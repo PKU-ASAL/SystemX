@@ -1,0 +1,66 @@
+# Processor 模块 - PyFlink 集群
+services:
+  flink-jobmanager:
+    build:
+      context: ../..
+      dockerfile: ./services/processor/Dockerfile
+    hostname: ${FLINK_JOBMANAGER_HOST}
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: ${FLINK_JOBMANAGER_HOST}
+        taskmanager.memory.process.size: 2048m
+        jobmanager.memory.process.size: 1024m
+        parallelism.default: ${FLINK_PARALLELISM}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - FLINK_JOBMANAGER_PORT=${FLINK_JOBMANAGER_PORT}
+      - FLINK_TASKMANAGER_SLOTS=${FLINK_TASKMANAGER_SLOTS}
+      - FLINK_PARALLELISM=${FLINK_PARALLELISM}
+      - THREAT_RULES_PATH=${THREAT_RULES_PATH}
+    ports:
+      - "${FLINK_JOBMANAGER_PORT}:8081"
+    command: jobmanager
+    volumes:
+      - ./jobs:/opt/flink/usr_jobs
+      - ./configs:/opt/flink/configs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=processor"
+      - "sysarmor.component=job-manager"
+
+  flink-taskmanager:
+    build:
+      context: ../..
+      dockerfile: ./services/processor/Dockerfile
+    hostname: processor-taskmanager
+    depends_on:
+      - flink-jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: ${FLINK_JOBMANAGER_HOST}
+        taskmanager.numberOfTaskSlots: ${FLINK_TASKMANAGER_SLOTS}
+        taskmanager.memory.process.size: 2048m
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+    command: taskmanager
+    volumes:
+      - ./jobs:/opt/flink/usr_jobs
+      - ./configs:/opt/flink/configs
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=processor"
+      - "sysarmor.component=task-manager"
+
+networks:
+  ${SYSARMOR_NETWORK}:
+    driver: bridge
+    name: ${SYSARMOR_NETWORK}

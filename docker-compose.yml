@@ -1,0 +1,16 @@
+# SysArmor EDR/HIDS 系统 - 逻辑模块编排
+include:
+  - path: ./services/manager/docker-compose.yml
+    env_file: .env
+  - path: ./services/middleware/docker-compose.yml
+    env_file: .env
+  - path: ./services/processor/docker-compose.yml
+    env_file: .env
+  - path: ./services/indexer/docker-compose.yml
+    env_file: .env
+
+# 全局网络定义
+networks:
+  sysarmor-net:
+    driver: bridge
+    name: sysarmor-net

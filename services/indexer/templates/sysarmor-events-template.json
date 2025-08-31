@@ -1,0 +1,431 @@
+{
+    "index_patterns": [
+        "sysarmor-events-*",
+        "sysarmor-alerts-*"
+    ],
+    "template": {
+        "settings": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "index.refresh_interval": "5s",
+            "index.max_result_window": 50000,
+            "analysis": {
+                "analyzer": {
+                    "sysarmor_analyzer": {
+                        "type": "standard",
+                        "stopwords": "_none_"
+                    },
+                    "path_analyzer": {
+                        "type": "custom",
+                        "tokenizer": "path_hierarchy",
+                        "filter": [
+                            "lowercase"
+                        ]
+                    }
+                }
+            }
+        },
+        "mappings": {
+            "properties": {
+                "@timestamp": {
+                    "type": "date",
+                    "format": "strict_date_optional_time||epoch_millis"
+                },
+                "event_id": {
+                    "type": "keyword",
+                    "index": true
+                },
+                "collector_id": {
+                    "type": "keyword",
+                    "index": true
+                },
+                "data_source": {
+                    "type": "keyword",
+                    "index": true
+                },
+                "ingestion_timestamp": {
+                    "type": "date",
+                    "format": "strict_date_optional_time||epoch_millis"
+                },
+                "pipeline": {
+                    "type": "keyword"
+                },
+                "pipeline_version": {
+                    "type": "keyword"
+                },
+                "risk_score": {
+                    "type": "integer",
+                    "index": true
+                },
+                "event": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "category": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "action": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "outcome": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "severity": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "evt": {
+                            "type": "object",
+                            "properties": {
+                                "num": {
+                                    "type": "long"
+                                },
+                                "time": {
+                                    "type": "date",
+                                    "format": "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'||yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'+0000'||strict_date_optional_time"
+                                },
+                                "type": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "args": {
+                                    "type": "text",
+                                    "analyzer": "sysarmor_analyzer",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 1024
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "proc": {
+                            "type": "object",
+                            "properties": {
+                                "pid": {
+                                    "type": "long",
+                                    "index": true
+                                },
+                                "name": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "cmdline": {
+                                    "type": "text",
+                                    "analyzer": "sysarmor_analyzer",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 1024
+                                        }
+                                    }
+                                },
+                                "ppid": {
+                                    "type": "long",
+                                    "index": true
+                                },
+                                "pname": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "pcmdline": {
+                                    "type": "text",
+                                    "analyzer": "sysarmor_analyzer",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 1024
+                                        }
+                                    }
+                                },
+                                "exe": {
+                                    "type": "text",
+                                    "analyzer": "path_analyzer",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 512
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "user": {
+                            "type": "object",
+                            "properties": {
+                                "uid": {
+                                    "type": "long",
+                                    "index": true
+                                },
+                                "name": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "gid": {
+                                    "type": "long"
+                                },
+                                "group": {
+                                    "type": "keyword"
+                                }
+                            }
+                        },
+                        "file": {
+                            "type": "object",
+                            "properties": {
+                                "path": {
+                                    "type": "text",
+                                    "analyzer": "path_analyzer",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 512
+                                        }
+                                    }
+                                },
+                                "name": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "extension": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "size": {
+                                    "type": "long"
+                                },
+                                "hash": {
+                                    "type": "object",
+                                    "properties": {
+                                        "md5": {
+                                            "type": "keyword"
+                                        },
+                                        "sha1": {
+                                            "type": "keyword"
+                                        },
+                                        "sha256": {
+                                            "type": "keyword"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "network": {
+                            "type": "object",
+                            "properties": {
+                                "src_ip": {
+                                    "type": "ip",
+                                    "index": true
+                                },
+                                "dst_ip": {
+                                    "type": "ip",
+                                    "index": true
+                                },
+                                "src_port": {
+                                    "type": "integer"
+                                },
+                                "dst_port": {
+                                    "type": "integer"
+                                },
+                                "protocol": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "direction": {
+                                    "type": "keyword"
+                                }
+                            }
+                        },
+                        "container": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "name": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "image": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "runtime": {
+                                    "type": "keyword"
+                                }
+                            }
+                        },
+                        "k8s": {
+                            "type": "object",
+                            "properties": {
+                                "pod": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "keyword",
+                                            "index": true
+                                        },
+                                        "namespace": {
+                                            "type": "keyword",
+                                            "index": true
+                                        },
+                                        "uid": {
+                                            "type": "keyword"
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "keyword",
+                                            "index": true
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "geo": {
+                            "type": "object",
+                            "properties": {
+                                "ip": {
+                                    "type": "ip"
+                                },
+                                "country": {
+                                    "type": "keyword"
+                                },
+                                "city": {
+                                    "type": "keyword"
+                                },
+                                "location": {
+                                    "type": "geo_point"
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": {
+                    "type": "object",
+                    "dynamic": true,
+                    "properties": {
+                        "suspicious": {
+                            "type": "boolean",
+                            "index": true
+                        },
+                        "category": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "rules": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "mitre": {
+                            "type": "object",
+                            "properties": {
+                                "technique": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "tactic": {
+                                    "type": "keyword",
+                                    "index": true
+                                }
+                            }
+                        }
+                    }
+                },
+                "analysis": {
+                    "type": "object",
+                    "dynamic": true,
+                    "properties": {
+                        "rules": {
+                            "type": "object",
+                            "properties": {
+                                "matched": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "severity": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
+                                "score": {
+                                    "type": "integer"
+                                },
+                                "description": {
+                                    "type": "text"
+                                }
+                            }
+                        },
+                        "ml": {
+                            "type": "object",
+                            "properties": {
+                                "anomaly_score": {
+                                    "type": "float"
+                                },
+                                "model_version": {
+                                    "type": "keyword"
+                                }
+                            }
+                        }
+                    }
+                },
+                "host": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "keyword",
+                            "index": true
+                        },
+                        "ip": {
+                            "type": "ip",
+                            "index": true
+                        },
+                        "os": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "keyword"
+                                },
+                                "version": {
+                                    "type": "keyword"
+                                },
+                                "family": {
+                                    "type": "keyword"
+                                }
+                            }
+                        },
+                        "architecture": {
+                            "type": "keyword"
+                        }
+                    }
+                },
+                "agent": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "keyword"
+                        },
+                        "name": {
+                            "type": "keyword"
+                        },
+                        "version": {
+                            "type": "keyword"
+                        },
+                        "type": {
+                            "type": "keyword"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

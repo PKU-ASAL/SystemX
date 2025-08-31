@@ -1,0 +1,125 @@
+# Middleware 模块 - Kafka + Vector + Prometheus
+services:
+  kafka:
+    build:
+      context: ../..
+      dockerfile: ./services/middleware/kafka.Dockerfile
+    hostname: ${KAFKA_HOST}
+    environment:
+      # Kafka 基础配置
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@${KAFKA_HOST}:${KAFKA_CONTROLLER_PORT}
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:${KAFKA_INTERNAL_PORT},CONTROLLER://0.0.0.0:${KAFKA_CONTROLLER_PORT},EXTERNAL://0.0.0.0:${KAFKA_EXTERNAL_PORT}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${KAFKA_HOST}:${KAFKA_INTERNAL_PORT},EXTERNAL://${KAFKA_EXTERNAL_HOST}:${KAFKA_EXTERNAL_PORT}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # JMX 配置
+      KAFKA_JMX_PORT: ${KAFKA_JMX_PORT}
+      KAFKA_JMX_HOSTNAME: ${KAFKA_JMX_HOSTNAME}
+      KAFKA_JVM_PERFORMANCE_OPTS: "-javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent-0.19.0.jar=7071:/opt/jmx-exporter/kafka-metrics.yml"
+      # 主题与副本配置
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      # 启动优化
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "${KAFKA_INTERNAL_PORT}:${KAFKA_INTERNAL_PORT}"
+      - "${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}"
+      - "7071:7071"  # JMX Exporter HTTP 端口
+    volumes:
+      - middleware_kafka_data:/var/lib/kafka/data
+      - middleware_kafka_logs:/var/lib/kafka/logs
+      - ./configs/monitoring/jmx-exporter:/opt/jmx-exporter:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=middleware"
+      - "sysarmor.component=message-queue"
+
+  vector:
+    build:
+      context: ../..
+      dockerfile: ./services/middleware/vector.Dockerfile
+    hostname: ${VECTOR_HOST}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+      - VECTOR_TCP_PORT=${VECTOR_TCP_PORT}
+      - VECTOR_API_PORT=${VECTOR_API_PORT}
+      - VECTOR_METRICS_PORT=${VECTOR_METRICS_PORT}
+    ports:
+      - "${VECTOR_TCP_PORT}:${VECTOR_TCP_PORT}"
+      - "${VECTOR_API_PORT}:${VECTOR_API_PORT}"
+      - "${VECTOR_METRICS_PORT}:${VECTOR_METRICS_PORT}"
+    volumes:
+      - ./configs/vector:/etc/vector:ro
+      - middleware_vector_data:/var/lib/vector
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${VECTOR_API_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=middleware"
+      - "sysarmor.component=data-collector"
+
+  prometheus:
+    image: docker.io/prom/prometheus:v2.45.0
+    hostname: ${PROMETHEUS_HOST}
+    depends_on:
+      - vector
+      - kafka
+    environment:
+      - PROMETHEUS_PORT=${PROMETHEUS_PORT}
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    volumes:
+      - ./configs/monitoring/prometheus:/etc/prometheus:ro
+      - middleware_prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=middleware"
+      - "sysarmor.component=monitoring"
+
+volumes:
+  middleware_kafka_data:
+    name: sysarmor_middleware_kafka_data
+  middleware_kafka_logs:
+    name: sysarmor_middleware_kafka_logs
+  middleware_vector_data:
+    name: sysarmor_middleware_vector_data
+  middleware_prometheus_data:
+    name: sysarmor_middleware_prometheus_data
+
+networks:
+  ${SYSARMOR_NETWORK}:
+    driver: bridge
+    name: ${SYSARMOR_NETWORK}

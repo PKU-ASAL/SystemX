@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # Vector 指标收集 (现有，不需要修改)
+  - job_name: 'vector'
+    static_configs:
+      - targets: ['vector:9598']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    
+  # Kafka JMX 指标收集 (新增)
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:7071']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Prometheus 自身指标
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

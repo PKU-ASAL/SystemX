@@ -1,0 +1,49 @@
+# SysArmor Indexer OpenSearch 配置文件
+cluster.name: sysarmor-indexer-cluster
+node.name: sysarmor-indexer-node-1
+network.host: 0.0.0.0
+http.port: 9200
+discovery.type: single-node
+
+# 路径配置
+path.data: /usr/share/opensearch/data
+path.logs: /usr/share/opensearch/logs
+
+# 内存配置
+bootstrap.memory_lock: true
+
+# 安全配置
+plugins.security.disabled: false
+plugins.security.ssl.transport.enforce_hostname_verification: false
+plugins.security.ssl.transport.enabled: true
+plugins.security.ssl.http.enabled: false
+plugins.security.allow_default_init_securityindex: true
+plugins.security.allow_unsafe_democertificates: false
+plugins.security.audit.type: internal_opensearch
+plugins.security.enable_snapshot_restore_privilege: true
+plugins.security.check_snapshot_restore_write_privileges: true
+plugins.security.restapi.roles_enabled: ["all_access", "security_rest_api_access"]
+
+# SSL 传输层配置
+plugins.security.ssl.transport.pemcert_filepath: certs/node.pem
+plugins.security.ssl.transport.pemkey_filepath: certs/node-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: certs/root-ca.pem
+
+# 管理员证书配置
+plugins.security.authcz.admin_dn:
+  - "CN=admin,OU=Security,O=SysArmor,L=San Francisco,ST=CA,C=US"
+
+# 集群配置
+cluster.routing.allocation.disk.threshold_enabled: false
+cluster.max_shards_per_node: 3000
+
+# 性能优化
+indices.query.bool.max_clause_count: 10000
+search.max_buckets: 100000
+
+# 索引配置
+action.auto_create_index: "sysarmor-events-*,sysarmor-alerts-*,sysarmor-metrics-*"
+
+# 日志配置
+logger.level: INFO
+logger.org.opensearch.security: DEBUG

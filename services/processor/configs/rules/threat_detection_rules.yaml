@@ -1,0 +1,482 @@
+# SysArmor 增强威胁检测规则配置
+# 基于采集脚本中的 auditd 规则优化的威胁检测规则集
+# 
+# 规则结构说明:
+# - id: 规则唯一标识符
+# - name: 规则名称
+# - description: 规则描述
+# - category: 威胁类别
+# - severity: 严重程度 (low/medium/high/critical)
+# - base_score: 基础风险评分 (0-100)
+# - enabled: 是否启用规则
+# - keywords: 关键词匹配列表
+# - patterns: 正则表达式匹配列表
+# - conditions: 字段条件匹配
+# - frequency_threshold: 频率阈值
+# - time_window: 时间窗口 (秒)
+# - score_multiplier: 评分乘数
+
+version: "2.0"
+metadata:
+  name: "SysArmor Enhanced Threat Detection Rules"
+  description: "基于采集脚本 auditd 规则优化的威胁检测规则集"
+  author: "SysArmor Team"
+  created_at: "2025-08-20"
+  updated_at: "2025-08-20"
+
+rules:
+  # ===== 可疑活动检测 (suspicious_activity) =====
+  - id: "suspicious_tmp_execution"
+    name: "可疑临时目录程序执行"
+    description: "检测在 /tmp、/dev/shm、/var/tmp 等可疑路径下的程序执行"
+    category: "suspicious_activity"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    keywords:
+      - "/tmp/"
+      - "/dev/shm/"
+      - "/var/tmp/"
+    patterns:
+      - 'exe="/tmp/[^"]*"'
+      - 'exe="/dev/shm/[^"]*"'
+      - 'exe="/var/tmp/[^"]*"'
+      - 'type=EXECVE.*a0="/tmp/'
+      - 'type=EXECVE.*a0="/dev/shm/'
+      - 'type=EXECVE.*a0="/var/tmp/'
+    conditions:
+      key: "suspicious_activity"
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.5
+
+  # ===== 权限提升检测 (privilege_escalation) =====
+  - id: "privilege_escalation_setuid"
+    name: "SetUID/SetGID 权限提升"
+    description: "检测 setuid、setgid、setreuid、setregid 系统调用"
+    category: "privilege_escalation"
+    severity: "critical"
+    base_score: 90
+    enabled: true
+    keywords:
+      - "setuid"
+      - "setgid"
+      - "setreuid"
+      - "setregid"
+    patterns:
+      - 'syscall=105'  # setuid
+      - 'syscall=106'  # setgid
+      - 'syscall=113'  # setreuid
+      - 'syscall=114'  # setregid
+      - 'type=SYSCALL.*syscall=105'
+      - 'type=SYSCALL.*syscall=106'
+      - 'type=SYSCALL.*syscall=113'
+      - 'type=SYSCALL.*syscall=114'
+    conditions:
+      key: "privilege_escalation"
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.8
+
+  - id: "sudo_privilege_escalation"
+    name: "Sudo 权限提升检测"
+    description: "检测 sudo 命令使用，支持连续检测"
+    category: "privilege_escalation"
+    severity: "high"
+    base_score: 75
+    enabled: true
+    keywords:
+      - "sudo"
+      - "op=PAM:session_open"
+      - "op=PAM:setcred"
+    patterns:
+      - 'exe="/usr/bin/sudo"'
+      - 'comm="sudo"'
+      - 'type=USER_CMD.*sudo'
+      - 'type=CRED_ACQ.*sudo'
+    frequency_threshold: 2  # 连续2次触发高风险
+    time_window: 300
+    score_multiplier: 1.3
+
+  # ===== 敏感文件访问 (sensitive_files) =====
+  - id: "sensitive_file_passwd_access"
+    name: "密码文件访问检测"
+    description: "检测对 /etc/passwd、/etc/shadow 等敏感文件的访问"
+    category: "sensitive_files"
+    severity: "medium"
+    base_score: 70
+    enabled: true
+    keywords:
+      - "/etc/passwd"
+      - "/etc/shadow"
+      - "/etc/sudoers"
+    patterns:
+      - 'name="/etc/passwd"'
+      - 'name="/etc/shadow"'
+      - 'name="/etc/sudoers"'
+      - 'name="/etc/sudoers\.d/[^"]*"'
+    conditions:
+      key: "sensitive_files"
+    frequency_threshold: 3
+    time_window: 600
+    score_multiplier: 1.2
+
+  - id: "ssh_config_access"
+    name: "SSH 配置文件访问"
+    description: "检测对 SSH 配置文件的访问和修改"
+    category: "sensitive_files"
+    severity: "medium"
+    base_score: 65
+    enabled: true
+    keywords:
+      - "/etc/ssh/sshd_config"
+      - "sshd_config"
+    patterns:
+      - 'name="/etc/ssh/sshd_config"'
+      - 'name="/etc/ssh/[^"]*"'
+    conditions:
+      key: "sensitive_files"
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.1
+
+  # ===== 系统二进制文件监控 (system_binaries) =====
+  - id: "system_binary_modification"
+    name: "系统二进制文件修改"
+    description: "检测对 /bin、/sbin、/usr/bin、/usr/sbin 目录的修改"
+    category: "system_binaries"
+    severity: "critical"
+    base_score: 95
+    enabled: true
+    keywords:
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+    patterns:
+      - 'name="/bin/[^"]*"'
+      - 'name="/sbin/[^"]*"'
+      - 'name="/usr/bin/[^"]*"'
+      - 'name="/usr/sbin/[^"]*"'
+    conditions:
+      key: "system_binaries"
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 2.0
+
+  # ===== 网络连接监控 (network_connections) =====
+  - id: "suspicious_network_socket"
+    name: "可疑网络套接字创建"
+    description: "检测可疑的网络套接字创建和连接"
+    category: "network_connections"
+    severity: "medium"
+    base_score: 60
+    enabled: true
+    keywords:
+      - "socket"
+      - "connect"
+    patterns:
+      - 'syscall=41'   # socket
+      - 'syscall=42'   # connect
+      - 'type=SYSCALL.*syscall=41'
+      - 'type=SYSCALL.*syscall=42'
+    conditions:
+      key: "network_connections"
+    frequency_threshold: 10
+    time_window: 60
+    score_multiplier: 1.0
+
+  - id: "netcat_reverse_shell"
+    name: "Netcat 反向 Shell 检测"
+    description: "检测 netcat 的使用，可能表示反向 shell"
+    category: "network_connections"
+    severity: "critical"
+    base_score: 90
+    enabled: true
+    keywords:
+      - "netcat"
+      - "nc -"
+      - "nc.traditional"
+    patterns:
+      - 'comm="nc"'
+      - 'comm="netcat"'
+      - 'exe=".*/nc"'
+      - 'exe=".*/netcat"'
+      - 'nc\s+.*-[lep]'
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.6
+
+  # ===== 认证监控 (authentication) =====
+  - id: "auth_log_access"
+    name: "认证日志访问"
+    description: "检测对认证日志文件的访问"
+    category: "authentication"
+    severity: "low"
+    base_score: 40
+    enabled: true
+    keywords:
+      - "/var/log/auth.log"
+      - "/var/log/secure"
+    patterns:
+      - 'name="/var/log/auth\.log"'
+      - 'name="/var/log/secure"'
+    conditions:
+      key: "authentication"
+    frequency_threshold: 5
+    time_window: 300
+    score_multiplier: 1.0
+
+  - id: "pam_authentication_failure"
+    name: "PAM 认证失败"
+    description: "检测 PAM 认证失败事件"
+    category: "authentication"
+    severity: "low"
+    base_score: 35
+    enabled: true
+    keywords:
+      - "op=PAM:authentication"
+      - "res=failed"
+    patterns:
+      - 'op=PAM:authentication.*res=failed'
+      - 'type=USER_AUTH.*res=failed'
+    frequency_threshold: 5
+    time_window: 300
+    score_multiplier: 1.1
+
+  # ===== 定时任务监控 (scheduled_tasks) =====
+  - id: "crontab_modification"
+    name: "Crontab 定时任务修改"
+    description: "检测对 crontab 和定时任务的修改"
+    category: "scheduled_tasks"
+    severity: "medium"
+    base_score: 65
+    enabled: true
+    keywords:
+      - "crontab"
+      - "/etc/cron"
+      - "/var/spool/cron"
+    patterns:
+      - 'name="/etc/crontab"'
+      - 'name="/etc/cron\.d/[^"]*"'
+      - 'name="/var/spool/cron/[^"]*"'
+      - 'comm="crontab"'
+    conditions:
+      key: "scheduled_tasks"
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.2
+
+  # ===== 高级威胁检测 =====
+  - id: "command_injection_indicators"
+    name: "命令注入指标检测"
+    description: "检测可能的命令注入攻击指标"
+    category: "command_injection"
+    severity: "critical"
+    base_score: 85
+    enabled: true
+    keywords:
+      - "bash -i"
+      - "sh -i"
+      - "/bin/sh"
+      - "python -c"
+      - "perl -e"
+    patterns:
+      - 'bash\s+.*-[ic]'
+      - 'sh\s+.*-[ic]'
+      - '/bin/sh.*-[ic]'
+      - 'python\s+.*-c'
+      - 'perl\s+.*-e'
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.5
+
+  - id: "file_deletion_dangerous"
+    name: "危险文件删除操作"
+    description: "检测危险的文件删除操作"
+    category: "file_manipulation"
+    severity: "critical"
+    base_score: 88
+    enabled: true
+    keywords:
+      - "rm -rf"
+      - "rm -f"
+      - "shred"
+      - "wipe"
+    patterns:
+      - 'rm\s+.*-[rf]'
+      - 'rm\s+.*--recursive'
+      - 'rm\s+.*--force'
+      - 'comm="shred"'
+      - 'comm="wipe"'
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.4
+
+  - id: "network_scanning_tools"
+    name: "网络扫描工具检测"
+    description: "检测网络扫描工具的使用"
+    category: "reconnaissance"
+    severity: "medium"
+    base_score: 70
+    enabled: true
+    keywords:
+      - "nmap"
+      - "masscan"
+      - "zmap"
+      - "nping"
+    patterns:
+      - 'comm="nmap"'
+      - 'comm="masscan"'
+      - 'comm="zmap"'
+      - 'comm="nping"'
+      - 'exe=".*/nmap"'
+      - 'exe=".*/masscan"'
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.2
+
+  - id: "permission_modification"
+    name: "文件权限修改"
+    description: "检测危险的文件权限修改"
+    category: "file_manipulation"
+    severity: "high"
+    base_score: 75
+    enabled: true
+    keywords:
+      - "chmod 777"
+      - "chmod 755"
+      - "chmod +x"
+    patterns:
+      - 'chmod\s+777'
+      - 'chmod\s+755'
+      - 'chmod\s+\+x'
+      - 'comm="chmod"'
+    frequency_threshold: 2
+    time_window: 300
+    score_multiplier: 1.3
+
+  # ===== 系统服务和内核模块 =====
+  - id: "service_manipulation"
+    name: "系统服务操作"
+    description: "检测系统服务的启动、停止或配置修改"
+    category: "system_configuration"
+    severity: "medium"
+    base_score: 55
+    enabled: true
+    keywords:
+      - "systemctl"
+      - "service"
+      - "SERVICE_START"
+      - "SERVICE_STOP"
+    patterns:
+      - 'comm="systemctl"'
+      - 'type=SERVICE_START'
+      - 'type=SERVICE_STOP'
+      - 'exe=".*/systemctl"'
+    frequency_threshold: 3
+    time_window: 300
+    score_multiplier: 1.1
+
+  - id: "kernel_module_loading"
+    name: "内核模块加载"
+    description: "检测内核模块的加载，可能表示 rootkit 安装"
+    category: "system_configuration"
+    severity: "critical"
+    base_score: 85
+    enabled: true
+    keywords:
+      - "insmod"
+      - "modprobe"
+      - "rmmod"
+    patterns:
+      - 'comm="insmod"'
+      - 'comm="modprobe"'
+      - 'comm="rmmod"'
+      - 'exe=".*/insmod"'
+      - 'exe=".*/modprobe"'
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.6
+
+# 规则组配置 - 基于采集脚本的 auditd 规则分类
+rule_groups:
+  critical_threats:
+    description: "关键威胁 - 需要立即响应"
+    rules:
+      - "privilege_escalation_setuid"
+      - "system_binary_modification"
+      - "command_injection_indicators"
+      - "file_deletion_dangerous"
+      - "netcat_reverse_shell"
+      - "kernel_module_loading"
+    
+  suspicious_activities:
+    description: "可疑活动 - 基于采集脚本的 suspicious_activity 规则"
+    rules:
+      - "suspicious_tmp_execution"
+      - "network_scanning_tools"
+      - "permission_modification"
+    
+  privilege_escalation:
+    description: "权限提升 - 基于采集脚本的 privilege_escalation 规则"
+    rules:
+      - "privilege_escalation_setuid"
+      - "sudo_privilege_escalation"
+    
+  sensitive_file_access:
+    description: "敏感文件访问 - 基于采集脚本的 sensitive_files 规则"
+    rules:
+      - "sensitive_file_passwd_access"
+      - "ssh_config_access"
+    
+  system_integrity:
+    description: "系统完整性 - 基于采集脚本的 system_binaries 规则"
+    rules:
+      - "system_binary_modification"
+      - "service_manipulation"
+      - "kernel_module_loading"
+    
+  network_monitoring:
+    description: "网络监控 - 基于采集脚本的 network_connections 规则"
+    rules:
+      - "suspicious_network_socket"
+      - "netcat_reverse_shell"
+      - "network_scanning_tools"
+    
+  authentication_monitoring:
+    description: "认证监控 - 基于采集脚本的 authentication 规则"
+    rules:
+      - "auth_log_access"
+      - "pam_authentication_failure"
+    
+  scheduled_tasks_monitoring:
+    description: "定时任务监控 - 基于采集脚本的 scheduled_tasks 规则"
+    rules:
+      - "crontab_modification"
+
+# 全局配置 - 威胁检测引擎配置
+global_settings:
+  default_time_window: 300  # 默认时间窗口 5 分钟
+  max_frequency_tracking: 2000  # 增加频率跟踪条目数以支持更多主机
+  cleanup_interval: 1800  # 清理间隔 30 分钟
+  enable_rule_reload: true  # 启用规则热重载
+  rule_reload_interval: 120  # 规则重载检查间隔 2 分钟
+  
+  # 风险评分调整
+  risk_score_adjustments:
+    consecutive_detection_bonus: 0.1  # 连续检测奖励系数
+    frequency_multiplier_cap: 2.0     # 频率乘数上限
+    time_decay_factor: 0.95           # 时间衰减因子
+    
+  # 输出配置
+  output_settings:
+    include_original_event: true      # 包含原始事件数据
+    include_rule_metadata: true       # 包含规则元数据
+    threat_id_format: "SYSARMOR-{timestamp}-{rule_id}-{host}"
+    
+  # 性能优化
+  performance_settings:
+    batch_size: 100                   # 批处理大小
+    max_memory_usage: "512MB"         # 最大内存使用
+    checkpoint_interval: 60           # 检查点间隔（秒）

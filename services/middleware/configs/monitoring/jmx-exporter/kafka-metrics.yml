@@ -1,0 +1,142 @@
+# Kafka 关键指标配置 - 针对您关心的指标
+startDelaySeconds: 0
+ssl: false
+lowercaseOutputName: false
+lowercaseOutputLabelNames: false
+
+rules:
+  # ========== 整体 Broker 级别指标 ==========
+  
+  # 1. 整体消息数量
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec><>Count"
+    name: kafka_broker_messages_total
+    type: COUNTER
+    help: "Total messages received by broker"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec><>OneMinuteRate"
+    name: kafka_broker_messages_per_sec
+    type: GAUGE
+    help: "Messages per second (1-minute rate)"
+
+  # 2. 整体字节数和速率
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec><>Count"
+    name: kafka_broker_bytes_in_total
+    type: COUNTER
+    help: "Total bytes received by broker"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec><>OneMinuteRate"
+    name: kafka_broker_bytes_in_per_sec
+    type: GAUGE
+    help: "Bytes in per second (1-minute rate)"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec><>Count"
+    name: kafka_broker_bytes_out_total
+    type: COUNTER
+    help: "Total bytes sent by broker"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec><>OneMinuteRate"
+    name: kafka_broker_bytes_out_per_sec
+    type: GAUGE
+    help: "Bytes out per second (1-minute rate)"
+
+  # 3. 整体存储空间 (所有 Topic 的日志大小总和)
+  - pattern: "kafka.log<type=LogManager, name=Size><>Value"
+    name: kafka_broker_log_size_total_bytes
+    type: GAUGE
+    help: "Total log size across all topics in bytes"
+
+  # 4. JVM 内存使用
+  - pattern: "java.lang<type=Memory><HeapMemoryUsage>used"
+    name: kafka_jvm_memory_heap_used_bytes
+    type: GAUGE
+    help: "JVM heap memory used in bytes"
+
+  - pattern: "java.lang<type=Memory><HeapMemoryUsage>max"
+    name: kafka_jvm_memory_heap_max_bytes
+    type: GAUGE
+    help: "JVM heap memory max in bytes"
+
+  - pattern: "java.lang<type=Memory><NonHeapMemoryUsage>used"
+    name: kafka_jvm_memory_nonheap_used_bytes
+    type: GAUGE
+    help: "JVM non-heap memory used in bytes"
+
+  # ========== Topic 级别指标 ==========
+  
+  # 1. 每个 Topic 的消息数
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec, topic=(.+)><>Count"
+    name: kafka_topic_messages_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+    help: "Total messages per topic"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec, topic=(.+)><>OneMinuteRate"
+    name: kafka_topic_messages_per_sec
+    labels:
+      topic: "$1"
+    type: GAUGE
+    help: "Messages per second per topic (1-minute rate)"
+
+  # 2. 每个 Topic 的字节数和速率
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec, topic=(.+)><>Count"
+    name: kafka_topic_bytes_in_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+    help: "Total bytes received per topic"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec, topic=(.+)><>OneMinuteRate"
+    name: kafka_topic_bytes_in_per_sec
+    labels:
+      topic: "$1"
+    type: GAUGE
+    help: "Bytes in per second per topic (1-minute rate)"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec, topic=(.+)><>Count"
+    name: kafka_topic_bytes_out_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+    help: "Total bytes sent per topic"
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec, topic=(.+)><>OneMinuteRate"
+    name: kafka_topic_bytes_out_per_sec
+    labels:
+      topic: "$1"
+    type: GAUGE
+    help: "Bytes out per second per topic (1-minute rate)"
+
+  # 3. 每个 Topic 的存储空间 (按分区)
+  - pattern: "kafka.log<type=Log, name=Size, topic=(.+), partition=(.+)><>Value"
+    name: kafka_topic_partition_log_size_bytes
+    labels:
+      topic: "$1"
+      partition: "$2"
+    type: GAUGE
+    help: "Log size per topic partition in bytes"
+
+  # 4. 每个 Topic 的总存储空间 (聚合指标，需要在 Prometheus 中计算)
+  # 这个通过 PromQL 查询: sum by (topic) (kafka_topic_partition_log_size_bytes)
+
+  # ========== 额外有用指标 ==========
+  
+  # Topic 分区数
+  - pattern: "kafka.server<type=ReplicaManager, name=PartitionCount><>Value"
+    name: kafka_broker_partitions_total
+    type: GAUGE
+    help: "Total number of partitions on broker"
+
+  # 活跃连接数
+  - pattern: "kafka.server<type=socket-server-metrics><>connection-count"
+    name: kafka_broker_connections_active
+    type: GAUGE
+    help: "Active connections to broker"
+
+  # 请求处理速率
+  - pattern: "kafka.network<type=RequestMetrics, name=RequestsPerSec, request=(.+)><>OneMinuteRate"
+    name: kafka_network_requests_per_sec
+    labels:
+      request: "$1"
+    type: GAUGE
+    help: "Network requests per second by type"

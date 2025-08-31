@@ -1,0 +1,55 @@
+# Manager 模块 - 控制平面 + PostgreSQL
+services:
+  postgres:
+    image: docker.io/postgres:15
+    hostname: manager-postgres
+    environment:
+      POSTGRES_DB: sysarmor
+      POSTGRES_USER: sysarmor
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - manager_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "sysarmor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=manager"
+      - "sysarmor.component=database"
+
+  manager:
+    build:
+      context: ../..
+      dockerfile: ./services/manager/Dockerfile
+    hostname: ${MANAGER_HOST}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - MANAGER_PORT=${MANAGER_PORT}
+      - DATABASE_URL=${MANAGER_DB_URL}
+      - MANAGER_LOG_LEVEL=${MANAGER_LOG_LEVEL}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - PROMETHEUS_URL=http://${PROMETHEUS_HOST}:${PROMETHEUS_PORT}
+    ports:
+      - "${MANAGER_PORT}:${MANAGER_PORT}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MANAGER_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ${SYSARMOR_NETWORK}
+    labels:
+      - "sysarmor.module=manager"
+      - "sysarmor.component=application"
+
+volumes:
+  manager_postgres_data:
+    name: sysarmor_manager_postgres_data

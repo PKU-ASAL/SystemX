@@ -1,0 +1,86 @@
+# SysArmor Vector - 支持动态Topic配置和auditd日志处理
+[api]
+enabled = true
+address = "0.0.0.0:${VECTOR_API_PORT}"
+
+# 接收来自Agent的结构化数据 - TCP Socket接收器
+[sources.tcp_receiver]
+type = "socket"
+address = "0.0.0.0:${VECTOR_TCP_PORT}"
+mode = "tcp"
+max_length = 102400
+decoding.codec = "json"
+
+# 简化的解析和路由 - 只做collector_id提取和topic路由
+[transforms.parse_and_route]
+type = "remap"
+inputs = ["tcp_receiver"]
+drop_on_error = true
+source = '''
+# 添加基本元数据
+.processed_at = now()
+.event_type = "tcp_message"
+.source_type = "tcp_socket"
+
+# 检查collector_id是否存在并生成topic
+if !exists(.collector_id) {
+    abort "No collector_id found, dropping message"
+}
+
+collector_id_str = string!(.collector_id)
+if length(collector_id_str) < 8 {
+    abort "Invalid collector_id format (too short): " + collector_id_str + ", dropping message"
+}
+
+# 生成topic名称 (与manager逻辑一致)
+collector_short = slice!(collector_id_str, start: 0, end: 8)
+.topic = "sysarmor-agentless-" + collector_short
+
+# 原始消息已经在 .message 字段中，无需重复保存
+
+# 确保timestamp存在
+if !exists(.timestamp) {
+    .timestamp = now()
+}
+'''
+
+# 输出到动态Kafka Topic
+[sinks.kafka_dynamic]
+type = "kafka"
+inputs = ["parse_and_route"]
+bootstrap_servers = "${KAFKA_BOOTSTRAP_SERVERS}"
+topic = "{{ topic }}"
+key_field = "collector_id"  # 使用 collector_id 作为 Kafka 消息 key
+encoding.codec = "json"
+compression = "snappy"
+
+# Kafka生产者配置 - 优化性能和可靠性
+[sinks.kafka_dynamic.librdkafka_options]
+"message.timeout.ms" = "30000"
+"delivery.timeout.ms" = "30000"
+"request.timeout.ms" = "30000"
+"queue.buffering.max.messages" = "100000"
+"queue.buffering.max.kbytes" = "1048576"
+"batch.num.messages" = "1000"
+"batch.size" = "1000000"
+"linger.ms" = "100"
+"compression.type" = "snappy"
+"acks" = "1"
+"retries" = "3"
+"retry.backoff.ms" = "100"
+
+# 内部指标收集
+[sources.internal_metrics]
+type = "internal_metrics"
+scrape_interval_secs = 30
+
+# Prometheus指标导出
+[sinks.prometheus_metrics]
+type = "prometheus_exporter"
+inputs = ["internal_metrics"]
+address = "0.0.0.0:${VECTOR_METRICS_PORT}"
+default_namespace = "vector"
+
+# 内部日志收集（用于调试）
+[sources.internal_logs]
+type = "internal_logs"
