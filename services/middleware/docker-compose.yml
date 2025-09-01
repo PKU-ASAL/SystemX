@@ -81,15 +81,18 @@ services:
       - "sysarmor.component=data-collector"
 
   prometheus:
-    image: docker.io/prom/prometheus:v2.45.0
-    hostname: ${PROMETHEUS_HOST}
+    build:
+      context: ../..
+      dockerfile: ./services/middleware/prometheus.Dockerfile
+    hostname: middleware-prometheus
     depends_on:
       - vector
       - kafka
     environment:
-      - PROMETHEUS_PORT=${PROMETHEUS_PORT}
+      - PROMETHEUS_HOST=${PROMETHEUS_HOST:-middleware-prometheus}
+      - PROMETHEUS_PORT=${PROMETHEUS_PORT:-9090}
     ports:
-      - "${PROMETHEUS_PORT}:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./configs/monitoring/prometheus:/etc/prometheus:ro
       - middleware_prometheus_data:/prometheus
@@ -104,7 +107,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - ${SYSARMOR_NETWORK}
+      - sysarmor-net
     labels:
       - "sysarmor.module=middleware"
       - "sysarmor.component=monitoring"
@@ -120,6 +123,6 @@ volumes:
     name: sysarmor_middleware_prometheus_data
 
 networks:
-  ${SYSARMOR_NETWORK}:
+  sysarmor-net:
     driver: bridge
-    name: ${SYSARMOR_NETWORK}
+    name: sysarmor-net

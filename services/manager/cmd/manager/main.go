@@ -161,6 +161,32 @@ func main() {
 		kafka.GET("/consumer-groups/:group", kafkaHandler.GetConsumerGroupDetails)
 	}
 
+	// Flink 管理路由
+	log.Printf("🔧 Initializing Flink handler with URL: %s", cfg.GetFlinkURL())
+	
+	flinkHandler := handlers.NewFlinkHandler(cfg.GetFlinkURL())
+	flink := api.Group("/flink")
+	{
+		// 连接测试
+		flink.GET("/test-connection", flinkHandler.TestFlinkConnection)
+		
+		// 集群管理
+		flink.GET("/overview", flinkHandler.GetClusterOverview)
+		flink.GET("/config", flinkHandler.GetConfig)
+		flink.GET("/health", flinkHandler.GetClusterHealth)
+		
+		// 作业管理
+		flink.GET("/jobs", flinkHandler.GetJobs)
+		flink.GET("/jobs/overview", flinkHandler.GetJobsOverview)
+		flink.GET("/jobs/:job_id", flinkHandler.GetJobDetails)
+		flink.GET("/jobs/:job_id/metrics", flinkHandler.GetJobMetrics)
+		
+		// TaskManager 管理
+		flink.GET("/taskmanagers", flinkHandler.GetTaskManagers)
+		flink.GET("/taskmanagers/overview", flinkHandler.GetTaskManagersOverview)
+	}
+	log.Printf("✅ Flink routes registered successfully")
+
 	// OpenSearch 管理路由
 	log.Printf("🔍 Initializing OpenSearch handler with URL: %s", cfg.GetOpenSearchURL())
 	log.Printf("🔍 OpenSearch Username: %s", cfg.GetOpenSearchUsername())

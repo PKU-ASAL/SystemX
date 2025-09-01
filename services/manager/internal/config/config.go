@@ -56,6 +56,11 @@ func (c *Config) GetOpenSearchPassword() string {
 	return sharedconfig.GetEnv("OPENSEARCH_PASSWORD", "admin")
 }
 
+// GetFlinkURL 获取 Flink JobManager URL
+func (c *Config) GetFlinkURL() string {
+	return sharedconfig.GetEnv("FLINK_JOBMANAGER_URL", "http://flink-jobmanager:8081")
+}
+
 // IsProduction 判断是否为生产环境
 func (c *Config) IsProduction() bool {
 	return c.BaseConfig.IsProduction()
