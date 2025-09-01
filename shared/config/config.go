@@ -31,20 +31,20 @@ type ManagerConfig struct {
 // MiddlewareConfig contains configuration for the Middleware service
 type MiddlewareConfig struct {
 	BaseConfig
-	VectorTCPPort int    `envconfig:"VECTOR_TCP_PORT" default:"6000"`
-	VectorAPIPort int    `envconfig:"VECTOR_API_PORT" default:"8686"`
-	KafkaBrokers  string `envconfig:"KAFKA_BROKERS" default:"kafka:9092"`
+	VectorTCPPort         int    `envconfig:"VECTOR_TCP_PORT" default:"6000"`
+	VectorAPIPort         int    `envconfig:"VECTOR_API_PORT" default:"8686"`
+	KafkaBootstrapServers string `envconfig:"KAFKA_BOOTSTRAP_SERVERS" default:"kafka:9092"`
 }
 
 // ProcessorConfig contains configuration for the Processor service
 type ProcessorConfig struct {
 	BaseConfig
-	KafkaBrokers         string `envconfig:"KAFKA_BROKERS" default:"kafka:9092"`
-	OpenSearchURL        string `envconfig:"OPENSEARCH_URL" default:"http://opensearch:9200"`
-	FlinkJobManagerPort  int    `envconfig:"FLINK_JOBMANAGER_PORT" default:"8081"`
-	FlinkTaskManagerSlots int   `envconfig:"FLINK_TASKMANAGER_SLOTS" default:"2"`
-	FlinkParallelism     int    `envconfig:"FLINK_PARALLELISM" default:"2"`
-	ThreatRulesPath      string `envconfig:"THREAT_RULES_PATH" default:"/app/configs/rules.yaml"`
+	KafkaBootstrapServers string `envconfig:"KAFKA_BOOTSTRAP_SERVERS" default:"kafka:9092"`
+	OpenSearchURL         string `envconfig:"OPENSEARCH_URL" default:"http://opensearch:9200"`
+	FlinkJobManagerPort   int    `envconfig:"FLINK_JOBMANAGER_PORT" default:"8081"`
+	FlinkTaskManagerSlots int    `envconfig:"FLINK_TASKMANAGER_SLOTS" default:"2"`
+	FlinkParallelism      int    `envconfig:"FLINK_PARALLELISM" default:"2"`
+	ThreatRulesPath       string `envconfig:"THREAT_RULES_PATH" default:"/app/configs/rules.yaml"`
 }
 
 // IndexerConfig contains configuration for the Indexer service
@@ -182,8 +182,8 @@ func (c *MiddlewareConfig) Validate() error {
 		return fmt.Errorf("invalid VECTOR_TCP_PORT: %d", c.VectorTCPPort)
 	}
 	
-	if c.KafkaBrokers == "" {
-		return fmt.Errorf("KAFKA_BROKERS is required")
+	if c.KafkaBootstrapServers == "" {
+		return fmt.Errorf("KAFKA_BOOTSTRAP_SERVERS is required")
 	}
 	
 	return nil
@@ -195,8 +195,8 @@ func (c *ProcessorConfig) Validate() error {
 		return err
 	}
 	
-	if c.KafkaBrokers == "" {
-		return fmt.Errorf("KAFKA_BROKERS is required")
+	if c.KafkaBootstrapServers == "" {
+		return fmt.Errorf("KAFKA_BOOTSTRAP_SERVERS is required")
 	}
 	
 	if c.OpenSearchURL == "" {

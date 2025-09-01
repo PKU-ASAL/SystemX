@@ -23,11 +23,11 @@ func Load() (*Config, error) {
 	}, nil
 }
 
-// GetKafkaBrokerList 获取 Kafka broker 列表
+// GetKafkaBrokerList 获取 Kafka bootstrap servers 列表
 // Manager 通过服务发现获取 Kafka 信息，这里返回默认配置
 func (c *Config) GetKafkaBrokerList() []string {
-	// 从环境变量获取 Kafka brokers，如果没有则使用默认值
-	kafkaBrokers := sharedconfig.GetEnv("KAFKA_BROKERS", "kafka:9092")
+	// 从环境变量获取 Kafka bootstrap servers，如果没有则使用默认值
+	kafkaBrokers := sharedconfig.GetEnv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 	return strings.Split(strings.TrimSpace(kafkaBrokers), ",")
 }
 
