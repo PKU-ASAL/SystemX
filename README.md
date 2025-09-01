@@ -104,9 +104,10 @@ make health
 ## 🔧 四大核心模块
 
 ### 1. **Manager 模块** (控制平面)
-- **技术栈**: Go 1.24 + Gin + PostgreSQL 15
+- **技术栈**: Go 1.24 + Gin + PostgreSQL 15 + 自动数据库初始化
 - **端口**: Manager :8080, PostgreSQL :5432
-- **职责**: 系统管理、配置管理、REST API
+- **职责**: 系统管理、配置管理、REST API、Collector 管理、安装脚本生成
+- **特性**: 自动数据库迁移、Worker 健康检查、模板系统
 
 ### 2. **Middleware 模块** (数据中间件)
 - **技术栈**: Vector (Rust) + Apache Kafka (KRaft)
@@ -213,6 +214,57 @@ make test                     # 运行测试
 - **Vector API**: http://localhost:8686 - 数据收集状态
 - **Flink Web UI**: http://localhost:8081 - 流处理作业管理
 - **OpenSearch**: http://localhost:9200 - 搜索和数据查询
+
+## 🎯 Collector 管理 API
+
+### 设备注册和脚本生成
+
+```bash
+# 1. 注册新设备
+curl -X POST http://localhost:8080/api/v1/collectors/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "hostname": "web-server-001",
+    "ip_address": "192.168.1.100",
+    "os_type": "linux",
+    "os_version": "Ubuntu 22.04",
+    "deployment_type": "agentless",
+    "metadata": {
+      "environment": "production",
+      "group": "web-servers",
+      "owner": "admin",
+      "tags": ["web", "nginx", "production"]
+    }
+  }'
+
+# 2. 下载安装脚本
+curl "http://localhost:8080/api/v1/scripts/setup-terminal.sh?collector_id=xxx" -o install.sh
+
+# 3. 下载卸载脚本
+curl "http://localhost:8080/api/v1/scripts/uninstall-terminal.sh?collector_id=xxx" -o uninstall.sh
+
+# 4. 查看设备状态
+curl http://localhost:8080/api/v1/collectors/{collector_id}
+
+# 5. 列出所有设备
+curl http://localhost:8080/api/v1/collectors
+```
+
+### 监控和管理
+
+```bash
+# 查看 Kafka 主题
+curl http://localhost:8080/api/v1/kafka/topics
+
+# 查看主题消息
+curl http://localhost:8080/api/v1/kafka/topics/{topic_name}/messages
+
+# 查看 Worker 健康状态
+curl http://localhost:8080/api/v1/health/workers
+
+# 查看系统健康状态
+curl http://localhost:8080/api/v1/health/system
+```
 
 ## 🎯 架构优势
 
