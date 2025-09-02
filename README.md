@@ -4,11 +4,8 @@
 
 SysArmor 是一个现代化的端点检测与响应(EDR/HIDS)系统，采用**Monorepo + 微服务架构**，支持agentless数据采集、实时威胁检测和智能分析。
 
-**✅ 状态**: 生产就绪，支持Docker一键部署
-
 ## 🏗️ 系统架构
 
-### 逻辑架构
 ```mermaid
 graph TB
     subgraph "🔧 Manager 模块 - 控制平面"
