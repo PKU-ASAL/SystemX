@@ -18,12 +18,17 @@ services:
       - FLINK_TASKMANAGER_SLOTS=${FLINK_TASKMANAGER_SLOTS}
       - FLINK_PARALLELISM=${FLINK_PARALLELISM}
       - THREAT_RULES_PATH=${THREAT_RULES_PATH}
+      # Auditd转换作业配置
+      - INPUT_TOPIC=${AUDITD_INPUT_TOPIC:-sysarmor-agentless-558c01dd}
+      - OUTPUT_TOPIC=${SYSDIG_OUTPUT_TOPIC:-sysarmor-sysdig-events}
+      - CONVERTER_ENABLED=${AUDITD_CONVERTER_ENABLED:-true}
     ports:
       - "${FLINK_JOBMANAGER_PORT}:8081"
     command: jobmanager
     volumes:
       - ./jobs:/opt/flink/usr_jobs
       - ./configs:/opt/flink/configs
+      - ./scripts:/opt/flink/scripts
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081"]
       interval: 10s
@@ -50,10 +55,14 @@ services:
         taskmanager.memory.process.size: 2048m
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
       - OPENSEARCH_URL=${OPENSEARCH_URL}
+      # Auditd转换作业配置
+      - INPUT_TOPIC=${AUDITD_INPUT_TOPIC:-sysarmor-agentless-558c01dd}
+      - OUTPUT_TOPIC=${SYSDIG_OUTPUT_TOPIC:-sysarmor-sysdig-events}
     command: taskmanager
     volumes:
       - ./jobs:/opt/flink/usr_jobs
       - ./configs:/opt/flink/configs
+      - ./scripts:/opt/flink/scripts
     networks:
       - ${SYSARMOR_NETWORK}
     labels:

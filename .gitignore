@@ -1,5 +1,6 @@
 # DIY
 .env
+docs/draft
 
 # Binaries for programs and plugins
 *.exe

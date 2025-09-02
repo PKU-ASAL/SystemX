@@ -1,0 +1,88 @@
+# SysArmor Auditd to Sysdig Converter Configuration
+
+# Kafka配置
+kafka:
+  bootstrap_servers: "middleware-kafka:9092"
+  input_topic: "sysarmor-agentless-558c01dd"  # 输入的auditd数据topic
+  output_topic: ""                            # 输出topic（空则自动生成：sysarmor-sysdig-{collector_id}）
+  consumer_group: "sysarmor-auditd-converter-group"
+  
+  # Topic命名规则
+  topic_naming:
+    input_prefix: "sysarmor-agentless-"       # 输入topic前缀
+    output_prefix: "sysarmor-sysdig-"         # 输出topic前缀
+    auto_generate: true                       # 是否自动生成输出topic名称
+  
+  # Kafka连接配置
+  connection:
+    session_timeout_ms: 30000
+    heartbeat_interval_ms: 10000
+    max_poll_interval_ms: 300000
+    request_timeout_ms: 30000
+    auto_offset_reset: "latest"
+
+# Flink作业配置
+flink:
+  parallelism: 2
+  checkpoint_interval: 60000  # 60秒
+  checkpoint_mode: "EXACTLY_ONCE"
+
+# 数据处理配置
+processing:
+  # 进程树重建配置
+  process_tree:
+    time_window: 60  # 秒，用于查找父进程信息
+    cache_size: 10000  # 进程缓存大小
+    
+  # 事件过滤配置
+  event_filter:
+    # 支持的事件类型（基于NODLINK标准）
+    supported_events:
+      - "read"
+      - "readv" 
+      - "write"
+      - "writev"
+      - "fcntl"
+      - "rmdir"
+      - "rename"
+      - "chmod"
+      - "execve"
+      - "clone"
+      - "pipe"
+      - "fork"
+      - "accept"
+      - "sendmsg"
+      - "recvmsg"
+      - "recvfrom"
+      - "send"
+      - "sendto"
+      - "open"
+      - "openat"
+      - "socket"
+      - "connect"
+    
+    # 过滤条件
+    min_pid: 1  # 最小进程ID
+    exclude_kernel_threads: true  # 排除内核线程
+
+# 系统调用映射配置
+syscall_mapping:
+  # 扩展的系统调用映射
+  custom_mappings:
+    257: "openat"  # 确保openat正确映射
+    
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+# 监控配置
+monitoring:
+  metrics_enabled: true
+  health_check_interval: 30  # 秒
+  
+# 性能调优
+performance:
+  buffer_size: 1000  # 事件缓冲区大小
+  batch_timeout: 5000  # 毫秒，批处理超时
+  max_memory_usage: "512MB"  # 最大内存使用
