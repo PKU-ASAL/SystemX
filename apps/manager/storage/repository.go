@@ -61,11 +61,12 @@ func (r *Repository) Create(ctx context.Context, collector *models.Collector) er
 func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors WHERE collector_id = $1`
 
 	collector := &models.Collector{}
 	var lastHeartbeat sql.NullTime
+	var lastActive sql.NullTime
 	var metadataJSON []byte
 
 	err := r.db.QueryRowContext(ctx, query, collectorID).Scan(
@@ -81,6 +82,7 @@ func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.C
 		&collector.DeploymentType,
 		&metadataJSON,
 		&lastHeartbeat,
+		&lastActive,
 		&collector.CreatedAt,
 		&collector.UpdatedAt,
 	)
@@ -100,6 +102,10 @@ func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.C
 	if lastHeartbeat.Valid {
 		collector.LastHeartbeat = &lastHeartbeat.Time
 	}
+	
+	if lastActive.Valid {
+		collector.LastActive = &lastActive.Time
+	}
 
 	return collector, nil
 }
@@ -107,59 +113,10 @@ func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.C
 func (r *Repository) List(ctx context.Context) ([]*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors ORDER BY created_at DESC`
 
-	rows, err := r.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var collectors []*models.Collector
-
-	for rows.Next() {
-		collector := &models.Collector{}
-		var lastHeartbeat sql.NullTime
-		var metadataJSON []byte
-
-		err := rows.Scan(
-			&collector.ID,
-			&collector.CollectorID,
-			&collector.Hostname,
-			&collector.IPAddress,
-			&collector.OSType,
-			&collector.OSVersion,
-			&collector.Status,
-			&collector.WorkerAddress,
-			&collector.KafkaTopic,
-			&collector.DeploymentType,
-			&metadataJSON,
-			&lastHeartbeat,
-			&collector.CreatedAt,
-			&collector.UpdatedAt,
-		)
-
-		if err != nil {
-			return nil, err
-		}
-
-		// 反序列化 metadata
-		if len(metadataJSON) > 0 {
-			var metadata models.CollectorMetadata
-			if err := json.Unmarshal(metadataJSON, &metadata); err == nil {
-				collector.Metadata = &metadata
-			}
-		}
-
-		if lastHeartbeat.Valid {
-			collector.LastHeartbeat = &lastHeartbeat.Time
-		}
-
-		collectors = append(collectors, collector)
-	}
-
-	return collectors, nil
+	return r.executeCollectorQuery(ctx, query)
 }
 
 // UpdateStatus 更新 Collector 状态
@@ -211,65 +168,33 @@ func (r *Repository) UpdateHeartbeat(ctx context.Context, collectorID string) er
 	return err
 }
 
+// UpdateHeartbeatWithStatus 心跳状态更新（Nova分支新增）
+func (r *Repository) UpdateHeartbeatWithStatus(ctx context.Context, collectorID string, status string) error {
+	now := time.Now()
+	
+	if status == "active" {
+		// 活跃状态: 同时更新 last_heartbeat 和 last_active
+		query := `UPDATE collectors SET last_heartbeat = $1, last_active = $1, status = $2, updated_at = $1 WHERE collector_id = $3`
+		_, err := r.db.ExecContext(ctx, query, now, status, collectorID)
+		return err
+	} else {
+		// 非活跃状态: 只更新 last_heartbeat，保持 last_active 不变
+		query := `UPDATE collectors SET last_heartbeat = $1, status = $2, updated_at = $1 WHERE collector_id = $3`
+		_, err := r.db.ExecContext(ctx, query, now, status, collectorID)
+		return err
+	}
+}
+
 // GetActiveCollectors 获取活跃的 Collectors
 func (r *Repository) GetActiveCollectors(ctx context.Context) ([]*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         WHERE status = 'active' 
         ORDER BY created_at DESC`
 
-	rows, err := r.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var collectors []*models.Collector
-
-	for rows.Next() {
-		collector := &models.Collector{}
-		var lastHeartbeat sql.NullTime
-		var metadataJSON []byte
-
-		err := rows.Scan(
-			&collector.ID,
-			&collector.CollectorID,
-			&collector.Hostname,
-			&collector.IPAddress,
-			&collector.OSType,
-			&collector.OSVersion,
-			&collector.Status,
-			&collector.WorkerAddress,
-			&collector.KafkaTopic,
-			&collector.DeploymentType,
-			&metadataJSON,
-			&lastHeartbeat,
-			&collector.CreatedAt,
-			&collector.UpdatedAt,
-		)
-
-		if err != nil {
-			return nil, err
-		}
-
-		// 反序列化 metadata
-		if len(metadataJSON) > 0 {
-			var metadata models.CollectorMetadata
-			if err := json.Unmarshal(metadataJSON, &metadata); err == nil {
-				collector.Metadata = &metadata
-			}
-		}
-
-		if lastHeartbeat.Valid {
-			collector.LastHeartbeat = &lastHeartbeat.Time
-		}
-
-		collectors = append(collectors, collector)
-	}
-
-	return collectors, nil
+	return r.executeCollectorQuery(ctx, query)
 }
 
 // UpdateMetadata 更新 Collector 元数据
@@ -303,7 +228,7 @@ func (r *Repository) GetByGroup(ctx context.Context, group string) ([]*models.Co
 		// 查询没有设置分组的 collectors
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE COALESCE(metadata->>'group', '') = ''
             ORDER BY created_at DESC`
@@ -312,7 +237,7 @@ func (r *Repository) GetByGroup(ctx context.Context, group string) ([]*models.Co
 		// 查询指定分组的 collectors
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE metadata->>'group' = $1
             ORDER BY created_at DESC`
@@ -328,7 +253,7 @@ func (r *Repository) GetByTag(ctx context.Context, tag string) ([]*models.Collec
 	// 同时处理 tags 字段不存在或为 null 的情况
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         WHERE metadata->'tags' ? $1
         ORDER BY created_at DESC`
@@ -344,7 +269,7 @@ func (r *Repository) GetByEnvironment(ctx context.Context, environment string) (
 	if environment == "null" || environment == "" {
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE COALESCE(metadata->>'environment', '') = ''
             ORDER BY created_at DESC`
@@ -352,7 +277,7 @@ func (r *Repository) GetByEnvironment(ctx context.Context, environment string) (
 	} else {
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE metadata->>'environment' = $1
             ORDER BY created_at DESC`
@@ -366,7 +291,7 @@ func (r *Repository) GetByEnvironment(ctx context.Context, environment string) (
 func (r *Repository) GetByOwner(ctx context.Context, owner string) ([]*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         WHERE metadata->>'owner' = $1
         ORDER BY created_at DESC`
@@ -472,7 +397,7 @@ func (r *Repository) SearchCollectors(ctx context.Context, filters *models.Colle
 	// 构建完整查询
 	query := fmt.Sprintf(`
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, created_at, updated_at
+               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         %s %s %s`, whereClause, orderClause, limitClause)
 
@@ -497,6 +422,7 @@ func (r *Repository) executeCollectorQuery(ctx context.Context, query string, ar
 	for rows.Next() {
 		collector := &models.Collector{}
 		var lastHeartbeat sql.NullTime
+		var lastActive sql.NullTime
 		var metadataJSON []byte
 
 		err := rows.Scan(
@@ -512,6 +438,7 @@ func (r *Repository) executeCollectorQuery(ctx context.Context, query string, ar
 			&collector.DeploymentType,
 			&metadataJSON,
 			&lastHeartbeat,
+			&lastActive,
 			&collector.CreatedAt,
 			&collector.UpdatedAt,
 		)
@@ -530,6 +457,10 @@ func (r *Repository) executeCollectorQuery(ctx context.Context, query string, ar
 
 		if lastHeartbeat.Valid {
 			collector.LastHeartbeat = &lastHeartbeat.Time
+		}
+		
+		if lastActive.Valid {
+			collector.LastActive = &lastActive.Time
 		}
 
 		collectors = append(collectors, collector)

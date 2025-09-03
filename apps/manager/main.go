@@ -76,7 +76,10 @@ func main() {
 		collectors.POST("/register", collectorHandler.Register)
 		collectors.GET("/:id", collectorHandler.GetStatus)
 		collectors.GET("", collectorHandler.ListCollectors) // 支持 Query Parameters 过滤
-		collectors.POST("/:id/heartbeat", collectorHandler.Heartbeat) // 心跳接口（预留）
+		
+		// Nova分支新增: 双向心跳路由
+		collectors.POST("/:id/heartbeat", collectorHandler.Heartbeat)      // 心跳上报
+		collectors.POST("/:id/probe", collectorHandler.ProbeHeartbeat)     // 主动探测
 		
 		// 元数据管理路由
 		collectors.PUT("/:id/metadata", collectorHandler.UpdateMetadata)

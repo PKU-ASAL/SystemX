@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -207,16 +209,19 @@ func (h *CollectorHandler) GetStatus(c *gin.Context) {
 
 	// 构造状态响应
 	status := models.CollectorStatus{
-		CollectorID:   collector.CollectorID,
-		Status:        collector.Status,
-		Hostname:      collector.Hostname,
-		IPAddress:     collector.IPAddress,
-		WorkerAddress: collector.WorkerAddress,
-		KafkaTopic:    collector.KafkaTopic,
-		Metadata:      collector.Metadata, // 包含元数据
-		LastHeartbeat: collector.LastHeartbeat,
-		CreatedAt:     collector.CreatedAt,
-		UpdatedAt:     collector.UpdatedAt,
+		CollectorID:     collector.CollectorID,
+		Status:          collector.Status,
+		Hostname:        collector.Hostname,
+		IPAddress:       collector.IPAddress,
+		WorkerAddress:   collector.WorkerAddress,
+		KafkaTopic:      collector.KafkaTopic,
+		Metadata:        collector.Metadata, // 包含元数据
+		LastHeartbeat:   collector.LastHeartbeat,
+		LastActive:      collector.LastActive,
+		RealTimeStatus:  collector.GetRealTimeStatus(),
+		LastSeenMinutes: collector.GetLastSeenMinutes(),
+		CreatedAt:       collector.CreatedAt,
+		UpdatedAt:       collector.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -320,16 +325,19 @@ func (h *CollectorHandler) ListCollectors(c *gin.Context) {
 		statuses := make([]*models.CollectorStatus, len(collectors))
 		for i, collector := range collectors {
 			statuses[i] = &models.CollectorStatus{
-				CollectorID:   collector.CollectorID,
-				Status:        collector.Status,
-				Hostname:      collector.Hostname,
-				IPAddress:     collector.IPAddress,
-				WorkerAddress: collector.WorkerAddress,
-				KafkaTopic:    collector.KafkaTopic,
-				Metadata:      collector.Metadata,
-				LastHeartbeat: collector.LastHeartbeat,
-				CreatedAt:     collector.CreatedAt,
-				UpdatedAt:     collector.UpdatedAt,
+				CollectorID:     collector.CollectorID,
+				Status:          collector.Status,
+				Hostname:        collector.Hostname,
+				IPAddress:       collector.IPAddress,
+				WorkerAddress:   collector.WorkerAddress,
+				KafkaTopic:      collector.KafkaTopic,
+				Metadata:        collector.Metadata,
+				LastHeartbeat:   collector.LastHeartbeat,
+				LastActive:      collector.LastActive,
+				RealTimeStatus:  collector.GetRealTimeStatus(),
+				LastSeenMinutes: collector.GetLastSeenMinutes(),
+				CreatedAt:       collector.CreatedAt,
+				UpdatedAt:       collector.UpdatedAt,
 			}
 		}
 
@@ -390,7 +398,18 @@ func (h *CollectorHandler) ListCollectors(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// Heartbeat 处理心跳请求（预留接口）
+// Heartbeat 处理心跳上报请求（Nova分支新增）
+// @Summary 接收 Collector 心跳
+// @Description Collector 主动上报心跳状态
+// @Tags collectors
+// @Accept json
+// @Produce json
+// @Param id path string true "Collector ID"
+// @Param request body models.HeartbeatRequest true "心跳请求"
+// @Success 200 {object} models.HeartbeatResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /collectors/{id}/heartbeat [post]
 func (h *CollectorHandler) Heartbeat(c *gin.Context) {
 	collectorID := c.Param("id")
 	if collectorID == "" {
@@ -401,9 +420,20 @@ func (h *CollectorHandler) Heartbeat(c *gin.Context) {
 		return
 	}
 
-	// 简单的心跳更新
+	var req models.HeartbeatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request format: " + err.Error(),
+		})
+		return
+	}
+
 	ctx := c.Request.Context()
-	if err := h.repo.UpdateHeartbeat(ctx, collectorID); err != nil {
+	
+	// 验证 Collector 是否存在
+	_, err := h.repo.GetByID(ctx, collectorID)
+	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -412,20 +442,174 @@ func (h *CollectorHandler) Heartbeat(c *gin.Context) {
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"error":   "Failed to update heartbeat: " + err.Error(),
+				"error":   "Database error: " + err.Error(),
 			})
 		}
 		return
 	}
+	
+	// 更新心跳状态
+	err = h.repo.UpdateHeartbeatWithStatus(ctx, collectorID, req.Status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to update heartbeat: " + err.Error(),
+		})
+		return
+	}
+	
+	// 返回响应
+	response := models.HeartbeatResponse{
+		Success:               true,
+		NextHeartbeatInterval: 60, // 60秒间隔
+		ServerTime:            time.Now(),
+	}
+	
+	c.JSON(http.StatusOK, response)
+}
 
-	// 返回简单响应
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"next_heartbeat_interval": 30,
-			"timestamp":               time.Now(),
-		},
-	})
+// ProbeHeartbeat 主动探测 Collector（Nova分支新增）
+// @Summary 主动探测 Collector
+// @Description Manager 主动探测 Collector 响应能力
+// @Tags collectors
+// @Accept json
+// @Produce json
+// @Param id path string true "Collector ID"
+// @Param request body models.ProbeRequest false "探测请求"
+// @Success 200 {object} models.ProbeResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /collectors/{id}/probe [post]
+func (h *CollectorHandler) ProbeHeartbeat(c *gin.Context) {
+	collectorID := c.Param("id")
+	if collectorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "collector_id is required",
+		})
+		return
+	}
+
+	// 解析探测请求
+	var req models.ProbeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 如果没有请求体，使用默认值
+		req.Timeout = 10
+	}
+	
+	// 验证超时参数
+	if req.Timeout <= 0 || req.Timeout > 60 {
+		req.Timeout = 10 // 默认10秒
+	}
+
+	ctx := c.Request.Context()
+	
+	// 获取 Collector 信息
+	collector, err := h.repo.GetByID(ctx, collectorID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   "Collector not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "Database error: " + err.Error(),
+			})
+		}
+		return
+	}
+	
+	// 执行探测
+	probeResponse, err := h.sendProbeRequest(ctx, collector, req.Timeout)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Probe failed: " + err.Error(),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, probeResponse)
+}
+
+// sendProbeRequest 发送探测请求的实现
+func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *models.Collector, timeoutSeconds int) (*models.ProbeResponse, error) {
+	// 1. 生成唯一 probe ID
+	probeID := uuid.New().String()[:8]
+	sentAt := time.Now()
+	
+	// 2. 记录探测前的心跳时间
+	var heartbeatBefore *time.Time
+	if collector.LastHeartbeat != nil {
+		hb := *collector.LastHeartbeat
+		heartbeatBefore = &hb
+	}
+	
+	// 3. 构造 RFC3164 格式的 syslog 消息
+	message := fmt.Sprintf("<134>%s %s sysarmor-manager: SYSARMOR_PROBE:%s", 
+		sentAt.Format("Jan 2 15:04:05"), 
+		"manager", 
+		probeID)
+	
+	// 4. 发送 UDP 消息到 collector:514
+	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:514", collector.IPAddress), time.Duration(timeoutSeconds)*time.Second)
+	if err != nil {
+		return &models.ProbeResponse{
+			CollectorID:     collector.CollectorID,
+			Success:         false,
+			ProbeID:         probeID,
+			SentAt:          sentAt,
+			HeartbeatBefore: heartbeatBefore,
+			ErrorMessage:    fmt.Sprintf("Failed to connect to %s:514: %v", collector.IPAddress, err),
+		}, nil
+	}
+	defer conn.Close()
+	
+	// 5. 发送消息
+	conn.SetWriteDeadline(time.Now().Add(time.Duration(timeoutSeconds) * time.Second))
+	_, err = conn.Write([]byte(message))
+	if err != nil {
+		return &models.ProbeResponse{
+			CollectorID:     collector.CollectorID,
+			Success:         false,
+			ProbeID:         probeID,
+			SentAt:          sentAt,
+			HeartbeatBefore: heartbeatBefore,
+			ErrorMessage:    fmt.Sprintf("Failed to send UDP message: %v", err),
+		}, nil
+	}
+	
+	// 6. 轮询检查心跳更新 (每秒检查一次)
+	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
+	for time.Now().Before(deadline) {
+		updatedCollector, err := h.repo.GetByID(ctx, collector.CollectorID)
+		if err == nil && updatedCollector.LastHeartbeat != nil {
+			// 检查心跳是否在 probe 发送后更新
+			if heartbeatBefore == nil || updatedCollector.LastHeartbeat.After(*heartbeatBefore) {
+				return &models.ProbeResponse{
+					CollectorID:     collector.CollectorID,
+					Success:         true,
+					ProbeID:         probeID,
+					SentAt:          sentAt,
+					HeartbeatBefore: heartbeatBefore,
+					HeartbeatAfter:  updatedCollector.LastHeartbeat,
+				}, nil
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	
+	// 7. 超时返回失败
+	return &models.ProbeResponse{
+		CollectorID:     collector.CollectorID,
+		Success:         false,
+		ProbeID:         probeID,
+		SentAt:          sentAt,
+		HeartbeatBefore: heartbeatBefore,
+		ErrorMessage:    fmt.Sprintf("Probe timeout after %d seconds", timeoutSeconds),
+	}, nil
 }
 
 // 辅助函数
