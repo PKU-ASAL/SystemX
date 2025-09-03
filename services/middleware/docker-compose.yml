@@ -19,7 +19,8 @@ services:
       # JMX 配置
       KAFKA_JMX_PORT: ${KAFKA_JMX_PORT}
       KAFKA_JMX_HOSTNAME: ${KAFKA_JMX_HOSTNAME}
-      KAFKA_JVM_PERFORMANCE_OPTS: "-javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent-0.19.0.jar=7071:/opt/jmx-exporter/kafka-metrics.yml"
+      KAFKA_JVM_PERFORMANCE_OPTS: "-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -XX:MaxInlineLevel=15 -Djava.awt.headless=true"
+      KAFKA_OPTS: "-javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent-0.19.0.jar=7071:/opt/jmx-exporter/kafka-metrics.yml"
       # 主题与副本配置
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_DELETE_TOPIC_ENABLE: 'true'
