@@ -1,6 +1,6 @@
 go 1.24
 
 use (
-	./services/manager
+	./apps/manager
 	./shared/config
 )

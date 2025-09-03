@@ -2,88 +2,51 @@
 
 ## 🎯 项目概述
 
-SysArmor 是一个现代化的端点检测与响应(EDR/HIDS)系统，采用**Monorepo + 微服务架构**，支持agentless数据采集、实时威胁检测和智能分析。
+SysArmor 是一个现代化的端点检测与响应(EDR/HIDS)系统，采用 **Monorepo + 微服务架构**，支持 agentless 数据采集、实时威胁检测和智能分析。
 
 ## 🏗️ 系统架构
 
-```mermaid
-graph TB
-    subgraph "🔧 Manager 模块 - 控制平面"
-        M1[设备管理<br/>Collector注册/监控]
-        M2[API服务<br/>REST API/Swagger]
-        M3[健康检查<br/>系统状态监控]
-        M4[脚本生成<br/>安装/卸载脚本]
-        M5[(PostgreSQL<br/>数据持久化)]
-        M1 --- M5
-        M2 --- M5
-        M3 --- M5
-    end
-    
-    subgraph "📡 Middleware 模块 - 数据中间件"
-        MW1[Vector<br/>数据收集/路由]
-        MW2[Kafka<br/>消息队列]
-        MW3[Prometheus<br/>指标监控]
-        MW1 --> MW2
-        MW1 --> MW3
-        MW2 --> MW3
-    end
-    
-    subgraph "🛡️ Processor 模块 - 数据处理"
-        P1[Flink JobManager<br/>作业管理]
-        P2[Flink TaskManager<br/>任务执行]
-        P3[威胁检测引擎<br/>规则匹配]
-        P4[格式转换<br/>Auditd→Sysdig]
-        P1 --> P2
-        P2 --> P3
-        P2 --> P4
-    end
-    
-    subgraph "🔍 Indexer 模块 - 索引存储"
-        I1[OpenSearch<br/>搜索引擎]
-        I2[索引服务<br/>数据索引]
-        I3[查询API<br/>事件搜索]
-        I1 --- I2
-        I1 --- I3
-    end
-    
-    %% 模块间连接
-    M1 -.-> MW1
-    M2 -.-> MW2
-    M3 -.-> P1
-    M3 -.-> I1
-    MW2 --> P1
-    P3 --> I1
-    P4 --> I1
-    
-    %% 样式
-    classDef managerStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef middlewareStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef processorStyle fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
-    classDef indexerStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    
-    class M1,M2,M3,M4,M5 managerStyle
-    class MW1,MW2,MW3 middlewareStyle
-    class P1,P2,P3,P4 processorStyle
-    class I1,I2,I3 indexerStyle
+### 核心架构
+```
+控制平面 (apps/)     +     数据平面 (services/)
+      ↓                           ↓
+  Manager API              Middleware + Processor + Indexer
+      ↓                           ↓
+   Web UI (预留)              实时数据处理流水线
 ```
 
-- **Manager** (Go): 控制平面，系统管理和API服务
-- **Middleware** (Vector+Kafka): 数据收集和消息队列
-- **Processor** (Flink): 实时流处理和威胁检测
-- **Indexer** (OpenSearch): 数据索引和搜索服务
+### 四大核心模块
+- **Manager** (Go): 控制平面 - 设备管理、API 服务、健康监控
+- **Middleware** (Vector+Kafka): 数据中间件 - 数据收集、消息队列、监控
+- **Processor** (Flink): 数据处理 - 实时流处理、威胁检测、格式转换
+- **Indexer** (OpenSearch): 索引存储 - 数据索引、搜索服务、事件查询
 
-### 系统组件
-```mermaid
-graph LR
-    A[Agent/Collector] --> B[Vector:6000]
-    B --> C[Kafka:9092]
-    C --> D[Flink:8081]
-    D --> E[OpenSearch:9200]
-    F[Manager:8080] --> B
-    F --> C
-    F --> D
-    F --> E
-    G[(PostgreSQL:5432)] --> F
+### 数据流向
+```
+Agent/Collector → Vector:6000 → Kafka:9092 → Flink:8081 → OpenSearch:9200
+                     ↓              ↓           ↓             ↓
+                Manager:8080 ←→ Prometheus:9090 ←→ 威胁检测 ←→ 事件存储
+```
+
+## 📁 项目结构
+
+```
+sysarmor/
+├── apps/                    # 🎯 应用层
+│   ├── manager/            # 控制平面管理应用
+│   └── ui/                 # Web UI 应用 (预留)
+├── services/               # 🔧 服务层 (数据平面)
+│   ├── middleware/         # 数据中间件 (Vector + Kafka)
+│   ├── processor/          # 数据处理 (Flink)
+│   └── indexer/           # 索引存储 (OpenSearch)
+├── shared/                 # 🤝 共享层
+│   ├── config/            # 共享配置库
+│   ├── templates/         # 共享模板
+│   └── migrations/        # 数据库迁移
+├── deployments/           # 🚀 部署配置
+│   ├── docker/           # Dockerfile 集中管理
+│   └── compose/          # Docker Compose 配置
+└── docs/                  # 📚 文档
 ```
 
 ## 🚀 快速开始
@@ -91,21 +54,23 @@ graph LR
 ### 1. 一键启动
 ```bash
 # 克隆项目
-git clone https://github.com/sysarmor/sysarmor-stack.git
-cd sysarmor-stack/sysarmor
+git clone https://git.pku.edu.cn/oslab/sysarmor.git
+cd sysarmor
 
 # 启动所有服务
-docker compose up -d
+make up
+# 或者: docker compose up -d
 
 # 验证部署
 make health
 ```
 
 ### 2. 访问服务
-- **管理界面**: http://localhost:8080
-- **API文档**: http://localhost:8080/swagger/index.html
-- **Flink监控**: http://localhost:8081
+- **Manager API**: http://localhost:8080
+- **API 文档**: http://localhost:8080/swagger/index.html
+- **Flink 监控**: http://localhost:8081
 - **OpenSearch**: http://localhost:9200
+- **Prometheus**: http://localhost:9090
 
 ### 3. 注册设备
 ```bash
@@ -123,178 +88,140 @@ curl -X POST http://localhost:8080/api/v1/collectors/register \
 curl "http://localhost:8080/api/v1/scripts/setup-terminal.sh?collector_id=xxx" -o install.sh
 ```
 
-## ⚙️ 环境配置
+## ⚙️ 配置管理
 
-### 核心配置项
-
-SysArmor使用`.env`文件管理所有配置，支持12-Factor App模式：
-
+### 环境配置
 ```bash
 # 复制配置模板
 cp .env.example .env
+
+# 编辑配置 (12-Factor App 模式)
+vim .env
 ```
 
-### 主要配置分类
-
-#### 🌐 网络配置
+### 核心配置项
 ```bash
-SYSARMOR_NETWORK=sysarmor-net          # Docker网络名称
-EXTERNAL_IP=localhost                   # 外部访问IP
-```
+# 网络配置
+SYSARMOR_NETWORK=sysarmor-net
+EXTERNAL_IP=localhost
 
-#### 🔧 Manager服务 (控制平面)
-```bash
-MANAGER_HOST=manager                    # Manager主机名
-MANAGER_PORT=8080                       # API端口
-MANAGER_LOG_LEVEL=info                  # 日志级别
-POSTGRES_DB=sysarmor                    # 数据库名
-POSTGRES_USER=sysarmor                  # 数据库用户
-POSTGRES_PASSWORD=password              # 数据库密码
-```
+# Manager 服务
+MANAGER_PORT=8080
+POSTGRES_DB=sysarmor
 
-#### 📡 Middleware服务 (数据中间件)
-```bash
-VECTOR_HOST=middleware-vector           # Vector主机名
-VECTOR_TCP_PORT=6000                    # 数据接收端口
-VECTOR_API_PORT=8686                    # Vector API端口
-KAFKA_HOST=middleware-kafka             # Kafka主机名
-KAFKA_INTERNAL_PORT=9092                # Kafka内部端口
-KAFKA_EXTERNAL_PORT=9094                # Kafka外部端口
+# Middleware 服务
+VECTOR_TCP_PORT=6000
 KAFKA_BOOTSTRAP_SERVERS=middleware-kafka:9092
-```
 
-#### 🛡️ Processor服务 (数据处理)
-```bash
-FLINK_JOBMANAGER_HOST=processor-jobmanager
-FLINK_JOBMANAGER_PORT=8081              # Flink Web UI端口
-FLINK_TASKMANAGER_SLOTS=2               # TaskManager槽位数
-FLINK_PARALLELISM=2                     # 作业并行度
+# Processor 服务
+FLINK_JOBMANAGER_PORT=8081
+FLINK_PARALLELISM=2
 
-# Auditd转换配置
-AUDITD_CONVERTER_ENABLED=true           # 启用auditd转换
-AUDITD_INPUT_TOPIC=sysarmor-agentless-558c01dd
-SYSDIG_OUTPUT_TOPIC=                    # 空则自动生成
-```
-
-#### 🔍 Indexer服务 (索引存储)
-```bash
-OPENSEARCH_HOST=indexer-opensearch      # OpenSearch主机名
-OPENSEARCH_PORT=9200                    # OpenSearch端口
-OPENSEARCH_USERNAME=admin               # 用户名
-OPENSEARCH_PASSWORD=admin               # 密码
-INDEX_PREFIX=sysarmor-events            # 索引前缀
-```
-
-#### 📊 监控配置
-```bash
-PROMETHEUS_HOST=middleware-prometheus   # Prometheus主机名
-PROMETHEUS_PORT=9090                    # Prometheus端口
-WORKER_URLS=middleware-vector:http://middleware-vector:6000:http://middleware-vector:8686/health
-```
-
-### 配置自定义
-
-#### 开发环境
-```bash
-ENVIRONMENT=development
-MANAGER_LOG_LEVEL=debug
-FLINK_PARALLELISM=1
-```
-
-#### 生产环境
-```bash
-ENVIRONMENT=production
-MANAGER_LOG_LEVEL=info
-FLINK_PARALLELISM=4
-FLINK_TASKMANAGER_SLOTS=4
-```
-
-#### 高可用配置
-```bash
-KAFKA_REPLICATION_FACTOR=3
-OPENSEARCH_REPLICAS=1
-POSTGRES_MAX_CONNECTIONS=200
+# Indexer 服务
+OPENSEARCH_PORT=9200
+INDEX_PREFIX=sysarmor-events
 ```
 
 ## 🔧 管理命令
 
 ### 服务管理
 ```bash
-make up                       # 启动所有服务
-make down                     # 停止所有服务
-make restart                  # 重启所有服务
-make health                   # 健康检查
-make logs                     # 查看日志
+make up          # 启动所有服务
+make down        # 停止所有服务
+make restart     # 重启所有服务
+make status      # 查看服务状态
+make logs        # 查看日志
+make health      # 健康检查
 ```
 
 ### 开发工具
 ```bash
-make build                    # 构建所有组件
-make test                     # 运行测试
-make clean                    # 清理资源
+make build       # 构建所有组件
+make test        # 运行测试
+make clean       # 清理资源
 ```
 
-## 🌐 API接口
+## 🌐 API 接口
 
-### 核心业务API
+### 核心业务 API
 - **设备管理**: `/api/v1/collectors/*`
 - **安全事件**: `/api/v1/events/*`
 - **系统监控**: `/api/v1/health/*`
+- **脚本下载**: `/api/v1/scripts/*`
 
-### 服务管理API
-- **Kafka**: `/api/v1/services/kafka/*`
-- **Flink**: `/api/v1/services/flink/*`
-- **OpenSearch**: `/api/v1/services/opensearch/*`
-- **Prometheus**: `/api/v1/services/prometheus/*`
+### 服务管理 API
+- **Kafka 管理**: `/api/v1/services/kafka/*`
+- **Flink 管理**: `/api/v1/services/flink/*`
+- **OpenSearch 管理**: `/api/v1/services/opensearch/*`
 
 ## 🎯 核心特性
 
 ### ✅ **实时威胁检测**
-- 基于Flink的毫秒级威胁检测
+- 基于 Flink 的毫秒级威胁检测
 - 支持权限提升、命令注入、网络扫描等威胁类型
-- 动态风险评分(0-100)和严重程度分级
+- 动态风险评分 (0-100) 和严重程度分级
 
-### ✅ **Agentless部署**
-- 无需在目标主机安装Agent
-- 基于rsyslog和auditd的数据采集
+### ✅ **Agentless 部署**
+- 无需在目标主机安装 Agent
+- 基于 rsyslog 和 auditd 的数据采集
 - 自动生成安装/卸载脚本
 
 ### ✅ **数据格式转换**
-- 实时auditd到sysdig格式转换
-- 支持NODLINK算法标准
+- 实时 auditd 到 sysdig 格式转换
+- 支持 NODLINK 算法标准
 - 智能进程树重建
 
 ### ✅ **统一管理**
-- Web管理界面
-- 完整的REST API
+- Monorepo 架构，统一代码管理
+- 完整的 REST API
 - 一键部署和监控
 
 ## 🔍 故障排查
 
 ```bash
 # 检查服务状态
-docker compose ps
+make status
 
-# 查看服务日志
-docker compose logs [service_name]
+# 查看特定服务日志
+docker compose logs manager
+docker compose logs middleware-kafka
 
 # 健康检查
 make health
 
-# 重启服务
-docker compose restart [service_name]
+# 重启特定服务
+docker compose restart manager
 ```
 
 ## 📚 文档
 
-- [API参考](docs/manager-api-reference.md) - 完整API文档
-- [v0.1功能特性](docs/v0.1-release-features.md) - 版本功能说明
-- [Auditd转换指南](docs/auditd-to-sysdig-integration-guide.md) - 格式转换集成
+- [API 参考](docs/manager-api-reference.md) - 完整 API 文档
+- [功能特性](docs/v0.1-release-features.md) - 版本功能说明
+
+## 🚀 开发指南
+
+### 本地开发
+```bash
+# 进入 Manager 应用
+cd apps/manager
+
+# 本地运行
+go run main.go
+
+# 构建
+go build -o manager main.go
+```
+
+### 构建镜像
+```bash
+# 构建 Manager 镜像
+docker build -f deployments/docker/manager.Dockerfile -t sysarmor/manager:latest .
+```
 
 ---
 
 **SysArmor EDR/HIDS** - 现代化端点检测与响应系统
 
-**🔗 快速开始**: `git clone && cd sysarmor && make up`  
-**📚 文档**: https://docs.sysarmor.com  
-**🐛 反馈**: https://github.com/sysarmor/sysarmor/issues
+**🔗 快速开始**: `git clone https://git.pku.edu.cn/oslab/sysarmor.git && cd sysarmor && make up`  
+**📖 架构文档**: [MONOREPO_DESIGN.md](MONOREPO_DESIGN.md)  
+**🐛 问题反馈**: https://git.pku.edu.cn/oslab/sysarmor/-/issues
