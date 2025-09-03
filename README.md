@@ -176,6 +176,32 @@ make clean       # 清理资源
 - 完整的 REST API
 - 一键部署和监控
 
+## 🧪 数据流测试
+
+### 测试 Auditd 数据流
+```bash
+# 运行端到端数据流测试
+./tests/test-auditd-data-flow.sh
+
+# 测试内容：
+# 1. 检查 Vector 服务状态
+# 2. 发送模拟 auditd 数据到 Vector
+# 3. 验证 Kafka 主题自动创建
+# 4. 确认数据正确路由到 Kafka
+```
+
+### 手动测试数据发送
+```bash
+# 发送测试数据到 Vector
+echo '{"collector_id":"12345678-abcd-efgh-ijkl-123456789012","timestamp":"2025-09-03T08:44:17Z","host":"test-host","source":"auditd","message":"type=SYSCALL msg=audit(1693420800.123:456): arch=c000003e syscall=2 success=yes exit=3","event_type":"audit","severity":"info","tags":["audit","syscall"]}' | nc localhost 6000
+
+# 消费 Kafka 消息 (重要：禁用 JMX agent 避免端口冲突)
+docker exec -e KAFKA_OPTS= sysarmor-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic sysarmor-agentless-12345678 --from-beginning
+
+# 或者使用 Manager API 查看主题
+curl http://localhost:8080/api/v1/services/kafka/topics
+```
+
 ## 🔍 故障排查
 
 ```bash
