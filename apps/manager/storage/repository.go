@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sysarmor/sysarmor/services/manager/internal/models"
+	"github.com/sysarmor/sysarmor/apps/manager/models"
 )
 
 type Repository struct {

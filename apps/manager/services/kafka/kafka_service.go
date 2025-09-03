@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/prometheus"
+	"github.com/sysarmor/sysarmor/apps/manager/services/prometheus"
 )
 
 var (

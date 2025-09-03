@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/flink"
+	"github.com/sysarmor/sysarmor/apps/manager/services/flink"
 )
 
 // FlinkHandler Flink 管理处理器
@@ -28,7 +28,7 @@ func NewFlinkHandler(flinkBaseURL string) *FlinkHandler {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "连接成功"
 // @Failure 500 {object} map[string]interface{} "连接失败"
-// @Router /flink/test-connection [get]
+// @Router /services/flink/test-connection [get]
 func (h *FlinkHandler) TestFlinkConnection(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -60,7 +60,7 @@ func (h *FlinkHandler) TestFlinkConnection(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "集群概览信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/overview [get]
+// @Router /services/flink/overview [get]
 func (h *FlinkHandler) GetClusterOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -87,7 +87,7 @@ func (h *FlinkHandler) GetClusterOverview(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "作业列表"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/jobs [get]
+// @Router /services/flink/jobs [get]
 func (h *FlinkHandler) GetJobs(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -114,7 +114,7 @@ func (h *FlinkHandler) GetJobs(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "作业概览信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/jobs/overview [get]
+// @Router /services/flink/jobs/overview [get]
 func (h *FlinkHandler) GetJobsOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -143,7 +143,7 @@ func (h *FlinkHandler) GetJobsOverview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "作业详细信息"
 // @Failure 404 {object} map[string]interface{} "作业不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/jobs/{job_id} [get]
+// @Router /services/flink/jobs/{job_id} [get]
 func (h *FlinkHandler) GetJobDetails(c *gin.Context) {
 	ctx := c.Request.Context()
 	jobID := c.Param("job_id")
@@ -181,7 +181,7 @@ func (h *FlinkHandler) GetJobDetails(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "作业指标信息"
 // @Failure 404 {object} map[string]interface{} "作业不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/jobs/{job_id}/metrics [get]
+// @Router /services/flink/jobs/{job_id}/metrics [get]
 func (h *FlinkHandler) GetJobMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
 	jobID := c.Param("job_id")
@@ -217,7 +217,7 @@ func (h *FlinkHandler) GetJobMetrics(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "TaskManager 信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/taskmanagers [get]
+// @Router /services/flink/taskmanagers [get]
 func (h *FlinkHandler) GetTaskManagers(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -244,7 +244,7 @@ func (h *FlinkHandler) GetTaskManagers(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "TaskManager 概览信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/taskmanagers/overview [get]
+// @Router /services/flink/taskmanagers/overview [get]
 func (h *FlinkHandler) GetTaskManagersOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -271,7 +271,7 @@ func (h *FlinkHandler) GetTaskManagersOverview(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Flink 配置信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/config [get]
+// @Router /services/flink/config [get]
 func (h *FlinkHandler) GetConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -298,7 +298,7 @@ func (h *FlinkHandler) GetConfig(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "集群健康状态"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /flink/health [get]
+// @Router /services/flink/health [get]
 func (h *FlinkHandler) GetClusterHealth(c *gin.Context) {
 	ctx := c.Request.Context()
 	

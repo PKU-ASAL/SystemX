@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/health"
+	"github.com/sysarmor/sysarmor/apps/manager/services/health"
 )
 
 // HealthHandler 健康检查处理器

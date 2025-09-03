@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/opensearch"
+	"github.com/sysarmor/sysarmor/apps/manager/services/opensearch"
 )
 
 // OpenSearchHandler OpenSearch 管理处理器
@@ -29,7 +29,7 @@ func NewOpenSearchHandler(baseURL, username, password string) *OpenSearchHandler
 // @Produce json
 // @Success 200 {object} map[string]interface{} "集群健康状态"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/cluster/health [get]
+// @Router /services/opensearch/cluster/health [get]
 func (h *OpenSearchHandler) GetClusterHealth(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -56,7 +56,7 @@ func (h *OpenSearchHandler) GetClusterHealth(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "集群统计信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/cluster/stats [get]
+// @Router /services/opensearch/cluster/stats [get]
 func (h *OpenSearchHandler) GetClusterStats(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -83,7 +83,7 @@ func (h *OpenSearchHandler) GetClusterStats(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "索引列表"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/indices [get]
+// @Router /services/opensearch/indices [get]
 func (h *OpenSearchHandler) GetIndices(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -115,7 +115,7 @@ func (h *OpenSearchHandler) GetIndices(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "搜索结果"
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/search [get]
+// @Router /services/opensearch/events/search [get]
 func (h *OpenSearchHandler) SearchEvents(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -202,7 +202,7 @@ func (h *OpenSearchHandler) SearchEvents(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "事件列表"
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/time-range [get]
+// @Router /services/opensearch/events/time-range [get]
 func (h *OpenSearchHandler) GetEventsByTimeRange(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -278,7 +278,7 @@ func (h *OpenSearchHandler) GetEventsByTimeRange(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "高风险事件列表"
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/high-risk [get]
+// @Router /services/opensearch/events/high-risk [get]
 func (h *OpenSearchHandler) GetEventsByRiskScore(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -337,7 +337,7 @@ func (h *OpenSearchHandler) GetEventsByRiskScore(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "事件列表"
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/by-source [get]
+// @Router /services/opensearch/events/by-source [get]
 func (h *OpenSearchHandler) GetEventsBySource(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -385,7 +385,7 @@ func (h *OpenSearchHandler) GetEventsBySource(c *gin.Context) {
 // @Param size query int false "返回结果数量，默认为10，最大100"
 // @Success 200 {object} map[string]interface{} "威胁事件列表"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/threats [get]
+// @Router /services/opensearch/events/threats [get]
 func (h *OpenSearchHandler) GetThreatEvents(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -423,7 +423,7 @@ func (h *OpenSearchHandler) GetThreatEvents(c *gin.Context) {
 // @Param index query string false "索引模式，默认为 sysarmor-events-*"
 // @Success 200 {object} map[string]interface{} "聚合统计结果"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/aggregations [get]
+// @Router /services/opensearch/events/aggregations [get]
 func (h *OpenSearchHandler) GetEventAggregations(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -456,7 +456,7 @@ func (h *OpenSearchHandler) GetEventAggregations(c *gin.Context) {
 // @Param size query int false "返回结果数量，默认为10，最大100"
 // @Success 200 {object} map[string]interface{} "最近事件列表"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /opensearch/events/recent [get]
+// @Router /services/opensearch/events/recent [get]
 func (h *OpenSearchHandler) GetRecentEvents(c *gin.Context) {
 	ctx := c.Request.Context()
 	

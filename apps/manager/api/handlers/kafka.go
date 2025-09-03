@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/kafka"
+	"github.com/sysarmor/sysarmor/apps/manager/services/kafka"
 )
 
 // KafkaHandler Kafka 管理处理器
@@ -29,7 +29,7 @@ func NewKafkaHandler(kafkaBrokers []string) *KafkaHandler {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "连接成功"
 // @Failure 500 {object} map[string]interface{} "连接失败"
-// @Router /kafka/test-connection [get]
+// @Router /services/kafka/test-connection [get]
 func (h *KafkaHandler) TestKafkaConnection(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -73,7 +73,7 @@ func (h *KafkaHandler) TestKafkaConnection(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "集群信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/clusters [get]
+// @Router /services/kafka/clusters [get]
 func (h *KafkaHandler) GetClusters(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -100,7 +100,7 @@ func (h *KafkaHandler) GetClusters(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Brokers 信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/brokers [get]
+// @Router /services/kafka/brokers [get]
 func (h *KafkaHandler) GetBrokers(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -130,7 +130,7 @@ func (h *KafkaHandler) GetBrokers(c *gin.Context) {
 // @Param search query string false "搜索关键词"
 // @Success 200 {object} map[string]interface{} "Topics 列表（包含详细指标）"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics [get]
+// @Router /services/kafka/topics [get]
 func (h *KafkaHandler) GetTopics(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -175,7 +175,7 @@ func (h *KafkaHandler) GetTopics(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} kafka.TopicsOverviewResponse "Topics 概览信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/overview [get]
+// @Router /services/kafka/topics/overview [get]
 func (h *KafkaHandler) GetTopicsOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -202,7 +202,7 @@ func (h *KafkaHandler) GetTopicsOverview(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} kafka.BrokersOverviewResponse "Brokers 概览信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/brokers/overview [get]
+// @Router /services/kafka/brokers/overview [get]
 func (h *KafkaHandler) GetBrokersOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -231,7 +231,7 @@ func (h *KafkaHandler) GetBrokersOverview(c *gin.Context) {
 // @Success 200 {object} kafka.TopicDetailsResponse "Topic 详细信息（增强版）"
 // @Failure 404 {object} map[string]interface{} "Topic 不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/{topic} [get]
+// @Router /services/kafka/topics/{topic} [get]
 func (h *KafkaHandler) GetTopicDetails(c *gin.Context) {
 	ctx := c.Request.Context()
 	topicName := c.Param("topic")
@@ -281,7 +281,7 @@ func (h *KafkaHandler) GetTopicDetails(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Topic 消息"
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/{topic}/messages [get]
+// @Router /services/kafka/topics/{topic}/messages [get]
 func (h *KafkaHandler) GetTopicMessages(c *gin.Context) {
 	ctx := c.Request.Context()
 	topicName := c.Param("topic")
@@ -337,7 +337,7 @@ func (h *KafkaHandler) GetTopicMessages(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Consumer Groups 信息"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/consumer-groups [get]
+// @Router /services/kafka/consumer-groups [get]
 func (h *KafkaHandler) GetConsumerGroups(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -366,7 +366,7 @@ func (h *KafkaHandler) GetConsumerGroups(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Consumer Group 详细信息"
 // @Failure 404 {object} map[string]interface{} "Consumer Group 不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/consumer-groups/{group} [get]
+// @Router /services/kafka/consumer-groups/{group} [get]
 func (h *KafkaHandler) GetConsumerGroupDetails(c *gin.Context) {
 	ctx := c.Request.Context()
 	groupName := c.Param("group")
@@ -413,7 +413,7 @@ func (h *KafkaHandler) GetConsumerGroupDetails(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 409 {object} map[string]interface{} "Topic 已存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics [post]
+// @Router /services/kafka/topics [post]
 func (h *KafkaHandler) CreateTopic(c *gin.Context) {
 	ctx := c.Request.Context()
 	
@@ -473,7 +473,7 @@ func (h *KafkaHandler) CreateTopic(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Topic 删除成功"
 // @Failure 404 {object} map[string]interface{} "Topic 不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/{topic} [delete]
+// @Router /services/kafka/topics/{topic} [delete]
 func (h *KafkaHandler) DeleteTopic(c *gin.Context) {
 	ctx := c.Request.Context()
 	topicName := c.Param("topic")
@@ -552,7 +552,7 @@ func (h *KafkaHandler) DeleteTopic(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Topic 配置信息"
 // @Failure 404 {object} map[string]interface{} "Topic 不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/{topic}/config [get]
+// @Router /services/kafka/topics/{topic}/config [get]
 func (h *KafkaHandler) GetTopicConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	topicName := c.Param("topic")
@@ -599,7 +599,7 @@ func (h *KafkaHandler) GetTopicConfig(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 404 {object} map[string]interface{} "Topic 不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/{topic}/config [put]
+// @Router /services/kafka/topics/{topic}/config [put]
 func (h *KafkaHandler) UpdateTopicConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	topicName := c.Param("topic")
@@ -665,7 +665,7 @@ func (h *KafkaHandler) UpdateTopicConfig(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Topic 指标信息"
 // @Failure 404 {object} map[string]interface{} "Topic 不存在"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /kafka/topics/{topic}/metrics [get]
+// @Router /services/kafka/topics/{topic}/metrics [get]
 func (h *KafkaHandler) GetTopicMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
 	topicName := c.Param("topic")

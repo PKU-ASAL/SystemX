@@ -13,20 +13,23 @@ ENV GOSUMDB=sum.golang.google.cn
 # 安装必要的工具
 RUN apk add --no-cache git ca-certificates tzdata make
 
+# 复制 Go workspace 配置
+COPY go.work go.work.sum ./
+
 # 复制共享配置模块
 COPY shared/ ./shared/
 
-# 复制 manager 应用的 go mod 文件
-COPY apps/manager/go.mod apps/manager/go.sum ./
+# 复制 manager 应用
+COPY apps/manager/ ./apps/manager/
 
-# 下载依赖
+# 设置工作目录到 manager 应用
+WORKDIR /app/apps/manager
+
+# 下载依赖（使用 workspace 模式）
 RUN go mod download
 
 # 安装 swag 工具
 RUN go install github.com/swaggo/swag/cmd/swag@latest
-
-# 复制 manager 应用源代码
-COPY apps/manager/ .
 
 # 生成 Swagger 文档
 RUN /go/bin/swag init -g main.go -o docs --parseDependency --parseInternal
@@ -52,19 +55,16 @@ RUN addgroup -g 1001 -S sysarmor && \
 WORKDIR /app
 
 # 从构建阶段复制二进制文件
-COPY --from=builder /app/manager .
+COPY --from=builder /app/apps/manager/manager .
 
 # 复制 Swagger 文档
-COPY --from=builder /app/docs ./docs
+COPY --from=builder /app/apps/manager/docs ./docs
 
-# 复制共享模板 (如果存在)
+# 复制共享模板
 COPY shared/templates ./templates
 
-# 创建configs目录 (如果不存在)
-RUN mkdir -p ./configs
-
 # 创建必要的目录
-RUN mkdir -p /app/logs && \
+RUN mkdir -p ./configs ./logs && \
     chown -R sysarmor:sysarmor /app
 
 # 切换到非 root 用户

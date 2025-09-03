@@ -9,7 +9,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/sysarmor/sysarmor/app/manager/models"
+	"github.com/sysarmor/sysarmor/apps/manager/models"
 )
 
 // TemplateService 模板服务

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/events"
+	"github.com/sysarmor/sysarmor/apps/manager/services/events"
 )
 
 // EventsHandler 事件查询处理器

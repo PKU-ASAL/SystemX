@@ -10,12 +10,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/sysarmor/sysarmor/services/manager/internal/config"
-	"github.com/sysarmor/sysarmor/services/manager/internal/models"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/health"
-	kafkaService "github.com/sysarmor/sysarmor/services/manager/internal/services/kafka"
-	"github.com/sysarmor/sysarmor/services/manager/internal/services/template"
-	"github.com/sysarmor/sysarmor/services/manager/internal/storage"
+	"github.com/sysarmor/sysarmor/apps/manager/config"
+	"github.com/sysarmor/sysarmor/apps/manager/models"
+	"github.com/sysarmor/sysarmor/apps/manager/services/health"
+	kafkaService "github.com/sysarmor/sysarmor/apps/manager/services/kafka"
+	"github.com/sysarmor/sysarmor/apps/manager/services/template"
+	"github.com/sysarmor/sysarmor/apps/manager/storage"
 )
 
 // CollectorHandler 处理 Collector 相关的 HTTP 请求
