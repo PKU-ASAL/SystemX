@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	sharedconfig "github.com/sysarmor/sysarmor/shared/config"
@@ -59,6 +60,19 @@ func (c *Config) GetOpenSearchPassword() string {
 // GetFlinkURL 获取 Flink JobManager URL
 func (c *Config) GetFlinkURL() string {
 	return sharedconfig.GetEnv("FLINK_JOBMANAGER_URL", "http://flink-jobmanager:8081")
+}
+
+// GetDownloadDir 获取下载目录路径
+func (c *Config) GetDownloadDir() string {
+	return c.DownloadDir
+}
+
+// GetManagerURL 获取 Manager URL
+func (c *Config) GetManagerURL() string {
+	if c.ExternalURL != "" {
+		return c.ExternalURL
+	}
+	return fmt.Sprintf("http://localhost:%d", c.Port)
 }
 
 // IsProduction 判断是否为生产环境

@@ -1,6 +1,8 @@
 # DIY
 .env
 docs/draft
+docs/patches
+tests/migrations/outputs
 
 # Binaries for programs and plugins
 *.exe

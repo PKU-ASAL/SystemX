@@ -1,0 +1,83 @@
+receivers:
+  sysdig:
+    command: [
+      "sysdig",
+      "-p",
+      "*{\"event\":{\"evt.num\":\"%evt.num\",\"evt.time\":\"%evt.time.iso8601\",\"evt.type\":\"%evt.type\",\"evt.args\":\"%evt.args\",\"fd.name\":\"%fd.name\",\"proc.pid\":\"%proc.pid\",\"proc.name\":\"%proc.name\",\"proc.cmdline\":\"%proc.cmdline\",\"proc.ppid\":\"%proc.ppid\",\"proc.pname\":\"%proc.pname\",\"proc.pcmdline\":\"%proc.pcmdline\"}}",
+      "proc.name!=sysdig and (fd.name exists and fd.name != \"\")"
+    ]
+    subject: "events.sysdig.{{.CollectorID}}"
+    duration: 0
+    backpressure: 0
+    log_level: "info"
+    log_interval: 30000
+    enable_verbose: false
+    buffer_size: 16777216
+    max_message_size: 4194304
+    queue_size: 100000
+    worker_count: 8
+    debug_sysdig: false
+
+processors:
+  batch:
+    timeout: 2s
+    send_batch_size: 8192
+    send_batch_max_size: 16384
+
+exporters:
+  sysarmormiddleware:
+    host: "{{.WorkerHost}}"
+    port: {{.WorkerPort}}
+    timeout: "30s"
+    read_timeout: "30s" 
+    write_timeout: "30s"
+    
+    pool_size: 10
+    max_idle_time: "300s"
+    health_check_interval: "60s"
+    
+    keep_alive: true
+    no_delay: true
+    
+    batch_size: 1000
+    flush_timeout: "10s"
+    max_message_size: 102400
+    
+    max_retries: 3
+    retry_delay: "5s"
+    backoff_multiplier: 2.0
+    
+    default_program: "sysarmor-otel"
+    default_facility: "local6"
+    default_severity: "info"
+    
+    stats_log_interval: "30s"
+    enable_performance_metrics: true
+    
+    debug_mode: false
+
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  telemetry:
+    logs:
+      level: "warn"
+    
+    metrics:
+      level: "basic"
+
+  extensions: [health_check, zpages]
+  
+  pipelines:
+    logs:
+      receivers: [sysdig]
+      processors: [batch]
+      exporters: [sysarmormiddleware, debug]

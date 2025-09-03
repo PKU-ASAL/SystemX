@@ -86,11 +86,18 @@ func main() {
 		collectors.POST("/:id/unregister", collectorHandler.Unregister) // 注销 Collector (软删除)
 	}
 
-	// 脚本下载路由
-	scripts := api.Group("/scripts")
+	// 资源管理路由 (统一的脚本、配置、二进制文件 API)
+	resourcesHandler := handlers.NewResourcesHandler(db.DB())
+	resources := api.Group("/resources")
 	{
-		scripts.GET("/setup-terminal.sh", collectorHandler.DownloadScript)
-		scripts.GET("/uninstall-terminal.sh", collectorHandler.DownloadUninstallScript)
+		// 脚本资源 (动态生成)
+		resources.GET("/scripts/:deployment_type/:script_name", resourcesHandler.GetScript)
+		
+		// 二进制资源 (静态下载)
+		resources.GET("/binaries/:filename", resourcesHandler.GetBinary)
+		
+		// 配置资源 (动态生成)
+		resources.GET("/configs/:deployment_type/:config_name", resourcesHandler.GetConfig)
 	}
 
 	// 健康检查路由
