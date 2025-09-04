@@ -1,5 +1,10 @@
 # DIY
 .env
+.env.indexer
+.env.manager
+.env.middleware
+.env.processor
+
 docs/draft
 docs/patches
 tests/migrations/outputs

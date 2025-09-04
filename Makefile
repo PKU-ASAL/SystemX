@@ -11,45 +11,39 @@ help: ## Show this help message
 init: ## 初始化项目环境
 	@echo "🚀 初始化SysArmor EDR项目..."
 	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建"; fi
-	@echo "📁 项目初始化完成，请编辑 .env 文件配置环境变量"
-	@echo "⚠️  重要: 如需分布式部署，请在 .env 中设置 KAFKA_EXTERNAL_HOST 为服务器IP"
+	@echo "📁 项目初始化完成，请根据需要编辑各服务的专用配置文件:"
+	@echo "   .env.middleware - Middleware服务配置"
+	@echo "   .env.manager    - Manager服务配置"
+	@echo "   .env.processor  - Processor服务配置"
+	@echo "   .env.indexer    - Indexer服务配置"
 
 up: ## 启动服务 (支持参数: make up [service])
 	@echo "🚀 启动SysArmor EDR服务..."
-	@if [ ! -f .env ]; then cp .env.example .env; fi
 	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
 		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
 		case $$SERVICE in \
 			middleware) \
 				echo "📡 启动Middleware服务..."; \
-				CURRENT_IP=$$(curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $$1}' || echo "unknown"); \
-				if [ -f .env ]; then \
-					KAFKA_EXT_HOST=$$(grep "^KAFKA_EXTERNAL_HOST=" .env | cut -d'=' -f2 || echo "localhost"); \
-					if [ "$$KAFKA_EXT_HOST" = "localhost" ] || [ "$$KAFKA_EXT_HOST" = "162.105.126.246" ]; then \
-						echo "⚠️  警告: KAFKA_EXTERNAL_HOST 使用默认值，外部客户端可能无法连接"; \
-						echo "   当前配置: $$KAFKA_EXT_HOST"; \
-						echo "   服务器IP: $$CURRENT_IP"; \
-						echo "   建议修改 .env 中的 KAFKA_EXTERNAL_HOST=$$CURRENT_IP"; \
-						echo ""; \
-					fi; \
-				fi; \
-				docker compose up vector kafka prometheus -d; \
+				if [ ! -f .env.middleware ]; then echo "❌ .env.middleware 文件不存在"; exit 1; fi; \
+				cd services/middleware && docker compose --env-file ../../.env.middleware up -d; \
 				echo "✅ Middleware启动完成: Vector:6000, Kafka:9092, Prometheus:9090"; \
-				echo "📋 外部连接地址: $$CURRENT_IP:9094 (Kafka)"; \
 				;; \
 			manager) \
 				echo "🔧 启动Manager服务..."; \
-				docker compose up manager postgres -d; \
+				if [ ! -f .env.manager ]; then echo "❌ .env.manager 文件不存在"; exit 1; fi; \
+				docker compose -f deployments/compose/manager.yml --env-file .env.manager up -d; \
 				echo "✅ Manager启动完成: http://localhost:8080"; \
 				;; \
 			processor) \
 				echo "⚡ 启动Processor服务..."; \
-				docker compose up flink-jobmanager flink-taskmanager -d; \
+				if [ ! -f .env.processor ]; then echo "❌ .env.processor 文件不存在"; exit 1; fi; \
+				cd services/processor && docker compose --env-file ../../.env.processor up -d; \
 				echo "✅ Processor启动完成: http://localhost:8081"; \
 				;; \
 			indexer) \
 				echo "🔍 启动Indexer服务..."; \
-				docker compose up opensearch indexer -d; \
+				if [ ! -f .env.indexer ]; then echo "❌ .env.indexer 文件不存在"; exit 1; fi; \
+				cd services/indexer && docker compose --env-file ../../.env.indexer up -d; \
 				echo "✅ Indexer启动完成: http://localhost:9200"; \
 				;; \
 			*) \
@@ -59,6 +53,7 @@ up: ## 启动服务 (支持参数: make up [service])
 				;; \
 		esac; \
 	else \
+		if [ ! -f .env ]; then cp .env.example .env; fi; \
 		docker compose up -d; \
 		echo "✅ 所有服务启动完成"; \
 		echo "🌐 Manager API: http://localhost:8080"; \
@@ -72,22 +67,22 @@ down: ## 停止服务 (支持参数: make down [service])
 		case $$SERVICE in \
 			middleware) \
 				echo "📡 停止Middleware服务..."; \
-				docker compose stop vector kafka prometheus; \
+				cd services/middleware && docker compose --env-file ../../.env.middleware down; \
 				echo "✅ Middleware已停止"; \
 				;; \
 			manager) \
 				echo "🔧 停止Manager服务..."; \
-				docker compose stop manager postgres; \
+				docker compose -f deployments/compose/manager.yml --env-file .env.manager down; \
 				echo "✅ Manager已停止"; \
 				;; \
 			processor) \
 				echo "⚡ 停止Processor服务..."; \
-				docker compose stop flink-jobmanager flink-taskmanager; \
+				cd services/processor && docker compose --env-file ../../.env.processor down; \
 				echo "✅ Processor已停止"; \
 				;; \
 			indexer) \
 				echo "🔍 停止Indexer服务..."; \
-				docker compose stop opensearch indexer; \
+				cd services/indexer && docker compose --env-file ../../.env.indexer down; \
 				echo "✅ Indexer已停止"; \
 				;; \
 			*) \
@@ -108,22 +103,22 @@ restart: ## 重启服务 (支持参数: make restart [service])
 		case $$SERVICE in \
 			middleware) \
 				echo "📡 重启Middleware服务..."; \
-				docker compose restart vector kafka prometheus; \
+				cd services/middleware && docker compose --env-file ../../.env.middleware restart; \
 				echo "✅ Middleware重启完成"; \
 				;; \
 			manager) \
 				echo "🔧 重启Manager服务..."; \
-				docker compose restart manager postgres; \
+				docker compose -f deployments/compose/manager.yml --env-file .env.manager restart; \
 				echo "✅ Manager重启完成"; \
 				;; \
 			processor) \
 				echo "⚡ 重启Processor服务..."; \
-				docker compose restart flink-jobmanager flink-taskmanager; \
+				cd services/processor && docker compose --env-file ../../.env.processor restart; \
 				echo "✅ Processor重启完成"; \
 				;; \
 			indexer) \
 				echo "🔍 重启Indexer服务..."; \
-				docker compose restart opensearch indexer; \
+				cd services/indexer && docker compose --env-file ../../.env.indexer restart; \
 				echo "✅ Indexer重启完成"; \
 				;; \
 			*) \
@@ -198,8 +193,14 @@ info: ## 显示项目信息
 	@echo "  OpenSearch: 9200  (搜索引擎)"
 	@echo "  Prometheus: 9090  (监控)"
 	@echo ""
-	@echo "分布式部署示例:"
-	@echo "  远程服务器: make up middleware"
+	@echo "专用配置文件:"
+	@echo "  .env.middleware - Middleware服务专用配置"
+	@echo "  .env.manager    - Manager服务专用配置"
+	@echo "  .env.processor  - Processor服务专用配置"
+	@echo "  .env.indexer    - Indexer服务专用配置"
+	@echo ""
+	@echo "分布式部署:"
+	@echo "  远程服务器: make up middleware  (使用 .env.middleware)"
 	@echo "  本地环境:   make up manager processor indexer"
 	@echo ""
 	@echo "快速开始: make init && make up"
