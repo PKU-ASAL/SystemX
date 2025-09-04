@@ -90,7 +90,7 @@ sysarmor/
 
 ## 🚀 快速开始
 
-### 1. 一键启动
+### 1. 单机部署 (推荐用于开发测试)
 ```bash
 # 克隆项目
 git clone https://git.pku.edu.cn/oslab/sysarmor.git
@@ -103,6 +103,23 @@ make up
 # 验证部署
 make health
 ```
+
+### 2. 分布式部署 (推荐用于生产环境)
+```bash
+# 远程服务器 (数据收集层)
+make up middleware    # 启动 Vector + Kafka + Prometheus
+
+# 本地环境 (管理控制层)
+make up manager       # 启动 Manager + PostgreSQL
+make up processor     # 启动 Flink 数据处理
+make up indexer       # 启动 OpenSearch 搜索引擎
+```
+
+**分布式部署优势**:
+- 🚀 **性能优化**: 数据收集靠近数据源，减少网络延迟
+- 🔧 **负载分离**: 数据处理和管理控制分离部署
+- 📈 **独立扩展**: 可以独立扩展各个组件
+- 🛡️ **故障隔离**: 不同层级服务故障互不影响
 
 ### 2. 访问服务
 - **Manager API**: http://localhost:8080
@@ -130,12 +147,33 @@ curl "http://localhost:8080/api/v1/resources/scripts/agentless/setup-terminal.sh
 ## ⚙️ 配置管理
 
 ### 环境配置
+
+#### 单机部署配置
 ```bash
 # 复制配置模板
 cp .env.example .env
 
 # 编辑配置 (12-Factor App 模式)
 vim .env
+```
+
+#### 分布式部署配置
+```bash
+# 使用专用配置文件，避免环境变量冲突
+.env.middleware  # Middleware服务专用配置
+.env.manager     # Manager服务专用配置
+.env.processor   # Processor服务专用配置
+.env.indexer     # Indexer服务专用配置
+
+# 分布式部署示例
+# 1. 远程服务器编辑middleware配置
+vim .env.middleware
+# 设置 KAFKA_EXTERNAL_HOST=your_server_ip
+
+# 2. 本地环境编辑其他服务配置
+vim .env.manager     # 设置远程Kafka连接
+vim .env.processor   # 设置远程Kafka连接
+vim .env.indexer     # 本地OpenSearch配置
 ```
 
 ### 核心配置项
