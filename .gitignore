@@ -156,6 +156,9 @@ target/
 *.tar.gz
 *.rar
 
+# 例外: 包含必要的第三方jar文件
+!services/middleware/configs/monitoring/jmx-exporter/*.jar
+
 # Temporary files
 tmp/
 temp/
