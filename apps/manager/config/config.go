@@ -84,3 +84,23 @@ func (c *Config) IsProduction() bool {
 func (c *Config) IsDevelopment() bool {
 	return c.BaseConfig.IsDevelopment()
 }
+
+// GetWazuhConfigPath 获取Wazuh配置文件路径
+func (c *Config) GetWazuhConfigPath() string {
+	return sharedconfig.GetEnv("WAZUH_CONFIG_PATH", "./shared/configs/wazuh.yaml")
+}
+
+// IsWazuhEnabled 检查Wazuh是否启用
+func (c *Config) IsWazuhEnabled() bool {
+	return sharedconfig.GetEnv("WAZUH_ENABLED", "false") == "true"
+}
+
+// GetWazuhConfig 获取Wazuh配置
+func (c *Config) GetWazuhConfig() (*WazuhConfig, error) {
+	if !c.IsWazuhEnabled() {
+		return nil, fmt.Errorf("wazuh plugin is disabled")
+	}
+	
+	configPath := c.GetWazuhConfigPath()
+	return LoadWazuhConfig(configPath)
+}

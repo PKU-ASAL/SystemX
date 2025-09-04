@@ -9,6 +9,7 @@ import (
 	"github.com/sysarmor/sysarmor/apps/manager/api/handlers"
 	"github.com/sysarmor/sysarmor/apps/manager/config"
 	"github.com/sysarmor/sysarmor/apps/manager/storage"
+	"github.com/sysarmor/sysarmor/apps/manager/services/wazuh"
 	
 	// Swagger imports
 	"github.com/swaggo/gin-swagger"
@@ -139,6 +140,49 @@ func main() {
 
 	// 服务管理路由组
 	services := api.Group("/services")
+
+	// Wazuh 集成路由 (HFW分支新增)
+	log.Printf("🛡️ Initializing Wazuh service...")
+	wazuhService, err := wazuh.NewWazuhService(cfg)
+	if err != nil {
+		log.Printf("❌ Failed to initialize Wazuh service: %v", err)
+	} else {
+		wazuhHandler := handlers.NewWazuhHandler(wazuhService)
+		
+		// 直接注册Wazuh路由以便Swagger识别
+		wazuhGroup := api.Group("/wazuh")
+		{
+			// 配置管理
+			wazuhGroup.GET("/config", wazuhHandler.GetConfig)
+			wazuhGroup.PUT("/config", wazuhHandler.UpdateConfig)
+			
+			// Manager API  
+			wazuhGroup.GET("/manager/info", wazuhHandler.GetManagerInfo)
+			wazuhGroup.GET("/manager/status", wazuhHandler.GetManagerStatus)
+			
+			// Agent管理
+			wazuhGroup.GET("/agents", wazuhHandler.GetAgents)
+			wazuhGroup.POST("/agents", wazuhHandler.AddAgent)
+			wazuhGroup.GET("/agents/:id", wazuhHandler.GetAgent)
+			wazuhGroup.DELETE("/agents/:id", wazuhHandler.DeleteAgent)
+			wazuhGroup.GET("/agents/:id/key", wazuhHandler.GetAgentKey)
+			
+			// 组管理
+			wazuhGroup.GET("/groups", wazuhHandler.GetGroups)
+			wazuhGroup.POST("/groups", wazuhHandler.CreateGroup)
+			wazuhGroup.GET("/groups/:name/agents", wazuhHandler.GetGroupAgents)
+			
+			// Indexer API
+			wazuhGroup.GET("/indexer/health", wazuhHandler.GetIndexerHealth)
+			wazuhGroup.GET("/indexer/indices", wazuhHandler.GetIndices)
+			
+			// 告警查询
+			wazuhGroup.POST("/alerts/search", wazuhHandler.SearchAlerts)
+			wazuhGroup.GET("/alerts/stats", wazuhHandler.GetAlertStats)
+		}
+		
+		log.Printf("✅ Wazuh routes registered successfully")
+	}
 
 	// Kafka 管理路由
 	kafkaHandler := handlers.NewKafkaHandler(kafkaBrokers)

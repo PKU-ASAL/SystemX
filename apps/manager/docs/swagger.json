@@ -207,6 +207,115 @@
                 }
             }
         },
+        "/collectors/{id}/heartbeat": {
+            "post": {
+                "description": "Collector 主动上报心跳状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "接收 Collector 心跳",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "心跳请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.HeartbeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.HeartbeatResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/collectors/{id}/probe": {
+            "post": {
+                "description": "Manager 主动探测 Collector 响应能力",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "主动探测 Collector",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "探测请求",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/models.ProbeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.ProbeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/events/collectors/{collector_id}": {
             "get": {
                 "description": "根据 Collector ID 查询其相关的所有事件数据",
@@ -506,6 +615,215 @@
                 "responses": {
                     "200": {
                         "description": "Worker 状态列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/binaries/{filename}": {
+            "get": {
+                "description": "下载存储的二进制文件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "resources"
+                ],
+                "summary": "获取二进制文件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "文件名",
+                        "name": "filename",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "文件内容",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "文件不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/configs/{deployment_type}/{config_name}": {
+            "get": {
+                "description": "根据部署类型和配置名称生成个性化的配置文件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "resources"
+                ],
+                "summary": "获取配置文件",
+                "parameters": [
+                    {
+                        "enum": [
+                            "agentless",
+                            "sysarmor-stack",
+                            "wazuh-hybrid",
+                            "collector"
+                        ],
+                        "type": "string",
+                        "description": "部署类型",
+                        "name": "deployment_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "cfg.yaml",
+                            "ossec.conf",
+                            "audit-rules"
+                        ],
+                        "type": "string",
+                        "description": "配置名称",
+                        "name": "config_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "collector_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "配置内容",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Collector 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/scripts/{deployment_type}/{script_name}": {
+            "get": {
+                "description": "根据部署类型和脚本名称生成个性化的部署脚本",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "resources"
+                ],
+                "summary": "获取部署脚本",
+                "parameters": [
+                    {
+                        "enum": [
+                            "agentless",
+                            "sysarmor-stack",
+                            "wazuh-hybrid",
+                            "collector"
+                        ],
+                        "type": "string",
+                        "description": "部署类型",
+                        "name": "deployment_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "setup-terminal.sh",
+                            "uninstall-terminal.sh",
+                            "install.sh"
+                        ],
+                        "type": "string",
+                        "description": "脚本名称",
+                        "name": "script_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "collector_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "脚本内容",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Collector 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1993,6 +2311,667 @@
                     }
                 }
             }
+        },
+        "/wazuh/agents": {
+            "get": {
+                "description": "获取所有Wazuh代理的列表，支持分页和过滤",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Manager"
+                ],
+                "summary": "获取Wazuh代理列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "限制数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序字段",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "代理状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.WazuhAgentListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "向Wazuh Manager添加新的代理",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Manager"
+                ],
+                "summary": "添加Wazuh代理",
+                "parameters": [
+                    {
+                        "description": "代理信息",
+                        "name": "agent",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.WazuhAgent"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/agents/{id}": {
+            "get": {
+                "description": "根据代理ID获取代理的详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Manager"
+                ],
+                "summary": "获取指定代理信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "代理ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "从Wazuh Manager删除指定的代理",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Manager"
+                ],
+                "summary": "删除Wazuh代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "代理ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/alerts/search": {
+            "post": {
+                "description": "根据查询条件搜索Wazuh告警信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Alerts"
+                ],
+                "summary": "搜索Wazuh告警",
+                "parameters": [
+                    {
+                        "description": "搜索查询",
+                        "name": "query",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.WazuhSearchQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/alerts/stats": {
+            "get": {
+                "description": "获取Wazuh告警的统计信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Alerts"
+                ],
+                "summary": "获取告警统计信息",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/config": {
+            "get": {
+                "description": "获取当前的Wazuh认证配置信息（脱敏）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh"
+                ],
+                "summary": "获取Wazuh配置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.WazuhConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "更新Wazuh认证配置信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh"
+                ],
+                "summary": "更新Wazuh配置",
+                "parameters": [
+                    {
+                        "description": "配置信息",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/groups": {
+            "get": {
+                "description": "获取所有Wazuh代理组的列表，支持分页和过滤",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Groups"
+                ],
+                "summary": "获取Wazuh组列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "限制数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序字段",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "创建新的Wazuh代理组",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Groups"
+                ],
+                "summary": "创建Wazuh组",
+                "parameters": [
+                    {
+                        "description": "组信息",
+                        "name": "group",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/groups/{name}/agents": {
+            "get": {
+                "description": "获取指定组内所有代理的列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Groups"
+                ],
+                "summary": "获取组内代理列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "组名称",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/indexer/health": {
+            "get": {
+                "description": "获取Wazuh Indexer的健康状态信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Indexer"
+                ],
+                "summary": "获取Wazuh Indexer健康状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/indexer/indices": {
+            "get": {
+                "description": "获取Wazuh Indexer中的所有索引",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Indexer"
+                ],
+                "summary": "获取Wazuh索引列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式",
+                        "name": "pattern",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/manager/info": {
+            "get": {
+                "description": "获取Wazuh Manager的基本信息和状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Manager"
+                ],
+                "summary": "获取Wazuh Manager信息",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/wazuh/manager/status": {
+            "get": {
+                "description": "获取Wazuh Manager的运行状态信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wazuh Manager"
+                ],
+                "summary": "获取Wazuh Manager状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -2528,6 +3507,77 @@
                 }
             }
         },
+        "models.HeartbeatRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "probe_id": {
+                    "description": "可选，用于探测响应",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "error",
+                        "offline",
+                        "unregistered"
+                    ]
+                }
+            }
+        },
+        "models.HeartbeatResponse": {
+            "type": "object",
+            "properties": {
+                "next_heartbeat_interval": {
+                    "type": "integer"
+                },
+                "server_time": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "models.ProbeRequest": {
+            "type": "object",
+            "properties": {
+                "timeout": {
+                    "description": "探测超时时间(秒)，默认10秒",
+                    "type": "integer"
+                }
+            }
+        },
+        "models.ProbeResponse": {
+            "type": "object",
+            "properties": {
+                "collector_id": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "heartbeat_after": {
+                    "type": "string"
+                },
+                "heartbeat_before": {
+                    "type": "string"
+                },
+                "probe_id": {
+                    "type": "string"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
         "models.RegisterRequest": {
             "type": "object",
             "required": [
@@ -2583,6 +3633,247 @@
                 },
                 "success": {
                     "type": "boolean"
+                }
+            }
+        },
+        "models.WazuhAgent": {
+            "type": "object",
+            "properties": {
+                "config_sum": {
+                    "type": "string"
+                },
+                "date_add": {
+                    "type": "string"
+                },
+                "disconnection_time": {
+                    "type": "string"
+                },
+                "group": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "group_config_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "last_keepalive": {
+                    "type": "string"
+                },
+                "manager": {
+                    "type": "string"
+                },
+                "merged_sum": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_name": {
+                    "type": "string"
+                },
+                "os": {
+                    "$ref": "#/definitions/models.WazuhOSInfo"
+                },
+                "register_ip": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WazuhAgentListData": {
+            "type": "object",
+            "properties": {
+                "affected_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.WazuhAgent"
+                    }
+                },
+                "failed_items": {
+                    "type": "array",
+                    "items": {}
+                },
+                "total_affected_items": {
+                    "type": "integer"
+                },
+                "total_failed_items": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.WazuhAgentListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/models.WazuhAgentListData"
+                },
+                "error": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WazuhConfigResponse": {
+            "type": "object",
+            "properties": {
+                "indexer": {
+                    "$ref": "#/definitions/models.WazuhIndexerConfigInfo"
+                },
+                "manager": {
+                    "$ref": "#/definitions/models.WazuhManagerConfigInfo"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WazuhIndexerConfigInfo": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "description": "脱敏显示",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timeout": {
+                    "type": "string"
+                },
+                "tls_verify": {
+                    "type": "boolean"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WazuhManagerConfigInfo": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "description": "脱敏显示",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timeout": {
+                    "type": "string"
+                },
+                "tls_verify": {
+                    "type": "boolean"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WazuhOSInfo": {
+            "type": "object",
+            "properties": {
+                "build": {
+                    "type": "string"
+                },
+                "display_version": {
+                    "type": "string"
+                },
+                "major": {
+                    "type": "string"
+                },
+                "minor": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "uname": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.WazuhSearchQuery": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "description": "代理ID",
+                    "type": "string"
+                },
+                "end_time": {
+                    "description": "结束时间",
+                    "type": "string"
+                },
+                "fields": {
+                    "description": "返回字段",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "from": {
+                    "type": "integer"
+                },
+                "index": {
+                    "description": "索引名称",
+                    "type": "string"
+                },
+                "index_type": {
+                    "description": "alerts or archives",
+                    "type": "string"
+                },
+                "query": {
+                    "description": "支持字符串或复杂DSL"
+                },
+                "rule_id": {
+                    "description": "规则ID",
+                    "type": "string"
+                },
+                "rule_level": {
+                    "description": "规则级别",
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "sort": {
+                    "description": "简化为字符串",
+                    "type": "string"
+                },
+                "start_time": {
+                    "description": "开始时间",
+                    "type": "string"
                 }
             }
         },

@@ -1,5 +1,5 @@
 # SysArmor EDR Monorepo Makefile
-.PHONY: help init migrate-repos up deploy down deploy-distributed restart status logs health build test
+.PHONY: help init migrate-repos up deploy down deploy-distributed restart status logs health build test docs docs-swagger
 
 # Default target
 help: ## Show this help message
@@ -82,6 +82,23 @@ build-manager: ## 构建Manager应用
 	@mkdir -p bin
 	@if [ -f apps/manager/go.mod ]; then cd apps/manager && go build -o ../../bin/manager ./main.go; fi
 	@echo "✅ Manager构建完成"
+
+docs: docs-swagger ## 生成所有文档
+
+docs-swagger: ## 生成Swagger API文档
+	@echo "📚 生成Swagger API文档..."
+	@if [ -f apps/manager/go.mod ]; then \
+		cd apps/manager && \
+		if command -v ~/go/bin/swag >/dev/null 2>&1; then \
+			~/go/bin/swag init -g main.go -o docs --parseDependency --parseInternal; \
+			echo "✅ Swagger文档生成完成"; \
+			echo "🌐 API文档: http://localhost:8080/swagger/index.html"; \
+		else \
+			echo "❌ swag工具未安装，请运行: go install github.com/swaggo/swag/cmd/swag@latest"; \
+		fi; \
+	else \
+		echo "❌ Manager应用不存在"; \
+	fi
 
 build-images: ## 构建所有Docker镜像
 	@echo "🐳 构建Docker镜像..."

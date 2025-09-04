@@ -221,8 +221,15 @@ docker compose restart manager
 
 ## 📚 文档
 
-- [API 参考](docs/manager-api-reference.md) - 完整 API 文档
-- [功能特性](docs/v0.1-release-features.md) - 版本功能说明
+### 核心文档
+- [SysArmor API参考手册](docs/sysarmor-api-reference.md) - 🆕 完整系统API手册
+- [Manager API参考](docs/manager-api-reference.md) - Manager服务API文档
+- [v0.1功能特性](docs/v0.1-release-features.md) - 版本功能说明
+
+### 迁移文档
+- [HFW分支迁移完成](docs/migrations/HFW_MIGRATION_COMPLETE.md) - Wazuh集成完成
+- [Nova分支迁移完成](docs/migrations/NOVA_MIGRATION_COMPLETE.md) - 心跳机制完成
+- [Dev-Zheng分支迁移完成](docs/migrations/DEV_ZHENG_MIGRATION_COMPLETE.md) - 开发功能完成
 
 ## 🚀 开发指南
 
