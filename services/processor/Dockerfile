@@ -33,4 +33,4 @@ RUN chmod +x ./download_libs.sh && ./download_libs.sh
 
 # 创建 usr_jobs 目录并设置 Python Path
 RUN mkdir -p /opt/flink/usr_jobs
-ENV PYTHONPATH=/opt/flink/usr_jobs:$PYTHONPATH
+ENV PYTHONPATH=/opt/flink/usr_jobs

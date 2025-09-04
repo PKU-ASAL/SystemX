@@ -750,7 +750,7 @@ OPENSEARCH_PASSWORD=admin
 ```
 
 ### 配置文件
-- `shared/configs/wazuh.yaml` - Wazuh集成配置
+- `shared/templates/configs/wazuh.yaml` - Wazuh集成配置模板
 - `.env` - 环境变量配置
 - `docker-compose.yml` - 服务编排配置
 
