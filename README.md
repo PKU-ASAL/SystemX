@@ -460,6 +460,11 @@ docker stats sysarmor-manager-1
 - [v0.1功能特性](docs/v0.1-release-features.md) - 版本功能说明
 - [系统更新日志](CHANGELOG.md) - 版本历史和功能迁移记录
 
+### 部署指南
+- [部署指南总览](docs/deployment/README.md) - 各种部署方案对比
+- [分布式部署指南](docs/deployment/distributed-deployment.md) - 🆕 完整分布式架构部署
+- [快速分布式部署](docs/deployment/quick-distributed-setup.md) - 🆕 5分钟快速部署
+
 ## 🚀 开发指南
 
 ### 本地开发

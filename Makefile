@@ -1,5 +1,5 @@
 # SysArmor EDR Monorepo Makefile
-.PHONY: help init migrate-repos up deploy down deploy-distributed restart status logs health build test docs docs-swagger
+.PHONY: help init up down restart status logs health build docs clean
 
 # Default target
 help: ## Show this help message
@@ -7,152 +7,201 @@ help: ## Show this help message
 	@echo "================================"
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-##@ 初始化和迁移
-init: ## 初始化Monorepo
-	@echo "🚀 初始化SysArmor EDR Monorepo..."
-	@cp .env.example .env
-	@echo "✅ 环境变量文件已创建，请根据需要修改 .env 文件"
-	@echo "📁 目录结构已就绪"
+##@ 基础操作
+init: ## 初始化项目环境
+	@echo "🚀 初始化SysArmor EDR项目..."
+	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建"; fi
+	@echo "📁 项目初始化完成，请编辑 .env 文件配置环境变量"
+	@echo "⚠️  重要: 如需分布式部署，请在 .env 中设置 KAFKA_EXTERNAL_HOST 为服务器IP"
 
-migrate-repos: ## 迁移现有分散仓库到Monorepo
-	@echo "🔄 开始迁移现有仓库..."
-	@echo "⚠️  请手动将以下仓库的代码迁移到对应目录："
-	@echo "   - sysarmor-manager → apps/manager/"
-	@echo "   - sysarmor-middleware → services/middleware/"
-	@echo "   - sysarmor-processor → services/processor/"
-	@echo "   - sysarmor-indexer → services/indexer/"
-
-##@ 部署管理
-up: ## 启动所有服务 (开发模式)
+up: ## 启动服务 (支持参数: make up [service])
 	@echo "🚀 启动SysArmor EDR服务..."
 	@if [ ! -f .env ]; then cp .env.example .env; fi
-	docker compose up -d
-	@echo "✅ 服务启动完成"
-	@echo "🌐 Manager API: http://localhost:8080"
-	@echo "🔍 Prometheus UI: http://localhost:9090"
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
+		case $$SERVICE in \
+			middleware) \
+				echo "📡 启动Middleware服务..."; \
+				CURRENT_IP=$$(curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $$1}' || echo "unknown"); \
+				if [ -f .env ]; then \
+					KAFKA_EXT_HOST=$$(grep "^KAFKA_EXTERNAL_HOST=" .env | cut -d'=' -f2 || echo "localhost"); \
+					if [ "$$KAFKA_EXT_HOST" = "localhost" ] || [ "$$KAFKA_EXT_HOST" = "162.105.126.246" ]; then \
+						echo "⚠️  警告: KAFKA_EXTERNAL_HOST 使用默认值，外部客户端可能无法连接"; \
+						echo "   当前配置: $$KAFKA_EXT_HOST"; \
+						echo "   服务器IP: $$CURRENT_IP"; \
+						echo "   建议修改 .env 中的 KAFKA_EXTERNAL_HOST=$$CURRENT_IP"; \
+						echo ""; \
+					fi; \
+				fi; \
+				docker compose up vector kafka prometheus -d; \
+				echo "✅ Middleware启动完成: Vector:6000, Kafka:9092, Prometheus:9090"; \
+				echo "📋 外部连接地址: $$CURRENT_IP:9094 (Kafka)"; \
+				;; \
+			manager) \
+				echo "🔧 启动Manager服务..."; \
+				docker compose up manager postgres -d; \
+				echo "✅ Manager启动完成: http://localhost:8080"; \
+				;; \
+			processor) \
+				echo "⚡ 启动Processor服务..."; \
+				docker compose up flink-jobmanager flink-taskmanager -d; \
+				echo "✅ Processor启动完成: http://localhost:8081"; \
+				;; \
+			indexer) \
+				echo "🔍 启动Indexer服务..."; \
+				docker compose up opensearch indexer -d; \
+				echo "✅ Indexer启动完成: http://localhost:9200"; \
+				;; \
+			*) \
+				echo "❌ 未知服务: $$SERVICE"; \
+				echo "支持的服务: middleware, manager, processor, indexer"; \
+				exit 1; \
+				;; \
+		esac; \
+	else \
+		docker compose up -d; \
+		echo "✅ 所有服务启动完成"; \
+		echo "🌐 Manager API: http://localhost:8080"; \
+		echo "📖 API文档: http://localhost:8080/swagger/index.html"; \
+	fi
 
-deploy: ## 重新构建镜像并部署所有服务
-	@echo "🔄 重新构建并部署SysArmor EDR服务..."
-	@if [ ! -f .env ]; then cp .env.example .env; fi
-	@echo "🛑 停止现有服务..."
-	docker compose down
-	@echo "🔨 重新构建镜像..."
-	docker compose build --no-cache
-	@echo "🚀 启动服务..."
-	docker compose up -d
-	@echo "✅ 部署完成"
-	@echo "🌐 Manager API: http://localhost:8080"
-	@echo "🔍 Prometheus UI: http://localhost:9090"
-
-down: ## 停止所有服务
+down: ## 停止服务 (支持参数: make down [service])
 	@echo "🛑 停止SysArmor EDR服务..."
-	docker compose down
-	@echo "✅ 服务已停止"
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
+		case $$SERVICE in \
+			middleware) \
+				echo "📡 停止Middleware服务..."; \
+				docker compose stop vector kafka prometheus; \
+				echo "✅ Middleware已停止"; \
+				;; \
+			manager) \
+				echo "🔧 停止Manager服务..."; \
+				docker compose stop manager postgres; \
+				echo "✅ Manager已停止"; \
+				;; \
+			processor) \
+				echo "⚡ 停止Processor服务..."; \
+				docker compose stop flink-jobmanager flink-taskmanager; \
+				echo "✅ Processor已停止"; \
+				;; \
+			indexer) \
+				echo "🔍 停止Indexer服务..."; \
+				docker compose stop opensearch indexer; \
+				echo "✅ Indexer已停止"; \
+				;; \
+			*) \
+				echo "❌ 未知服务: $$SERVICE"; \
+				echo "支持的服务: middleware, manager, processor, indexer"; \
+				exit 1; \
+				;; \
+		esac; \
+	else \
+		docker compose down; \
+		echo "✅ 所有服务已停止"; \
+	fi
 
-deploy-distributed: ## 分布式部署
-	@echo "🌐 分布式部署模式"
-	@echo "⚠️  请参考 examples/development/README.md 进行分布式部署配置"
-
-##@ 服务管理
-restart: ## 重启所有服务
+restart: ## 重启服务 (支持参数: make restart [service])
 	@echo "🔄 重启SysArmor EDR服务..."
-	docker compose restart
-	@echo "✅ 服务重启完成"
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
+		case $$SERVICE in \
+			middleware) \
+				echo "📡 重启Middleware服务..."; \
+				docker compose restart vector kafka prometheus; \
+				echo "✅ Middleware重启完成"; \
+				;; \
+			manager) \
+				echo "🔧 重启Manager服务..."; \
+				docker compose restart manager postgres; \
+				echo "✅ Manager重启完成"; \
+				;; \
+			processor) \
+				echo "⚡ 重启Processor服务..."; \
+				docker compose restart flink-jobmanager flink-taskmanager; \
+				echo "✅ Processor重启完成"; \
+				;; \
+			indexer) \
+				echo "🔍 重启Indexer服务..."; \
+				docker compose restart opensearch indexer; \
+				echo "✅ Indexer重启完成"; \
+				;; \
+			*) \
+				echo "❌ 未知服务: $$SERVICE"; \
+				echo "支持的服务: middleware, manager, processor, indexer"; \
+				exit 1; \
+				;; \
+		esac; \
+	else \
+		docker compose restart; \
+		echo "✅ 所有服务重启完成"; \
+	fi
 
+# 允许make命令接受参数
+%:
+	@:
+
+##@ 监控运维
 status: ## 查看服务状态
 	@echo "📊 SysArmor EDR服务状态："
 	docker compose ps
 
-logs: ## 查看日志
+logs: ## 查看服务日志
 	@echo "📋 SysArmor EDR服务日志："
 	docker compose logs -f
 
-health: ## 健康检查
+health: ## 系统健康检查
 	@echo "🏥 SysArmor EDR健康检查..."
-	@echo "检查Manager服务..."
 	@curl -s http://localhost:8080/health > /dev/null && echo "✅ Manager: 健康" || echo "❌ Manager: 异常"
-	@echo "检查Prometheus服务..."
 	@curl -s http://localhost:9090/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
 
-##@ 开发工具
-build: build-manager build-images ## 构建所有组件
-
-build-manager: ## 构建Manager应用
+##@ 开发构建
+build: ## 构建Manager应用
 	@echo "🔨 构建Manager应用..."
 	@mkdir -p bin
 	@if [ -f apps/manager/go.mod ]; then cd apps/manager && go build -o ../../bin/manager ./main.go; fi
 	@echo "✅ Manager构建完成"
 
-docs: docs-swagger ## 生成所有文档
-
-docs-swagger: ## 生成Swagger API文档
+docs: ## 生成API文档
 	@echo "📚 生成Swagger API文档..."
 	@if [ -f apps/manager/go.mod ]; then \
 		cd apps/manager && \
 		if command -v ~/go/bin/swag >/dev/null 2>&1; then \
 			~/go/bin/swag init -g main.go -o docs --parseDependency --parseInternal; \
-			echo "✅ Swagger文档生成完成"; \
-			echo "🌐 API文档: http://localhost:8080/swagger/index.html"; \
+			echo "✅ API文档生成完成: http://localhost:8080/swagger/index.html"; \
 		else \
 			echo "❌ swag工具未安装，请运行: go install github.com/swaggo/swag/cmd/swag@latest"; \
 		fi; \
-	else \
-		echo "❌ Manager应用不存在"; \
 	fi
 
-build-images: ## 构建所有Docker镜像
-	@echo "🐳 构建Docker镜像..."
-	@echo "构建Manager镜像..."
-	@docker build -t sysarmor/manager:latest -f deployments/docker/manager.Dockerfile .
-	@echo "构建Middleware镜像..."
-	@docker build -t sysarmor/middleware:latest -f services/middleware/vector.Dockerfile services/middleware/
-	@echo "构建Processor镜像..."
-	@docker build -t sysarmor/processor:latest -f services/processor/Dockerfile services/processor/
-	@echo "构建Indexer镜像..."
-	@docker build -t sysarmor/indexer:latest -f services/indexer/indexer.Dockerfile services/indexer/
-	@echo "✅ 所有镜像构建完成"
-
-test: test-manager test-services ## 运行所有测试
-
-test-manager: ## 测试Manager应用
-	@echo "🧪 测试Manager应用..."
-	@if [ -f apps/manager/go.mod ]; then cd apps/manager && go test ./...; fi
-
-test-services: ## 测试其他服务
-	@echo "🧪 测试Middleware服务..."
-	@if [ -f services/middleware/tests/test_agentless_rsyslog_format.sh ]; then cd services/middleware && bash tests/test_agentless_rsyslog_format.sh; fi
-	@echo "🧪 测试Processor服务..."
-	@if [ -f services/processor/tests/test_collect_kafka_samples.py ]; then cd services/processor && python3 tests/test_collect_kafka_samples.py; fi
-	@echo "✅ 所有测试完成"
-
-##@ 配置管理
-config-validate: ## 验证环境变量配置
-	@echo "🔍 验证配置文件..."
-	@if [ ! -f .env ]; then echo "❌ .env 文件不存在，请运行 make init"; exit 1; fi
-	@echo "✅ 配置文件验证通过"
-
-##@ 清理
+##@ 清理维护
 clean: ## 清理构建文件和容器
-	@echo "🧹 清理构建文件..."
+	@echo "🧹 清理构建文件和容器..."
 	@rm -rf bin/
-	@echo "🐳 清理容器..."
 	docker compose down -v --remove-orphans
 	@echo "✅ 清理完成"
 
-##@ 信息
+##@ 信息帮助
 info: ## 显示项目信息
-	@echo "SysArmor EDR Monorepo"
-	@echo "===================="
-	@echo "架构: 控制平面 + 数据平面"
-	@echo "控制平面: Manager (Go + Gin)"
-	@echo "数据平面: Middleware (Vector+Kafka) + Processor (PyFlink) + Indexer (OpenSearch)"
-	@echo "配置模式: 12-Factor App (环境变量驱动)"
-	@echo "容器编排: Docker Compose"
+	@echo "SysArmor EDR/HIDS 系统"
+	@echo "====================="
+	@echo "架构: Monorepo + 微服务"
+	@echo "控制平面: Manager (Go + Gin + Swagger)"
+	@echo "数据平面: Middleware + Processor + Indexer"
+	@echo "集成功能: Wazuh SIEM + 实时威胁检测"
 	@echo ""
-	@echo "核心服务端口:"
-	@echo "  Manager:    8080"
-	@echo "  Prometheus: 9090"
-	@echo "  Vector:     6000"
-	@echo "  Kafka:      9092/9094"
-	@echo "  Flink:      8081"
-	@echo "  OpenSearch: 9200"
+	@echo "核心端口:"
+	@echo "  Manager:    8080  (API + Swagger UI)"
+	@echo "  Vector:     6000  (数据收集)"
+	@echo "  Kafka:      9092  (消息队列)"
+	@echo "  Flink:      8081  (流处理)"
+	@echo "  OpenSearch: 9200  (搜索引擎)"
+	@echo "  Prometheus: 9090  (监控)"
+	@echo ""
+	@echo "分布式部署示例:"
+	@echo "  远程服务器: make up middleware"
+	@echo "  本地环境:   make up manager processor indexer"
+	@echo ""
+	@echo "快速开始: make init && make up"
+	@echo "API文档: http://localhost:8080/swagger/index.html"
+	@echo "部署指南: docs/deployment/README.md"
