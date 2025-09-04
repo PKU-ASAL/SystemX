@@ -20,12 +20,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=manager"
       - "sysarmor.component=database"
-
 
   manager:
     build:
@@ -50,12 +47,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=manager"
       - "sysarmor.component=application"
 
 volumes:
   manager_postgres_data:
-    name: sysarmor_manager_postgres_data
+    name: ${POSTGRES_VOLUME_NAME:-sysarmor_manager_postgres_data}
+    external: ${POSTGRES_VOLUME_EXTERNAL:-false}
+
+networks:
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: ${SYSARMOR_NETWORK_EXTERNAL:-false}

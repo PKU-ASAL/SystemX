@@ -92,7 +92,14 @@ down: ## 停止服务 (支持参数: make down [service])
 				;; \
 		esac; \
 	else \
-		docker compose down; \
+		echo "🔧 停止所有独立启动的服务..."; \
+		docker compose -f deployments/compose/manager.yml --env-file .env.manager down 2>/dev/null || true; \
+		cd services/middleware && docker compose --env-file ../../.env.middleware down 2>/dev/null || true; cd ../..; \
+		cd services/processor && docker compose --env-file ../../.env.processor down 2>/dev/null || true; cd ../..; \
+		cd services/indexer && docker compose --env-file ../../.env.indexer down 2>/dev/null || true; cd ../..; \
+		docker compose down 2>/dev/null || true; \
+		echo "🔧 强制停止剩余容器..."; \
+		docker stop $$(docker ps -q --filter "label=sysarmor.module") 2>/dev/null || true; \
 		echo "✅ 所有服务已停止"; \
 	fi
 

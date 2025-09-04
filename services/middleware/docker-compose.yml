@@ -44,8 +44,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=middleware"
       - "sysarmor.component=message-queue"
@@ -75,8 +73,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=middleware"
       - "sysarmor.component=data-collector"
@@ -107,23 +103,25 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    networks:
-      - sysarmor-net
     labels:
       - "sysarmor.module=middleware"
       - "sysarmor.component=monitoring"
 
 volumes:
   middleware_kafka_data:
-    name: sysarmor_middleware_kafka_data
+    name: ${KAFKA_DATA_VOLUME_NAME:-sysarmor_middleware_kafka_data}
+    external: ${KAFKA_DATA_VOLUME_EXTERNAL:-false}
   middleware_kafka_logs:
-    name: sysarmor_middleware_kafka_logs
+    name: ${KAFKA_LOGS_VOLUME_NAME:-sysarmor_middleware_kafka_logs}
+    external: ${KAFKA_LOGS_VOLUME_EXTERNAL:-false}
   middleware_vector_data:
-    name: sysarmor_middleware_vector_data
+    name: ${VECTOR_DATA_VOLUME_NAME:-sysarmor_middleware_vector_data}
+    external: ${VECTOR_DATA_VOLUME_EXTERNAL:-false}
   middleware_prometheus_data:
-    name: sysarmor_middleware_prometheus_data
+    name: ${PROMETHEUS_DATA_VOLUME_NAME:-sysarmor_middleware_prometheus_data}
+    external: ${PROMETHEUS_DATA_VOLUME_EXTERNAL:-false}
 
 networks:
-  sysarmor-net:
-    driver: bridge
-    name: sysarmor-net
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: ${SYSARMOR_NETWORK_EXTERNAL:-false}

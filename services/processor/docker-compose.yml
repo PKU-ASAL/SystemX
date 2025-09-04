@@ -34,8 +34,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=processor"
       - "sysarmor.component=job-manager"
@@ -63,13 +61,11 @@ services:
       - ./jobs:/opt/flink/usr_jobs
       - ./configs:/opt/flink/configs
       - ./scripts:/opt/flink/scripts
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=processor"
       - "sysarmor.component=task-manager"
 
 networks:
-  ${SYSARMOR_NETWORK}:
-    driver: bridge
-    name: ${SYSARMOR_NETWORK}
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: ${SYSARMOR_NETWORK_EXTERNAL:-false}

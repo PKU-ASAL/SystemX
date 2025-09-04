@@ -21,8 +21,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=indexer"
       - "sysarmor.component=search-engine"
@@ -40,17 +38,16 @@ services:
       - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME}
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
       - INDEX_PREFIX=${INDEX_PREFIX}
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=indexer"
       - "sysarmor.component=index-service"
 
 volumes:
   indexer_opensearch_data:
-    name: sysarmor_indexer_opensearch_data
+    name: ${OPENSEARCH_DATA_VOLUME_NAME:-sysarmor_indexer_opensearch_data}
+    external: ${OPENSEARCH_DATA_VOLUME_EXTERNAL:-false}
 
 networks:
-  ${SYSARMOR_NETWORK}:
-    driver: bridge
-    name: ${SYSARMOR_NETWORK}
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: ${SYSARMOR_NETWORK_EXTERNAL:-false}
