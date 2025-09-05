@@ -26,6 +26,11 @@ type ManagerConfig struct {
 	MiddlewareService string `envconfig:"MIDDLEWARE_SERVICE" default:"sysarmor-middleware"`
 	ProcessorService  string `envconfig:"PROCESSOR_SERVICE" default:"sysarmor-processor"`
 	IndexerService    string `envconfig:"INDEXER_SERVICE" default:"sysarmor-indexer"`
+	
+	// Resource management
+	TemplateDir string `envconfig:"TEMPLATE_DIR" default:"./templates"`
+	DownloadDir string `envconfig:"DOWNLOAD_DIR" default:"./data/dist"`
+	ExternalURL string `envconfig:"EXTERNAL_URL" default:""`
 }
 
 // MiddlewareConfig contains configuration for the Middleware service

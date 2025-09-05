@@ -71,11 +71,17 @@ type TemplateData struct {
 	WorkerHost string
 	WorkerPort string
 
+	// Manager 信息
+	ManagerURL string
+
 	// 生成时间
 	GeneratedAt string
 
 	// Agentless 特定数据
 	AuditRules string
+	
+	// OpenTelemetry Collector 特定数据
+	ExtraCfgData string
 }
 
 // NewTemplateData 从 Collector 创建模板数据

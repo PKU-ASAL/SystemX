@@ -4,26 +4,19 @@ services:
     build:
       context: ../..
       dockerfile: ./services/processor/Dockerfile
-    hostname: ${FLINK_JOBMANAGER_HOST}
+    hostname: flink-jobmanager
     environment:
       - |
         FLINK_PROPERTIES=
-        jobmanager.rpc.address: ${FLINK_JOBMANAGER_HOST}
+        jobmanager.rpc.address: flink-jobmanager
         taskmanager.memory.process.size: 2048m
         jobmanager.memory.process.size: 1024m
-        parallelism.default: ${FLINK_PARALLELISM}
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
-      - OPENSEARCH_URL=${OPENSEARCH_URL}
-      - FLINK_JOBMANAGER_PORT=${FLINK_JOBMANAGER_PORT}
-      - FLINK_TASKMANAGER_SLOTS=${FLINK_TASKMANAGER_SLOTS}
-      - FLINK_PARALLELISM=${FLINK_PARALLELISM}
-      - THREAT_RULES_PATH=${THREAT_RULES_PATH}
-      # Auditd转换作业配置
-      - INPUT_TOPIC=${AUDITD_INPUT_TOPIC:-sysarmor-agentless-558c01dd}
-      - OUTPUT_TOPIC=${SYSDIG_OUTPUT_TOPIC:-sysarmor-sysdig-events}
-      - CONVERTER_ENABLED=${AUDITD_CONVERTER_ENABLED:-true}
+        parallelism.default: 2
+      # 基于HOST自动派生的配置
+      - KAFKA_BOOTSTRAP_SERVERS=${MIDDLEWARE_HOST}:${KAFKA_PORT}
+      - OPENSEARCH_URL=http://${INDEXER_HOST}:${OPENSEARCH_PORT}
     ports:
-      - "${FLINK_JOBMANAGER_PORT}:8081"
+      - "${FLINK_PORT}:8081"
     command: jobmanager
     volumes:
       - ./jobs:/opt/flink/usr_jobs
@@ -34,8 +27,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=processor"
       - "sysarmor.component=job-manager"
@@ -44,32 +35,28 @@ services:
     build:
       context: ../..
       dockerfile: ./services/processor/Dockerfile
-    hostname: processor-taskmanager
+    hostname: flink-taskmanager
     depends_on:
       - flink-jobmanager
     environment:
       - |
         FLINK_PROPERTIES=
-        jobmanager.rpc.address: ${FLINK_JOBMANAGER_HOST}
-        taskmanager.numberOfTaskSlots: ${FLINK_TASKMANAGER_SLOTS}
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
         taskmanager.memory.process.size: 2048m
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
-      - OPENSEARCH_URL=${OPENSEARCH_URL}
-      # Auditd转换作业配置
-      - INPUT_TOPIC=${AUDITD_INPUT_TOPIC:-sysarmor-agentless-558c01dd}
-      - OUTPUT_TOPIC=${SYSDIG_OUTPUT_TOPIC:-sysarmor-sysdig-events}
+      # 基于HOST自动派生的配置
+      - KAFKA_BOOTSTRAP_SERVERS=${MIDDLEWARE_HOST}:${KAFKA_PORT}
+      - OPENSEARCH_URL=http://${INDEXER_HOST}:${OPENSEARCH_PORT}
     command: taskmanager
     volumes:
       - ./jobs:/opt/flink/usr_jobs
       - ./configs:/opt/flink/configs
       - ./scripts:/opt/flink/scripts
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=processor"
       - "sysarmor.component=task-manager"
 
 networks:
-  ${SYSARMOR_NETWORK}:
-    driver: bridge
-    name: ${SYSARMOR_NETWORK}
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: ${SYSARMOR_NETWORK_EXTERNAL:-false}

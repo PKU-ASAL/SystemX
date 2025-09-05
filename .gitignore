@@ -1,6 +1,11 @@
 # DIY
 .env
+.env.dev
+.env.middleware
+
 docs/draft
+docs/patches
+tests/migrations/outputs
 
 # Binaries for programs and plugins
 *.exe
@@ -148,6 +153,9 @@ target/
 *.zip
 *.tar.gz
 *.rar
+
+# 例外: 包含必要的第三方jar文件
+!services/middleware/configs/monitoring/jmx-exporter/*.jar
 
 # Temporary files
 tmp/

@@ -5,6 +5,7 @@ const (
 	CollectorStatusActive      = "active"
 	CollectorStatusInactive    = "inactive"
 	CollectorStatusError       = "error"
+	CollectorStatusOffline     = "offline"      // 新增: 长时间无心跳
 	CollectorStatusUnregistered = "unregistered"
 )
 

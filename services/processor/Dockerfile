@@ -24,13 +24,13 @@ RUN apt-get update && \
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
 
 WORKDIR /opt/flink
-COPY ./requirements.txt .
+COPY services/processor/requirements.txt .
 RUN pip install -r requirements.txt
 
 # 复制并执行下载脚本
-COPY ./scripts/download_libs.sh .
+COPY services/processor/scripts/download_libs.sh .
 RUN chmod +x ./download_libs.sh && ./download_libs.sh
 
 # 创建 usr_jobs 目录并设置 Python Path
 RUN mkdir -p /opt/flink/usr_jobs
-ENV PYTHONPATH=/opt/flink/usr_jobs:$PYTHONPATH
+ENV PYTHONPATH=/opt/flink/usr_jobs

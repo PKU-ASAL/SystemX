@@ -4,13 +4,13 @@ services:
     build:
       context: ../..
       dockerfile: ./services/indexer/opensearch.Dockerfile
-    hostname: ${OPENSEARCH_HOST}
+    hostname: opensearch
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       - cluster.name=sysarmor-indexer-cluster
-      - node.name=${OPENSEARCH_HOST}-node-1
+      - node.name=opensearch-node-1
     ports:
       - "${OPENSEARCH_PORT}:${OPENSEARCH_PORT}"
     volumes:
@@ -21,8 +21,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=indexer"
       - "sysarmor.component=search-engine"
@@ -36,21 +34,20 @@ services:
       opensearch:
         condition: service_healthy
     environment:
-      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - OPENSEARCH_URL=http://${INDEXER_HOST}:${OPENSEARCH_PORT}
       - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME}
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
       - INDEX_PREFIX=${INDEX_PREFIX}
-    networks:
-      - ${SYSARMOR_NETWORK}
     labels:
       - "sysarmor.module=indexer"
       - "sysarmor.component=index-service"
 
 volumes:
   indexer_opensearch_data:
-    name: sysarmor_indexer_opensearch_data
+    name: ${OPENSEARCH_DATA_VOLUME_NAME:-sysarmor_indexer_opensearch_data}
+    external: ${OPENSEARCH_DATA_VOLUME_EXTERNAL:-false}
 
 networks:
-  ${SYSARMOR_NETWORK}:
-    driver: bridge
-    name: ${SYSARMOR_NETWORK}
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: ${SYSARMOR_NETWORK_EXTERNAL:-false}

@@ -9,6 +9,7 @@ import (
 	"github.com/sysarmor/sysarmor/apps/manager/api/handlers"
 	"github.com/sysarmor/sysarmor/apps/manager/config"
 	"github.com/sysarmor/sysarmor/apps/manager/storage"
+	"github.com/sysarmor/sysarmor/apps/manager/services/wazuh"
 	
 	// Swagger imports
 	"github.com/swaggo/gin-swagger"
@@ -76,7 +77,10 @@ func main() {
 		collectors.POST("/register", collectorHandler.Register)
 		collectors.GET("/:id", collectorHandler.GetStatus)
 		collectors.GET("", collectorHandler.ListCollectors) // 支持 Query Parameters 过滤
-		collectors.POST("/:id/heartbeat", collectorHandler.Heartbeat) // 心跳接口（预留）
+		
+		// Nova分支新增: 双向心跳路由
+		collectors.POST("/:id/heartbeat", collectorHandler.Heartbeat)      // 心跳上报
+		collectors.POST("/:id/probe", collectorHandler.ProbeHeartbeat)     // 主动探测
 		
 		// 元数据管理路由
 		collectors.PUT("/:id/metadata", collectorHandler.UpdateMetadata)
@@ -86,11 +90,18 @@ func main() {
 		collectors.POST("/:id/unregister", collectorHandler.Unregister) // 注销 Collector (软删除)
 	}
 
-	// 脚本下载路由
-	scripts := api.Group("/scripts")
+	// 资源管理路由 (统一的脚本、配置、二进制文件 API)
+	resourcesHandler := handlers.NewResourcesHandler(db.DB())
+	resources := api.Group("/resources")
 	{
-		scripts.GET("/setup-terminal.sh", collectorHandler.DownloadScript)
-		scripts.GET("/uninstall-terminal.sh", collectorHandler.DownloadUninstallScript)
+		// 脚本资源 (动态生成)
+		resources.GET("/scripts/:deployment_type/:script_name", resourcesHandler.GetScript)
+		
+		// 二进制资源 (静态下载)
+		resources.GET("/binaries/:filename", resourcesHandler.GetBinary)
+		
+		// 配置资源 (动态生成)
+		resources.GET("/configs/:deployment_type/:config_name", resourcesHandler.GetConfig)
 	}
 
 	// 健康检查路由
@@ -129,6 +140,49 @@ func main() {
 
 	// 服务管理路由组
 	services := api.Group("/services")
+
+	// Wazuh 集成路由 (HFW分支新增)
+	log.Printf("🛡️ Initializing Wazuh service...")
+	wazuhService, err := wazuh.NewWazuhService(cfg)
+	if err != nil {
+		log.Printf("❌ Failed to initialize Wazuh service: %v", err)
+	} else {
+		wazuhHandler := handlers.NewWazuhHandler(wazuhService)
+		
+		// 直接注册Wazuh路由以便Swagger识别
+		wazuhGroup := api.Group("/wazuh")
+		{
+			// 配置管理
+			wazuhGroup.GET("/config", wazuhHandler.GetConfig)
+			wazuhGroup.PUT("/config", wazuhHandler.UpdateConfig)
+			
+			// Manager API  
+			wazuhGroup.GET("/manager/info", wazuhHandler.GetManagerInfo)
+			wazuhGroup.GET("/manager/status", wazuhHandler.GetManagerStatus)
+			
+			// Agent管理
+			wazuhGroup.GET("/agents", wazuhHandler.GetAgents)
+			wazuhGroup.POST("/agents", wazuhHandler.AddAgent)
+			wazuhGroup.GET("/agents/:id", wazuhHandler.GetAgent)
+			wazuhGroup.DELETE("/agents/:id", wazuhHandler.DeleteAgent)
+			wazuhGroup.GET("/agents/:id/key", wazuhHandler.GetAgentKey)
+			
+			// 组管理
+			wazuhGroup.GET("/groups", wazuhHandler.GetGroups)
+			wazuhGroup.POST("/groups", wazuhHandler.CreateGroup)
+			wazuhGroup.GET("/groups/:name/agents", wazuhHandler.GetGroupAgents)
+			
+			// Indexer API
+			wazuhGroup.GET("/indexer/health", wazuhHandler.GetIndexerHealth)
+			wazuhGroup.GET("/indexer/indices", wazuhHandler.GetIndices)
+			
+			// 告警查询
+			wazuhGroup.POST("/alerts/search", wazuhHandler.SearchAlerts)
+			wazuhGroup.GET("/alerts/stats", wazuhHandler.GetAlertStats)
+		}
+		
+		log.Printf("✅ Wazuh routes registered successfully")
+	}
 
 	// Kafka 管理路由
 	kafkaHandler := handlers.NewKafkaHandler(kafkaBrokers)

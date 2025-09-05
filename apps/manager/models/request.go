@@ -24,16 +24,19 @@ type RegisterResponse struct {
 
 // CollectorStatus 收集器状态响应
 type CollectorStatus struct {
-	CollectorID   string             `json:"collector_id"`
-	Status        string             `json:"status"`
-	Hostname      string             `json:"hostname"`
-	IPAddress     string             `json:"ip_address"`
-	WorkerAddress string             `json:"worker_address"`
-	KafkaTopic    string             `json:"kafka_topic"`
-	Metadata      *CollectorMetadata `json:"metadata,omitempty"`
-	LastHeartbeat *time.Time         `json:"last_heartbeat,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
-	UpdatedAt     time.Time          `json:"updated_at"`
+	CollectorID     string             `json:"collector_id"`
+	Status          string             `json:"status"`
+	Hostname        string             `json:"hostname"`
+	IPAddress       string             `json:"ip_address"`
+	WorkerAddress   string             `json:"worker_address"`
+	KafkaTopic      string             `json:"kafka_topic"`
+	Metadata        *CollectorMetadata `json:"metadata,omitempty"`
+	LastHeartbeat   *time.Time         `json:"last_heartbeat,omitempty"`
+	LastActive      *time.Time         `json:"last_active,omitempty"`
+	RealTimeStatus  string             `json:"realtime_status"`
+	LastSeenMinutes int                `json:"last_seen_minutes"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
 // UpdateMetadataRequest 更新元数据请求
@@ -81,4 +84,33 @@ type CollectorSearchResponse struct {
 		Limit      int                `json:"limit"`
 		TotalPages int                `json:"total_pages"`
 	} `json:"data"`
+}
+
+// HeartbeatRequest 心跳请求
+type HeartbeatRequest struct {
+	Status  string `json:"status" binding:"required,oneof=active inactive error offline unregistered"`
+	ProbeID string `json:"probe_id,omitempty"` // 可选，用于探测响应
+}
+
+// HeartbeatResponse 心跳响应
+type HeartbeatResponse struct {
+	Success               bool      `json:"success"`
+	NextHeartbeatInterval int       `json:"next_heartbeat_interval"`
+	ServerTime            time.Time `json:"server_time"`
+}
+
+// ProbeRequest 探测请求
+type ProbeRequest struct {
+	Timeout int `json:"timeout,omitempty"` // 探测超时时间(秒)，默认10秒
+}
+
+// ProbeResponse 探测响应
+type ProbeResponse struct {
+	CollectorID     string     `json:"collector_id"`
+	Success         bool       `json:"success"`
+	ProbeID         string     `json:"probe_id"`
+	SentAt          time.Time  `json:"sent_at"`
+	HeartbeatBefore *time.Time `json:"heartbeat_before,omitempty"`
+	HeartbeatAfter  *time.Time `json:"heartbeat_after,omitempty"`
+	ErrorMessage    string     `json:"error_message,omitempty"`
 }

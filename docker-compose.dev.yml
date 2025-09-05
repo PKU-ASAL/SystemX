@@ -1,0 +1,16 @@
+# SysArmor EDR/HIDS 开发环境配置
+# 连接到远程middleware (49.232.13.155)，本地运行manager + processor + indexer
+
+include:
+  - path: ./deployments/compose/manager.yml
+    env_file: .env.dev
+  - path: ./services/processor/docker-compose.yml
+    env_file: .env.dev
+  - path: ./services/indexer/docker-compose.yml
+    env_file: .env.dev
+
+# 开发环境网络配置
+networks:
+  sysarmor-net:
+    driver: bridge
+    name: sysarmor-dev-net

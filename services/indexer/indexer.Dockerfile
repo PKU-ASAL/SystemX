@@ -5,14 +5,14 @@ FROM docker.io/python:3.11-slim
 WORKDIR /app
 
 # 复制 requirements 文件
-COPY ./requirements.txt .
+COPY services/indexer/requirements.txt .
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制应用代码
-COPY ./src/ ./src/
-COPY ./templates/ ./templates/
+COPY services/indexer/src/ ./src/
+COPY services/indexer/templates/ ./templates/
 
 # 创建非 root 用户
 RUN addgroup --gid 1001 --system sysarmor && \

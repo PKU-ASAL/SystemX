@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	sharedconfig "github.com/sysarmor/sysarmor/shared/config"
@@ -61,6 +62,19 @@ func (c *Config) GetFlinkURL() string {
 	return sharedconfig.GetEnv("FLINK_JOBMANAGER_URL", "http://flink-jobmanager:8081")
 }
 
+// GetDownloadDir 获取下载目录路径
+func (c *Config) GetDownloadDir() string {
+	return c.DownloadDir
+}
+
+// GetManagerURL 获取 Manager URL
+func (c *Config) GetManagerURL() string {
+	if c.ExternalURL != "" {
+		return c.ExternalURL
+	}
+	return fmt.Sprintf("http://localhost:%d", c.Port)
+}
+
 // IsProduction 判断是否为生产环境
 func (c *Config) IsProduction() bool {
 	return c.BaseConfig.IsProduction()
@@ -69,4 +83,24 @@ func (c *Config) IsProduction() bool {
 // IsDevelopment 判断是否为开发环境
 func (c *Config) IsDevelopment() bool {
 	return c.BaseConfig.IsDevelopment()
+}
+
+// GetWazuhConfigPath 获取Wazuh配置文件路径
+func (c *Config) GetWazuhConfigPath() string {
+	return sharedconfig.GetEnv("WAZUH_CONFIG_PATH", "./shared/configs/wazuh.yaml")
+}
+
+// IsWazuhEnabled 检查Wazuh是否启用
+func (c *Config) IsWazuhEnabled() bool {
+	return sharedconfig.GetEnv("WAZUH_ENABLED", "false") == "true"
+}
+
+// GetWazuhConfig 获取Wazuh配置
+func (c *Config) GetWazuhConfig() (*WazuhConfig, error) {
+	if !c.IsWazuhEnabled() {
+		return nil, fmt.Errorf("wazuh plugin is disabled")
+	}
+	
+	configPath := c.GetWazuhConfigPath()
+	return LoadWazuhConfig(configPath)
 }

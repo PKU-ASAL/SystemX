@@ -1,0 +1,12 @@
+# SysArmor EDR/HIDS 开发环境配置
+# 在服务器部署middleware用
+
+include:
+  - path: ./services/middleware/docker-compose.yml
+    env_file: .env.middleware
+
+# 开发环境网络配置
+networks:
+  sysarmor-net:
+    driver: bridge
+    name: sysarmor-dev-net

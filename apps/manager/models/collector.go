@@ -32,6 +32,7 @@ type Collector struct {
 	DeploymentType string             `json:"deployment_type" db:"deployment_type"`
 	Metadata       *CollectorMetadata `json:"metadata,omitempty" db:"metadata"`
 	LastHeartbeat  *time.Time         `json:"last_heartbeat,omitempty" db:"last_heartbeat"`
+	LastActive     *time.Time         `json:"last_active,omitempty" db:"last_active"`
 	CreatedAt      time.Time          `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at" db:"updated_at"`
 }
@@ -154,4 +155,33 @@ func (c *Collector) GetDisplayName() string {
 		return c.Metadata.Description
 	}
 	return c.Hostname
+}
+
+// GetRealTimeStatus 获取基于时间的实时状态
+func (c *Collector) GetRealTimeStatus() string {
+	now := time.Now()
+	
+	// 1. 检查最近心跳 (5分钟内)
+	if c.LastHeartbeat != nil && now.Sub(*c.LastHeartbeat) <= 5*time.Minute {
+		return c.Status // 返回 Collector 上报的状态 (active/inactive/error)
+	}
+	
+	// 2. 检查最近活跃 (30分钟内)
+	if c.LastActive != nil && now.Sub(*c.LastActive) <= 30*time.Minute {
+		return "inactive" // 最近活跃过但现在无心跳
+	}
+	
+	// 3. 长时间无响应
+	return CollectorStatusOffline // 长时间无任何响应
+}
+
+// GetLastSeenMinutes 获取最后活跃的分钟数
+func (c *Collector) GetLastSeenMinutes() int {
+	if c.LastActive == nil {
+		return -1 // 从未活跃
+	}
+	
+	now := time.Now()
+	minutes := int(now.Sub(*c.LastActive).Minutes())
+	return minutes
 }
