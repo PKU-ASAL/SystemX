@@ -34,7 +34,7 @@ services:
       opensearch:
         condition: service_healthy
     environment:
-      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - OPENSEARCH_URL=http://${INDEXER_HOST}:${OPENSEARCH_PORT}
       - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME}
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
       - INDEX_PREFIX=${INDEX_PREFIX}
