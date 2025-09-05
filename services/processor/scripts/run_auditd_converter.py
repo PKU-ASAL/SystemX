@@ -39,7 +39,7 @@ def set_environment_variables(config: dict):
         kafka_config = config.get('kafka', {})
         os.environ['KAFKA_BOOTSTRAP_SERVERS'] = kafka_config.get('bootstrap_servers', 'middleware-kafka:9092')
         os.environ['INPUT_TOPIC'] = kafka_config.get('input_topic', 'sysarmor-agentless-558c01dd')
-        os.environ['OUTPUT_TOPIC'] = kafka_config.get('output_topic', 'sysarmor-sysdig-events')
+        os.environ['OUTPUT_TOPIC'] = kafka_config.get('output_topic', 'sysarmor-events-sysdig')
         os.environ['KAFKA_GROUP_ID'] = kafka_config.get('consumer_group', 'sysarmor-auditd-converter-group')
         
         # Flink配置
