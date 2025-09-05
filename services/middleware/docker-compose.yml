@@ -58,8 +58,11 @@ services:
         condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=middleware-kafka:9092
+      - VECTOR_API_PORT=${VECTOR_API_PORT}
+      - VECTOR_TCP_PORT=${VECTOR_TCP_PORT}
+      - VECTOR_METRICS_PORT=${VECTOR_METRICS_PORT}
     ports:
-      - "${VECTOR_PORT}:${VECTOR_PORT}"
+      - "${VECTOR_TCP_PORT}:${VECTOR_TCP_PORT}"
       - "8686:8686"
       - "9598:9598"
     volumes:

@@ -47,6 +47,20 @@ down-dev: ## 停止并清理开发环境
 	docker image prune -f --filter "label=sysarmor.module"
 	@echo "✅ 开发环境已清理"
 
+up-middleware: ## 构建并启动开发环境 (单独部署middleware)
+	@echo "🚀 启动SysArmor EDR开发环境..."
+	@if [ ! -f .env.middleware ]; then echo "❌ .env.middleware 文件不存在"; exit 1; fi
+	docker compose -f docker-compose.middleware.yml build --no-cache
+	docker compose -f docker-compose.middleware.yml up -d
+	@echo "✅ 开发环境启动完成 (已部署middleware)"
+
+down-middleware: ## 停止并清理开发环境
+	@echo "🛑 停止并清理SysArmor EDR开发环境..."
+	docker compose -f docker-compose.middleware.yml down -v --remove-orphans
+	@echo "🧹 清理开发环境镜像..."
+	docker image prune -f --filter "label=sysarmor.module"
+	@echo "✅ 开发环境已清理"
+
 restart: ## 重启所有服务
 	@echo "🔄 重启SysArmor EDR服务..."
 	docker compose restart

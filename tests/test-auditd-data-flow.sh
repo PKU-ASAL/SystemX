@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 
 # 测试配置
 VECTOR_HOST="localhost"
-VECTOR_PORT="6000"
+VECTOR_TCP_PORT="6000"
 VECTOR_API="http://localhost:8686"
 
 # 生成符合要求的测试数据 (包含 collector_id)
@@ -29,7 +29,7 @@ EXPECTED_TOPIC="sysarmor-agentless-${COLLECTOR_SHORT}"
 TEST_MESSAGE='{"collector_id":"'${COLLECTOR_ID}'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","host":"test-host-001","source":"auditd","message":"type=SYSCALL msg=audit(1693420800.123:456): arch=c000003e syscall=2 success=yes exit=3 a0=7fff12345678 a1=0 a2=0 a3=7fff87654321 items=1 ppid=1234 pid=5678 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=1 comm=\"cat\" exe=\"/bin/cat\" key=\"file_access\"","event_type":"audit","severity":"info","tags":["audit","syscall","file_access"]}'
 
 echo -e "${BLUE}📋 测试环境信息:${NC}"
-echo "  Vector TCP: ${VECTOR_HOST}:${VECTOR_PORT}"
+echo "  Vector TCP: ${VECTOR_HOST}:${VECTOR_TCP_PORT}"
 echo "  Vector API: ${VECTOR_API}"
 echo "  Collector ID: ${COLLECTOR_ID}"
 echo "  Expected Topic: ${EXPECTED_TOPIC}"
@@ -57,9 +57,9 @@ echo "测试数据 (紧凑格式):"
 echo "${TEST_MESSAGE}" | jq . 2>/dev/null || echo "${TEST_MESSAGE}"
 echo ""
 
-echo -n "发送数据到 Vector TCP:${VECTOR_PORT} (带换行符): "
+echo -n "发送数据到 Vector TCP:${VECTOR_TCP_PORT} (带换行符): "
 # 使用 printf 确保正确的换行符
-if printf "%s\n" "${TEST_MESSAGE}" | nc -w 5 ${VECTOR_HOST} ${VECTOR_PORT}; then
+if printf "%s\n" "${TEST_MESSAGE}" | nc -w 5 ${VECTOR_HOST} ${VECTOR_TCP_PORT}; then
     echo -e "${GREEN}✅ 数据发送成功${NC}"
 else
     echo -e "${RED}❌ 数据发送失败${NC}"
@@ -82,7 +82,7 @@ echo ""
 # 步骤4: 查看 Vector 最新日志
 echo -e "${YELLOW}📋 步骤4: 查看 Vector 最新日志${NC}"
 echo "=================================================="
-docker compose logs --tail 10 vector
+docker compose -f docker-compose.middleware.yml logs --tail 10 vector
 echo ""
 
 # 步骤5: 检查 Kafka 主题 (使用正确路径)
@@ -95,7 +95,7 @@ if docker ps --format "{{.Names}}" | grep -q "$KAFKA_CONTAINER"; then
     echo -e "${GREEN}✅ 容器运行中${NC}"
     
     echo -n "获取主题列表: "
-    TOPICS=$(docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list 2>/dev/null || echo "")
+    TOPICS=$(docker exec -e KAFKA_OPTS= $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list 2>/dev/null || echo "")
     if [ -n "$TOPICS" ]; then
         echo -e "${GREEN}✅ 成功${NC}"
         echo "现有主题:"
@@ -107,7 +107,7 @@ if docker ps --format "{{.Names}}" | grep -q "$KAFKA_CONTAINER"; then
             
             # 尝试消费消息
             echo -n "消费最新消息: "
-            LATEST_MESSAGE=$(timeout 10 docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-console-consumer.sh \
+            LATEST_MESSAGE=$(timeout 10 docker exec -e KAFKA_OPTS= $KAFKA_CONTAINER /opt/kafka/bin/kafka-console-consumer.sh \
                 --bootstrap-server localhost:9092 \
                 --topic "${EXPECTED_TOPIC}" \
                 --from-beginning \
@@ -136,7 +136,7 @@ echo ""
 echo -e "${YELLOW}🔍 步骤6: 检查 Vector 错误日志${NC}"
 echo "=================================================="
 echo "搜索最新的错误信息:"
-VECTOR_ERRORS=$(docker compose logs --tail 50 vector 2>&1 | grep -i -E "(error|failed|abort|drop)" | tail -5 || echo "")
+VECTOR_ERRORS=$(docker compose -f docker-compose.middleware.yml logs --tail 50 vector 2>&1 | grep -i -E "(error|failed|abort|drop)" | tail -5 || echo "")
 if [ -n "$VECTOR_ERRORS" ]; then
     echo -e "${RED}发现错误日志:${NC}"
     echo "$VECTOR_ERRORS"
@@ -178,9 +178,9 @@ fi
 
 echo ""
 echo -e "${BLUE}💡 调试命令:${NC}"
-echo "1. 实时查看 Vector 日志: docker compose logs -f vector"
-echo "2. 检查 Kafka 主题: docker exec sysarmor-kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
-echo "3. 消费 Kafka 消息: docker exec sysarmor-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ${EXPECTED_TOPIC} --from-beginning"
+echo "1. 实时查看 Vector 日志: docker compose -f docker-compose.middleware.yml logs -f vector"
+echo "2. 检查 Kafka 主题: docker exec -e KAFKA_OPTS= sysarmor-kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
+echo "3. 消费 Kafka 消息: docker exec -e KAFKA_OPTS= sysarmor-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ${EXPECTED_TOPIC} --from-beginning"
 echo "4. 检查 Vector 配置: cat services/middleware/configs/vector/vector.toml"
 echo ""
 echo -e "${GREEN}🎉 SysArmor 修复版数据流测试完成！${NC}"
