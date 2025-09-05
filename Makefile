@@ -1,5 +1,5 @@
 # SysArmor EDR Monorepo Makefile
-.PHONY: help init up down restart status logs health build docs clean
+.PHONY: help init up down restart status logs health build docs clean up-dev down-dev
 
 # Default target
 help: ## Show this help message
@@ -10,134 +10,47 @@ help: ## Show this help message
 ##@ 基础操作
 init: ## 初始化项目环境
 	@echo "🚀 初始化SysArmor EDR项目..."
-	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建"; fi
-	@echo "📁 项目初始化完成，请根据需要编辑各服务的专用配置文件:"
-	@echo "   .env.middleware - Middleware服务配置"
-	@echo "   .env.manager    - Manager服务配置"
-	@echo "   .env.processor  - Processor服务配置"
-	@echo "   .env.indexer    - Indexer服务配置"
+	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建: .env"; fi
+	@echo "📁 项目初始化完成"
+	@echo "   .env     - 单机部署配置"
+	@echo "   .env.dev - 开发环境配置 (连接远程middleware)"
 
-up: ## 启动服务 (支持参数: make up [service])
+up: ## 启动所有服务 (单机部署)
 	@echo "🚀 启动SysArmor EDR服务..."
-	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
-		case $$SERVICE in \
-			middleware) \
-				echo "📡 启动Middleware服务..."; \
-				if [ ! -f .env.middleware ]; then echo "❌ .env.middleware 文件不存在"; exit 1; fi; \
-				cd services/middleware && docker compose --env-file ../../.env.middleware up -d; \
-				echo "✅ Middleware启动完成: Vector:6000, Kafka:9092, Prometheus:9090"; \
-				;; \
-			manager) \
-				echo "🔧 启动Manager服务..."; \
-				if [ ! -f .env.manager ]; then echo "❌ .env.manager 文件不存在"; exit 1; fi; \
-				docker compose -f deployments/compose/manager.yml --env-file .env.manager up -d; \
-				echo "✅ Manager启动完成: http://localhost:8080"; \
-				;; \
-			processor) \
-				echo "⚡ 启动Processor服务..."; \
-				if [ ! -f .env.processor ]; then echo "❌ .env.processor 文件不存在"; exit 1; fi; \
-				cd services/processor && docker compose --env-file ../../.env.processor up -d; \
-				echo "✅ Processor启动完成: http://localhost:8081"; \
-				;; \
-			indexer) \
-				echo "🔍 启动Indexer服务..."; \
-				if [ ! -f .env.indexer ]; then echo "❌ .env.indexer 文件不存在"; exit 1; fi; \
-				cd services/indexer && docker compose --env-file ../../.env.indexer up -d; \
-				echo "✅ Indexer启动完成: http://localhost:9200"; \
-				;; \
-			*) \
-				echo "❌ 未知服务: $$SERVICE"; \
-				echo "支持的服务: middleware, manager, processor, indexer"; \
-				exit 1; \
-				;; \
-		esac; \
-	else \
-		if [ ! -f .env ]; then cp .env.example .env; fi; \
-		docker compose up -d; \
-		echo "✅ 所有服务启动完成"; \
-		echo "🌐 Manager API: http://localhost:8080"; \
-		echo "📖 API文档: http://localhost:8080/swagger/index.html"; \
-	fi
+	@if [ ! -f .env ]; then cp .env.example .env; fi
+	docker compose up -d
+	@echo "✅ 所有服务启动完成"
+	@echo "🌐 Manager API: http://localhost:8080"
+	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
 
-down: ## 停止服务 (支持参数: make down [service])
+down: ## 停止所有服务
 	@echo "🛑 停止SysArmor EDR服务..."
-	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
-		case $$SERVICE in \
-			middleware) \
-				echo "📡 停止Middleware服务..."; \
-				cd services/middleware && docker compose --env-file ../../.env.middleware down; \
-				echo "✅ Middleware已停止"; \
-				;; \
-			manager) \
-				echo "🔧 停止Manager服务..."; \
-				docker compose -f deployments/compose/manager.yml --env-file .env.manager down; \
-				echo "✅ Manager已停止"; \
-				;; \
-			processor) \
-				echo "⚡ 停止Processor服务..."; \
-				cd services/processor && docker compose --env-file ../../.env.processor down; \
-				echo "✅ Processor已停止"; \
-				;; \
-			indexer) \
-				echo "🔍 停止Indexer服务..."; \
-				cd services/indexer && docker compose --env-file ../../.env.indexer down; \
-				echo "✅ Indexer已停止"; \
-				;; \
-			*) \
-				echo "❌ 未知服务: $$SERVICE"; \
-				echo "支持的服务: middleware, manager, processor, indexer"; \
-				exit 1; \
-				;; \
-		esac; \
-	else \
-		echo "🔧 停止所有独立启动的服务..."; \
-		docker compose -f deployments/compose/manager.yml --env-file .env.manager down 2>/dev/null || true; \
-		cd services/middleware && docker compose --env-file ../../.env.middleware down 2>/dev/null || true; cd ../..; \
-		cd services/processor && docker compose --env-file ../../.env.processor down 2>/dev/null || true; cd ../..; \
-		cd services/indexer && docker compose --env-file ../../.env.indexer down 2>/dev/null || true; cd ../..; \
-		docker compose down 2>/dev/null || true; \
-		echo "🔧 强制停止剩余容器..."; \
-		docker stop $$(docker ps -q --filter "label=sysarmor.module") 2>/dev/null || true; \
-		echo "✅ 所有服务已停止"; \
-	fi
+	docker compose down
+	@echo "✅ 所有服务已停止"
 
-restart: ## 重启服务 (支持参数: make restart [service])
+up-dev: ## 构建并启动开发环境 (连接远程middleware)
+	@echo "🚀 启动SysArmor EDR开发环境..."
+	@if [ ! -f .env.dev ]; then echo "❌ .env.dev 文件不存在"; exit 1; fi
+	docker compose -f docker-compose.dev.yml build --no-cache
+	docker compose -f docker-compose.dev.yml up -d
+	@echo "✅ 开发环境启动完成 (连接到远程middleware: 49.232.13.155)"
+	@echo "🌐 Manager API: http://localhost:8080"
+	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
+	@echo "🔧 Flink监控: http://localhost:8081"
+	@echo "🔍 OpenSearch: http://localhost:9200"
+	@echo "📊 远程Prometheus: http://49.232.13.155:9090"
+
+down-dev: ## 停止并清理开发环境
+	@echo "🛑 停止并清理SysArmor EDR开发环境..."
+	docker compose -f docker-compose.dev.yml down -v --remove-orphans
+	@echo "🧹 清理开发环境镜像..."
+	docker image prune -f --filter "label=sysarmor.module"
+	@echo "✅ 开发环境已清理"
+
+restart: ## 重启所有服务
 	@echo "🔄 重启SysArmor EDR服务..."
-	@if [ "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		SERVICE="$(filter-out $@,$(MAKECMDGOALS))"; \
-		case $$SERVICE in \
-			middleware) \
-				echo "📡 重启Middleware服务..."; \
-				cd services/middleware && docker compose --env-file ../../.env.middleware restart; \
-				echo "✅ Middleware重启完成"; \
-				;; \
-			manager) \
-				echo "🔧 重启Manager服务..."; \
-				docker compose -f deployments/compose/manager.yml --env-file .env.manager restart; \
-				echo "✅ Manager重启完成"; \
-				;; \
-			processor) \
-				echo "⚡ 重启Processor服务..."; \
-				cd services/processor && docker compose --env-file ../../.env.processor restart; \
-				echo "✅ Processor重启完成"; \
-				;; \
-			indexer) \
-				echo "🔍 重启Indexer服务..."; \
-				cd services/indexer && docker compose --env-file ../../.env.indexer restart; \
-				echo "✅ Indexer重启完成"; \
-				;; \
-			*) \
-				echo "❌ 未知服务: $$SERVICE"; \
-				echo "支持的服务: middleware, manager, processor, indexer"; \
-				exit 1; \
-				;; \
-		esac; \
-	else \
-		docker compose restart; \
-		echo "✅ 所有服务重启完成"; \
-	fi
+	docker compose restart
+	@echo "✅ 所有服务重启完成"
 
 # 允许make命令接受参数
 %:
@@ -156,6 +69,8 @@ health: ## 系统健康检查
 	@echo "🏥 SysArmor EDR健康检查..."
 	@curl -s http://localhost:8080/health > /dev/null && echo "✅ Manager: 健康" || echo "❌ Manager: 异常"
 	@curl -s http://localhost:9090/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
+	@curl -s http://localhost:8081/overview > /dev/null && echo "✅ Flink: 健康" || echo "❌ Flink: 异常"
+	@curl -s http://localhost:9200/_cluster/health > /dev/null && echo "✅ OpenSearch: 健康" || echo "❌ OpenSearch: 异常"
 
 ##@ 开发构建
 build: ## 构建Manager应用
@@ -200,15 +115,13 @@ info: ## 显示项目信息
 	@echo "  OpenSearch: 9200  (搜索引擎)"
 	@echo "  Prometheus: 9090  (监控)"
 	@echo ""
-	@echo "专用配置文件:"
-	@echo "  .env.middleware - Middleware服务专用配置"
-	@echo "  .env.manager    - Manager服务专用配置"
-	@echo "  .env.processor  - Processor服务专用配置"
-	@echo "  .env.indexer    - Indexer服务专用配置"
+	@echo "配置文件:"
+	@echo "  .env     - 单机部署配置"
+	@echo "  .env.dev - 开发环境配置 (连接远程middleware)"
 	@echo ""
-	@echo "分布式部署:"
-	@echo "  远程服务器: make up middleware  (使用 .env.middleware)"
-	@echo "  本地环境:   make up manager processor indexer"
+	@echo "部署模式:"
+	@echo "  单机部署: make up"
+	@echo "  开发环境: make up-dev (连接远程middleware)"
 	@echo ""
 	@echo "快速开始: make init && make up"
 	@echo "API文档: http://localhost:8080/swagger/index.html"
