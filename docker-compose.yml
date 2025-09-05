@@ -1,15 +1,15 @@
 # SysArmor EDR/HIDS 系统 - 逻辑模块编排
-# 支持单机部署和分布式部署两种模式
+# 支持单机部署和分布式部署两种模式，本文件用于一体化部署
 
 include:
   - path: ./deployments/compose/manager.yml
-    env_file: ${MANAGER_ENV_FILE:-.env}
+    env_file: .env
   - path: ./services/middleware/docker-compose.yml
-    env_file: ${MIDDLEWARE_ENV_FILE:-.env}
+    env_file: .env
   - path: ./services/processor/docker-compose.yml
-    env_file: ${PROCESSOR_ENV_FILE:-.env}
+    env_file: .env
   - path: ./services/indexer/docker-compose.yml
-    env_file: ${INDEXER_ENV_FILE:-.env}
+    env_file: .env
 
 # 全局网络定义 (支持环境变量配置)
 networks:
