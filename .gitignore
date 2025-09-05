@@ -1,9 +1,7 @@
 # DIY
 .env
-.env.indexer
-.env.manager
+.env.dev
 .env.middleware
-.env.processor
 
 docs/draft
 docs/patches

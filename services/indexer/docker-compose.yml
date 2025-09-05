@@ -4,13 +4,13 @@ services:
     build:
       context: ../..
       dockerfile: ./services/indexer/opensearch.Dockerfile
-    hostname: ${OPENSEARCH_HOST}
+    hostname: opensearch
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       - cluster.name=sysarmor-indexer-cluster
-      - node.name=${OPENSEARCH_HOST}-node-1
+      - node.name=opensearch-node-1
     ports:
       - "${OPENSEARCH_PORT}:${OPENSEARCH_PORT}"
     volumes:

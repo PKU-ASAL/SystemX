@@ -4,21 +4,21 @@ services:
     build:
       context: ../..
       dockerfile: ./services/middleware/kafka.Dockerfile
-    hostname: ${KAFKA_HOST}
+    hostname: middleware-kafka
     environment:
       # Kafka 基础配置
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@${KAFKA_HOST}:${KAFKA_CONTROLLER_PORT}
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:${KAFKA_INTERNAL_PORT},CONTROLLER://0.0.0.0:${KAFKA_CONTROLLER_PORT},EXTERNAL://0.0.0.0:${KAFKA_EXTERNAL_PORT}
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${KAFKA_HOST}:${KAFKA_INTERNAL_PORT},EXTERNAL://${KAFKA_EXTERNAL_HOST}:${KAFKA_EXTERNAL_PORT}
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@middleware-kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:${KAFKA_PORT}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://middleware-kafka:9092,EXTERNAL://${MIDDLEWARE_HOST}:${KAFKA_PORT}
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # JMX 配置
-      KAFKA_JMX_PORT: ${KAFKA_JMX_PORT}
-      KAFKA_JMX_HOSTNAME: ${KAFKA_JMX_HOSTNAME}
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: middleware-kafka
       KAFKA_JVM_PERFORMANCE_OPTS: "-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -XX:MaxInlineLevel=15 -Djava.awt.headless=true"
       KAFKA_OPTS: "-javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent-0.19.0.jar=7071:/opt/jmx-exporter/kafka-metrics.yml"
       # 主题与副本配置
@@ -32,8 +32,8 @@ services:
       # 启动优化
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     ports:
-      - "${KAFKA_INTERNAL_PORT}:${KAFKA_INTERNAL_PORT}"
-      - "${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}"
+      - "9092:9092"
+      - "${KAFKA_PORT}:${KAFKA_PORT}"
       - "7071:7071"  # JMX Exporter HTTP 端口
     volumes:
       - middleware_kafka_data:/var/lib/kafka/data
@@ -52,19 +52,16 @@ services:
     build:
       context: ../..
       dockerfile: ./services/middleware/vector.Dockerfile
-    hostname: ${VECTOR_HOST}
+    hostname: middleware-vector
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
-      - VECTOR_TCP_PORT=${VECTOR_TCP_PORT}
-      - VECTOR_API_PORT=${VECTOR_API_PORT}
-      - VECTOR_METRICS_PORT=${VECTOR_METRICS_PORT}
+      - KAFKA_BOOTSTRAP_SERVERS=middleware-kafka:9092
     ports:
-      - "${VECTOR_TCP_PORT}:${VECTOR_TCP_PORT}"
-      - "${VECTOR_API_PORT}:${VECTOR_API_PORT}"
-      - "${VECTOR_METRICS_PORT}:${VECTOR_METRICS_PORT}"
+      - "${VECTOR_PORT}:${VECTOR_PORT}"
+      - "8686:8686"
+      - "9598:9598"
     volumes:
       - ./configs/vector:/etc/vector:ro
       - middleware_vector_data:/var/lib/vector

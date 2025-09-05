@@ -59,7 +59,12 @@ restart: ## 重启所有服务
 ##@ 监控运维
 status: ## 查看服务状态
 	@echo "📊 SysArmor EDR服务状态："
-	docker compose ps
+	@if [ -f .env ]; then \
+		docker compose ps; \
+	else \
+		echo "⚠️  .env文件不存在，显示所有SysArmor容器:"; \
+		docker ps --filter "label=sysarmor.module" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; \
+	fi
 
 logs: ## 查看服务日志
 	@echo "📋 SysArmor EDR服务日志："
@@ -102,26 +107,39 @@ clean: ## 清理构建文件和容器
 info: ## 显示项目信息
 	@echo "SysArmor EDR/HIDS 系统"
 	@echo "====================="
-	@echo "架构: Monorepo + 微服务"
+	@echo "架构: Monorepo + 微服务 + 极简配置"
 	@echo "控制平面: Manager (Go + Gin + Swagger)"
 	@echo "数据平面: Middleware + Processor + Indexer"
 	@echo "集成功能: Wazuh SIEM + 实时威胁检测"
 	@echo ""
+	@echo "极简配置架构:"
+	@echo "  只需要设置4个服务HOST，其他配置自动派生"
+	@echo "  Manager服务:    MANAGER_HOST (控制平面)"
+	@echo "  Middleware服务: MIDDLEWARE_HOST (数据中间件)"
+	@echo "  Processor服务:  PROCESSOR_HOST (数据处理)"
+	@echo "  Indexer服务:    INDEXER_HOST (索引存储)"
+	@echo ""
 	@echo "核心端口:"
 	@echo "  Manager:    8080  (API + Swagger UI)"
 	@echo "  Vector:     6000  (数据收集)"
-	@echo "  Kafka:      9092  (消息队列)"
+	@echo "  Kafka:      9094  (消息队列)"
 	@echo "  Flink:      8081  (流处理)"
 	@echo "  OpenSearch: 9200  (搜索引擎)"
 	@echo "  Prometheus: 9090  (监控)"
 	@echo ""
-	@echo "配置文件:"
-	@echo "  .env     - 单机部署配置"
-	@echo "  .env.dev - 开发环境配置 (连接远程middleware)"
+	@echo "配置文件 (按服务逻辑分类):"
+	@echo "  .env     - 单机部署配置 (所有HOST=localhost)"
+	@echo "  .env.dev - 开发环境配置 (MIDDLEWARE_HOST=远程IP)"
 	@echo ""
 	@echo "部署模式:"
 	@echo "  单机部署: make up"
 	@echo "  开发环境: make up-dev (连接远程middleware)"
+	@echo ""
+	@echo "配置优势:"
+	@echo "  - 环境变量从55个减少到23个 (减少58%)"
+	@echo "  - 只需要设置4个HOST，其他配置自动派生"
+	@echo "  - 按Manager/Middleware/Processor/Indexer逻辑分类"
+	@echo "  - 修改部署拓扑只需要改对应服务的HOST"
 	@echo ""
 	@echo "快速开始: make init && make up"
 	@echo "API文档: http://localhost:8080/swagger/index.html"
