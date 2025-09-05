@@ -717,7 +717,7 @@ func (h *HealthChecker) checkKafkaHealth(ctx context.Context) *SystemComponentHe
 	}
 	
 	// 通过 Manager 自身的 Kafka API 检查
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/kafka/test-connection", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/kafka/test-connection", nil)
 	if err != nil {
 		health.Healthy = false
 		health.Status = "request_failed"
@@ -737,6 +737,13 @@ func (h *HealthChecker) checkKafkaHealth(ctx context.Context) *SystemComponentHe
 	}
 	defer resp.Body.Close()
 	
+	if resp.StatusCode != http.StatusOK {
+		health.Healthy = false
+		health.Status = "http_error"
+		health.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		return health
+	}
+	
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		health.Healthy = false
@@ -745,16 +752,25 @@ func (h *HealthChecker) checkKafkaHealth(ctx context.Context) *SystemComponentHe
 		return health
 	}
 	
-	success, _ := result["success"].(bool)
-	connected, _ := result["connected"].(bool)
+	success, successOk := result["success"].(bool)
+	connected, connectedOk := result["connected"].(bool)
 	
-	health.Healthy = success && connected
+	// 检查字段是否存在且为 true
+	health.Healthy = successOk && success && connectedOk && connected
 	if health.Healthy {
 		health.Status = "connected"
 	} else {
 		health.Status = "disconnected"
 		if errorMsg, exists := result["error"].(string); exists {
 			health.Error = errorMsg
+		} else if !successOk {
+			health.Error = "Missing 'success' field in response"
+		} else if !connectedOk {
+			health.Error = "Missing 'connected' field in response"
+		} else if !success {
+			health.Error = "Kafka connection test failed"
+		} else if !connected {
+			health.Error = "Kafka not connected"
 		}
 	}
 	health.Details = result
