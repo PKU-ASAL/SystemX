@@ -69,6 +69,19 @@ submit-configurable:
 	@echo "🖨️  All threats printed with 'CONFIG_THREAT_DETECTED' prefix"
 	@echo "🌐 Monitor at: http://localhost:8081"
 
+# 提交简单控制台测试作业 (用于基本功能验证)
+submit-console-test:
+	@echo "🖥️  Submitting Simple Console Test Job..."
+	docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_simple_console_test.py
+	@echo "✅ Simple console test job submitted!"
+	@echo "🔍 读取指定 topic prefix 的数据并输出到控制台"
+	@echo "📋 默认监听 topics: sysarmor-events-test, sysarmor-agentless-*"
+	@echo "🎯 单并行度，便于观察输出顺序"
+	@echo "📝 消息格式: '🔍 MESSAGE #N | Time | Host | Collector | Content'"
+	@echo "🖨️  All messages printed to TaskManager console"
+	@echo "🌐 Monitor at: http://localhost:8081"
+	@echo "📊 Check TaskManager logs: docker logs processor-taskmanager"
+
 # 列出所有作业
 list-jobs:
 	@echo "📋 Active Flink Jobs:"
@@ -80,7 +93,7 @@ cancel-job:
 		echo "❌ Please specify JOB_ID: make cancel-job JOB_ID=your_job_id"; \
 		exit 1; \
 	fi
-	@echo "🛑 Cancelling job $(JOB_ID)..."
+	@echo " Cancelling job $(JOB_ID)..."
 	docker compose exec flink-jobmanager flink cancel $(JOB_ID)
 
 #==============================================================================
@@ -107,6 +120,7 @@ help:
 	@echo "  make logs           - 查看所有日志"
 	@echo ""
 	@echo "📋 Job Management:"
+	@echo "  make submit-console-test - 提交简单控制台测试作业 (基本功能验证)"
 	@echo "  make submit-datastream   - 提交基础威胁检测作业 (DataStream API)"
 	@echo "  make submit-configurable - 提交基于配置文件的威胁检测作业 (推荐)"
 	@echo "  make list-jobs           - 列出所有作业"
@@ -121,9 +135,11 @@ help:
 	@echo "📖 Quick Start:"
 	@echo "  1. make setup            # 初始化环境"
 	@echo "  2. make up               # 启动集群"
-	@echo "  3. make submit-configurable # 提交配置化威胁检测作业 (推荐)"
+	@echo "  3. make submit-console-test # 提交简单测试作业 (验证基本功能)"
 	@echo "  4. make status           # 检查状态"
+	@echo "  5. docker logs processor-taskmanager # 查看控制台输出"
 	@echo ""
 	@echo "💡 Available Jobs:"
-	@echo "   - job_rules_filter_datastream.py      # 基础威胁检测"
+	@echo "   - job_simple_console_test.py           # 简单控制台测试 (推荐先测试)"
+	@echo "   - job_rules_filter_datastream.py       # 基础威胁检测"
 	@echo "   - job_rules_configuration_datastream.py # 配置化威胁检测"

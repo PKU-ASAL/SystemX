@@ -6,6 +6,7 @@
 docs/draft
 docs/patches
 tests/migrations/outputs
+scripts/data
 
 # Binaries for programs and plugins
 *.exe

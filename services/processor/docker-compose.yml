@@ -42,7 +42,7 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 5
         taskmanager.memory.process.size: 2048m
       # 基于HOST自动派生的配置
       - KAFKA_BOOTSTRAP_SERVERS=${MIDDLEWARE_HOST}:${KAFKA_PORT}
