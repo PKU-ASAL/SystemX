@@ -26,7 +26,7 @@ func NewWazuhHandler(wazuhService *wazuh.WazuhService) *WazuhHandler {
 // handleWazuhError 智能处理Wazuh错误，返回合适的HTTP状态码
 func (h *WazuhHandler) handleWazuhError(c *gin.Context, err error, operation string) {
 	errMsg := err.Error()
-	
+
 	// 根据错误类型返回不同的状态码
 	switch {
 	case strings.Contains(errMsg, "wazuh service is disabled"):
@@ -117,7 +117,40 @@ func (h *WazuhHandler) RegisterRoutes(router *gin.RouterGroup) {
 			agents.POST("/:id/upgrade", h.UpgradeAgent)
 			agents.GET("/:id/config", h.GetAgentConfig)
 			agents.PUT("/:id/config", h.UpdateAgentConfig)
+
+			// Agent详细信息
+			agents.GET("/:id/system", h.GetAgentSystem)
+			agents.GET("/:id/hardware", h.GetAgentHardware)
+			agents.GET("/:id/ports", h.GetAgentPorts)
+			agents.GET("/:id/packages", h.GetAgentPackages)
+			agents.GET("/:id/processes", h.GetAgentProcesses)
+			agents.GET("/:id/netproto", h.GetAgentNetworkProtocols)
+			agents.GET("/:id/netaddr", h.GetAgentNetworkAddresses)
+
+			// Agent统计信息
+			agents.GET("/:id/stats/logcollector", h.GetAgentLogcollectorStats)
+			agents.GET("/:id/daemons/stats", h.GetAgentDaemonStats)
+
+			// 安全扫描
+			agents.GET("/:id/ciscat", h.GetAgentCiscatResults)
+			agents.GET("/:id/sca", h.GetAgentSCAResults)
+			agents.GET("/:id/rootcheck", h.GetAgentRootcheckResults)
+			agents.DELETE("/:id/rootcheck", h.ClearAgentRootcheckResults)
+			agents.GET("/:id/rootcheck/last_scan", h.GetAgentRootcheckLastScan)
+
+			// Agent高级操作
+			agents.PUT("/:id/active-response", h.ExecuteActiveResponse)
+			agents.GET("/:id/upgrade/result", h.GetUpgradeResult)
 		}
+
+		// 批量Agent操作
+		wazuh.PUT("/agents/upgrade", h.UpgradeAgents)
+		wazuh.PUT("/agents/upgrade/custom", h.CustomUpgradeAgents)
+		wazuh.PUT("/rootcheck", h.RunRootcheck)
+
+		// 集群和概览
+		wazuh.GET("/cluster/health", h.GetClusterHealth)
+		wazuh.GET("/overview/agents", h.GetOverviewAgents)
 
 		// 组管理
 		groups := wazuh.Group("/groups")
@@ -353,7 +386,7 @@ func (h *WazuhHandler) GetManagerStatus(c *gin.Context) {
 // GetManagerLogs 获取Manager日志
 func (h *WazuhHandler) GetManagerLogs(c *gin.Context) {
 	ctx := context.Background()
-	
+
 	// 解析查询参数
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "100")
@@ -414,7 +447,7 @@ func (h *WazuhHandler) RestartManager(c *gin.Context) {
 func (h *WazuhHandler) GetManagerConfiguration(c *gin.Context) {
 	ctx := context.Background()
 	section := c.Query("section")
-	
+
 	config, err := h.wazuhService.GetManagerConfiguration(ctx, section)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -473,7 +506,7 @@ func (h *WazuhHandler) UpdateManagerConfiguration(c *gin.Context) {
 // @Router /wazuh/agents [get]
 func (h *WazuhHandler) GetAgents(c *gin.Context) {
 	ctx := context.Background()
-	
+
 	// 解析查询参数
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "100")
@@ -542,7 +575,7 @@ func (h *WazuhHandler) AddAgent(c *gin.Context) {
 // @Router /wazuh/agents/{id} [get]
 func (h *WazuhHandler) GetAgent(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	ctx := context.Background()
 	agent, err := h.wazuhService.GetAgent(ctx, agentID)
 	if err != nil {
@@ -562,7 +595,7 @@ func (h *WazuhHandler) GetAgent(c *gin.Context) {
 // UpdateAgent 更新Agent
 func (h *WazuhHandler) UpdateAgent(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	var req models.WazuhAgent
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -599,7 +632,7 @@ func (h *WazuhHandler) UpdateAgent(c *gin.Context) {
 // @Router /wazuh/agents/{id} [delete]
 func (h *WazuhHandler) DeleteAgent(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.DeleteAgent(ctx, agentID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -618,7 +651,7 @@ func (h *WazuhHandler) DeleteAgent(c *gin.Context) {
 // RestartAgent 重启Agent
 func (h *WazuhHandler) RestartAgent(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.RestartAgent(ctx, agentID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -637,7 +670,7 @@ func (h *WazuhHandler) RestartAgent(c *gin.Context) {
 // GetAgentKey 获取Agent密钥
 func (h *WazuhHandler) GetAgentKey(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	ctx := context.Background()
 	key, err := h.wazuhService.GetAgentKey(ctx, agentID)
 	if err != nil {
@@ -657,7 +690,7 @@ func (h *WazuhHandler) GetAgentKey(c *gin.Context) {
 // UpgradeAgent 升级Agent
 func (h *WazuhHandler) UpgradeAgent(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	var req struct {
 		Version string `json:"version"`
 		Force   bool   `json:"force"`
@@ -689,7 +722,7 @@ func (h *WazuhHandler) UpgradeAgent(c *gin.Context) {
 func (h *WazuhHandler) GetAgentConfig(c *gin.Context) {
 	agentID := c.Param("id")
 	section := c.Query("section")
-	
+
 	ctx := context.Background()
 	config, err := h.wazuhService.GetAgentConfig(ctx, agentID, section)
 	if err != nil {
@@ -709,7 +742,7 @@ func (h *WazuhHandler) GetAgentConfig(c *gin.Context) {
 // UpdateAgentConfig 更新Agent配置
 func (h *WazuhHandler) UpdateAgentConfig(c *gin.Context) {
 	agentID := c.Param("id")
-	
+
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -788,7 +821,7 @@ func (h *WazuhHandler) GetIndexerInfo(c *gin.Context) {
 // @Router /wazuh/indexer/indices [get]
 func (h *WazuhHandler) GetIndices(c *gin.Context) {
 	pattern := c.Query("pattern")
-	
+
 	ctx := context.Background()
 	indices, err := h.wazuhService.GetIndices(ctx, pattern)
 	if err != nil {
@@ -837,7 +870,7 @@ func (h *WazuhHandler) CreateIndex(c *gin.Context) {
 // DeleteIndex 删除索引
 func (h *WazuhHandler) DeleteIndex(c *gin.Context) {
 	indexName := c.Param("name")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.DeleteIndex(ctx, indexName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1112,7 +1145,7 @@ func (h *WazuhHandler) GetSystemStats(c *gin.Context) {
 // @Router /wazuh/groups [get]
 func (h *WazuhHandler) GetGroups(c *gin.Context) {
 	ctx := context.Background()
-	
+
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "100")
 	sort := c.Query("sort")
@@ -1171,7 +1204,7 @@ func (h *WazuhHandler) CreateGroup(c *gin.Context) {
 // GetGroup 获取单个组
 func (h *WazuhHandler) GetGroup(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	ctx := context.Background()
 	group, err := h.wazuhService.GetGroup(ctx, groupName)
 	if err != nil {
@@ -1191,7 +1224,7 @@ func (h *WazuhHandler) GetGroup(c *gin.Context) {
 // UpdateGroup 更新组
 func (h *WazuhHandler) UpdateGroup(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1219,7 +1252,7 @@ func (h *WazuhHandler) UpdateGroup(c *gin.Context) {
 // DeleteGroup 删除组
 func (h *WazuhHandler) DeleteGroup(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.DeleteGroup(ctx, groupName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1247,7 +1280,7 @@ func (h *WazuhHandler) DeleteGroup(c *gin.Context) {
 // @Router /wazuh/groups/{name}/agents [get]
 func (h *WazuhHandler) GetGroupAgents(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	ctx := context.Background()
 	agents, err := h.wazuhService.GetGroupAgents(ctx, groupName)
 	if err != nil {
@@ -1267,7 +1300,7 @@ func (h *WazuhHandler) GetGroupAgents(c *gin.Context) {
 // AddAgentToGroup 添加Agent到组
 func (h *WazuhHandler) AddAgentToGroup(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	var req struct {
 		AgentID string `json:"agent_id" binding:"required"`
 	}
@@ -1298,7 +1331,7 @@ func (h *WazuhHandler) AddAgentToGroup(c *gin.Context) {
 func (h *WazuhHandler) RemoveAgentFromGroup(c *gin.Context) {
 	groupName := c.Param("name")
 	agentID := c.Param("agent_id")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.RemoveAgentFromGroup(ctx, groupName, agentID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1317,7 +1350,7 @@ func (h *WazuhHandler) RemoveAgentFromGroup(c *gin.Context) {
 // GetGroupConfiguration 获取组配置
 func (h *WazuhHandler) GetGroupConfiguration(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	ctx := context.Background()
 	config, err := h.wazuhService.GetGroupConfiguration(ctx, groupName)
 	if err != nil {
@@ -1337,7 +1370,7 @@ func (h *WazuhHandler) GetGroupConfiguration(c *gin.Context) {
 // UpdateGroupConfiguration 更新组配置
 func (h *WazuhHandler) UpdateGroupConfiguration(c *gin.Context) {
 	groupName := c.Param("name")
-	
+
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1365,7 +1398,7 @@ func (h *WazuhHandler) UpdateGroupConfiguration(c *gin.Context) {
 // GetRules 获取规则列表
 func (h *WazuhHandler) GetRules(c *gin.Context) {
 	ctx := context.Background()
-	
+
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "100")
 	sort := c.Query("sort")
@@ -1389,7 +1422,7 @@ func (h *WazuhHandler) GetRules(c *gin.Context) {
 // GetRule 获取单个规则
 func (h *WazuhHandler) GetRule(c *gin.Context) {
 	ruleID := c.Param("id")
-	
+
 	ctx := context.Background()
 	rule, err := h.wazuhService.GetRule(ctx, ruleID)
 	if err != nil {
@@ -1436,7 +1469,7 @@ func (h *WazuhHandler) CreateRule(c *gin.Context) {
 // UpdateRule 更新规则
 func (h *WazuhHandler) UpdateRule(c *gin.Context) {
 	ruleID := c.Param("id")
-	
+
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1464,7 +1497,7 @@ func (h *WazuhHandler) UpdateRule(c *gin.Context) {
 // DeleteRule 删除规则
 func (h *WazuhHandler) DeleteRule(c *gin.Context) {
 	ruleID := c.Param("id")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.DeleteRule(ctx, ruleID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1501,7 +1534,7 @@ func (h *WazuhHandler) GetRuleFiles(c *gin.Context) {
 // GetRuleFile 获取规则文件内容
 func (h *WazuhHandler) GetRuleFile(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	ctx := context.Background()
 	content, err := h.wazuhService.GetRuleFile(ctx, filename)
 	if err != nil {
@@ -1521,7 +1554,7 @@ func (h *WazuhHandler) GetRuleFile(c *gin.Context) {
 // UpdateRuleFile 更新规则文件
 func (h *WazuhHandler) UpdateRuleFile(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	var req struct {
 		Content string `json:"content" binding:"required"`
 	}
@@ -1551,7 +1584,7 @@ func (h *WazuhHandler) UpdateRuleFile(c *gin.Context) {
 // GetDecoders 获取解码器列表
 func (h *WazuhHandler) GetDecoders(c *gin.Context) {
 	ctx := context.Background()
-	
+
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "100")
 	sort := c.Query("sort")
@@ -1575,7 +1608,7 @@ func (h *WazuhHandler) GetDecoders(c *gin.Context) {
 // GetDecoder 获取单个解码器
 func (h *WazuhHandler) GetDecoder(c *gin.Context) {
 	decoderName := c.Param("name")
-	
+
 	ctx := context.Background()
 	decoder, err := h.wazuhService.GetDecoder(ctx, decoderName)
 	if err != nil {
@@ -1622,7 +1655,7 @@ func (h *WazuhHandler) CreateDecoder(c *gin.Context) {
 // UpdateDecoder 更新解码器
 func (h *WazuhHandler) UpdateDecoder(c *gin.Context) {
 	decoderName := c.Param("name")
-	
+
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1650,7 +1683,7 @@ func (h *WazuhHandler) UpdateDecoder(c *gin.Context) {
 // DeleteDecoder 删除解码器
 func (h *WazuhHandler) DeleteDecoder(c *gin.Context) {
 	decoderName := c.Param("name")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.DeleteDecoder(ctx, decoderName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1687,7 +1720,7 @@ func (h *WazuhHandler) GetDecoderFiles(c *gin.Context) {
 // GetDecoderFile 获取解码器文件内容
 func (h *WazuhHandler) GetDecoderFile(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	ctx := context.Background()
 	content, err := h.wazuhService.GetDecoderFile(ctx, filename)
 	if err != nil {
@@ -1707,7 +1740,7 @@ func (h *WazuhHandler) GetDecoderFile(c *gin.Context) {
 // UpdateDecoderFile 更新解码器文件
 func (h *WazuhHandler) UpdateDecoderFile(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	var req struct {
 		Content string `json:"content" binding:"required"`
 	}
@@ -1737,7 +1770,7 @@ func (h *WazuhHandler) UpdateDecoderFile(c *gin.Context) {
 // GetLists 获取CDB列表
 func (h *WazuhHandler) GetLists(c *gin.Context) {
 	ctx := context.Background()
-	
+
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "100")
 	sort := c.Query("sort")
@@ -1761,7 +1794,7 @@ func (h *WazuhHandler) GetLists(c *gin.Context) {
 // GetList 获取单个CDB列表
 func (h *WazuhHandler) GetList(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	ctx := context.Background()
 	list, err := h.wazuhService.GetList(ctx, filename)
 	if err != nil {
@@ -1810,7 +1843,7 @@ func (h *WazuhHandler) CreateList(c *gin.Context) {
 // UpdateList 更新CDB列表
 func (h *WazuhHandler) UpdateList(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	var req struct {
 		Content string `json:"content" binding:"required"`
 	}
@@ -1840,7 +1873,7 @@ func (h *WazuhHandler) UpdateList(c *gin.Context) {
 // DeleteList 删除CDB列表
 func (h *WazuhHandler) DeleteList(c *gin.Context) {
 	filename := c.Param("filename")
-	
+
 	ctx := context.Background()
 	if err := h.wazuhService.DeleteList(ctx, filename); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1859,7 +1892,7 @@ func (h *WazuhHandler) DeleteList(c *gin.Context) {
 // GetIndexTemplates 获取索引模板
 func (h *WazuhHandler) GetIndexTemplates(c *gin.Context) {
 	pattern := c.Query("pattern")
-	
+
 	ctx := context.Background()
 	templates, err := h.wazuhService.GetIndexTemplates(ctx, pattern)
 	if err != nil {
@@ -1902,5 +1935,413 @@ func (h *WazuhHandler) CreateIndexTemplate(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"message": "Index template created successfully",
+	})
+}
+
+// GetAgentSystem 获取Agent系统信息
+func (h *WazuhHandler) GetAgentSystem(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	system, err := h.wazuhService.GetSystemInfo(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent system info")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    system,
+	})
+}
+
+// GetAgentHardware 获取Agent硬件信息
+func (h *WazuhHandler) GetAgentHardware(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	hardware, err := h.wazuhService.GetHardwareInfo(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent hardware info")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    hardware,
+	})
+}
+
+// GetAgentPorts 获取Agent端口信息
+func (h *WazuhHandler) GetAgentPorts(c *gin.Context) {
+	agentID := c.Param("id")
+	offset := c.DefaultQuery("offset", "0")
+	limit := c.DefaultQuery("limit", "10")
+	sort := c.Query("sort")
+	search := c.Query("search")
+
+	ctx := context.Background()
+	ports, err := h.wazuhService.GetPorts(ctx, agentID, offset, limit, sort, search)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent ports")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    ports,
+	})
+}
+
+// GetAgentPackages 获取Agent软件包信息
+func (h *WazuhHandler) GetAgentPackages(c *gin.Context) {
+	agentID := c.Param("id")
+	offset := c.DefaultQuery("offset", "0")
+	limit := c.DefaultQuery("limit", "10")
+	sort := c.Query("sort")
+	search := c.Query("search")
+
+	ctx := context.Background()
+	packages, err := h.wazuhService.GetPackages(ctx, agentID, offset, limit, sort, search)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent packages")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    packages,
+	})
+}
+
+// GetAgentProcesses 获取Agent进程信息
+func (h *WazuhHandler) GetAgentProcesses(c *gin.Context) {
+	agentID := c.Param("id")
+	offset := c.DefaultQuery("offset", "0")
+	limit := c.DefaultQuery("limit", "10")
+	sort := c.Query("sort")
+	search := c.Query("search")
+
+	ctx := context.Background()
+	processes, err := h.wazuhService.GetProcesses(ctx, agentID, offset, limit, sort, search)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent processes")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    processes,
+	})
+}
+
+// GetAgentNetworkProtocols 获取Agent网络协议信息
+func (h *WazuhHandler) GetAgentNetworkProtocols(c *gin.Context) {
+	agentID := c.Param("id")
+	offset := c.DefaultQuery("offset", "0")
+	limit := c.DefaultQuery("limit", "10")
+	sort := c.Query("sort")
+	search := c.Query("search")
+
+	ctx := context.Background()
+	protocols, err := h.wazuhService.GetNetworkProtocols(ctx, agentID, offset, limit, sort, search)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent network protocols")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    protocols,
+	})
+}
+
+// GetAgentNetworkAddresses 获取Agent网络地址信息
+func (h *WazuhHandler) GetAgentNetworkAddresses(c *gin.Context) {
+	agentID := c.Param("id")
+	offset := c.DefaultQuery("offset", "0")
+	limit := c.DefaultQuery("limit", "10")
+	sort := c.Query("sort")
+	search := c.Query("search")
+
+	ctx := context.Background()
+	addresses, err := h.wazuhService.GetNetworkAddresses(ctx, agentID, offset, limit, sort, search)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent network addresses")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    addresses,
+	})
+}
+
+// GetAgentLogcollectorStats 获取Agent日志收集器统计信息
+func (h *WazuhHandler) GetAgentLogcollectorStats(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	stats, err := h.wazuhService.GetLogcollectorStats(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent logcollector stats")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    stats,
+	})
+}
+
+// GetAgentDaemonStats 获取Agent守护进程统计信息
+func (h *WazuhHandler) GetAgentDaemonStats(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	stats, err := h.wazuhService.GetAgentDaemonStats(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent daemon stats")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    stats,
+	})
+}
+
+// GetAgentCiscatResults 获取Agent CIS-CAT扫描结果
+func (h *WazuhHandler) GetAgentCiscatResults(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	results, err := h.wazuhService.GetCiscatResults(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent CIS-CAT results")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    results,
+	})
+}
+
+// GetAgentSCAResults 获取Agent SCA扫描结果
+func (h *WazuhHandler) GetAgentSCAResults(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	results, err := h.wazuhService.GetSCAResults(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent SCA results")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    results,
+	})
+}
+
+// GetAgentRootcheckResults 获取Agent Rootcheck扫描结果
+func (h *WazuhHandler) GetAgentRootcheckResults(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	results, err := h.wazuhService.GetRootcheckResults(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent rootcheck results")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    results,
+	})
+}
+
+// ClearAgentRootcheckResults 清除Agent Rootcheck扫描结果
+func (h *WazuhHandler) ClearAgentRootcheckResults(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	if err := h.wazuhService.ClearRootcheckResults(ctx, agentID); err != nil {
+		h.handleWazuhError(c, err, "Failed to clear agent rootcheck results")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Agent rootcheck results cleared successfully",
+	})
+}
+
+// GetAgentRootcheckLastScan 获取Agent Rootcheck最后扫描时间
+func (h *WazuhHandler) GetAgentRootcheckLastScan(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	lastScan, err := h.wazuhService.GetRootcheckLastScan(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get agent rootcheck last scan")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    lastScan,
+	})
+}
+
+// ExecuteActiveResponse 执行主动响应
+func (h *WazuhHandler) ExecuteActiveResponse(c *gin.Context) {
+	var req struct {
+		Command string `json:"command" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	activeReq := &models.WazuhActiveResponseRequest{
+		Command: req.Command,
+	}
+
+	result, err := h.wazuhService.ExecuteActiveResponse(ctx, activeReq)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to execute active response")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// GetUpgradeResult 获取升级结果
+func (h *WazuhHandler) GetUpgradeResult(c *gin.Context) {
+	agentID := c.Param("id")
+
+	ctx := context.Background()
+	result, err := h.wazuhService.GetUpgradeResult(ctx, agentID)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get upgrade result")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// UpgradeAgents 批量升级Agent
+func (h *WazuhHandler) UpgradeAgents(c *gin.Context) {
+	var req models.WazuhUpgradeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	result, err := h.wazuhService.UpgradeAgents(ctx, &req)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to upgrade agents")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// CustomUpgradeAgents 自定义升级Agent
+func (h *WazuhHandler) CustomUpgradeAgents(c *gin.Context) {
+	var req models.WazuhCustomUpgradeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	result, err := h.wazuhService.CustomUpgradeAgents(ctx, &req)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to custom upgrade agents")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// RunRootcheck 运行Rootcheck扫描
+func (h *WazuhHandler) RunRootcheck(c *gin.Context) {
+	var req struct {
+		AgentsList []string `json:"agents_list" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	result, err := h.wazuhService.RunRootcheck(ctx, req.AgentsList)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to run rootcheck")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// GetClusterHealth 获取集群健康状态
+func (h *WazuhHandler) GetClusterHealth(c *gin.Context) {
+	ctx := context.Background()
+	health, err := h.wazuhService.GetClusterHealth(ctx)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get cluster health")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    health,
+	})
+}
+
+// GetOverviewAgents 获取代理概览信息
+func (h *WazuhHandler) GetOverviewAgents(c *gin.Context) {
+	ctx := context.Background()
+	overview, err := h.wazuhService.GetOverviewAgents(ctx)
+	if err != nil {
+		h.handleWazuhError(c, err, "Failed to get overview agents")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    overview,
 	})
 }

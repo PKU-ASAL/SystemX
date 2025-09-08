@@ -119,16 +119,16 @@ test_wazuh_config() {
     log_info "验证Wazuh配置..."
     local config_data='{
         "manager": {
-            "host": "wazuh-manager",
+            "host": "10.129.81.4",
             "port": 55000,
             "username": "wazuh",
-            "password": "wazuh"
+            "password": "WfvmoiqFu*0g0t425lj*Y.3SBZOYmUCR"
         },
         "indexer": {
-            "host": "wazuh-indexer",
+            "host": "10.129.81.4",
             "port": 9200,
             "username": "admin",
-            "password": "admin"
+            "password": "5uSbeSyPANO?8rcbgvAF8frpANOWon+D"
         }
     }'
     make_request "POST" "${API_BASE}/wazuh/config/validate" "$config_data"

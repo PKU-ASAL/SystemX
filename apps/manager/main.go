@@ -8,12 +8,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sysarmor/sysarmor/apps/manager/api/handlers"
 	"github.com/sysarmor/sysarmor/apps/manager/config"
-	"github.com/sysarmor/sysarmor/apps/manager/storage"
 	"github.com/sysarmor/sysarmor/apps/manager/services/wazuh"
-	
+	"github.com/sysarmor/sysarmor/apps/manager/storage"
+
 	// Swagger imports
-	"github.com/swaggo/gin-swagger"
-	"github.com/swaggo/files"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	_ "github.com/sysarmor/sysarmor/apps/manager/docs" // Swagger docs
 )
 
@@ -77,16 +77,16 @@ func main() {
 		collectors.POST("/register", collectorHandler.Register)
 		collectors.GET("/:id", collectorHandler.GetStatus)
 		collectors.GET("", collectorHandler.ListCollectors) // 支持 Query Parameters 过滤
-		
+
 		// Nova分支新增: 双向心跳路由
-		collectors.POST("/:id/heartbeat", collectorHandler.Heartbeat)      // 心跳上报
-		collectors.POST("/:id/probe", collectorHandler.ProbeHeartbeat)     // 主动探测
-		
+		collectors.POST("/:id/heartbeat", collectorHandler.Heartbeat)  // 心跳上报
+		collectors.POST("/:id/probe", collectorHandler.ProbeHeartbeat) // 主动探测
+
 		// 元数据管理路由
 		collectors.PUT("/:id/metadata", collectorHandler.UpdateMetadata)
-		
+
 		// 删除和注销路由
-		collectors.DELETE("/:id", collectorHandler.Delete)           // 删除 Collector (支持 force 参数)
+		collectors.DELETE("/:id", collectorHandler.Delete)              // 删除 Collector (支持 force 参数)
 		collectors.POST("/:id/unregister", collectorHandler.Unregister) // 注销 Collector (软删除)
 	}
 
@@ -96,10 +96,10 @@ func main() {
 	{
 		// 脚本资源 (动态生成)
 		resources.GET("/scripts/:deployment_type/:script_name", resourcesHandler.GetScript)
-		
+
 		// 二进制资源 (静态下载)
 		resources.GET("/binaries/:filename", resourcesHandler.GetBinary)
-		
+
 		// 配置资源 (动态生成)
 		resources.GET("/configs/:deployment_type/:config_name", resourcesHandler.GetConfig)
 	}
@@ -128,11 +128,11 @@ func main() {
 		events.GET("/query", eventsHandler.QueryEvents)
 		events.GET("/latest", eventsHandler.GetLatestEvents)
 		events.POST("/search", eventsHandler.SearchEvents)
-		
+
 		// Collector 相关事件查询
 		events.GET("/collectors/:collector_id", eventsHandler.QueryCollectorEvents)
 		events.GET("/collectors/topics", eventsHandler.GetCollectorTopics)
-		
+
 		// Topic 管理
 		events.GET("/topics", eventsHandler.ListTopics)
 		events.GET("/topics/:topic/info", eventsHandler.GetTopicInfo)
@@ -148,39 +148,135 @@ func main() {
 		log.Printf("❌ Failed to initialize Wazuh service: %v", err)
 	} else {
 		wazuhHandler := handlers.NewWazuhHandler(wazuhService)
-		
-		// 直接注册Wazuh路由以便Swagger识别
+
+		// 完整的Wazuh路由注册
 		wazuhGroup := api.Group("/wazuh")
 		{
-			// 配置管理
-			wazuhGroup.GET("/config", wazuhHandler.GetConfig)
-			wazuhGroup.PUT("/config", wazuhHandler.UpdateConfig)
-			
-			// Manager API  
-			wazuhGroup.GET("/manager/info", wazuhHandler.GetManagerInfo)
-			wazuhGroup.GET("/manager/status", wazuhHandler.GetManagerStatus)
-			
+			config := wazuhGroup.Group("/config")
+			{
+				config.GET("", wazuhHandler.GetConfig)
+				config.PUT("", wazuhHandler.UpdateConfig)
+				config.POST("/validate", wazuhHandler.ValidateConfig)
+				config.POST("/reload", wazuhHandler.ReloadConfig)
+			}
+
+			manager := wazuhGroup.Group("/manager")
+			{
+				manager.GET("/info", wazuhHandler.GetManagerInfo)
+				manager.GET("/status", wazuhHandler.GetManagerStatus)
+				manager.GET("/logs", wazuhHandler.GetManagerLogs)
+				manager.GET("/stats", wazuhHandler.GetManagerStats)
+				manager.POST("/restart", wazuhHandler.RestartManager)
+				manager.GET("/configuration", wazuhHandler.GetManagerConfiguration)
+			}
+
 			// Agent管理
-			wazuhGroup.GET("/agents", wazuhHandler.GetAgents)
-			wazuhGroup.POST("/agents", wazuhHandler.AddAgent)
-			wazuhGroup.GET("/agents/:id", wazuhHandler.GetAgent)
-			wazuhGroup.DELETE("/agents/:id", wazuhHandler.DeleteAgent)
-			wazuhGroup.GET("/agents/:id/key", wazuhHandler.GetAgentKey)
-			
+			agents := wazuhGroup.Group("/agents")
+			{
+				agents.GET("", wazuhHandler.GetAgents)
+				agents.POST("", wazuhHandler.AddAgent)
+				agents.GET("/:id", wazuhHandler.GetAgent)
+				agents.PUT("/:id", wazuhHandler.UpdateAgent)
+				agents.DELETE("/:id", wazuhHandler.DeleteAgent)
+				agents.POST("/:id/restart", wazuhHandler.RestartAgent)
+				agents.GET("/:id/key", wazuhHandler.GetAgentKey)
+				agents.POST("/:id/upgrade", wazuhHandler.UpgradeAgent)
+
+				// Agent详细信息
+				agents.GET("/:id/system", wazuhHandler.GetAgentSystem)
+				agents.GET("/:id/hardware", wazuhHandler.GetAgentHardware)
+				agents.GET("/:id/ports", wazuhHandler.GetAgentPorts)
+				agents.GET("/:id/packages", wazuhHandler.GetAgentPackages)
+				agents.GET("/:id/processes", wazuhHandler.GetAgentProcesses)
+				agents.GET("/:id/netproto", wazuhHandler.GetAgentNetworkProtocols)
+				agents.GET("/:id/netaddr", wazuhHandler.GetAgentNetworkAddresses)
+
+				// Agent统计信息
+				agents.GET("/:id/stats/logcollector", wazuhHandler.GetAgentLogcollectorStats)
+				agents.GET("/:id/daemons/stats", wazuhHandler.GetAgentDaemonStats)
+
+				// 安全扫描
+				agents.GET("/:id/ciscat", wazuhHandler.GetAgentCiscatResults)
+				agents.GET("/:id/sca", wazuhHandler.GetAgentSCAResults)
+				agents.GET("/:id/rootcheck", wazuhHandler.GetAgentRootcheckResults)
+				agents.DELETE("/:id/rootcheck", wazuhHandler.ClearAgentRootcheckResults)
+				agents.GET("/:id/rootcheck/last_scan", wazuhHandler.GetAgentRootcheckLastScan)
+
+				// Agent高级操作
+				agents.PUT("/:id/active-response", wazuhHandler.ExecuteActiveResponse)
+				agents.GET("/:id/upgrade/result", wazuhHandler.GetUpgradeResult)
+			}
+
+			// 批量Agent操作
+			wazuhGroup.PUT("/agents/upgrade", wazuhHandler.UpgradeAgents)
+			wazuhGroup.PUT("/agents/upgrade/custom", wazuhHandler.CustomUpgradeAgents)
+			wazuhGroup.PUT("/rootcheck", wazuhHandler.RunRootcheck)
+
+			// 集群和概览
+			wazuhGroup.GET("/cluster/health", wazuhHandler.GetClusterHealth)
+			wazuhGroup.GET("/overview/agents", wazuhHandler.GetOverviewAgents)
+
 			// 组管理
-			wazuhGroup.GET("/groups", wazuhHandler.GetGroups)
-			wazuhGroup.POST("/groups", wazuhHandler.CreateGroup)
-			wazuhGroup.GET("/groups/:name/agents", wazuhHandler.GetGroupAgents)
-			
+			groups := wazuhGroup.Group("/groups")
+			{
+				groups.GET("", wazuhHandler.GetGroups)
+				groups.POST("", wazuhHandler.CreateGroup)
+				groups.GET("/:name", wazuhHandler.GetGroup)
+				groups.PUT("/:name", wazuhHandler.UpdateGroup)
+				groups.DELETE("/:name", wazuhHandler.DeleteGroup)
+				groups.GET("/:name/agents", wazuhHandler.GetGroupAgents)
+				groups.POST("/:name/agents", wazuhHandler.AddAgentToGroup)
+				groups.DELETE("/:name/agents/:agent_id", wazuhHandler.RemoveAgentFromGroup)
+				groups.GET("/:name/configuration", wazuhHandler.GetGroupConfiguration)
+				groups.PUT("/:name/configuration", wazuhHandler.UpdateGroupConfiguration)
+			}
+
+			// 规则管理
+			rules := wazuhGroup.Group("/rules")
+			{
+				rules.GET("", wazuhHandler.GetRules)
+				rules.GET("/:id", wazuhHandler.GetRule)
+				rules.POST("", wazuhHandler.CreateRule)
+				rules.PUT("/:id", wazuhHandler.UpdateRule)
+				rules.DELETE("/:id", wazuhHandler.DeleteRule)
+				rules.GET("/files", wazuhHandler.GetRuleFiles)
+				rules.GET("/files/:filename", wazuhHandler.GetRuleFile)
+				rules.PUT("/files/:filename", wazuhHandler.UpdateRuleFile)
+			}
+
 			// Indexer API
-			wazuhGroup.GET("/indexer/health", wazuhHandler.GetIndexerHealth)
-			wazuhGroup.GET("/indexer/indices", wazuhHandler.GetIndices)
-			
+			indexer := wazuhGroup.Group("/indexer")
+			{
+				indexer.GET("/health", wazuhHandler.GetIndexerHealth)
+				indexer.GET("/info", wazuhHandler.GetIndexerInfo)
+				indexer.GET("/indices", wazuhHandler.GetIndices)
+				indexer.POST("/indices", wazuhHandler.CreateIndex)
+				indexer.DELETE("/indices/:name", wazuhHandler.DeleteIndex)
+				indexer.GET("/templates", wazuhHandler.GetIndexTemplates)
+				indexer.POST("/templates", wazuhHandler.CreateIndexTemplate)
+			}
+
 			// 告警查询
-			wazuhGroup.POST("/alerts/search", wazuhHandler.SearchAlerts)
-			wazuhGroup.GET("/alerts/stats", wazuhHandler.GetAlertStats)
+			alerts := wazuhGroup.Group("/alerts")
+			{
+				alerts.POST("/search", wazuhHandler.SearchAlerts)
+				alerts.GET("/agent/:id", wazuhHandler.GetAlertsByAgent)
+				alerts.GET("/rule/:id", wazuhHandler.GetAlertsByRule)
+				alerts.GET("/level/:level", wazuhHandler.GetAlertsByLevel)
+				alerts.POST("/aggregate", wazuhHandler.AggregateAlerts)
+				alerts.GET("/stats", wazuhHandler.GetAlertStats)
+			}
+
+			// 监控和统计
+			monitoring := wazuhGroup.Group("/monitoring")
+			{
+				monitoring.GET("/overview", wazuhHandler.GetMonitoringOverview)
+				monitoring.GET("/agents/summary", wazuhHandler.GetAgentsSummary)
+				monitoring.GET("/alerts/summary", wazuhHandler.GetAlertsSummary)
+				monitoring.GET("/system/stats", wazuhHandler.GetSystemStats)
+			}
 		}
-		
+
 		log.Printf("✅ Wazuh routes registered successfully")
 	}
 
@@ -190,14 +286,14 @@ func main() {
 	{
 		// 连接测试
 		kafka.GET("/test-connection", kafkaHandler.TestKafkaConnection)
-		
+
 		// 集群管理
 		kafka.GET("/clusters", kafkaHandler.GetClusters)
-		
+
 		// Broker 管理
 		kafka.GET("/brokers", kafkaHandler.GetBrokers)
 		kafka.GET("/brokers/overview", kafkaHandler.GetBrokersOverview) // 新增：Brokers 概览
-		
+
 		// Topic 管理
 		kafka.GET("/topics", kafkaHandler.GetTopics)
 		kafka.GET("/topics/overview", kafkaHandler.GetTopicsOverview) // 新增：Topics 概览
@@ -205,14 +301,14 @@ func main() {
 		kafka.GET("/topics/:topic", kafkaHandler.GetTopicDetails)
 		kafka.DELETE("/topics/:topic", kafkaHandler.DeleteTopic)
 		kafka.GET("/topics/:topic/messages", kafkaHandler.GetTopicMessages)
-		
+
 		// Topic 配置管理
 		kafka.GET("/topics/:topic/config", kafkaHandler.GetTopicConfig)
 		kafka.PUT("/topics/:topic/config", kafkaHandler.UpdateTopicConfig)
-		
+
 		// Topic 指标管理
 		kafka.GET("/topics/:topic/metrics", kafkaHandler.GetTopicMetrics)
-		
+
 		// Consumer Group 管理
 		kafka.GET("/consumer-groups", kafkaHandler.GetConsumerGroups)
 		kafka.GET("/consumer-groups/:group", kafkaHandler.GetConsumerGroupDetails)
@@ -220,24 +316,24 @@ func main() {
 
 	// Flink 管理路由
 	log.Printf("🔧 Initializing Flink handler with URL: %s", cfg.GetFlinkURL())
-	
+
 	flinkHandler := handlers.NewFlinkHandler(cfg.GetFlinkURL())
 	flink := services.Group("/flink")
 	{
 		// 连接测试
 		flink.GET("/test-connection", flinkHandler.TestFlinkConnection)
-		
+
 		// 集群管理
 		flink.GET("/overview", flinkHandler.GetClusterOverview)
 		flink.GET("/config", flinkHandler.GetConfig)
 		flink.GET("/health", flinkHandler.GetClusterHealth)
-		
+
 		// 作业管理
 		flink.GET("/jobs", flinkHandler.GetJobs)
 		flink.GET("/jobs/overview", flinkHandler.GetJobsOverview)
 		flink.GET("/jobs/:job_id", flinkHandler.GetJobDetails)
 		flink.GET("/jobs/:job_id/metrics", flinkHandler.GetJobMetrics)
-		
+
 		// TaskManager 管理
 		flink.GET("/taskmanagers", flinkHandler.GetTaskManagers)
 		flink.GET("/taskmanagers/overview", flinkHandler.GetTaskManagersOverview)
@@ -248,14 +344,14 @@ func main() {
 	log.Printf("🔍 Initializing OpenSearch handler with URL: %s", cfg.GetOpenSearchURL())
 	log.Printf("🔍 OpenSearch Username: %s", cfg.GetOpenSearchUsername())
 	log.Printf("🔍 About to call handlers.NewOpenSearchHandler...")
-	
+
 	opensearchHandler := handlers.NewOpenSearchHandler(
-		cfg.GetOpenSearchURL(),     // 从配置文件读取 OpenSearch URL
+		cfg.GetOpenSearchURL(),      // 从配置文件读取 OpenSearch URL
 		cfg.GetOpenSearchUsername(), // 从配置文件读取用户名
 		cfg.GetOpenSearchPassword(), // 从配置文件读取密码
 	)
 	log.Printf("✅ OpenSearch handler initialized successfully")
-	
+
 	if opensearchHandler != nil {
 		opensearch := services.Group("/opensearch")
 		{
@@ -265,10 +361,10 @@ func main() {
 				cluster.GET("/health", opensearchHandler.GetClusterHealth)
 				cluster.GET("/stats", opensearchHandler.GetClusterStats)
 			}
-			
+
 			// 索引管理
 			opensearch.GET("/indices", opensearchHandler.GetIndices)
-			
+
 			// 事件搜索和查询
 			events := opensearch.Group("/events")
 			{
@@ -288,7 +384,7 @@ func main() {
 
 	// Swagger 文档路由
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	
+
 	// API 文档重定向
 	r.GET("/docs", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
