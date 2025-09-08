@@ -20,9 +20,42 @@ type WazuhService struct {
 
 // NewWazuhService 创建Wazuh服务 (遵循现有构造函数模式)
 func NewWazuhService(cfg *config.Config) (*WazuhService, error) {
-	// 暂时返回一个禁用的服务，因为配置系统还未完全集成
-	fmt.Printf("🔌 Wazuh service disabled (configuration not yet integrated)")
-	return &WazuhService{enabled: false}, nil
+	// 检查Wazuh是否启用
+	if !cfg.IsWazuhEnabled() {
+		fmt.Printf("🔌 Wazuh service disabled (WAZUH_ENABLED=false)\n")
+		return &WazuhService{enabled: false}, nil
+	}
+
+	// 加载Wazuh配置
+	wazuhConfig, err := cfg.GetWazuhConfig()
+	if err != nil {
+		fmt.Printf("❌ Failed to load Wazuh config: %v\n", err)
+		return &WazuhService{enabled: false}, nil
+	}
+
+	// 创建配置管理器
+	configManager := NewConfigManager(wazuhConfig, cfg.GetWazuhConfigPath())
+
+	// 创建服务实例
+	service := &WazuhService{
+		config:        wazuhConfig,
+		configManager: configManager,
+		enabled:       true,
+	}
+
+	// 初始化客户端
+	if wazuhConfig.IsManagerEnabled() {
+		service.managerClient = NewManagerClient(wazuhConfig)
+		fmt.Printf("✅ Wazuh Manager client initialized: %s\n", wazuhConfig.Wazuh.Manager.URL)
+	}
+
+	if wazuhConfig.IsIndexerEnabled() {
+		service.indexerClient = NewIndexerClient(wazuhConfig)
+		fmt.Printf("✅ Wazuh Indexer client initialized: %s\n", wazuhConfig.Wazuh.Indexer.URL)
+	}
+
+	fmt.Printf("🛡️ Wazuh service initialized successfully\n")
+	return service, nil
 }
 
 // IsEnabled 检查服务是否启用
@@ -119,10 +152,10 @@ func (s *WazuhService) UpdateConfig(ctx context.Context, req map[string]interfac
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 将map[string]interface{}转换为WazuhDynamicAuthRequest
 	dynamicReq := &models.WazuhDynamicAuthRequest{}
-	
+
 	// 解析Manager配置
 	if managerData, ok := req["manager"].(map[string]interface{}); ok {
 		dynamicReq.Manager = &models.WazuhManagerAuthConfig{}
@@ -142,7 +175,7 @@ func (s *WazuhService) UpdateConfig(ctx context.Context, req map[string]interfac
 			dynamicReq.Manager.TLSVerify = &tlsVerify
 		}
 	}
-	
+
 	// 解析Indexer配置
 	if indexerData, ok := req["indexer"].(map[string]interface{}); ok {
 		dynamicReq.Indexer = &models.WazuhIndexerAuthConfig{}
@@ -162,7 +195,7 @@ func (s *WazuhService) UpdateConfig(ctx context.Context, req map[string]interfac
 			dynamicReq.Indexer.TLSVerify = &tlsVerify
 		}
 	}
-	
+
 	return s.configManager.UpdateConfig(ctx, dynamicReq)
 }
 
@@ -171,15 +204,15 @@ func (s *WazuhService) ValidateConfig(ctx context.Context, req map[string]interf
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 构建测试请求
 	testReq := &models.WazuhAuthTestRequest{
 		Type: models.WazuhAuthTestTypeBoth,
 	}
-	
+
 	// 将map转换为配置结构
 	dynamicReq := &models.WazuhDynamicAuthRequest{}
-	
+
 	if managerData, ok := req["manager"].(map[string]interface{}); ok {
 		dynamicReq.Manager = &models.WazuhManagerAuthConfig{}
 		if url, ok := managerData["url"].(string); ok {
@@ -192,7 +225,7 @@ func (s *WazuhService) ValidateConfig(ctx context.Context, req map[string]interf
 			dynamicReq.Manager.Password = password
 		}
 	}
-	
+
 	if indexerData, ok := req["indexer"].(map[string]interface{}); ok {
 		dynamicReq.Indexer = &models.WazuhIndexerAuthConfig{}
 		if url, ok := indexerData["url"].(string); ok {
@@ -205,19 +238,19 @@ func (s *WazuhService) ValidateConfig(ctx context.Context, req map[string]interf
 			dynamicReq.Indexer.Password = password
 		}
 	}
-	
+
 	testReq.Config = dynamicReq
-	
+
 	// 执行连接测试
 	result, err := s.configManager.TestConnection(ctx, testReq)
 	if err != nil {
 		return err
 	}
-	
+
 	if result.Overall != "success" {
 		return fmt.Errorf("configuration validation failed: %s", result.Overall)
 	}
-	
+
 	return nil
 }
 
@@ -226,7 +259,7 @@ func (s *WazuhService) ReloadConfig(ctx context.Context) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 重置为静态配置
 	s.configManager.ResetToStaticConfig()
 	return nil
@@ -237,12 +270,12 @@ func (s *WazuhService) GetManagerInfo(ctx context.Context) (interface{}, error) 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetManagerInfo(ctx)
 }
 
@@ -251,12 +284,12 @@ func (s *WazuhService) GetManagerStatus(ctx context.Context) (interface{}, error
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetManagerStatus(ctx)
 }
 
@@ -265,24 +298,24 @@ func (s *WazuhService) GetManagerLogs(ctx context.Context, offset, limit, level,
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := map[string]interface{}{
 		"offset": parseInt(offset),
 		"limit":  parseInt(limit),
 	}
-	
+
 	if level != "" {
 		params["level"] = level
 	}
 	if search != "" {
 		params["search"] = search
 	}
-	
+
 	return client.GetManagerLogs(ctx, params)
 }
 
@@ -291,12 +324,12 @@ func (s *WazuhService) GetManagerStats(ctx context.Context) (interface{}, error)
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetManagerStats(ctx)
 }
 
@@ -305,12 +338,12 @@ func (s *WazuhService) RestartManager(ctx context.Context) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.RestartManager(ctx)
 	return err
 }
@@ -320,12 +353,12 @@ func (s *WazuhService) GetManagerConfiguration(ctx context.Context, section stri
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetManagerConfiguration(ctx, section)
 }
 
@@ -334,12 +367,12 @@ func (s *WazuhService) UpdateManagerConfiguration(ctx context.Context, req map[s
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.UpdateManagerConfiguration(ctx, req)
 }
 
@@ -348,12 +381,12 @@ func (s *WazuhService) GetAgents(ctx context.Context, offset, limit, sort, searc
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 转换参数
 	params := &WazuhAgentParams{
 		Offset: parseInt(offset),
@@ -362,7 +395,7 @@ func (s *WazuhService) GetAgents(ctx context.Context, offset, limit, sort, searc
 		Search: search,
 		Status: status,
 	}
-	
+
 	return client.GetAgents(ctx, params)
 }
 
@@ -371,18 +404,18 @@ func (s *WazuhService) AddAgent(ctx context.Context, req *models.WazuhAgent) (in
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 转换请求格式
 	addReq := &models.WazuhAddAgentRequest{
 		Name: req.Name,
 		IP:   req.IP,
 	}
-	
+
 	return client.AddAgent(ctx, addReq)
 }
 
@@ -391,12 +424,12 @@ func (s *WazuhService) GetAgent(ctx context.Context, agentID string) (interface{
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetAgent(ctx, agentID)
 }
 
@@ -405,18 +438,18 @@ func (s *WazuhService) UpdateAgent(ctx context.Context, agentID string, req *mod
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 构建更新请求
 	updateReq := &models.WazuhUpdateAgentRequest{
 		Name: req.Name,
 		IP:   req.IP,
 	}
-	
+
 	_, err := client.UpdateAgent(ctx, agentID, updateReq)
 	return err
 }
@@ -426,12 +459,12 @@ func (s *WazuhService) DeleteAgent(ctx context.Context, agentID string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.DeleteAgent(ctx, agentID, false)
 	return err
 }
@@ -441,12 +474,12 @@ func (s *WazuhService) RestartAgent(ctx context.Context, agentID string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.RestartAgent(ctx, agentID)
 	return err
 }
@@ -456,21 +489,21 @@ func (s *WazuhService) GetAgentKey(ctx context.Context, agentID string) (string,
 	if !s.enabled {
 		return "", fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return "", fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	keyResp, err := client.GetAgentKey(ctx, agentID)
 	if err != nil {
 		return "", err
 	}
-	
+
 	if len(keyResp.Data.AffectedItems) > 0 {
 		return keyResp.Data.AffectedItems[0].Key, nil
 	}
-	
+
 	return "", fmt.Errorf("no key found for agent %s", agentID)
 }
 
@@ -479,22 +512,22 @@ func (s *WazuhService) UpgradeAgent(ctx context.Context, agentID, version string
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 构建升级请求
 	upgradeReq := &models.WazuhUpgradeRequest{
 		AgentsList: []string{agentID},
 		Force:      force,
 	}
-	
+
 	if version != "" {
 		upgradeReq.UpgradeVersion = version
 	}
-	
+
 	_, err := client.UpgradeAgents(ctx, upgradeReq)
 	return err
 }
@@ -504,12 +537,12 @@ func (s *WazuhService) GetAgentConfig(ctx context.Context, agentID, section stri
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetAgentConfiguration(ctx, agentID, section)
 }
 
@@ -518,12 +551,12 @@ func (s *WazuhService) UpdateAgentConfig(ctx context.Context, agentID string, re
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.UpdateAgentConfiguration(ctx, agentID, req)
 }
 
@@ -532,12 +565,12 @@ func (s *WazuhService) GetSystemInfo(ctx context.Context, agentID string) (inter
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetSystemInfo(ctx, agentID)
 }
 
@@ -546,12 +579,12 @@ func (s *WazuhService) GetHardwareInfo(ctx context.Context, agentID string) (int
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetHardwareInfo(ctx, agentID)
 }
 
@@ -560,19 +593,19 @@ func (s *WazuhService) GetNetworkAddresses(ctx context.Context, agentID string, 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhNetworkParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetNetworkAddresses(ctx, agentID, params)
 }
 
@@ -581,19 +614,19 @@ func (s *WazuhService) GetProcesses(ctx context.Context, agentID string, offset,
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhProcessParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetProcesses(ctx, agentID, params)
 }
 
@@ -602,19 +635,19 @@ func (s *WazuhService) GetPackages(ctx context.Context, agentID string, offset, 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhPackageParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetPackages(ctx, agentID, params)
 }
 
@@ -623,19 +656,19 @@ func (s *WazuhService) GetPorts(ctx context.Context, agentID string, offset, lim
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhPortParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetPorts(ctx, agentID, params)
 }
 
@@ -644,19 +677,19 @@ func (s *WazuhService) GetHotfixes(ctx context.Context, agentID string, offset, 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhHotfixParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetHotfixes(ctx, agentID, params)
 }
 
@@ -665,19 +698,19 @@ func (s *WazuhService) GetNetworkProtocols(ctx context.Context, agentID string, 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhNetworkParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetNetworkProtocols(ctx, agentID, params)
 }
 
@@ -686,12 +719,12 @@ func (s *WazuhService) GetAgentStats(ctx context.Context, agentID string) (inter
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetAgentStats(ctx, agentID)
 }
 
@@ -700,12 +733,12 @@ func (s *WazuhService) GetLogcollectorStats(ctx context.Context, agentID string)
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetLogcollectorStats(ctx, agentID)
 }
 
@@ -714,12 +747,12 @@ func (s *WazuhService) GetAgentDaemonStats(ctx context.Context, agentID string) 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetAgentDaemonStats(ctx, agentID)
 }
 
@@ -728,12 +761,12 @@ func (s *WazuhService) UpgradeAgents(ctx context.Context, req *models.WazuhUpgra
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.UpgradeAgents(ctx, req)
 }
 
@@ -742,12 +775,12 @@ func (s *WazuhService) CustomUpgradeAgents(ctx context.Context, req *models.Wazu
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.CustomUpgradeAgents(ctx, req)
 }
 
@@ -756,12 +789,12 @@ func (s *WazuhService) GetUpgradeResult(ctx context.Context, agentID string) (in
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetUpgradeResult(ctx, []string{agentID})
 }
 
@@ -770,12 +803,12 @@ func (s *WazuhService) GetCiscatResults(ctx context.Context, agentID string) (in
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetCiscatResults(ctx, agentID)
 }
 
@@ -784,12 +817,12 @@ func (s *WazuhService) GetSCAResults(ctx context.Context, agentID string) (inter
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetSCAResults(ctx, agentID)
 }
 
@@ -798,16 +831,16 @@ func (s *WazuhService) GetRootcheckResults(ctx context.Context, agentID string) 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := &WazuhAgentParams{
 		Limit: 100, // 默认限制
 	}
-	
+
 	return client.GetRootcheckResults(ctx, agentID, params)
 }
 
@@ -816,12 +849,12 @@ func (s *WazuhService) ClearRootcheckResults(ctx context.Context, agentID string
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.ClearRootcheckResults(ctx, agentID)
 	return err
 }
@@ -831,12 +864,12 @@ func (s *WazuhService) GetRootcheckLastScan(ctx context.Context, agentID string)
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetRootcheckLastScan(ctx, agentID)
 }
 
@@ -845,12 +878,12 @@ func (s *WazuhService) RunRootcheck(ctx context.Context, agentsList []string) (i
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.RunRootcheck(ctx, agentsList)
 }
 
@@ -859,12 +892,12 @@ func (s *WazuhService) ExecuteActiveResponse(ctx context.Context, req *models.Wa
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.ExecuteActiveResponse(ctx, req)
 }
 
@@ -873,12 +906,12 @@ func (s *WazuhService) GetOverviewAgents(ctx context.Context) (interface{}, erro
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetOverviewAgents(ctx)
 }
 
@@ -887,12 +920,12 @@ func (s *WazuhService) GetIndexerHealth(ctx context.Context) (interface{}, error
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.HealthCheck(ctx)
 }
 
@@ -901,12 +934,12 @@ func (s *WazuhService) GetIndexerInfo(ctx context.Context) (interface{}, error) 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetClusterInfo(ctx)
 }
 
@@ -915,12 +948,12 @@ func (s *WazuhService) SearchEvents(ctx context.Context, query *models.WazuhSear
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.SearchAlerts(ctx, query)
 }
 
@@ -929,12 +962,12 @@ func (s *WazuhService) GetEventByID(ctx context.Context, indexType, eventID stri
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetEventByID(ctx, indexType, eventID)
 }
 
@@ -943,12 +976,12 @@ func (s *WazuhService) GetAggregations(ctx context.Context, query *models.WazuhA
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetAggregations(ctx, query)
 }
 
@@ -957,12 +990,12 @@ func (s *WazuhService) GetIndices(ctx context.Context, pattern string) (interfac
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetIndices(ctx, pattern)
 }
 
@@ -971,12 +1004,12 @@ func (s *WazuhService) GetClusterHealth(ctx context.Context) (interface{}, error
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.HealthCheck(ctx)
 }
 
@@ -985,12 +1018,12 @@ func (s *WazuhService) GetGroups(ctx context.Context, offset, limit, sort, searc
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 转换参数
 	params := &WazuhGroupParams{
 		Offset: parseInt(offset),
@@ -998,7 +1031,7 @@ func (s *WazuhService) GetGroups(ctx context.Context, offset, limit, sort, searc
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetGroups(ctx, params)
 }
 
@@ -1007,12 +1040,12 @@ func (s *WazuhService) CreateGroup(ctx context.Context, name string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.CreateGroup(ctx, name)
 	return err
 }
@@ -1022,18 +1055,18 @@ func (s *WazuhService) GetGroup(ctx context.Context, name string) (interface{}, 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 通过组列表查询特定组
 	params := &WazuhGroupParams{
 		Search: name,
 		Limit:  1,
 	}
-	
+
 	return client.GetGroups(ctx, params)
 }
 
@@ -1042,7 +1075,7 @@ func (s *WazuhService) UpdateGroup(ctx context.Context, name string, req map[str
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// Wazuh Manager API不直接支持组更新，通常通过配置文件管理
 	return fmt.Errorf("group update not supported by Wazuh Manager API")
 }
@@ -1052,7 +1085,7 @@ func (s *WazuhService) DeleteGroup(ctx context.Context, name string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// Wazuh Manager API不直接支持组删除，需要通过文件系统操作
 	return fmt.Errorf("group deletion not supported by Wazuh Manager API")
 }
@@ -1062,12 +1095,12 @@ func (s *WazuhService) AddAgentToGroup(ctx context.Context, groupName, agentID s
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.AssignAgentToGroup(ctx, agentID, groupName)
 	return err
 }
@@ -1077,13 +1110,13 @@ func (s *WazuhService) RemoveAgentFromGroup(ctx context.Context, groupName, agen
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 将Agent分配到default组来实现从当前组移除
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.AssignAgentToGroup(ctx, agentID, "default")
 	return err
 }
@@ -1093,7 +1126,7 @@ func (s *WazuhService) UpdateGroupConfiguration(ctx context.Context, name string
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 组配置更新通常通过文件上传实现，这里暂不实现
 	return fmt.Errorf("group configuration update requires file upload, not yet implemented")
 }
@@ -1103,12 +1136,12 @@ func (s *WazuhService) GetGroupAgents(ctx context.Context, groupID string, param
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 解析可选参数
 	var offset, limit, sort, search string
 	if len(params) > 0 {
@@ -1123,14 +1156,14 @@ func (s *WazuhService) GetGroupAgents(ctx context.Context, groupID string, param
 	if len(params) > 3 {
 		search = params[3]
 	}
-	
+
 	agentParams := &WazuhAgentParams{
 		Offset: parseInt(offset),
 		Limit:  parseInt(limit),
 		Sort:   sort,
 		Search: search,
 	}
-	
+
 	return client.GetGroupAgents(ctx, groupID, agentParams)
 }
 
@@ -1139,12 +1172,12 @@ func (s *WazuhService) GetGroupConfiguration(ctx context.Context, groupID string
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetGroupConfiguration(ctx, groupID)
 }
 
@@ -1153,12 +1186,12 @@ func (s *WazuhService) GetGroupFiles(ctx context.Context, groupID string) (inter
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetGroupFiles(ctx, groupID)
 }
 
@@ -1167,12 +1200,12 @@ func (s *WazuhService) GetGroupFile(ctx context.Context, groupID, filename strin
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetGroupFile(ctx, groupID, filename)
 }
 
@@ -1181,12 +1214,12 @@ func (s *WazuhService) RestartGroupAgents(ctx context.Context, groupID string) (
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.RestartGroupAgents(ctx, groupID)
 }
 
@@ -1195,12 +1228,12 @@ func (s *WazuhService) AssignAgentToGroup(ctx context.Context, agentID, groupID 
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	_, err := client.AssignAgentToGroup(ctx, agentID, groupID)
 	return err
 }
@@ -1210,12 +1243,12 @@ func (s *WazuhService) GetAgentsSummary(ctx context.Context) (interface{}, error
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	return client.GetAgentsSummary(ctx)
 }
 
@@ -1224,9 +1257,9 @@ func (s *WazuhService) GetMonitoringOverview(ctx context.Context) (interface{}, 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	overview := make(map[string]interface{})
-	
+
 	// 获取Manager状态
 	if s.IsManagerEnabled() {
 		if client := s.GetManagerClient(); client != nil {
@@ -1241,7 +1274,7 @@ func (s *WazuhService) GetMonitoringOverview(ctx context.Context) (interface{}, 
 			}
 		}
 	}
-	
+
 	// 获取Indexer状态
 	if s.IsIndexerEnabled() {
 		if client := s.GetIndexerClient(); client != nil {
@@ -1253,7 +1286,7 @@ func (s *WazuhService) GetMonitoringOverview(ctx context.Context) (interface{}, 
 			}
 		}
 	}
-	
+
 	return overview, nil
 }
 
@@ -1262,12 +1295,12 @@ func (s *WazuhService) SearchAlerts(ctx context.Context, query *models.WazuhSear
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.SearchAlerts(ctx, query)
 }
 
@@ -1276,12 +1309,12 @@ func (s *WazuhService) GetAlertsByAgent(ctx context.Context, agentID string, lim
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetAlertsByAgent(ctx, agentID, limit)
 }
 
@@ -1290,12 +1323,12 @@ func (s *WazuhService) GetAlertsByRule(ctx context.Context, ruleID string, limit
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetAlertsByRule(ctx, ruleID, limit)
 }
 
@@ -1304,12 +1337,12 @@ func (s *WazuhService) GetAlertsByLevel(ctx context.Context, level, limit int) (
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetAlertsByLevel(ctx, level, limit)
 }
 
@@ -1318,12 +1351,12 @@ func (s *WazuhService) AggregateAlerts(ctx context.Context, aggType, field strin
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.AggregateAlerts(ctx, aggType, field, size)
 }
 
@@ -1332,12 +1365,12 @@ func (s *WazuhService) CreateIndex(ctx context.Context, name string, settings ma
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.CreateIndex(ctx, name, settings)
 }
 
@@ -1346,12 +1379,12 @@ func (s *WazuhService) DeleteIndex(ctx context.Context, name string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.DeleteIndex(ctx, name)
 }
 
@@ -1360,12 +1393,12 @@ func (s *WazuhService) GetIndexTemplates(ctx context.Context, pattern string) (i
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.GetIndexTemplates(ctx, pattern)
 }
 
@@ -1374,12 +1407,12 @@ func (s *WazuhService) CreateIndexTemplate(ctx context.Context, name string, tem
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetIndexerClient()
 	if client == nil {
 		return fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	return client.CreateIndexTemplate(ctx, name, template)
 }
 
@@ -1388,20 +1421,20 @@ func (s *WazuhService) GetAlertStats(ctx context.Context) (interface{}, error) {
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 实现告警统计逻辑，聚合多个查询结果
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	// 聚合不同级别的告警统计
 	levelAgg := &models.WazuhAggregationQuery{
 		IndexType: "alerts",
 		GroupBy:   "rule.level",
 		Size:      20,
 	}
-	
+
 	return client.GetAggregations(ctx, levelAgg)
 }
 
@@ -1410,20 +1443,20 @@ func (s *WazuhService) GetAlertsSummary(ctx context.Context) (interface{}, error
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 实现告警摘要统计
 	client := s.GetIndexerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
-	
+
 	// 聚合代理告警统计
 	agentAgg := &models.WazuhAggregationQuery{
 		IndexType: "alerts",
 		GroupBy:   "agent.id",
 		Size:      50,
 	}
-	
+
 	return client.GetAggregations(ctx, agentAgg)
 }
 
@@ -1432,10 +1465,10 @@ func (s *WazuhService) GetSystemStats(ctx context.Context) (interface{}, error) 
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 聚合系统级别的统计信息
 	stats := make(map[string]interface{})
-	
+
 	// 获取Manager统计
 	if s.IsManagerEnabled() {
 		if client := s.GetManagerClient(); client != nil {
@@ -1447,7 +1480,7 @@ func (s *WazuhService) GetSystemStats(ctx context.Context) (interface{}, error) 
 			}
 		}
 	}
-	
+
 	// 获取Indexer统计
 	if s.IsIndexerEnabled() {
 		if client := s.GetIndexerClient(); client != nil {
@@ -1456,7 +1489,7 @@ func (s *WazuhService) GetSystemStats(ctx context.Context) (interface{}, error) 
 			}
 		}
 	}
-	
+
 	return stats, nil
 }
 
@@ -1465,24 +1498,24 @@ func (s *WazuhService) GetRules(ctx context.Context, offset, limit, sort, search
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	params := map[string]interface{}{
 		"offset": parseInt(offset),
 		"limit":  parseInt(limit),
 	}
-	
+
 	if sort != "" {
 		params["sort"] = sort
 	}
 	if search != "" {
 		params["search"] = search
 	}
-	
+
 	return client.GetRules(ctx, params)
 }
 
@@ -1491,18 +1524,18 @@ func (s *WazuhService) GetRule(ctx context.Context, ruleID string) (interface{},
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	client := s.GetManagerClient()
 	if client == nil {
 		return nil, fmt.Errorf("wazuh manager client not available")
 	}
-	
+
 	// 通过规则列表查询特定规则
 	params := map[string]interface{}{
 		"rule_ids": ruleID,
 		"limit":    1,
 	}
-	
+
 	return client.GetRules(ctx, params)
 }
 
@@ -1511,7 +1544,7 @@ func (s *WazuhService) CreateRule(ctx context.Context, req map[string]interface{
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 规则创建通常通过文件上传实现
 	return nil, fmt.Errorf("rule creation requires file upload, not yet implemented")
 }
@@ -1521,7 +1554,7 @@ func (s *WazuhService) UpdateRule(ctx context.Context, ruleID string, req map[st
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 规则更新通常通过文件上传实现
 	return fmt.Errorf("rule update requires file upload, not yet implemented")
 }
@@ -1531,7 +1564,7 @@ func (s *WazuhService) DeleteRule(ctx context.Context, ruleID string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 规则删除通常通过文件操作实现
 	return fmt.Errorf("rule deletion requires file operations, not yet implemented")
 }
@@ -1541,7 +1574,7 @@ func (s *WazuhService) GetRuleFiles(ctx context.Context) (interface{}, error) {
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 规则文件列表查询需要文件系统API
 	return nil, fmt.Errorf("rule files listing requires file system API, not yet implemented")
 }
@@ -1551,7 +1584,7 @@ func (s *WazuhService) GetRuleFile(ctx context.Context, filename string) (string
 	if !s.enabled {
 		return "", fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 规则文件内容查询需要文件系统API
 	return "", fmt.Errorf("rule file content requires file system API, not yet implemented")
 }
@@ -1561,7 +1594,7 @@ func (s *WazuhService) UpdateRuleFile(ctx context.Context, filename, content str
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 规则文件更新需要文件上传API
 	return fmt.Errorf("rule file update requires file upload API, not yet implemented")
 }
@@ -1571,7 +1604,7 @@ func (s *WazuhService) GetDecoders(ctx context.Context, offset, limit, sort, sea
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器列表查询需要Manager API支持
 	return nil, fmt.Errorf("decoder listing requires Manager API support, not yet implemented")
 }
@@ -1581,7 +1614,7 @@ func (s *WazuhService) GetDecoder(ctx context.Context, name string) (interface{}
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 单个解码器查询需要Manager API支持
 	return nil, fmt.Errorf("decoder query requires Manager API support, not yet implemented")
 }
@@ -1591,7 +1624,7 @@ func (s *WazuhService) CreateDecoder(ctx context.Context, req map[string]interfa
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器创建通常通过文件上传实现
 	return nil, fmt.Errorf("decoder creation requires file upload, not yet implemented")
 }
@@ -1601,7 +1634,7 @@ func (s *WazuhService) UpdateDecoder(ctx context.Context, name string, req map[s
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器更新通常通过文件上传实现
 	return fmt.Errorf("decoder update requires file upload, not yet implemented")
 }
@@ -1611,7 +1644,7 @@ func (s *WazuhService) DeleteDecoder(ctx context.Context, name string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器删除通常通过文件操作实现
 	return fmt.Errorf("decoder deletion requires file operations, not yet implemented")
 }
@@ -1621,7 +1654,7 @@ func (s *WazuhService) GetDecoderFiles(ctx context.Context) (interface{}, error)
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器文件列表查询需要文件系统API
 	return nil, fmt.Errorf("decoder files listing requires file system API, not yet implemented")
 }
@@ -1631,7 +1664,7 @@ func (s *WazuhService) GetDecoderFile(ctx context.Context, filename string) (str
 	if !s.enabled {
 		return "", fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器文件内容查询需要文件系统API
 	return "", fmt.Errorf("decoder file content requires file system API, not yet implemented")
 }
@@ -1641,7 +1674,7 @@ func (s *WazuhService) UpdateDecoderFile(ctx context.Context, filename, content 
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 解码器文件更新需要文件上传API
 	return fmt.Errorf("decoder file update requires file upload API, not yet implemented")
 }
@@ -1651,7 +1684,7 @@ func (s *WazuhService) GetLists(ctx context.Context, offset, limit, sort, search
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// CDB列表查询需要Manager API支持
 	return nil, fmt.Errorf("CDB lists query requires Manager API support, not yet implemented")
 }
@@ -1661,7 +1694,7 @@ func (s *WazuhService) GetList(ctx context.Context, filename string) (interface{
 	if !s.enabled {
 		return nil, fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// 单个CDB列表查询需要Manager API支持
 	return nil, fmt.Errorf("CDB list query requires Manager API support, not yet implemented")
 }
@@ -1671,7 +1704,7 @@ func (s *WazuhService) CreateList(ctx context.Context, filename, content string)
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// CDB列表创建通常通过文件上传实现
 	return fmt.Errorf("CDB list creation requires file upload, not yet implemented")
 }
@@ -1681,7 +1714,7 @@ func (s *WazuhService) UpdateList(ctx context.Context, filename, content string)
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// CDB列表更新通常通过文件上传实现
 	return fmt.Errorf("CDB list update requires file upload, not yet implemented")
 }
@@ -1691,7 +1724,7 @@ func (s *WazuhService) DeleteList(ctx context.Context, filename string) error {
 	if !s.enabled {
 		return fmt.Errorf("wazuh service is disabled")
 	}
-	
+
 	// CDB列表删除通常通过文件操作实现
 	return fmt.Errorf("CDB list deletion requires file operations, not yet implemented")
 }
