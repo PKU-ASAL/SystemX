@@ -4,6 +4,7 @@
 .env.middleware
 
 docs/draft
+docs/refactor
 docs/patches
 tests/migrations/outputs
 scripts/data
