@@ -20,16 +20,16 @@ func NewFlinkHandler(flinkBaseURL string) *FlinkHandler {
 	}
 }
 
-// TestFlinkConnection 测试 Flink 连接
-// @Summary 测试 Flink 连接
-// @Description 测试与 Flink 集群的连接状态
+// GetFlinkHealth 获取 Flink 健康状态
+// @Summary 获取 Flink 健康状态
+// @Description 获取 Flink 集群的健康状态和连接信息
 // @Tags flink
 // @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{} "连接成功"
-// @Failure 500 {object} map[string]interface{} "连接失败"
-// @Router /services/flink/test-connection [get]
-func (h *FlinkHandler) TestFlinkConnection(c *gin.Context) {
+// @Success 200 {object} map[string]interface{} "健康状态正常"
+// @Failure 500 {object} map[string]interface{} "健康状态异常"
+// @Router /services/flink/health [get]
+func (h *FlinkHandler) GetFlinkHealth(c *gin.Context) {
 	ctx := c.Request.Context()
 	
 	// 尝试获取集群概览来测试连接
@@ -298,7 +298,7 @@ func (h *FlinkHandler) GetConfig(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "集群健康状态"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
-// @Router /services/flink/health [get]
+// @Router /services/flink/cluster/health [get]
 func (h *FlinkHandler) GetClusterHealth(c *gin.Context) {
 	ctx := c.Request.Context()
 	

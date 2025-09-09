@@ -8,6 +8,39 @@
 
 set -e
 
+# 自动加载 .env 配置
+load_env_config() {
+    local env_file=".env"
+    
+    # 如果在 scripts 目录下运行，查找上级目录的 .env 文件
+    if [[ -f "../.env" ]]; then
+        env_file="../.env"
+    elif [[ -f ".env" ]]; then
+        env_file=".env"
+    fi
+    
+    if [[ -f "$env_file" ]]; then
+        # 读取网络配置
+        local network_name=$(grep "^SYSARMOR_NETWORK=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "")
+        local network_external=$(grep "^SYSARMOR_NETWORK_EXTERNAL=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "false")
+        local kafka_port=$(grep "^KAFKA_PORT=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "9094")
+        local kafka_host=$(grep "^KAFKA_HOST=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "middleware-kafka")
+        
+        # 设置 Docker 网络配置
+        if [[ -n "$network_name" && "$network_external" != "true" ]]; then
+            export DOCKER_NETWORK="${DOCKER_NETWORK:-$network_name}"
+            export KAFKA_CONTAINER_NAME="${KAFKA_CONTAINER_NAME:-$kafka_host}"
+        fi
+        
+        # 设置 Kafka 连接配置
+        export DEFAULT_KAFKA_BROKERS="localhost:$kafka_port"
+        
+        echo "[INFO] 已加载 .env 配置: 网络=$network_name, Kafka容器=$kafka_host, 外部端口=$kafka_port"
+    else
+        echo "[WARNING] 未找到 .env 文件，使用默认配置"
+    fi
+}
+
 # 配置参数
 DEFAULT_KAFKA_BROKERS="localhost:9094"
 KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BROKERS:-$DEFAULT_KAFKA_BROKERS}"
@@ -703,6 +736,9 @@ EOF
 
 # 主函数
 main() {
+    # 加载环境配置 (在日志函数定义之后)
+    load_env_config
+    
     # 解析参数
     REMAINING_ARGS=()
     parse_args "$@"

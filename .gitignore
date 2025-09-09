@@ -3,11 +3,11 @@
 .env.dev
 .env.middleware
 
+data
 docs/draft
 docs/refactor
 docs/patches
 tests/migrations/outputs
-scripts/data
 
 # Binaries for programs and plugins
 *.exe

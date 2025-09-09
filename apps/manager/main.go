@@ -284,8 +284,8 @@ func main() {
 	kafkaHandler := handlers.NewKafkaHandler(kafkaBrokers)
 	kafka := services.Group("/kafka")
 	{
-		// 连接测试
-		kafka.GET("/test-connection", kafkaHandler.TestKafkaConnection)
+		// 健康检查
+		kafka.GET("/health", kafkaHandler.GetKafkaHealth)
 
 		// 集群管理
 		kafka.GET("/clusters", kafkaHandler.GetClusters)
@@ -320,13 +320,13 @@ func main() {
 	flinkHandler := handlers.NewFlinkHandler(cfg.GetFlinkURL())
 	flink := services.Group("/flink")
 	{
-		// 连接测试
-		flink.GET("/test-connection", flinkHandler.TestFlinkConnection)
+		// 健康检查
+		flink.GET("/health", flinkHandler.GetFlinkHealth)
 
 		// 集群管理
 		flink.GET("/overview", flinkHandler.GetClusterOverview)
 		flink.GET("/config", flinkHandler.GetConfig)
-		flink.GET("/health", flinkHandler.GetClusterHealth)
+		flink.GET("/cluster/health", flinkHandler.GetClusterHealth)
 
 		// 作业管理
 		flink.GET("/jobs", flinkHandler.GetJobs)
@@ -355,6 +355,9 @@ func main() {
 	if opensearchHandler != nil {
 		opensearch := services.Group("/opensearch")
 		{
+			// 健康检查
+			opensearch.GET("/health", opensearchHandler.GetOpenSearchHealth)
+
 			// 集群管理
 			cluster := opensearch.Group("/cluster")
 			{

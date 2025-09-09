@@ -21,16 +21,16 @@ func NewKafkaHandler(kafkaBrokers []string) *KafkaHandler {
 	}
 }
 
-// TestKafkaConnection 测试 Kafka 连接
-// @Summary 测试 Kafka 连接
-// @Description 测试与 Kafka 集群的连接状态
+// GetKafkaHealth 获取 Kafka 健康状态
+// @Summary 获取 Kafka 健康状态
+// @Description 获取 Kafka 集群的健康状态和连接信息
 // @Tags kafka
 // @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{} "连接成功"
-// @Failure 500 {object} map[string]interface{} "连接失败"
-// @Router /services/kafka/test-connection [get]
-func (h *KafkaHandler) TestKafkaConnection(c *gin.Context) {
+// @Success 200 {object} map[string]interface{} "健康状态正常"
+// @Failure 500 {object} map[string]interface{} "健康状态异常"
+// @Router /services/kafka/health [get]
+func (h *KafkaHandler) GetKafkaHealth(c *gin.Context) {
 	ctx := c.Request.Context()
 	
 	// 尝试获取集群信息来测试连接

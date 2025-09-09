@@ -139,13 +139,13 @@ main() {
     # 2. 数据库连接测试
     print_section "2. 数据库连接测试"
     test_json_structure "/health" "数据库连接状态" ".database"
-    test_json_structure "/api/v1/health" "API数据库连接状态" ".data.components.database.status"
+    test_json_structure "/api/v1/health" "API数据库连接状态" ".data.services.manager.components.database.status"
     
     # 3. Kafka服务测试
     print_section "3. Kafka服务测试"
-    test_api_endpoint "/api/v1/services/kafka/test-connection" "Kafka连接测试" "connected"
-    test_json_structure "/api/v1/services/kafka/test-connection" "Kafka集群信息" ".cluster_info[0].health_status"
-    test_json_structure "/api/v1/services/kafka/test-connection" "Kafka Broker数量" ".broker_count"
+    test_api_endpoint "/api/v1/services/kafka/health" "Kafka健康检查" "connected"
+    test_json_structure "/api/v1/services/kafka/health" "Kafka集群信息" ".cluster_info[0].health_status"
+    test_json_structure "/api/v1/services/kafka/health" "Kafka Broker数量" ".broker_count"
     
     # 4. Kafka Topics测试
     print_section "4. Kafka Topics测试"
@@ -159,11 +159,13 @@ main() {
     
     # 6. Flink服务测试
     print_section "6. Flink服务测试"
+    test_api_endpoint "/api/v1/services/flink/health" "Flink健康检查" "connected"
     test_api_endpoint "/api/v1/services/flink/overview" "Flink集群概览" "success"
     test_json_structure "/api/v1/services/flink/overview" "Flink TaskManager数量" ".data.taskmanagers"
     
     # 7. OpenSearch服务测试
     print_section "7. OpenSearch服务测试"
+    test_api_endpoint "/api/v1/services/opensearch/health" "OpenSearch健康检查" "connected"
     test_api_endpoint "/api/v1/services/opensearch/cluster/health" "OpenSearch集群健康" "success"
     test_json_structure "/api/v1/services/opensearch/cluster/health" "OpenSearch状态" ".data.status"
     
@@ -179,7 +181,7 @@ main() {
     # 10. 详细信息展示
     print_section "10. 详细系统信息"
     show_detailed_info "/api/v1/health" "系统健康状态"
-    show_detailed_info "/api/v1/services/kafka/test-connection" "Kafka连接信息"
+    show_detailed_info "/api/v1/services/kafka/health" "Kafka健康信息"
     
     # 测试结果汇总
     print_header "📊 测试结果汇总"

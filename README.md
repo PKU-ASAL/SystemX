@@ -89,14 +89,60 @@ SysArmor 提供完整的 REST API 接口，支持设备管理、系统监控和�
 - [Flink 测试指南](docs/flink-testing.md) - 集群测试和验证
 - [系统更新日志](CHANGELOG.md) - 版本历史
 
-## 🚀 开发
+## 🧪 快速测试
 
+### 系统健康检查
+```bash
+# 基础健康检查
+make health
+
+# 详细系统健康测试 (20项测试)
+./tests/test-system-health.sh
+
+# 查看按逻辑服务分组的健康状态
+curl -s http://localhost:8080/api/v1/health | jq '.data.services'
+```
+
+### 数据流测试
+```bash
+# 导入测试数据到 Kafka
+./scripts/kafka-tools.sh import docs/draft/sysarmor-agentless-b1de298c_20250905_225242.jsonl sysarmor-events-test
+
+# 查看 Kafka topics 和消息数量
+./scripts/kafka-tools.sh list
+
+# 导出验证数据
+./scripts/kafka-tools.sh export sysarmor-events-test 5
+
+# 完整数据流测试
+./tests/test-auditd-data-flow.sh
+```
+
+### 服务管理测试
+```bash
+# Kafka 服务管理
+make middleware health
+curl -s http://localhost:8080/api/v1/services/kafka/health | jq '.'
+
+# Flink 服务管理  
+make processor overview
+curl -s http://localhost:8080/api/v1/services/flink/health | jq '.'
+
+# OpenSearch 服务管理
+make indexer health
+curl -s http://localhost:8080/api/v1/services/opensearch/health | jq '.'
+```
+
+### 开发构建
 ```bash
 # 本地开发
 cd apps/manager && go run main.go
 
-# 构建镜像
-docker build -f deployments/docker/manager.Dockerfile -t sysarmor/manager .
+# 构建并启动 (重新构建镜像)
+make deploy
+
+# 生成 API 文档
+make docs
 ```
 
 ---
