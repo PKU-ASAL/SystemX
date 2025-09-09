@@ -167,9 +167,8 @@ processor: ## Processor服务管理 (用法: make processor <command>)
 		echo "可用命令:"; \
 		echo "  list-jobs        - 查看Flink作业列表"; \
 		echo "  submit-console   - 提交简单控制台测试作业"; \
-		echo "  submit-auditd-sysdig - 提交Auditd到Sysdig转换作业"; \
-		echo "  submit-datastream - 提交基础威胁检测作业"; \
-		echo "  submit-configurable - 提交配置化威胁检测作业"; \
+		echo "  submit-auditd-sysdig - 提交Auditd到Sysdig转换测试作业"; \
+		echo "  submit-multi-topic - 提交多Topic进程树构建作业 (开发中)"; \
 		echo "  cancel-job JOB_ID=xxx - 取消指定作业"; \
 		echo "  logs-jobmanager  - 查看JobManager日志"; \
 		echo "  logs-taskmanager - 查看TaskManager日志 (控制台输出)"; \
@@ -181,6 +180,7 @@ processor: ## Processor服务管理 (用法: make processor <command>)
 		echo "  make processor list-jobs"; \
 		echo "  make processor submit-console"; \
 		echo "  make processor submit-auditd-sysdig"; \
+		echo "  make processor submit-multi-topic"; \
 		echo "  make processor logs-taskmanager"; \
 	else \
 		$(MAKE) processor-$(filter-out $@,$(MAKECMDGOALS)); \
@@ -189,7 +189,7 @@ processor: ## Processor服务管理 (用法: make processor <command>)
 processor-list-jobs:
 	@echo "📋 SysArmor Processor - Flink作业列表："
 	@echo "通过Manager API查询:"
-	@curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 \(.name) | 状态: \(.state) | ID: \(.jid)"' 2>/dev/null || \
+	@curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 作业名称: \(if .name == "" then "未知" else .name end) | 状态: \(if .state == "" then "未知" else .state end) | ID: \(.id)"' 2>/dev/null || \
 	(echo "  ⚠️  Manager API不可用，尝试直接访问Flink..." && \
 	 curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
 	 echo "  ❌ Flink集群不可用")
@@ -197,7 +197,7 @@ processor-list-jobs:
 processor-submit-console:
 	@echo "🖥️  SysArmor Processor - 提交简单控制台测试作业..."
 	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_simple_console_test.py; \
+		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_test_simple_console.py; \
 		echo "✅ 简单控制台测试作业已提交!"; \
 		echo "🔍 查看输出: make processor logs-taskmanager"; \
 		echo "📊 监控: http://localhost:8081"; \
@@ -206,10 +206,10 @@ processor-submit-console:
 	fi
 
 processor-submit-auditd-sysdig:
-	@echo "🔄 SysArmor Processor - 提交Auditd到Sysdig转换作业..."
+	@echo "🔄 SysArmor Processor - 提交Auditd到Sysdig转换测试作业..."
 	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_auditd_sysdig_console_test.py; \
-		echo "✅ Auditd到Sysdig转换作业已提交!"; \
+		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_test_auditd_sysdig_console.py; \
+		echo "✅ Auditd到Sysdig转换测试作业已提交!"; \
 		echo "🔄 基于NODLINK管道处理逻辑"; \
 		echo "📥 消费: sysarmor-events-test"; \
 		echo "📤 输出: 控制台 (sysdig格式)"; \
@@ -219,25 +219,18 @@ processor-submit-auditd-sysdig:
 		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
 	fi
 
-processor-submit-datastream:
-	@echo "🌊 SysArmor Processor - 提交基础威胁检测作业..."
+processor-submit-multi-topic:
+	@echo "🌐 SysArmor Processor - 提交多Topic进程树构建作业 (开发中)..."
 	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_rules_filter_datastream.py; \
-		echo "✅ 基础威胁检测作业已提交!"; \
-		echo "🚨 威胁检测: 查找'THREAT_DETECTED'日志"; \
+		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_multi_topic_process_tree_builder.py; \
+		echo "✅ 多Topic进程树构建作业已提交!"; \
+		echo "🌐 支持同时处理多个 sysarmor-agentless-* topics"; \
+		echo "🔄 每个 collector 独立处理进程树重建"; \
+		echo "📥 消费: sysarmor-agentless-*"; \
+		echo "📤 输出: sysarmor-audit-unified (统一路由)"; \
 		echo "🔍 查看输出: make processor logs-taskmanager"; \
-	else \
-		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
-	fi
-
-processor-submit-configurable:
-	@echo "⚙️  SysArmor Processor - 提交配置化威胁检测作业..."
-	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_rules_configuration_datastream.py; \
-		echo "✅ 配置化威胁检测作业已提交!"; \
-		echo "🔧 基于YAML配置文件的灵活规则"; \
-		echo "🚨 威胁检测: 查找'CONFIG_THREAT_DETECTED'日志"; \
-		echo "🔍 查看输出: make processor logs-taskmanager"; \
+		echo "📊 监控: http://localhost:8081"; \
+		echo "⚠️  注意: 此作业仍在开发中，可能存在不稳定性"; \
 	else \
 		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
 	fi
