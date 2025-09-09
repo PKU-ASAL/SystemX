@@ -106,16 +106,13 @@ curl -s http://localhost:8080/api/v1/health | jq '.data.services'
 ### 数据流测试
 ```bash
 # 导入测试数据到 Kafka
-./scripts/kafka-tools.sh import docs/draft/sysarmor-agentless-b1de298c_20250905_225242.jsonl sysarmor-events-test
+./scripts/kafka-tools.sh import data/sysarmor-agentless-b1de298c_20250905_225242.jsonl sysarmor-events-test
 
 # 查看 Kafka topics 和消息数量
 ./scripts/kafka-tools.sh list
 
 # 导出验证数据
 ./scripts/kafka-tools.sh export sysarmor-events-test 5
-
-# 完整数据流测试
-./tests/test-auditd-data-flow.sh
 ```
 
 ### 服务管理测试
@@ -131,18 +128,6 @@ curl -s http://localhost:8080/api/v1/services/flink/health | jq '.'
 # OpenSearch 服务管理
 make indexer health
 curl -s http://localhost:8080/api/v1/services/opensearch/health | jq '.'
-```
-
-### 开发构建
-```bash
-# 本地开发
-cd apps/manager && go run main.go
-
-# 构建并启动 (重新构建镜像)
-make deploy
-
-# 生成 API 文档
-make docs
 ```
 
 ---
