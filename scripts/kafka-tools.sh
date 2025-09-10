@@ -63,7 +63,7 @@ load_env_config() {
         if [[ -n "$KAFKA_HOST_OVERRIDE" ]]; then
             echo "[INFO] 配置覆盖: Kafka=$KAFKA_HOST:$KAFKA_PORT (环境变量覆盖)"
         else
-            echo "[INFO] 配置加载: 网络=$network_name, Kafka=$kafka_host:$kafka_port"
+            echo "[INFO] 配置加载: 网络=$network_name, Kafka容器=$kafka_host, 外部端口=$kafka_port"
         fi
     else
         echo "[WARNING] 未找到 .env 文件，使用默认配置"

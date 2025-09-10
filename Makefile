@@ -42,8 +42,8 @@ deploy: ## 构建并启动所有服务 (单机部署)
 
 down: ## 停止所有服务
 	@echo "🛑 停止SysArmor EDR服务..."
-	docker compose down
-	@echo "✅ 所有服务已停止"
+	docker compose down -v --remove-orphans
+	@echo "✅ 所有服务已停止，数据卷和网络已清理"
 
 up-dev: ## 启动开发环境 (连接远程middleware)
 	@echo "🚀 启动SysArmor EDR开发环境..."
