@@ -85,10 +85,9 @@ openssl x509 -req -in $CERT_DIR/node.csr -CA $CERT_DIR/root-ca.pem -CAkey $CERT_
 echo "🧹 清理临时文件..."
 rm -f $CERT_DIR/admin-key-temp.pem $CERT_DIR/node-key-temp.pem $CERT_DIR/admin.csr $CERT_DIR/node.csr $CERT_DIR/node.conf
 
-# 设置权限
+# 设置权限 (Docker容器兼容)
 echo "🔒 设置证书权限..."
 chmod 644 $CERT_DIR/*.pem
-chmod 600 $CERT_DIR/*-key.pem
 
 echo "✅ SSL 证书生成完成!"
 echo ""
