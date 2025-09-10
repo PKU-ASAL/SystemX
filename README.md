@@ -29,10 +29,21 @@ graph LR
 ```bash
 git clone https://git.pku.edu.cn/oslab/sysarmor.git
 cd sysarmor
-make init        # 初始化环境(复制.env.example为.env, 创建data目录)
-make deploy      # 启动所有服务
-make health      # 验证部署
-make down        # 停止所有服务并清理资源(volume, network等)
+
+# 初始化环境
+# 1. 复制.env.example为.env
+# 2. 创建./data目录
+# 3. 在./services/indexer/configs/opensearch/certs目录下生成opensearch证书
+make init        
+
+# 构建并启动所有服务
+make deploy
+
+# 验证部署
+make health
+
+# 停止所有服务并清理资源(volume, network等)
+make down        
 ```
 
 ### 分布式部署
@@ -60,16 +71,6 @@ make deply       # 重新构建镜像，并启动所有服务
 make down        # 停止所有服务
 make health      # 健康检查
 ```
-
-## 🌐 API 接口
-
-SysArmor 提供完整的 REST API 接口，支持设备管理、系统监控和服务管理：
-
-- **设备管理**: `/api/v1/collectors/*` - 设备注册、状态管理
-- **告警查询**: `/api/v1/events/*` - 威胁告警查询和分析
-- **系统监控**: `/api/v1/health/*` - 健康检查和指标
-- **API 文档**: http://localhost:8080/swagger/index.html
-
 
 ## 📚 文档
 
@@ -177,5 +178,3 @@ make processor list-jobs
 ---
 
 **SysArmor EDR/HIDS** - 现代化端点检测与响应系统
-
-**🔗 快速开始**: `git clone https://git.pku.edu.cn/oslab/sysarmor.git && cd sysarmor && make up`

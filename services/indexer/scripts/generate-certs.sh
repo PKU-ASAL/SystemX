@@ -87,8 +87,8 @@ rm -f $CERT_DIR/admin-key-temp.pem $CERT_DIR/node-key-temp.pem $CERT_DIR/admin.c
 
 # 设置权限
 echo "🔒 设置证书权限..."
-chmod 600 $CERT_DIR/*.pem
-chmod 644 $CERT_DIR/root-ca.pem $CERT_DIR/admin.pem $CERT_DIR/node.pem
+chmod 644 $CERT_DIR/*.pem
+chmod 600 $CERT_DIR/*-key.pem
 
 echo "✅ SSL 证书生成完成!"
 echo ""
