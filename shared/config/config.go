@@ -27,6 +27,11 @@ type ManagerConfig struct {
 	ProcessorService  string `envconfig:"PROCESSOR_SERVICE" default:"sysarmor-processor"`
 	IndexerService    string `envconfig:"INDEXER_SERVICE" default:"sysarmor-indexer"`
 	
+	// OpenSearch configuration (for health checks and API access)
+	OpenSearchURL      string `envconfig:"OPENSEARCH_URL" default:"http://opensearch:9200"`
+	OpenSearchUsername string `envconfig:"OPENSEARCH_USERNAME" default:"admin"`
+	OpenSearchPassword string `envconfig:"OPENSEARCH_PASSWORD" default:"admin"`
+	
 	// Resource management
 	TemplateDir string `envconfig:"TEMPLATE_DIR" default:"./templates"`
 	DownloadDir string `envconfig:"DOWNLOAD_DIR" default:"./data/dist"`

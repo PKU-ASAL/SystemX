@@ -30,18 +30,14 @@ graph LR
 git clone https://git.pku.edu.cn/oslab/sysarmor.git
 cd sysarmor
 make init        # 初始化环境(复制.env.example为.env, 创建data目录)
-make up          # 启动所有服务
+make deploy      # 启动所有服务
 make health      # 验证部署
+make down        # 停止所有服务并清理资源(volume, network等)
 ```
 
-### 分布式部署 (生产推荐)
-```bash
-# 远程服务器 - 数据收集层
-make up-middleware    # Vector + Kafka + Prometheus
+### 分布式部署
 
-# 本地环境 - 管理控制层  
-make up-dev          # Manager + Processor + Indexer
-```
+WIP
 
 ### 访问服务
 - **Manager API**: http://localhost:8080
@@ -60,18 +56,9 @@ make up-dev          # Manager + Processor + Indexer
 ```bash
 # 单机部署
 make up          # 启动所有服务
+make deply       # 重新构建镜像，并启动所有服务
 make down        # 停止所有服务
 make health      # 健康检查
-
-# 分布式部署
-make up-middleware    # 启动middleware (远程)
-make up-dev          # 启动开发环境 (本地)
-make down-dev        # 停止开发环境
-
-# 开发工具
-make build           # 构建应用
-make docs           # 生成API文档
-make test           # 运行测试
 ```
 
 ## 🌐 API 接口
@@ -87,7 +74,6 @@ SysArmor 提供完整的 REST API 接口，支持设备管理、系统监控和�
 ## 📚 文档
 
 - [部署指南](docs/deployment.md) - 分布式部署配置
-- [Flink 测试指南](docs/flink-testing.md) - 集群测试和验证
 - [系统更新日志](CHANGELOG.md) - 版本历史
 
 ## 🧪 快速测试
@@ -98,7 +84,8 @@ SysArmor 提供完整的 REST API 接口，支持设备管理、系统监控和�
 make health
 
 # 详细系统健康测试 (20项测试)
-./tests/test-system-health.sh
+# “📋 9. 系统资源测试”会失败，可忽略
+./tests/test-system-health.sh 
 
 # 查看按逻辑服务分组的健康状态
 curl -s http://localhost:8080/api/v1/health | jq '.data.services'

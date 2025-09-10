@@ -709,21 +709,93 @@ func (h *HealthChecker) checkOpenSearchHealth(ctx context.Context) *SystemCompon
 		CheckedAt: time.Now(),
 	}
 	
+	// 通过 Manager 自身的 OpenSearch API 检查
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/opensearch/health", nil)
+	if err != nil {
+		health.Healthy = false
+		health.Status = "request_failed"
+		health.Error = err.Error()
+		health.ResponseTime = time.Since(start)
+		return health
+	}
+	
+	resp, err := h.client.Do(req)
+	health.ResponseTime = time.Since(start)
+	
+	if err != nil {
+		health.Healthy = false
+		health.Status = "connection_failed"
+		health.Error = err.Error()
+		return health
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		health.Healthy = false
+		health.Status = "http_error"
+		health.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		return health
+	}
+	
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		health.Healthy = false
+		health.Status = "parse_failed"
+		health.Error = err.Error()
+		return health
+	}
+	
+	success, successOk := result["success"].(bool)
+	connected, connectedOk := result["connected"].(bool)
+	
+	// 检查字段是否存在且为 true
+	health.Healthy = successOk && success && connectedOk && connected
+	if health.Healthy {
+		health.Status = "connected"
+	} else {
+		health.Status = "disconnected"
+		if errorMsg, exists := result["error"].(string); exists {
+			health.Error = errorMsg
+		} else if !successOk {
+			health.Error = "Missing 'success' field in response"
+		} else if !connectedOk {
+			health.Error = "Missing 'connected' field in response"
+		} else if !success {
+			health.Error = "OpenSearch connection test failed"
+		} else if !connected {
+			health.Error = "OpenSearch not connected"
+		}
+	}
+	health.Details = result
+	
+	return health
+}
+
+// checkOpenSearchHealthDirect 直接检查 OpenSearch 健康状态 (备用方法)
+func (h *HealthChecker) checkOpenSearchHealthDirect(ctx context.Context) *SystemComponentHealth {
+	start := time.Now()
+	
+	health := &SystemComponentHealth{
+		Name:      "opensearch",
+		Type:      "indexer",
+		CheckedAt: time.Now(),
+	}
+	
 	// 从环境变量获取 OpenSearch URL 和认证信息
 	opensearchURL := os.Getenv("OPENSEARCH_URL")
 	if opensearchURL == "" {
-		opensearchURL = "http://localhost:9200"
+		opensearchURL = "http://opensearch:9200"
 	}
 	
 	opensearchUser := os.Getenv("OPENSEARCH_USERNAME")
 	opensearchPassword := os.Getenv("OPENSEARCH_PASSWORD")
 	
-	// 如果没有配置认证信息，使用默认的监控用户
+	// 如果没有配置认证信息，使用默认的admin用户
 	if opensearchUser == "" {
-		opensearchUser = "sysarmor_monitor"
+		opensearchUser = "admin"
 	}
 	if opensearchPassword == "" {
-		opensearchPassword = "sysarmor_monitor"
+		opensearchPassword = "admin"
 	}
 	
 	// 检查集群健康状态
