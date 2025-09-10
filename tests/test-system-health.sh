@@ -134,7 +134,7 @@ main() {
     # 1. 基础健康检查
     print_section "1. 基础健康检查"
     test_api_endpoint "/health" "Manager基础健康检查" "status"
-    test_api_endpoint "/api/v1/health" "Manager API健康检查" "success"
+    test_api_endpoint "/api/v1/health" "Manager API健康检查" "data"
     
     # 2. 数据库连接测试
     print_section "2. 数据库连接测试"

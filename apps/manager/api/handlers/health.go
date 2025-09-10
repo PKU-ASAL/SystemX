@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sysarmor/sysarmor/apps/manager/services/health"
@@ -317,7 +318,7 @@ func (h *HealthHandler) GetHealthOverview(c *gin.Context) {
 			"healthy": true,
 			"status":  "running",
 			"components": gin.H{
-				"api":      gin.H{"healthy": true, "status": "running"},
+				"api": gin.H{"healthy": true, "status": "running"},
 			},
 		},
 		"middleware": gin.H{
@@ -328,9 +329,7 @@ func (h *HealthHandler) GetHealthOverview(c *gin.Context) {
 		"processor": gin.H{
 			"healthy": true,
 			"status":  "running", 
-			"components": gin.H{
-				"flink": gin.H{"healthy": true, "status": "running"},
-			},
+			"components": gin.H{},
 		},
 		"indexer": gin.H{
 			"healthy": true,
@@ -382,12 +381,22 @@ func (h *HealthHandler) GetHealthOverview(c *gin.Context) {
 				services["manager"].(gin.H)["healthy"] = false
 				services["manager"].(gin.H)["status"] = "unhealthy"
 			}
+		case "flink":
+			services["processor"].(gin.H)["components"].(gin.H)["flink"] = gin.H{
+				"healthy":       comp.Healthy,
+				"status":        comp.Status,
+				"response_time": comp.ResponseTime,
+			}
+			if !comp.Healthy {
+				services["processor"].(gin.H)["healthy"] = false
+				services["processor"].(gin.H)["status"] = "unhealthy"
+			}
 		}
 	}
 	
 	// 添加 Vector 状态 (从 Workers 获取)
 	for _, worker := range systemHealth.Workers {
-		if worker.Name == "middleware-vector" {
+		if strings.Contains(worker.Name, "vector") || strings.Contains(worker.URL, "8686") {
 			services["middleware"].(gin.H)["components"].(gin.H)["vector"] = gin.H{
 				"healthy":       worker.Healthy,
 				"status":        "running",
@@ -401,29 +410,21 @@ func (h *HealthHandler) GetHealthOverview(c *gin.Context) {
 	}
 	
 	// 计算整体健康状态
-	overallHealthy := true
+	overallHealthy := systemHealth.Healthy
+	healthyServices := 0
 	for _, service := range services {
-		if !service.(gin.H)["healthy"].(bool) {
-			overallHealthy = false
-			break
+		if service.(gin.H)["healthy"].(bool) {
+			healthyServices++
 		}
 	}
 	
 	overview := gin.H{
 		"healthy":    overallHealthy,
-		"status":     map[bool]string{true: "healthy", false: "unhealthy"}[overallHealthy],
+		"status":     systemHealth.Status,
 		"services":   services,
 		"summary": gin.H{
-			"total_services":   4,
-			"healthy_services": func() int {
-				count := 0
-				for _, service := range services {
-					if service.(gin.H)["healthy"].(bool) {
-						count++
-					}
-				}
-				return count
-			}(),
+			"total_services":     4,
+			"healthy_services":   healthyServices,
 			"total_components":   systemHealth.Summary.TotalComponents,
 			"healthy_components": systemHealth.Summary.HealthyComponents,
 		},
