@@ -131,6 +131,62 @@ make indexer health
 curl -s http://localhost:8080/api/v1/services/opensearch/health | jq '.'
 ```
 
+### Flink 流处理测试
+```bash
+# 1. 导入测试数据到 Kafka
+./scripts/kafka-tools.sh import data/kafka-imports/sysarmor-agentless-b1de298c_20250905_225242.jsonl sysarmor-events-test
+
+# 2. 查看数据是否导入成功
+./scripts/kafka-tools.sh list
+
+# 3. 提交 Flink 控制台测试作业
+make processor submit-console
+
+# 4. 查看 Flink 作业状态
+make processor list-jobs
+
+# 5. 监控作业输出
+# 方法1: 查看 TaskManager 日志中的消息处理输出
+docker logs sysarmor-flink-taskmanager-1 -f | grep "🔍 MESSAGE"
+
+# 方法2: 在 Flink Web UI 中查看
+# 访问 http://localhost:8081
+# 点击 Running Jobs -> 选择作业 -> TaskManagers -> 查看 Logs
+# 寻找类似 "🔍 MESSAGE #1", "🔍 MESSAGE #2" 的输出
+
+# 6. 查看 Flink 集群概览
+make processor overview
+
+# 7. 获取作业详细信息
+# 通过 Manager API 获取作业详情 (包含完整的执行计划、顶点信息等)
+curl -s http://localhost:8080/api/v1/services/flink/jobs/{JOB_ID} | jq '.'
+
+# 通过 Flink 原生 API 获取作业详情
+curl -s http://localhost:8081/jobs/{JOB_ID} | jq '.'
+
+# 8. 取消运行中的作业
+# 获取作业ID
+export JOB_ID=$(curl -s http://localhost:8080/api/v1/services/flink/jobs | jq -r '.data.jobs[0].id')
+
+# 取消作业
+make processor cancel-job JOB_ID=$JOB_ID
+
+# 通过makefile确认，状态已经变为CANCELED
+make processor list-jobs
+```
+
+**预期输出示例**：
+```
+🔍 MESSAGE #1 | Time: 2025-09-05T22:52:42Z | Host: test-host | Collector: b1de298c... | Content: type=SYSCALL msg=audit...
+🔍 MESSAGE #2 | Time: 2025-09-05T22:52:43Z | Host: test-host | Collector: b1de298c... | Content: type=EXECVE msg=audit...
+```
+
+**注意事项**：
+- Flink 作业配置为从 `earliest` 开始读取，会处理 topic 中的所有历史数据
+- 每次提交作业会使用新的 Consumer Group，确保从头开始处理
+- Console 输出会显示在 TaskManager 日志中，可通过 Flink Web UI 或 Docker 日志查看
+
+
 ---
 
 **SysArmor EDR/HIDS** - 现代化端点检测与响应系统

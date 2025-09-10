@@ -12,7 +12,6 @@ import logging
 from typing import Dict, Any
 import requests
 from opensearchpy import OpenSearch, RequestsHttpConnection
-import consul
 import yaml
 
 # 配置日志
@@ -30,11 +29,9 @@ class SysArmorIndexer:
         self.opensearch_username = os.getenv('OPENSEARCH_USERNAME', 'admin')
         self.opensearch_password = os.getenv('OPENSEARCH_PASSWORD', 'admin')
         self.index_prefix = os.getenv('INDEX_PREFIX', 'sysarmor-events')
-        self.consul_address = os.getenv('CONSUL_ADDRESS', 'consul:8500')
         
         # 初始化OpenSearch客户端
         self.opensearch_client = None
-        self.consul_client = None
         
     def init_opensearch_client(self):
         """初始化OpenSearch客户端"""
@@ -68,20 +65,6 @@ class SysArmorIndexer:
             logger.error(f"Failed to connect to OpenSearch: {e}")
             return False
     
-    def init_consul_client(self):
-        """初始化Consul客户端"""
-        try:
-            host, port = self.consul_address.split(':')
-            self.consul_client = consul.Consul(host=host, port=int(port))
-            
-            # 测试连接
-            self.consul_client.agent.self()
-            logger.info(f"Connected to Consul at {self.consul_address}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to Consul: {e}")
-            return False
     
     def load_index_templates(self):
         """加载索引模板"""
@@ -147,30 +130,6 @@ class SysArmorIndexer:
         except Exception as e:
             logger.error(f"Failed to create initial indices: {e}")
     
-    def register_with_consul(self):
-        """向Consul注册服务"""
-        try:
-            service_id = "sysarmor-indexer"
-            service_name = "sysarmor-indexer"
-            
-            # 注册服务
-            self.consul_client.agent.service.register(
-                name=service_name,
-                service_id=service_id,
-                address="indexer",
-                port=8080,  # 虽然我们不暴露HTTP端口，但Consul需要一个端口
-                tags=["sysarmor", "indexer", "opensearch"],
-                check=consul.Check.http(
-                    url=f"{self.opensearch_url}/_cluster/health",
-                    interval="10s",
-                    timeout="5s"
-                )
-            )
-            
-            logger.info(f"Registered service with Consul: {service_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to register with Consul: {e}")
     
     def health_check_loop(self):
         """健康检查循环"""
@@ -194,19 +153,19 @@ class SysArmorIndexer:
         """运行索引服务"""
         logger.info("Starting SysArmor Indexer Service...")
         
-        # 等待依赖服务启动
+        # 等待OpenSearch服务启动
         max_retries = 30
         retry_count = 0
         
         while retry_count < max_retries:
-            if self.init_opensearch_client() and self.init_consul_client():
+            if self.init_opensearch_client():
                 break
             retry_count += 1
-            logger.info(f"Waiting for dependencies... ({retry_count}/{max_retries})")
+            logger.info(f"Waiting for OpenSearch... ({retry_count}/{max_retries})")
             time.sleep(10)
         
         if retry_count >= max_retries:
-            logger.error("Failed to connect to dependencies after maximum retries")
+            logger.error("Failed to connect to OpenSearch after maximum retries")
             sys.exit(1)
         
         # 加载索引模板
@@ -214,9 +173,6 @@ class SysArmorIndexer:
         
         # 创建初始索引
         self.create_initial_indices()
-        
-        # 注册到Consul
-        self.register_with_consul()
         
         logger.info("SysArmor Indexer Service started successfully")
         

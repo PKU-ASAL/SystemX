@@ -188,11 +188,11 @@ processor: ## Processor服务管理 (用法: make processor <command>)
 
 processor-list-jobs:
 	@echo "📋 SysArmor Processor - Flink作业列表："
-	@echo "通过Manager API查询:"
-	@curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 作业名称: \(if .name == "" then "未知" else .name end) | 状态: \(if .state == "" then "未知" else .state end) | ID: \(.id)"' 2>/dev/null || \
-	(echo "  ⚠️  Manager API不可用，尝试直接访问Flink..." && \
-	 curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
-	 echo "  ❌ Flink集群不可用")
+	@echo "通过Flink API查询:"
+	@curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
+	(echo "  ⚠️  Flink API不可用，尝试Manager API..." && \
+	 curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.state // "未知")"' 2>/dev/null || \
+	 echo "  ❌ 所有API都不可用")
 
 processor-submit-console:
 	@echo "🖥️  SysArmor Processor - 提交简单控制台测试作业..."

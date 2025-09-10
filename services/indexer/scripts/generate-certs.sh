@@ -2,7 +2,7 @@
 set -e
 
 # SysArmor Indexer SSL 证书生成脚本
-CERT_DIR="./config/certs"
+CERT_DIR="./configs/opensearch/certs"
 OPENSEARCH_DN="/C=US/ST=CA/L=San Francisco/O=SysArmor/OU=Security/CN=opensearch"
 ADMIN_DN="/C=US/ST=CA/L=San Francisco/O=SysArmor/OU=Security/CN=admin"
 

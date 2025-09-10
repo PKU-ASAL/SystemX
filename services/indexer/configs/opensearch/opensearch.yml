@@ -10,7 +10,7 @@ path.data: /usr/share/opensearch/data
 path.logs: /usr/share/opensearch/logs
 
 # 内存配置
-bootstrap.memory_lock: true
+bootstrap.memory_lock: false
 
 # 安全配置
 plugins.security.disabled: false

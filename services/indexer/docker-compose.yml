@@ -7,7 +7,6 @@ services:
     hostname: opensearch
     environment:
       - discovery.type=single-node
-      - DISABLE_SECURITY_PLUGIN=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       - cluster.name=sysarmor-indexer-cluster
       - node.name=opensearch-node-1
@@ -16,11 +15,15 @@ services:
     volumes:
       - indexer_opensearch_data:/usr/share/opensearch/data
       - ./configs/opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+      - ./configs/opensearch/certs:/usr/share/opensearch/config/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${OPENSEARCH_PORT}/_cluster/health"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "curl", "-s", "-f", 
+             "-u", "admin:${OPENSEARCH_PASSWORD}",
+             "http://localhost:${OPENSEARCH_PORT}/_cluster/health"]
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 60s
     labels:
       - "sysarmor.module=indexer"
       - "sysarmor.component=search-engine"

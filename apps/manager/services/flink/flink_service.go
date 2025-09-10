@@ -38,7 +38,7 @@ type ClusterOverview struct {
 	FlinkCommit    string `json:"flink-commit"`
 }
 
-// Job 作业信息
+// Job 作业信息 (完整信息，用于API返回)
 type Job struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
@@ -49,7 +49,18 @@ type Job struct {
 	LastModification int64  `json:"last-modification"`
 }
 
-// JobsResponse 作业列表响应
+// JobBasic 基础作业信息 (来自 /jobs 端点)
+type JobBasic struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+// JobsBasicResponse 基础作业列表响应
+type JobsBasicResponse struct {
+	Jobs []JobBasic `json:"jobs"`
+}
+
+// JobsResponse 作业列表响应 (完整信息)
 type JobsResponse struct {
 	Jobs []Job `json:"jobs"`
 }
@@ -138,9 +149,51 @@ func (s *FlinkService) GetClusterOverview(ctx context.Context) (*ClusterOverview
 	return &overview, err
 }
 
-// GetJobs 获取所有作业
+// GetJobs 获取所有作业 (包含完整信息)
 func (s *FlinkService) GetJobs(ctx context.Context) (*JobsResponse, error) {
-	var jobs JobsResponse
+	// 首先获取基础作业列表
+	var basicJobs JobsBasicResponse
+	err := s.makeRequest(ctx, "/jobs", &basicJobs)
+	if err != nil {
+		return nil, err
+	}
+	
+	// 为每个作业获取详细信息
+	var jobs []Job
+	for _, basicJob := range basicJobs.Jobs {
+		jobDetails, err := s.GetJobDetails(ctx, basicJob.ID)
+		if err != nil {
+			// 如果获取详细信息失败，使用基础信息
+			jobs = append(jobs, Job{
+				ID:    basicJob.ID,
+				Name:  "Unknown",
+				State: basicJob.Status,
+				StartTime: 0,
+				EndTime: 0,
+				Duration: 0,
+				LastModification: 0,
+			})
+			continue
+		}
+		
+		// 转换详细信息为Job结构
+		jobs = append(jobs, Job{
+			ID:               jobDetails.JID,
+			Name:             jobDetails.Name,
+			State:            jobDetails.State,
+			StartTime:        jobDetails.StartTime,
+			EndTime:          jobDetails.EndTime,
+			Duration:         jobDetails.Duration,
+			LastModification: jobDetails.Now,
+		})
+	}
+	
+	return &JobsResponse{Jobs: jobs}, nil
+}
+
+// GetJobsBasic 获取基础作业列表 (仅ID和状态)
+func (s *FlinkService) GetJobsBasic(ctx context.Context) (*JobsBasicResponse, error) {
+	var jobs JobsBasicResponse
 	err := s.makeRequest(ctx, "/jobs", &jobs)
 	return &jobs, err
 }
