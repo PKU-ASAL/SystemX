@@ -62,7 +62,7 @@ def main():
     # 环境变量配置
     kafka_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9094')
     topic_prefix = os.getenv('TOPIC_PREFIX', 'sysarmor-')
-    kafka_group_id = os.getenv('KAFKA_GROUP_ID', 'sysarmor-console-test-group')
+    kafka_group_id = os.getenv('KAFKA_GROUP_ID', f'sysarmor-console-test-group-{datetime.now().strftime("%Y%m%d-%H%M%S")}')
     
     # 可以通过环境变量指定具体的 topics，用逗号分隔
     specific_topics = os.getenv('TEST_TOPICS', '')
@@ -71,13 +71,9 @@ def main():
         topics = [topic.strip() for topic in specific_topics.split(',')]
         logger.info(f"📋 Using specific topics: {topics}")
     else:
-        # 默认使用一些常见的测试 topics
-        topics = [
-            'sysarmor-events-test',
-            'sysarmor-agentless-b1de298c',
-            'sysarmor-agentless-c289acf6'
-        ]
-        logger.info(f"📋 Using default test topics: {topics}")
+        # 只消费测试 topic
+        topics = ['sysarmor-events-test']
+        logger.info(f"📋 Using test topic: {topics}")
     
     logger.info(f"📡 Kafka Servers: {kafka_servers}")
     logger.info(f"👥 Consumer Group: {kafka_group_id}")
@@ -98,7 +94,7 @@ def main():
         kafka_props = {
             'bootstrap.servers': kafka_servers,
             'group.id': kafka_group_id,
-            'auto.offset.reset': 'latest',  # 从最新消息开始读取
+            'auto.offset.reset': 'earliest',  # 从最早消息开始读取
             'session.timeout.ms': '30000',
             'heartbeat.interval.ms': '10000',
             'max.poll.interval.ms': '300000',
