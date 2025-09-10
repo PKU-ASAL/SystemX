@@ -3,16 +3,35 @@
 # =============================================================================
 # SysArmor Kafka 工具脚本
 # 提供 Kafka 事件的导出、导入和 topic 管理功能
-# 支持 Docker 网络连接和批量导出
+# 自动读取 .env 配置，支持 Docker 网络连接
 # =============================================================================
 
 set -e
+
+# 检查是否有环境变量覆盖 (在脚本开始时检查并保存)
+if [[ -n "$KAFKA_HOST" || -n "$KAFKA_PORT" ]]; then
+    KAFKA_HOST_OVERRIDE=1
+    OVERRIDE_KAFKA_HOST="$KAFKA_HOST"
+    OVERRIDE_KAFKA_PORT="$KAFKA_PORT"
+fi
+
+# 默认配置
+DEFAULT_OUTPUT_DIR="./data/kafka-exports"
+DEFAULT_BATCH_SIZE=1000000
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_FILE="$HOME/kafka-export-${TIMESTAMP}.log"
+
+# 运行时配置 (将由 load_env_config 设置)
+KAFKA_HOST=""
+KAFKA_PORT=""
+NETWORK_NAME=""
+KAFKA_CONTAINER=""
 
 # 自动加载 .env 配置
 load_env_config() {
     local env_file=".env"
     
-    # 如果在 scripts 目录下运行，查找上级目录的 .env 文件
+    # 查找 .env 文件
     if [[ -f "../.env" ]]; then
         env_file="../.env"
     elif [[ -f ".env" ]]; then
@@ -20,40 +39,51 @@ load_env_config() {
     fi
     
     if [[ -f "$env_file" ]]; then
-        # 读取网络配置
-        local network_name=$(grep "^SYSARMOR_NETWORK=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "")
-        local network_external=$(grep "^SYSARMOR_NETWORK_EXTERNAL=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "false")
-        local kafka_port=$(grep "^KAFKA_PORT=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "9094")
-        local kafka_host=$(grep "^KAFKA_HOST=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "middleware-kafka")
+        # 读取配置 (忽略注释)
+        local network_name=$(grep "^SYSARMOR_NETWORK=" "$env_file" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '"' | xargs 2>/dev/null || echo "")
+        local network_external=$(grep "^SYSARMOR_NETWORK_EXTERNAL=" "$env_file" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '"' | xargs 2>/dev/null || echo "false")
+        local kafka_port=$(grep "^KAFKA_PORT=" "$env_file" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '"' | xargs 2>/dev/null || echo "9094")
+        local kafka_host=$(grep "^KAFKA_HOST=" "$env_file" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '"' | xargs 2>/dev/null || echo "middleware-kafka")
         
-        # 设置 Docker 网络配置
-        if [[ -n "$network_name" && "$network_external" != "true" ]]; then
-            export DOCKER_NETWORK="${DOCKER_NETWORK:-$network_name}"
-            export KAFKA_CONTAINER_NAME="${KAFKA_CONTAINER_NAME:-$kafka_host}"
+        # 设置全局配置 (支持环境变量覆盖)
+        if [[ -z "$KAFKA_HOST_OVERRIDE" ]]; then
+            KAFKA_HOST="localhost"
+            KAFKA_PORT="$kafka_port"
+        else
+            KAFKA_HOST="${OVERRIDE_KAFKA_HOST:-localhost}"
+            KAFKA_PORT="${OVERRIDE_KAFKA_PORT:-9094}"
         fi
         
-        # 设置 Kafka 连接配置
-        export DEFAULT_KAFKA_BROKERS="localhost:$kafka_port"
+        # 如果使用内部网络且没有手动覆盖，设置 Docker 网络配置
+        if [[ -n "$network_name" && "$network_external" != "true" && -z "$KAFKA_HOST_OVERRIDE" ]]; then
+            NETWORK_NAME="${SYSARMOR_NETWORK:-$network_name}"
+            KAFKA_CONTAINER="sysarmor-kafka-1"
+        fi
         
-        echo "[INFO] 已加载 .env 配置: 网络=$network_name, Kafka容器=$kafka_host, 外部端口=$kafka_port"
+        if [[ -n "$KAFKA_HOST_OVERRIDE" ]]; then
+            echo "[INFO] 配置覆盖: Kafka=$KAFKA_HOST:$KAFKA_PORT (环境变量覆盖)"
+        else
+            echo "[INFO] 配置加载: 网络=$network_name, Kafka=$kafka_host:$kafka_port"
+        fi
     else
         echo "[WARNING] 未找到 .env 文件，使用默认配置"
+        if [[ -z "$KAFKA_HOST_OVERRIDE" ]]; then
+            KAFKA_HOST="localhost"
+            KAFKA_PORT="9094"
+        else
+            KAFKA_HOST="${OVERRIDE_KAFKA_HOST:-localhost}"
+            KAFKA_PORT="${OVERRIDE_KAFKA_PORT:-9094}"
+        fi
+    fi
+    
+    # 如果有环境变量覆盖，显示最终使用的配置
+    if [[ -n "$KAFKA_HOST_OVERRIDE" ]]; then
+        echo "[INFO] 最终配置: Kafka=$KAFKA_HOST:$KAFKA_PORT (直连模式)"
+        # 清除网络配置，强制使用直连
+        NETWORK_NAME=""
+        KAFKA_CONTAINER=""
     fi
 }
-
-# 配置参数
-DEFAULT_KAFKA_BROKERS="localhost:9094"
-KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BROKERS:-$DEFAULT_KAFKA_BROKERS}"
-DEFAULT_OUTPUT_DIR="./data/kafka-exports"
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-
-# Docker 网络配置
-DOCKER_NETWORK="${DOCKER_NETWORK:-}"
-KAFKA_CONTAINER_NAME="${KAFKA_CONTAINER_NAME:-sysarmor-kafka-1}"
-
-# 批量导出配置
-DEFAULT_BATCH_SIZE=1000000  # 默认每批100万条
-LOG_FILE="$HOME/kafka-export-${TIMESTAMP}.log"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -124,6 +154,19 @@ parse_args() {
     done
 }
 
+# 获取网络和服务器配置
+get_kafka_config() {
+    if [[ -n "$NETWORK_NAME" ]]; then
+        echo "--network"
+        echo "$NETWORK_NAME"
+        echo "$KAFKA_CONTAINER:9092"
+    else
+        echo ""
+        echo ""
+        echo "$KAFKA_HOST:$KAFKA_PORT"
+    fi
+}
+
 # 检查依赖
 check_dependencies() {
     if ! command -v docker &> /dev/null; then
@@ -132,23 +175,24 @@ check_dependencies() {
     fi
     
     # 检查 Docker 网络是否存在
-    if [[ -n "$DOCKER_NETWORK" ]] && ! docker network ls | grep -q "$DOCKER_NETWORK"; then
-        log_warning "Docker 网络 '$DOCKER_NETWORK' 不存在，将使用默认连接"
-        DOCKER_NETWORK=""
+    if [[ -n "$NETWORK_NAME" ]] && ! docker network ls | grep -q "$NETWORK_NAME"; then
+        log_warning "Docker 网络 '$NETWORK_NAME' 不存在，将使用直连模式"
+        NETWORK_NAME=""
+        KAFKA_CONTAINER=""
     fi
 }
 
 # 执行 Kafka 命令
 run_kafka_command() {
     local cmd="$1"
-    local network_param=""
-    local kafka_server=""
+    local config=($(get_kafka_config))
+    local network_flag="${config[0]}"
+    local network_name="${config[1]}"
+    local kafka_server="${config[2]}"
     
-    if [[ -n "$DOCKER_NETWORK" ]]; then
-        network_param="--network $DOCKER_NETWORK"
-        kafka_server="$KAFKA_CONTAINER_NAME:9092"
-    else
-        kafka_server="$KAFKA_BOOTSTRAP_SERVERS"
+    local network_param=""
+    if [[ -n "$network_flag" && -n "$network_name" ]]; then
+        network_param="$network_flag $network_name"
     fi
     
     docker run --rm $network_param confluentinc/cp-kafka:7.4.0 \
@@ -171,14 +215,14 @@ get_kafka_topics() {
 # 获取 topic 消息数量
 get_topic_message_count() {
     local topic="$1"
-    local network_param=""
-    local kafka_server=""
+    local config=($(get_kafka_config))
+    local network_flag="${config[0]}"
+    local network_name="${config[1]}"
+    local kafka_server="${config[2]}"
     
-    if [[ -n "$DOCKER_NETWORK" ]]; then
-        network_param="--network $DOCKER_NETWORK"
-        kafka_server="$KAFKA_CONTAINER_NAME:9092"
-    else
-        kafka_server="$KAFKA_BOOTSTRAP_SERVERS"
+    local network_param=""
+    if [[ -n "$network_flag" && -n "$network_name" ]]; then
+        network_param="$network_flag $network_name"
     fi
     
     local offset_info=$(docker run --rm $network_param confluentinc/cp-kafka:7.4.0 \
@@ -195,11 +239,11 @@ list_topics() {
     echo "=============================================="
     echo "SysArmor Kafka Topics"
     echo "=============================================="
-    if [[ -n "$DOCKER_NETWORK" ]]; then
-        echo "网络: $DOCKER_NETWORK"
-        echo "服务器: $KAFKA_CONTAINER_NAME:9092"
+    if [[ -n "$NETWORK_NAME" ]]; then
+        echo "网络: $NETWORK_NAME"
+        echo "服务器: $KAFKA_CONTAINER:9092"
     else
-        echo "服务器: $KAFKA_BOOTSTRAP_SERVERS"
+        echo "服务器: $KAFKA_HOST:$KAFKA_PORT"
     fi
     echo "=============================================="
     
@@ -248,11 +292,11 @@ export_events() {
     if [[ -n "$COLLECTOR_ID" ]]; then
         echo "Collector 过滤: $COLLECTOR_ID"
     fi
-    if [[ -n "$DOCKER_NETWORK" ]]; then
-        echo "网络: $DOCKER_NETWORK"
-        echo "服务器: $KAFKA_CONTAINER_NAME:9092"
+    if [[ -n "$NETWORK_NAME" ]]; then
+        echo "网络: $NETWORK_NAME"
+        echo "服务器: $KAFKA_CONTAINER:9092"
     else
-        echo "服务器: $KAFKA_BOOTSTRAP_SERVERS"
+        echo "服务器: $KAFKA_HOST:$KAFKA_PORT"
     fi
     echo "日志文件: $LOG_FILE"
     echo "=============================================="
@@ -283,14 +327,15 @@ export_events() {
         return 0
     fi
     
-    local network_param=""
-    local kafka_server=""
+    # 获取连接配置
+    local config=($(get_kafka_config))
+    local network_flag="${config[0]}"
+    local network_name="${config[1]}"
+    local kafka_server="${config[2]}"
     
-    if [[ -n "$DOCKER_NETWORK" ]]; then
-        network_param="--network $DOCKER_NETWORK"
-        kafka_server="$KAFKA_CONTAINER_NAME:9092"
-    else
-        kafka_server="$KAFKA_BOOTSTRAP_SERVERS"
+    local network_param=""
+    if [[ -n "$network_flag" && -n "$network_name" ]]; then
+        network_param="$network_flag $network_name"
     fi
     
     # 判断是否需要批量导出
@@ -524,8 +569,8 @@ Collector ID: ${COLLECTOR_ID:-所有}
 $(ls -la "$topic_dir"/*.jsonl 2>/dev/null | awk '{print "  " $9 ": " $5 " bytes (" int($5/1024/1024) " MB)"}' || echo "  无数据文件")
 
 配置信息:
-  Docker 网络: ${DOCKER_NETWORK:-直连}
-  Kafka 服务器: ${KAFKA_CONTAINER_NAME:-$KAFKA_BOOTSTRAP_SERVERS}
+  Docker 网络: ${NETWORK_NAME:-直连}
+  Kafka 服务器: ${KAFKA_CONTAINER:-$KAFKA_HOST:$KAFKA_PORT}
   日志文件: $LOG_FILE
 EOF
     
@@ -628,14 +673,15 @@ import_events() {
     local line_count=$(wc -l < "$input_file")
     log_info "准备导入 $line_count 条事件到 topic '$topic'..."
     
-    local network_param=""
-    local kafka_server=""
+    # 获取连接配置
+    local config=($(get_kafka_config))
+    local network_flag="${config[0]}"
+    local network_name="${config[1]}"
+    local kafka_server="${config[2]}"
     
-    if [[ -n "$DOCKER_NETWORK" ]]; then
-        network_param="--network $DOCKER_NETWORK"
-        kafka_server="$KAFKA_CONTAINER_NAME:9092"
-    else
-        kafka_server="$KAFKA_BOOTSTRAP_SERVERS"
+    local network_param=""
+    if [[ -n "$network_flag" && -n "$network_name" ]]; then
+        network_param="$network_flag $network_name"
     fi
     
     # 检查 topic 是否存在，不存在则创建
@@ -690,9 +736,9 @@ SysArmor Kafka 工具 (增强版)
   --collector-id <id>            过滤特定 collector 的数据
 
 环境变量:
-  KAFKA_BROKERS         - Kafka 服务器地址 (默认: ${DEFAULT_KAFKA_BROKERS})
-  DOCKER_NETWORK        - Docker 网络名称 (默认: 未设置，使用直连)
-  KAFKA_CONTAINER_NAME  - Kafka 容器名称 (默认: sysarmor-kafka-1)
+  KAFKA_HOST            - Kafka 服务器主机 (默认: localhost)
+  KAFKA_PORT            - Kafka 服务器端口 (默认: 9094)
+  SYSARMOR_NETWORK      - Docker 网络名称 (默认: 从 .env 读取)
 
 示例:
   # 基础操作
@@ -709,9 +755,9 @@ SysArmor Kafka 工具 (增强版)
   # 组合使用
   $0 export sysarmor-agentless-b1de298c all --out ~/exports --batch-size 500000 --collector-id b1de298c
   
-  # Docker 网络模式
-  DOCKER_NETWORK=sysarmor-net $0 list                        # 使用 Docker 网络
-  DOCKER_NETWORK=sysarmor-net $0 export sysarmor-agentless-b1de298c all --out ~/exports
+  # 环境变量覆盖
+  KAFKA_HOST=remote-server KAFKA_PORT=9094 $0 list           # 连接远程 Kafka
+  KAFKA_PORT=9095 $0 export sysarmor-events-test 10          # 使用不同端口
   
   # 后台运行和监控
   nohup $0 export sysarmor-agentless-b1de298c all --collector-id b1de298c > export.out 2>&1 &
@@ -719,9 +765,9 @@ SysArmor Kafka 工具 (增强版)
   $0 status                                                  # 查看导出状态
 
 配置:
-  当前服务器: ${KAFKA_BOOTSTRAP_SERVERS}
-  Docker 网络: ${DOCKER_NETWORK:-未设置}
-  Kafka 容器: ${KAFKA_CONTAINER_NAME}
+  当前服务器: ${KAFKA_HOST:-localhost}:${KAFKA_PORT:-9094}
+  Docker 网络: ${NETWORK_NAME:-未设置}
+  Kafka 容器: ${KAFKA_CONTAINER:-sysarmor-kafka-1}
   默认输出目录: ${DEFAULT_OUTPUT_DIR}
   默认批次大小: ${DEFAULT_BATCH_SIZE}
 

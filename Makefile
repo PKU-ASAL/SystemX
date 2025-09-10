@@ -10,10 +10,18 @@ help: ## Show this help message
 ##@ 基础操作
 init: ## 初始化项目环境
 	@echo "🚀 初始化SysArmor EDR项目..."
-	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建: .env"; fi
+	@echo "1️⃣  创建数据目录..."
+	@mkdir -p data/kafka-exports data/logs data/backups
+	@echo "✅ 数据目录已创建: data/"
+	@echo "2️⃣  创建环境配置文件..."
+	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建: .env"; else echo "ℹ️  .env 文件已存在，跳过"; fi
 	@echo "📁 项目初始化完成"
-	@echo "   .env     - 单机部署配置"
-	@echo "   .env.dev - 开发环境配置 (连接远程middleware)"
+	@echo "   data/            - 数据存储目录"
+	@echo "   data/kafka-exports/ - Kafka 数据导出目录"
+	@echo "   data/logs/       - 日志文件目录"
+	@echo "   data/backups/    - 备份文件目录"
+	@echo "   .env             - 单机部署配置"
+	@echo "   .env.dev         - 开发环境配置 (连接远程middleware)"
 
 up: ## 启动所有服务 (单机部署)
 	@echo "🚀 启动SysArmor EDR服务..."

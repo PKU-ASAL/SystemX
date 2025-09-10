@@ -29,6 +29,7 @@ graph LR
 ```bash
 git clone https://git.pku.edu.cn/oslab/sysarmor.git
 cd sysarmor
+make init        # 初始化环境(复制.env.example为.env, 创建data目录)
 make up          # 启动所有服务
 make health      # 验证部署
 ```
@@ -106,7 +107,7 @@ curl -s http://localhost:8080/api/v1/health | jq '.data.services'
 ### 数据流测试
 ```bash
 # 导入测试数据到 Kafka
-./scripts/kafka-tools.sh import data/sysarmor-agentless-b1de298c_20250905_225242.jsonl sysarmor-events-test
+./scripts/kafka-tools.sh import data/kafka-imports/sysarmor-agentless-b1de298c_20250905_225242.jsonl sysarmor-events-test
 
 # 查看 Kafka topics 和消息数量
 ./scripts/kafka-tools.sh list
