@@ -3,7 +3,9 @@
 .env.dev
 .env.middleware
 
+data
 docs/draft
+docs/refactor
 docs/patches
 tests/migrations/outputs
 
@@ -24,7 +26,7 @@ tests/migrations/outputs
 # vendor/
 
 # Go workspace file
-go.work.sum
+# go.work.sum
 
 # Environment variables
 .env

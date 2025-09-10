@@ -20,7 +20,7 @@ services:
       KAFKA_METADATA_LOG_SEGMENT_MS: 15000
       KAFKA_METADATA_LOG_MAX_RECORD_BYTES_BETWEEN_SNAPSHOTS: 2800
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-      # JMX 配置
+      # JMX 配置 (优化启动速度)
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: middleware-kafka
       KAFKA_JVM_PERFORMANCE_OPTS: "-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -XX:MaxInlineLevel=15 -Djava.awt.headless=true"
@@ -44,10 +44,11 @@ services:
       - middleware_kafka_logs:/var/lib/kafka/logs
       - ./configs/monitoring/jmx-exporter:/opt/jmx-exporter:ro
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "9092"]
-      interval: 10s
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9092"]
+      interval: 15s
       timeout: 5s
-      retries: 10
+      retries: 5
+      start_period: 30s
     labels:
       - "sysarmor.module=middleware"
       - "sysarmor.component=message-queue"
@@ -58,8 +59,7 @@ services:
       dockerfile: ./services/middleware/vector.Dockerfile
     hostname: middleware-vector
     depends_on:
-      kafka:
-        condition: service_healthy
+      - kafka
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=middleware-kafka:9092
       - VECTOR_API_PORT=${VECTOR_API_PORT}

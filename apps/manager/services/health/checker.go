@@ -520,7 +520,11 @@ func (h *HealthChecker) GetSystemHealth(ctx context.Context, db *sql.DB) *System
 	prometheusHealth := h.checkPrometheusHealth(ctx)
 	components = append(components, prometheusHealth)
 	
-	// 5. 检查 Vector 健康状态 (通过现有的 worker 检查)
+	// 5. 检查 Flink 健康状态
+	flinkHealth := h.checkFlinkHealth(ctx)
+	components = append(components, flinkHealth)
+	
+	// 6. 检查 Vector 健康状态 (通过现有的 worker 检查)
 	workerResults := h.CheckAllWorkers(ctx)
 	
 	// 计算摘要
@@ -623,6 +627,78 @@ func (h *HealthChecker) checkDatabaseHealth(ctx context.Context, db *sql.DB) *Sy
 	return health
 }
 
+// checkFlinkHealth 检查 Flink 健康状态
+func (h *HealthChecker) checkFlinkHealth(ctx context.Context) *SystemComponentHealth {
+	start := time.Now()
+	
+	health := &SystemComponentHealth{
+		Name:      "flink",
+		Type:      "processor",
+		CheckedAt: time.Now(),
+	}
+	
+	// 通过 Manager 自身的 Flink API 检查
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/flink/health", nil)
+	if err != nil {
+		health.Healthy = false
+		health.Status = "request_failed"
+		health.Error = err.Error()
+		health.ResponseTime = time.Since(start)
+		return health
+	}
+	
+	resp, err := h.client.Do(req)
+	health.ResponseTime = time.Since(start)
+	
+	if err != nil {
+		health.Healthy = false
+		health.Status = "connection_failed"
+		health.Error = err.Error()
+		return health
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		health.Healthy = false
+		health.Status = "http_error"
+		health.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		return health
+	}
+	
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		health.Healthy = false
+		health.Status = "parse_failed"
+		health.Error = err.Error()
+		return health
+	}
+	
+	success, successOk := result["success"].(bool)
+	connected, connectedOk := result["connected"].(bool)
+	
+	// 检查字段是否存在且为 true
+	health.Healthy = successOk && success && connectedOk && connected
+	if health.Healthy {
+		health.Status = "connected"
+	} else {
+		health.Status = "disconnected"
+		if errorMsg, exists := result["error"].(string); exists {
+			health.Error = errorMsg
+		} else if !successOk {
+			health.Error = "Missing 'success' field in response"
+		} else if !connectedOk {
+			health.Error = "Missing 'connected' field in response"
+		} else if !success {
+			health.Error = "Flink connection test failed"
+		} else if !connected {
+			health.Error = "Flink not connected"
+		}
+	}
+	health.Details = result
+	
+	return health
+}
+
 // checkOpenSearchHealth 检查 OpenSearch 健康状态
 func (h *HealthChecker) checkOpenSearchHealth(ctx context.Context) *SystemComponentHealth {
 	start := time.Now()
@@ -717,7 +793,7 @@ func (h *HealthChecker) checkKafkaHealth(ctx context.Context) *SystemComponentHe
 	}
 	
 	// 通过 Manager 自身的 Kafka API 检查
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/kafka/test-connection", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/kafka/health", nil)
 	if err != nil {
 		health.Healthy = false
 		health.Status = "request_failed"

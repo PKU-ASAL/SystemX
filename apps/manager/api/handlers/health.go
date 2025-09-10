@@ -300,7 +300,7 @@ func (h *HealthHandler) GetComprehensiveHealth(c *gin.Context) {
 
 // GetHealthOverview 获取健康状态概览 (替代原有的 /health 接口)
 // @Summary 获取健康状态概览
-// @Description 获取系统健康状态概览，包括所有组件的简要状态信息
+// @Description 获取系统健康状态概览，按逻辑服务分组显示状态信息
 // @Tags health
 // @Accept json
 // @Produce json
@@ -311,39 +311,126 @@ func (h *HealthHandler) GetHealthOverview(c *gin.Context) {
 	ctx := c.Request.Context()
 	systemHealth := h.healthChecker.GetSystemHealth(ctx, h.db)
 	
-	// 构建概览响应
-	overview := gin.H{
-		"healthy":     systemHealth.Healthy,
-		"status":      systemHealth.Status,
-		"summary":     systemHealth.Summary,
-		"checked_at":  systemHealth.CheckedAt,
+	// 按逻辑服务分组构建响应
+	services := gin.H{
+		"manager": gin.H{
+			"healthy": true,
+			"status":  "running",
+			"components": gin.H{
+				"api":      gin.H{"healthy": true, "status": "running"},
+			},
+		},
+		"middleware": gin.H{
+			"healthy": true,
+			"status":  "running",
+			"components": gin.H{},
+		},
+		"processor": gin.H{
+			"healthy": true,
+			"status":  "running", 
+			"components": gin.H{
+				"flink": gin.H{"healthy": true, "status": "running"},
+			},
+		},
+		"indexer": gin.H{
+			"healthy": true,
+			"status":  "running",
+			"components": gin.H{},
+		},
 	}
 	
-	// 添加组件状态摘要
-	componentSummary := make(map[string]interface{})
+	// 填充各个服务的组件状态
 	for _, comp := range systemHealth.Components {
-		componentSummary[comp.Name] = gin.H{
-			"healthy":       comp.Healthy,
-			"status":        comp.Status,
-			"response_time": comp.ResponseTime,
+		switch comp.Name {
+		case "kafka":
+			services["middleware"].(gin.H)["components"].(gin.H)["kafka"] = gin.H{
+				"healthy":       comp.Healthy,
+				"status":        comp.Status,
+				"response_time": comp.ResponseTime,
+			}
+			if !comp.Healthy {
+				services["middleware"].(gin.H)["healthy"] = false
+				services["middleware"].(gin.H)["status"] = "unhealthy"
+			}
+		case "prometheus":
+			services["middleware"].(gin.H)["components"].(gin.H)["prometheus"] = gin.H{
+				"healthy":       comp.Healthy,
+				"status":        comp.Status,
+				"response_time": comp.ResponseTime,
+			}
+			if !comp.Healthy {
+				services["middleware"].(gin.H)["healthy"] = false
+				services["middleware"].(gin.H)["status"] = "unhealthy"
+			}
+		case "opensearch":
+			services["indexer"].(gin.H)["components"].(gin.H)["opensearch"] = gin.H{
+				"healthy":       comp.Healthy,
+				"status":        comp.Status,
+				"response_time": comp.ResponseTime,
+			}
+			if !comp.Healthy {
+				services["indexer"].(gin.H)["healthy"] = false
+				services["indexer"].(gin.H)["status"] = "unhealthy"
+			}
+		case "database":
+			services["manager"].(gin.H)["components"].(gin.H)["database"] = gin.H{
+				"healthy":       comp.Healthy,
+				"status":        comp.Status,
+				"response_time": comp.ResponseTime,
+			}
+			if !comp.Healthy {
+				services["manager"].(gin.H)["healthy"] = false
+				services["manager"].(gin.H)["status"] = "unhealthy"
+			}
 		}
 	}
-	overview["components"] = componentSummary
 	
-	// 添加 Worker 状态摘要
-	if len(systemHealth.Workers) > 0 {
-		workerSummary := make([]gin.H, 0, len(systemHealth.Workers))
-		for _, worker := range systemHealth.Workers {
-			workerSummary = append(workerSummary, gin.H{
-				"name":          worker.Name,
+	// 添加 Vector 状态 (从 Workers 获取)
+	for _, worker := range systemHealth.Workers {
+		if worker.Name == "middleware-vector" {
+			services["middleware"].(gin.H)["components"].(gin.H)["vector"] = gin.H{
 				"healthy":       worker.Healthy,
+				"status":        "running",
 				"response_time": worker.ResponseTime,
-			})
+			}
+			if !worker.Healthy {
+				services["middleware"].(gin.H)["healthy"] = false
+				services["middleware"].(gin.H)["status"] = "unhealthy"
+			}
 		}
-		overview["workers"] = workerSummary
 	}
 	
-	if systemHealth.Healthy {
+	// 计算整体健康状态
+	overallHealthy := true
+	for _, service := range services {
+		if !service.(gin.H)["healthy"].(bool) {
+			overallHealthy = false
+			break
+		}
+	}
+	
+	overview := gin.H{
+		"healthy":    overallHealthy,
+		"status":     map[bool]string{true: "healthy", false: "unhealthy"}[overallHealthy],
+		"services":   services,
+		"summary": gin.H{
+			"total_services":   4,
+			"healthy_services": func() int {
+				count := 0
+				for _, service := range services {
+					if service.(gin.H)["healthy"].(bool) {
+						count++
+					}
+				}
+				return count
+			}(),
+			"total_components":   systemHealth.Summary.TotalComponents,
+			"healthy_components": systemHealth.Summary.HealthyComponents,
+		},
+		"checked_at": systemHealth.CheckedAt,
+	}
+	
+	if overallHealthy {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    overview,

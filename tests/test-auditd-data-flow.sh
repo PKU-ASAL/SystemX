@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SysArmor 修复版数据流测试脚本
-# 修复 JSON 格式和 Kafka 工具路径问题
+# 修复 JSON 格式和 Kafka 工具路径问题，支持自动读取 .env 配置
 
 set -e
 
@@ -15,10 +15,36 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# 自动加载 .env 配置
+load_env_config() {
+    local env_file=".env"
+    
+    if [[ -f "$env_file" ]]; then
+        # 读取配置
+        local vector_tcp_port=$(grep "^VECTOR_TCP_PORT=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "6000")
+        local vector_api_port=$(grep "^VECTOR_API_PORT=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "8686")
+        local vector_host=$(grep "^VECTOR_HOST=" "$env_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "middleware-vector")
+        
+        # 设置配置
+        export VECTOR_TCP_PORT="$vector_tcp_port"
+        export VECTOR_API_PORT="$vector_api_port"
+        export VECTOR_HOST="localhost"  # 外部访问使用 localhost
+        export VECTOR_API="http://localhost:$vector_api_port"
+        
+        echo "[INFO] 已加载 .env 配置: Vector TCP端口=$vector_tcp_port, API端口=$vector_api_port"
+    else
+        echo "[WARNING] 未找到 .env 文件，使用默认配置"
+        export VECTOR_HOST="localhost"
+        export VECTOR_TCP_PORT="6000"
+        export VECTOR_API="http://localhost:8686"
+    fi
+}
+
+# 加载环境配置
+load_env_config
+
 # 测试配置
-VECTOR_HOST="localhost"
-VECTOR_TCP_PORT="6000"
-VECTOR_API="http://localhost:8686"
+MANAGER_API="http://localhost:8080"
 
 # 生成符合要求的测试数据 (包含 collector_id)
 COLLECTOR_ID="12345678-abcd-efgh-ijkl-123456789012"
@@ -85,40 +111,47 @@ echo "=================================================="
 docker compose -f docker-compose.middleware.yml logs --tail 10 vector
 echo ""
 
-# 步骤5: 检查 Kafka 主题 (使用正确路径)
+# 步骤5: 检查 Kafka 主题 (使用 Manager API)
 echo -e "${YELLOW}📋 步骤5: 检查 Kafka 主题: ${EXPECTED_TOPIC}${NC}"
 echo "=================================================="
 
-KAFKA_CONTAINER="sysarmor-kafka-1"
-echo -n "检查 Kafka 容器: "
-if docker ps --format "{{.Names}}" | grep -q "$KAFKA_CONTAINER"; then
-    echo -e "${GREEN}✅ 容器运行中${NC}"
+echo -n "检查 Kafka 健康状态: "
+KAFKA_HEALTH=$(curl -s --max-time 10 "${MANAGER_API}/api/v1/services/kafka/health" 2>/dev/null)
+KAFKA_CONNECTED=$(echo "$KAFKA_HEALTH" | jq -r '.connected' 2>/dev/null)
+
+if [ "$KAFKA_CONNECTED" = "true" ]; then
+    echo -e "${GREEN}✅ Kafka 连接正常${NC}"
     
     echo -n "获取主题列表: "
-    TOPICS=$(docker exec -e KAFKA_OPTS= $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list 2>/dev/null || echo "")
-    if [ -n "$TOPICS" ]; then
+    TOPICS_RESPONSE=$(curl -s --max-time 10 "${MANAGER_API}/api/v1/services/kafka/topics" 2>/dev/null)
+    TOPICS_SUCCESS=$(echo "$TOPICS_RESPONSE" | jq -r '.success' 2>/dev/null)
+    
+    if [ "$TOPICS_SUCCESS" = "true" ]; then
         echo -e "${GREEN}✅ 成功${NC}"
         echo "现有主题:"
-        echo "$TOPICS" | sed 's/^/  - /'
+        echo "$TOPICS_RESPONSE" | jq -r '.data.topics[].name' | sed 's/^/  - /'
         
         # 检查期望的主题是否存在
-        if echo "$TOPICS" | grep -q "${EXPECTED_TOPIC}"; then
+        TOPIC_EXISTS=$(echo "$TOPICS_RESPONSE" | jq -r ".data.topics[] | select(.name == \"${EXPECTED_TOPIC}\") | .name" 2>/dev/null)
+        if [ -n "$TOPIC_EXISTS" ]; then
             echo -e "${GREEN}✅ 主题 ${EXPECTED_TOPIC} 存在${NC}"
             
-            # 尝试消费消息
-            echo -n "消费最新消息: "
-            LATEST_MESSAGE=$(timeout 10 docker exec -e KAFKA_OPTS= $KAFKA_CONTAINER /opt/kafka/bin/kafka-console-consumer.sh \
-                --bootstrap-server localhost:9092 \
-                --topic "${EXPECTED_TOPIC}" \
-                --from-beginning \
-                --max-messages 1 2>/dev/null || echo "")
+            # 获取主题消息
+            echo -n "获取最新消息: "
+            MESSAGES_RESPONSE=$(curl -s --max-time 10 "${MANAGER_API}/api/v1/services/kafka/topics/${EXPECTED_TOPIC}/messages?limit=1" 2>/dev/null)
+            MESSAGES_SUCCESS=$(echo "$MESSAGES_RESPONSE" | jq -r '.success' 2>/dev/null)
             
-            if [ -n "$LATEST_MESSAGE" ]; then
-                echo -e "${GREEN}✅ 发现消息${NC}"
-                echo "消息内容:"
-                echo "$LATEST_MESSAGE" | jq . 2>/dev/null || echo "$LATEST_MESSAGE"
+            if [ "$MESSAGES_SUCCESS" = "true" ]; then
+                MESSAGES_COUNT=$(echo "$MESSAGES_RESPONSE" | jq -r '.data.messages | length' 2>/dev/null)
+                if [ "$MESSAGES_COUNT" -gt 0 ]; then
+                    echo -e "${GREEN}✅ 发现 $MESSAGES_COUNT 条消息${NC}"
+                    echo "最新消息:"
+                    echo "$MESSAGES_RESPONSE" | jq -r '.data.messages[0].value' | jq . 2>/dev/null || echo "$MESSAGES_RESPONSE" | jq -r '.data.messages[0].value'
+                else
+                    echo -e "${YELLOW}⚠️  暂无消息${NC}"
+                fi
             else
-                echo -e "${YELLOW}⚠️  暂无消息${NC}"
+                echo -e "${YELLOW}⚠️  无法获取消息${NC}"
             fi
         else
             echo -e "${YELLOW}⚠️  主题 ${EXPECTED_TOPIC} 不存在${NC}"
@@ -127,7 +160,7 @@ if docker ps --format "{{.Names}}" | grep -q "$KAFKA_CONTAINER"; then
         echo -e "${RED}❌ 无法获取主题列表${NC}"
     fi
 else
-    echo -e "${RED}❌ Kafka 容器未运行${NC}"
+    echo -e "${RED}❌ Kafka 连接失败${NC}"
 fi
 
 echo ""
@@ -167,8 +200,10 @@ echo -e "${GREEN}✅ 数据发送: 成功 (修复格式)${NC}"
 echo -e "${GREEN}✅ Kafka 工具: 路径修复${NC}"
 
 # 检查数据流是否成功
-TOPICS=$(docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list 2>/dev/null || echo "")
-if echo "$TOPICS" | grep -q "${EXPECTED_TOPIC}"; then
+TOPICS_RESPONSE=$(curl -s --max-time 10 "${MANAGER_API}/api/v1/services/kafka/topics" 2>/dev/null)
+TOPIC_EXISTS=$(echo "$TOPICS_RESPONSE" | jq -r ".data.topics[] | select(.name == \"${EXPECTED_TOPIC}\") | .name" 2>/dev/null)
+
+if [ -n "$TOPIC_EXISTS" ]; then
     echo -e "${GREEN}✅ Kafka 主题创建: 成功${NC}"
     echo -e "${GREEN}✅ 数据流: Vector → Kafka 正常${NC}"
 else
@@ -178,9 +213,11 @@ fi
 
 echo ""
 echo -e "${BLUE}💡 调试命令:${NC}"
-echo "1. 实时查看 Vector 日志: docker compose -f docker-compose.middleware.yml logs -f vector"
-echo "2. 检查 Kafka 主题: docker exec -e KAFKA_OPTS= sysarmor-kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
-echo "3. 消费 Kafka 消息: docker exec -e KAFKA_OPTS= sysarmor-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ${EXPECTED_TOPIC} --from-beginning"
+echo "1. 实时查看 Vector 日志: docker compose logs -f vector"
+echo "2. 检查 Kafka 主题: ./scripts/kafka-tools.sh list"
+echo "3. 消费 Kafka 消息: ./scripts/kafka-tools.sh export ${EXPECTED_TOPIC} 10"
 echo "4. 检查 Vector 配置: cat services/middleware/configs/vector/vector.toml"
+echo "5. Manager API 健康检查: curl -s ${MANAGER_API}/api/v1/health | jq ."
+echo "6. Kafka 健康检查: curl -s ${MANAGER_API}/api/v1/services/kafka/health | jq ."
 echo ""
 echo -e "${GREEN}🎉 SysArmor 修复版数据流测试完成！${NC}"

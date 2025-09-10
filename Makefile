@@ -5,15 +5,23 @@
 help: ## Show this help message
 	@echo "SysArmor EDR Monorepo Management"
 	@echo "================================"
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ 基础操作
 init: ## 初始化项目环境
 	@echo "🚀 初始化SysArmor EDR项目..."
-	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建: .env"; fi
+	@echo "1️⃣  创建数据目录..."
+	@mkdir -p data/kafka-exports data/logs data/backups
+	@echo "✅ 数据目录已创建: data/"
+	@echo "2️⃣  创建环境配置文件..."
+	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建: .env"; else echo "ℹ️  .env 文件已存在，跳过"; fi
 	@echo "📁 项目初始化完成"
-	@echo "   .env     - 单机部署配置"
-	@echo "   .env.dev - 开发环境配置 (连接远程middleware)"
+	@echo "   data/            - 数据存储目录"
+	@echo "   data/kafka-exports/ - Kafka 数据导出目录"
+	@echo "   data/logs/       - 日志文件目录"
+	@echo "   data/backups/    - 备份文件目录"
+	@echo "   .env             - 单机部署配置"
+	@echo "   .env.dev         - 开发环境配置 (连接远程middleware)"
 
 up: ## 启动所有服务 (单机部署)
 	@echo "🚀 启动SysArmor EDR服务..."
@@ -23,17 +31,37 @@ up: ## 启动所有服务 (单机部署)
 	@echo "🌐 Manager API: http://localhost:8080"
 	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
 
+deploy: ## 构建并启动所有服务 (单机部署)
+	@echo "🔨 构建并启动SysArmor EDR服务..."
+	@if [ ! -f .env ]; then cp .env.example .env; fi
+	docker compose build --no-cache
+	docker compose up -d
+	@echo "✅ 所有服务构建并启动完成"
+	@echo "🌐 Manager API: http://localhost:8080"
+	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
+
 down: ## 停止所有服务
 	@echo "🛑 停止SysArmor EDR服务..."
-	docker compose down
-	@echo "✅ 所有服务已停止"
+	docker compose down -v --remove-orphans
+	@echo "✅ 所有服务已停止，数据卷和网络已清理"
 
-up-dev: ## 构建并启动开发环境 (连接远程middleware)
+up-dev: ## 启动开发环境 (连接远程middleware)
 	@echo "🚀 启动SysArmor EDR开发环境..."
+	@if [ ! -f .env.dev ]; then echo "❌ .env.dev 文件不存在"; exit 1; fi
+	docker compose -f docker-compose.dev.yml up -d
+	@echo "✅ 开发环境启动完成 (连接到远程middleware: 49.232.13.155)"
+	@echo "🌐 Manager API: http://localhost:8080"
+	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
+	@echo "🔧 Flink监控: http://localhost:8081"
+	@echo "🔍 OpenSearch: http://localhost:9200"
+	@echo "📊 远程Prometheus: http://49.232.13.155:9090"
+
+deploy-dev: ## 构建并启动开发环境 (连接远程middleware)
+	@echo "🔨 构建并启动SysArmor EDR开发环境..."
 	@if [ ! -f .env.dev ]; then echo "❌ .env.dev 文件不存在"; exit 1; fi
 	docker compose -f docker-compose.dev.yml build --no-cache
 	docker compose -f docker-compose.dev.yml up -d
-	@echo "✅ 开发环境启动完成 (连接到远程middleware: 49.232.13.155)"
+	@echo "✅ 开发环境构建并启动完成 (连接到远程middleware: 49.232.13.155)"
 	@echo "🌐 Manager API: http://localhost:8080"
 	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
 	@echo "🔧 Flink监控: http://localhost:8081"
@@ -47,12 +75,18 @@ down-dev: ## 停止并清理开发环境
 	docker image prune -f --filter "label=sysarmor.module"
 	@echo "✅ 开发环境已清理"
 
-up-middleware: ## 构建并启动开发环境 (单独部署middleware)
-	@echo "🚀 启动SysArmor EDR开发环境..."
+up-middleware: ## 启动middleware服务 (单独部署middleware)
+	@echo "🚀 启动SysArmor EDR middleware服务..."
+	@if [ ! -f .env.middleware ]; then echo "❌ .env.middleware 文件不存在"; exit 1; fi
+	docker compose -f docker-compose.middleware.yml up -d
+	@echo "✅ Middleware服务启动完成"
+
+deploy-middleware: ## 构建并启动middleware服务 (单独部署middleware)
+	@echo "� 构建并启动SysArmor EDR middleware服务..."
 	@if [ ! -f .env.middleware ]; then echo "❌ .env.middleware 文件不存在"; exit 1; fi
 	docker compose -f docker-compose.middleware.yml build --no-cache
 	docker compose -f docker-compose.middleware.yml up -d
-	@echo "✅ 开发环境启动完成 (已部署middleware)"
+	@echo "✅ Middleware服务构建并启动完成"
 
 down-middleware: ## 停止并清理开发环境
 	@echo "🛑 停止并清理SysArmor EDR开发环境..."
@@ -80,9 +114,6 @@ status: ## 查看服务状态
 		docker ps --filter "label=sysarmor.module" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; \
 	fi
 
-logs: ## 查看服务日志
-	@echo "📋 SysArmor EDR服务日志："
-	docker compose logs -f
 
 health: ## 系统健康检查
 	@echo "🏥 SysArmor EDR健康检查..."
@@ -90,6 +121,239 @@ health: ## 系统健康检查
 	@curl -s http://localhost:9090/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
 	@curl -s http://localhost:8081/overview > /dev/null && echo "✅ Flink: 健康" || echo "❌ Flink: 异常"
 	@curl -s http://localhost:9200/_cluster/health > /dev/null && echo "✅ OpenSearch: 健康" || echo "❌ OpenSearch: 异常"
+
+##@ 服务管理 (格式: make <service> <command>)
+# Middleware 服务管理
+middleware: ## Middleware服务管理 (用法: make middleware <command>)
+	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		echo "📡 SysArmor Middleware 服务管理"; \
+		echo "==============================="; \
+		echo "用法: make middleware <command>"; \
+		echo ""; \
+		echo "可用命令:"; \
+		echo "  status           - 查看Middleware服务状态"; \
+		echo "  test-kafka       - 测试Kafka连接"; \
+		echo "  topics           - 查看Kafka Topics"; \
+		echo "  health           - 健康检查"; \
+		echo ""; \
+		echo "示例:"; \
+		echo "  make middleware status"; \
+		echo "  make middleware test-kafka"; \
+		echo "  make middleware topics"; \
+	else \
+		$(MAKE) middleware-$(filter-out $@,$(MAKECMDGOALS)); \
+	fi
+
+middleware-status:
+	@echo "📊 SysArmor Middleware - 服务状态："
+	@docker ps --filter "label=sysarmor.module=middleware" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+
+middleware-test-kafka:
+	@echo "📡 SysArmor Middleware - 测试Kafka连接..."
+	@curl -s http://localhost:8080/api/v1/services/kafka/health | jq '.' || echo "❌ Kafka不可用"
+
+middleware-topics:
+	@echo "📋 SysArmor Middleware - Kafka Topics："
+	@curl -s http://localhost:8080/api/v1/services/kafka/topics | jq '.data' || echo "❌ 无法获取Topics"
+
+middleware-health:
+	@echo "🏥 SysArmor Middleware - 健康检查..."
+	@curl -s http://localhost:8080/api/v1/services/kafka/health | jq '.' || echo "❌ Kafka不可用"
+	@curl -s http://localhost:9090/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
+
+# Processor 服务管理
+processor: ## Processor服务管理 (用法: make processor <command>)
+	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		echo "🔧 SysArmor Processor 服务管理"; \
+		echo "=============================="; \
+		echo "用法: make processor <command>"; \
+		echo ""; \
+		echo "可用命令:"; \
+		echo "  list-jobs        - 查看Flink作业列表"; \
+		echo "  submit-console   - 提交简单控制台测试作业"; \
+		echo "  submit-auditd-sysdig - 提交Auditd到Sysdig转换测试作业"; \
+		echo "  cancel-job JOB_ID=xxx - 取消指定作业"; \
+		echo "  overview         - 查看Flink集群概览"; \
+		echo "  status           - 查看Processor服务状态"; \
+		echo "  test             - 快速测试Processor功能"; \
+		echo ""; \
+		echo "示例:"; \
+		echo "  make processor list-jobs"; \
+		echo "  make processor submit-console"; \
+		echo "  make processor submit-auditd-sysdig"; \
+	else \
+		$(MAKE) processor-$(filter-out $@,$(MAKECMDGOALS)); \
+	fi
+
+processor-list-jobs:
+	@echo "📋 SysArmor Processor - Flink作业列表："
+	@echo "通过Flink API查询:"
+	@curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
+	(echo "  ⚠️  Flink API不可用，尝试Manager API..." && \
+	 curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.state // "未知")"' 2>/dev/null || \
+	 echo "  ❌ 所有API都不可用")
+
+processor-submit-console:
+	@echo "🖥️  SysArmor Processor - 提交简单控制台测试作业..."
+	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
+		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_test_simple_console.py; \
+		echo "✅ 简单控制台测试作业已提交!"; \
+		echo "📊 监控: http://localhost:8081"; \
+	else \
+		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
+	fi
+
+processor-submit-auditd-sysdig:
+	@echo "🔄 SysArmor Processor - 提交Auditd到Sysdig转换测试作业..."
+	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
+		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_test_auditd_sysdig_console.py; \
+		echo "✅ Auditd到Sysdig转换测试作业已提交!"; \
+		echo "🔄 基于NODLINK管道处理逻辑"; \
+		echo "📥 消费: sysarmor-events-test"; \
+		echo "📤 输出: 控制台 (sysdig格式)"; \
+		echo "📊 监控: http://localhost:8081"; \
+	else \
+		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
+	fi
+
+
+processor-cancel-job:
+	@if [ -z "$(JOB_ID)" ]; then \
+		echo "❌ 请指定作业ID: make processor cancel-job JOB_ID=your_job_id"; \
+		echo "💡 获取作业ID: make processor list-jobs"; \
+		exit 1; \
+	fi
+	@echo "🛑 SysArmor Processor - 取消Flink作业 $(JOB_ID)..."
+	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
+		docker compose exec flink-jobmanager flink cancel $(JOB_ID); \
+		echo "✅ 作业 $(JOB_ID) 已取消"; \
+	else \
+		echo "❌ Flink JobManager容器未运行"; \
+	fi
+
+
+processor-overview:
+	@echo "📊 SysArmor Processor - Flink集群概览："
+	@echo "通过Manager API查询:"
+	@curl -s http://localhost:8080/api/v1/services/flink/overview 2>/dev/null | jq '.' 2>/dev/null || \
+	(echo "⚠️  Manager API不可用，尝试直接访问Flink..." && \
+	 curl -s http://localhost:8081/overview 2>/dev/null | jq '.' 2>/dev/null || \
+	 echo "❌ Flink集群不可用")
+
+processor-status:
+	@echo "📊 SysArmor Processor - 服务状态："
+	@docker ps --filter "label=sysarmor.module=processor" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+processor-test:
+	@echo "🚀 SysArmor Processor - 快速测试流程..."
+	@echo "1️⃣  检查Processor服务状态..."
+	@make processor-status
+	@echo ""
+	@echo "2️⃣  查看Flink集群概览..."
+	@make processor-overview
+	@echo ""
+	@echo "3️⃣  提交简单控制台测试作业..."
+	@make processor-submit-console
+	@echo ""
+	@echo "4️⃣  查看作业列表..."
+	@sleep 3
+	@make processor-list-jobs
+	@echo ""
+	@echo "✅ Processor快速测试完成!"
+	@echo "📊 Web监控: http://localhost:8081"
+
+# Indexer 服务管理
+indexer: ## Indexer服务管理 (用法: make indexer <command>)
+	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		echo "🔍 SysArmor Indexer 服务管理"; \
+		echo "============================="; \
+		echo "用法: make indexer <command>"; \
+		echo ""; \
+		echo "可用命令:"; \
+		echo "  status           - 查看Indexer服务状态"; \
+		echo "  health           - 健康检查"; \
+		echo "  indices          - 查看索引列表"; \
+		echo "  search           - 搜索威胁事件"; \
+		echo "  cluster-info     - 查看集群信息"; \
+		echo ""; \
+		echo "示例:"; \
+		echo "  make indexer status"; \
+		echo "  make indexer health"; \
+		echo "  make indexer indices"; \
+	else \
+		$(MAKE) indexer-$(filter-out $@,$(MAKECMDGOALS)); \
+	fi
+
+indexer-status:
+	@echo "📊 SysArmor Indexer - 服务状态："
+	@docker ps --filter "label=sysarmor.module=indexer" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+
+indexer-health:
+	@echo "🏥 SysArmor Indexer - 健康检查..."
+	@curl -s http://localhost:9200/_cluster/health | jq '.' || echo "❌ OpenSearch不可用"
+
+indexer-indices:
+	@echo "📋 SysArmor Indexer - 索引列表："
+	@curl -s http://localhost:8080/api/v1/services/opensearch/indices | jq '.data' || \
+	curl -s -u admin:admin http://localhost:9200/_cat/indices?v || echo "❌ 无法获取索引列表"
+
+indexer-search:
+	@echo "🔍 SysArmor Indexer - 搜索威胁事件 (最近1小时)："
+	@curl -s "http://localhost:8080/api/v1/services/opensearch/events/recent?hours=1&size=5" | jq '.data.hits.hits[] | ._source | {timestamp, threat_type, risk_score, severity, host}' || echo "❌ 无法搜索事件"
+
+indexer-cluster-info:
+	@echo "📊 SysArmor Indexer - 集群信息："
+	@curl -s -u admin:admin http://localhost:9200/_cluster/stats | jq '{cluster_name, status, nodes: .nodes.count, indices: .indices.count, docs: .indices.docs.count}' || echo "❌ 无法获取集群信息"
+
+# Manager 服务管理
+manager: ## Manager服务管理 (用法: make manager <command>)
+	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		echo "🎛️  SysArmor Manager 服务管理"; \
+		echo "============================="; \
+		echo "用法: make manager <command>"; \
+		echo ""; \
+		echo "可用命令:"; \
+		echo "  status           - 查看Manager服务状态"; \
+		echo "  health           - 健康检查"; \
+		echo "  api-docs         - 打开API文档"; \
+		echo "  collectors       - 查看设备列表"; \
+		echo "  events           - 查看最近事件"; \
+		echo ""; \
+		echo "示例:"; \
+		echo "  make manager status"; \
+		echo "  make manager health"; \
+		echo "  make manager collectors"; \
+	else \
+		$(MAKE) manager-$(filter-out $@,$(MAKECMDGOALS)); \
+	fi
+
+manager-status:
+	@echo "📊 SysArmor Manager - 服务状态："
+	@docker ps --filter "label=sysarmor.module=manager" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+
+manager-health:
+	@echo "🏥 SysArmor Manager - 健康检查..."
+	@curl -s http://localhost:8080/health | jq '.' || echo "❌ Manager不可用"
+
+manager-api-docs:
+	@echo "📖 SysArmor Manager - API文档："
+	@echo "🌐 http://localhost:8080/swagger/index.html"
+	@if command -v open >/dev/null 2>&1; then \
+		open http://localhost:8080/swagger/index.html; \
+	elif command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open http://localhost:8080/swagger/index.html; \
+	fi
+
+manager-collectors:
+	@echo "📱 SysArmor Manager - 设备列表："
+	@curl -s http://localhost:8080/api/v1/collectors | jq '.data[] | {id: .id[:8], hostname, status, last_active}' || echo "❌ 无法获取设备列表"
+
+manager-events:
+	@echo "📋 SysArmor Manager - 最近事件 (最近1小时)："
+	@curl -s "http://localhost:8080/api/v1/events/recent?hours=1&size=5" | jq '.data[] | {timestamp, event_type, severity, host, message}' || echo "❌ 无法获取事件"
 
 ##@ 开发构建
 build: ## 构建Manager应用
@@ -116,6 +380,7 @@ clean: ## 清理构建文件和容器
 	@rm -rf bin/
 	docker compose down -v --remove-orphans
 	@echo "✅ 清理完成"
+
 
 ##@ 信息帮助
 info: ## 显示项目信息

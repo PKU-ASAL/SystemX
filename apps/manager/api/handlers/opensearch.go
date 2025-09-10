@@ -21,6 +21,41 @@ func NewOpenSearchHandler(baseURL, username, password string) *OpenSearchHandler
 	}
 }
 
+// GetOpenSearchHealth 获取 OpenSearch 健康状态
+// @Summary 获取 OpenSearch 健康状态
+// @Description 获取 OpenSearch 集群的健康状态和连接信息
+// @Tags opensearch
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "健康状态正常"
+// @Failure 500 {object} map[string]interface{} "健康状态异常"
+// @Router /services/opensearch/health [get]
+func (h *OpenSearchHandler) GetOpenSearchHealth(c *gin.Context) {
+	ctx := c.Request.Context()
+	
+	// 获取集群健康状态来测试连接
+	health, err := h.opensearchService.GetClusterHealth(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success":   false,
+			"connected": false,
+			"error":     "Failed to connect to OpenSearch: " + err.Error(),
+		})
+		return
+	}
+
+	// 检查集群状态
+	connected := health.Status == "green" || health.Status == "yellow"
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"connected":    connected,
+		"message":      "Successfully connected to OpenSearch",
+		"cluster_info": health,
+		"tested_at":    time.Now(),
+	})
+}
+
 // GetClusterHealth 获取集群健康状态
 // @Summary 获取 OpenSearch 集群健康状态
 // @Description 获取 OpenSearch 集群的健康状态，包括节点数量、分片状态等

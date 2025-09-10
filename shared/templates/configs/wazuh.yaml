@@ -3,29 +3,27 @@
 wazuh:
   # Wazuh Manager配置
   manager:
-    url: "https://wazuh-manager:55000"
+    url: "https://10.129.81.4:55000"
     username: "wazuh"
-    password: "${WAZUH_MANAGER_PASSWORD}"
+    password: "WfvmoiqFu*0g0t425lj*Y.3SBZOYmUCR"
     timeout: 30s
     token_expiry: 7200s
     tls_verify: false
     max_retries: 3
-  
   # Wazuh Indexer配置
   indexer:
-    url: "https://wazuh-indexer:9200"
+    url: "https://10.129.81.4:9200"
     username: "admin"
-    password: "${WAZUH_INDEXER_PASSWORD}"
+    password: "5uSbeSyPANO?8rcbgvAF8frpANOWon+D"
     timeout: 30s
     tls_verify: false
     max_retries: 3
     indices:
-      alerts: "wazuh-alerts-*"      # 告警索引模式
-      archives: "wazuh-archives-*"  # 原始日志索引模式
-  
+      alerts: "wazuh-alerts-*" # 告警索引模式
+      archives: "wazuh-archives-*" # 原始日志索引模式
   # 功能开关
   features:
-    manager_enabled: true   # 是否启用Manager API
-    indexer_enabled: true   # 是否启用Indexer API
-    auto_sync: true         # 是否自动同步代理状态
-    sync_interval: 300s     # 同步间隔
+    manager_enabled: true # 是否启用Manager API
+    indexer_enabled: true # 是否启用Indexer API
+    auto_sync: true # 是否自动同步代理状态
+    sync_interval: 300s # 同步间隔
