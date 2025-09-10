@@ -55,16 +55,18 @@ services/indexer/
 
 ## 🛠️ 部署说明
 
-### 1. 生成SSL证书
-```bash
-cd services/indexer
-./scripts/generate-certs.sh
-```
-
-### 2. 启动服务
+### 快速部署
 ```bash
 # 从项目根目录
-make up
+make init       # 初始化环境 (包含SSL证书生成)
+make up         # 启动所有服务
+```
+
+### 手动证书生成 (可选)
+```bash
+# 如需重新生成证书
+cd services/indexer
+./scripts/generate-certs.sh
 ```
 
 ### 3. 验证部署

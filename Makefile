@@ -15,6 +15,13 @@ init: ## 初始化项目环境
 	@echo "✅ 数据目录已创建: data/"
 	@echo "2️⃣  创建环境配置文件..."
 	@if [ ! -f .env ]; then cp .env.example .env; echo "✅ 环境配置文件已创建: .env"; else echo "ℹ️  .env 文件已存在，跳过"; fi
+	@echo "3️⃣  生成OpenSearch SSL证书..."
+	@if [ ! -f services/indexer/configs/opensearch/certs/node.pem ]; then \
+		cd services/indexer && chmod +x scripts/generate-certs.sh && ./scripts/generate-certs.sh; \
+		echo "✅ OpenSearch SSL证书已生成"; \
+	else \
+		echo "ℹ️  SSL证书已存在，跳过生成"; \
+	fi
 	@echo "📁 项目初始化完成"
 	@echo "   data/            - 数据存储目录"
 	@echo "   data/kafka-exports/ - Kafka 数据导出目录"
@@ -22,6 +29,7 @@ init: ## 初始化项目环境
 	@echo "   data/backups/    - 备份文件目录"
 	@echo "   .env             - 单机部署配置"
 	@echo "   .env.dev         - 开发环境配置 (连接远程middleware)"
+	@echo "   services/indexer/configs/opensearch/certs/ - SSL证书文件"
 
 up: ## 启动所有服务 (单机部署)
 	@echo "🚀 启动SysArmor EDR服务..."
