@@ -49,10 +49,10 @@ MANAGER_API="http://localhost:8080"
 # 生成符合要求的测试数据 (包含 collector_id)
 COLLECTOR_ID="12345678-abcd-efgh-ijkl-123456789012"
 COLLECTOR_SHORT="12345678"
-EXPECTED_TOPIC="sysarmor-agentless-${COLLECTOR_SHORT}"
+EXPECTED_TOPIC="sysarmor.raw.audit"  # 使用新的统一topic
 
 # 符合 Vector 配置要求的测试数据 (紧凑格式，避免换行问题)
-TEST_MESSAGE='{"collector_id":"'${COLLECTOR_ID}'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","host":"test-host-001","source":"auditd","message":"type=SYSCALL msg=audit(1693420800.123:456): arch=c000003e syscall=2 success=yes exit=3 a0=7fff12345678 a1=0 a2=0 a3=7fff87654321 items=1 ppid=1234 pid=5678 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=1 comm=\"cat\" exe=\"/bin/cat\" key=\"file_access\"","event_type":"audit","severity":"info","tags":["audit","syscall","file_access"]}'
+TEST_MESSAGE='{"collector_id":"'${COLLECTOR_ID}'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","host":"test-host-001","source":"auditd","message":"type=SYSCALL msg=audit(1693420800.123:456): arch=c000003e syscall=2 success=yes exit=3 a0=7fff12345678 a1=0 a2=0 a3=7fff87654321 items=1 ppid=1234 pid=5678 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=1 comm=\"cat\" exe=\"/bin/cat\" key=\"file_access\"","event_type":"syslog","severity":"info","tags":["audit","syscall","file_access"]}'
 
 echo -e "${BLUE}📋 测试环境信息:${NC}"
 echo "  Vector TCP: ${VECTOR_HOST}:${VECTOR_TCP_PORT}"

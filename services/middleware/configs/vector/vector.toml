@@ -1,9 +1,9 @@
-# SysArmor Vector - 支持动态Topic配置和auditd日志处理
+# SysArmor Vector - MVP 简化版本
 [api]
 enabled = true
 address = "0.0.0.0:${VECTOR_API_PORT}"
 
-# 接收来自Agent的结构化数据 - TCP Socket接收器
+# 接收来自 rsyslog 的 auditd 数据
 [sources.tcp_receiver]
 type = "socket"
 address = "0.0.0.0:${VECTOR_TCP_PORT}"
@@ -11,51 +11,96 @@ mode = "tcp"
 max_length = 102400
 decoding.codec = "json"
 
-# 简化的解析和路由 - 只做collector_id提取和topic路由
-[transforms.parse_and_route]
+# 简化的数据处理 - 基于 event_type 做路由
+[transforms.process_and_route]
 type = "remap"
 inputs = ["tcp_receiver"]
 drop_on_error = true
 source = '''
-# 添加基本元数据
+# 添加处理时间戳
 .processed_at = now()
-.event_type = "tcp_message"
-.source_type = "tcp_socket"
 
-# 检查collector_id是否存在并生成topic
+# 验证必需字段
 if !exists(.collector_id) {
     abort "No collector_id found, dropping message"
 }
 
-collector_id_str = string!(.collector_id)
-if length(collector_id_str) < 8 {
-    abort "Invalid collector_id format (too short): " + collector_id_str + ", dropping message"
+if !exists(.message) {
+    abort "No message content found, dropping message"
 }
 
-# 生成topic名称 (与manager逻辑一致)
-collector_short = slice!(collector_id_str, start: 0, end: 8)
-.topic = "sysarmor-agentless-" + collector_short
+# 使用 collector_id 作为分区键，确保同一 collector 的数据有序
+.partition_key = string!(.collector_id)
 
-# 原始消息已经在 .message 字段中，无需重复保存
+# 根据 event_type 进行路由
+event_type = .event_type || "unknown"
 
-# 确保timestamp存在
+if event_type == "syslog" {
+    # syslog 类型数据（主要是 auditd）转发到 audit topic
+    .target_topic = "sysarmor.raw.audit"
+    .data_source = "syslog"
+    .event_category = "raw_audit"
+} else {
+    # 其他类型数据可以扩展到不同的 topic
+    .target_topic = "sysarmor.raw.other"
+    .data_source = event_type
+    .event_category = "raw_other"
+}
+
+# 确保 timestamp 存在
 if !exists(.timestamp) {
     .timestamp = now()
 }
 '''
 
-# 输出到动态Kafka Topic
-[sinks.kafka_dynamic]
+# 条件路由到 audit topic
+[transforms.route_to_audit]
+type = "filter"
+inputs = ["process_and_route"]
+condition = '.target_topic == "sysarmor.raw.audit"'
+
+# 条件路由到 other topic
+[transforms.route_to_other]
+type = "filter"
+inputs = ["process_and_route"]
+condition = '.target_topic == "sysarmor.raw.other"'
+
+# 输出到 audit topic
+[sinks.kafka_raw_audit]
 type = "kafka"
-inputs = ["parse_and_route"]
+inputs = ["route_to_audit"]
 bootstrap_servers = "${KAFKA_BOOTSTRAP_SERVERS}"
-topic = "{{ topic }}"
-key_field = "collector_id"  # 使用 collector_id 作为 Kafka 消息 key
+topic = "sysarmor.raw.audit"
+key_field = "partition_key"
 encoding.codec = "json"
 compression = "snappy"
 
-# Kafka生产者配置 - 优化性能和可靠性
-[sinks.kafka_dynamic.librdkafka_options]
+# 输出到 other topic（为未来扩展预留）
+[sinks.kafka_raw_other]
+type = "kafka"
+inputs = ["route_to_other"]
+bootstrap_servers = "${KAFKA_BOOTSTRAP_SERVERS}"
+topic = "sysarmor.raw.other"
+key_field = "partition_key"
+encoding.codec = "json"
+compression = "snappy"
+
+# Kafka 生产者配置
+[sinks.kafka_raw_audit.librdkafka_options]
+"message.timeout.ms" = "30000"
+"delivery.timeout.ms" = "30000"
+"request.timeout.ms" = "30000"
+"queue.buffering.max.messages" = "100000"
+"queue.buffering.max.kbytes" = "1048576"
+"batch.num.messages" = "1000"
+"batch.size" = "1000000"
+"linger.ms" = "100"
+"compression.type" = "snappy"
+"acks" = "1"
+"retries" = "3"
+"retry.backoff.ms" = "100"
+
+[sinks.kafka_raw_other.librdkafka_options]
 "message.timeout.ms" = "30000"
 "delivery.timeout.ms" = "30000"
 "request.timeout.ms" = "30000"

@@ -53,6 +53,29 @@ services:
       - "sysarmor.module=middleware"
       - "sysarmor.component=message-queue"
 
+  # Kafka Topics 初始化服务
+  kafka-init:
+    build:
+      context: ../..
+      dockerfile: ./services/middleware/kafka.Dockerfile
+    hostname: middleware-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - SYSARMOR_AUDIT_TOPIC=${SYSARMOR_AUDIT_TOPIC:-sysarmor.raw.audit.1}
+      - SYSARMOR_OTHER_TOPIC=${SYSARMOR_OTHER_TOPIC:-sysarmor.raw.other.1}
+      - KAFKA_AUDIT_PARTITIONS=${KAFKA_AUDIT_PARTITIONS:-32}
+      - KAFKA_AUDIT_RETENTION_MS=${KAFKA_AUDIT_RETENTION_MS:-259200000}
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=1
+    volumes:
+      - ./configs/kafka:/opt/kafka-config:ro
+    command: ["/opt/kafka-config/init-topics.sh"]
+    restart: "no"
+    labels:
+      - "sysarmor.module=middleware"
+      - "sysarmor.component=kafka-init"
+
   vector:
     build:
       context: ../..
@@ -65,6 +88,7 @@ services:
       - VECTOR_API_PORT=${VECTOR_API_PORT}
       - VECTOR_TCP_PORT=${VECTOR_TCP_PORT}
       - VECTOR_METRICS_PORT=${VECTOR_METRICS_PORT}
+      - SYSARMOR_AUDIT_TOPIC=${SYSARMOR_AUDIT_TOPIC:-sysarmor.raw.audit.1}
     ports:
       - "${VECTOR_TCP_PORT}:${VECTOR_TCP_PORT}"
       - "8686:8686"
