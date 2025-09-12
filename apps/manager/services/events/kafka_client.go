@@ -16,29 +16,24 @@ type KafkaClient struct {
 	config  *sarama.Config
 }
 
-// EventMessage Kafka 事件消息结构 (匹配 Vector 输出格式)
+// EventMessage Kafka 事件消息结构 (适配Flink NODLINK输出格式)
 type EventMessage struct {
+	// SysArmor元数据
+	EventID         string    `json:"event_id"`
 	Timestamp       time.Time `json:"timestamp"`
 	CollectorID     string    `json:"collector_id"`
-	EventType       string    `json:"event_type"`
+	Host            string    `json:"host"`
+	Source          string    `json:"source"`
+	Processor       string    `json:"processor"`
 	ProcessedAt     time.Time `json:"processed_at"`
 	
-	// 主要消息内容
-	Message         string    `json:"message"`           // Vector发送的主要消息内容
-	Host            string    `json:"host,omitempty"`
-	Source          string    `json:"source,omitempty"`
-	Severity        string    `json:"severity,omitempty"`
+	// 事件分类
+	EventType       string    `json:"event_type"`
+	EventCategory   string    `json:"event_category"`
+	Severity        string    `json:"severity"`
 	
-	// Vector处理字段
-	DataSource      string    `json:"data_source,omitempty"`
-	EventCategory   string    `json:"event_category,omitempty"`
-	PartitionKey    string    `json:"partition_key,omitempty"`
-	TargetTopic     string    `json:"target_topic,omitempty"`
-	SourceType      string    `json:"source_type,omitempty"`
-	Port            int       `json:"port,omitempty"`
-	
-	// 原始数据字段（兼容性）
-	Tags            []string  `json:"tags,omitempty"`
+	// 完整的sysdig格式数据 (改名为message以保持兼容性)
+	Message         map[string]interface{} `json:"message"`
 	
 	// Kafka 元数据
 	Partition       int       `json:"partition,omitempty"`

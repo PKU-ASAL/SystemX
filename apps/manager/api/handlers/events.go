@@ -400,9 +400,10 @@ func (h *EventsHandler) SearchEvents(c *gin.Context) {
 		keyword := strings.ToLower(searchRequest.Keyword)
 
 		for _, event := range result.Events {
-			if strings.Contains(strings.ToLower(event.Message), keyword) ||
-				strings.Contains(strings.ToLower(event.EventType), keyword) ||
-				strings.Contains(strings.ToLower(event.CollectorID), keyword) {
+			// 搜索事件类型、collector_id和host
+			if strings.Contains(strings.ToLower(event.EventType), keyword) ||
+				strings.Contains(strings.ToLower(event.CollectorID), keyword) ||
+				strings.Contains(strings.ToLower(event.Host), keyword) {
 				filteredEvents = append(filteredEvents, event)
 			}
 		}

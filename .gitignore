@@ -4,10 +4,8 @@
 .env.middleware
 
 data
-docs/draft
-docs/refactor
-docs/patches
-tests/migrations/outputs
+docs/specs
+docs/references
 
 # Binaries for programs and plugins
 *.exe
