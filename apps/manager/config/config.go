@@ -37,7 +37,7 @@ func (c *Config) GetKafkaBrokerList() []string {
 func (c *Config) GetWorkerList() []string {
 	return []string{
 		c.MiddlewareService + ":http://middleware:8686/health",
-		c.ProcessorService + ":http://processor:8081/health", 
+		c.ProcessorService + ":http://processor:8081/health",
 		c.IndexerService + ":http://indexer:9200/health",
 	}
 }
@@ -87,7 +87,7 @@ func (c *Config) IsDevelopment() bool {
 
 // GetWazuhConfigPath 获取Wazuh配置文件路径
 func (c *Config) GetWazuhConfigPath() string {
-	return sharedconfig.GetEnv("WAZUH_CONFIG_PATH", "./shared/configs/wazuh.yaml")
+	return sharedconfig.GetEnv("WAZUH_CONFIG_PATH", "./shared/templates/configs/wazuh.yaml")
 }
 
 // IsWazuhEnabled 检查Wazuh是否启用
@@ -100,7 +100,7 @@ func (c *Config) GetWazuhConfig() (*WazuhConfig, error) {
 	if !c.IsWazuhEnabled() {
 		return nil, fmt.Errorf("wazuh plugin is disabled")
 	}
-	
+
 	configPath := c.GetWazuhConfigPath()
 	return LoadWazuhConfig(configPath)
 }

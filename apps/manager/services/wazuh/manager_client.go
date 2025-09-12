@@ -983,7 +983,7 @@ func (c *ManagerClient) GetAgentKey(ctx context.Context, agentID string) (*model
 }
 
 // GetManagerInfo 获取Manager信息
-func (c *ManagerClient) GetManagerInfo(ctx context.Context) (*models.WazuhManagerInfoResponse, error) {
+func (c *ManagerClient) GetManagerInfo(ctx context.Context) (interface{}, error) {
 	resp, err := c.makeRequest(ctx, "GET", "/manager/info", nil)
 	if err != nil {
 		return nil, err
@@ -1000,11 +1000,12 @@ func (c *ManagerClient) GetManagerInfo(ctx context.Context) (*models.WazuhManage
 		return nil, fmt.Errorf("解析Manager信息响应失败: %w", err)
 	}
 
+	// 返回完整的响应结构，包含正确解析的数据
 	return &result, nil
 }
 
 // GetManagerStatus 获取Manager状态
-func (c *ManagerClient) GetManagerStatus(ctx context.Context) (*models.WazuhManagerStatusResponse, error) {
+func (c *ManagerClient) GetManagerStatus(ctx context.Context) (interface{}, error) {
 	resp, err := c.makeRequest(ctx, "GET", "/manager/status", nil)
 	if err != nil {
 		return nil, err
@@ -1021,6 +1022,7 @@ func (c *ManagerClient) GetManagerStatus(ctx context.Context) (*models.WazuhMana
 		return nil, fmt.Errorf("解析Manager状态响应失败: %w", err)
 	}
 
+	// 返回完整的响应结构，包含正确解析的数据
 	return &result, nil
 }
 
