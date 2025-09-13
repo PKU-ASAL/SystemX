@@ -58,7 +58,7 @@ up: ## 启动所有服务 (单机部署)
 	@if [ ! -f .env ]; then cp .env.example .env; fi
 	docker compose up -d
 	@echo "✅ 所有服务启动完成"
-	@echo "🌐 Manager API: $(MANAGER_URL)"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
 	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
 
 deploy: ## 构建并启动所有服务 (单机部署)
@@ -67,7 +67,7 @@ deploy: ## 构建并启动所有服务 (单机部署)
 	docker compose build --no-cache
 	docker compose up -d
 	@echo "✅ 所有服务构建并启动完成"
-	@echo "🌐 Manager API: $(MANAGER_URL)"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
 	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
 
 down: ## 停止所有服务
@@ -80,7 +80,7 @@ up-dev: ## 启动开发环境 (连接远程middleware)
 	@if [ ! -f .env.dev ]; then echo "❌ .env.dev 文件不存在"; exit 1; fi
 	docker compose -f docker-compose.dev.yml up -d
 	@echo "✅ 开发环境启动完成 (连接到远程middleware: 49.232.13.155)"
-	@echo "🌐 Manager API: $(MANAGER_URL)"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
 	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
 	@echo "🔧 Flink监控: $(FLINK_URL)"
 	@echo "🔍 OpenSearch: $(OPENSEARCH_URL)"
@@ -92,7 +92,7 @@ deploy-dev: ## 构建并启动开发环境 (连接远程middleware)
 	docker compose -f docker-compose.dev.yml build --no-cache
 	docker compose -f docker-compose.dev.yml up -d
 	@echo "✅ 开发环境构建并启动完成 (连接到远程middleware: 49.232.13.155)"
-	@echo "🌐 Manager API: $(MANAGER_URL)"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
 	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
 	@echo "🔧 Flink监控: $(FLINK_URL)"
 	@echo "🔍 OpenSearch: $(OPENSEARCH_URL)"
@@ -147,6 +147,10 @@ status: ## 查看服务状态
 
 health: ## 系统健康检查
 	@echo "🏥 SysArmor EDR健康检查..."
+	@echo "MANAGER_URL: $(MANAGER_URL)"
+	@echo "PROMETHEUS_URL: $(PROMETHEUS_URL)"
+	@echo "FLINK_URL: $(FLINK_URL)"
+	@echo "OPENSEARCH_URL: $(OPENSEARCH_URL)"
 	@curl -s $(MANAGER_URL)/health > /dev/null && echo "✅ Manager: 健康" || echo "❌ Manager: 异常"
 	@curl -s $(PROMETHEUS_URL)/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
 	@curl -s $(FLINK_URL)/overview > /dev/null && echo "✅ Flink: 健康" || echo "❌ Flink: 异常"
