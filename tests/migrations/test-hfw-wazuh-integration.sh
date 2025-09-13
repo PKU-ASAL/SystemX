@@ -16,7 +16,9 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 配置
-MANAGER_URL="http://localhost:8080"
+MANAGER_HOST="${MANAGER_HOST:-localhost}"
+MANAGER_PORT="${MANAGER_PORT:-8080}"
+MANAGER_URL="http://${MANAGER_HOST}:${MANAGER_PORT}"
 API_BASE="${MANAGER_URL}/api/v1"
 
 # 日志函数

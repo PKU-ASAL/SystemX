@@ -211,6 +211,64 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "description": "删除或停用指定的 Collector。默认行为是设置为 inactive 状态，使用 force=true 参数可以完全删除 Collector 及其相关资源（包括 Kafka topic）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "删除 Collector",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否强制删除，默认为 false。true 表示完全删除，false 表示设置为 inactive 状态",
+                        "name": "force",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "操作成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Collector 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
         "/collectors/{id}/heartbeat": {
@@ -314,6 +372,60 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/collectors/{id}/unregister": {
+            "post": {
+                "description": "注销指定的 Collector，将其状态设置为 unregistered，但保留数据库记录和相关资源",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "注销 Collector",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "注销成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Collector 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -576,7 +688,7 @@ const docTemplate = `{
         },
         "/health/overview": {
             "get": {
-                "description": "获取系统健康状态概览，包括所有组件的简要状态信息",
+                "description": "获取系统健康状态概览，按逻辑服务分组显示状态信息",
                 "consumes": [
                     "application/json"
                 ],
@@ -838,6 +950,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/services/flink/cluster/health": {
+            "get": {
+                "description": "获取 Flink 集群的健康状态，包括 TaskManager 健康度、作业状态等",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "flink"
+                ],
+                "summary": "获取集群健康状态",
+                "responses": {
+                    "200": {
+                        "description": "集群健康状态",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/services/flink/config": {
             "get": {
                 "description": "获取 Flink 集群的配置信息",
@@ -871,7 +1014,7 @@ const docTemplate = `{
         },
         "/services/flink/health": {
             "get": {
-                "description": "获取 Flink 集群的健康状态，包括 TaskManager 健康度、作业状态等",
+                "description": "获取 Flink 集群的健康状态和连接信息",
                 "consumes": [
                     "application/json"
                 ],
@@ -881,17 +1024,17 @@ const docTemplate = `{
                 "tags": [
                     "flink"
                 ],
-                "summary": "获取集群健康状态",
+                "summary": "获取 Flink 健康状态",
                 "responses": {
                     "200": {
-                        "description": "集群健康状态",
+                        "description": "健康状态正常",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "服务器内部错误",
+                        "description": "健康状态异常",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1149,37 +1292,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/services/flink/test-connection": {
-            "get": {
-                "description": "测试与 Flink 集群的连接状态",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "flink"
-                ],
-                "summary": "测试 Flink 连接",
-                "responses": {
-                    "200": {
-                        "description": "连接成功",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "连接失败",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/services/kafka/brokers": {
             "get": {
                 "description": "获取 Kafka 集群中所有 Broker 的详细信息",
@@ -1350,9 +1462,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/services/kafka/test-connection": {
+        "/services/kafka/health": {
             "get": {
-                "description": "测试与 Kafka 集群的连接状态",
+                "description": "获取 Kafka 集群的健康状态和连接信息",
                 "consumes": [
                     "application/json"
                 ],
@@ -1362,17 +1474,17 @@ const docTemplate = `{
                 "tags": [
                     "kafka"
                 ],
-                "summary": "测试 Kafka 连接",
+                "summary": "获取 Kafka 健康状态",
                 "responses": {
                     "200": {
-                        "description": "连接成功",
+                        "description": "健康状态正常",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "连接失败",
+                        "description": "健康状态异常",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2279,6 +2391,37 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/services/opensearch/health": {
+            "get": {
+                "description": "获取 OpenSearch 集群的健康状态和连接信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取 OpenSearch 健康状态",
+                "responses": {
+                    "200": {
+                        "description": "健康状态正常",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "健康状态异常",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

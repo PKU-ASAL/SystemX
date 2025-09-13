@@ -84,11 +84,11 @@ make up
 
 # 3. 验证部署
 make health
-curl http://localhost:8080/swagger/index.html
+curl http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/swagger/index.html
 ```
 
 **服务端口**:
-- Manager API: http://localhost:8080
+- Manager API: http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}
 - Flink Web UI: http://localhost:8081  
 - OpenSearch: http://localhost:9200
 - Prometheus: http://localhost:9090

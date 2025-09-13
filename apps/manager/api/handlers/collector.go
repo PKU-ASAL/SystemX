@@ -47,7 +47,7 @@ func NewCollectorHandler(db *sql.DB) *CollectorHandler {
 	return &CollectorHandler{
 		repo:            storage.NewRepository(db),
 		config:          cfg,
-		healthChecker:   health.NewHealthChecker(),
+		healthChecker:   health.NewHealthChecker(cfg),
 		kafkaService:    kafkaService.NewKafkaService(cfg.GetKafkaBrokerList()),
 		templateService: templateService,
 	}
@@ -766,7 +766,19 @@ func (h *CollectorHandler) UpdateMetadata(c *gin.Context) {
 	})
 }
 
-// Delete 删除 Collector
+// Delete 删除或停用 Collector
+// @Summary 删除 Collector
+// @Description 删除或停用指定的 Collector。默认行为是设置为 inactive 状态，使用 force=true 参数可以完全删除 Collector 及其相关资源（包括 Kafka topic）
+// @Tags collectors
+// @Accept json
+// @Produce json
+// @Param id path string true "Collector ID"
+// @Param force query boolean false "是否强制删除，默认为 false。true 表示完全删除，false 表示设置为 inactive 状态"
+// @Success 200 {object} map[string]interface{} "操作成功"
+// @Failure 400 {object} map[string]interface{} "请求参数错误"
+// @Failure 404 {object} map[string]interface{} "Collector 不存在"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误"
+// @Router /collectors/{id} [delete]
 func (h *CollectorHandler) Delete(c *gin.Context) {
 	collectorID := c.Param("id")
 	if collectorID == "" {
@@ -855,6 +867,17 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 }
 
 // Unregister 注销 Collector（软删除）
+// @Summary 注销 Collector
+// @Description 注销指定的 Collector，将其状态设置为 unregistered，但保留数据库记录和相关资源
+// @Tags collectors
+// @Accept json
+// @Produce json
+// @Param id path string true "Collector ID"
+// @Success 200 {object} map[string]interface{} "注销成功"
+// @Failure 400 {object} map[string]interface{} "请求参数错误"
+// @Failure 404 {object} map[string]interface{} "Collector 不存在"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误"
+// @Router /collectors/{id}/unregister [post]
 func (h *CollectorHandler) Unregister(c *gin.Context) {
 	collectorID := c.Param("id")
 	if collectorID == "" {

@@ -13,12 +13,22 @@ import (
 type HealthHandler struct {
 	healthChecker *health.HealthChecker
 	db            *sql.DB
+	config        health.HealthCheckerConfig
 }
 
 // NewHealthHandler 创建健康检查处理器
-func NewHealthHandler(db *sql.DB) *HealthHandler {
+func NewHealthHandler(db *sql.DB, config health.HealthCheckerConfig) *HealthHandler {
 	return &HealthHandler{
-		healthChecker: health.NewHealthChecker(),
+		healthChecker: health.NewHealthChecker(config),
+		db:            db,
+		config:        config,
+	}
+}
+
+// NewHealthHandlerLegacy 创建传统方式的健康检查处理器(向后兼容)
+func NewHealthHandlerLegacy(db *sql.DB) *HealthHandler {
+	return &HealthHandler{
+		healthChecker: health.NewHealthCheckerWithoutConfig(),
 		db:            db,
 	}
 }

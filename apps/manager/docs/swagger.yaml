@@ -692,6 +692,47 @@ paths:
       tags:
       - collectors
   /collectors/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除或停用指定的 Collector。默认行为是设置为 inactive 状态，使用 force=true 参数可以完全删除
+        Collector 及其相关资源（包括 Kafka topic）
+      parameters:
+      - description: Collector ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 是否强制删除，默认为 false。true 表示完全删除，false 表示设置为 inactive 状态
+        in: query
+        name: force
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 操作成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Collector 不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 删除 Collector
+      tags:
+      - collectors
     get:
       consumes:
       - application/json
@@ -794,6 +835,43 @@ paths:
             additionalProperties: true
             type: object
       summary: 主动探测 Collector
+      tags:
+      - collectors
+  /collectors/{id}/unregister:
+    post:
+      consumes:
+      - application/json
+      description: 注销指定的 Collector，将其状态设置为 unregistered，但保留数据库记录和相关资源
+      parameters:
+      - description: Collector ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 注销成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Collector 不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 注销 Collector
       tags:
       - collectors
   /collectors/register:
@@ -1007,7 +1085,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: 获取系统健康状态概览，包括所有组件的简要状态信息
+      description: 获取系统健康状态概览，按逻辑服务分组显示状态信息
       produces:
       - application/json
       responses:
@@ -1186,6 +1264,27 @@ paths:
       summary: 获取部署脚本
       tags:
       - resources
+  /services/flink/cluster/health:
+    get:
+      consumes:
+      - application/json
+      description: 获取 Flink 集群的健康状态，包括 TaskManager 健康度、作业状态等
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 集群健康状态
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取集群健康状态
+      tags:
+      - flink
   /services/flink/config:
     get:
       consumes:
@@ -1211,21 +1310,21 @@ paths:
     get:
       consumes:
       - application/json
-      description: 获取 Flink 集群的健康状态，包括 TaskManager 健康度、作业状态等
+      description: 获取 Flink 集群的健康状态和连接信息
       produces:
       - application/json
       responses:
         "200":
-          description: 集群健康状态
+          description: 健康状态正常
           schema:
             additionalProperties: true
             type: object
         "500":
-          description: 服务器内部错误
+          description: 健康状态异常
           schema:
             additionalProperties: true
             type: object
-      summary: 获取集群健康状态
+      summary: 获取 Flink 健康状态
       tags:
       - flink
   /services/flink/jobs:
@@ -1397,27 +1496,6 @@ paths:
       summary: 获取 TaskManager 概览信息
       tags:
       - flink
-  /services/flink/test-connection:
-    get:
-      consumes:
-      - application/json
-      description: 测试与 Flink 集群的连接状态
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 连接成功
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 连接失败
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 测试 Flink 连接
-      tags:
-      - flink
   /services/kafka/brokers:
     get:
       consumes:
@@ -1533,25 +1611,25 @@ paths:
       summary: 获取特定 Consumer Group 的详细信息
       tags:
       - kafka
-  /services/kafka/test-connection:
+  /services/kafka/health:
     get:
       consumes:
       - application/json
-      description: 测试与 Kafka 集群的连接状态
+      description: 获取 Kafka 集群的健康状态和连接信息
       produces:
       - application/json
       responses:
         "200":
-          description: 连接成功
+          description: 健康状态正常
           schema:
             additionalProperties: true
             type: object
         "500":
-          description: 连接失败
+          description: 健康状态异常
           schema:
             additionalProperties: true
             type: object
-      summary: 测试 Kafka 连接
+      summary: 获取 Kafka 健康状态
       tags:
       - kafka
   /services/kafka/topics:
@@ -2165,6 +2243,27 @@ paths:
             additionalProperties: true
             type: object
       summary: 根据时间范围获取安全事件
+      tags:
+      - opensearch
+  /services/opensearch/health:
+    get:
+      consumes:
+      - application/json
+      description: 获取 OpenSearch 集群的健康状态和连接信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 健康状态正常
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 健康状态异常
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取 OpenSearch 健康状态
       tags:
       - opensearch
   /services/opensearch/indices:

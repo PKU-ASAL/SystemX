@@ -13,7 +13,8 @@ readonly BLUE='\033[0;34m'
 readonly NC='\033[0m' # No Color
 
 # 配置
-readonly MANAGER_URL="http://localhost:8080"
+readonly MANAGER_URL="${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}"
+readonly MANAGER_URL="http://${MANAGER_URL}"
 readonly TEST_OUTPUT_DIR="./tests/migrations/outputs"
 readonly TEST_COLLECTOR_DATA='{
     "hostname": "test-server-nova",

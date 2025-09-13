@@ -44,7 +44,9 @@ load_env_config() {
 load_env_config
 
 # 测试配置
-MANAGER_API="http://localhost:8080"
+MANAGER_HOST="${MANAGER_HOST:-localhost}"
+MANAGER_PORT="${MANAGER_PORT:-8080}"
+MANAGER_API="http://${MANAGER_HOST}:${MANAGER_PORT}"
 
 # 生成符合要求的测试数据 (包含 collector_id)
 COLLECTOR_ID="12345678-abcd-efgh-ijkl-123456789012"
