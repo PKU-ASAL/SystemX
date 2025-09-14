@@ -33,8 +33,8 @@ type ManagerConfig struct {
 	OpenSearchPassword string `envconfig:"OPENSEARCH_PASSWORD" default:"admin"`
 
 	// Resource management
-	TemplateDir string `envconfig:"TEMPLATE_DIR" default:"./templates"`
-	DownloadDir string `envconfig:"DOWNLOAD_DIR" default:"./binaries"`
+	TemplateDir string `envconfig:"TEMPLATE_DIR" default:"./shared/templates"`
+	DownloadDir string `envconfig:"DOWNLOAD_DIR" default:"./shared/binaries"`
 	ExternalURL string `envconfig:"EXTERNAL_URL" default:""`
 }
 
