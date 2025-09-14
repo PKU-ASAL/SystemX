@@ -806,8 +806,7 @@
                         "enum": [
                             "agentless",
                             "sysarmor-stack",
-                            "wazuh-hybrid",
-                            "collector"
+                            "wazuh-hybrid"
                         ],
                         "type": "string",
                         "description": "部署类型",
@@ -884,8 +883,7 @@
                         "enum": [
                             "agentless",
                             "sysarmor-stack",
-                            "wazuh-hybrid",
-                            "collector"
+                            "wazuh-hybrid"
                         ],
                         "type": "string",
                         "description": "部署类型",

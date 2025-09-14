@@ -1,7 +1,6 @@
 # DIY
-.env
-.env.dev
-.env.middleware
+.env*
+!.env.example
 
 data
 docs/draft

@@ -812,8 +812,7 @@ const docTemplate = `{
                         "enum": [
                             "agentless",
                             "sysarmor-stack",
-                            "wazuh-hybrid",
-                            "collector"
+                            "wazuh-hybrid"
                         ],
                         "type": "string",
                         "description": "部署类型",
@@ -890,8 +889,7 @@ const docTemplate = `{
                         "enum": [
                             "agentless",
                             "sysarmor-stack",
-                            "wazuh-hybrid",
-                            "collector"
+                            "wazuh-hybrid"
                         ],
                         "type": "string",
                         "description": "部署类型",

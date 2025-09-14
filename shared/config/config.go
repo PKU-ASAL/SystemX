@@ -12,8 +12,8 @@ import (
 
 // BaseConfig contains common configuration for all SysArmor services
 type BaseConfig struct {
-	Environment    string `envconfig:"ENVIRONMENT" default:"development"`
-	LogLevel       string `envconfig:"LOG_LEVEL" default:"info"`
+	Environment string `envconfig:"ENVIRONMENT" default:"development"`
+	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
 }
 
 // ManagerConfig contains configuration for the Manager service
@@ -21,20 +21,20 @@ type ManagerConfig struct {
 	BaseConfig
 	Port        int    `envconfig:"MANAGER_PORT" default:"8080"`
 	DatabaseURL string `envconfig:"MANAGER_DB_URL" default:"postgres://sysarmor:password@postgres:5432/sysarmor"`
-	
+
 	// Downstream services (discovered via Consul)
 	MiddlewareService string `envconfig:"MIDDLEWARE_SERVICE" default:"sysarmor-middleware"`
 	ProcessorService  string `envconfig:"PROCESSOR_SERVICE" default:"sysarmor-processor"`
 	IndexerService    string `envconfig:"INDEXER_SERVICE" default:"sysarmor-indexer"`
-	
+
 	// OpenSearch configuration (for health checks and API access)
 	OpenSearchURL      string `envconfig:"OPENSEARCH_URL" default:"http://opensearch:9200"`
 	OpenSearchUsername string `envconfig:"OPENSEARCH_USERNAME" default:"admin"`
 	OpenSearchPassword string `envconfig:"OPENSEARCH_PASSWORD" default:"admin"`
-	
+
 	// Resource management
 	TemplateDir string `envconfig:"TEMPLATE_DIR" default:"./templates"`
-	DownloadDir string `envconfig:"DOWNLOAD_DIR" default:"./data/dist"`
+	DownloadDir string `envconfig:"DOWNLOAD_DIR" default:"./binaries"`
 	ExternalURL string `envconfig:"EXTERNAL_URL" default:""`
 }
 
@@ -153,7 +153,7 @@ func (c *BaseConfig) Validate() error {
 	if c.Environment == "" {
 		return fmt.Errorf("ENVIRONMENT is required")
 	}
-	
+
 	validEnvs := []string{"development", "staging", "production"}
 	env := strings.ToLower(c.Environment)
 	for _, validEnv := range validEnvs {
@@ -161,7 +161,7 @@ func (c *BaseConfig) Validate() error {
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("invalid ENVIRONMENT: %s, must be one of: %v", c.Environment, validEnvs)
 }
 
@@ -170,15 +170,15 @@ func (c *ManagerConfig) Validate() error {
 	if err := c.BaseConfig.Validate(); err != nil {
 		return err
 	}
-	
+
 	if c.Port <= 0 || c.Port > 65535 {
 		return fmt.Errorf("invalid MANAGER_PORT: %d", c.Port)
 	}
-	
+
 	if c.DatabaseURL == "" {
 		return fmt.Errorf("MANAGER_DB_URL is required")
 	}
-	
+
 	return nil
 }
 
@@ -187,15 +187,15 @@ func (c *MiddlewareConfig) Validate() error {
 	if err := c.BaseConfig.Validate(); err != nil {
 		return err
 	}
-	
+
 	if c.VectorTCPPort <= 0 || c.VectorTCPPort > 65535 {
 		return fmt.Errorf("invalid VECTOR_TCP_PORT: %d", c.VectorTCPPort)
 	}
-	
+
 	if c.KafkaBootstrapServers == "" {
 		return fmt.Errorf("KAFKA_BOOTSTRAP_SERVERS is required")
 	}
-	
+
 	return nil
 }
 
@@ -204,19 +204,19 @@ func (c *ProcessorConfig) Validate() error {
 	if err := c.BaseConfig.Validate(); err != nil {
 		return err
 	}
-	
+
 	if c.KafkaBootstrapServers == "" {
 		return fmt.Errorf("KAFKA_BOOTSTRAP_SERVERS is required")
 	}
-	
+
 	if c.OpenSearchURL == "" {
 		return fmt.Errorf("OPENSEARCH_URL is required")
 	}
-	
+
 	if c.FlinkParallelism <= 0 {
 		return fmt.Errorf("invalid FLINK_PARALLELISM: %d", c.FlinkParallelism)
 	}
-	
+
 	return nil
 }
 
@@ -225,14 +225,14 @@ func (c *IndexerConfig) Validate() error {
 	if err := c.BaseConfig.Validate(); err != nil {
 		return err
 	}
-	
+
 	if c.OpenSearchURL == "" {
 		return fmt.Errorf("OPENSEARCH_URL is required")
 	}
-	
+
 	if c.IndexPrefix == "" {
 		return fmt.Errorf("INDEX_PREFIX is required")
 	}
-	
+
 	return nil
 }

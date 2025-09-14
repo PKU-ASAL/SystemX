@@ -1165,7 +1165,6 @@ paths:
         - agentless
         - sysarmor-stack
         - wazuh-hybrid
-        - collector
         in: path
         name: deployment_type
         required: true
@@ -1220,7 +1219,6 @@ paths:
         - agentless
         - sysarmor-stack
         - wazuh-hybrid
-        - collector
         in: path
         name: deployment_type
         required: true
