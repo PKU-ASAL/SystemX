@@ -544,8 +544,8 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 		"manager",
 		probeID)
 
-	// 4. 发送 UDP 消息到 collector:VectorTCPPort
-	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:%d", collector.IPAddress, h.config.VectorTCPPort), time.Duration(timeoutSeconds)*time.Second)
+	// 4. 发送 TCP 消息到 collector:VectorTCPPort
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", collector.IPAddress, h.config.VectorTCPPort), time.Duration(timeoutSeconds)*time.Second)
 	if err != nil {
 		return &models.ProbeResponse{
 			CollectorID:     collector.CollectorID,

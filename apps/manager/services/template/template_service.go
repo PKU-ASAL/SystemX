@@ -83,15 +83,16 @@ type TemplateData struct {
 
 	// Agentless 特定数据
 	AuditRules string
-	
+
 	// OpenTelemetry Collector 特定数据
 	ExtraCfgData string
 }
 
 // NewTemplateData 从 Collector 创建模板数据
 func (ts *TemplateService) NewTemplateData(collector *models.Collector) (*TemplateData, error) {
-	// 解析 Worker URL
-	workerHost, workerPort := ts.parseWorkerURL(collector.WorkerAddress)
+	// 解析 Worker URL 并使用外部主机地址替换内部主机地址
+	_, workerPort := ts.parseWorkerURL(collector.WorkerAddress)
+	workerHost := ts.config.GetExternalHost() // 使用外部访问地址而非内部通信地址
 
 	data := &TemplateData{
 		CollectorID:    collector.CollectorID,

@@ -17,7 +17,8 @@ import (
 // HealthCheckerConfig 健康检查器配置接口
 type HealthCheckerConfig interface {
 	GetManagerURL() string
-	GetVectorHost() string
+	GetVectorHost() string      // 获取内部通信地址（容器名或内网IP）
+	GetExternalHost() string    // 获取外部访问地址（localhost或远程IP）
 	GetVectorTCPPort() int
 }
 

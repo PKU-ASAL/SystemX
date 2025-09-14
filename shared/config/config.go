@@ -28,7 +28,8 @@ type ManagerConfig struct {
 	IndexerService    string `envconfig:"INDEXER_SERVICE" default:"sysarmor-indexer"`
 
 	// Vector configuration
-	VectorHost    string `envconfig:"VECTOR_HOST" default:"localhost"`
+	VectorHost    string `envconfig:"VECTOR_HOST" default:"localhost"`          // 内部通信地址（容器名或内网IP）
+	ExternalHost  string `envconfig:"EXTERNAL_VECTOR_HOST" default:"localhost"` // 外部访问地址（本地localhost或远程IP）
 	VectorTCPPort int    `envconfig:"VECTOR_TCP_PORT" default:"6000"`
 
 	// OpenSearch configuration (for health checks and API access)
