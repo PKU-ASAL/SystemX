@@ -31,7 +31,7 @@ func NewResourcesHandler(db *sql.DB) *ResourcesHandler {
 	}
 
 	// 创建模板服务并加载模板
-	templateService := template.NewTemplateService()
+	templateService := template.NewTemplateService(cfg)
 	if err := templateService.LoadTemplates("./shared/templates"); err != nil {
 		// 日志记录但不阻止创建
 	}
@@ -265,7 +265,7 @@ func (h *ResourcesHandler) GetConfig(c *gin.Context) {
 // generateScript 生成脚本内容
 func (h *ResourcesHandler) generateScript(collector *models.Collector, deploymentType, scriptName string) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", err
 	}
@@ -327,7 +327,7 @@ func (h *ResourcesHandler) generateOtelCollectorScript(templateData *template.Te
 // generateConfig 生成配置内容
 func (h *ResourcesHandler) generateConfig(collector *models.Collector, deploymentType, configName string) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", err
 	}

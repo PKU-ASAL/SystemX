@@ -152,7 +152,7 @@ generate_config_file() {
 {{.ExtraCfgData}}
 EOF
 
-    if [[ ! -f "$CONFIG_FILE" ]]; then
+    if [[ ! -f "$INSTALL_DIR/$CONFIG_FILE" ]]; then
         log_error "配置文件生成失败"
         exit 1
     fi

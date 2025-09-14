@@ -27,6 +27,10 @@ type ManagerConfig struct {
 	ProcessorService  string `envconfig:"PROCESSOR_SERVICE" default:"sysarmor-processor"`
 	IndexerService    string `envconfig:"INDEXER_SERVICE" default:"sysarmor-indexer"`
 
+	// Vector configuration
+	VectorHost    string `envconfig:"VECTOR_HOST" default:"localhost"`
+	VectorTCPPort int    `envconfig:"VECTOR_TCP_PORT" default:"6000"`
+
 	// OpenSearch configuration (for health checks and API access)
 	OpenSearchURL      string `envconfig:"OPENSEARCH_URL" default:"http://opensearch:9200"`
 	OpenSearchUsername string `envconfig:"OPENSEARCH_USERNAME" default:"admin"`
@@ -177,6 +181,10 @@ func (c *ManagerConfig) Validate() error {
 
 	if c.DatabaseURL == "" {
 		return fmt.Errorf("MANAGER_DB_URL is required")
+	}
+
+	if c.VectorTCPPort <= 0 || c.VectorTCPPort > 65535 {
+		return fmt.Errorf("invalid VECTOR_TCP_PORT: %d", c.VectorTCPPort)
 	}
 
 	return nil

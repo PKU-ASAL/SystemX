@@ -17,6 +17,8 @@ import (
 // HealthCheckerConfig 健康检查器配置接口
 type HealthCheckerConfig interface {
 	GetManagerURL() string
+	GetVectorHost() string
+	GetVectorTCPPort() int
 }
 
 // HealthChecker 健康检查器
@@ -129,11 +131,22 @@ func (h *HealthChecker) loadWorkersFromEnv() {
 	workersEnv := os.Getenv("WORKER_URLS")
 	if workersEnv == "" {
 		// 默认配置
+		var defaultURL string
+		var healthURL string
+
+		if h.config != nil {
+			defaultURL = fmt.Sprintf("http://%s:%d", h.config.GetVectorHost(), h.config.GetVectorTCPPort())
+			healthURL = fmt.Sprintf("http://%s:8686/health", h.config.GetVectorHost())
+		} else {
+			defaultURL = "http://localhost:6000"
+			healthURL = "http://localhost:8686/health"
+		}
+
 		h.workers = []WorkerConfig{
 			{
 				Name:      "default-worker",
-				URL:       "http://localhost:514",
-				HealthURL: "http://localhost:8686/health",
+				URL:       defaultURL,
+				HealthURL: healthURL,
 			},
 		}
 		return

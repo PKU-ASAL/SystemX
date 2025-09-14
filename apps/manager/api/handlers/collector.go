@@ -39,7 +39,7 @@ func NewCollectorHandler(db *sql.DB) *CollectorHandler {
 	}
 
 	// 创建模板服务并加载模板
-	templateService := template.NewTemplateService()
+	templateService := template.NewTemplateService(cfg)
 	if err := templateService.LoadTemplates("./shared/templates"); err != nil {
 		fmt.Printf("⚠️ Warning: Failed to load templates: %v\n", err)
 	}
@@ -544,8 +544,8 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 		"manager",
 		probeID)
 
-	// 4. 发送 UDP 消息到 collector:514
-	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:514", collector.IPAddress), time.Duration(timeoutSeconds)*time.Second)
+	// 4. 发送 UDP 消息到 collector:VectorTCPPort
+	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:%d", collector.IPAddress, h.config.VectorTCPPort), time.Duration(timeoutSeconds)*time.Second)
 	if err != nil {
 		return &models.ProbeResponse{
 			CollectorID:     collector.CollectorID,
@@ -553,7 +553,7 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 			ProbeID:         probeID,
 			SentAt:          sentAt,
 			HeartbeatBefore: heartbeatBefore,
-			ErrorMessage:    fmt.Sprintf("Failed to connect to %s:514: %v", collector.IPAddress, err),
+			ErrorMessage:    fmt.Sprintf("Failed to connect to %s:%d: %v", collector.IPAddress, h.config.VectorTCPPort, err),
 		}, nil
 	}
 	defer conn.Close()
@@ -631,7 +631,7 @@ func getSupportedDeploymentTypes() string {
 }
 
 // parseWorkerURL 解析 Worker URL
-func parseWorkerURL(workerURL string) (host, port string) {
+func (h *CollectorHandler) parseWorkerURL(workerURL string) (host, port string) {
 	// 处理格式: http://localhost:514:http://localhost
 	// 我们需要提取 host 和 port
 	if strings.HasPrefix(workerURL, "http://") {
@@ -641,7 +641,7 @@ func parseWorkerURL(workerURL string) (host, port string) {
 		parts := strings.Split(urlWithoutProtocol, ":")
 		if len(parts) >= 2 {
 			host = parts[0] // localhost
-			port = parts[1] // 514
+			port = parts[1] // 端口
 			return host, port
 		}
 	}
@@ -651,13 +651,13 @@ func parseWorkerURL(workerURL string) (host, port string) {
 	if len(parts) == 2 {
 		return parts[0], parts[1]
 	}
-	return "localhost", "514" // 默认值
+	return h.config.VectorHost, strconv.Itoa(h.config.VectorTCPPort) // 使用配置的默认值
 }
 
 // generateScriptFromTemplate 使用模板生成脚本
 func (h *CollectorHandler) generateScriptFromTemplate(collector *models.Collector) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", fmt.Errorf("failed to create template data: %w", err)
 	}
@@ -687,7 +687,7 @@ func (h *CollectorHandler) generateScriptFromTemplate(collector *models.Collecto
 // generateUninstallScriptFromTemplate 使用模板生成卸载脚本
 func (h *CollectorHandler) generateUninstallScriptFromTemplate(collector *models.Collector) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", fmt.Errorf("failed to create template data: %w", err)
 	}

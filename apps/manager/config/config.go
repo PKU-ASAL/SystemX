@@ -95,6 +95,16 @@ func (c *Config) IsWazuhEnabled() bool {
 	return sharedconfig.GetEnv("WAZUH_ENABLED", "false") == "true"
 }
 
+// GetVectorHost 获取 Vector 主机
+func (c *Config) GetVectorHost() string {
+	return c.VectorHost
+}
+
+// GetVectorTCPPort 获取 Vector TCP 端口
+func (c *Config) GetVectorTCPPort() int {
+	return c.VectorTCPPort
+}
+
 // GetWazuhConfig 获取Wazuh配置
 func (c *Config) GetWazuhConfig() (*WazuhConfig, error) {
 	if !c.IsWazuhEnabled() {
