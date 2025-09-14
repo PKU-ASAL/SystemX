@@ -61,7 +61,8 @@ COPY --from=builder /app/apps/manager/manager .
 COPY --from=builder /app/apps/manager/docs ./docs
 
 # 复制共享模板
-COPY shared/templates ./templates
+COPY shared/templates ./shared/templates
+COPY shared/binaries ./shared/binaries
 
 # 创建必要的目录
 RUN mkdir -p ./configs ./logs && \

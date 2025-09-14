@@ -1,6 +1,28 @@
 # SysArmor EDR Monorepo Makefile
 .PHONY: help init up down restart status logs health build docs clean up-dev down-dev
 
+# 条件加载 .env 文件，如果存在则读取，否则使用默认值
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
+# 默认值定义（当 .env 不存在时使用）
+MANAGER_HOST ?= localhost
+MANAGER_PORT ?= 8080
+MIDDLEWARE_HOST ?= localhost
+PROCESSOR_HOST ?= localhost
+INDEXER_HOST ?= localhost
+PROMETHEUS_PORT ?= 9090
+FLINK_PORT ?= 8081
+OPENSEARCH_PORT ?= 9200
+
+# 服务URL变量
+MANAGER_URL := http://$(MANAGER_HOST):$(MANAGER_PORT)
+PROMETHEUS_URL := http://$(MIDDLEWARE_HOST):$(PROMETHEUS_PORT)
+FLINK_URL := http://$(PROCESSOR_HOST):$(FLINK_PORT)
+OPENSEARCH_URL := http://$(INDEXER_HOST):$(OPENSEARCH_PORT)
+
 # Default target
 help: ## Show this help message
 	@echo "SysArmor EDR Monorepo Management"
@@ -36,8 +58,8 @@ up: ## 启动所有服务 (单机部署)
 	@if [ ! -f .env ]; then cp .env.example .env; fi
 	docker compose up -d
 	@echo "✅ 所有服务启动完成"
-	@echo "🌐 Manager API: http://localhost:8080"
-	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
+	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
 
 deploy: ## 构建并启动所有服务 (单机部署)
 	@echo "🔨 构建并启动SysArmor EDR服务..."
@@ -45,8 +67,8 @@ deploy: ## 构建并启动所有服务 (单机部署)
 	docker compose build --no-cache
 	docker compose up -d
 	@echo "✅ 所有服务构建并启动完成"
-	@echo "🌐 Manager API: http://localhost:8080"
-	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
+	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
 
 down: ## 停止所有服务
 	@echo "🛑 停止SysArmor EDR服务..."
@@ -58,10 +80,10 @@ up-dev: ## 启动开发环境 (连接远程middleware)
 	@if [ ! -f .env.dev ]; then echo "❌ .env.dev 文件不存在"; exit 1; fi
 	docker compose -f docker-compose.dev.yml up -d
 	@echo "✅ 开发环境启动完成 (连接到远程middleware: 49.232.13.155)"
-	@echo "🌐 Manager API: http://localhost:8080"
-	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
-	@echo "🔧 Flink监控: http://localhost:8081"
-	@echo "🔍 OpenSearch: http://localhost:9200"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
+	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
+	@echo "🔧 Flink监控: $(FLINK_URL)"
+	@echo "🔍 OpenSearch: $(OPENSEARCH_URL)"
 	@echo "📊 远程Prometheus: http://49.232.13.155:9090"
 
 deploy-dev: ## 构建并启动开发环境 (连接远程middleware)
@@ -70,10 +92,10 @@ deploy-dev: ## 构建并启动开发环境 (连接远程middleware)
 	docker compose -f docker-compose.dev.yml build --no-cache
 	docker compose -f docker-compose.dev.yml up -d
 	@echo "✅ 开发环境构建并启动完成 (连接到远程middleware: 49.232.13.155)"
-	@echo "🌐 Manager API: http://localhost:8080"
-	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
-	@echo "🔧 Flink监控: http://localhost:8081"
-	@echo "🔍 OpenSearch: http://localhost:9200"
+	@echo "🌐 Manager API: $(MANAGER_URL)/api/v1"
+	@echo "📖 API文档: $(MANAGER_URL)/swagger/index.html"
+	@echo "🔧 Flink监控: $(FLINK_URL)"
+	@echo "🔍 OpenSearch: $(OPENSEARCH_URL)"
 	@echo "📊 远程Prometheus: http://49.232.13.155:9090"
 
 down-dev: ## 停止并清理开发环境
@@ -125,10 +147,14 @@ status: ## 查看服务状态
 
 health: ## 系统健康检查
 	@echo "🏥 SysArmor EDR健康检查..."
-	@curl -s http://localhost:8080/health > /dev/null && echo "✅ Manager: 健康" || echo "❌ Manager: 异常"
-	@curl -s http://localhost:9090/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
-	@curl -s http://localhost:8081/overview > /dev/null && echo "✅ Flink: 健康" || echo "❌ Flink: 异常"
-	@curl -s http://localhost:9200/_cluster/health > /dev/null && echo "✅ OpenSearch: 健康" || echo "❌ OpenSearch: 异常"
+	@echo "MANAGER_URL: $(MANAGER_URL)"
+	@echo "PROMETHEUS_URL: $(PROMETHEUS_URL)"
+	@echo "FLINK_URL: $(FLINK_URL)"
+	@echo "OPENSEARCH_URL: $(OPENSEARCH_URL)"
+	@curl -s $(MANAGER_URL)/health > /dev/null && echo "✅ Manager: 健康" || echo "❌ Manager: 异常"
+	@curl -s $(PROMETHEUS_URL)/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
+	@curl -s $(FLINK_URL)/overview > /dev/null && echo "✅ Flink: 健康" || echo "❌ Flink: 异常"
+	@curl -s $(OPENSEARCH_URL)/_cluster/health > /dev/null && echo "✅ OpenSearch: 健康" || echo "❌ OpenSearch: 异常"
 
 ##@ 服务管理 (格式: make <service> <command>)
 # Middleware 服务管理
@@ -159,16 +185,16 @@ middleware-status:
 
 middleware-test-kafka:
 	@echo "📡 SysArmor Middleware - 测试Kafka连接..."
-	@curl -s http://localhost:8080/api/v1/services/kafka/health | jq '.' || echo "❌ Kafka不可用"
+	@curl -s $(MANAGER_URL)/api/v1/services/kafka/health | jq '.' || echo "❌ Kafka不可用"
 
 middleware-topics:
 	@echo "📋 SysArmor Middleware - Kafka Topics："
-	@curl -s http://localhost:8080/api/v1/services/kafka/topics | jq '.data' || echo "❌ 无法获取Topics"
+	@curl -s $(MANAGER_URL)/api/v1/services/kafka/topics | jq '.data' || echo "❌ 无法获取Topics"
 
 middleware-health:
 	@echo "🏥 SysArmor Middleware - 健康检查..."
-	@curl -s http://localhost:8080/api/v1/services/kafka/health | jq '.' || echo "❌ Kafka不可用"
-	@curl -s http://localhost:9090/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
+	@curl -s $(MANAGER_URL)/api/v1/services/kafka/health | jq '.' || echo "❌ Kafka不可用"
+	@curl -s $(PROMETHEUS_URL)/-/healthy > /dev/null && echo "✅ Prometheus: 健康" || echo "❌ Prometheus: 异常"
 
 # Processor 服务管理
 processor: ## Processor服务管理 (用法: make processor <command>)
@@ -197,9 +223,9 @@ processor: ## Processor服务管理 (用法: make processor <command>)
 processor-list-jobs:
 	@echo "📋 SysArmor Processor - Flink作业列表："
 	@echo "通过Flink API查询:"
-	@curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
+	@curl -s $(FLINK_URL)/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
 	(echo "  ⚠️  Flink API不可用，尝试Manager API..." && \
-	 curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.state // "未知")"' 2>/dev/null || \
+	 curl -s $(MANAGER_URL)/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.state // "未知")"' 2>/dev/null || \
 	 echo "  ❌ 所有API都不可用")
 
 processor-submit-console:
@@ -220,7 +246,7 @@ processor-submit-auditd-sysdig:
 		echo "🔄 基于NODLINK管道处理逻辑"; \
 		echo "📥 消费: sysarmor-events-test"; \
 		echo "📤 输出: 控制台 (sysdig格式)"; \
-		echo "📊 监控: http://localhost:8081"; \
+		echo "📊 监控: $(FLINK_URL)"; \
 	else \
 		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
 	fi
@@ -244,9 +270,9 @@ processor-cancel-job:
 processor-overview:
 	@echo "📊 SysArmor Processor - Flink集群概览："
 	@echo "通过Manager API查询:"
-	@curl -s http://localhost:8080/api/v1/services/flink/overview 2>/dev/null | jq '.' 2>/dev/null || \
+	@curl -s $(MANAGER_URL)/api/v1/services/flink/overview 2>/dev/null | jq '.' 2>/dev/null || \
 	(echo "⚠️  Manager API不可用，尝试直接访问Flink..." && \
-	 curl -s http://localhost:8081/overview 2>/dev/null | jq '.' 2>/dev/null || \
+	 curl -s $(FLINK_URL)/overview 2>/dev/null | jq '.' 2>/dev/null || \
 	 echo "❌ Flink集群不可用")
 
 processor-status:
@@ -269,7 +295,7 @@ processor-test:
 	@make processor-list-jobs
 	@echo ""
 	@echo "✅ Processor快速测试完成!"
-	@echo "📊 Web监控: http://localhost:8081"
+	@echo "📊 Web监控: $(FLINK_URL)"
 
 # Indexer 服务管理
 indexer: ## Indexer服务管理 (用法: make indexer <command>)
@@ -300,20 +326,20 @@ indexer-status:
 
 indexer-health:
 	@echo "🏥 SysArmor Indexer - 健康检查..."
-	@curl -s http://localhost:9200/_cluster/health | jq '.' || echo "❌ OpenSearch不可用"
+	@curl -s $(OPENSEARCH_URL)/_cluster/health | jq '.' || echo "❌ OpenSearch不可用"
 
 indexer-indices:
 	@echo "📋 SysArmor Indexer - 索引列表："
-	@curl -s http://localhost:8080/api/v1/services/opensearch/indices | jq '.data' || \
-	curl -s -u admin:admin http://localhost:9200/_cat/indices?v || echo "❌ 无法获取索引列表"
+	@curl -s $(MANAGER_URL)/api/v1/services/opensearch/indices | jq '.data' || \
+	curl -s -u admin:admin $(OPENSEARCH_URL)/_cat/indices?v || echo "❌ 无法获取索引列表"
 
 indexer-search:
 	@echo "🔍 SysArmor Indexer - 搜索威胁事件 (最近1小时)："
-	@curl -s "http://localhost:8080/api/v1/services/opensearch/events/recent?hours=1&size=5" | jq '.data.hits.hits[] | ._source | {timestamp, threat_type, risk_score, severity, host}' || echo "❌ 无法搜索事件"
+	@curl -s "$(MANAGER_URL)/api/v1/services/opensearch/events/recent?hours=1&size=5" | jq '.data.hits.hits[] | ._source | {timestamp, threat_type, risk_score, severity, host}' || echo "❌ 无法搜索事件"
 
 indexer-cluster-info:
 	@echo "📊 SysArmor Indexer - 集群信息："
-	@curl -s -u admin:admin http://localhost:9200/_cluster/stats | jq '{cluster_name, status, nodes: .nodes.count, indices: .indices.count, docs: .indices.docs.count}' || echo "❌ 无法获取集群信息"
+	@curl -s -u admin:admin $(OPENSEARCH_URL)/_cluster/stats | jq '{cluster_name, status, nodes: .nodes.count, indices: .indices.count, docs: .indices.docs.count}' || echo "❌ 无法获取集群信息"
 
 # Manager 服务管理
 manager: ## Manager服务管理 (用法: make manager <command>)
@@ -344,24 +370,24 @@ manager-status:
 
 manager-health:
 	@echo "🏥 SysArmor Manager - 健康检查..."
-	@curl -s http://localhost:8080/health | jq '.' || echo "❌ Manager不可用"
+	@curl -s $(MANAGER_URL)/health | jq '.' || echo "❌ Manager不可用"
 
 manager-api-docs:
 	@echo "📖 SysArmor Manager - API文档："
-	@echo "🌐 http://localhost:8080/swagger/index.html"
+	@echo "🌐 $(MANAGER_URL)/swagger/index.html"
 	@if command -v open >/dev/null 2>&1; then \
-		open http://localhost:8080/swagger/index.html; \
+		open $(MANAGER_URL)/swagger/index.html; \
 	elif command -v xdg-open >/dev/null 2>&1; then \
-		xdg-open http://localhost:8080/swagger/index.html; \
+		xdg-open $(MANAGER_URL)/swagger/index.html; \
 	fi
 
 manager-collectors:
 	@echo "📱 SysArmor Manager - 设备列表："
-	@curl -s http://localhost:8080/api/v1/collectors | jq '.data[] | {id: .id[:8], hostname, status, last_active}' || echo "❌ 无法获取设备列表"
+	@curl -s $(MANAGER_URL)/api/v1/collectors | jq '.data[] | {id: .id[:8], hostname, status, last_active}' || echo "❌ 无法获取设备列表"
 
 manager-events:
 	@echo "📋 SysArmor Manager - 最近事件 (最近1小时)："
-	@curl -s "http://localhost:8080/api/v1/events/recent?hours=1&size=5" | jq '.data[] | {timestamp, event_type, severity, host, message}' || echo "❌ 无法获取事件"
+	@curl -s "$(MANAGER_URL)/api/v1/events/recent?hours=1&size=5" | jq '.data[] | {timestamp, event_type, severity, host, message}' || echo "❌ 无法获取事件"
 
 ##@ 开发构建
 build: ## 构建Manager应用
@@ -376,7 +402,7 @@ docs: ## 生成API文档
 		cd apps/manager && \
 		if command -v ~/go/bin/swag >/dev/null 2>&1; then \
 			~/go/bin/swag init -g main.go -o docs --parseDependency --parseInternal; \
-			echo "✅ API文档生成完成: http://localhost:8080/swagger/index.html"; \
+			echo "✅ API文档生成完成: $(MANAGER_URL)/swagger/index.html"; \
 		else \
 			echo "❌ swag工具未安装，请运行: go install github.com/swaggo/swag/cmd/swag@latest"; \
 		fi; \
@@ -429,5 +455,5 @@ info: ## 显示项目信息
 	@echo "  - 修改部署拓扑只需要改对应服务的HOST"
 	@echo ""
 	@echo "快速开始: make init && make up"
-	@echo "API文档: http://localhost:8080/swagger/index.html"
+	@echo "API文档: $(MANAGER_URL)/swagger/index.html"
 	@echo "部署指南: docs/deployment/README.md"

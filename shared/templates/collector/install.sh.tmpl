@@ -13,7 +13,7 @@ readonly NC='\033[0m' # No Color
 # 配置常量
 readonly INSTALL_DIR="/opt/sysarmor"
 readonly BINARY_NAME="otelcol-sysarmor"
-readonly CONFIG_FILE="$INSTALL_DIR/cfg.yaml"
+readonly CONFIG_FILE="cfg.yaml"
 readonly SERVICE_NAME="sysarmor-otelcol"
 readonly MANAGER_URL="{{.ManagerURL}}"
 readonly COLLECTOR_ID="{{.CollectorID}}"
@@ -148,11 +148,11 @@ download_collector_binary() {
 generate_config_file() {
     log_info "生成配置文件: $CONFIG_FILE"
     
-    cat > "$CONFIG_FILE" << 'EOF'
+    cat > "$INSTALL_DIR/$CONFIG_FILE" << 'EOF'
 {{.ExtraCfgData}}
 EOF
 
-    if [[ ! -f "$CONFIG_FILE" ]]; then
+    if [[ ! -f "$INSTALL_DIR/$CONFIG_FILE" ]]; then
         log_error "配置文件生成失败"
         exit 1
     fi

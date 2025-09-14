@@ -51,8 +51,8 @@ make down
 WIP
 
 ### 访问服务
-- **Manager API**: http://localhost:8080
-- **API 文档**: http://localhost:8080/swagger/index.html
+- **Manager API**: http://${MANAGER_HOST}:${MANAGER_PORT} (默认: http://localhost:8080)
+- **API 文档**: http://${MANAGER_HOST}:${MANAGER_PORT}/swagger/index.html (默认: http://localhost:8080/swagger/index.html)
 - **Flink 监控**: http://localhost:8081
 - **OpenSearch**: http://localhost:9200
 
@@ -89,7 +89,7 @@ make health
 ./tests/test-system-health.sh 
 
 # 查看按逻辑服务分组的健康状态
-curl -s http://localhost:8080/api/v1/health | jq '.data.services'
+curl -s http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/api/v1/health | jq '.data.services'
 ```
 
 ### 数据流测试
@@ -108,15 +108,15 @@ curl -s http://localhost:8080/api/v1/health | jq '.data.services'
 ```bash
 # Kafka 服务管理
 make middleware health
-curl -s http://localhost:8080/api/v1/services/kafka/health | jq '.'
+curl -s http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/api/v1/services/kafka/health | jq '.'
 
 # Flink 服务管理  
 make processor overview
-curl -s http://localhost:8080/api/v1/services/flink/health | jq '.'
+curl -s http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/api/v1/services/flink/health | jq '.'
 
 # OpenSearch 服务管理
 make indexer health
-curl -s http://localhost:8080/api/v1/services/opensearch/health | jq '.'
+curl -s http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/api/v1/services/opensearch/health | jq '.'
 ```
 
 ### Flink 流处理测试
@@ -147,14 +147,14 @@ make processor overview
 
 # 7. 获取作业详细信息
 # 通过 Manager API 获取作业详情 (包含完整的执行计划、顶点信息等)
-curl -s http://localhost:8080/api/v1/services/flink/jobs/{JOB_ID} | jq '.'
+curl -s http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/api/v1/services/flink/jobs/{JOB_ID} | jq '.'
 
 # 通过 Flink 原生 API 获取作业详情
 curl -s http://localhost:8081/jobs/{JOB_ID} | jq '.'
 
 # 8. 取消运行中的作业
 # 获取作业ID
-export JOB_ID=$(curl -s http://localhost:8080/api/v1/services/flink/jobs | jq -r '.data.jobs[0].id')
+export JOB_ID=$(curl -s http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}/api/v1/services/flink/jobs | jq -r '.data.jobs[0].id')
 
 # 取消作业
 make processor cancel-job JOB_ID=$JOB_ID

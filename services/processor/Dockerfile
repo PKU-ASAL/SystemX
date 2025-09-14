@@ -12,9 +12,10 @@ RUN apt-get update -y && \
 # Ensure python command points to python3
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# 设置 pip 清华镜像为默认源
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set install.trusted-host pypi.tuna.tsinghua.edu.cn
+# 设置 pip 镜像源配置，添加备用源解决403问题
+RUN pip config set global.index-url https://pypi.org/simple && \
+    pip config set global.extra-index-url "https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple" && \
+    pip config set install.trusted-host "pypi.org pypi.tuna.tsinghua.edu.cn mirrors.aliyun.com"
 
 # install Java & updates
 RUN apt-get update && \
