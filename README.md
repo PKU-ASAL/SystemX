@@ -46,28 +46,18 @@ make health
 make down        
 ```
 
-### 分布式部署
-
-WIP
-
 ### 访问服务
 - **Manager API**: http://localhost:8080
 - **API 文档**: http://localhost:8080/swagger/index.html
 - **Flink 监控**: http://localhost:8081
 - **OpenSearch**: http://localhost:9200
 
-### 设备接入
-1. **注册设备**: 通过 Manager API 注册新设备
-2. **下载脚本**: 获取 agentless 安装脚本
-3. **部署采集**: 在目标服务器执行脚本，配置 rsyslog + auditd
-
-
 ## 🔧 管理命令
 
 ```bash
 # 单机部署
 make up          # 启动所有服务
-make deply       # 重新构建镜像，并启动所有服务
+make deploy      # 重新构建镜像，并启动所有服务
 make down        # 停止所有服务
 make health      # 健康检查
 ```
@@ -79,7 +69,6 @@ make health      # 健康检查
 - **[系统概览](docs/guides/overview.md)** - 系统架构和部署方案
 - **[API参考](docs/development/api-reference.md)** - 完整的API接口文档
 - **[v0.1.0 Release Notes](docs/releases/v0.1.0-release-notes.md)** - 版本发布说明
-
 
 ---
 
