@@ -5,7 +5,7 @@
 
 data
 docs/specs
-docs/references
+.scratchpad
 
 # Binaries for programs and plugins
 *.exe
