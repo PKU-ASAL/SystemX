@@ -539,15 +539,15 @@ def main():
         logger.info("✅ Starting NODLINK-based Auditd processing job...")
         
         job_client = env.execute_async("SysArmor-NODLINK-Auditd-Raw-to-Events")
-        job_id = job_client.get_job_id()
         
         logger.info(f"🎯 NODLINK Auditd processing job submitted successfully!")
-        logger.info(f"📋 Job ID: {job_id}")
+        logger.info(f"📋 Job submitted with async execution")
         logger.info(f"🌐 Monitor at: http://localhost:8081")
         logger.info(f"📊 Processing: {input_topic} → {output_topic}")
         logger.info(f"🔍 View logs: docker logs -f sysarmor-flink-taskmanager-1")
         
-        return job_id
+        # 不等待 job_id，直接返回
+        return "async-job-submitted"
         
     except Exception as e:
         logger.error(f"❌ NODLINK Auditd processing job failed: {e}")

@@ -42,8 +42,9 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 5
-        taskmanager.memory.process.size: 2048m
+        taskmanager.numberOfTaskSlots: 8
+        taskmanager.memory.process.size: 4096m
+        taskmanager.memory.flink.size: 3584m
       # 基于细粒度HOST配置
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_HOST}:9092
       - OPENSEARCH_URL=http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}
