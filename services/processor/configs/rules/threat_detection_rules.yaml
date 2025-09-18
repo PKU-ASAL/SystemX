@@ -143,21 +143,23 @@ rules:
   # ===== 系统二进制文件监控 (system_binaries) =====
   - id: "system_binary_modification"
     name: "系统二进制文件修改"
-    description: "检测对 /bin、/sbin、/usr/bin、/usr/sbin 目录的修改"
+    description: "检测对系统二进制文件的写入或修改操作"
     category: "system_binaries"
     severity: "critical"
     base_score: 95
     enabled: true
     keywords:
-      - "/bin/"
-      - "/sbin/"
-      - "/usr/bin/"
-      - "/usr/sbin/"
+      - "write.*bin/"
+      - "write.*sbin/"
+      - "chmod.*bin/"
+      - "chmod.*sbin/"
     patterns:
-      - 'name="/bin/[^"]*"'
-      - 'name="/sbin/[^"]*"'
-      - 'name="/usr/bin/[^"]*"'
-      - 'name="/usr/sbin/[^"]*"'
+      - 'evt\.type.*write.*fd\.name.*"/bin/'
+      - 'evt\.type.*write.*fd\.name.*"/sbin/'
+      - 'evt\.type.*write.*fd\.name.*"/usr/bin/'
+      - 'evt\.type.*write.*fd\.name.*"/usr/sbin/'
+      - 'evt\.type.*chmod.*fd\.name.*"/bin/'
+      - 'evt\.type.*chmod.*fd\.name.*"/sbin/'
     conditions:
       key: "system_binaries"
     frequency_threshold: 1

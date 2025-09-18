@@ -225,6 +225,20 @@ processor-submit-auditd-sysdig:
 		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
 	fi
 
+processor-submit-events-to-alerts:
+	@echo "🚨 SysArmor Processor - 提交事件到告警过滤作业..."
+	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
+		docker compose exec flink-jobmanager flink run -d -py /opt/flink/usr_jobs/job_events_to_alerts.py; \
+		echo "✅ 事件到告警过滤作业已提交!"; \
+		echo "🛡️ 基于Falco风格规则引擎"; \
+		echo "📥 消费: sysarmor.events.audit"; \
+		echo "📤 输出: sysarmor.alerts + sysarmor.alerts.high"; \
+		echo "🔧 规则文件: /opt/flink/configs/rules/threat_detection_rules.yaml"; \
+		echo "📊 监控: http://localhost:8081"; \
+	else \
+		echo "❌ Flink JobManager容器未运行，请先启动: make up"; \
+	fi
+
 
 processor-cancel-job:
 	@if [ -z "$(JOB_ID)" ]; then \
