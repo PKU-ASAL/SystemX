@@ -3,6 +3,17 @@
 
 ---
 
+```
+配置及测试方法:
+wazuh初始配置见/shared/templates/configs/wazuh.yaml
+首先配置环境变量export WAZUH_ENABLED=true 
+然后正常运行manager启动 
+可通过1.3 验证Wazuh配置 api 来更新自己的wazuh 配置，然后通过1.2来更新wazuh 配置，该api会自动更新wazuh.yaml并备份原始配置文件
+即可测试下面的manager api.
+```
+
+
+
 ## 1. 配置管理
 
 ### 1.1 获取Wazuh配置
