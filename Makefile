@@ -45,8 +45,15 @@ deploy: ## 构建并启动所有服务 (单机部署)
 	docker compose build --no-cache
 	docker compose up -d
 	@echo "✅ 所有服务构建并启动完成"
+	@echo ""
+	@echo "🚀 自动初始化数据处理流程..."
+	@./scripts/auto-init-processor.sh
+	@echo ""
+	@echo "🎉 SysArmor EDR 系统完全就绪！"
 	@echo "🌐 Manager API: http://localhost:8080"
 	@echo "📖 API文档: http://localhost:8080/swagger/index.html"
+	@echo "🔧 Flink监控: http://localhost:8081"
+	@echo "📊 数据流已激活: auditd → events → alerts"
 
 down: ## 停止所有服务
 	@echo "🛑 停止SysArmor EDR服务..."

@@ -160,51 +160,57 @@ class ThreatDetectionRules:
             severity = 'low'
         
         alert = {
-            # SysArmor 告警元数据 (使用 UUID)
-            "alert_id": str(uuid.uuid4()),
-            "timestamp": now.isoformat() + 'Z',
-            "collector_id": event.get('collector_id', ''),
-            "host": event.get('host', 'unknown'),
-            "source": "sysarmor-threat-detector",
-            "processor": "flink-events-to-alerts",
-            "processed_at": now.isoformat() + 'Z',
+            # OpenSearch 标准主时间字段
+            "@timestamp": now.isoformat() + 'Z',
             
-            # 告警分类
-            "alert_type": "rule_based_detection",
-            "alert_category": rule.get('category', 'unknown'),
-            "severity": severity,
-            "risk_score": final_score,
-            "confidence": 0.8,  # 基于规则的检测置信度
-            
-            # 告警详情
+            # 告警核心信息
             "alert": {
-                "rule_id": rule['id'],
-                "rule_name": rule.get('name', ''),
-                "description": rule.get('description', ''),
-                "title": f"{rule.get('name', 'Unknown Threat')}: {event.get('event_type', 'unknown')}",
+                "id": str(uuid.uuid4()),
+                "type": "rule_based_detection",
+                "category": rule.get('category', 'unknown'),
+                "severity": severity,
+                "risk_score": final_score,
+                "confidence": 0.8,
+                "rule": {
+                    "id": rule['id'],
+                    "name": rule.get('name', ''),
+                    "description": rule.get('description', ''),
+                    "title": f"{rule.get('name', 'Unknown Threat')}: {event.get('event_type', 'unknown')}",
+                    "mitigation": f"检查 {rule.get('category', 'unknown')} 相关活动",
+                    "references": [f"SysArmor Rule: {rule['id']}"]
+                },
                 "evidence": {
                     "event_type": event.get('event_type', ''),
                     "process_name": event.get('message', {}).get('proc.name', ''),
                     "process_cmdline": event.get('message', {}).get('proc.cmdline', ''),
                     "file_path": event.get('message', {}).get('fd.name', ''),
                     "network_info": event.get('message', {}).get('net.sockaddr', {})
-                },
-                "mitigation": f"检查 {rule.get('category', 'unknown')} 相关活动",
-                "references": [f"SysArmor Rule: {rule['id']}"]
+                }
             },
             
-            # 原始事件引用
-            "source_events": [
-                {
+            # 原始事件数据
+            "event": {
+                "raw": {
                     "event_id": event.get('event_id', ''),
-                    "topic": "sysarmor.events.audit",
                     "timestamp": event.get('timestamp', ''),
-                    "event_type": event.get('event_type', '')
+                    "source": event.get('source', 'auditd'),
+                    "message": event.get('message', {})  # 完整的 sysdig 数据，包含 evt.time
                 }
-            ],
+            },
             
-            # 原始事件数据 (用于溯源)
-            "original_event": event
+            # 时间信息
+            "timing": {
+                "created_at": now.isoformat() + 'Z',
+                "processed_at": now.isoformat() + 'Z'
+            },
+            
+            # 元数据信息
+            "metadata": {
+                "collector_id": event.get('collector_id', ''),
+                "host": event.get('host', 'unknown'),
+                "source": "sysarmor-threat-detector",
+                "processor": "flink-events-to-alerts"
+            }
         }
         
         return alert
@@ -227,7 +233,7 @@ class EventToAlertsProcessor(MapFunction):
                 logger.info(f"🚨 匹配到 {len(alerts)} 个告警规则")
                 # 返回第一个匹配的告警
                 alert = alerts[0]
-                logger.info(f"🚨 生成告警: {alert['alert_id']} - {alert['alert']['rule_name']}")
+                logger.info(f"🚨 生成告警: {alert['alert']['id']} - {alert['alert']['rule']['name']}")
                 return json.dumps(alert, ensure_ascii=False)
             
             return None
@@ -245,7 +251,7 @@ class AlertSeverityRouter(FilterFunction):
     def filter(self, value):
         try:
             alert = json.loads(value)
-            severity = alert.get('severity', 'low')
+            severity = alert.get('alert', {}).get('severity', 'low')
             
             if self.target_severity == "high":
                 return severity in ['high', 'critical']
@@ -376,7 +382,7 @@ def main():
                     )
                     
                     if response.status_code in [200, 201]:
-                        logger.info(f"✅ 告警写入 OpenSearch: {alert_data.get('alert_id', 'unknown')}")
+                        logger.info(f"✅ 告警写入 OpenSearch: {alert_data.get('alert', {}).get('id', 'unknown')}")
                     else:
                         logger.error(f"❌ OpenSearch 写入失败: {response.status_code}")
                         
@@ -405,7 +411,7 @@ def main():
         
         # 监控输出
         alerts_stream.map(
-            lambda x: f"🚨 Alert: {json.loads(x).get('severity', 'unknown')} - {json.loads(x).get('alert', {}).get('rule_name', 'unknown')} from {json.loads(x).get('collector_id', 'unknown')[:8]}",
+            lambda x: f"🚨 Alert: {json.loads(x).get('alert', {}).get('severity', 'unknown')} - {json.loads(x).get('alert', {}).get('rule', {}).get('name', 'unknown')} from {json.loads(x).get('metadata', {}).get('collector_id', 'unknown')[:8]}",
             output_type=Types.STRING()
         ).print()
         
