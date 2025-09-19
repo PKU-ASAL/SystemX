@@ -177,113 +177,46 @@ processor: ## Processor服务管理 (用法: make processor <command>)
 		echo "=============================="; \
 		echo "用法: make processor <command>"; \
 		echo ""; \
-		echo "可用命令:"; \
-		echo "  list-jobs        - 查看Flink作业列表"; \
-		echo "  submit-console   - 提交简单控制台测试作业"; \
-		echo "  submit-auditd-sysdig - 提交Auditd到Sysdig转换测试作业"; \
-		echo "  cancel-job JOB_ID=xxx - 取消指定作业"; \
-		echo "  overview         - 查看Flink集群概览"; \
-		echo "  status           - 查看Processor服务状态"; \
-		echo "  test             - 快速测试Processor功能"; \
+		echo "核心命令:"; \
+		echo "  init             - 智能初始化 (推荐: 等待所有服务就绪后自动提交作业)"; \
+		echo "  jobs             - 查看作业状态"; \
+		echo "  cancel JOB_ID=xxx - 取消指定作业"; \
+		echo "  status           - 查看服务状态"; \
 		echo ""; \
-		echo "示例:"; \
-		echo "  make processor list-jobs"; \
-		echo "  make processor submit-console"; \
-		echo "  make processor submit-auditd-sysdig"; \
+		echo "常用操作:"; \
+		echo "  make processor init    # 智能初始化数据流"; \
+		echo "  make processor jobs    # 查看运行中的作业"; \
+		echo "  make processor status  # 检查服务状态"; \
 	else \
 		$(MAKE) processor-$(filter-out $@,$(MAKECMDGOALS)); \
 	fi
 
-processor-list-jobs:
-	@echo "📋 SysArmor Processor - Flink作业列表："
-	@echo "通过Flink API查询:"
-	@curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.status)"' 2>/dev/null || \
-	(echo "  ⚠️  Flink API不可用，尝试Manager API..." && \
-	 curl -s http://localhost:8080/api/v1/services/flink/jobs 2>/dev/null | jq -r '.data.jobs[]? | "  🎯 Job ID: \(.id) | 状态: \(.state // "未知")"' 2>/dev/null || \
-	 echo "  ❌ 所有API都不可用")
+processor-jobs:
+	@echo "📋 SysArmor Processor - 作业状态："
+	@curl -s http://localhost:8081/jobs 2>/dev/null | jq -r '.jobs[]? | "  🎯 \(.id[:8])... | \(.status) | \(.name // "未命名")"' 2>/dev/null || \
+	echo "  ❌ 无法获取作业信息"
 
-processor-submit-console:
-	@echo "🖥️  SysArmor Processor - 提交简单控制台测试作业..."
-	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_test_simple_console.py; \
-		echo "✅ 简单控制台测试作业已提交!"; \
-		echo "📊 监控: http://localhost:8081"; \
-	else \
-		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
-	fi
+processor-init:
+	@echo "🚀 SysArmor Processor - 智能初始化..."
+	@./scripts/auto-init-processor.sh
 
-processor-submit-auditd-sysdig:
-	@echo "🔄 SysArmor Processor - 提交Auditd到Sysdig转换测试作业..."
-	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -py /opt/flink/usr_jobs/job_test_auditd_sysdig_console.py; \
-		echo "✅ Auditd到Sysdig转换测试作业已提交!"; \
-		echo "🔄 基于NODLINK管道处理逻辑"; \
-		echo "📥 消费: sysarmor-events-test"; \
-		echo "📤 输出: 控制台 (sysdig格式)"; \
-		echo "📊 监控: http://localhost:8081"; \
-	else \
-		echo "❌ Flink JobManager容器未运行，请先启动: make up-dev"; \
-	fi
-
-processor-submit-events-to-alerts:
-	@echo "🚨 SysArmor Processor - 提交事件到告警过滤作业..."
-	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
-		docker compose exec flink-jobmanager flink run -d -py /opt/flink/usr_jobs/job_events_to_alerts.py; \
-		echo "✅ 事件到告警过滤作业已提交!"; \
-		echo "🛡️ 基于Falco风格规则引擎"; \
-		echo "📥 消费: sysarmor.events.audit"; \
-		echo "📤 输出: sysarmor.alerts + sysarmor.alerts.high"; \
-		echo "🔧 规则文件: /opt/flink/configs/rules/threat_detection_rules.yaml"; \
-		echo "📊 监控: http://localhost:8081"; \
-	else \
-		echo "❌ Flink JobManager容器未运行，请先启动: make up"; \
-	fi
-
-
-processor-cancel-job:
+processor-cancel:
 	@if [ -z "$(JOB_ID)" ]; then \
-		echo "❌ 请指定作业ID: make processor cancel-job JOB_ID=your_job_id"; \
-		echo "💡 获取作业ID: make processor list-jobs"; \
+		echo "❌ 请指定作业ID: make processor cancel JOB_ID=your_job_id"; \
+		echo "💡 获取作业ID: make processor jobs"; \
 		exit 1; \
 	fi
-	@echo "🛑 SysArmor Processor - 取消Flink作业 $(JOB_ID)..."
+	@echo "🛑 取消Flink作业 $(JOB_ID)..."
 	@if docker ps --format "table {{.Names}}" | grep -q "flink-jobmanager"; then \
 		docker compose exec flink-jobmanager flink cancel $(JOB_ID); \
-		echo "✅ 作业 $(JOB_ID) 已取消"; \
+		echo "✅ 作业已取消"; \
 	else \
 		echo "❌ Flink JobManager容器未运行"; \
 	fi
 
-
-processor-overview:
-	@echo "📊 SysArmor Processor - Flink集群概览："
-	@echo "通过Manager API查询:"
-	@curl -s http://localhost:8080/api/v1/services/flink/overview 2>/dev/null | jq '.' 2>/dev/null || \
-	(echo "⚠️  Manager API不可用，尝试直接访问Flink..." && \
-	 curl -s http://localhost:8081/overview 2>/dev/null | jq '.' 2>/dev/null || \
-	 echo "❌ Flink集群不可用")
-
 processor-status:
 	@echo "📊 SysArmor Processor - 服务状态："
-	@docker ps --filter "label=sysarmor.module=processor" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
-
-processor-test:
-	@echo "🚀 SysArmor Processor - 快速测试流程..."
-	@echo "1️⃣  检查Processor服务状态..."
-	@make processor-status
-	@echo ""
-	@echo "2️⃣  查看Flink集群概览..."
-	@make processor-overview
-	@echo ""
-	@echo "3️⃣  提交简单控制台测试作业..."
-	@make processor-submit-console
-	@echo ""
-	@echo "4️⃣  查看作业列表..."
-	@sleep 3
-	@make processor-list-jobs
-	@echo ""
-	@echo "✅ Processor快速测试完成!"
-	@echo "📊 Web监控: http://localhost:8081"
+	@docker ps --filter "label=sysarmor.module=processor" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 # Indexer 服务管理
 indexer: ## Indexer服务管理 (用法: make indexer <command>)
