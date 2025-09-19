@@ -178,18 +178,18 @@ type WazuhPackageInfo struct {
 
 // WazuhSearchQuery 事件搜索查询
 type WazuhSearchQuery struct {
-	Index     string                   `json:"index,omitempty"`      // 索引名称
-	IndexType string                   `json:"index_type,omitempty"` // alerts or archives
-	Query     interface{}              `json:"query,omitempty"`      // 支持字符串或复杂DSL
-	Size      int                      `json:"size,omitempty"`
-	From      int                      `json:"from,omitempty"`
-	Sort      string                   `json:"sort,omitempty"`       // 简化为字符串
-	Fields    []string                 `json:"fields,omitempty"`     // 返回字段
-	StartTime time.Time                `json:"start_time,omitempty"` // 开始时间
-	EndTime   time.Time                `json:"end_time,omitempty"`   // 结束时间
-	AgentID   string                   `json:"agent_id,omitempty"`   // 代理ID
-	RuleID    string                   `json:"rule_id,omitempty"`    // 规则ID
-	RuleLevel int                      `json:"rule_level,omitempty"` // 规则级别
+	Index     string      `json:"index,omitempty"`      // 索引名称
+	IndexType string      `json:"index_type,omitempty"` // alerts or archives
+	Query     interface{} `json:"query,omitempty"`      // 支持字符串或复杂DSL
+	Size      int         `json:"size,omitempty"`
+	From      int         `json:"from,omitempty"`
+	Sort      string      `json:"sort,omitempty"`       // 简化为字符串
+	Fields    []string    `json:"fields,omitempty"`     // 返回字段
+	StartTime time.Time   `json:"start_time,omitempty"` // 开始时间
+	EndTime   time.Time   `json:"end_time,omitempty"`   // 结束时间
+	AgentID   string      `json:"agent_id,omitempty"`   // 代理ID
+	RuleID    string      `json:"rule_id,omitempty"`    // 规则ID
+	RuleLevel int         `json:"rule_level,omitempty"` // 规则级别
 }
 
 // WazuhSearchResponse 搜索响应
@@ -348,9 +348,30 @@ type WazuhSystemInfoData struct {
 
 // WazuhSystemInfo 系统信息
 type WazuhSystemInfo struct {
-	AgentID  string `json:"agent_id"`
-	ScanID   int    `json:"scan_id,omitempty"`
-	ScanTime string `json:"scan_time,omitempty"`
+	AgentID      string             `json:"agent_id"`
+	OS           *WazuhOSDetailInfo `json:"os,omitempty"`
+	Hostname     string             `json:"hostname,omitempty"`
+	Architecture string             `json:"architecture,omitempty"`
+	OSRelease    string             `json:"os_release,omitempty"`
+	Scan         *WazuhScanInfo     `json:"scan,omitempty"`
+	ScanID       int                `json:"scan_id,omitempty"`
+	ScanTime     string             `json:"scan_time,omitempty"`
+}
+
+// WazuhOSDetailInfo 详细操作系统信息
+type WazuhOSDetailInfo struct {
+	Build          string `json:"build,omitempty"`
+	DisplayVersion string `json:"display_version,omitempty"`
+	Major          string `json:"major,omitempty"`
+	Minor          string `json:"minor,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Version        string `json:"version,omitempty"`
+}
+
+// WazuhScanInfo 扫描信息
+type WazuhScanInfo struct {
+	ID   int    `json:"id,omitempty"`
+	Time string `json:"time,omitempty"`
 }
 
 // WazuhHardwareInfoResponse 硬件信息响应
@@ -637,18 +658,18 @@ type WazuhSCAData struct {
 
 // WazuhSCAResult SCA扫描结果
 type WazuhSCAResult struct {
-	PolicyID    string    `json:"policy_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	References  string    `json:"references"`
-	TotalChecks int       `json:"total_checks"`
-	Pass        int       `json:"pass"`
-	Fail        int       `json:"fail"`
-	Invalid     int       `json:"invalid"`
-	Score       int       `json:"score"`
-	StartScan   string    `json:"start_scan"`
-	EndScan     string    `json:"end_scan"`
-	HashFile    string    `json:"hash_file"`
+	PolicyID    string `json:"policy_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	References  string `json:"references"`
+	TotalChecks int    `json:"total_checks"`
+	Pass        int    `json:"pass"`
+	Fail        int    `json:"fail"`
+	Invalid     int    `json:"invalid"`
+	Score       int    `json:"score"`
+	StartScan   string `json:"start_scan"`
+	EndScan     string `json:"end_scan"`
+	HashFile    string `json:"hash_file"`
 }
 
 // WazuhRootcheckResponse Rootcheck响应
@@ -921,9 +942,17 @@ type WazuhClusterHealthResponse struct {
 
 // WazuhManagerInfoResponse Manager信息响应
 type WazuhManagerInfoResponse struct {
-	Data    WazuhManagerBasicInfo `json:"data"`
-	Message string                `json:"message"`
-	Error   int                   `json:"error"`
+	Data    WazuhManagerInfoData `json:"data"`
+	Message string               `json:"message"`
+	Error   int                  `json:"error"`
+}
+
+// WazuhManagerInfoData Manager信息数据
+type WazuhManagerInfoData struct {
+	AffectedItems      []WazuhManagerBasicInfo `json:"affected_items"`
+	TotalAffectedItems int                     `json:"total_affected_items"`
+	TotalFailedItems   int                     `json:"total_failed_items"`
+	FailedItems        []interface{}           `json:"failed_items"`
 }
 
 // WazuhManagerBasicInfo 管理器基本信息
@@ -939,9 +968,17 @@ type WazuhManagerBasicInfo struct {
 
 // WazuhManagerStatusResponse Manager状态响应
 type WazuhManagerStatusResponse struct {
-	Data    WazuhManagerStatus `json:"data"`
-	Message string             `json:"message"`
-	Error   int                `json:"error"`
+	Data    WazuhManagerStatusData `json:"data"`
+	Message string                 `json:"message"`
+	Error   int                    `json:"error"`
+}
+
+// WazuhManagerStatusData Manager状态数据
+type WazuhManagerStatusData struct {
+	AffectedItems      []WazuhManagerStatus `json:"affected_items"`
+	TotalAffectedItems int                  `json:"total_affected_items"`
+	TotalFailedItems   int                  `json:"total_failed_items"`
+	FailedItems        []interface{}        `json:"failed_items"`
 }
 
 // WazuhManagerStatus 管理器状态
@@ -1081,14 +1118,14 @@ type WazuhIndexerVersionInfo struct {
 
 // WazuhIndexerIndex 索引信息
 type WazuhIndexerIndex struct {
-	Index      string `json:"index"`
-	Status     string `json:"status"`
-	Health     string `json:"health"`
-	Pri        string `json:"pri"`
-	Rep        string `json:"rep"`
-	DocsCount  string `json:"docs.count"`
-	StoreSize  string `json:"store.size"`
-	UUID       string `json:"uuid,omitempty"`
+	Index        string `json:"index"`
+	Status       string `json:"status"`
+	Health       string `json:"health"`
+	Pri          string `json:"pri"`
+	Rep          string `json:"rep"`
+	DocsCount    string `json:"docs.count"`
+	StoreSize    string `json:"store.size"`
+	UUID         string `json:"uuid,omitempty"`
 	CreationDate string `json:"creation.date,omitempty"`
 }
 

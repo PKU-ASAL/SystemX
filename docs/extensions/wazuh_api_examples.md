@@ -371,18 +371,6 @@ curl -X DELETE "http://localhost:8080/api/v1/wazuh/groups/web-servers/agents/001
 curl -X GET "http://localhost:8080/api/v1/wazuh/groups/default/configuration"
 ```
 
-### 4.8 更新组配置
-```bash
-curl -X PUT "http://localhost:8080/api/v1/wazuh/groups/default/configuration" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_config": {
-      "syscheck": {
-        "frequency": "43200"
-      }
-    }
-  }'
-```
 
 ---
 

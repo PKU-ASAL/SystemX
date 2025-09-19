@@ -1428,14 +1428,40 @@ func (s *WazuhService) GetAlertStats(ctx context.Context) (interface{}, error) {
 		return nil, fmt.Errorf("wazuh indexer client not available")
 	}
 
-	// 聚合不同级别的告警统计
+	// 创建综合统计结果
+	stats := make(map[string]interface{})
+
+	// 1. 按级别统计
 	levelAgg := &models.WazuhAggregationQuery{
 		IndexType: "alerts",
 		GroupBy:   "rule.level",
-		Size:      20,
+		Size:      10,
+	}
+	if levelResult, err := client.GetAggregations(ctx, levelAgg); err == nil {
+		stats["by_level"] = levelResult
 	}
 
-	return client.GetAggregations(ctx, levelAgg)
+	// 2. 按代理统计
+	agentAgg := &models.WazuhAggregationQuery{
+		IndexType: "alerts",
+		GroupBy:   "agent.id",
+		Size:      15,
+	}
+	if agentResult, err := client.GetAggregations(ctx, agentAgg); err == nil {
+		stats["by_agent"] = agentResult
+	}
+
+	// 3. 按规则统计
+	ruleAgg := &models.WazuhAggregationQuery{
+		IndexType: "alerts",
+		GroupBy:   "rule.id",
+		Size:      10,
+	}
+	if ruleResult, err := client.GetAggregations(ctx, ruleAgg); err == nil {
+		stats["by_rule"] = ruleResult
+	}
+
+	return stats, nil
 }
 
 // GetAlertsSummary 获取告警摘要
