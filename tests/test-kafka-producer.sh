@@ -306,12 +306,12 @@ main() {
     # 记录关键 topics 的消息数量
     local raw_audit_before=$(get_topic_message_count "sysarmor.raw.audit")
     local events_audit_before=$(get_topic_message_count "sysarmor.events.audit")
-    local alerts_before=$(get_topic_message_count "sysarmor.alerts")
+    local alerts_audit_before=$(get_topic_message_count "sysarmor.alerts.audit")
     
     echo "  📊 关键 Topics 消息数量 (导入前):"
     echo "    🎯 sysarmor.raw.audit: $raw_audit_before"
     echo "    🔄 sysarmor.events.audit: $events_audit_before"
-    echo "    🚨 sysarmor.alerts: $alerts_before"
+    echo "    🚨 sysarmor.alerts.audit: $alerts_audit_before"
     echo ""
     
     get_kafka_topics_info
@@ -335,12 +335,12 @@ main() {
     # 获取导入后的消息数量
     local raw_audit_after=$(get_topic_message_count "sysarmor.raw.audit")
     local events_audit_after=$(get_topic_message_count "sysarmor.events.audit")
-    local alerts_after=$(get_topic_message_count "sysarmor.alerts")
+    local alerts_audit_after=$(get_topic_message_count "sysarmor.alerts.audit")
     
     echo "  📊 关键 Topics 消息数量 (导入后):"
     echo "    🎯 sysarmor.raw.audit: $raw_audit_after"
     echo "    🔄 sysarmor.events.audit: $events_audit_after"
-    echo "    🚨 sysarmor.alerts: $alerts_after"
+    echo "    🚨 sysarmor.alerts.audit: $alerts_audit_after"
     echo ""
     
     # 计算各个 topic 的变化
@@ -367,12 +367,12 @@ main() {
     fi
     
     # 告警 topic 变化
-    if [[ "$alerts_before" != "N/A" && "$alerts_after" != "N/A" ]]; then
-        local alerts_diff=$((alerts_after - alerts_before))
+    if [[ "$alerts_audit_before" != "N/A" && "$alerts_audit_after" != "N/A" ]]; then
+        local alerts_diff=$((alerts_audit_after - alerts_audit_before))
         if [ $alerts_diff -gt 0 ]; then
-            echo "  🚨 sysarmor.alerts: +$alerts_diff 条消息 ✅ (告警生成)"
+            echo "  🚨 sysarmor.alerts.audit: +$alerts_diff 条消息 ✅ (告警生成)"
         else
-            echo "  🚨 sysarmor.alerts: 无变化"
+            echo "  🚨 sysarmor.alerts.audit: 无变化"
         fi
     fi
     
@@ -389,7 +389,7 @@ main() {
     echo "  📊 数据流处理统计:"
     echo "    📥 原始数据: $raw_audit_before → $raw_audit_after (+$((raw_audit_after - raw_audit_before)))"
     echo "    🔄 处理事件: $events_audit_before → $events_audit_after (+$((events_audit_after - events_audit_before)))"
-    echo "    🚨 告警事件: $alerts_before → $alerts_after (+$((alerts_after - alerts_before)))"
+    echo "    🚨 告警事件: $alerts_audit_before → $alerts_audit_after (+$((alerts_audit_after - alerts_audit_before)))"
     
     echo ""
     echo -e "${BLUE}💡 后续操作建议:${NC}"

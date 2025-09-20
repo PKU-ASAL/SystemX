@@ -264,20 +264,19 @@ class AlertSeverityRouter(FilterFunction):
 def main():
     """主函数：创建事件到告警的处理作业"""
     
-    logger.info("🚀 Starting SysArmor Events to Alerts Job")
+    logger.info("🚀 Starting SysArmor Audit Events to Alerts Job")
     logger.info("📋 Based on Falco-style rule engine")
-    logger.info("📊 Processing: sysarmor.events.audit → sysarmor.alerts.*")
+    logger.info("📊 Processing: sysarmor.events.audit → sysarmor.alerts.audit")
     
     # 环境变量配置
     kafka_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'middleware-kafka:9092')
     input_topic = 'sysarmor.events.audit'
-    output_topic_general = 'sysarmor.alerts'
-    output_topic_high = 'sysarmor.alerts.high'
-    kafka_group_id = 'sysarmor-events-to-alerts-processor-v2'  # 使用新的 Consumer Group
+    output_topic = 'sysarmor.alerts.audit'  # 简化为单一告警topic
+    kafka_group_id = 'sysarmor-audit-events-to-alerts-processor'  # 更新Consumer Group名称
     
     logger.info(f"📡 Kafka Servers: {kafka_servers}")
     logger.info(f"📥 Input Topic: {input_topic}")
-    logger.info(f"📤 Output Topics: {output_topic_general}, {output_topic_high}")
+    logger.info(f"📤 Output Topic: {output_topic}")
     logger.info(f"👥 Consumer Group: {kafka_group_id}")
     
     # 创建流处理环境
@@ -308,7 +307,7 @@ def main():
             properties=consumer_props
         )
         
-        # 创建 Kafka Producers
+        # 创建 Kafka Producer (简化为单一告警流)
         producer_props = {
             'bootstrap.servers': kafka_servers,
             'transaction.timeout.ms': '900000',
@@ -317,14 +316,8 @@ def main():
             'compression.type': 'snappy'
         }
         
-        kafka_producer_general = FlinkKafkaProducer(
-            topic=output_topic_general,
-            serialization_schema=SimpleStringSchema(),
-            producer_config=producer_props
-        )
-        
-        kafka_producer_high = FlinkKafkaProducer(
-            topic=output_topic_high,
+        kafka_producer = FlinkKafkaProducer(
+            topic=output_topic,
             serialization_schema=SimpleStringSchema(),
             producer_config=producer_props
         )
@@ -360,7 +353,7 @@ def main():
                 self.opensearch_url = opensearch_url
                 self.opensearch_username = opensearch_username
                 self.opensearch_password = opensearch_password
-                self.index_url = f"{opensearch_url}/sysarmor-alerts/_doc"
+                self.index_url = f"{opensearch_url}/sysarmor-alerts-audit/_doc"
                 
             def map(self, value):
                 try:
@@ -392,22 +385,16 @@ def main():
                 return value
         
         opensearch_http_sink = OpenSearchHttpSink()
-        logger.info("✅ OpenSearch HTTP sink 已配置: sysarmor-alerts")
+        logger.info("✅ OpenSearch HTTP sink 已配置: sysarmor-alerts-audit")
         
-        # 路由到不同的输出
-        # 一般告警 (low, medium)
-        general_alerts = alerts_stream.filter(AlertSeverityRouter("general"))
-        general_alerts.add_sink(kafka_producer_general)
-        
-        # 高危告警 (high, critical)
-        high_alerts = alerts_stream.filter(AlertSeverityRouter("high"))
-        high_alerts.add_sink(kafka_producer_high)
+        # 简化的告警输出 (单一告警流)
+        alerts_stream.add_sink(kafka_producer)
         
         # 所有告警写入 OpenSearch (使用 HTTP 方式)
         alerts_stream.map(opensearch_http_sink, output_type=Types.STRING())
-        logger.info("✅ 所有告警将写入 OpenSearch: sysarmor-alerts")
+        logger.info("✅ 所有告警将写入 OpenSearch: sysarmor-alerts-audit")
         
-        logger.info("✅ 告警将写入 Kafka Topics + OpenSearch")
+        logger.info("✅ 告警将写入 Kafka Topic + OpenSearch")
         
         # 监控输出
         alerts_stream.map(
@@ -416,7 +403,7 @@ def main():
         ).print()
         
         logger.info("🔄 Falco-style threat detection pipeline created:")
-        logger.info(f"   {input_topic} -> Rule Engine -> Frequency Check -> Alert Routing -> {output_topic_general}/{output_topic_high}")
+        logger.info(f"   {input_topic} -> Rule Engine -> Threat Detection -> {output_topic}")
         
         # 显示加载的规则
         rules_engine = ThreatDetectionRules()
@@ -424,20 +411,19 @@ def main():
         for rule_id, rule in rules_engine.rules.items():
             logger.info(f"   - {rule_id}: {rule.get('name', '')} ({rule.get('severity', 'unknown')})")
         
-        logger.info("🎯 告警路由:")
-        logger.info(f"   - 一般告警 (low/medium): {output_topic_general}")
-        logger.info(f"   - 高危告警 (high/critical): {output_topic_high}")
-        logger.info(f"   - 所有告警索引: OpenSearch:sysarmor-alerts")
+        logger.info("🎯 告警输出:")
+        logger.info(f"   - Kafka Topic: {output_topic}")
+        logger.info(f"   - OpenSearch索引: sysarmor-alerts-audit")
         
         # 执行作业
-        logger.info("✅ Starting threat detection job...")
+        logger.info("✅ Starting audit threat detection job...")
         
-        job_client = env.execute_async("SysArmor-Events-to-Alerts-Processor")
+        job_client = env.execute_async("SysArmor-Audit-Events-to-Alerts-Processor")
         
-        logger.info(f"🎯 Events to Alerts job submitted successfully!")
+        logger.info(f"🎯 Audit Events to Alerts job submitted successfully!")
         logger.info(f"📋 Job submitted with async execution")
         logger.info(f"🌐 Monitor at: http://localhost:8081")
-        logger.info(f"📊 Processing: {input_topic} → {output_topic_general}/{output_topic_high}")
+        logger.info(f"📊 Processing: {input_topic} → {output_topic}")
         logger.info(f"🔍 View logs: docker logs -f sysarmor-flink-taskmanager-1")
         
         return "async-job-submitted"

@@ -85,9 +85,9 @@ func main() {
 		// 元数据管理路由
 		collectors.PUT("/:id/metadata", collectorHandler.UpdateMetadata)
 
-		// 删除和注销路由
-		collectors.DELETE("/:id", collectorHandler.Delete)              // 删除 Collector (支持 force 参数)
+		// 注销和删除路由 (注意顺序：具体路径在前，通用路径在后)
 		collectors.POST("/:id/unregister", collectorHandler.Unregister) // 注销 Collector (软删除)
+		collectors.DELETE("/:id", collectorHandler.Delete)              // 删除 Collector (支持 force 参数)
 	}
 
 	// 资源管理路由 (统一的脚本、配置、二进制文件 API)
@@ -108,7 +108,8 @@ func main() {
 	healthHandler := handlers.NewHealthHandler(db.DB())
 	health := api.Group("/health")
 	{
-		health.GET("", healthHandler.GetHealthOverview)                    // 新的综合健康状态概览
+		health.GET("", healthHandler.GetHealthOverview)                    // 映射到 /api/v1/health
+		health.GET("/overview", healthHandler.GetHealthOverview)           // 映射到 /api/v1/health/overview
 		health.GET("/comprehensive", healthHandler.GetComprehensiveHealth) // 详细的系统健康状态
 		health.GET("/system", healthHandler.GetSystemHealth)
 		health.GET("/workers", healthHandler.GetWorkers)

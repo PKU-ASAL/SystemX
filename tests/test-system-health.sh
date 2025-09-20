@@ -172,14 +172,44 @@ main() {
     # 8. Collectors管理测试
     print_section "8. Collectors管理测试"
     test_api_endpoint "/api/v1/collectors" "Collectors列表" "success"
-    test_json_structure "/api/v1/collectors" "Collectors数据结构" ".data | length"
+    test_json_structure "/api/v1/collectors" "Collectors数据结构" ".data.collectors | length"
     
-    # 9. 系统资源测试
-    print_section "9. 系统资源测试"
-    test_api_endpoint "/api/v1/resources/scripts/agentless/setup-terminal.sh" "安装脚本资源" ""
+    # 9. Worker健康状态测试
+    print_section "9. Worker健康状态测试"
+    test_api_endpoint "/api/v1/health/workers" "Workers列表" "data"
+    test_json_structure "/api/v1/health/workers" "Workers数量" ".data | length"
+    test_json_structure "/api/v1/health/workers" "Vector Worker状态" ".data[0].healthy"
     
-    # 10. 详细信息展示
-    print_section "10. 详细系统信息"
+    # 10. 综合健康状态测试
+    print_section "10. 综合健康状态测试"
+    test_api_endpoint "/api/v1/health/comprehensive" "综合健康检查" "data"
+    test_json_structure "/api/v1/health/comprehensive" "系统整体健康状态" ".data.healthy"
+    test_json_structure "/api/v1/health/comprehensive" "健康组件数量" ".data.components | length"
+    
+    # 11. 事件查询健康测试
+    print_section "11. 事件查询健康测试"
+    test_api_endpoint "/api/v1/events/topics" "事件Topics健康" "success"
+    test_api_endpoint "/api/v1/events/latest" "最新事件查询健康" "success"
+    
+    # 12. Topic配置健康测试
+    print_section "12. Topic配置健康测试"
+    test_api_endpoint "/api/v1/topics/configs" "Topic配置健康" "success"
+    test_api_endpoint "/api/v1/topics/defaults" "默认Topic配置健康" "success"
+    
+    # 13. 系统资源测试
+    print_section "13. 系统资源测试"
+    # 测试参数验证 - 应该返回400因为缺少collector_id参数
+    ((TOTAL_TESTS++))
+    print_test "安装脚本资源参数验证"
+    local http_code=$(curl -s --max-time $TIMEOUT -o /dev/null -w "%{http_code}" "$MANAGER_URL/api/v1/resources/scripts/agentless/setup-terminal.sh" 2>/dev/null)
+    if [ "$http_code" = "400" ]; then
+        print_success "安装脚本资源参数验证 - HTTP 400 (正确拒绝无参数请求)"
+    else
+        print_error "安装脚本资源参数验证 - HTTP $http_code (应该返回400)"
+    fi
+    
+    # 14. 详细信息展示
+    print_section "14. 详细系统信息"
     show_detailed_info "/api/v1/health" "系统健康状态"
     show_detailed_info "/api/v1/services/kafka/health" "Kafka健康信息"
     

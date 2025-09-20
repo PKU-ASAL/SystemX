@@ -789,16 +789,15 @@ func (s *KafkaService) getLatestMessages(consumer sarama.Consumer, topicName str
 	}, nil
 }
 
-// GetConsumerGroups 获取 Consumer Groups - 必须使用Sarama
+// GetConsumerGroups 获取 Consumer Groups - 临时简化实现
 func (s *KafkaService) GetConsumerGroups(ctx context.Context) ([]ConsumerGroupInfo, error) {
-	// 注意：Sarama 的基础客户端不直接支持获取 Consumer Groups
-	// 这里返回空列表，实际实现需要使用 Admin API 或其他方法
+	// 临时返回空列表，避免编译错误
 	return []ConsumerGroupInfo{}, nil
 }
 
-// GetConsumerGroupDetails 获取 Consumer Group 详细信息 - 必须使用Sarama
+// GetConsumerGroupDetails 获取 Consumer Group 详细信息 - 临时简化实现
 func (s *KafkaService) GetConsumerGroupDetails(ctx context.Context, groupName string) (*ConsumerGroupInfo, error) {
-	// 注意：这里需要实现具体的 Consumer Group 查询逻辑
+	// 临时返回错误，避免编译错误
 	return nil, fmt.Errorf("consumer group details not implemented yet")
 }
 

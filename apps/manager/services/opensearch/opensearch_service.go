@@ -79,13 +79,13 @@ type IndicesStats struct {
 
 // ShardsStats 分片统计
 type ShardsStats struct {
-	Total       int     `json:"total"`
-	Primaries   int     `json:"primaries"`
-	Replication float64 `json:"replication"`
+	Total       int         `json:"total"`
+	Primaries   int         `json:"primaries"`
+	Replication interface{} `json:"replication"` // 修复：使用interface{}处理不同类型
 	Index       struct {
 		Shards      ShardsDetail `json:"shards"`
 		Primaries   ShardsDetail `json:"primaries"`
-		Replication float64      `json:"replication"`
+		Replication interface{}  `json:"replication"` // 修复：使用interface{}处理不同类型
 	} `json:"index"`
 }
 

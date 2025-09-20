@@ -92,7 +92,10 @@ class SysArmorIndexer:
                     
                     # 如果是告警模板，创建对应的索引
                     if 'alerts' in template_name:
-                        self.create_alerts_index()
+                        if 'audit' in template_name:
+                            self.create_audit_alerts_index()
+                        else:
+                            self.create_alerts_index()
                     
                 except Exception as e:
                     logger.error(f"Failed to load template {template_file}: {e}")
@@ -123,6 +126,33 @@ class SysArmorIndexer:
                 
         except Exception as e:
             logger.error(f"Failed to create alerts index: {e}")
+    
+    def create_audit_alerts_index(self):
+        """创建audit告警索引"""
+        try:
+            index_name = "sysarmor-alerts-audit"
+            
+            if not self.opensearch_client.indices.exists(index=index_name):
+                # 使用模板创建索引
+                index_settings = {
+                    "settings": {
+                        "number_of_shards": 1,
+                        "number_of_replicas": 0,
+                        "refresh_interval": "5s"
+                    }
+                }
+                
+                self.opensearch_client.indices.create(
+                    index=index_name,
+                    body=index_settings
+                )
+                
+                logger.info(f"Created audit alerts index: {index_name}")
+            else:
+                logger.info(f"Audit alerts index already exists: {index_name}")
+                
+        except Exception as e:
+            logger.error(f"Failed to create audit alerts index: {e}")
     
     def create_initial_indices(self):
         """创建初始索引"""

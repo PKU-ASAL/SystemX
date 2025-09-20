@@ -122,25 +122,25 @@ main() {
     local success_count=0
     local total_jobs=2
     
-    # 提交 job_auditd_raw_to_events.py
-    log_info "提交作业: job_auditd_raw_to_events.py"
-    if docker compose exec -T flink-jobmanager flink run -d -py /opt/flink/usr_jobs/job_auditd_raw_to_events.py > /dev/null 2>&1; then
-        log_success "job_auditd_raw_to_events.py 提交成功"
+    # 提交 job_01_audit_raw_to_events.py
+    log_info "提交作业: job_01_audit_raw_to_events.py"
+    if docker compose exec -T flink-jobmanager flink run -d -py /opt/flink/usr_jobs/job_01_audit_raw_to_events.py > /dev/null 2>&1; then
+        log_success "job_01_audit_raw_to_events.py 提交成功"
         success_count=$((success_count + 1))
     else
-        log_error "job_auditd_raw_to_events.py 提交失败"
+        log_error "job_01_audit_raw_to_events.py 提交失败"
     fi
     
     # 等待第一个作业启动
     sleep 5
     
-    # 提交 job_events_to_alerts.py
-    log_info "提交作业: job_events_to_alerts.py"
-    if docker compose exec -T flink-jobmanager flink run -d -py /opt/flink/usr_jobs/job_events_to_alerts.py > /dev/null 2>&1; then
-        log_success "job_events_to_alerts.py 提交成功"
+    # 提交 job_02_audit_events_to_alerts.py
+    log_info "提交作业: job_02_audit_events_to_alerts.py"
+    if docker compose exec -T flink-jobmanager flink run -d -py /opt/flink/usr_jobs/job_02_audit_events_to_alerts.py > /dev/null 2>&1; then
+        log_success "job_02_audit_events_to_alerts.py 提交成功"
         success_count=$((success_count + 1))
     else
-        log_error "job_events_to_alerts.py 提交失败"
+        log_error "job_02_audit_events_to_alerts.py 提交失败"
     fi
     
     # 等待作业启动
@@ -151,8 +151,8 @@ main() {
         log_success "🎉 所有核心作业提交成功！数据流已启动！"
         echo ""
         echo "数据流已启动："
-        echo "  📥 sysarmor.raw.audit → job_auditd_raw_to_events.py → sysarmor.events.audit"
-        echo "  🚨 sysarmor.events.audit → job_events_to_alerts.py → sysarmor.alerts"
+        echo "  📥 sysarmor.raw.audit → job_01_audit_raw_to_events.py → sysarmor.events.audit"
+        echo "  🚨 sysarmor.events.audit → job_02_audit_events_to_alerts.py → sysarmor.alerts.audit"
         echo ""
         echo "监控地址："
         echo "  🔧 Flink Web UI: http://localhost:8081"

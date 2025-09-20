@@ -59,8 +59,7 @@ create_topic_if_not_exists "sysarmor.events.audit" "32" "604800000" "auditd经�
 create_topic_if_not_exists "sysarmor.events.sysdig" "32" "604800000" "Sysdig直接发过来的事件"
 
 echo "🔸 创建告警Topics (sysarmor.alerts.*)..."
-create_topic_if_not_exists "sysarmor.alerts" "16" "2592000000" "消费sysarmor.events.*后生成的一般预警事件"
-create_topic_if_not_exists "sysarmor.alerts.high" "8" "7776000000" "消费sysarmor.events.*后生成的高危预警事件"
+create_topic_if_not_exists "sysarmor.alerts.audit" "16" "2592000000" "消费sysarmor.events.audit后生成的audit告警事件"
 
 # 验证创建结果
 echo "🔍 验证Topics创建结果:"
@@ -69,7 +68,7 @@ echo "=== 所有SysArmor Topics ==="
 
 echo ""
 echo "=== 主要Topics详情 ==="
-for topic in "sysarmor.raw.audit" "sysarmor.events.audit" "sysarmor.alerts"; do
+for topic in "sysarmor.raw.audit" "sysarmor.events.audit" "sysarmor.alerts.audit"; do
     echo "--- $topic ---"
     /opt/kafka/bin/kafka-topics.sh --bootstrap-server middleware-kafka:9092 --describe --topic "$topic"
     echo ""
@@ -87,7 +86,6 @@ echo "    - sysarmor.events.audit (32分区, 7天保留) - auditd经过convert�
 echo "    - sysarmor.events.sysdig (32分区, 7天保留) - Sysdig直接发过来的事件"
 echo ""
 echo "  🔸 Alert Layer (告警层) - sysarmor.alerts.*:"
-echo "    - sysarmor.alerts (16分区, 30天保留) - 消费sysarmor.events.*后生成的一般预警事件"
-echo "    - sysarmor.alerts.high (8分区, 90天保留) - 消费sysarmor.events.*后生成的高危预警事件"
+echo "    - sysarmor.alerts.audit (16分区, 30天保留) - 消费sysarmor.events.audit后生成的audit告警事件"
 echo ""
 echo "✨ 所有Topics配置与代码中的常量定义保持一致，无需环境变量配置！"

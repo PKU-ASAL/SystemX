@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -183,15 +184,17 @@ func (h *EventsHandler) QueryCollectorEvents(c *gin.Context) {
 // @Tags events
 // @Accept json
 // @Produce json
-// @Param topic query string false "Topic 名称，默认为 sysarmor.raw.audit.1"
+// @Param topic query string false "Topic 名称，默认为 sysarmor.raw.audit"
 // @Param collector_id query string false "Collector ID 过滤"
-// @Param limit query int false "返回数量限制，默认100，最大1000"
+// @Param limit query int false "返回数量限制，默认10，最大100"
 // @Success 200 {object} map[string]interface{} "最新事件数据"
 // @Failure 400 {object} map[string]interface{} "请求参数错误"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误"
 // @Router /events/latest [get]
 func (h *EventsHandler) GetLatestEvents(c *gin.Context) {
-	ctx := c.Request.Context()
+	// 添加5秒超时控制
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
 	
 	// 获取 topic 参数，默认使用 audit topic
 	topic := c.Query("topic")
@@ -199,17 +202,17 @@ func (h *EventsHandler) GetLatestEvents(c *gin.Context) {
 		topic = models.GetDefaultAuditTopic() // 使用常量定义的默认topic
 	}
 	
-	// 解析查询参数
+	// 解析查询参数 - 减少默认limit避免超时
 	params := events.QueryParams{
 		Topic:       topic,
 		CollectorID: c.Query("collector_id"),
 		Latest:      true,
-		Limit:       100,
+		Limit:       10, // 减少默认数量
 	}
 	
-	// 解析 limit
+	// 解析 limit - 限制最大值避免超时
 	if limitStr := c.Query("limit"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit <= 1000 {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit <= 100 {
 			params.Limit = limit
 		}
 	}
@@ -217,6 +220,16 @@ func (h *EventsHandler) GetLatestEvents(c *gin.Context) {
 	// 查询最新事件
 	result, err := h.kafkaClient.QueryEvents(ctx, params)
 	if err != nil {
+		// 检查是否是超时错误
+		if ctx.Err() == context.DeadlineExceeded {
+			c.JSON(http.StatusRequestTimeout, gin.H{
+				"success": false,
+				"error":   "Request timeout: query took too long",
+				"timeout": "5s",
+			})
+			return
+		}
+		
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   "Failed to query latest events: " + err.Error(),
