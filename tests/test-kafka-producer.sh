@@ -391,12 +391,54 @@ main() {
     echo "    🔄 处理事件: $events_audit_before → $events_audit_after (+$((events_audit_after - events_audit_before)))"
     echo "    🚨 告警事件: $alerts_audit_before → $alerts_audit_after (+$((alerts_audit_after - alerts_audit_before)))"
     
+    # 步骤6: OpenSearch 数据验证
+    print_section "6. OpenSearch 数据验证"
+    
+    echo -e "${PURPLE}🔍 验证 OpenSearch 中的告警数据...${NC}"
+    
+    # 检查 OpenSearch 健康状态
+    echo -n "OpenSearch 连接状态: "
+    if opensearch_health=$(curl -s --max-time $TIMEOUT "$MANAGER_API/api/v1/services/opensearch/health" 2>/dev/null); then
+        if echo "$opensearch_health" | jq -e '.connected' > /dev/null 2>&1; then
+            print_success "OpenSearch 连接正常"
+        else
+            print_warning "OpenSearch 连接异常"
+        fi
+    else
+        print_warning "无法获取 OpenSearch 健康状态"
+    fi
+    
+    # 查询告警索引中的数据
+    echo -n "告警索引数据查询: "
+    if alerts_data=$(curl -s --max-time $TIMEOUT "$MANAGER_API/api/v1/services/opensearch/events/search?index=sysarmor-alerts-audit&size=5" 2>/dev/null); then
+        local alert_count=$(echo "$alerts_data" | jq -r '.data.hits.total.value // 0' 2>/dev/null)
+        if [ "$alert_count" -gt 0 ]; then
+            print_success "发现 $alert_count 条告警数据"
+            echo "  📊 最新告警数据:"
+            echo "$alerts_data" | jq -r '.data.hits.hits[]._source | "    🚨 " + (.event.type // "unknown") + " - " + (.event.severity // "info") + " (" + (."@timestamp" // .timestamp // "no-time") + ")"' 2>/dev/null | head -3
+        else
+            print_info "暂无告警数据 (可能还在处理中)"
+        fi
+    else
+        print_warning "无法查询告警索引"
+    fi
+    
+    # 查询事件索引状态
+    echo -n "事件索引状态: "
+    if events_data=$(curl -s --max-time $TIMEOUT "$MANAGER_API/api/v1/services/opensearch/events/recent" 2>/dev/null); then
+        local event_count=$(echo "$events_data" | jq -r '.data.hits.total.value // 0' 2>/dev/null)
+        print_info "事件索引查询正常 (当前: $event_count 条)"
+    else
+        print_warning "无法查询事件索引"
+    fi
+    
     echo ""
     echo -e "${BLUE}💡 后续操作建议:${NC}"
     echo "1. 验证数据内容: ./scripts/kafka-tools.sh export $TARGET_TOPIC 5"
-    echo "2. 启动 Flink 处理: ./tests/test-flink-processor.sh"
-    echo "3. 查看处理结果: ./scripts/kafka-tools.sh export sysarmor.events.audit 5"
+    echo "2. 查看处理结果: ./scripts/kafka-tools.sh export sysarmor.events.audit 5"
+    echo "3. 查看告警详情: curl -s '$MANAGER_API/api/v1/services/opensearch/events/search?index=sysarmor-alerts-audit&size=10' | jq"
     echo "4. 系统健康检查: ./tests/test-system-health.sh"
+    echo "5. 完整API测试: ./tests/test-system-api.sh"
     
     echo ""
     print_success "🎉 SysArmor Kafka Producer 测试完成！"
