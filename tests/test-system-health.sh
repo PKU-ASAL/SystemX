@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# =============================================================================
 # SysArmor EDR 系统健康状态测试脚本
-# 测试所有组件的健康状态和连接性
-# =============================================================================
+# 简化版本 - 专注于主要组件健康状态
 
 # set -e  # 注释掉，避免单个测试失败导致整个脚本退出
 
@@ -37,10 +35,6 @@ print_section() {
     echo -e "${CYAN}-----------------------------------------------${NC}"
 }
 
-print_test() {
-    echo -e "${YELLOW}🔍 测试: $1${NC}"
-}
-
 print_success() {
     echo -e "${GREEN}✅ $1${NC}"
     ((PASSED_TESTS++))
@@ -51,137 +45,81 @@ print_error() {
     ((FAILED_TESTS++))
 }
 
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
 print_info() {
     echo -e "${PURPLE}ℹ️  $1${NC}"
 }
 
-# 测试API端点
-test_api_endpoint() {
-    local endpoint="$1"
-    local description="$2"
-    local expected_field="$3"
+# 测试组件健康状态
+test_component_health() {
+    local component_name="$1"
+    local jq_path="$2"
     
     ((TOTAL_TESTS++))
-    print_test "$description"
     
-    local response=$(curl -s --max-time $TIMEOUT "$MANAGER_URL$endpoint" 2>/dev/null)
-    local http_code=$(curl -s --max-time $TIMEOUT -o /dev/null -w "%{http_code}" "$MANAGER_URL$endpoint" 2>/dev/null)
+    local response=$(curl -s --max-time $TIMEOUT "$MANAGER_URL/api/v1/health" 2>/dev/null)
+    local component_status=$(echo "$response" | jq -r "$jq_path" 2>/dev/null)
     
-    if [ "$http_code" = "200" ]; then
-        if [ -n "$expected_field" ]; then
-            local field_value=$(echo "$response" | jq -r ".$expected_field" 2>/dev/null)
-            if [ "$field_value" != "null" ] && [ "$field_value" != "" ]; then
-                print_success "$description - HTTP 200, $expected_field: $field_value"
-                return 0
-            else
-                print_error "$description - HTTP 200 但缺少字段: $expected_field"
-                return 1
-            fi
-        else
-            print_success "$description - HTTP 200"
-            return 0
-        fi
+    if [ "$component_status" = "true" ] || [ "$component_status" = "connected" ] || [ "$component_status" = "running" ] || [ "$component_status" = "healthy" ]; then
+        print_success "$component_name: 健康"
     else
-        print_error "$description - HTTP $http_code"
-        return 1
+        print_error "$component_name: 异常 ($component_status)"
     fi
-}
-
-# 测试JSON响应结构
-test_json_structure() {
-    local endpoint="$1"
-    local description="$2"
-    local jq_filter="$3"
-    
-    ((TOTAL_TESTS++))
-    print_test "$description"
-    
-    local response=$(curl -s --max-time $TIMEOUT "$MANAGER_URL$endpoint" 2>/dev/null)
-    local result=$(echo "$response" | jq -r "$jq_filter" 2>/dev/null)
-    
-    if [ "$result" != "null" ] && [ "$result" != "" ]; then
-        print_success "$description - $result"
-        return 0
-    else
-        print_error "$description - 结构验证失败"
-        echo "响应: $response" | head -c 200
-        return 1
-    fi
-}
-
-# 显示详细信息
-show_detailed_info() {
-    local endpoint="$1"
-    local description="$2"
-    
-    print_info "获取 $description 详细信息..."
-    local response=$(curl -s --max-time $TIMEOUT "$MANAGER_URL$endpoint" 2>/dev/null)
-    echo "$response" | jq . 2>/dev/null || echo "$response"
 }
 
 # 主测试函数
 main() {
-    print_header "🚀 SysArmor EDR 系统健康状态测试"
+    print_header "🚀 SysArmor EDR 系统健康状态检查"
     
     echo -e "测试目标: ${MANAGER_URL}"
     echo -e "测试时间: $(date)"
-    echo -e "超时设置: ${TIMEOUT}秒"
     
-    # 1. 基础健康检查
-    print_section "1. 基础健康检查"
-    test_api_endpoint "/health" "Manager基础健康检查" "status"
-    test_api_endpoint "/api/v1/health" "Manager API健康检查" "data"
+    # 检查Manager API连通性
+    print_section "系统连通性检查"
+    ((TOTAL_TESTS++))
+    if curl -s --max-time $TIMEOUT "$MANAGER_URL/health" > /dev/null 2>&1; then
+        print_success "Manager API: 连通"
+    else
+        print_error "Manager API: 不可用"
+        echo -e "\n${RED}⚠️  Manager API不可用，无法继续健康检查${NC}"
+        exit 1
+    fi
     
-    # 2. 数据库连接测试
-    print_section "2. 数据库连接测试"
-    test_json_structure "/health" "数据库连接状态" ".database"
-    test_json_structure "/api/v1/health" "API数据库连接状态" ".data.services.manager.components.database.status"
+    # 获取系统健康状态
+    print_section "核心组件健康状态"
     
-    # 3. Kafka服务测试
-    print_section "3. Kafka服务测试"
-    test_api_endpoint "/api/v1/services/kafka/health" "Kafka健康检查" "connected"
-    test_json_structure "/api/v1/services/kafka/health" "Kafka集群信息" ".cluster_info[0].health_status"
-    test_json_structure "/api/v1/services/kafka/health" "Kafka Broker数量" ".broker_count"
+    local health_response=$(curl -s --max-time $TIMEOUT "$MANAGER_URL/api/v1/health" 2>/dev/null)
     
-    # 4. Kafka Topics测试
-    print_section "4. Kafka Topics测试"
-    test_api_endpoint "/api/v1/services/kafka/topics" "Kafka Topics列表" "success"
-    test_json_structure "/api/v1/services/kafka/topics" "Topics数据结构" ".data.topics | length"
+    if [ -z "$health_response" ]; then
+        print_error "无法获取系统健康状态"
+        exit 1
+    fi
     
-    # 5. Kafka Brokers测试
-    print_section "5. Kafka Brokers测试"
-    test_api_endpoint "/api/v1/services/kafka/brokers" "Kafka Brokers信息" "success"
-    test_json_structure "/api/v1/services/kafka/brokers" "Brokers数据结构" ".data | length"
+    # 检查各个组件
+    test_component_health "数据库 (PostgreSQL)" ".data.services.manager.components.database.healthy"
+    test_component_health "索引器 (OpenSearch)" ".data.services.indexer.components.opensearch.healthy"
+    test_component_health "消息队列 (Kafka)" ".data.services.middleware.components.kafka.healthy"
+    test_component_health "监控系统 (Prometheus)" ".data.services.middleware.components.prometheus.healthy"
+    test_component_health "数据收集 (Vector)" ".data.services.middleware.components.vector.healthy"
+    test_component_health "流处理 (Flink)" ".data.services.processor.components.flink.healthy"
     
-    # 6. Flink服务测试
-    print_section "6. Flink服务测试"
-    test_api_endpoint "/api/v1/services/flink/health" "Flink健康检查" "connected"
-    test_api_endpoint "/api/v1/services/flink/overview" "Flink集群概览" "success"
-    test_json_structure "/api/v1/services/flink/overview" "Flink TaskManager数量" ".data.taskmanagers"
+    # 检查整体健康状态
+    print_section "系统整体状态"
+    ((TOTAL_TESTS++))
+    local overall_healthy=$(echo "$health_response" | jq -r ".data.healthy" 2>/dev/null)
+    if [ "$overall_healthy" = "true" ]; then
+        print_success "系统整体状态: 健康"
+    else
+        print_error "系统整体状态: 异常"
+    fi
     
-    # 7. OpenSearch服务测试
-    print_section "7. OpenSearch服务测试"
-    test_api_endpoint "/api/v1/services/opensearch/health" "OpenSearch健康检查" "connected"
-    test_api_endpoint "/api/v1/services/opensearch/cluster/health" "OpenSearch集群健康" "success"
-    test_json_structure "/api/v1/services/opensearch/cluster/health" "OpenSearch状态" ".data.status"
+    # 显示服务摘要
+    local healthy_services=$(echo "$health_response" | jq -r ".data.summary.healthy_services" 2>/dev/null)
+    local total_services=$(echo "$health_response" | jq -r ".data.summary.total_services" 2>/dev/null)
+    local healthy_components=$(echo "$health_response" | jq -r ".data.summary.healthy_components" 2>/dev/null)
+    local total_components=$(echo "$health_response" | jq -r ".data.summary.total_components" 2>/dev/null)
     
-    # 8. Collectors管理测试
-    print_section "8. Collectors管理测试"
-    test_api_endpoint "/api/v1/collectors" "Collectors列表" "success"
-    test_json_structure "/api/v1/collectors" "Collectors数据结构" ".data | length"
-    
-    # 9. 系统资源测试
-    print_section "9. 系统资源测试"
-    test_api_endpoint "/api/v1/resources/scripts/agentless/setup-terminal.sh" "安装脚本资源" ""
-    
-    # 10. 详细信息展示
-    print_section "10. 详细系统信息"
-    show_detailed_info "/api/v1/health" "系统健康状态"
-    show_detailed_info "/api/v1/services/kafka/health" "Kafka健康信息"
+    print_info "服务状态: $healthy_services/$total_services 健康"
+    print_info "组件状态: $healthy_components/$total_components 健康"
     
     # 测试结果汇总
     print_header "📊 测试结果汇总"
@@ -190,10 +128,11 @@ main() {
     echo -e "${RED}失败测试: ${FAILED_TESTS}${NC}"
     
     if [ $FAILED_TESTS -eq 0 ]; then
-        echo -e "\n${GREEN}🎉 所有测试通过！系统健康状态良好！${NC}"
+        echo -e "\n${GREEN}🎉 所有组件健康！系统运行正常！${NC}"
         exit 0
     else
         echo -e "\n${RED}⚠️  发现 $FAILED_TESTS 个问题，请检查系统状态${NC}"
+        echo -e "${BLUE}💡 详细检查: ./tests/test-system-api.sh${NC}"
         exit 1
     fi
 }
@@ -211,9 +150,9 @@ check_dependencies() {
     fi
 }
 
-# 脚本入口
+# 显示帮助信息
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    echo "SysArmor EDR 系统健康状态测试脚本"
+    echo "SysArmor EDR 系统健康状态测试脚本 (简化版)"
     echo ""
     echo "用法: $0 [选项]"
     echo ""
@@ -221,6 +160,11 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  -h, --help     显示帮助信息"
     echo "  --url URL      指定Manager API地址 (默认: http://localhost:8080)"
     echo "  --timeout SEC  设置请求超时时间 (默认: 10秒)"
+    echo ""
+    echo "功能:"
+    echo "  - 检查Manager API连通性"
+    echo "  - 验证核心组件健康状态"
+    echo "  - 显示系统整体状态摘要"
     echo ""
     echo "示例:"
     echo "  $0                                    # 使用默认配置"

@@ -6,9 +6,11 @@ FROM docker.io/golang:1.24-alpine AS builder
 # 设置工作目录
 WORKDIR /app
 
-# 设置 Go 代理为大陆镜像
+# 设置 Go 代理为大陆镜像，并配置超时
 ENV GOPROXY=https://goproxy.cn,direct
-ENV GOSUMDB=sum.golang.google.cn
+ENV GOSUMDB=off
+ENV GO111MODULE=on
+ENV GOTIMEOUT=300s
 
 # 安装必要的工具
 RUN apk add --no-cache git ca-certificates tzdata make
@@ -28,8 +30,8 @@ WORKDIR /app/apps/manager
 # 下载依赖（使用 workspace 模式）
 RUN go mod download
 
-# 安装 swag 工具
-RUN go install github.com/swaggo/swag/cmd/swag@latest
+# 安装 swag 工具 (使用固定版本避免网络问题)
+RUN go install github.com/swaggo/swag/cmd/swag@v1.16.3
 
 # 生成 Swagger 文档
 RUN /go/bin/swag init -g main.go -o docs --parseDependency --parseInternal

@@ -79,13 +79,13 @@ type IndicesStats struct {
 
 // ShardsStats 分片统计
 type ShardsStats struct {
-	Total       int     `json:"total"`
-	Primaries   int     `json:"primaries"`
-	Replication float64 `json:"replication"`
+	Total       int         `json:"total"`
+	Primaries   int         `json:"primaries"`
+	Replication interface{} `json:"replication"` // 修复：使用interface{}处理不同类型
 	Index       struct {
 		Shards      ShardsDetail `json:"shards"`
 		Primaries   ShardsDetail `json:"primaries"`
-		Replication float64      `json:"replication"`
+		Replication interface{}  `json:"replication"` // 修复：使用interface{}处理不同类型
 	} `json:"index"`
 }
 
@@ -380,10 +380,13 @@ func (s *OpenSearchService) SearchEvents(ctx context.Context, indexPattern strin
 func (s *OpenSearchService) GetEventsByTimeRange(ctx context.Context, indexPattern string, from, to time.Time, size int, page int) (*SearchResponse, error) {
 	offset := (page - 1) * size
 	
+	// 智能选择时间字段
+	timestampField := s.getTimestampField(indexPattern)
+	
 	request := &SearchRequest{
 		Query: map[string]interface{}{
 			"range": map[string]interface{}{
-				"@timestamp": map[string]interface{}{
+				timestampField: map[string]interface{}{
 					"gte": from.Format(time.RFC3339),
 					"lte": to.Format(time.RFC3339),
 				},
@@ -393,7 +396,7 @@ func (s *OpenSearchService) GetEventsByTimeRange(ctx context.Context, indexPatte
 		From: offset,
 		Sort: []map[string]interface{}{
 			{
-				"@timestamp": map[string]string{
+				timestampField: map[string]string{
 					"order": "desc",
 				},
 			},
@@ -403,8 +406,17 @@ func (s *OpenSearchService) GetEventsByTimeRange(ctx context.Context, indexPatte
 	return s.SearchEvents(ctx, indexPattern, request)
 }
 
+// getTimestampField 根据索引模式智能选择时间字段
+func (s *OpenSearchService) getTimestampField(indexPattern string) string {
+	// 统一使用标准的 @timestamp 字段
+	// 新的告警数据已经包含 @timestamp 字段
+	return "@timestamp"
+}
+
 // GetEventsByRiskScore 根据风险评分获取事件
 func (s *OpenSearchService) GetEventsByRiskScore(ctx context.Context, indexPattern string, minScore int, size int) (*SearchResponse, error) {
+	timestampField := s.getTimestampField(indexPattern)
+	
 	request := &SearchRequest{
 		Query: map[string]interface{}{
 			"range": map[string]interface{}{
@@ -421,7 +433,7 @@ func (s *OpenSearchService) GetEventsByRiskScore(ctx context.Context, indexPatte
 				},
 			},
 			{
-				"@timestamp": map[string]string{
+				timestampField: map[string]string{
 					"order": "desc",
 				},
 			},
@@ -433,16 +445,18 @@ func (s *OpenSearchService) GetEventsByRiskScore(ctx context.Context, indexPatte
 
 // GetEventsBySource 根据数据源获取事件
 func (s *OpenSearchService) GetEventsBySource(ctx context.Context, indexPattern string, dataSource string, size int) (*SearchResponse, error) {
+	timestampField := s.getTimestampField(indexPattern)
+	
 	request := &SearchRequest{
 		Query: map[string]interface{}{
 			"term": map[string]interface{}{
-				"data_source.keyword": dataSource,
+				"source.keyword": dataSource,
 			},
 		},
 		Size: size,
 		Sort: []map[string]interface{}{
 			{
-				"@timestamp": map[string]string{
+				timestampField: map[string]string{
 					"order": "desc",
 				},
 			},
@@ -454,10 +468,26 @@ func (s *OpenSearchService) GetEventsBySource(ctx context.Context, indexPattern 
 
 // GetThreatEvents 获取威胁事件（标记为可疑的事件）
 func (s *OpenSearchService) GetThreatEvents(ctx context.Context, indexPattern string, size int) (*SearchResponse, error) {
+	timestampField := s.getTimestampField(indexPattern)
+	
 	request := &SearchRequest{
 		Query: map[string]interface{}{
-			"term": map[string]interface{}{
-				"tags.suspicious": true,
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{
+						"term": map[string]interface{}{
+							"severity.keyword": "high",
+						},
+					},
+					{
+						"range": map[string]interface{}{
+							"risk_score": map[string]interface{}{
+								"gte": 70,
+							},
+						},
+					},
+				},
+				"minimum_should_match": 1,
 			},
 		},
 		Size: size,
@@ -468,7 +498,7 @@ func (s *OpenSearchService) GetThreatEvents(ctx context.Context, indexPattern st
 				},
 			},
 			{
-				"@timestamp": map[string]string{
+				timestampField: map[string]string{
 					"order": "desc",
 				},
 			},

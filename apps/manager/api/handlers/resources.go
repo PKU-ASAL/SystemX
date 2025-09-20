@@ -332,6 +332,11 @@ func (h *ResourcesHandler) generateOtelCollectorScript(collector *models.Collect
 
 // generateConfig 生成配置内容
 func (h *ResourcesHandler) generateConfig(collector *models.Collector, deploymentType, configName string) (string, error) {
+	// 验证部署类型匹配
+	if collector.DeploymentType != deploymentType {
+		return "", fmt.Errorf("deployment type mismatch: collector is %s but requested %s", collector.DeploymentType, deploymentType)
+	}
+
 	// 创建模板数据
 	templateData, err := template.NewTemplateData(collector)
 	if err != nil {
@@ -349,6 +354,7 @@ func (h *ResourcesHandler) generateConfig(collector *models.Collector, deploymen
 		if configName == "audit-rules" {
 			templateName = "agentless/audit-rules"
 		}
+		// 注意：agentless模式不支持cfg.yaml，因为它不需要安装collector程序
 	case models.DeploymentTypeWazuh:
 		if configName == "ossec.conf" {
 			templateName = "wazuh/ossec.conf"

@@ -7,42 +7,38 @@ import (
 	"log"
 	"time"
 
-	"github.com/segmentio/kafka-go"
+	"github.com/IBM/sarama"
 )
 
-// KafkaClient Kafka 客户端
+// KafkaClient Kafka 客户端 (使用sarama库，与kafka_service保持一致)
 type KafkaClient struct {
 	brokers []string
-	reader  *kafka.Reader
+	config  *sarama.Config
 }
 
-// EventMessage Kafka 事件消息结构 (匹配 Vector 输出格式)
+// EventMessage Kafka 事件消息结构 (适配Flink NODLINK输出格式)
 type EventMessage struct {
+	// SysArmor元数据
+	EventID         string    `json:"event_id"`
 	Timestamp       time.Time `json:"timestamp"`
 	CollectorID     string    `json:"collector_id"`
-	EventType       string    `json:"event_type"`
-	KafkaTopic      string    `json:"kafka_topic"`
-	OriginalMessage string    `json:"original_message"`
+	Host            string    `json:"host"`
+	Source          string    `json:"source"`
+	Processor       string    `json:"processor"`
 	ProcessedAt     time.Time `json:"processed_at"`
 	
-	// Vector 字段
-	AppName        string `json:"appname,omitempty"`
-	Facility       string `json:"facility,omitempty"`
-	FacilityLabel  string `json:"facility_label,omitempty"`
-	Host           string `json:"host,omitempty"`
-	Hostname       string `json:"hostname,omitempty"`
-	LogLevel       string `json:"log_level,omitempty"`
-	Message        string `json:"message,omitempty"`
-	Severity       string `json:"severity,omitempty"`
-	SeverityLabel  string `json:"severity_label,omitempty"`
-	SourceHost     string `json:"source_host,omitempty"`
-	SourceIP       string `json:"source_ip,omitempty"`
-	SourceType     string `json:"source_type,omitempty"`
+	// 事件分类
+	EventType       string    `json:"event_type"`
+	EventCategory   string    `json:"event_category"`
+	Severity        string    `json:"severity"`
+	
+	// 完整的sysdig格式数据 (改名为message以保持兼容性)
+	Message         map[string]interface{} `json:"message"`
 	
 	// Kafka 元数据
-	Partition int    `json:"partition,omitempty"`
-	Offset    int64  `json:"offset,omitempty"`
-	Key       string `json:"key,omitempty"`
+	Partition       int       `json:"partition,omitempty"`
+	Offset          int64     `json:"offset,omitempty"`
+	Key             string    `json:"key,omitempty"`
 }
 
 // QueryParams 查询参数
@@ -65,14 +61,39 @@ type QueryResult struct {
 	QueryParams QueryParams    `json:"query_params"`
 }
 
-// NewKafkaClient 创建 Kafka 客户端
+// TopicInfo Topic 信息
+type TopicInfo struct {
+	Topic         string          `json:"topic"`
+	Partitions    int             `json:"partitions"`
+	PartitionInfo []PartitionInfo `json:"partition_info"`
+	QueriedAt     time.Time       `json:"queried_at"`
+}
+
+// PartitionInfo 分区信息
+type PartitionInfo struct {
+	ID          int    `json:"id"`
+	Leader      string `json:"leader"`
+	Replicas    int    `json:"replicas"`
+	FirstOffset int64  `json:"first_offset"`
+	LastOffset  int64  `json:"last_offset"`
+}
+
+// NewKafkaClient 创建 Kafka 客户端 (使用sarama)
 func NewKafkaClient(brokers []string) *KafkaClient {
+	config := sarama.NewConfig()
+	config.Version = sarama.V3_4_0_0
+	config.Consumer.Return.Errors = true
+	config.Net.DialTimeout = 10 * time.Second
+	config.Net.ReadTimeout = 10 * time.Second
+	config.Net.WriteTimeout = 10 * time.Second
+	
 	return &KafkaClient{
 		brokers: brokers,
+		config:  config,
 	}
 }
 
-// QueryEvents 查询事件
+// QueryEvents 查询事件（使用sarama，无状态读取）
 func (k *KafkaClient) QueryEvents(ctx context.Context, params QueryParams) (*QueryResult, error) {
 	// 设置默认值
 	if params.Limit <= 0 {
@@ -82,60 +103,37 @@ func (k *KafkaClient) QueryEvents(ctx context.Context, params QueryParams) (*Que
 		params.Limit = 1000 // 最大限制
 	}
 
-	// 使用消费者组模式读取所有分区
-	readerConfig := kafka.ReaderConfig{
-		Brokers:     k.brokers,
-		Topic:       params.Topic,
-		GroupID:     fmt.Sprintf("sysarmor-manager-query-%d", time.Now().UnixNano()),
-		StartOffset: kafka.FirstOffset,
+	// 创建consumer
+	consumer, err := sarama.NewConsumer(k.brokers, k.config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create consumer: %w", err)
+	}
+	defer consumer.Close()
+
+	// 获取分区列表
+	partitions, err := consumer.Partitions(params.Topic)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get partitions: %w", err)
 	}
 
-	reader := kafka.NewReader(readerConfig)
-	defer reader.Close()
-
 	var events []EventMessage
-	readCount := 0
-	maxReads := params.Limit * 2 // 读取更多消息以便过滤
-
-	for readCount < maxReads {
-		// 设置读取超时
-		readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		message, err := reader.ReadMessage(readCtx)
-		cancel()
-
+	
+	// 简化实现：只读取第一个有数据的分区
+	for _, partition := range partitions {
+		partitionEvents, err := k.readPartitionEvents(consumer, params.Topic, partition, params)
 		if err != nil {
-			if err == context.DeadlineExceeded {
-				break // 超时，停止读取
-			}
-			log.Printf("Error reading message: %v", err)
-			break
-		}
-
-		// 解析消息
-		var event EventMessage
-		if err := json.Unmarshal(message.Value, &event); err != nil {
-			log.Printf("Error unmarshaling message: %v", err)
+			log.Printf("Error reading partition %d: %v", partition, err)
 			continue
 		}
-
-		// 添加 Kafka 元数据
-		event.Partition = message.Partition
-		event.Offset = message.Offset
-		event.Key = string(message.Key)
-
-		// 应用过滤条件
-		if k.matchesFilter(event, params) {
-			events = append(events, event)
-			if len(events) >= params.Limit {
-				break
-			}
+		
+		events = append(events, partitionEvents...)
+		if len(events) >= params.Limit {
+			break
 		}
-
-		readCount++
 	}
 
 	// 如果查询最新事件，需要反转顺序
-	if params.Latest {
+	if params.Latest && len(events) > 1 {
 		k.reverseEvents(events)
 	}
 
@@ -148,6 +146,93 @@ func (k *KafkaClient) QueryEvents(ctx context.Context, params QueryParams) (*Que
 	}
 
 	return result, nil
+}
+
+// readPartitionEvents 读取单个分区的事件
+func (k *KafkaClient) readPartitionEvents(consumer sarama.Consumer, topic string, partition int32, params QueryParams) ([]EventMessage, error) {
+	// 创建client来获取offset信息
+	client, err := sarama.NewClient(k.brokers, k.config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client: %w", err)
+	}
+	defer client.Close()
+
+	// 获取分区的offset范围
+	latestOffset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest offset: %w", err)
+	}
+
+	earliestOffset, err := client.GetOffset(topic, partition, sarama.OffsetOldest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get earliest offset: %w", err)
+	}
+
+	// 如果分区为空，返回空结果
+	if latestOffset <= earliestOffset {
+		return []EventMessage{}, nil
+	}
+
+	// 确定起始offset
+	var startOffset int64
+	if params.Latest {
+		// 从最新位置向前读取
+		startOffset = latestOffset - int64(params.Limit)
+		if startOffset < earliestOffset {
+			startOffset = earliestOffset
+		}
+	} else {
+		// 从最早位置开始读取
+		startOffset = earliestOffset
+	}
+
+	// 创建分区consumer
+	partitionConsumer, err := consumer.ConsumePartition(topic, partition, startOffset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create partition consumer: %w", err)
+	}
+	defer partitionConsumer.Close()
+
+	var events []EventMessage
+	messageCount := 0
+	timeout := time.After(3 * time.Second)
+
+	for messageCount < params.Limit {
+		select {
+		case msg := <-partitionConsumer.Messages():
+			if msg == nil {
+				goto done
+			}
+
+			// 解析消息
+			var event EventMessage
+			if err := json.Unmarshal(msg.Value, &event); err != nil {
+				log.Printf("Error unmarshaling message: %v", err)
+				messageCount++
+				continue
+			}
+
+			// 添加Kafka元数据
+			event.Partition = int(msg.Partition)
+			event.Offset = msg.Offset
+			if msg.Key != nil {
+				event.Key = string(msg.Key)
+			}
+
+			// 应用过滤条件
+			if k.matchesFilter(event, params) {
+				events = append(events, event)
+			}
+
+			messageCount++
+
+		case <-timeout:
+			goto done
+		}
+	}
+
+done:
+	return events, nil
 }
 
 // matchesFilter 检查事件是否匹配过滤条件
@@ -181,17 +266,18 @@ func (k *KafkaClient) reverseEvents(events []EventMessage) {
 	}
 }
 
-// GetTopicInfo 获取 Topic 信息
+// GetTopicInfo 获取 Topic 信息 (使用sarama)
 func (k *KafkaClient) GetTopicInfo(ctx context.Context, topic string) (*TopicInfo, error) {
-	conn, err := kafka.DialContext(ctx, "tcp", k.brokers[0])
+	client, err := sarama.NewClient(k.brokers, k.config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to kafka: %w", err)
+		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
-	defer conn.Close()
+	defer client.Close()
 
-	partitions, err := conn.ReadPartitions(topic)
+	// 获取分区信息
+	partitions, err := client.Partitions(topic)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read partitions: %w", err)
+		return nil, fmt.Errorf("failed to get partitions: %w", err)
 	}
 
 	info := &TopicInfo{
@@ -200,25 +286,30 @@ func (k *KafkaClient) GetTopicInfo(ctx context.Context, topic string) (*TopicInf
 		QueriedAt:  time.Now(),
 	}
 
-	// 获取每个分区的信息
-	for _, partition := range partitions {
-		partInfo := PartitionInfo{
-			ID:       partition.ID,
-			Leader:   partition.Leader.Host,
-			Replicas: len(partition.Replicas),
+	// 获取每个分区的详细信息
+	for _, partitionID := range partitions {
+		latestOffset, err := client.GetOffset(topic, partitionID, sarama.OffsetNewest)
+		if err != nil {
+			continue
 		}
 
-		// 获取分区的偏移量信息
-		if reader := kafka.NewReader(kafka.ReaderConfig{
-			Brokers:   k.brokers,
-			Topic:     topic,
-			Partition: partition.ID,
-		}); reader != nil {
-			// 获取最早和最新的偏移量
-			firstOffset, lastOffset := reader.Stats().Offset, reader.Stats().Lag
-			partInfo.FirstOffset = firstOffset
-			partInfo.LastOffset = lastOffset
-			reader.Close()
+		earliestOffset, err := client.GetOffset(topic, partitionID, sarama.OffsetOldest)
+		if err != nil {
+			continue
+		}
+
+		// 获取分区leader信息
+		leader, err := client.Leader(topic, partitionID)
+		if err != nil {
+			continue
+		}
+
+		partInfo := PartitionInfo{
+			ID:          int(partitionID),
+			Leader:      leader.Addr(),
+			Replicas:    1, // 简化，实际应该查询replica信息
+			FirstOffset: earliestOffset,
+			LastOffset:  latestOffset,
 		}
 
 		info.PartitionInfo = append(info.PartitionInfo, partInfo)
@@ -227,44 +318,17 @@ func (k *KafkaClient) GetTopicInfo(ctx context.Context, topic string) (*TopicInf
 	return info, nil
 }
 
-// TopicInfo Topic 信息
-type TopicInfo struct {
-	Topic         string          `json:"topic"`
-	Partitions    int             `json:"partitions"`
-	PartitionInfo []PartitionInfo `json:"partition_info"`
-	QueriedAt     time.Time       `json:"queried_at"`
-}
-
-// PartitionInfo 分区信息
-type PartitionInfo struct {
-	ID          int    `json:"id"`
-	Leader      string `json:"leader"`
-	Replicas    int    `json:"replicas"`
-	FirstOffset int64  `json:"first_offset"`
-	LastOffset  int64  `json:"last_offset"`
-}
-
-// ListTopics 列出所有 Topic
+// ListTopics 列出所有 Topic (使用sarama)
 func (k *KafkaClient) ListTopics(ctx context.Context) ([]string, error) {
-	conn, err := kafka.DialContext(ctx, "tcp", k.brokers[0])
+	client, err := sarama.NewClient(k.brokers, k.config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to kafka: %w", err)
+		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
-	defer conn.Close()
+	defer client.Close()
 
-	partitions, err := conn.ReadPartitions()
+	topics, err := client.Topics()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read partitions: %w", err)
-	}
-
-	topicSet := make(map[string]bool)
-	for _, partition := range partitions {
-		topicSet[partition.Topic] = true
-	}
-
-	var topics []string
-	for topic := range topicSet {
-		topics = append(topics, topic)
+		return nil, fmt.Errorf("failed to get topics: %w", err)
 	}
 
 	return topics, nil

@@ -131,20 +131,8 @@ func (h *CollectorHandler) Register(c *gin.Context) {
 		UpdatedAt:      time.Now(),
 	}
 
-	// 生成基于部署类型的 Kafka topic 名称
-	topicName := collector.GetTopicName()
-	collector.KafkaTopic = topicName
-
-	// 创建 Kafka topic
-	createTopicReq := &kafkaService.CreateTopicRequest{
-		Name:              topicName,
-		Partitions:        3,
-		ReplicationFactor: 1,
-	}
-	if err := h.kafkaService.CreateTopic(ctx, createTopicReq); err != nil {
-		fmt.Printf("⚠️ Warning: Failed to create Kafka topic %s: %v\n", topicName, err)
-		// 不阻止注册流程，只记录警告
-	}
+	// 注意：现在使用统一的 topic 架构，不再为每个 collector 创建单独的 topic
+	// 所有数据都写入 sysarmor.raw.audit topic，通过 collector_id 作为分区键
 
 	// 保存到数据库
 	if err := h.repo.Create(ctx, collector); err != nil {
@@ -163,8 +151,8 @@ func (h *CollectorHandler) Register(c *gin.Context) {
 	resp.Data.ScriptDownloadURL = fmt.Sprintf("/api/v1/scripts/setup-terminal.sh?collector_id=%s", collectorID)
 
 	// 记录日志
-	fmt.Printf("✅ Collector registered: %s (hostname: %s, worker: %s, topic: %s)\n",
-		collectorID, req.Hostname, workerURL, topicName)
+	fmt.Printf("✅ Collector registered: %s (hostname: %s, worker: %s)\n",
+		collectorID, req.Hostname, workerURL)
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -214,7 +202,6 @@ func (h *CollectorHandler) GetStatus(c *gin.Context) {
 		Hostname:        collector.Hostname,
 		IPAddress:       collector.IPAddress,
 		WorkerAddress:   collector.WorkerAddress,
-		KafkaTopic:      collector.KafkaTopic,
 		Metadata:        collector.Metadata, // 包含元数据
 		LastHeartbeat:   collector.LastHeartbeat,
 		LastActive:      collector.LastActive,
@@ -330,7 +317,6 @@ func (h *CollectorHandler) ListCollectors(c *gin.Context) {
 				Hostname:        collector.Hostname,
 				IPAddress:       collector.IPAddress,
 				WorkerAddress:   collector.WorkerAddress,
-				KafkaTopic:      collector.KafkaTopic,
 				Metadata:        collector.Metadata,
 				LastHeartbeat:   collector.LastHeartbeat,
 				LastActive:      collector.LastActive,
@@ -370,7 +356,6 @@ func (h *CollectorHandler) ListCollectors(c *gin.Context) {
 			Hostname:      collector.Hostname,
 			IPAddress:     collector.IPAddress,
 			WorkerAddress: collector.WorkerAddress,
-			KafkaTopic:    collector.KafkaTopic,
 			Metadata:      collector.Metadata,
 			LastHeartbeat: collector.LastHeartbeat,
 			CreatedAt:     collector.CreatedAt,
@@ -822,15 +807,9 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 	}
 
 	// 强制删除：清理相关资源
-	// 1. 尝试删除 Kafka topic（可选，因为可能有其他数据）
-	if collector.KafkaTopic != "" {
-            if err := h.kafkaService.DeleteTopic(ctx, collector.KafkaTopic, false); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to delete Kafka topic %s: %v\n", collector.KafkaTopic, err)
-			// 不阻止删除流程，只记录警告
-		}
-	}
+	// 注意：现在使用统一 topic 架构，不需要删除特定的 topic
 
-	// 2. 从数据库中删除记录
+	// 从数据库中删除记录
 	if err := h.repo.Delete(ctx, collectorID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -840,8 +819,8 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 	}
 
 	// 记录日志
-	fmt.Printf("🗑️ Collector deleted: %s (hostname: %s, topic: %s)\n",
-		collectorID, collector.Hostname, collector.KafkaTopic)
+	fmt.Printf("🗑️ Collector deleted: %s (hostname: %s)\n",
+		collectorID, collector.Hostname)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -849,7 +828,6 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 		"data": gin.H{
 			"collector_id": collectorID,
 			"hostname":     collector.Hostname,
-			"kafka_topic":  collector.KafkaTopic,
 		},
 	})
 }
@@ -987,7 +965,6 @@ func (h *CollectorHandler) GetByGroup(c *gin.Context) {
 			Hostname:      collector.Hostname,
 			IPAddress:     collector.IPAddress,
 			WorkerAddress: collector.WorkerAddress,
-			KafkaTopic:    collector.KafkaTopic,
 			Metadata:      collector.Metadata,
 			LastHeartbeat: collector.LastHeartbeat,
 			CreatedAt:     collector.CreatedAt,
@@ -1035,7 +1012,6 @@ func (h *CollectorHandler) GetByTag(c *gin.Context) {
 			Hostname:      collector.Hostname,
 			IPAddress:     collector.IPAddress,
 			WorkerAddress: collector.WorkerAddress,
-			KafkaTopic:    collector.KafkaTopic,
 			Metadata:      collector.Metadata,
 			LastHeartbeat: collector.LastHeartbeat,
 			CreatedAt:     collector.CreatedAt,
@@ -1083,7 +1059,6 @@ func (h *CollectorHandler) GetByEnvironment(c *gin.Context) {
 			Hostname:      collector.Hostname,
 			IPAddress:     collector.IPAddress,
 			WorkerAddress: collector.WorkerAddress,
-			KafkaTopic:    collector.KafkaTopic,
 			Metadata:      collector.Metadata,
 			LastHeartbeat: collector.LastHeartbeat,
 			CreatedAt:     collector.CreatedAt,
@@ -1131,7 +1106,6 @@ func (h *CollectorHandler) GetByOwner(c *gin.Context) {
 			Hostname:      collector.Hostname,
 			IPAddress:     collector.IPAddress,
 			WorkerAddress: collector.WorkerAddress,
-			KafkaTopic:    collector.KafkaTopic,
 			Metadata:      collector.Metadata,
 			LastHeartbeat: collector.LastHeartbeat,
 			CreatedAt:     collector.CreatedAt,

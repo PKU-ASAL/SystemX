@@ -65,7 +65,6 @@ type TemplateData struct {
 	OSVersion      string
 	DeploymentType string
 	WorkerAddress  string
-	KafkaTopic     string
 
 	// 解析后的 Worker 信息
 	WorkerHost string
@@ -97,7 +96,6 @@ func NewTemplateData(collector *models.Collector) (*TemplateData, error) {
 		OSVersion:      collector.OSVersion,
 		DeploymentType: collector.DeploymentType,
 		WorkerAddress:  collector.WorkerAddress,
-		KafkaTopic:     collector.KafkaTopic,
 		WorkerHost:     workerHost,
 		WorkerPort:     workerPort,
 		GeneratedAt:    time.Now().Format("2006-01-02 15:04:05 MST"),

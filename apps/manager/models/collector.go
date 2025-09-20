@@ -28,7 +28,6 @@ type Collector struct {
 	OSVersion      string             `json:"os_version" db:"os_version"`
 	Status         string             `json:"status" db:"status"`
 	WorkerAddress  string             `json:"worker_address" db:"worker_address"`
-	KafkaTopic     string             `json:"kafka_topic" db:"kafka_topic"`
 	DeploymentType string             `json:"deployment_type" db:"deployment_type"`
 	Metadata       *CollectorMetadata `json:"metadata,omitempty" db:"metadata"`
 	LastHeartbeat  *time.Time         `json:"last_heartbeat,omitempty" db:"last_heartbeat"`
@@ -44,27 +43,6 @@ func (c *Collector) IsActive() bool {
 	return c.Status == CollectorStatusActive
 }
 
-// GetTopicName 生成基于部署类型的 Topic 名称
-func (c *Collector) GetTopicName() string {
-	var prefix string
-	switch c.DeploymentType {
-	case DeploymentTypeAgentless:
-		prefix = "sysarmor-agentless"
-	case DeploymentTypeSysArmor:
-		prefix = "sysarmor-stack"
-	case DeploymentTypeWazuh:
-		prefix = "sysarmor-wazuh"
-	default:
-		// 不支持的部署类型，使用 agentless 作为默认
-		prefix = "sysarmor-agentless"
-	}
-	
-	// 使用 collector_id 的前8位作为后缀
-	if len(c.CollectorID) >= 8 {
-		return prefix + "-" + c.CollectorID[:8]
-	}
-	return prefix + "-" + c.CollectorID
-}
 
 // GetDeploymentTypeDisplayName 获取部署类型的显示名称
 func (c *Collector) GetDeploymentTypeDisplayName() string {

@@ -1,32 +1,53 @@
-# Kafka 配置
+# Kafka 配置和初始化
 
-此目录用于存放 Apache Kafka 的配置文件。
+## 📋 概述
 
-## 配置文件
+这个目录包含 SysArmor Kafka 的配置文件和初始化脚本。
 
-- `server.properties` - Kafka 服务器配置
-- `log4j.properties` - Kafka 日志配置
-- `jmx-exporter.yml` - JMX 监控配置
+## 🚀 自动初始化
 
-## 使用方式
+### Topics 自动创建
 
-这些配置文件会通过 Docker volume 挂载到 Kafka 容器中：
+当启动 middleware 服务时，`kafka-init` 服务会自动创建所需的 topics：
 
-```yaml
-kafka:
-  volumes:
-    - ./configs/kafka:/opt/kafka/config/custom:ro
+```bash
+docker-compose -f docker-compose.middleware.yml up -d
 ```
 
-## 配置项说明
+### 创建的 Topics
 
-- **KRaft 模式配置**：无需 Zookeeper 的现代 Kafka 架构
-- **日志保留策略**：数据保留时间和大小限制
-- **性能优化**：网络线程、IO 线程配置
-- **监控集成**：JMX 指标导出配置
+| Topic 名称 | 分区数 | 用途 | 保留期 |
+|-----------|--------|------|--------|
+| `sysarmor.raw.audit.1` | 32 | 主要的 audit 事件数据 | 3天 |
+| `sysarmor.raw.other.1` | 8 | 其他类型的事件数据 | 3天 |
 
-## 注意事项
+### 配置参数
 
-- 当前使用 KRaft 模式，无需 Zookeeper
-- 生产环境请根据数据量调整保留策略
-- 监控配置与 Prometheus 集成
+通过环境变量可以自定义 topic 配置：
+
+```bash
+# 在 .env 文件中设置
+SYSARMOR_AUDIT_TOPIC=sysarmor.raw.audit.1
+SYSARMOR_OTHER_TOPIC=sysarmor.raw.other.1
+KAFKA_AUDIT_PARTITIONS=32
+KAFKA_AUDIT_RETENTION_MS=259200000  # 3天
+```
+
+## 🔧 初始化脚本
+
+### `init-topics.sh`
+
+这个脚本在 Kafka 启动后自动运行，负责：
+
+1. 等待 Kafka 服务就绪
+2. 检查 topics 是否已存在
+3. 创建不存在的 topics
+4. 配置 topic 参数（分区数、保留期、压缩等）
+5. 验证创建结果
+
+### 脚本特性
+
+- **幂等性**: 多次运行不会重复创建 topics
+- **健康检查**: 等待 Kafka 完全启动后再执行
+- **错误处理**: 创建失败时提供详细错误信息
+- **验证**: 创建后验证 topics 配置

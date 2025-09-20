@@ -29,7 +29,6 @@ type CollectorStatus struct {
 	Hostname        string             `json:"hostname"`
 	IPAddress       string             `json:"ip_address"`
 	WorkerAddress   string             `json:"worker_address"`
-	KafkaTopic      string             `json:"kafka_topic"`
 	Metadata        *CollectorMetadata `json:"metadata,omitempty"`
 	LastHeartbeat   *time.Time         `json:"last_heartbeat,omitempty"`
 	LastActive      *time.Time         `json:"last_active,omitempty"`

@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sysarmor/sysarmor/apps/manager/models"
 	"github.com/sysarmor/sysarmor/apps/manager/services/events"
 )
 
@@ -176,49 +178,74 @@ func (h *EventsHandler) QueryCollectorEvents(c *gin.Context) {
 	})
 }
 
-// GetLatestEvents 获取最新事件
-// GET /api/v1/events/latest?topic=collector-001&limit=50
+// GetLatestEvents 获取最新事件（MVP简化版本）
+// @Summary 获取指定 Topic 的最新事件
+// @Description 从指定 Topic 获取最新的事件数据，支持 collector_id 过滤
+// @Tags events
+// @Accept json
+// @Produce json
+// @Param topic query string false "Topic 名称，默认为 sysarmor.raw.audit"
+// @Param collector_id query string false "Collector ID 过滤"
+// @Param limit query int false "返回数量限制，默认10，最大100"
+// @Success 200 {object} map[string]interface{} "最新事件数据"
+// @Failure 400 {object} map[string]interface{} "请求参数错误"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误"
+// @Router /events/latest [get]
 func (h *EventsHandler) GetLatestEvents(c *gin.Context) {
-	ctx := c.Request.Context()
-
+	// 添加5秒超时控制
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	
+	// 获取 topic 参数，默认使用 audit topic
 	topic := c.Query("topic")
 	if topic == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "topic parameter is required",
-		})
-		return
+		topic = models.GetDefaultAuditTopic() // 使用常量定义的默认topic
 	}
-
-	// 解析 limit 参数
-	limit := 50 // 默认值
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil {
-			limit = l
-		}
-	}
-
+	
+	// 解析查询参数 - 减少默认limit避免超时
 	params := events.QueryParams{
 		Topic:       topic,
 		CollectorID: c.Query("collector_id"),
-		EventType:   c.Query("event_type"),
-		Limit:       limit,
 		Latest:      true,
+		Limit:       10, // 减少默认数量
 	}
-
-	// 查询事件
+	
+	// 解析 limit - 限制最大值避免超时
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && limit <= 100 {
+			params.Limit = limit
+		}
+	}
+	
+	// 查询最新事件
 	result, err := h.kafkaClient.QueryEvents(ctx, params)
 	if err != nil {
+		// 检查是否是超时错误
+		if ctx.Err() == context.DeadlineExceeded {
+			c.JSON(http.StatusRequestTimeout, gin.H{
+				"success": false,
+				"error":   "Request timeout: query took too long",
+				"timeout": "5s",
+			})
+			return
+		}
+		
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   "Failed to query latest events: " + err.Error(),
 		})
 		return
 	}
-
+	
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    result,
+		"data": gin.H{
+			"topic":        topic,
+			"collector_id": params.CollectorID,
+			"events":       result.Events,
+			"total":        result.Total,
+			"queried_at":   time.Now(),
+		},
 	})
 }
 
@@ -386,9 +413,10 @@ func (h *EventsHandler) SearchEvents(c *gin.Context) {
 		keyword := strings.ToLower(searchRequest.Keyword)
 
 		for _, event := range result.Events {
-			if strings.Contains(strings.ToLower(event.OriginalMessage), keyword) ||
-				strings.Contains(strings.ToLower(event.EventType), keyword) ||
-				strings.Contains(strings.ToLower(event.CollectorID), keyword) {
+			// 搜索事件类型、collector_id和host
+			if strings.Contains(strings.ToLower(event.EventType), keyword) ||
+				strings.Contains(strings.ToLower(event.CollectorID), keyword) ||
+				strings.Contains(strings.ToLower(event.Host), keyword) {
 				filteredEvents = append(filteredEvents, event)
 			}
 		}

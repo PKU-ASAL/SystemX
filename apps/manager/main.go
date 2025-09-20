@@ -85,9 +85,9 @@ func main() {
 		// 元数据管理路由
 		collectors.PUT("/:id/metadata", collectorHandler.UpdateMetadata)
 
-		// 删除和注销路由
-		collectors.DELETE("/:id", collectorHandler.Delete)              // 删除 Collector (支持 force 参数)
+		// 注销和删除路由 (注意顺序：具体路径在前，通用路径在后)
 		collectors.POST("/:id/unregister", collectorHandler.Unregister) // 注销 Collector (软删除)
+		collectors.DELETE("/:id", collectorHandler.Delete)              // 删除 Collector (支持 force 参数)
 	}
 
 	// 资源管理路由 (统一的脚本、配置、二进制文件 API)
@@ -108,7 +108,8 @@ func main() {
 	healthHandler := handlers.NewHealthHandler(db.DB())
 	health := api.Group("/health")
 	{
-		health.GET("", healthHandler.GetHealthOverview)                    // 新的综合健康状态概览
+		health.GET("", healthHandler.GetHealthOverview)                    // 映射到 /api/v1/health
+		health.GET("/overview", healthHandler.GetHealthOverview)           // 映射到 /api/v1/health/overview
 		health.GET("/comprehensive", healthHandler.GetComprehensiveHealth) // 详细的系统健康状态
 		health.GET("/system", healthHandler.GetSystemHealth)
 		health.GET("/workers", healthHandler.GetWorkers)
@@ -119,23 +120,37 @@ func main() {
 		health.GET("/workers/:name/components", healthHandler.GetWorkerComponents)
 	}
 
-	// 事件查询路由
+	// 事件查询路由（MVP简化版本）
 	kafkaBrokers := cfg.GetKafkaBrokerList() // 从配置文件读取
 	eventsHandler := handlers.NewEventsHandler(kafkaBrokers)
 	events := api.Group("/events")
 	{
-		// 通用事件查询
-		events.GET("/query", eventsHandler.QueryEvents)
+		// 通用事件查询接口
 		events.GET("/latest", eventsHandler.GetLatestEvents)
+		events.GET("/query", eventsHandler.QueryEvents)
 		events.POST("/search", eventsHandler.SearchEvents)
-
-		// Collector 相关事件查询
-		events.GET("/collectors/:collector_id", eventsHandler.QueryCollectorEvents)
-		events.GET("/collectors/topics", eventsHandler.GetCollectorTopics)
-
+		
 		// Topic 管理
 		events.GET("/topics", eventsHandler.ListTopics)
 		events.GET("/topics/:topic/info", eventsHandler.GetTopicInfo)
+		
+		// 保留collector特定接口（向后兼容，但标记为deprecated）
+		events.GET("/collectors/:collector_id", eventsHandler.QueryCollectorEvents)
+		events.GET("/collectors/topics", eventsHandler.GetCollectorTopics)
+	}
+
+	// Topic配置管理路由（新增）
+	topicsHandler := handlers.NewTopicsHandler()
+	topics := api.Group("/topics")
+	{
+		// Topic配置查询
+		topics.GET("/configs", topicsHandler.GetTopicConfigs)
+		topics.GET("/categories", topicsHandler.GetTopicsByCategory)
+		topics.GET("/defaults", topicsHandler.GetDefaultTopics)
+		
+		// Topic验证和分区信息
+		topics.GET("/:topic/validate", topicsHandler.ValidateTopic)
+		topics.GET("/:topic/partitions", topicsHandler.GetTopicPartitions)
 	}
 
 	// 服务管理路由组

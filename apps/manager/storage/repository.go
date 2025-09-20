@@ -37,8 +37,8 @@ func (r *Repository) Create(ctx context.Context, collector *models.Collector) er
 
 	query := `
         INSERT INTO collectors (collector_id, hostname, ip_address, os_type, os_version, 
-                              status, worker_address, kafka_topic, deployment_type, metadata, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+                              status, worker_address, deployment_type, metadata, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	_, err = r.db.ExecContext(ctx, query,
 		collector.CollectorID,
@@ -48,7 +48,6 @@ func (r *Repository) Create(ctx context.Context, collector *models.Collector) er
 		collector.OSVersion,
 		collector.Status,
 		collector.WorkerAddress,
-		collector.KafkaTopic,
 		collector.DeploymentType,
 		metadataJSON,
 		collector.CreatedAt,
@@ -61,7 +60,7 @@ func (r *Repository) Create(ctx context.Context, collector *models.Collector) er
 func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+               status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors WHERE collector_id = $1`
 
 	collector := &models.Collector{}
@@ -78,7 +77,6 @@ func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.C
 		&collector.OSVersion,
 		&collector.Status,
 		&collector.WorkerAddress,
-		&collector.KafkaTopic,
 		&collector.DeploymentType,
 		&metadataJSON,
 		&lastHeartbeat,
@@ -113,7 +111,7 @@ func (r *Repository) GetByID(ctx context.Context, collectorID string) (*models.C
 func (r *Repository) List(ctx context.Context) ([]*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+               status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors ORDER BY created_at DESC`
 
 	return r.executeCollectorQuery(ctx, query)
@@ -189,7 +187,7 @@ func (r *Repository) UpdateHeartbeatWithStatus(ctx context.Context, collectorID 
 func (r *Repository) GetActiveCollectors(ctx context.Context) ([]*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+               status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         WHERE status = 'active' 
         ORDER BY created_at DESC`
@@ -228,7 +226,7 @@ func (r *Repository) GetByGroup(ctx context.Context, group string) ([]*models.Co
 		// 查询没有设置分组的 collectors
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+                   status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE COALESCE(metadata->>'group', '') = ''
             ORDER BY created_at DESC`
@@ -237,7 +235,7 @@ func (r *Repository) GetByGroup(ctx context.Context, group string) ([]*models.Co
 		// 查询指定分组的 collectors
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+                   status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE metadata->>'group' = $1
             ORDER BY created_at DESC`
@@ -253,7 +251,7 @@ func (r *Repository) GetByTag(ctx context.Context, tag string) ([]*models.Collec
 	// 同时处理 tags 字段不存在或为 null 的情况
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+               status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         WHERE metadata->'tags' ? $1
         ORDER BY created_at DESC`
@@ -269,7 +267,7 @@ func (r *Repository) GetByEnvironment(ctx context.Context, environment string) (
 	if environment == "null" || environment == "" {
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+                   status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE COALESCE(metadata->>'environment', '') = ''
             ORDER BY created_at DESC`
@@ -277,7 +275,7 @@ func (r *Repository) GetByEnvironment(ctx context.Context, environment string) (
 	} else {
 		query = `
             SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-                   status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+                   status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
             FROM collectors 
             WHERE metadata->>'environment' = $1
             ORDER BY created_at DESC`
@@ -291,7 +289,7 @@ func (r *Repository) GetByEnvironment(ctx context.Context, environment string) (
 func (r *Repository) GetByOwner(ctx context.Context, owner string) ([]*models.Collector, error) {
 	query := `
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+               status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         WHERE metadata->>'owner' = $1
         ORDER BY created_at DESC`
@@ -397,7 +395,7 @@ func (r *Repository) SearchCollectors(ctx context.Context, filters *models.Colle
 	// 构建完整查询
 	query := fmt.Sprintf(`
         SELECT id, collector_id, hostname, ip_address, os_type, os_version,
-               status, worker_address, kafka_topic, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
+               status, worker_address, deployment_type, metadata, last_heartbeat, last_active, created_at, updated_at
         FROM collectors 
         %s %s %s`, whereClause, orderClause, limitClause)
 
@@ -434,7 +432,6 @@ func (r *Repository) executeCollectorQuery(ctx context.Context, query string, ar
 			&collector.OSVersion,
 			&collector.Status,
 			&collector.WorkerAddress,
-			&collector.KafkaTopic,
 			&collector.DeploymentType,
 			&metadataJSON,
 			&lastHeartbeat,

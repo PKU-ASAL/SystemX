@@ -19,7 +19,7 @@ fi
 DEFAULT_OUTPUT_DIR="./data/kafka-exports"
 DEFAULT_BATCH_SIZE=1000000
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-LOG_FILE="$HOME/kafka-export-${TIMESTAMP}.log"
+LOG_FILE=""  # 将在export_events中动态设置
 
 # 运行时配置 (将由 load_env_config 设置)
 KAFKA_HOST=""
@@ -234,8 +234,10 @@ get_topic_message_count() {
     echo "${offset_info:-0}"
 }
 
-# 列出 topics
+# 列出 topics (快速版本)
 list_topics() {
+    local show_counts="${1:-false}"
+    
     echo "=============================================="
     echo "SysArmor Kafka Topics"
     echo "=============================================="
@@ -259,14 +261,27 @@ list_topics() {
     fi
     
     log_success "可用 topics:"
-    echo "$topics" | while IFS= read -r topic; do
-        if [[ "$topic" =~ (sysarmor|agentless) ]]; then
-            local message_count=$(get_topic_message_count "$topic")
-            echo -e "  ${GREEN}★${NC} $topic (消息数: $message_count)"
-        else
-            echo "  - $topic"
-        fi
-    done
+    if [[ "$show_counts" == "true" ]]; then
+        log_info "正在获取消息数量 (可能较慢)..."
+        echo "$topics" | while IFS= read -r topic; do
+            if [[ "$topic" =~ (sysarmor|agentless) ]]; then
+                local message_count=$(get_topic_message_count "$topic")
+                echo -e "  ${GREEN}★${NC} $topic (消息数: $message_count)"
+            else
+                echo "  - $topic"
+            fi
+        done
+    else
+        echo "$topics" | while IFS= read -r topic; do
+            if [[ "$topic" =~ (sysarmor|agentless) ]]; then
+                echo -e "  ${GREEN}★${NC} $topic"
+            else
+                echo "  - $topic"
+            fi
+        done
+        echo ""
+        log_info "使用 'list --count' 查看消息数量"
+    fi
     echo "=============================================="
 }
 
@@ -307,9 +322,6 @@ export_events() {
     # 创建输出目录
     mkdir -p "$OUTPUT_DIR"
     
-    # 初始化日志文件
-    echo "SysArmor Kafka 数据导出开始 - $(date)" > "$LOG_FILE"
-    
     # 创建 topic 专用目录
     local topic_suffix=""
     if [[ -n "$COLLECTOR_ID" ]]; then
@@ -317,6 +329,12 @@ export_events() {
     fi
     local topic_dir="$OUTPUT_DIR/${topic}${topic_suffix}_${TIMESTAMP}"
     mkdir -p "$topic_dir"
+    
+    # 设置日志文件路径到输出目录中
+    LOG_FILE="$topic_dir/export_${TIMESTAMP}.log"
+    
+    # 初始化日志文件
+    echo "SysArmor Kafka 数据导出开始 - $(date)" > "$LOG_FILE"
     
     # 获取总消息数
     local total_messages=$(get_topic_message_count "$topic")
@@ -719,10 +737,9 @@ SysArmor Kafka 工具 (增强版)
 用法: $0 <命令> <topic> [count] [选项]
 
 命令:
-  list                           列出所有可用的 topics
+  list [--count]                 列出所有可用的 topics (可选显示消息数量)
   export <topic> [count]         导出事件 (支持批量和过滤)
   import <file> <topic>          导入事件
-  monitor [log_file]             监控导出进度
   status                         显示导出状态
 
 参数:
@@ -759,10 +776,11 @@ SysArmor Kafka 工具 (增强版)
   KAFKA_HOST=remote-server KAFKA_PORT=9094 $0 list           # 连接远程 Kafka
   KAFKA_PORT=9095 $0 export sysarmor-events-test 10          # 使用不同端口
   
-  # 后台运行和监控
-  nohup $0 export sysarmor-agentless-b1de298c all --collector-id b1de298c > export.out 2>&1 &
-  $0 monitor                                                 # 监控最新的导出进度
-  $0 status                                                  # 查看导出状态
+  # 快速查看消息数量
+  $0 list --count                                            # 显示topics和消息数量
+  
+  # 查看导出状态
+  $0 status                                                  # 查看导出状态和历史
 
 配置:
   当前服务器: ${KAFKA_HOST:-localhost}:${KAFKA_PORT:-9094}
@@ -800,7 +818,12 @@ main() {
     
     case "$command" in
         list|ls)
-            list_topics
+            # 检查是否有--count参数
+            if [[ "$1" == "--count" ]]; then
+                list_topics "true"
+            else
+                list_topics "false"
+            fi
             ;;
         export|exp)
             if [[ $# -eq 0 ]]; then
@@ -817,9 +840,6 @@ main() {
                 exit 1
             fi
             import_events "$@"
-            ;;
-        monitor|mon)
-            monitor_export_progress "$@"
             ;;
         status|stat)
             show_export_status

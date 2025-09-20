@@ -25,7 +25,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
 
 WORKDIR /opt/flink
 COPY services/processor/requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple -r requirements.txt
 
 # 复制并执行下载脚本
 COPY services/processor/scripts/download_libs.sh .
