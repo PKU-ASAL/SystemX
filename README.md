@@ -25,41 +25,83 @@ graph LR
 
 ## 🚀 快速开始
 
-### 单机部署 (开发测试)
+### 一键部署
 ```bash
 git clone https://git.pku.edu.cn/oslab/sysarmor.git
 cd sysarmor
 
-# 初始化环境
-# 1. 复制.env.example为.env
-# 2. 创建./data目录
-# 3. 在./services/indexer/configs/opensearch/certs目录下生成opensearch证书
-make init        
-
-# 构建并启动所有服务
-make deploy
-
-# 验证部署
-make health
-
-# 停止所有服务并清理资源(volume, network等)
-make down        
+# 初始化并部署 (一键完成)
+make init && make deploy
 ```
 
-### 访问服务
-- **Manager API**: http://localhost:8080
-- **API 文档**: http://localhost:8080/swagger/index.html
-- **Flink 监控**: http://localhost:8081
-- **OpenSearch**: http://localhost:9200
+**部署完成后，系统会自动**:
+- ✅ 启动所有服务 (Manager、Kafka、Flink、OpenSearch等)
+- ✅ 提交核心Flink作业 (数据转换和告警生成)
+- ✅ 激活完整数据流 (auditd → events → alerts)
+
+### 快速验证
+
+#### 1. 系统健康检查
+```bash
+make health
+# 或者
+./tests/test-system-health.sh
+```
+
+#### 2. API接口测试
+```bash
+./tests/test-system-api.sh
+```
+
+#### 3. 数据流测试
+```bash
+# 导入测试数据
+./tests/import-events-data.sh ./data/kafka-imports/sysarmor-agentless-samples.jsonl
+
+# 查看处理结果
+./scripts/kafka-tools.sh export sysarmor.events.audit 5
+./scripts/kafka-tools.sh export sysarmor.alerts.audit 5
+
+# 查看OpenSearch中的告警
+curl -s 'http://localhost:8080/api/v1/services/opensearch/events/search?index=sysarmor-alerts-audit&size=10' | jq
+```
+
+### 系统访问地址
+- **🌐 Manager API**: http://localhost:8080
+- **📖 API 文档**: http://localhost:8080/swagger/index.html
+- **🔧 Flink 监控**: http://localhost:8081
+- **📊 Prometheus**: http://localhost:9090
+- **🔍 OpenSearch**: http://localhost:9200
 
 ## 🔧 管理命令
 
+### 基础操作
 ```bash
-# 单机部署
-make up          # 启动所有服务
-make deploy      # 重新构建镜像，并启动所有服务
+make deploy      # 🎯 完整部署 (推荐)
+make up          # 启动服务 (不重新构建)
 make down        # 停止所有服务
-make health      # 健康检查
+make restart     # 重启所有服务
+make status      # 查看服务状态
+make health      # 快速健康检查
+make test        # 完整系统测试
+make clean       # 清理环境
+```
+
+### 工具脚本
+```bash
+# 系统测试
+./tests/test-system-health.sh        # 快速健康检查
+./tests/test-system-api.sh           # 完整API测试 (53个接口)
+./tests/import-events-data.sh        # 事件数据导入
+
+# Kafka管理
+./scripts/kafka-tools.sh list        # 列出topics (快速)
+./scripts/kafka-tools.sh list --count # 显示消息数量 (较慢)
+./scripts/kafka-tools.sh export sysarmor.raw.audit 100
+
+# Flink管理
+./scripts/flink-tools.sh list        # 查看作业状态
+./scripts/flink-tools.sh overview    # 集群概览
 ```
 
 ## 📚 文档

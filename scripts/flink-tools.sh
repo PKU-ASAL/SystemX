@@ -92,9 +92,8 @@ submit_job() {
         log_error "请指定作业文件"
         echo "用法: $0 submit <job_file>"
         echo "可用作业:"
-        echo "  job_test_simple_console.py"
-        echo "  job_test_auditd_sysdig_console.py"
-        echo "  job_auditd_raw_to_events.py"
+        echo "  job_01_audit_raw_to_events.py"
+        echo "  job_02_audit_events_to_alerts.py"
         return 1
     fi
     
@@ -303,10 +302,6 @@ quick_test() {
     list_jobs
     
     echo ""
-    log_info "4. 提交简单测试作业..."
-    submit_job "job_test_simple_console.py"
-    
-    echo ""
     log_success "快速测试完成!"
     log_info "Web监控: $FLINK_API"
 }
@@ -335,9 +330,8 @@ SysArmor Flink 工具
   lines       - 日志行数 (默认: 50)
 
 可用作业文件:
-  job_test_simple_console.py           - 简单控制台测试
-  job_test_auditd_sysdig_console.py    - Auditd到Sysdig转换测试
-  job_auditd_raw_to_events.py          - Auditd原始数据到事件转换
+  job_01_audit_raw_to_events.py        - Auditd原始数据到事件转换
+  job_02_audit_events_to_alerts.py     - 事件到告警转换
 
 示例:
   # 基础操作
@@ -346,8 +340,8 @@ SysArmor Flink 工具
   $0 status                                  # 查看服务状态
   
   # 作业管理
-  $0 submit job_test_simple_console.py       # 提交简单测试作业
-  $0 submit job_auditd_raw_to_events.py      # 提交数据转换作业
+  $0 submit job_01_audit_raw_to_events.py    # 提交原始数据转换作业
+  $0 submit job_02_audit_events_to_alerts.py # 提交告警生成作业
   $0 cancel abc123def456                     # 取消指定作业
   $0 details abc123def456                    # 查看作业详情
   

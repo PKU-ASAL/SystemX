@@ -159,7 +159,7 @@ main() {
         echo "  📊 Manager API: http://localhost:8080/api/v1/services/flink/jobs"
         echo ""
         echo "测试数据流："
-        echo "  ./tests/test-kafka-producer.sh sysarmor-agentless-samples.jsonl"
+        echo "  ./tests/import-events-data.sh ./data/kafka-imports/sysarmor-agentless-samples.jsonl"
     else
         log_error "部分作业提交失败 ($success_count/$total_jobs)"
         exit 1

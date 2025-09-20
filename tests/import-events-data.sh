@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# SysArmor Kafka Producer 测试脚本
-# 用于测试 Kafka 中间件健康状态和数据导入功能
+# SysArmor 事件数据导入脚本
+# 用于将事件数据导入到Kafka raw topic并验证数据流处理
 
 set -e
 
@@ -24,9 +24,9 @@ TIMEOUT=10
 # 显示帮助信息
 show_help() {
     cat << EOF
-SysArmor Kafka Producer 测试脚本
+SysArmor 事件数据导入脚本
 
-用法: $0 [选项] [文件名]
+用法: $0 [选项] [文件路径]
 
 选项:
   --topic <topic>       指定目标 Topic (默认: $DEFAULT_TOPIC)
@@ -35,19 +35,25 @@ SysArmor Kafka Producer 测试脚本
   --help               显示此帮助信息
 
 参数:
-  文件名               要导入的 JSONL 文件名 (在数据目录中)
+  文件路径             要导入的 JSONL 文件，支持以下格式:
+                       - 绝对路径: /path/to/file.jsonl
+                       - 相对路径: ./data/file.jsonl
+                       - 文件名: file.jsonl (在数据目录中查找)
 
 功能:
   1. 检测 Middleware 和 Kafka 健康状态
   2. 显示 Kafka 现有 Topics 和消息数量
   3. 导入指定的 JSONL 文件到 Kafka Topic
-  4. 验证数据导入结果
+  4. 验证数据导入结果和数据流处理
+  5. 验证 OpenSearch 中的告警数据
 
 示例:
-  $0                                    # 交互式选择文件
-  $0 sample.jsonl                       # 导入 sample.jsonl
-  $0 --topic sysarmor.raw.other test.jsonl  # 导入到指定 Topic
-  $0 --data-dir /path/to/data audit.jsonl   # 指定数据目录
+  $0                                           # 交互式选择文件
+  $0 sample.jsonl                              # 导入数据目录中的 sample.jsonl
+  $0 ./data/kafka-imports/audit-data.jsonl    # 导入相对路径文件
+  $0 /home/user/data/events.jsonl             # 导入绝对路径文件
+  $0 --topic sysarmor.raw.other test.jsonl    # 导入到指定 Topic
+  $0 --data-dir /custom/path audit.jsonl      # 指定自定义数据目录
 
 EOF
 }
@@ -169,6 +175,34 @@ get_topic_message_count() {
 # 选择输入文件
 select_input_file() {
     if [ -n "$INPUT_FILE" ]; then
+        # 如果提供了文件参数，检查是否为完整路径
+        if [[ "$INPUT_FILE" == /* ]]; then
+            # 绝对路径
+            if [ ! -f "$INPUT_FILE" ]; then
+                print_error "文件不存在: $INPUT_FILE"
+                exit 1
+            fi
+            FILE_PATH="$INPUT_FILE"
+            INPUT_FILE=$(basename "$INPUT_FILE")
+        elif [[ "$INPUT_FILE" == */* ]]; then
+            # 相对路径
+            if [ ! -f "$INPUT_FILE" ]; then
+                print_error "文件不存在: $INPUT_FILE"
+                exit 1
+            fi
+            FILE_PATH="$INPUT_FILE"
+            INPUT_FILE=$(basename "$INPUT_FILE")
+        else
+            # 只是文件名，在数据目录中查找
+            FILE_PATH="$DATA_DIR/$INPUT_FILE"
+            if [ ! -f "$FILE_PATH" ]; then
+                print_error "文件不存在: $FILE_PATH"
+                exit 1
+            fi
+        fi
+        
+        print_info "使用指定文件: $INPUT_FILE"
+        print_info "文件路径: $FILE_PATH"
         return 0
     fi
     
@@ -200,7 +234,8 @@ select_input_file() {
     read -r selection
     
     if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le ${#files[@]} ]; then
-        INPUT_FILE=$(basename "${files[$((selection-1))]}")
+        FILE_PATH="${files[$((selection-1))]}"
+        INPUT_FILE=$(basename "$FILE_PATH")
         echo -e "${GREEN}✅ 已选择: $INPUT_FILE${NC}"
     else
         print_error "无效选择"
@@ -210,18 +245,17 @@ select_input_file() {
 
 # 导入数据到 Kafka (使用 kafka-tools.sh)
 import_data_to_kafka() {
-    local file_path="$DATA_DIR/$INPUT_FILE"
-    
-    if [ ! -f "$file_path" ]; then
-        print_error "文件不存在: $file_path"
+    if [ ! -f "$FILE_PATH" ]; then
+        print_error "文件不存在: $FILE_PATH"
         exit 1
     fi
     
-    local line_count=$(wc -l < "$file_path" 2>/dev/null || echo "0")
-    local file_size=$(du -h "$file_path" | cut -f1)
+    local line_count=$(wc -l < "$FILE_PATH" 2>/dev/null || echo "0")
+    local file_size=$(du -h "$FILE_PATH" | cut -f1)
     
     print_info "准备导入数据:"
     echo "  📁 文件: $INPUT_FILE"
+    echo "  📂 路径: $FILE_PATH"
     echo "  📊 大小: $file_size"
     echo "  📝 行数: $line_count"
     echo "  🎯 目标 Topic: $TARGET_TOPIC"
@@ -237,7 +271,7 @@ import_data_to_kafka() {
     echo -e "${YELLOW}📤 开始导入数据...${NC}"
     
     # 使用 kafka-tools.sh 进行导入 (避免 JVM 冲突)
-    if ./scripts/kafka-tools.sh import "$file_path" "$TARGET_TOPIC" > /tmp/kafka-import.log 2>&1; then
+    if ./scripts/kafka-tools.sh import "$FILE_PATH" "$TARGET_TOPIC" > /tmp/kafka-import.log 2>&1; then
         print_success "数据导入完成"
         echo "  📊 已导入 $line_count 条消息到 $TARGET_TOPIC"
         # 显示导入日志的关键信息
@@ -253,7 +287,15 @@ import_data_to_kafka() {
 
 # 主函数
 main() {
-    print_header "🚀 SysArmor Kafka Producer 测试"
+    # 如果没有提供文件参数，显示帮助信息
+    if [ -z "$INPUT_FILE" ]; then
+        echo -e "${YELLOW}⚠️  请指定要导入的事件数据文件${NC}"
+        echo ""
+        show_help
+        exit 1
+    fi
+    
+    print_header "🚀 SysArmor 事件数据导入"
     
     echo -e "Kafka 服务器: ${KAFKA_BOOTSTRAP_SERVERS}"
     echo -e "Manager API: ${MANAGER_API}"
@@ -382,7 +424,7 @@ main() {
     # 步骤5: 测试总结
     print_section "5. 测试总结"
     
-    print_success "Kafka Producer 测试完成"
+    print_success "事件数据导入完成"
     echo "  📁 导入文件: $INPUT_FILE"
     echo "  🎯 目标 Topic: $TARGET_TOPIC"
     echo ""
@@ -441,7 +483,7 @@ main() {
     echo "5. 完整API测试: ./tests/test-system-api.sh"
     
     echo ""
-    print_success "🎉 SysArmor Kafka Producer 测试完成！"
+    print_success "🎉 SysArmor 事件数据导入完成！"
 }
 
 # 脚本入口
