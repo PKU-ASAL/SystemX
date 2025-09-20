@@ -107,10 +107,9 @@ make clean       # 清理环境
 ## 📚 文档
 
 详细文档请参考 [docs/](docs/) 目录：
-- **[快速开始](docs/guides/quick-start.md)** - 5分钟完成部署和测试验证
-- **[系统概览](docs/guides/overview.md)** - 系统架构和部署方案
-- **[API参考](docs/development/api-reference.md)** - 完整的API接口文档
-- **[v0.1.0 Release Notes](docs/releases/v0.1.0-release-notes.md)** - 版本发布说明
+- **[API文档](docs/api-reference.md)** - Manager API接口文档 (53个接口，98%测试通过)
+- **[各模块开发指南](docs/development/)** - Wazuh集成、ML服务等开发文档（实施中）
+- **[版本发布](docs/releases/v0.1.0.md)** - 版本发布说明
 
 ---
 
