@@ -39,15 +39,15 @@ func NewCollectorHandler(db *sql.DB) *CollectorHandler {
 	}
 	
 	// 创建模板服务并加载模板
-	templateService := template.NewTemplateService()
-	if err := templateService.LoadTemplates("./templates"); err != nil {
+	templateService := template.NewTemplateService(cfg)
+	if err := templateService.LoadTemplates("./shared/templates"); err != nil {
 		fmt.Printf("⚠️ Warning: Failed to load templates: %v\n", err)
 	}
-	
+
 	return &CollectorHandler{
 		repo:            storage.NewRepository(db),
 		config:          cfg,
-		healthChecker:   health.NewHealthChecker(),
+		healthChecker:   health.NewHealthChecker(cfg),
 		kafkaService:    kafkaService.NewKafkaService(cfg.GetKafkaBrokerList()),
 		templateService: templateService,
 	}
@@ -652,7 +652,7 @@ func parseWorkerURL(workerURL string) (host, port string) {
 // generateScriptFromTemplate 使用模板生成脚本
 func (h *CollectorHandler) generateScriptFromTemplate(collector *models.Collector) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", fmt.Errorf("failed to create template data: %w", err)
 	}
@@ -663,7 +663,7 @@ func (h *CollectorHandler) generateScriptFromTemplate(collector *models.Collecto
 	case models.DeploymentTypeAgentless:
 		templateName = "agentless/setup-terminal.sh"
 	case models.DeploymentTypeSysArmor:
-		templateName = "sysarmor-stack/install-collector.sh"
+		templateName = "collector/install.sh"
 	case models.DeploymentTypeWazuh:
 		templateName = "wazuh-hybrid/install-wazuh.sh"
 	default:
@@ -682,7 +682,7 @@ func (h *CollectorHandler) generateScriptFromTemplate(collector *models.Collecto
 // generateUninstallScriptFromTemplate 使用模板生成卸载脚本
 func (h *CollectorHandler) generateUninstallScriptFromTemplate(collector *models.Collector) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", fmt.Errorf("failed to create template data: %w", err)
 	}
@@ -693,7 +693,7 @@ func (h *CollectorHandler) generateUninstallScriptFromTemplate(collector *models
 	case models.DeploymentTypeAgentless:
 		templateName = "agentless/uninstall-terminal.sh"
 	case models.DeploymentTypeSysArmor:
-		templateName = "sysarmor-stack/uninstall-collector.sh"
+		templateName = "collector/uninstall.sh"
 	case models.DeploymentTypeWazuh:
 		templateName = "wazuh-hybrid/uninstall-wazuh.sh"
 	default:
