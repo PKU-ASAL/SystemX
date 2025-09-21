@@ -14,10 +14,19 @@ import (
 	"time"
 )
 
+// HealthCheckerConfig 健康检查器配置接口
+type HealthCheckerConfig interface {
+	GetManagerURL() string
+	GetVectorHost() string      // 获取内部通信地址（容器名或内网IP）
+	GetExternalHost() string    // 获取外部访问地址（localhost或远程IP）
+	GetVectorTCPPort() int
+}
+
 // HealthChecker 健康检查器
 type HealthChecker struct {
 	client  *http.Client
 	workers []WorkerConfig
+	config  HealthCheckerConfig
 }
 
 // WorkerConfig Worker 配置
@@ -87,16 +96,32 @@ type ComponentMetrics struct {
 }
 
 // NewHealthChecker 创建健康检查器
-func NewHealthChecker() *HealthChecker {
+func NewHealthChecker(config HealthCheckerConfig) *HealthChecker {
+	checker := &HealthChecker{
+		client: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+		config: config,
+	}
+
+	// 从环境变量加载 worker 配置
+	checker.loadWorkersFromEnv()
+
+	return checker
+}
+
+// NewHealthCheckerWithoutConfig 创建不带配置的健康检查器(向后兼容)
+// 注意：这个方法只应在测试或不需要动态端口的场景使用
+func NewHealthCheckerWithoutConfig() *HealthChecker {
 	checker := &HealthChecker{
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
 	}
-	
+
 	// 从环境变量加载 worker 配置
 	checker.loadWorkersFromEnv()
-	
+
 	return checker
 }
 
@@ -107,11 +132,22 @@ func (h *HealthChecker) loadWorkersFromEnv() {
 	workersEnv := os.Getenv("WORKER_URLS")
 	if workersEnv == "" {
 		// 默认配置
+		var defaultURL string
+		var healthURL string
+
+		if h.config != nil {
+			defaultURL = fmt.Sprintf("http://%s:%d", h.config.GetVectorHost(), h.config.GetVectorTCPPort())
+			healthURL = fmt.Sprintf("http://%s:8686/health", h.config.GetVectorHost())
+		} else {
+			defaultURL = "http://localhost:6000"
+			healthURL = "http://localhost:8686/health"
+		}
+
 		h.workers = []WorkerConfig{
 			{
 				Name:      "default-worker",
-				URL:       "http://localhost:514",
-				HealthURL: "http://localhost:8686/health",
+				URL:       defaultURL,
+				HealthURL: healthURL,
 			},
 		}
 		return
@@ -638,7 +674,12 @@ func (h *HealthChecker) checkFlinkHealth(ctx context.Context) *SystemComponentHe
 	}
 	
 	// 通过 Manager 自身的 Flink API 检查
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/flink/health", nil)
+	managerURL := "http://localhost:8080" // 默认值
+	if h.config != nil {
+		managerURL = h.config.GetManagerURL()
+	}
+	url := fmt.Sprintf("%s/api/v1/services/flink/health", managerURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		health.Healthy = false
 		health.Status = "request_failed"
@@ -710,7 +751,12 @@ func (h *HealthChecker) checkOpenSearchHealth(ctx context.Context) *SystemCompon
 	}
 	
 	// 通过 Manager 自身的 OpenSearch API 检查
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/opensearch/health", nil)
+	managerURL := "http://localhost:8080" // 默认值
+	if h.config != nil {
+		managerURL = h.config.GetManagerURL()
+	}
+	url := fmt.Sprintf("%s/api/v1/services/opensearch/health", managerURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		health.Healthy = false
 		health.Status = "request_failed"
@@ -865,7 +911,12 @@ func (h *HealthChecker) checkKafkaHealth(ctx context.Context) *SystemComponentHe
 	}
 	
 	// 通过 Manager 自身的 Kafka API 检查
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/api/v1/services/kafka/health", nil)
+	managerURL := "http://localhost:8080" // 默认值
+	if h.config != nil {
+		managerURL = h.config.GetManagerURL()
+	}
+	url := fmt.Sprintf("%s/api/v1/services/kafka/health", managerURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		health.Healthy = false
 		health.Status = "request_failed"

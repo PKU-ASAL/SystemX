@@ -31,8 +31,8 @@ func NewResourcesHandler(db *sql.DB) *ResourcesHandler {
 	}
 
 	// 创建模板服务并加载模板
-	templateService := template.NewTemplateService()
-	if err := templateService.LoadTemplates("./templates"); err != nil {
+	templateService := template.NewTemplateService(cfg)
+	if err := templateService.LoadTemplates("./shared/templates"); err != nil {
 		// 日志记录但不阻止创建
 	}
 
@@ -49,7 +49,7 @@ func NewResourcesHandler(db *sql.DB) *ResourcesHandler {
 // @Tags resources
 // @Accept json
 // @Produce text/plain
-// @Param deployment_type path string true "部署类型" Enums(agentless,sysarmor-stack,wazuh-hybrid,collector)
+// @Param deployment_type path string true "部署类型" Enums(agentless,sysarmor-stack,wazuh-hybrid)
 // @Param script_name path string true "脚本名称" Enums(setup-terminal.sh,uninstall-terminal.sh,install.sh)
 // @Param collector_id query string true "Collector ID"
 // @Success 200 {string} string "脚本内容"
@@ -201,7 +201,7 @@ func (h *ResourcesHandler) GetBinary(c *gin.Context) {
 // @Tags resources
 // @Accept json
 // @Produce text/plain
-// @Param deployment_type path string true "部署类型" Enums(agentless,sysarmor-stack,wazuh-hybrid,collector)
+// @Param deployment_type path string true "部署类型" Enums(agentless,sysarmor-stack,wazuh-hybrid)
 // @Param config_name path string true "配置名称" Enums(cfg.yaml,ossec.conf,audit-rules)
 // @Param collector_id query string true "Collector ID"
 // @Success 200 {string} string "配置内容"
@@ -265,7 +265,7 @@ func (h *ResourcesHandler) GetConfig(c *gin.Context) {
 // generateScript 生成脚本内容
 func (h *ResourcesHandler) generateScript(collector *models.Collector, deploymentType, scriptName string) (string, error) {
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", err
 	}
@@ -283,20 +283,14 @@ func (h *ResourcesHandler) generateScript(collector *models.Collector, deploymen
 			templateName = "agentless/setup-terminal.sh"
 		}
 	case models.DeploymentTypeSysArmor:
-		if strings.Contains(scriptName, "uninstall") {
-			templateName = "sysarmor-stack/uninstall-collector.sh"
-		} else {
-			templateName = "sysarmor-stack/install-collector.sh"
-		}
+		// OpenTelemetry Collector 特殊处理
+		return h.generateOtelCollectorScript(templateData)
 	case models.DeploymentTypeWazuh:
 		if strings.Contains(scriptName, "uninstall") {
 			templateName = "wazuh-hybrid/uninstall-wazuh.sh"
 		} else {
 			templateName = "wazuh-hybrid/install-wazuh.sh"
 		}
-	case "collector":
-		// OpenTelemetry Collector 特殊处理
-		return h.generateOtelCollectorScript(collector, templateData)
 	default:
 		return "", fmt.Errorf("unsupported deployment type: %s", deploymentType)
 	}
@@ -311,7 +305,7 @@ func (h *ResourcesHandler) generateScript(collector *models.Collector, deploymen
 }
 
 // generateOtelCollectorScript 生成 OpenTelemetry Collector 脚本
-func (h *ResourcesHandler) generateOtelCollectorScript(collector *models.Collector, templateData *template.TemplateData) (string, error) {
+func (h *ResourcesHandler) generateOtelCollectorScript(templateData *template.TemplateData) (string, error) {
 	// 先渲染配置文件模板
 	configContent, err := h.templateService.RenderTemplate("collector/cfg.yaml", templateData)
 	if err != nil {
@@ -338,7 +332,7 @@ func (h *ResourcesHandler) generateConfig(collector *models.Collector, deploymen
 	}
 
 	// 创建模板数据
-	templateData, err := template.NewTemplateData(collector)
+	templateData, err := h.templateService.NewTemplateData(collector)
 	if err != nil {
 		return "", err
 	}
@@ -346,7 +340,7 @@ func (h *ResourcesHandler) generateConfig(collector *models.Collector, deploymen
 	// 根据部署类型和配置名称选择模板
 	var templateName string
 	switch deploymentType {
-	case "collector":
+	case models.DeploymentTypeSysArmor:
 		if configName == "cfg.yaml" {
 			templateName = "collector/cfg.yaml"
 		}
@@ -380,8 +374,6 @@ func (h *ResourcesHandler) generateConfig(collector *models.Collector, deploymen
 func (h *ResourcesHandler) getScriptFilename(deploymentType, scriptName, collectorID string) string {
 	prefix := collectorID[:8]
 	switch deploymentType {
-	case "collector":
-		return "install-otelcol-" + prefix + ".sh"
 	case models.DeploymentTypeAgentless:
 		if strings.Contains(scriptName, "uninstall") {
 			return "uninstall-terminal-" + prefix + ".sh"

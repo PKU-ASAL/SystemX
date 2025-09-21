@@ -66,6 +66,13 @@ extensions:
   zpages:
     endpoint: 0.0.0.0:55679
 
+  heartbeat:
+    enabled: true
+    collector_id: "{{.CollectorID}}"
+    server_host: "{{.ManagerURL}}"
+    interval: 60s
+    timeout: 10s
+
 service:
   telemetry:
     logs:
@@ -74,7 +81,7 @@ service:
     metrics:
       level: "basic"
 
-  extensions: [health_check, zpages]
+  extensions: [health_check, zpages, heartbeat]
   
   pipelines:
     logs:

@@ -1,0 +1,1 @@
+shared/binaries/otelcol-sysarmor_linux-x64 filter=lfs diff=lfs merge=lfs -text

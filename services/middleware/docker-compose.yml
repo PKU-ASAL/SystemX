@@ -84,7 +84,7 @@ services:
     depends_on:
       - kafka
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=middleware-kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-middleware-kafka:9092}
       - VECTOR_API_PORT=${VECTOR_API_PORT}
       - VECTOR_TCP_PORT=${VECTOR_TCP_PORT}
       - VECTOR_METRICS_PORT=${VECTOR_METRICS_PORT}

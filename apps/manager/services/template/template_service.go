@@ -5,22 +5,26 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/sysarmor/sysarmor/apps/manager/config"
 	"github.com/sysarmor/sysarmor/apps/manager/models"
 )
 
 // TemplateService 模板服务
 type TemplateService struct {
 	templates map[string]*template.Template
+	config    *config.Config
 }
 
 // NewTemplateService 创建新的模板服务
-func NewTemplateService() *TemplateService {
+func NewTemplateService(cfg *config.Config) *TemplateService {
 	return &TemplateService{
 		templates: make(map[string]*template.Template),
+		config:    cfg,
 	}
 }
 
@@ -78,15 +82,16 @@ type TemplateData struct {
 
 	// Agentless 特定数据
 	AuditRules string
-	
+
 	// OpenTelemetry Collector 特定数据
 	ExtraCfgData string
 }
 
 // NewTemplateData 从 Collector 创建模板数据
-func NewTemplateData(collector *models.Collector) (*TemplateData, error) {
-	// 解析 Worker URL
-	workerHost, workerPort := parseWorkerURL(collector.WorkerAddress)
+func (ts *TemplateService) NewTemplateData(collector *models.Collector) (*TemplateData, error) {
+	// 解析 Worker URL 并使用外部主机地址替换内部主机地址
+	_, workerPort := ts.parseWorkerURL(collector.WorkerAddress)
+	workerHost := ts.config.GetExternalHost() // 使用外部访问地址而非内部通信地址
 
 	data := &TemplateData{
 		CollectorID:    collector.CollectorID,
@@ -138,7 +143,7 @@ func (ts *TemplateService) GetAvailableTemplates() []string {
 }
 
 // parseWorkerURL 解析 Worker URL
-func parseWorkerURL(workerURL string) (host, port string) {
+func (ts *TemplateService) parseWorkerURL(workerURL string) (host, port string) {
 	// 处理格式: http://localhost:514:http://localhost
 	// 我们需要提取 host 和 port
 	if strings.HasPrefix(workerURL, "http://") {
@@ -148,7 +153,7 @@ func parseWorkerURL(workerURL string) (host, port string) {
 		parts := strings.Split(urlWithoutProtocol, ":")
 		if len(parts) >= 2 {
 			host = parts[0] // localhost
-			port = parts[1] // 514
+			port = parts[1] // 端口
 			return host, port
 		}
 	}
@@ -158,5 +163,5 @@ func parseWorkerURL(workerURL string) (host, port string) {
 	if len(parts) == 2 {
 		return parts[0], parts[1]
 	}
-	return "localhost", "514" // 默认值
+	return ts.config.VectorHost, strconv.Itoa(ts.config.VectorTCPPort) // 使用配置的默认值
 }

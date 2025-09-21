@@ -42,6 +42,9 @@ services:
       - OPENSEARCH_URL=http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}
       - FLINK_JOBMANAGER_URL=http://${FLINK_JOBMANAGER_HOST}:${FLINK_PORT}
       - WORKER_URLS=${VECTOR_HOST}:http://${VECTOR_HOST}:${VECTOR_TCP_PORT}:http://${VECTOR_HOST}:8686/health
+      # Vector 配置：区分内部通信和外部访问
+      - VECTOR_HOST=${VECTOR_HOST}
+      - EXTERNAL_VECTOR_HOST=${EXTERNAL_VECTOR_HOST}
     ports:
       - "${MANAGER_PORT}:${MANAGER_PORT}"
     healthcheck:

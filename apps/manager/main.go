@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sysarmor/sysarmor/apps/manager/api/handlers"
@@ -14,7 +16,7 @@ import (
 	// Swagger imports
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/sysarmor/sysarmor/apps/manager/docs" // Swagger docs
+	docs "github.com/sysarmor/sysarmor/apps/manager/docs" // Swagger docs
 )
 
 // @title SysArmor Manager API
@@ -45,6 +47,16 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("Failed to load configuration:", err)
+	}
+
+	// 动态设置Swagger文档的Host
+	if cfg.ExternalURL != "" {
+		// 解析外部URL以提取host部分
+		if host := extractHostFromURL(cfg.ExternalURL); host != "" {
+			docs.SwaggerInfo.Host = host
+		}
+	} else {
+		docs.SwaggerInfo.Host = fmt.Sprintf("localhost:%d", cfg.Port)
 	}
 
 	// 连接数据库
@@ -105,7 +117,7 @@ func main() {
 	}
 
 	// 健康检查路由
-	healthHandler := handlers.NewHealthHandler(db.DB())
+	healthHandler := handlers.NewHealthHandler(db.DB(), cfg)
 	health := api.Group("/health")
 	{
 		health.GET("", healthHandler.GetHealthOverview)                    // 映射到 /api/v1/health
@@ -421,4 +433,25 @@ func main() {
 	if err := r.Run(fmt.Sprintf(":%d", port)); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+// extractHostFromURL 从URL中提取host部分 (hostname:port)
+func extractHostFromURL(urlStr string) string {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return ""
+	}
+
+	// 如果URL中没有端口，根据协议添加默认端口
+	host := u.Host
+	if !strings.Contains(host, ":") {
+		switch u.Scheme {
+		case "http":
+			host += ":80"
+		case "https":
+			host += ":443"
+		}
+	}
+
+	return host
 }
