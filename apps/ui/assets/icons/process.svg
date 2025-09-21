@@ -1,0 +1,11 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- 服务器/进程图标 -->
+  <rect x="3" y="3" width="18" height="18" rx="2" fill="#4CAF50" stroke="#388E3C" stroke-width="2"/>
+  <!-- 显示屏效果 -->
+  <rect x="6" y="8" width="12" height="2" fill="white"/>
+  <rect x="6" y="12" width="12" height="2" fill="white"/>
+  <!-- 指示灯 -->
+  <circle cx="8" cy="17" r="1.5" fill="white"/>
+  <circle cx="12" cy="17" r="1.5" fill="white"/>
+  <circle cx="16" cy="17" r="1.5" fill="white"/>
+</svg>
