@@ -93,6 +93,11 @@ dev-down: ## 停止开发环境
 	docker compose -f docker-compose.dev.yml down -v --remove-orphans
 	@echo "✅ 开发环境已停止"
 
+build-ui: ## 构建UI Docker服务
+	@echo "🔨 构建UI Docker服务..."
+	@cd apps/ui && docker compose build
+	@echo "✅ UI Docker服务构建完成"
+
 
 ##@ 🧹 清理维护
 clean: ## 清理构建文件和容器
