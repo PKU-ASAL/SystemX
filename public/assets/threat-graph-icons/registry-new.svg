@@ -1,0 +1,19 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 传统注册表/数据库图标 -->
+  <!-- 顶部椭圆 -->
+  <ellipse cx="16" cy="8" rx="12" ry="4" fill="#9C27B0" stroke="#6A1B9A" stroke-width="2"/>
+  <!-- 主体柱状 -->
+  <rect x="4" y="8" width="24" height="16" fill="#9C27B0"/>
+  <!-- 中间分割线 -->
+  <ellipse cx="16" cy="16" rx="12" ry="3" fill="none" stroke="#6A1B9A" stroke-width="1.5"/>
+  <!-- 底部椭圆 -->
+  <ellipse cx="16" cy="24" rx="12" ry="4" fill="#AB47BC" stroke="#6A1B9A" stroke-width="2"/>
+  <!-- 侧边线条 -->
+  <line x1="4" y1="8" x2="4" y2="24" stroke="#6A1B9A" stroke-width="2"/>
+  <line x1="28" y1="8" x2="28" y2="24" stroke="#6A1B9A" stroke-width="2"/>
+  <!-- 数据装饰 -->
+  <rect x="7" y="10" width="18" height="1" fill="#E1BEE7"/>
+  <rect x="7" y="13" width="18" height="1" fill="#E1BEE7"/>
+  <rect x="7" y="18" width="18" height="1" fill="#E1BEE7"/>
+  <rect x="7" y="21" width="18" height="1" fill="#E1BEE7"/>
+</svg>

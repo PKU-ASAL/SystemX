@@ -1,0 +1,15 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- 网络/地球图标 -->
+  <circle cx="12" cy="12" r="9" fill="#2196F3" stroke="#1976D2" stroke-width="2"/>
+  <!-- 经纬线 -->
+  <ellipse cx="12" cy="12" rx="9" ry="4" fill="none" stroke="white" stroke-width="1.5"/>
+  <ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="white" stroke-width="1.5"/>
+  <!-- 中央十字线 -->
+  <line x1="12" y1="3" x2="12" y2="21" stroke="white" stroke-width="1"/>
+  <line x1="3" y1="12" x2="21" y2="12" stroke="white" stroke-width="1"/>
+  <!-- 小点装饰 -->
+  <circle cx="9" cy="9" r="1" fill="white"/>
+  <circle cx="15" cy="9" r="1" fill="white"/>
+  <circle cx="9" cy="15" r="1" fill="white"/>
+  <circle cx="15" cy="15" r="1" fill="white"/>
+</svg>

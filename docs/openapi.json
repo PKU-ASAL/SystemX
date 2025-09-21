@@ -1,0 +1,1985 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "SysArmor EDR 系统的控制平面服务 API",
+        "title": "SysArmor Manager API",
+        "termsOfService": "https://sysarmor.com/terms",
+        "contact": {
+            "name": "SysArmor Team",
+            "url": "https://sysarmor.com/support",
+            "email": "support@sysarmor.com"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/collectors": {
+            "get": {
+                "description": "获取所有 Collector 列表，支持分页、过滤和排序",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "列出所有 Collectors",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认为1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认为20，最大100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按状态过滤",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按分组过滤",
+                        "name": "group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按环境过滤",
+                        "name": "environment",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按负责人过滤",
+                        "name": "owner",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按标签过滤，多个标签用逗号分隔",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序字段",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序方向，asc或desc，默认desc",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Collector 列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/collectors/register": {
+            "post": {
+                "description": "为终端设备注册一个新的 Collector，分配唯一 ID 并选择健康的 Worker",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "注册新的 Collector",
+                "parameters": [
+                    {
+                        "description": "注册请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_models.RegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "注册成功",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_models.RegisterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "501": {
+                        "description": "部署类型未实现",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "没有可用的健康 Worker",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/collectors/{id}": {
+            "get": {
+                "description": "根据 Collector ID 获取其详细状态信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectors"
+                ],
+                "summary": "获取 Collector 状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Collector 状态信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Collector 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/events/collectors/{collector_id}": {
+            "get": {
+                "description": "根据 Collector ID 查询其相关的所有事件数据",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "查询特定 Collector 的事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collector ID",
+                        "name": "collector_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "事件类型过滤",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回数量限制，默认100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否只获取最新事件",
+                        "name": "latest",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间 (RFC3339格式)",
+                        "name": "from_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间 (RFC3339格式)",
+                        "name": "to_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Collector 事件查询结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/events/query": {
+            "get": {
+                "description": "根据 Topic 和其他条件查询事件数据",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "查询事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Kafka Topic 名称",
+                        "name": "topic",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collector ID 过滤",
+                        "name": "collector_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "事件类型过滤",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回数量限制，默认100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否只获取最新事件",
+                        "name": "latest",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间 (RFC3339格式)",
+                        "name": "from_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间 (RFC3339格式)",
+                        "name": "to_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "事件查询结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/events/topics": {
+            "get": {
+                "description": "获取所有可用的 Kafka Topic 列表，包括 Collector 相关和其他 Topic",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "列出所有 Kafka Topics",
+                "responses": {
+                    "200": {
+                        "description": "Topic 列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "获取所有 Worker 的健康状态和系统整体状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "获取系统健康状态",
+                "responses": {
+                    "200": {
+                        "description": "健康状态正常",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "没有健康的 Worker",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/health/workers": {
+            "get": {
+                "description": "获取所有已配置 Worker 的健康状态详情",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "获取所有 Worker 状态",
+                "responses": {
+                    "200": {
+                        "description": "Worker 状态列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/brokers": {
+            "get": {
+                "description": "获取 Kafka 集群中所有 Broker 的详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Kafka Brokers 信息",
+                "responses": {
+                    "200": {
+                        "description": "Brokers 信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/brokers/overview": {
+            "get": {
+                "description": "获取 Kafka 集群中所有 Broker 的概览信息，包括集群状态、Broker 详情、性能指标等",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Brokers 概览信息",
+                "responses": {
+                    "200": {
+                        "description": "Brokers 概览信息",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.BrokersOverviewResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/clusters": {
+            "get": {
+                "description": "获取 Kafka 集群的基本信息，包括状态、Broker 数量、Topic 数量等",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Kafka 集群信息",
+                "responses": {
+                    "200": {
+                        "description": "集群信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/consumer-groups": {
+            "get": {
+                "description": "获取 Kafka 集群中所有 Consumer Group 的信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Consumer Groups 信息",
+                "responses": {
+                    "200": {
+                        "description": "Consumer Groups 信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/consumer-groups/{group}": {
+            "get": {
+                "description": "获取指定 Consumer Group 的详细信息，包括成员、偏移量等",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取特定 Consumer Group 的详细信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consumer Group 名称",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Consumer Group 详细信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Consumer Group 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/test-connection": {
+            "get": {
+                "description": "测试与 Kafka 集群的连接状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "测试 Kafka 连接",
+                "responses": {
+                    "200": {
+                        "description": "连接成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "连接失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/topics": {
+            "get": {
+                "description": "获取 Kafka 集群中所有 Topic 的详细信息列表，包含 Prometheus 指标数据，支持分页和搜索",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Kafka Topics 列表（增强版）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认为1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认为20",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topics 列表（包含详细指标）",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "创建一个新的 Kafka Topic",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "创建新的 Topic",
+                "parameters": [
+                    {
+                        "description": "创建 Topic 请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.CreateTopicRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Topic 创建成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Topic 已存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/topics/overview": {
+            "get": {
+                "description": "获取 Kafka 集群中所有 Topic 的概览信息，包括分区数量、消息数量、大小、速率等统计数据",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Topics 概览信息",
+                "responses": {
+                    "200": {
+                        "description": "Topics 概览信息",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.TopicsOverviewResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/topics/{topic}": {
+            "get": {
+                "description": "获取指定 Topic 的详细信息，包括分区、副本、分区大小等增强信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取特定 Topic 的详细信息（增强版）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Topic 名称",
+                        "name": "topic",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topic 详细信息（增强版）",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.TopicDetailsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Topic 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "删除指定的 Kafka Topic",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "删除 Topic",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Topic 名称",
+                        "name": "topic",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "强制删除，忽略错误",
+                        "name": "force",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topic 删除成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Topic 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/topics/{topic}/config": {
+            "get": {
+                "description": "获取指定 Topic 的详细配置信息，包括 retention.ms、segment.ms 等所有配置参数",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Topic 配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Topic 名称",
+                        "name": "topic",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topic 配置信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Topic 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "更新指定 Topic 的配置参数",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "更新 Topic 配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Topic 名称",
+                        "name": "topic",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "配置更新请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "配置更新成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Topic 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/topics/{topic}/messages": {
+            "get": {
+                "description": "获取指定 Topic 的消息内容，支持分页和过滤",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Topic 消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Topic 名称",
+                        "name": "topic",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "消息数量限制，默认为10，最大100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指定分区",
+                        "name": "partition",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "起始偏移量，可以是数字或'earliest'/'latest'",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topic 消息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/kafka/topics/{topic}/metrics": {
+            "get": {
+                "description": "获取指定 Topic 的详细指标信息，包括消息数量、大小、吞吐量等",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kafka"
+                ],
+                "summary": "获取 Topic 指标信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Topic 名称",
+                        "name": "topic",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topic 指标信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Topic 不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/cluster/health": {
+            "get": {
+                "description": "获取 OpenSearch 集群的健康状态，包括节点数量、分片状态等",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取 OpenSearch 集群健康状态",
+                "responses": {
+                    "200": {
+                        "description": "集群健康状态",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/cluster/stats": {
+            "get": {
+                "description": "获取 OpenSearch 集群的详细统计信息，包括索引、节点、存储等统计",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取 OpenSearch 集群统计信息",
+                "responses": {
+                    "200": {
+                        "description": "集群统计信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/aggregations": {
+            "get": {
+                "description": "获取安全事件的聚合统计信息，包括按数据源、严重程度、事件类型等维度的统计",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取事件聚合统计",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "聚合统计结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/by-source": {
+            "get": {
+                "description": "获取来自指定数据源的安全事件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "根据数据源获取安全事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据源名称",
+                        "name": "source",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回结果数量，默认为10，最大100",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "事件列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/high-risk": {
+            "get": {
+                "description": "获取风险评分高于指定阈值的安全事件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "根据风险评分获取安全事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最小风险评分",
+                        "name": "min_score",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回结果数量，默认为10，最大100",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "高风险事件列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/recent": {
+            "get": {
+                "description": "获取最近一段时间内的安全事件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取最近的安全事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "时间范围（小时），默认为24小时",
+                        "name": "hours",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回结果数量，默认为10，最大100",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "最近事件列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/search": {
+            "get": {
+                "description": "在指定索引模式中搜索安全事件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "搜索安全事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索查询字符串",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回结果数量，默认为10，最大100",
+                        "name": "size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "结果偏移量，默认为0",
+                        "name": "from",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "搜索结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/threats": {
+            "get": {
+                "description": "获取标记为可疑的威胁事件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取威胁事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回结果数量，默认为10，最大100",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "威胁事件列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/events/time-range": {
+            "get": {
+                "description": "获取指定时间范围内的安全事件",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "根据时间范围获取安全事件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引模式，默认为 sysarmor-events-*",
+                        "name": "index",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间 (RFC3339 格式)",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间 (RFC3339 格式)",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回结果数量，默认为10，最大100",
+                        "name": "size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认为1",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "事件列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/opensearch/indices": {
+            "get": {
+                "description": "获取 OpenSearch 集群中所有索引的信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "opensearch"
+                ],
+                "summary": "获取 OpenSearch 索引列表",
+                "responses": {
+                    "200": {
+                        "description": "索引列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_sysarmor_manager_internal_models.CollectorMetadata": {
+            "type": "object",
+            "properties": {
+                "datacenter": {
+                    "description": "数据中心，如 \"dc1\", \"aws-us-east\"",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "描述信息",
+                    "type": "string"
+                },
+                "environment": {
+                    "description": "环境标识，如 \"prod\", \"staging\", \"dev\"",
+                    "type": "string"
+                },
+                "group": {
+                    "description": "分组名称，如 \"web-servers\", \"db-cluster\"",
+                    "type": "string"
+                },
+                "owner": {
+                    "description": "负责人/团队",
+                    "type": "string"
+                },
+                "purpose": {
+                    "description": "用途，如 \"web-server\", \"database\", \"cache\"",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "地域信息，如 \"us-east-1\", \"beijing\"",
+                    "type": "string"
+                },
+                "tags": {
+                    "description": "标签列表，如 [\"web\", \"production\", \"critical\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_models.RegisterRequest": {
+            "type": "object",
+            "required": [
+                "deployment_type",
+                "hostname",
+                "ip_address",
+                "os_type",
+                "os_version"
+            ],
+            "properties": {
+                "deployment_type": {
+                    "description": "必须字段",
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "可选的元数据",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_sysarmor_manager_internal_models.CollectorMetadata"
+                        }
+                    ]
+                },
+                "os_type": {
+                    "type": "string"
+                },
+                "os_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_models.RegisterResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "collector_id": {
+                            "type": "string"
+                        },
+                        "script_download_url": {
+                            "type": "string"
+                        },
+                        "worker_url": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.BrokerOverviewItem": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_controller": {
+                    "type": "boolean"
+                },
+                "jvm_stats": {
+                    "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.JVMStats"
+                },
+                "leader_count": {
+                    "type": "integer"
+                },
+                "network_stats": {
+                    "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.NetworkStats"
+                },
+                "partition_count": {
+                    "type": "integer"
+                },
+                "port": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.BrokersOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "brokers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.BrokerOverviewItem"
+                    }
+                },
+                "cluster": {
+                    "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.ClusterOverviewInfo"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.ClusterOverviewInfo": {
+            "type": "object",
+            "properties": {
+                "broker_count": {
+                    "type": "integer"
+                },
+                "controller_id": {
+                    "type": "integer"
+                },
+                "online_brokers": {
+                    "type": "integer"
+                },
+                "online_partitions": {
+                    "type": "integer"
+                },
+                "preferred_replica_imbalance": {
+                    "type": "integer"
+                },
+                "total_partitions": {
+                    "type": "integer"
+                },
+                "under_replicated_partitions": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.CreateTopicRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "partitions": {
+                    "type": "integer"
+                },
+                "replication_factor": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.JVMStats": {
+            "type": "object",
+            "properties": {
+                "gc_count": {
+                    "type": "integer"
+                },
+                "heap_max": {
+                    "type": "string"
+                },
+                "heap_used": {
+                    "type": "string"
+                },
+                "uptime": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.NetworkStats": {
+            "type": "object",
+            "properties": {
+                "bytes_in_per_sec": {
+                    "type": "integer"
+                },
+                "bytes_out_per_sec": {
+                    "type": "integer"
+                },
+                "messages_in_per_sec": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.PartitionDetailInfo": {
+            "type": "object",
+            "properties": {
+                "in_sync_replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "leader": {
+                    "type": "integer"
+                },
+                "offset_earliest": {
+                    "type": "integer"
+                },
+                "offset_lag": {
+                    "type": "integer"
+                },
+                "offset_latest": {
+                    "type": "integer"
+                },
+                "partition_id": {
+                    "type": "integer"
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "size_formatted": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.TopicDetailsResponse": {
+            "type": "object",
+            "properties": {
+                "metrics": {
+                    "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.TopicMetricsInfo"
+                },
+                "overview": {
+                    "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.TopicOverviewInfo"
+                },
+                "partitions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.PartitionDetailInfo"
+                    }
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.TopicMetricsInfo": {
+            "type": "object",
+            "properties": {
+                "bytes_per_sec": {
+                    "type": "number"
+                },
+                "messages_per_sec": {
+                    "type": "number"
+                },
+                "messages_total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.TopicOverviewInfo": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "partition_count": {
+                    "type": "integer"
+                },
+                "replication_factor": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.TopicOverviewItem": {
+            "type": "object",
+            "properties": {
+                "bytes_per_sec": {
+                    "type": "number"
+                },
+                "is_internal": {
+                    "type": "boolean"
+                },
+                "messages_per_sec": {
+                    "type": "number"
+                },
+                "messages_total": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "out_of_sync_replicas": {
+                    "type": "integer"
+                },
+                "partition_count": {
+                    "type": "integer"
+                },
+                "replication_factor": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "size_formatted": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.TopicsOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.TopicsSummary"
+                },
+                "topics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_sysarmor_manager_internal_services_kafka.TopicOverviewItem"
+                    }
+                }
+            }
+        },
+        "github_com_sysarmor_manager_internal_services_kafka.TopicsSummary": {
+            "type": "object",
+            "properties": {
+                "internal_topics": {
+                    "type": "integer"
+                },
+                "total_size_bytes": {
+                    "type": "integer"
+                },
+                "total_topics": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
+        },
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
