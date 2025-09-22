@@ -83,84 +83,68 @@ export function HealthStatus() {
     try {
       setLoading(true);
 
-      // 获取健康状态数据
-      const healthResponse = await apiClient.getHealth();
-      console.log("Health API response:", healthResponse);
-
-      // Handle different possible response structures
-      let healthData: any;
-      if (healthResponse && typeof healthResponse === "object") {
-        // The getHealth() method returns a transformed HealthStatus object
-        // We need to get the raw response instead
-        const rawResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1"}/health`
-        );
-        const rawData = await rawResponse.json();
-        healthData = rawData;
-      } else {
-        throw new Error("Invalid health response format");
-      }
-
-      console.log("Processed health data:", healthData);
+      // 使用正确的健康检查API端点
+      const rawResponse = await fetch("/api/v1/health");
+      const healthData = await rawResponse.json();
+      
+      console.log("Health API response:", healthData);
 
       const componentConfigs = [
         {
-          key: "database",
+          service: "manager",
+          component: "database",
           name: "数据库",
           icon: IconDatabase,
           description: "PostgreSQL 数据库连接状态",
         },
         {
-          key: "opensearch",
+          service: "indexer",
+          component: "opensearch",
           name: "OpenSearch",
           icon: IconSearch,
           description: "OpenSearch 搜索引擎状态",
         },
         {
-          key: "kafka",
+          service: "middleware",
+          component: "kafka",
           name: "Kafka",
           icon: IconServer,
           description: "Kafka 消息队列状态",
         },
         {
-          key: "prometheus",
+          service: "middleware",
+          component: "prometheus",
           name: "Prometheus",
           icon: IconChartLine,
           description: "Prometheus 监控系统状态",
         },
         {
-          key: "vector",
+          service: "middleware",
+          component: "vector",
           name: "Vector",
           icon: IconVector,
           description: "Vector 日志收集器状态",
         },
+        {
+          service: "processor",
+          component: "flink",
+          name: "Flink",
+          icon: IconActivity,
+          description: "Flink 流处理引擎状态",
+        },
       ];
+
+      const currentTime = new Date();
+      const checkedAt = healthData.data?.checked_at
+        ? new Date(healthData.data.checked_at)
+        : currentTime;
 
       const componentStatuses: ComponentStatus[] = componentConfigs.map(
         (config) => {
-          const componentData =
-            healthData.data?.components?.[
-              config.key as keyof typeof healthData.data.components
-            ];
+          const serviceData = healthData.data?.services?.[config.service];
+          const componentData = serviceData?.components?.[config.component];
 
-          const currentTime = new Date();
-          const checkedAt = healthData.checked_at
-            ? new Date(healthData.checked_at)
-            : currentTime;
-
-          if (config.key === "vector") {
-            // Vector 暂时没有在API中，模拟为健康状态
-            return {
-              name: config.name,
-              status: "healthy",
-              responseTime: 50, // 模拟响应时间
-              lastChecked: checkedAt,
-              icon: config.icon,
-              description: config.description,
-            };
-          }
-
-          if (!componentData) {
+          if (!serviceData || !componentData) {
             return {
               name: config.name,
               status: "unhealthy",
@@ -174,7 +158,7 @@ export function HealthStatus() {
           return {
             name: config.name,
             status: componentData.healthy ? "healthy" : "unhealthy",
-            responseTime: Math.round(componentData.response_time / 1000), // 转换为毫秒
+            responseTime: componentData.response_time ? Math.round(componentData.response_time / 1000000) : undefined, // 转换纳秒为毫秒
             lastChecked: checkedAt,
             error: !componentData.healthy
               ? `状态: ${componentData.status}`

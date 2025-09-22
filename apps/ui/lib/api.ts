@@ -170,12 +170,12 @@ export interface KafkaTopic {
   bytes_per_sec?: number;
   is_internal?: boolean;
   out_of_sync_replicas?: number;
-  
+
   // 详情页面特有字段
   overview?: TopicOverviewInfo;
   partitions?: PartitionDetailInfo[];
   metrics?: TopicMetricsInfo;
-  
+
   // 兼容旧字段
   internal?: boolean;
   messageCount?: number;
@@ -243,11 +243,11 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    
+
     // 创建 AbortController 用于超时控制
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
-    
+
     try {
       const response = await fetch(url, {
         headers: {
@@ -279,22 +279,22 @@ class ApiClient {
     } catch (error) {
       clearTimeout(timeoutId);
       console.error(`API request failed: ${url}`, error);
-      
+
       // 网络错误或连接问题
       if (error instanceof TypeError && error.message.includes('fetch')) {
         throw new ApiError('网络连接失败，请检查后端服务是否正常运行', 0, endpoint);
       }
-      
+
       // 超时错误
       if (error instanceof Error && error.name === 'AbortError') {
         throw new ApiError('请求超时，请稍后重试', 408, endpoint);
       }
-      
+
       // 如果已经是 ApiError，直接抛出
       if (error instanceof ApiError) {
         throw error;
       }
-      
+
       // 其他未知错误
       throw new ApiError(error instanceof Error ? error.message : '未知错误', 500, endpoint);
     }
@@ -320,10 +320,10 @@ class ApiClient {
         }
       });
     }
-    
+
     const endpoint = `/collectors${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const response = await this.request<{ data: { collectors: Collector[]; total: number }; success: boolean }>(endpoint);
-    
+
     return {
       data: response.data.collectors || [],
       total: response.data.total || 0,
@@ -355,7 +355,7 @@ class ApiClient {
     if (options?.force) {
       searchParams.append('force', 'true');
     }
-    
+
     const endpoint = `/collectors/${id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     return this.request(endpoint, {
       method: 'DELETE',
@@ -378,7 +378,7 @@ class ApiClient {
         searchParams.append(key, value.toString());
       }
     });
-    
+
     const response = await this.request<{ data: { events: Event[] | null; total: number }; success: boolean }>(`/events/query?${searchParams.toString()}`);
     return {
       data: response.data.events || [],
@@ -401,7 +401,7 @@ class ApiClient {
         }
       });
     }
-    
+
     const endpoint = `/events/collectors/${collectorId}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const response = await this.request<{ data: { events: Event[] | null; total: number }; success: boolean }>(endpoint);
     return {
@@ -423,7 +423,7 @@ class ApiClient {
   async getHealth(): Promise<HealthStatus> {
     const response = await this.request<{ data: any; success: boolean }>('/health');
     const healthData = response.data;
-    
+
     return {
       status: healthData.healthy ? 'healthy' : 'unhealthy',
       workers: healthData.workers?.map((worker: any) => ({
@@ -447,12 +447,12 @@ class ApiClient {
 
   // Kafka APIs
   async getKafkaClusterInfo(): Promise<{ data: any }> {
-    const response = await this.request<any>('/kafka/clusters');
+    const response = await this.request<any>('/services/kafka/clusters');
     return response;
   }
 
   async getKafkaBrokers(): Promise<{ data: KafkaBroker[] }> {
-    const response = await this.request<any>('/kafka/brokers');
+    const response = await this.request<any>('/services/kafka/brokers');
     return {
       data: response.data || []
     };
@@ -461,17 +461,17 @@ class ApiClient {
   // 使用新的 Topics Overview API
   async getKafkaTopics(params?: { page?: number; limit?: number; search?: string }): Promise<{ data: KafkaTopic[]; total: number }> {
     const response = await this.request<{ data: TopicsOverviewResponse; success: boolean }>('/services/kafka/topics');
-    
+
     let topics = response.data.topics || [];
-    
+
     // 应用搜索过滤
     if (params?.search) {
       const searchTerm = params.search.toLowerCase();
-      topics = topics.filter(topic => 
+      topics = topics.filter(topic =>
         topic.name.toLowerCase().includes(searchTerm)
       );
     }
-    
+
     // 转换为兼容格式
     const convertedTopics: KafkaTopic[] = topics.map(topic => ({
       name: topic.name,
@@ -489,7 +489,7 @@ class ApiClient {
       messageCount: topic.messages_total,
       size: topic.size_formatted
     }));
-    
+
     // 应用分页
     const total = convertedTopics.length;
     const page = params?.page || 1;
@@ -497,7 +497,7 @@ class ApiClient {
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
     const paginatedTopics = convertedTopics.slice(startIndex, endIndex);
-    
+
     return {
       data: paginatedTopics,
       total: total
@@ -524,7 +524,7 @@ class ApiClient {
 
   async getKafkaTopicDetail(topicName: string): Promise<{ data: KafkaTopic }> {
     const response = await this.request<{ data: TopicDetailsResponse; success: boolean }>(`/kafka/topics/${topicName}`);
-    
+
     // 转换为兼容格式
     const topicData: KafkaTopic = {
       name: response.data.overview.name,
@@ -533,16 +533,16 @@ class ApiClient {
       messages_total: response.data.metrics.messages_total,
       messages_per_sec: response.data.metrics.messages_per_sec,
       bytes_per_sec: response.data.metrics.bytes_per_sec,
-      
+
       // 详情页面特有字段
       overview: response.data.overview,
       partitions: response.data.partitions,
       metrics: response.data.metrics,
-      
+
       // 兼容字段
       messageCount: response.data.metrics.messages_total,
     };
-    
+
     return {
       data: topicData
     };
@@ -560,7 +560,7 @@ class ApiClient {
 
     const endpoint = `/kafka/topics/${topicName}/messages${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const response = await this.request<any>(endpoint);
-    
+
     return {
       data: response.data?.messages || []
     };
@@ -580,19 +580,6 @@ class ApiClient {
     });
   }
 
-  async getKafkaConsumerGroups(): Promise<{ data: KafkaConsumerGroup[] }> {
-    const response = await this.request<any>('/services/kafka/consumer-groups');
-    return {
-      data: response.data || []
-    };
-  }
-
-  async getKafkaConsumerGroup(groupId: string): Promise<{ data: KafkaConsumerGroup }> {
-    const response = await this.request<any>(`/services/kafka/consumer-groups/${groupId}`);
-    return {
-      data: response.data
-    };
-  }
 
   // OpenSearch APIs
   async getOpenSearchClusterHealth(): Promise<any> {

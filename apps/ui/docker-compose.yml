@@ -4,9 +4,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        MANAGER_HOST: ${MANAGER_HOST:-sysarmor-manager-1}
+        MANAGER_PORT: ${MANAGER_PORT:-8080}
     hostname: ${UI_HOST:-sysarmor-ui}
     environment:
-      - NEXT_PUBLIC_API_URL=http://${MANAGER_HOST:-localhost}:${MANAGER_PORT:-8080}
+      - NEXT_PUBLIC_API_URL=http://localhost:${MANAGER_PORT:-8080}
+      - MANAGER_HOST=sysarmor-manager-1
+      - MANAGER_PORT=${MANAGER_PORT:-8080}
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${UI_PORT:-3000}:3000"
@@ -19,6 +24,8 @@ services:
     labels:
       - "sysarmor.module=ui"
       - "sysarmor.component=frontend"
+    depends_on:
+      - manager
 
 networks:
   default:

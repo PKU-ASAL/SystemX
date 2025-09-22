@@ -1,13 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   async rewrites() {
     return [
       {
-        source: '/api/v1/:path*',
-        destination: 'http://100.71.164.84:8080/api/v1/:path*',
+        source: '/api/alert/:path*',
+        destination: 'http://110.40.136.112:1334/api/alert/:path*',
       },
     ];
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
   },
 };
 

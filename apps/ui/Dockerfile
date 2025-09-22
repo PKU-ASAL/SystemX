@@ -16,6 +16,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Build-time environment variables
+ARG MANAGER_HOST=sysarmor-manager-1
+ARG MANAGER_PORT=8080
+ENV MANAGER_HOST=$MANAGER_HOST
+ENV MANAGER_PORT=$MANAGER_PORT
+
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry
 # Uncomment the following line in case you want to disable telemetry during the build.

@@ -101,10 +101,6 @@ const data = {
           title: "Topics",
           url: "/kafka/topics",
         },
-        {
-          title: "Consumer Groups",
-          url: "/kafka/consumers",
-        },
       ],
     },
     {
