@@ -99,6 +99,22 @@ build-ui: ## 构建UI Docker服务
 	@cd apps/ui && docker compose build
 	@echo "✅ UI Docker服务构建完成"
 
+dev-ui: ## 启动UI开发环境 (支持热更新)
+	@echo "🚀 启动UI开发环境 (热更新模式)..."
+	@cd apps/ui && docker compose -f docker-compose.dev.yml up -d --build
+	@echo "✅ UI开发环境启动完成"
+	@echo "🌐 开发服务器: http://localhost:3000"
+	@echo "🔥 热更新已启用，修改代码后会自动刷新"
+
+dev-ui-logs: ## 查看UI开发环境日志
+	@echo "📋 UI开发环境日志："
+	@cd apps/ui && docker compose -f docker-compose.dev.yml logs -f ui-dev
+
+dev-ui-stop: ## 停止UI开发环境
+	@echo "🛑 停止UI开发环境..."
+	@cd apps/ui && docker compose -f docker-compose.dev.yml down
+	@echo "✅ UI开发环境已停止"
+
 test-ui: ## 测试UI部署和API连接
 	@echo "🧪 测试UI部署和API连接..."
 	@./tests/test-ui-deployment.sh

@@ -16,11 +16,17 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time environment variables
-ARG MANAGER_HOST=sysarmor-manager-1
-ARG MANAGER_PORT=8080
-ENV MANAGER_HOST=$MANAGER_HOST
-ENV MANAGER_PORT=$MANAGER_PORT
+# Build-time environment variables for UI container internal access
+ARG UI_MANAGER_HOST=sysarmor-manager-1
+ARG UI_MANAGER_PORT=8080
+ENV UI_MANAGER_HOST=$UI_MANAGER_HOST
+ENV UI_MANAGER_PORT=$UI_MANAGER_PORT
+
+# Build-time environment variables for external APIs
+ARG THREAT_API_BASE_URL=http://110.40.136.112:1334/api
+ARG THREAT_API_ENABLED=true
+ENV NEXT_PUBLIC_THREAT_API_BASE_URL=$THREAT_API_BASE_URL
+ENV NEXT_PUBLIC_THREAT_API_ENABLED=$THREAT_API_ENABLED
 
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry

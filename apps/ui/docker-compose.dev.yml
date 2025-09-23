@@ -1,0 +1,49 @@
+# UI 开发环境配置 - 支持热更新
+services:
+  ui-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        UI_MANAGER_HOST: ${UI_MANAGER_HOST:-sysarmor-manager-1}
+        UI_MANAGER_PORT: ${UI_MANAGER_PORT:-8080}
+        THREAT_API_BASE_URL: ${THREAT_API_BASE_URL:-http://110.40.136.112:1334/api}
+        THREAT_API_ENABLED: ${THREAT_API_ENABLED:-true}
+    hostname: ${UI_HOST:-sysarmor-ui-dev}
+    environment:
+      # 开发环境配置
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - UI_MANAGER_HOST=${UI_MANAGER_HOST:-sysarmor-manager-1}
+      - UI_MANAGER_PORT=${UI_MANAGER_PORT:-8080}
+      # 外部API配置
+      - NEXT_PUBLIC_THREAT_API_BASE_URL=${THREAT_API_BASE_URL:-http://110.40.136.112:1334/api}
+      - NEXT_PUBLIC_THREAT_API_ENABLED=${THREAT_API_ENABLED:-true}
+      # 热更新配置
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - "${UI_PORT:-3000}:3000"
+    volumes:
+      # 挂载源代码目录实现热更新
+      - ./app:/app/app:ro
+      - ./components:/app/components:ro
+      - ./lib:/app/lib:ro
+      - ./hooks:/app/hooks:ro
+      - ./types:/app/types:ro
+      - ./utils:/app/utils:ro
+      - ./public:/app/public:ro
+      - ./next.config.ts:/app/next.config.ts:ro
+      - ./postcss.config.mjs:/app/postcss.config.mjs:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      # 排除node_modules和.next目录
+      - /app/node_modules
+      - /app/.next
+    labels:
+      - "sysarmor.module=ui"
+      - "sysarmor.component=frontend-dev"
+
+networks:
+  default:
+    name: ${SYSARMOR_NETWORK:-sysarmor-net}
+    external: true  # 开发环境使用外部网络连接到已运行的服务

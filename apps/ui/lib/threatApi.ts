@@ -1,5 +1,6 @@
 // 威胁图谱API服务层
 import axios, { AxiosResponse } from 'axios';
+import { getThreatApiConfig, isThreatApiEnabled } from './externalApiConfig';
 import {
   APIResponse,
   NodeInfoAPIResponse,
@@ -16,16 +17,24 @@ import {
 export class ThreatAPI {
   private static cache = new Map<string, ThreatGraphData>();
   private static nodeInfoCache = new Map<string, NodeInfo>();
-  
-  // API基础URL - 通过Vite代理
-  private static readonly BASE_URL = '/api';
+
+  // 获取API基础URL - 使用配置管理器
+  private static getBaseUrl(): string {
+    const config = getThreatApiConfig();
+    return config.baseUrl;
+  }
+
+  // 检查API是否启用
+  private static isEnabled(): boolean {
+    return isThreatApiEnabled();
+  }
 
   /**
    * 获取威胁图数据 - 主要API
    */
   static async getThreatGraphData(threatId: string): Promise<ThreatGraphData> {
     console.group(`🎯 [THREAT-API] 获取威胁图数据: ${threatId}`);
-    
+
     try {
       // 检查缓存
       if (this.cache.has(threatId)) {
@@ -34,15 +43,19 @@ export class ThreatAPI {
         return this.cache.get(threatId)!;
       }
 
+      // 检查API是否启用
+      if (!this.isEnabled()) {
+        throw new Error('威胁图谱API功能已禁用');
+      }
+
       console.log(`📡 [API] 调用威胁图API (增强版 - 支持边标签)`);
-      const url = `${this.BASE_URL}/alert/alert_chain_new_new_new`;
-      
+      const config = getThreatApiConfig();
+      const url = `${config.baseUrl}/alert/alert_chain_new_new_new`;
+
       const response: AxiosResponse<APIResponse> = await axios.get(url, {
         params: { threat_id: threatId },
-        timeout: 30000, // 增加到30秒超时
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        timeout: config.timeout,
+        headers: config.headers
       });
 
       console.log(`✅ [API_SUCCESS] API响应:`, {
@@ -88,15 +101,15 @@ export class ThreatAPI {
         }))
       });
       const processedData = this.processGraphData(threatId, parsedGraphData);
-      
+
       // 缓存结果
       this.cache.set(threatId, processedData);
-      
+
       console.log(`✅ [SUCCESS] 威胁数据处理完成`);
       console.groupEnd();
-      
+
       return processedData;
-      
+
     } catch (error) {
       console.error(`❌ [ERROR] 获取威胁图数据失败:`, error);
       console.groupEnd();
@@ -109,7 +122,7 @@ export class ThreatAPI {
    */
   static async getNodeInfo(threatId: string, nodeId: string): Promise<NodeInfo | null> {
     const cacheKey = `${threatId}_${nodeId}`;
-    
+
     try {
       // 检查缓存
       if (this.nodeInfoCache.has(cacheKey)) {
@@ -118,16 +131,18 @@ export class ThreatAPI {
       }
 
       console.log(`📡 [API] 调用节点信息API: ${threatId} + ${nodeId}`);
-      
-      const url = `${this.BASE_URL}/alert/node_info`;
+
+      const config = getThreatApiConfig();
+      const url = `${config.baseUrl}/alert/node_info`;
       const response: AxiosResponse<NodeInfoAPIResponse> = await axios.get(url, {
-        params: { 
+        params: {
           threat_id: threatId,
-          node_id: nodeId 
+          node_id: nodeId
         },
-        timeout: 5000
+        timeout: config.timeout || 5000,
+        headers: config.headers
       });
-      
+
       // 验证响应格式：code: 200, msg: "success"
       if (response.data.code !== 200 || response.data.msg !== 'success') {
         console.warn(`⚠️ [API_WARNING] 节点信息API错误: ${response.data.msg} (${response.data.code})`);
@@ -142,12 +157,12 @@ export class ThreatAPI {
 
       // 缓存结果
       this.nodeInfoCache.set(cacheKey, nodeInfo);
-      
+
       console.log(`✅ [SUCCESS] 节点信息获取成功: ${nodeId}`);
       console.log(`📋 [NODE_FIELDS] 节点字段:`, Object.keys(response.data.data || {}));
-      
+
       return nodeInfo;
-      
+
     } catch (error) {
       console.error(`❌ [ERROR] 获取节点信息失败:`, error);
       return null;
@@ -160,29 +175,28 @@ export class ThreatAPI {
   static async getThreatList(): Promise<string[]> {
     try {
       console.log(`📋 [THREAT_LIST] 获取威胁ID列表`);
-      
+
       // 尝试调用威胁列表API，如果没有专门的API，可以从测试已知威胁ID
       const knownThreatIds = ['th-001', 'th-002', 'th-003', 'th-004', 'th-005', 'th-006'];
-      
+
       // 并发测试所有威胁ID，看哪些返回有效数据
       const availableThreatIds: string[] = [];
-      
+
       const testPromises = knownThreatIds.map(async (threatId) => {
         try {
-          const url = `${this.BASE_URL}/alert/alert_chain_new_new_new`;
+          const config = getThreatApiConfig();
+          const url = `${config.baseUrl}/alert/alert_chain_new_new_new`;
           const response = await axios.get(url, {
             params: { threat_id: threatId },
             timeout: 10000, // 增加到10秒超时
-            headers: {
-              'Content-Type': 'application/json'
-            }
+            headers: config.headers
           });
-          
+
           // 检查是否有有效数据
-          if (response.data.code === '0000' && 
-              response.data.data && 
-              Array.isArray(response.data.data) && 
-              response.data.data.length > 0) {
+          if (response.data.code === '0000' &&
+            response.data.data &&
+            Array.isArray(response.data.data) &&
+            response.data.data.length > 0) {
             return threatId;
           }
           return null;
@@ -191,25 +205,25 @@ export class ThreatAPI {
           return null;
         }
       });
-      
+
       const results = await Promise.allSettled(testPromises);
-      
+
       results.forEach((result, index) => {
         if (result.status === 'fulfilled' && result.value) {
           availableThreatIds.push(result.value);
         }
       });
-      
+
       console.log(`✅ [THREAT_LIST] 发现 ${availableThreatIds.length} 个可用威胁ID:`, availableThreatIds);
-      
+
       // 如果没有找到可用的威胁ID，返回默认列表
       if (availableThreatIds.length === 0) {
         console.log(`⚠️ [THREAT_LIST] 未找到可用威胁ID，使用默认列表`);
         return knownThreatIds;
       }
-      
+
       return availableThreatIds.sort();
-      
+
     } catch (error) {
       console.error(`❌ [THREAT_LIST] 获取威胁列表失败:`, error);
       // 返回默认威胁ID列表
@@ -223,10 +237,12 @@ export class ThreatAPI {
   static async testConnection(): Promise<{ success: boolean; message: string }> {
     try {
       console.log(`🔗 [TEST] 测试API连接`);
-      
-      const response = await axios.get(`${this.BASE_URL}/alert/alert_chain_new_new`, {
+
+      const config = getThreatApiConfig();
+      const response = await axios.get(`${config.baseUrl}/alert/alert_chain_new_new`, {
         params: { threat_id: 'th-001' },
-        timeout: 5000
+        timeout: config.timeout || 5000,
+        headers: config.headers
       });
 
       if (response.data && (response.data.code === '0000' || response.data.code === 200)) {
@@ -236,7 +252,7 @@ export class ThreatAPI {
         console.log(`⚠️ [TEST_WARNING] API响应异常:`, response.data);
         return { success: false, message: `API响应异常` };
       }
-      
+
     } catch (error) {
       console.error(`❌ [TEST_ERROR] API连接失败:`, error);
       return { success: false, message: `API连接失败: ${(error as Error).message}` };
@@ -254,10 +270,10 @@ export class ThreatAPI {
       nodeCount: rawData.nodes ? rawData.nodes.length : 0,
       edgeCount: rawData.edges ? rawData.edges.length : 0
     });
-    
+
     // 将nodes转换为hop序列格式
     let hopSequence: ProcessedHop[] = [];
-    
+
     if (rawData.nodes && Array.isArray(rawData.nodes)) {
       hopSequence = rawData.nodes.map((node: ThreatNode, index: number) => ({
         hop_id: index,
@@ -276,42 +292,42 @@ export class ThreatAPI {
         children_count: 0,
         originalNode: node
       }));
-      
+
       // 根据edges分析层次结构
       if (rawData.edges && Array.isArray(rawData.edges)) {
         this.analyzeDepthFromEdges(hopSequence, rawData.edges);
       }
     }
-    
+
     console.log(`📊 [HOP_EXTRACT] 提取到 ${hopSequence.length} 个hop`);
-    
+
     // 分析深度分布
     const depthDistribution: { [depth: number]: number } = {};
     let maxDepth = 0;
-    
+
     hopSequence.forEach(hop => {
       const depth = hop.depth || 0;
       depthDistribution[depth] = (depthDistribution[depth] || 0) + 1;
       maxDepth = Math.max(maxDepth, depth);
     });
-    
+
     // 识别第一层节点 (depth=0)
     const firstLayerNodes = hopSequence
       .filter(hop => hop.depth === 0)
       .map((hop, index) => `node_${hop.hop_id !== undefined ? hop.hop_id : index}`);
-    
+
     console.log(`🎯 [FIRST_LAYER] 识别到 ${firstLayerNodes.length} 个第一层节点`);
-    
+
     // 统计时间戳信息
     const timestampedHops = hopSequence.filter(hop => hop.timestamps && hop.timestamps.length > 0);
     const nonTimestampedHops = hopSequence.filter(hop => !hop.timestamps || hop.timestamps.length === 0);
-    
+
     // 创建时间线数据
     const timelineData = this.createTimelineData(hopSequence);
-    
+
     // 生成网络拓扑
     const networkTopology = this.generateNetworkTopology(hopSequence);
-    
+
     const processedData: ThreatGraphData = {
       threat_id: threatId,
       hop_sequence: hopSequence,
@@ -347,7 +363,7 @@ export class ThreatAPI {
         originalEdges: rawData.edges || []
       }
     };
-    
+
     console.log(`✅ [PROCESS_SUCCESS] 威胁数据处理完成:`, {
       威胁ID: processedData.threat_id,
       最大深度: processedData.max_depth,
@@ -356,7 +372,7 @@ export class ThreatAPI {
       有时间戳hop: processedData.bfs_analysis.timestamped_hops,
       网络节点数: processedData.network_topology.nodes.length
     });
-    
+
     return processedData;
   }
 
@@ -365,30 +381,30 @@ export class ThreatAPI {
    */
   private static analyzeDepthFromEdges(hopSequence: ProcessedHop[], edges: ThreatEdge[]): void {
     console.log(`🔄 [DEPTH_ANALYSIS] 分析 ${edges.length} 条边的深度关系`);
-    
+
     // 构建节点ID到索引的映射
     const nodeIdToIndex = new Map<string, number>();
     hopSequence.forEach((hop, index) => {
       const nodeId = hop.node_id || hop.originalNode?.id || String(index);
       nodeIdToIndex.set(nodeId, index);
     });
-    
+
     // 构建图的邻接表
     const adjacencyList = new Map<string, string[]>();
     const inDegree = new Map<string, number>();
-    
+
     // 初始化
     hopSequence.forEach(hop => {
       const nodeId = hop.node_id || hop.originalNode?.id || String(hop.hop_id);
       adjacencyList.set(nodeId, []);
       inDegree.set(nodeId, 0);
     });
-    
+
     // 构建边关系
     edges.forEach(edge => {
       const fromId = edge.from || edge.source || edge.src;
       const toId = edge.to || edge.target || edge.dst;
-      
+
       if (fromId && toId) {
         if (!adjacencyList.has(fromId)) {
           adjacencyList.set(fromId, []);
@@ -398,15 +414,15 @@ export class ThreatAPI {
           adjacencyList.set(toId, []);
           inDegree.set(toId, 0);
         }
-        
+
         adjacencyList.get(fromId)?.push(toId);
         inDegree.set(toId, (inDegree.get(toId) || 0) + 1);
       }
     });
-    
+
     // 使用BFS计算深度
     const depths = new Map<string, number>();
-    
+
     // 找到入度为0的节点作为根节点（深度0）
     const rootNodes: string[] = [];
     for (const [nodeId, degree] of inDegree.entries()) {
@@ -415,23 +431,23 @@ export class ThreatAPI {
         depths.set(nodeId, 0);
       }
     }
-    
+
     // 如果没有找到根节点，选择第一个节点作为根
     if (rootNodes.length === 0 && hopSequence.length > 0) {
       const firstNodeId = hopSequence[0].node_id || hopSequence[0].originalNode?.id || '0';
       rootNodes.push(firstNodeId);
       depths.set(firstNodeId, 0);
     }
-    
+
     // BFS计算深度
     const queue: string[] = [...rootNodes];
     const visited = new Set<string>();
-    
+
     while (queue.length > 0) {
       const currentId = queue.shift()!;
       const currentDepth = depths.get(currentId) || 0;
       visited.add(currentId);
-      
+
       const neighbors = adjacencyList.get(currentId) || [];
       for (const neighborId of neighbors) {
         if (!depths.has(neighborId) || depths.get(neighborId)! > currentDepth + 1) {
@@ -442,13 +458,13 @@ export class ThreatAPI {
         }
       }
     }
-    
+
     // 应用深度到hop序列
     let updatedCount = 0;
     hopSequence.forEach((hop, index) => {
       const nodeId = hop.node_id || hop.originalNode?.id || String(index);
       const calculatedDepth = depths.get(nodeId);
-      
+
       if (calculatedDepth !== undefined) {
         hop.depth = calculatedDepth;
         updatedCount++;
@@ -456,7 +472,7 @@ export class ThreatAPI {
         hop.depth = 0;
       }
     });
-    
+
     console.log(`✅ [DEPTH_ANALYSIS] 深度分析完成: ${updatedCount}/${hopSequence.length} 个节点更新深度`);
   }
 
