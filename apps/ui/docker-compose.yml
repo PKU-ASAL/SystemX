@@ -9,14 +9,15 @@ services:
         MANAGER_PORT: ${MANAGER_PORT:-8080}
     hostname: ${UI_HOST:-sysarmor-ui}
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:${MANAGER_PORT:-8080}
-      - MANAGER_HOST=sysarmor-manager-1
+      # 使用相对路径，通过rewrites代理到manager
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - MANAGER_HOST=${MANAGER_HOST:-sysarmor-manager-1}
       - MANAGER_PORT=${MANAGER_PORT:-8080}
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${UI_PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000", "||", "exit", "1"]
+      test: ["CMD", "node", "-e", "require('http').get({hostname: '127.0.0.1', port: 3000, family: 4}, (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

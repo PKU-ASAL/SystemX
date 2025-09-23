@@ -31,6 +31,7 @@ deploy: ## 🎯 完整部署 (推荐)
 	@echo "🎉 SysArmor EDR 系统完全就绪！"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "📋 系统访问地址:"
+	@echo "   🎨 Web界面: http://localhost:3000"
 	@echo "   🌐 Manager API: http://localhost:8080"
 	@echo "   📖 API文档: http://localhost:8080/swagger/index.html"
 	@echo "   🔧 Flink监控: http://localhost:8081"
@@ -97,6 +98,10 @@ build-ui: ## 构建UI Docker服务
 	@echo "🔨 构建UI Docker服务..."
 	@cd apps/ui && docker compose build
 	@echo "✅ UI Docker服务构建完成"
+
+test-ui: ## 测试UI部署和API连接
+	@echo "🧪 测试UI部署和API连接..."
+	@./tests/test-ui-deployment.sh
 
 
 ##@ 🧹 清理维护
