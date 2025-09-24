@@ -1,7 +1,7 @@
 "use client";
 
-import { OpenSearchAlertsKibanaStyle } from "@/components/opensearch-alerts-kibana-style";
+import { OpenSearchAlerts } from "@/components/opensearch-alerts";
 
 export default function OpenSearchAlertsPage() {
-  return <OpenSearchAlertsKibanaStyle />;
+  return <OpenSearchAlerts />;
 }

@@ -89,14 +89,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiClient, type Collector } from "@/lib/api";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 
 // Create a separate component for the drag handle
 function DragHandle({ id }: { id: string }) {
@@ -452,31 +444,10 @@ export function TerminalListTable() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 lg:px-6 py-4 border-b">
-        <div className="space-y-2">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (typeof window !== "undefined") {
-                      window.history.pushState(null, "", "/dashboard");
-                      window.location.reload();
-                    }
-                  }}
-                >
-                  Dashboard
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>终端列表</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+      {/* Page Description */}
+      <div className="px-4 lg:px-6 py-4 border-b">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">终端列表</h1>
           <p className="text-muted-foreground text-sm">
             管理和监控所有 EDR Collector 实例
           </p>

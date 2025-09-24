@@ -25,18 +25,9 @@ services:
     ports:
       - "${UI_PORT:-3000}:3000"
     volumes:
-      # 挂载源代码目录实现热更新
-      - ./app:/app/app:ro
-      - ./components:/app/components:ro
-      - ./lib:/app/lib:ro
-      - ./hooks:/app/hooks:ro
-      - ./types:/app/types:ro
-      - ./utils:/app/utils:ro
-      - ./public:/app/public:ro
-      - ./next.config.ts:/app/next.config.ts:ro
-      - ./postcss.config.mjs:/app/postcss.config.mjs:ro
-      - ./tsconfig.json:/app/tsconfig.json:ro
-      # 排除node_modules和.next目录
+      # 挂载整个项目目录实现热更新（读写模式，允许创建子目录）
+      - .:/app
+      # 排除node_modules和.next目录，避免覆盖容器内的依赖
       - /app/node_modules
       - /app/.next
     labels:

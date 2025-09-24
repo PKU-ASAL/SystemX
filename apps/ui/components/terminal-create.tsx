@@ -38,14 +38,6 @@ import {
   CheckCircle,
   Lock,
 } from "lucide-react";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { DeploymentInstructions } from "@/components/deployment-instructions";
 
 export function TerminalCreate() {
@@ -200,31 +192,10 @@ export function TerminalCreate() {
     <div className="flex flex-col h-full">
       {/* Page Header */}
       <div className="flex items-center justify-between px-4 lg:px-6 py-4 border-b">
-        <div className="space-y-2">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (typeof window !== "undefined") {
-                      window.history.pushState(null, "", "/dashboard");
-                      window.location.reload();
-                    }
-                  }}
-                >
-                  Dashboard
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>新建终端</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">新建终端</h1>
           <p className="text-muted-foreground text-sm">
-            选择部署类型并配置新的 EDR 终端
+            部署新的 EDR Collector 到目标主机
           </p>
         </div>
       </div>

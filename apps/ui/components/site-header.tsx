@@ -47,15 +47,6 @@ export function SiteHeader() {
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-
-        {/* 右侧区域 */}
-        <div className="ml-auto flex items-center gap-2">
-          {/* 系统标题移到右侧 */}
-          <h1 className="text-base font-medium">SysArmor控制平面</h1>
-            <Badge variant="outline">
-              v0.0.3
-            </Badge>
-        </div>
       </div>
     </header>
   );

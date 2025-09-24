@@ -583,15 +583,15 @@ class ApiClient {
 
   // OpenSearch APIs
   async getOpenSearchClusterHealth(): Promise<any> {
-    return this.request('/opensearch/cluster/health');
+    return this.request('/services/opensearch/cluster/health');
   }
 
   async getOpenSearchClusterStats(): Promise<any> {
-    return this.request('/opensearch/cluster/stats');
+    return this.request('/services/opensearch/cluster/stats');
   }
 
   async getOpenSearchIndices(): Promise<any> {
-    return this.request('/opensearch/indices');
+    return this.request('/services/opensearch/indices');
   }
 
   async searchSecurityEvents(params?: {
@@ -606,7 +606,7 @@ class ApiClient {
     if (params?.size) searchParams.append('size', params.size.toString());
     if (params?.from) searchParams.append('from', params.from.toString());
 
-    const endpoint = `/opensearch/events/search${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    const endpoint = `/services/opensearch/events/search${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     return this.request(endpoint);
   }
 
@@ -620,7 +620,7 @@ class ApiClient {
     if (params?.hours) searchParams.append('hours', params.hours.toString());
     if (params?.size) searchParams.append('size', params.size.toString());
 
-    const endpoint = `/opensearch/events/recent${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    const endpoint = `/services/opensearch/events/recent${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     return this.request(endpoint);
   }
 
@@ -634,7 +634,7 @@ class ApiClient {
     if (params.index) searchParams.append('index', params.index);
     if (params.size) searchParams.append('size', params.size.toString());
 
-    return this.request(`/opensearch/events/high-risk?${searchParams.toString()}`);
+    return this.request(`/services/opensearch/events/high-risk?${searchParams.toString()}`);
   }
 
   async getThreatEvents(params?: {
@@ -645,7 +645,7 @@ class ApiClient {
     if (params?.index) searchParams.append('index', params.index);
     if (params?.size) searchParams.append('size', params.size.toString());
 
-    const endpoint = `/opensearch/events/threats${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    const endpoint = `/services/opensearch/events/threats${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     return this.request(endpoint);
   }
 
@@ -659,7 +659,7 @@ class ApiClient {
     if (params.index) searchParams.append('index', params.index);
     if (params.size) searchParams.append('size', params.size.toString());
 
-    return this.request(`/opensearch/events/by-source?${searchParams.toString()}`);
+    return this.request(`/services/opensearch/events/by-source?${searchParams.toString()}`);
   }
 
   async getEventsByTimeRange(params: {
@@ -676,7 +676,7 @@ class ApiClient {
     if (params.size) searchParams.append('size', params.size.toString());
     if (params.page) searchParams.append('page', params.page.toString());
 
-    return this.request(`/opensearch/events/time-range?${searchParams.toString()}`);
+    return this.request(`/services/opensearch/events/time-range?${searchParams.toString()}`);
   }
 
   async getEventAggregations(params?: {
@@ -685,7 +685,7 @@ class ApiClient {
     const searchParams = new URLSearchParams();
     if (params?.index) searchParams.append('index', params.index);
 
-    const endpoint = `/opensearch/events/aggregations${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    const endpoint = `/services/opensearch/events/aggregations${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     return this.request(endpoint);
   }
 }

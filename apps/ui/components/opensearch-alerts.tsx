@@ -48,7 +48,7 @@ import {
   Flag,
   Plus,
   X,
-  Calendar,
+  Calendar as CalendarIcon,
   ChevronRight,
 } from "lucide-react";
 import {
@@ -60,43 +60,92 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import dynamic from 'next/dynamic';
+
+// 动态导入EUI组件避免SSR问题
+const EuiSearchBar = dynamic(
+  () => import('@elastic/eui').then(mod => ({ default: mod.EuiSearchBar })),
+  { ssr: false }
+);
+
+const EuiHealth = dynamic(
+  () => import('@elastic/eui').then(mod => ({ default: mod.EuiHealth })),
+  { ssr: false }
+);
+
+const EuiSuperSelect = dynamic(
+  () => import('@elastic/eui').then(mod => ({ default: mod.EuiSuperSelect })),
+  { ssr: false }
+);
+
+const EuiFormRow = dynamic(
+  () => import('@elastic/eui').then(mod => ({ default: mod.EuiFormRow })),
+  { ssr: false }
+);
 
 interface SecurityEvent {
   _id: string;
   _source: {
     "@timestamp": string;
-    event_type: string;
-    severity: string;
-    source: string;
-    message: string;
-    risk_score: number;
-    collector_id?: string;
-    host?: {
-      name: string;
-      ip: string;
-    };
-    process?: {
-      name: string;
-      pid: number;
-      command_line: string;
-    };
-    file?: {
-      path: string;
-      hash: string;
-    };
-    network?: {
-      src_ip: string;
-      dst_ip: string;
-      src_port: number;
-      dst_port: number;
-      protocol: string;
-    };
-    threat?: {
-      indicator: string;
+    alert: {
+      id: string;
       type: string;
+      category: string;
+      severity: string;
+      risk_score: number;
       confidence: number;
+      rule: {
+        id: string;
+        name: string;
+        description: string;
+        title: string;
+        mitigation: string;
+        references: string[];
+      };
+      evidence: {
+        event_type: string;
+        process_name: string;
+        process_cmdline: string;
+        file_path: string;
+        network_info: any;
+      };
+    };
+    event: {
+      raw: {
+        event_id: string;
+        timestamp: string;
+        source: string;
+        message: {
+          "evt.num": number;
+          "evt.time": number;
+          "evt.type": string;
+          "evt.category": string;
+          "evt.dir": string;
+          "evt.args": string;
+          "proc.name": string;
+          "proc.exe": string;
+          "proc.cmdline": string;
+          "proc.pid": number;
+          "proc.ppid": number;
+          "proc.uid": number;
+          "proc.gid": number;
+          "fd.name": string;
+          "net.sockaddr": any;
+          host: string;
+          is_warn: boolean;
+        };
+      };
+    };
+    timing: {
+      created_at: string;
+      processed_at: string;
+    };
+    metadata: {
+      collector_id: string;
+      host: string;
+      source: string;
+      processor: string;
     };
   };
 }
@@ -142,41 +191,40 @@ interface FieldOption {
   type: string;
 }
 
-// 基于实际事件数据结构的可用字段
+// 基于实际告警数据结构的可用字段
 const AVAILABLE_FIELDS: FieldOption[] = [
-  // 基础事件字段
+  // 基础时间字段
   { value: "@timestamp", label: "Timestamp", type: "date" },
-  { value: "severity", label: "Severity", type: "keyword" },
-  { value: "event_type", label: "Event Type", type: "keyword" },
-  { value: "source", label: "Source", type: "keyword" },
-  { value: "message", label: "Message", type: "text" },
-  { value: "risk_score", label: "Risk Score", type: "number" },
-  { value: "collector_id", label: "Collector ID", type: "keyword" },
-
-  // 主机信息字段（如果存在）
-  { value: "host.name", label: "Host Name", type: "keyword" },
-  { value: "host.ip", label: "Host IP", type: "ip" },
-
-  // 进程信息字段（如果存在）
-  { value: "process.name", label: "Process Name", type: "keyword" },
-  { value: "process.pid", label: "Process PID", type: "number" },
-  { value: "process.command_line", label: "Command Line", type: "text" },
-
-  // 文件信息字段（如果存在）
-  { value: "file.path", label: "File Path", type: "keyword" },
-  { value: "file.hash", label: "File Hash", type: "keyword" },
-
-  // 网络信息字段（如果存在）
-  { value: "network.src_ip", label: "Source IP", type: "ip" },
-  { value: "network.dst_ip", label: "Destination IP", type: "ip" },
-  { value: "network.src_port", label: "Source Port", type: "number" },
-  { value: "network.dst_port", label: "Destination Port", type: "number" },
-  { value: "network.protocol", label: "Network Protocol", type: "keyword" },
-
-  // 威胁信息字段（如果存在）
-  { value: "threat.indicator", label: "Threat Indicator", type: "keyword" },
-  { value: "threat.type", label: "Threat Type", type: "keyword" },
-  { value: "threat.confidence", label: "Threat Confidence", type: "number" },
+  
+  // 告警字段
+  { value: "alert.severity", label: "Severity", type: "keyword" },
+  { value: "alert.risk_score", label: "Risk Score", type: "number" },
+  { value: "alert.confidence", label: "Confidence", type: "number" },
+  { value: "alert.type", label: "Alert Type", type: "keyword" },
+  { value: "alert.category", label: "Alert Category", type: "keyword" },
+  
+  // 告警规则字段
+  { value: "alert.rule.id", label: "Rule ID", type: "keyword" },
+  { value: "alert.rule.name", label: "Rule Name", type: "text" },
+  
+  // 证据字段
+  { value: "alert.evidence.event_type", label: "Event Type", type: "keyword" },
+  { value: "alert.evidence.process_name", label: "Process Name", type: "keyword" },
+  { value: "alert.evidence.process_cmdline", label: "Command Line", type: "text" },
+  { value: "alert.evidence.file_path", label: "File Path", type: "keyword" },
+  
+  // 元数据字段
+  { value: "metadata.collector_id", label: "Collector ID", type: "keyword" },
+  { value: "metadata.host", label: "Host Name", type: "keyword" },
+  { value: "metadata.source", label: "Source", type: "keyword" },
+  { value: "metadata.processor", label: "Processor", type: "keyword" },
+  
+  // 原始事件字段
+  { value: "event.raw.event_id", label: "Event ID", type: "keyword" },
+  { value: "event.raw.source", label: "Raw Source", type: "keyword" },
+  { value: "event.raw.message.proc.name", label: "Raw Process Name", type: "keyword" },
+  { value: "event.raw.message.proc.pid", label: "Raw Process PID", type: "number" },
+  { value: "event.raw.message.host", label: "Raw Host", type: "keyword" },
 ];
 
 const OPERATORS = {
@@ -210,28 +258,7 @@ const OPERATORS = {
   ],
 };
 
-export function OpenSearchAlertsKibanaStyle() {
-  const [events, setEvents] = useState<SecurityEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedEvent, setSelectedEvent] = useState<SecurityEvent | null>(
-    null
-  );
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [aggregations, setAggregations] = useState<any>({});
-  const [timelineData, setTimelineData] = useState<TimelineData[]>([]);
-  const [showAddFilter, setShowAddFilter] = useState(false);
-  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false);
-  const [activeTab, setActiveTab] = useState<"absolute" | "relative" | "now">(
-    "absolute"
-  );
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [availableFields, setAvailableFields] =
-    useState<FieldOption[]>(AVAILABLE_FIELDS);
-  const [error, setError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<
-    "connected" | "disconnected" | "connecting"
-  >("connecting");
-
+export function OpenSearchAlerts() {
   // 初始化时间范围为过去15天
   const now = new Date();
   const fifteenDaysAgo = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
@@ -254,6 +281,33 @@ export function OpenSearchAlertsKibanaStyle() {
     selectedEvents: [],
   });
 
+  const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<SecurityEvent | null>(
+    null
+  );
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [aggregations, setAggregations] = useState<any>({});
+  const [timelineData, setTimelineData] = useState<TimelineData[]>([]);
+  const [showAddFilter, setShowAddFilter] = useState(false);
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false);
+  const [activeTab, setActiveTab] = useState<"absolute" | "relative" | "now">(
+    "absolute"
+  );
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  
+  // 临时时间范围状态，用于在用户确认前暂存
+  const [tempTimeRange, setTempTimeRange] = useState({
+    from: searchState.timeRange.from,
+    to: searchState.timeRange.to,
+  });
+  const [availableFields, setAvailableFields] =
+    useState<FieldOption[]>(AVAILABLE_FIELDS);
+  const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "disconnected" | "connecting"
+  >("connecting");
+
   // 新增过滤器的状态
   const [newFilter, setNewFilter] = useState({
     field: "",
@@ -264,6 +318,181 @@ export function OpenSearchAlertsKibanaStyle() {
   // 防抖相关
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [debouncedQuery, setDebouncedQuery] = useState(searchState.query);
+  
+  // EUI SearchBar 相关状态
+  const [searchError, setSearchError] = useState<any>(null);
+  const [euiQuery, setEuiQuery] = useState<any>(null);
+  
+  // Index选择器状态
+  const [selectedIndex, setSelectedIndex] = useState('sysarmor-alerts*');
+
+  // Index选择器选项配置
+  const indexOptions = [
+    {
+      value: 'sysarmor-alerts*',
+      inputDisplay: (
+        <EuiHealth color="success" style={{ lineHeight: 'inherit' }}>
+          sysarmor-alerts*
+        </EuiHealth>
+      ),
+      'data-test-subj': 'option-alerts',
+    },
+  ];
+
+  // 严重程度过滤器选项
+  const severityFilterOptions = [
+    { value: 'critical', view: <EuiHealth color="danger">Critical</EuiHealth> },
+    { value: 'high', view: <EuiHealth color="warning">High</EuiHealth> },
+    { value: 'medium', view: <EuiHealth color="primary">Medium</EuiHealth> },
+    { value: 'low', view: <EuiHealth color="success">Low</EuiHealth> },
+  ];
+
+  // 事件类型过滤器选项
+  const eventTypeFilterOptions = [
+    { value: 'file_access', view: 'File Access' },
+    { value: 'process_execution', view: 'Process Execution' },
+    { value: 'network_connection', view: 'Network Connection' },
+    { value: 'system_call', view: 'System Call' },
+  ];
+
+  // EUI SearchBar 过滤器配置
+  const searchFilters = [
+    {
+      type: 'field_value_selection' as const,
+      field: 'severity',
+      name: 'Severity',
+      multiSelect: 'or' as const,
+      options: severityFilterOptions,
+    },
+    {
+      type: 'field_value_selection' as const,
+      field: 'event_type',
+      name: 'Event Type',
+      multiSelect: 'or' as const,
+      options: eventTypeFilterOptions,
+    },
+  ];
+
+  // EUI SearchBar Schema配置
+  const searchSchema = {
+    strict: true,
+    fields: {
+      severity: {
+        type: 'string',
+        validate: (value: string) => {
+          const validSeverities = ['critical', 'high', 'medium', 'low'];
+          if (!validSeverities.includes(value.toLowerCase())) {
+            throw new Error(`Invalid severity. Valid values: ${validSeverities.join(', ')}`);
+          }
+        },
+      },
+      risk_score: {
+        type: 'number',
+      },
+      event_type: {
+        type: 'string',
+      },
+      host: {
+        type: 'string',
+      },
+      process_name: {
+        type: 'string',
+      },
+      source: {
+        type: 'string',
+      },
+      '@timestamp': {
+        type: 'date',
+      },
+    },
+  };
+
+  // 处理Index选择变化
+  const handleIndexChange = (value: unknown) => {
+    const indexValue = value as string;
+    setSelectedIndex(indexValue);
+    // 重新搜索数据
+    setSearchState((prev) => ({
+      ...prev,
+      pagination: { ...prev.pagination, current: 1 },
+    }));
+  };
+
+  // 从EUI查询中提取过滤器
+  const extractFiltersFromEuiQuery = (query: any) => {
+    const filters: DynamicFilter[] = [];
+    
+    if (!query) return filters;
+    
+    try {
+      // 提取字段过滤器
+      const clauses = query.ast?.clauses || [];
+      clauses.forEach((clause: any, index: number) => {
+        if (clause.type === 'field') {
+          const field = clause.field;
+          const value = clause.value;
+          const operator = clause.match === 'must_not' ? 'is_not' : 'is';
+          
+          filters.push({
+            id: `eui-filter-${index}`,
+            field: field,
+            operator: operator,
+            value: value,
+            label: `${field} ${operator} ${value}`,
+          });
+        }
+      });
+    } catch (err) {
+      console.warn('Failed to extract filters from EUI query:', err);
+    }
+    
+    return filters;
+  };
+
+  // 处理EUI SearchBar查询变化
+  const handleSearchBarChange = ({ query, error }: any) => {
+    if (error) {
+      setSearchError(error);
+      console.error('Search error:', error);
+    } else {
+      setSearchError(null);
+      setEuiQuery(query);
+      
+      // 提取EUI查询中的过滤器并添加到左侧sidebar
+      const euiFilters = extractFiltersFromEuiQuery(query);
+      
+      // 将EUI查询转换为Elasticsearch查询字符串
+      try {
+        // 动态导入EuiSearchBar来访问Query方法
+        import('@elastic/eui').then(({ EuiSearchBar }) => {
+          const queryString = EuiSearchBar.Query.toESQueryString(query);
+          
+          setSearchState((prev) => ({
+            ...prev,
+            query: queryString || "",
+            // 将EUI过滤器合并到现有过滤器中，避免重复
+            dynamicFilters: [
+              ...prev.dynamicFilters.filter(f => !f.id.startsWith('eui-filter-')),
+              ...euiFilters
+            ],
+            pagination: { ...prev.pagination, current: 1 },
+          }));
+        });
+      } catch (err) {
+        // 如果转换失败，使用查询文本
+        const queryText = query?.text || "";
+        setSearchState((prev) => ({
+          ...prev,
+          query: queryText,
+          dynamicFilters: [
+            ...prev.dynamicFilters.filter(f => !f.id.startsWith('eui-filter-')),
+            ...euiFilters
+          ],
+          pagination: { ...prev.pagination, current: 1 },
+        }));
+      }
+    }
+  };
 
   // 从真实事件数据生成时间线数据，根据时间范围动态调整
   const generateTimelineData = (events: SecurityEvent[]): TimelineData[] => {
@@ -323,7 +552,7 @@ export function OpenSearchAlertsKibanaStyle() {
       };
 
       eventsInBucket.forEach((event) => {
-        const severity = event._source.severity?.toLowerCase() || "low";
+        const severity = event._source.alert?.severity?.toLowerCase() || "low";
         if (severity in severityCounts) {
           severityCounts[severity as keyof typeof severityCounts]++;
         } else {
@@ -410,7 +639,7 @@ export function OpenSearchAlertsKibanaStyle() {
     return queryParts.join(" AND ");
   };
 
-  // 动态检测事件数据中存在的字段
+  // 动态检测事件数据中存在的字段 - 适配新的告警数据结构
   const detectAvailableFields = (events: SecurityEvent[]) => {
     if (events.length === 0) {
       setAvailableFields(AVAILABLE_FIELDS);
@@ -425,43 +654,38 @@ export function OpenSearchAlertsKibanaStyle() {
     sampleEvents.forEach((event) => {
       const source = event._source;
 
-      // 基础字段
+      // 基础时间字段
       if (source["@timestamp"]) detectedFields.add("@timestamp");
-      if (source.severity) detectedFields.add("severity");
-      if (source.event_type) detectedFields.add("event_type");
-      if (source.source) detectedFields.add("source");
-      if (source.message) detectedFields.add("message");
-      if (source.risk_score !== undefined) detectedFields.add("risk_score");
-      if (source.collector_id) detectedFields.add("collector_id");
-
-      // 主机信息字段
-      if (source.host?.name) detectedFields.add("host.name");
-      if (source.host?.ip) detectedFields.add("host.ip");
-
-      // 进程信息字段
-      if (source.process?.name) detectedFields.add("process.name");
-      if (source.process?.pid !== undefined) detectedFields.add("process.pid");
-      if (source.process?.command_line)
-        detectedFields.add("process.command_line");
-
-      // 文件信息字段
-      if (source.file?.path) detectedFields.add("file.path");
-      if (source.file?.hash) detectedFields.add("file.hash");
-
-      // 网络信息字段
-      if (source.network?.src_ip) detectedFields.add("network.src_ip");
-      if (source.network?.dst_ip) detectedFields.add("network.dst_ip");
-      if (source.network?.src_port !== undefined)
-        detectedFields.add("network.src_port");
-      if (source.network?.dst_port !== undefined)
-        detectedFields.add("network.dst_port");
-      if (source.network?.protocol) detectedFields.add("network.protocol");
-
-      // 威胁信息字段
-      if (source.threat?.indicator) detectedFields.add("threat.indicator");
-      if (source.threat?.type) detectedFields.add("threat.type");
-      if (source.threat?.confidence !== undefined)
-        detectedFields.add("threat.confidence");
+      
+      // 告警字段
+      if (source.alert?.severity) detectedFields.add("alert.severity");
+      if (source.alert?.risk_score !== undefined) detectedFields.add("alert.risk_score");
+      if (source.alert?.confidence !== undefined) detectedFields.add("alert.confidence");
+      if (source.alert?.type) detectedFields.add("alert.type");
+      if (source.alert?.category) detectedFields.add("alert.category");
+      
+      // 告警规则字段
+      if (source.alert?.rule?.id) detectedFields.add("alert.rule.id");
+      if (source.alert?.rule?.name) detectedFields.add("alert.rule.name");
+      
+      // 证据字段
+      if (source.alert?.evidence?.event_type) detectedFields.add("alert.evidence.event_type");
+      if (source.alert?.evidence?.process_name) detectedFields.add("alert.evidence.process_name");
+      if (source.alert?.evidence?.process_cmdline) detectedFields.add("alert.evidence.process_cmdline");
+      if (source.alert?.evidence?.file_path) detectedFields.add("alert.evidence.file_path");
+      
+      // 元数据字段
+      if (source.metadata?.collector_id) detectedFields.add("metadata.collector_id");
+      if (source.metadata?.host) detectedFields.add("metadata.host");
+      if (source.metadata?.source) detectedFields.add("metadata.source");
+      if (source.metadata?.processor) detectedFields.add("metadata.processor");
+      
+      // 原始事件字段
+      if (source.event?.raw?.event_id) detectedFields.add("event.raw.event_id");
+      if (source.event?.raw?.source) detectedFields.add("event.raw.source");
+      if (source.event?.raw?.message?.["proc.name"]) detectedFields.add("event.raw.message.proc.name");
+      if (source.event?.raw?.message?.["proc.pid"]) detectedFields.add("event.raw.message.proc.pid");
+      if (source.event?.raw?.message?.host) detectedFields.add("event.raw.message.host");
     });
 
     // 过滤出实际存在的字段
@@ -484,7 +708,7 @@ export function OpenSearchAlertsKibanaStyle() {
       setConnectionStatus("connecting");
 
       const params: any = {
-        index: "sysarmor-events-*",
+        index: "sysarmor-alerts-test",
         size: searchState.pagination.size,
         from:
           (searchState.pagination.current - 1) * searchState.pagination.size,
@@ -510,7 +734,7 @@ export function OpenSearchAlertsKibanaStyle() {
 
       try {
         aggregationsResponse = await apiClient.getEventAggregations({
-          index: "sysarmor-events-*",
+          index: "sysarmor-alerts-test",
         });
       } catch (aggregationsErr) {
         console.warn("Failed to fetch aggregations:", aggregationsErr);
@@ -678,6 +902,19 @@ export function OpenSearchAlertsKibanaStyle() {
     setShowTimeRangePicker(false);
   };
 
+  // 应用临时时间范围
+  const applyTempTimeRange = () => {
+    handleTimeRangeChange(tempTimeRange.from, tempTimeRange.to);
+  };
+
+  // 重置临时时间范围
+  const resetTempTimeRange = () => {
+    setTempTimeRange({
+      from: searchState.timeRange.from,
+      to: searchState.timeRange.to,
+    });
+  };
+
   const handleSelectEvent = (eventId: string) => {
     setSearchState((prev) => ({
       ...prev,
@@ -818,22 +1055,16 @@ export function OpenSearchAlertsKibanaStyle() {
       <div className="flex h-full bg-gray-50">
         {/* 左侧过滤器面板 */}
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          {/* Index 选择器 - 占满一行 */}
-          <div className="px-4 py-3 border-b border-gray-200 h-[60px] flex items-center">
-            <Select defaultValue="sysarmor-events-*">
-              <SelectTrigger className="h-9 text-sm w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="sysarmor-events-*">
-                  sysarmor-events-*
-                </SelectItem>
-                <SelectItem value="sysarmor-logs-*">sysarmor-logs-*</SelectItem>
-                <SelectItem value="sysarmor-metrics-*">
-                  sysarmor-metrics-*
-                </SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Index 选择器 - EUI SuperSelect版 */}
+          <div className="px-4 py-4 border-b border-gray-200 h-[72px] flex items-center">
+            <div className="w-full">
+              <EuiSuperSelect
+                options={indexOptions}
+                valueOfSelected={selectedIndex}
+                onChange={handleIndexChange}
+                fullWidth
+              />
+            </div>
           </div>
 
           {/* Filters 标题和添加按钮 */}
@@ -851,6 +1082,64 @@ export function OpenSearchAlertsKibanaStyle() {
               <Plus className="h-3 w-3 mr-1" />
               Add filter
             </Button>
+          </div>
+
+          {/* 快速过滤器按钮 */}
+          <div className="px-4 pb-3 space-y-2">
+            <div className="text-xs font-medium text-gray-700 mb-2">Quick Filters</div>
+            <div className="flex flex-wrap gap-1">
+              {/* Severity快速过滤器 */}
+              {['critical', 'high', 'medium', 'low'].map((severity) => {
+                const isActive = searchState.dynamicFilters.some(f => 
+                  f.field === 'severity' && f.value === severity
+                );
+                const colorMap = {
+                  critical: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100',
+                  high: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',
+                  medium: 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100',
+                  low: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
+                };
+                
+                return (
+                  <button
+                    key={severity}
+                    className={`px-2 py-1 text-xs rounded border transition-colors ${
+                      isActive 
+                        ? `${colorMap[severity as keyof typeof colorMap]} ring-1 ring-current` 
+                        : `${colorMap[severity as keyof typeof colorMap]}`
+                    }`}
+                    onClick={() => {
+                      if (isActive) {
+                        // 移除过滤器
+                        setSearchState(prev => ({
+                          ...prev,
+                          dynamicFilters: prev.dynamicFilters.filter(f => 
+                            !(f.field === 'severity' && f.value === severity)
+                          ),
+                          pagination: { ...prev.pagination, current: 1 },
+                        }));
+                      } else {
+                        // 添加过滤器
+                        const newFilter: DynamicFilter = {
+                          id: `quick-severity-${severity}`,
+                          field: 'severity',
+                          operator: 'is',
+                          value: severity,
+                          label: `Severity is ${severity}`,
+                        };
+                        setSearchState(prev => ({
+                          ...prev,
+                          dynamicFilters: [...prev.dynamicFilters, newFilter],
+                          pagination: { ...prev.pagination, current: 1 },
+                        }));
+                      }
+                    }}
+                  >
+                    {severity}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* 动态过滤器列表 */}
@@ -873,28 +1162,47 @@ export function OpenSearchAlertsKibanaStyle() {
                     fieldOption?.type as keyof typeof OPERATORS
                   ]?.find((o) => o.value === filter.operator);
 
+                  // 区分EUI生成的过滤器和手动添加的过滤器
+                  const isEuiFilter = filter.id.startsWith('eui-filter-');
+                  const filterBgColor = isEuiFilter 
+                    ? "bg-green-50/80 border-green-200/80 hover:bg-green-100/80" 
+                    : "bg-blue-50/80 border-blue-200/80 hover:bg-blue-100/80";
+                  const filterTextColor = isEuiFilter ? "text-green-800" : "text-blue-800";
+                  const filterValueColor = isEuiFilter ? "text-green-900" : "text-blue-900";
+                  const filterButtonColor = isEuiFilter 
+                    ? "text-green-500 hover:text-green-700 hover:bg-green-200/80" 
+                    : "text-blue-500 hover:text-blue-700 hover:bg-blue-200/80";
+
                   return (
                     <div
                       key={filter.id}
-                      className="group flex items-center gap-2 p-2 bg-blue-50/80 border border-blue-200/80 rounded text-xs hover:bg-blue-100/80 transition-colors"
+                      className={`group flex items-center gap-2 p-2 rounded text-xs transition-colors ${filterBgColor}`}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1 text-blue-800">
+                        <div className={`flex items-center gap-1 ${filterTextColor}`}>
+                          {isEuiFilter && (
+                            <Search className="h-3 w-3 flex-shrink-0" />
+                          )}
                           <span className="font-medium truncate">
-                            {fieldOption?.label}
+                            {fieldOption?.label || filter.field}
                           </span>
-                          <span className="text-blue-600 flex-shrink-0">
-                            {operatorOption?.label}
+                          <span className={`${isEuiFilter ? 'text-green-600' : 'text-blue-600'} flex-shrink-0`}>
+                            {operatorOption?.label || filter.operator}
                           </span>
                         </div>
-                        <div className="font-mono text-blue-900 truncate mt-0.5">
+                        <div className={`font-mono truncate mt-0.5 ${filterValueColor}`}>
                           "{filter.value}"
                         </div>
+                        {isEuiFilter && (
+                          <div className="text-xs text-green-600 mt-0.5">
+                            From search query
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-5 w-5 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-200/80 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        className={`h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${filterButtonColor}`}
                         onClick={() => handleRemoveFilter(filter.id)}
                       >
                         <X className="h-3 w-3" />
@@ -910,80 +1218,40 @@ export function OpenSearchAlertsKibanaStyle() {
         {/* 右侧主内容区域 */}
         <div className="flex-1 bg-white flex flex-col min-w-0">
           {/* 搜索框和时间筛选框 */}
-          <div className="bg-white border-b border-gray-200 px-6 py-3 relative h-[60px] flex items-center">
+          <div className="bg-white border-b border-gray-200 px-6 py-4 relative h-[72px] flex items-center">
             <div className="flex items-center gap-3 w-full min-w-0">
-              {/* EUI SearchBar 风格的搜索框 */}
+              {/* EUI SearchBar */}
               <div className="flex-1 min-w-0">
-                <div className="relative">
-                  {/* 主搜索框容器 */}
-                  <div className="flex items-stretch border border-gray-300 rounded-md bg-white shadow-sm hover:shadow-md transition-all focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 h-9">
-                    {/* 搜索输入框 */}
-                    <div className="flex-1 relative">
-                      <input
-                        type="text"
-                        className="w-full px-3 py-2 text-sm border-0 bg-transparent focus:outline-none focus:ring-0 placeholder-gray-500 pr-12 h-full"
-                        placeholder="Search events, hosts, processes... (e.g., severity:high host:server-01)"
-                        value={searchState.query}
-                        onChange={(e) => handleSearch(e.target.value)}
-                      />
-                      {/* 搜索图标 */}
-                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        <Search className="h-4 w-4 text-gray-400" />
-                      </div>
-                    </div>
-
-                    {/* 查询语言切换按钮 */}
-                    <div className="flex items-center border-l border-gray-200">
-                      <button className="px-3 py-2 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-colors rounded-r-md h-full">
-                        KQL
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 搜索提示 */}
-                  {searchState.query && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 p-2 text-xs text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">Tip:</span>
-                        <span>
-                          Use field:value syntax (e.g., severity:critical,
-                          host.name:server-01)
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                <div style={{ fontSize: '14px' }}>
+                  <EuiSearchBar
+                    box={{
+                      placeholder: 'Search events... (e.g., severity:critical host:server-01)',
+                      incremental: true,
+                      schema: searchSchema,
+                    }}
+                    onChange={handleSearchBarChange}
+                  />
                 </div>
               </div>
 
-              {/* EuiSuperDatePicker 风格的时间选择器 */}
-              <div className="flex items-center flex-shrink-0">
-                <div className="relative">
-                  <button
-                    className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm transition-all min-w-[200px] h-9"
-                    onClick={() => setShowTimeRangePicker(!showTimeRangePicker)}
-                  >
-                    <Calendar className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                    <span className="text-gray-700 text-xs font-medium truncate flex-1 text-left">
-                      {searchState.timeRange.label}
-                    </span>
-                    <ChevronDown className="h-3 w-3 text-gray-500 flex-shrink-0" />
-                  </button>
-                </div>
+              {/* 时间范围选择器 */}
+              <div className="flex-shrink-0" style={{ fontSize: '14px' }}>
+                <DateRangePicker
+                  from={searchState.timeRange.from}
+                  to={searchState.timeRange.to}
+                  onRangeChange={(from, to) => {
+                    const label = `${from.toLocaleDateString()} → ${to.toLocaleDateString()}`;
+                    setSearchState((prev) => ({
+                      ...prev,
+                      timeRange: { from, to, label },
+                      pagination: { ...prev.pagination, current: 1 },
+                    }));
+                  }}
+                  label={searchState.timeRange.label}
+                  onRefresh={fetchData}
+                  isLoading={loading}
+                />
               </div>
-
-              {/* Refresh 按钮 */}
-              <Button
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 h-9 text-sm font-medium shadow-sm border-0 flex-shrink-0"
-                onClick={fetchData}
-                disabled={loading}
-              >
-                {loading ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-              </Button>
             </div>
           </div>
 
@@ -1158,45 +1426,45 @@ export function OpenSearchAlertsKibanaStyle() {
                           </TableCell>
                           <TableCell className="px-3 py-2">
                             {getSeverityBadge(
-                              event._source.severity || "unknown"
+                              event._source.alert?.severity || "unknown"
                             )}
                           </TableCell>
                           <TableCell className="px-3 py-2">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border bg-gray-100/80 text-gray-700 border-gray-200/80">
-                              {event._source.event_type || "Unknown"}
+                              {event._source.alert?.evidence?.event_type || "Unknown"}
                             </span>
                           </TableCell>
                           <TableCell className="px-3 py-2">
-                            {getRiskScoreBadge(event._source.risk_score || 0)}
+                            {getRiskScoreBadge(event._source.alert?.risk_score || 0)}
                           </TableCell>
                           <TableCell className="px-3 py-2 font-mono text-xs text-gray-600 hidden md:table-cell">
                             <div
                               className="truncate max-w-[80px]"
-                              title={event._source.source || "Unknown"}
+                              title={event._source.metadata?.source || "Unknown"}
                             >
-                              {event._source.source || "Unknown"}
+                              {event._source.metadata?.source || "Unknown"}
                             </div>
                           </TableCell>
                           <TableCell className="px-3 py-2 text-xs hidden lg:table-cell">
                             <div
                               className="truncate max-w-[80px]"
                               title={
-                                event._source.host?.name ||
-                                event._source.collector_id ||
+                                event._source.metadata?.host ||
+                                event._source.metadata?.collector_id ||
                                 "N/A"
                               }
                             >
-                              {event._source.host?.name ||
-                                event._source.collector_id ||
+                              {event._source.metadata?.host ||
+                                event._source.metadata?.collector_id ||
                                 "N/A"}
                             </div>
                           </TableCell>
                           <TableCell className="px-3 py-2 hidden xl:table-cell">
                             <div
                               className="truncate text-xs text-gray-600 max-w-[160px]"
-                              title={event._source.message}
+                              title={event._source.alert?.rule?.title}
                             >
-                              {event._source.message}
+                              {event._source.alert?.rule?.title}
                             </div>
                           </TableCell>
                           <TableCell className="px-3 py-2">
@@ -1213,120 +1481,106 @@ export function OpenSearchAlertsKibanaStyle() {
                             </Button>
                           </TableCell>
                         </TableRow>
-                        {/* 展开行 */}
+                        {/* 展开行 - 子表格版本 */}
                         {expandedRows.has(event._id) && (
-                          <TableRow className="bg-gray-50/40">
-                            <TableCell colSpan={10} className="px-3 py-3">
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                                <div>
-                                  <h4 className="font-medium text-gray-800 mb-1.5 text-xs">
-                                    Host Information
-                                  </h4>
-                                  <div className="space-y-1">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">
-                                        Host Name:
-                                      </span>
-                                      <span className="font-mono">
-                                        {event._source.host?.name || "N/A"}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">
-                                        IP Address:
-                                      </span>
-                                      <span className="font-mono">
-                                        {event._source.host?.ip || "N/A"}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">
-                                        Collector ID:
-                                      </span>
-                                      <span className="font-mono">
-                                        {event._source.collector_id || "N/A"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                                {event._source.process && (
-                                  <div>
-                                    <h4 className="font-medium text-gray-800 mb-1.5 text-xs">
-                                      Process Information
-                                    </h4>
-                                    <div className="space-y-1">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                          Process Name:
-                                        </span>
-                                        <span className="font-mono">
-                                          {event._source.process.name || "N/A"}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                          PID:
-                                        </span>
-                                        <span className="font-mono">
-                                          {event._source.process.pid || "N/A"}
-                                        </span>
-                                      </div>
-                                      <div className="col-span-2">
-                                        <span className="text-gray-600">
-                                          Command Line:
-                                        </span>
-                                        <div className="font-mono text-xs bg-gray-100/80 p-1.5 rounded mt-1 break-all">
-                                          {event._source.process.command_line ||
-                                            "N/A"}
+                          <TableRow className="bg-gradient-to-r from-slate-50 to-blue-50/30 border-l-2 border-blue-400">
+                            <TableCell colSpan={10} className="px-6 py-4">
+                              <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                                <Table className="text-xs">
+                                  <TableBody>
+                                    {/* 系统信息分组 */}
+                                    <TableRow className="bg-purple-50/50">
+                                      <TableCell colSpan={2} className="px-4 py-2 font-semibold text-purple-800 text-xs">
+                                        <div className="flex items-center gap-2">
+                                          <Server className="h-3 w-3" />
+                                          系统信息
                                         </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                                {event._source.network && (
-                                  <div>
-                                    <h4 className="font-medium text-gray-800 mb-1.5 text-xs">
-                                      Network Information
-                                    </h4>
-                                    <div className="space-y-1">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                          Source IP:
-                                        </span>
-                                        <span className="font-mono">
-                                          {event._source.network.src_ip ||
-                                            "N/A"}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                          Destination IP:
-                                        </span>
-                                        <span className="font-mono">
-                                          {event._source.network.dst_ip ||
-                                            "N/A"}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                          Protocol:
-                                        </span>
-                                        <span className="font-mono">
-                                          {event._source.network.protocol ||
-                                            "N/A"}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="mt-3">
-                                <h4 className="font-medium text-gray-800 mb-1.5 text-xs">
-                                  Event Message
-                                </h4>
-                                <div className="p-2 bg-white/80 rounded border text-xs">
-                                  {event._source.message}
-                                </div>
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">主机名</TableCell>
+                                      <TableCell className="px-4 py-2 font-mono text-gray-900">{event._source.metadata?.host || "N/A"}</TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">Collector ID</TableCell>
+                                      <TableCell className="px-4 py-2 font-mono text-gray-900 break-all">{event._source.metadata?.collector_id || "N/A"}</TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">处理器</TableCell>
+                                      <TableCell className="px-4 py-2 font-mono text-gray-900">{event._source.metadata?.processor || "N/A"}</TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">置信度</TableCell>
+                                      <TableCell className="px-4 py-2">
+                                        <Badge variant="secondary" className="text-xs">
+                                          {event._source.alert?.confidence ? `${(event._source.alert.confidence * 100).toFixed(1)}%` : "N/A"}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+
+                                    {/* 告警规则分组 */}
+                                    <TableRow className="bg-blue-50/50">
+                                      <TableCell colSpan={2} className="px-4 py-2 font-semibold text-blue-800 text-xs">
+                                        <div className="flex items-center gap-2">
+                                          <Shield className="h-3 w-3" />
+                                          告警规则
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">规则名称</TableCell>
+                                      <TableCell className="px-4 py-2 text-gray-900">{event._source.alert?.rule?.name || "N/A"}</TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">规则ID</TableCell>
+                                      <TableCell className="px-4 py-2 font-mono text-gray-900">{event._source.alert?.rule?.id || "N/A"}</TableCell>
+                                    </TableRow>
+                                    {event._source.alert?.rule?.description && (
+                                      <TableRow className="hover:bg-gray-50/50">
+                                        <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">描述</TableCell>
+                                        <TableCell className="px-4 py-2 text-gray-700 leading-relaxed">{event._source.alert.rule.description}</TableCell>
+                                      </TableRow>
+                                    )}
+
+                                    {/* 证据信息分组 */}
+                                    <TableRow className="bg-orange-50/50">
+                                      <TableCell colSpan={2} className="px-4 py-2 font-semibold text-orange-800 text-xs">
+                                        <div className="flex items-center gap-2">
+                                          <AlertTriangle className="h-3 w-3" />
+                                          证据信息
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">事件类型</TableCell>
+                                      <TableCell className="px-4 py-2">
+                                        <Badge variant="outline" className="text-xs">
+                                          {event._source.alert?.evidence?.event_type || "N/A"}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow className="hover:bg-gray-50/50">
+                                      <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">进程名称</TableCell>
+                                      <TableCell className="px-4 py-2 font-mono text-gray-900">{event._source.alert?.evidence?.process_name || "N/A"}</TableCell>
+                                    </TableRow>
+                                    {event._source.alert?.evidence?.file_path && (
+                                      <TableRow className="hover:bg-gray-50/50">
+                                        <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium">文件路径</TableCell>
+                                        <TableCell className="px-4 py-2 font-mono text-gray-900 break-all">{event._source.alert.evidence.file_path}</TableCell>
+                                      </TableRow>
+                                    )}
+                                    {event._source.alert?.evidence?.process_cmdline && (
+                                      <TableRow className="hover:bg-gray-50/50">
+                                        <TableCell className="px-4 py-2 w-32 text-gray-600 font-medium align-top">命令行</TableCell>
+                                        <TableCell className="px-4 py-2">
+                                          <div className="p-2 bg-gray-50 rounded border font-mono text-xs break-all leading-relaxed max-h-20 overflow-y-auto">
+                                            {event._source.alert.evidence.process_cmdline}
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                  </TableBody>
+                                </Table>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1526,21 +1780,21 @@ export function OpenSearchAlertsKibanaStyle() {
                       <div className="flex justify-between">
                         <span className="text-gray-600">Type:</span>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                          {selectedEvent._source.event_type}
+                          {selectedEvent._source.alert?.evidence?.event_type}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Severity:</span>
-                        {getSeverityBadge(selectedEvent._source.severity)}
+                        {getSeverityBadge(selectedEvent._source.alert?.severity)}
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Risk Score:</span>
-                        {getRiskScoreBadge(selectedEvent._source.risk_score)}
+                        {getRiskScoreBadge(selectedEvent._source.alert?.risk_score)}
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Source:</span>
                         <span className="font-mono">
-                          {selectedEvent._source.source}
+                          {selectedEvent._source.metadata?.source}
                         </span>
                       </div>
                     </div>
@@ -1552,18 +1806,18 @@ export function OpenSearchAlertsKibanaStyle() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Host Name:</span>
-                        <span>{selectedEvent._source.host?.name || "N/A"}</span>
+                        <span>{selectedEvent._source.metadata?.host || "N/A"}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">IP Address:</span>
                         <span className="font-mono">
-                          {selectedEvent._source.host?.ip || "N/A"}
+                          {selectedEvent._source.event?.raw?.message?.host || "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Collector ID:</span>
                         <span className="font-mono">
-                          {selectedEvent._source.collector_id || "N/A"}
+                          {selectedEvent._source.metadata?.collector_id || "N/A"}
                         </span>
                       </div>
                     </div>
@@ -1572,10 +1826,14 @@ export function OpenSearchAlertsKibanaStyle() {
 
                 <div>
                   <h4 className="font-semibold mb-3 text-gray-800">
-                    Event Message
+                    Alert Rule
                   </h4>
                   <div className="p-4 bg-gray-50 rounded-lg text-sm border">
-                    {selectedEvent._source.message}
+                    <div className="space-y-2">
+                      <div><strong>Title:</strong> {selectedEvent._source.alert?.rule?.title}</div>
+                      <div><strong>Description:</strong> {selectedEvent._source.alert?.rule?.description}</div>
+                      <div><strong>Mitigation:</strong> {selectedEvent._source.alert?.rule?.mitigation}</div>
+                    </div>
                   </div>
                 </div>
 

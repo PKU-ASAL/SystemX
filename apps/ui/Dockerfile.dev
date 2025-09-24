@@ -8,7 +8,11 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json pnpm-lock.yaml* ./
-RUN corepack enable pnpm && pnpm i --no-frozen-lockfile
+# Configure Chinese mirrors for better network connectivity
+RUN npm config set registry https://registry.npmmirror.com/ && \
+    corepack enable pnpm && \
+    pnpm config set registry https://registry.npmmirror.com/ && \
+    pnpm i --no-frozen-lockfile
 
 # Development image with hot reload support
 FROM base AS development
