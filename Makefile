@@ -104,44 +104,6 @@ test: ## 运行完整系统测试
 	@echo ""
 	@echo "🎉 完整系统测试完成！"
 
-##@ 🛠️ 开发环境
-dev-up: ## 启动开发环境 (连接远程middleware)
-	@echo "🚀 启动开发环境..."
-	@if [ ! -f .env.dev ]; then echo "❌ .env.dev 文件不存在"; exit 1; fi
-	docker compose -f docker-compose.dev.yml up -d
-	@echo "✅ 开发环境启动完成"
-
-dev-down: ## 停止开发环境
-	@echo "🛑 停止开发环境..."
-	docker compose -f docker-compose.dev.yml down -v --remove-orphans
-	@echo "✅ 开发环境已停止"
-
-build-ui: ## 构建UI Docker服务
-	@echo "🔨 构建UI Docker服务..."
-	@cd apps/ui && docker compose build
-	@echo "✅ UI Docker服务构建完成"
-
-dev-ui: ## 启动UI开发环境 (支持热更新)
-	@echo "🚀 启动UI开发环境 (热更新模式)..."
-	@cd apps/ui && docker compose -f docker-compose.dev.yml up -d --build
-	@echo "✅ UI开发环境启动完成"
-	@echo "🌐 开发服务器: http://localhost:3000"
-	@echo "🔥 热更新已启用，修改代码后会自动刷新"
-
-dev-ui-logs: ## 查看UI开发环境日志
-	@echo "📋 UI开发环境日志："
-	@cd apps/ui && docker compose -f docker-compose.dev.yml logs -f ui-dev
-
-dev-ui-stop: ## 停止UI开发环境
-	@echo "🛑 停止UI开发环境..."
-	@cd apps/ui && docker compose -f docker-compose.dev.yml down
-	@echo "✅ UI开发环境已停止"
-
-test-ui: ## 测试UI部署和API连接
-	@echo "🧪 测试UI部署和API连接..."
-	@./tests/test-ui-deployment.sh
-
-
 ##@ 🧹 清理维护
 clean: ## 清理构建文件和容器
 	@echo "🧹 清理构建文件和容器..."
@@ -181,8 +143,6 @@ info: ## 显示项目信息
 	@echo "开发模式:"
 	@echo "  make deploy DEV_UI=true  # 使用参数启用开发UI"
 	@echo "  make deploy-dev          # 快捷开发部署命令"
-	@echo "  make dev-ui-logs         # 查看开发UI日志"
-	@echo "  make dev-ui-stop         # 停止开发UI"
 
 # 允许make命令接受参数
 %:
