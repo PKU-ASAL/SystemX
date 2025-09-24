@@ -334,17 +334,27 @@ export function OpenSearchAlerts() {
         <EuiFlexGroup alignItems="center" gutterSize="m">
           {/* Index选择器 */}
           <EuiFlexItem grow={false} style={{ minWidth: '200px' }}>
-            <EuiSuperSelect
-              options={indexOptions}
-              valueOfSelected={selectedIndex}
-              onChange={handleIndexChange}
-              fullWidth
-            />
+            <div style={{ 
+              fontSize: '14px',
+              '--euiFontSizeS': '14px',
+              '--euiFontSizeXS': '12px'
+            } as React.CSSProperties}>
+              <EuiSuperSelect
+                options={indexOptions}
+                valueOfSelected={selectedIndex}
+                onChange={handleIndexChange}
+                fullWidth
+              />
+            </div>
           </EuiFlexItem>
 
           {/* 搜索框 */}
           <EuiFlexItem>
-            <div style={{ fontSize: '14px' }}>
+            <div style={{ 
+              fontSize: '14px',
+              '--euiFontSizeS': '14px',
+              '--euiFontSizeXS': '12px'
+            } as React.CSSProperties}>
               <EuiSearchBar
                 box={{
                   placeholder: 'Search events... (e.g., alert.severity:critical metadata.host:server-01)',
@@ -359,7 +369,11 @@ export function OpenSearchAlerts() {
 
           {/* 时间范围选择器 */}
           <EuiFlexItem grow={false}>
-            <div style={{ fontSize: '14px' }}>
+            <div style={{ 
+              fontSize: '14px',
+              '--euiFontSizeS': '14px',
+              '--euiFontSizeXS': '12px'
+            } as React.CSSProperties}>
               <DateRangePicker
                 from={searchState.timeRange.from}
                 to={searchState.timeRange.to}
