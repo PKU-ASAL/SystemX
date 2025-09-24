@@ -194,19 +194,39 @@ export function OpenSearchAlerts() {
       }
 
       const eventsResponse = await apiClient.searchSecurityEvents(params);
+      console.log('API Response:', eventsResponse); // 调试信息
+      
       const events = eventsResponse?.hits?.hits || eventsResponse?.data?.hits?.hits || [];
-      const total = eventsResponse?.hits?.total?.value || eventsResponse?.hits?.total || 0;
+      
+      // 修复total字段解析逻辑
+      let total = 0;
+      if (eventsResponse?.hits?.total?.value) {
+        total = eventsResponse.hits.total.value;
+      } else if (eventsResponse?.hits?.total) {
+        total = typeof eventsResponse.hits.total === 'number' ? eventsResponse.hits.total : eventsResponse.hits.total.value || 0;
+      } else if (eventsResponse?.data?.hits?.total?.value) {
+        total = eventsResponse.data.hits.total.value;
+      } else if (eventsResponse?.data?.hits?.total) {
+        total = typeof eventsResponse.data.hits.total === 'number' ? eventsResponse.data.hits.total : eventsResponse.data.hits.total.value || 0;
+      } else {
+        // 如果无法从API响应中获取total，使用实际events数组长度
+        total = events.length;
+      }
+
+      console.log('Parsed events:', events.length, 'Total:', total, 'Raw total field:', eventsResponse?.data?.hits?.total); // 调试信息
 
       setEvents(events);
       setSearchState((prev) => ({
         ...prev,
         pagination: {
           ...prev.pagination,
-          total: typeof total === "number" ? total : total.value || 0,
+          total: total,
         },
       }));
 
-      setTimelineData(generateTimelineData(events));
+      const timelineData = generateTimelineData(events);
+      console.log('Generated timeline data:', timelineData); // 调试信息
+      setTimelineData(timelineData);
 
     } catch (error) {
       console.error("❌ OpenSearch API 调用失败:", error);
