@@ -22,9 +22,6 @@ from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer, FlinkKafkaPr
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.typeinfo import Types
 from pyflink.datastream.functions import MapFunction, FilterFunction
-from pyflink.datastream.state import ValueStateDescriptor
-from pyflink.datastream.functions import KeyedProcessFunction, ProcessFunction
-from pyflink.common import Time
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -110,6 +107,7 @@ class ThreatDetectionRules:
     
     def _match_rule(self, event: Dict, sysdig_data: Dict, event_str: str, rule: Dict) -> bool:
         """检查事件是否匹配规则"""
+        rule_id = rule.get('id', 'unknown')
         try:
             # 检查关键词匹配
             keywords = rule.get('keywords', [])
@@ -215,8 +213,67 @@ class ThreatDetectionRules:
         
         return alert
 
+class EventDeduplicationProcessor(MapFunction):
+    """事件去重处理器 - 简化版本：每100个事件输出所有窗口数据"""
+    
+    def __init__(self, window_size: int = 100):
+        self.window_size = window_size  # 每处理100个事件就输出
+        self.event_buffer = {}  # 存储每个event_id的最新事件
+        self.event_counts = {}  # 存储事件计数  
+        self.processed_count = 0
+        self.output_buffer = []  # 输出缓冲区
+        
+    def map(self, value):
+        try:
+            event = json.loads(value)
+            event_id = event.get('event_id', '')
+            
+            if not event_id:
+                # 没有event_id的事件直接输出
+                return value
+            
+            # 始终用最新事件覆盖之前的记录
+            self.event_buffer[event_id] = value
+            self.event_counts[event_id] = self.event_counts.get(event_id, 0) + 1
+            self.processed_count += 1
+            
+            # 如果输出缓冲区有数据，先输出一个
+            if self.output_buffer:
+                return self.output_buffer.pop(0)
+            
+            # 每处理window_size个事件，输出窗口中的所有数据
+            if self.processed_count % self.window_size == 0:
+                self._flush_all_events()
+                if self.output_buffer:
+                    return self.output_buffer.pop(0)
+            
+            # 当前事件暂不输出，保留在缓冲区等待批量输出
+            return None
+            
+        except Exception as e:
+            logger.error(f"EventDeduplicationProcessor处理异常: {e}")
+            return value
+    
+    def _flush_all_events(self):
+        """输出窗口中的所有事件"""
+        all_events = []
+        for event_id_key, latest_value in list(self.event_buffer.items()):
+            latest_event = json.loads(latest_value)
+            latest_event['_deduplicated'] = True
+            latest_event['_dedup_count'] = self.event_counts.get(event_id_key, 1)
+            
+            all_events.append(json.dumps(latest_event, ensure_ascii=False))
+        
+        # 清理所有缓冲数据
+        self.event_buffer.clear()
+        self.event_counts.clear()
+        
+        if all_events:
+            self.output_buffer.extend(all_events)
+            logger.info(f"🔄 批量输出 {len(all_events)} 个去重事件 (处理计数: {self.processed_count})")
+
 class EventToAlertsProcessor(MapFunction):
-    """事件到告警处理器 - 简化版本，先测试基本功能"""
+    """事件到告警处理器"""
     
     def __init__(self):
         self.rules_engine = ThreatDetectionRules()
@@ -224,7 +281,18 @@ class EventToAlertsProcessor(MapFunction):
     def map(self, value):
         try:
             event = json.loads(value)
-            logger.info(f"🔍 处理事件: {event.get('event_type', 'unknown')} from {event.get('collector_id', 'unknown')[:8]}")
+            event_id = event.get('event_id', 'unknown')
+            event_type = event.get('event_type', 'unknown')
+            collector_id = event.get('collector_id', 'unknown')[:8]
+            
+            # 检查是否是去重后的事件
+            is_deduplicated = event.get('_deduplicated', False)
+            dedup_count = event.get('_dedup_count', 1)
+            
+            if is_deduplicated:
+                logger.info(f"🔍 处理去重事件: {event_type} (ID: {event_id}) from {collector_id} [合并了{dedup_count}条记录]")
+            else:
+                logger.info(f"🔍 处理事件: {event_type} (ID: {event_id}) from {collector_id}")
             
             # 基础规则匹配
             alerts = self.rules_engine.evaluate_event(event)
@@ -233,7 +301,20 @@ class EventToAlertsProcessor(MapFunction):
                 logger.info(f"🚨 匹配到 {len(alerts)} 个告警规则")
                 # 返回第一个匹配的告警
                 alert = alerts[0]
-                logger.info(f"🚨 生成告警: {alert['alert']['id']} - {alert['alert']['rule']['name']}")
+                
+                # 在告警中记录去重信息
+                if is_deduplicated:
+                    alert['alert']['evidence']['deduplication_info'] = {
+                        'is_deduplicated': True,
+                        'original_record_count': dedup_count,
+                        'selected_as_most_complete': True
+                    }
+                    alert['metadata']['deduplication_applied'] = True
+                
+                alert_id = alert['alert']['id']
+                rule_name = alert['alert']['rule']['name']
+                logger.info(f"🚨 生成告警: {alert_id} - {rule_name} (事件ID: {event_id})")
+                
                 return json.dumps(alert, ensure_ascii=False)
             
             return None
@@ -322,18 +403,18 @@ def main():
             producer_config=producer_props
         )
         
-        logger.info("📋 Creating Falco-style threat detection pipeline...")
+        logger.info("📋 Creating Falco-style threat detection pipeline with deduplication...")
         
         # 构建数据流处理管道
         events_stream = env.add_source(kafka_consumer)
         
-        # 按 collector_id 分组，支持频率检测
-        keyed_stream = events_stream.key_by(
-            lambda event: json.loads(event).get('collector_id', 'unknown')
-        )
+        deduplicated_stream = events_stream.map(
+            EventDeduplicationProcessor(window_size=100),
+            output_type=Types.STRING()
+        ).filter(lambda x: x is not None)  # 过滤掉None值（缓冲中的事件）
         
-        # 威胁检测处理 (简化版本)
-        alerts_stream = events_stream.map(
+        # 威胁检测处理
+        alerts_stream = deduplicated_stream.map(
             EventToAlertsProcessor(),
             output_type=Types.STRING()
         ).filter(lambda x: x is not None)
@@ -397,13 +478,21 @@ def main():
         logger.info("✅ 告警将写入 Kafka Topic + OpenSearch")
         
         # 监控输出
+        def format_alert_log(x):
+            try:
+                alert = json.loads(x)
+                severity = alert.get('alert', {}).get('severity', 'unknown')
+                rule_name = alert.get('alert', {}).get('rule', {}).get('name', 'unknown')
+                collector_id = alert.get('metadata', {}).get('collector_id', 'unknown')[:8]
+                return f"🚨 Alert: {severity} - {rule_name} from {collector_id}"
+            except:
+                return f"🚨 Alert: (parse error)"
+        
         alerts_stream.map(
-            lambda x: f"🚨 Alert: {json.loads(x).get('alert', {}).get('severity', 'unknown')} - {json.loads(x).get('alert', {}).get('rule', {}).get('name', 'unknown')} from {json.loads(x).get('metadata', {}).get('collector_id', 'unknown')[:8]}",
+            format_alert_log,
             output_type=Types.STRING()
         ).print()
-        
-        logger.info("🔄 Falco-style threat detection pipeline created:")
-        logger.info(f"   {input_topic} -> Rule Engine -> Threat Detection -> {output_topic}")
+    
         
         # 显示加载的规则
         rules_engine = ThreatDetectionRules()
