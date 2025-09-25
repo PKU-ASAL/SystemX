@@ -70,6 +70,10 @@ const data = {
           title: "攻击溯源图",
           url: "/threats/timeline",
         },
+        {
+          title: "智能体分析",
+          url: "/threats/agent-analysis",
+        },
       ],
     },
     {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { RefreshCw, AlertTriangle, Search } from "lucide-react";
+import { RefreshCw, AlertTriangle, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -334,6 +334,19 @@ export function OpenSearchAlerts() {
 
   return (
     <div className="flex flex-col h-full bg-background">
+      {/* 页面标题 */}
+      <div className="border-b border-border px-4 lg:px-6 py-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <AlertTriangle className="h-6 w-6 text-destructive" />
+            攻击告警
+          </h1>
+          <p className="text-muted-foreground">
+            实时安全事件监控和威胁告警分析系统
+          </p>
+        </div>
+      </div>
+
       {/* 控制面板 - 单行布局 */}
       <div className="border-b border-border px-4 lg:px-6 py-3">
         <div className="flex items-center">
@@ -440,19 +453,149 @@ export function OpenSearchAlerts() {
             </p>
           </div>
         ) : (
-          <EventsTable
-            events={events}
-            searchState={searchState}
-            expandedRows={expandedRows}
-            onSelectEvent={handleSelectEvent}
-            onSelectAll={handleSelectAll}
-            onSort={handleSort}
-            onToggleExpansion={toggleRowExpansion}
-            onViewDetails={(event) => {
-              setSelectedEvent(event);
-              setDetailDialogOpen(true);
-            }}
-          />
+          <div className="flex flex-col h-full">
+            <div className="flex-1 overflow-auto">
+              <EventsTable
+                events={events}
+                searchState={searchState}
+                expandedRows={expandedRows}
+                onSelectEvent={handleSelectEvent}
+                onSelectAll={handleSelectAll}
+                onSort={handleSort}
+                onToggleExpansion={toggleRowExpansion}
+                onViewDetails={(event) => {
+                  setSelectedEvent(event);
+                  setDetailDialogOpen(true);
+                }}
+              />
+            </div>
+            
+            {/* 翻页组件 */}
+            {searchState.pagination.total > 0 && (
+              <div className="border-t border-border px-4 lg:px-6 py-3 bg-background">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    显示 {((searchState.pagination.current - 1) * searchState.pagination.size) + 1} - {Math.min(searchState.pagination.current * searchState.pagination.size, searchState.pagination.total)} 条，共 {searchState.pagination.total} 条记录
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    {/* 每页显示数量选择器 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">每页显示</span>
+                      <Select
+                        value={searchState.pagination.size.toString()}
+                        onValueChange={(value) => {
+                          setSearchState((prev) => ({
+                            ...prev,
+                            pagination: {
+                              ...prev.pagination,
+                              size: parseInt(value),
+                              current: 1,
+                            },
+                          }));
+                        }}
+                      >
+                        <SelectTrigger className="w-20 h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-muted-foreground">条</span>
+                    </div>
+
+                    {/* 翻页按钮 */}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSearchState((prev) => ({
+                            ...prev,
+                            pagination: {
+                              ...prev.pagination,
+                              current: Math.max(1, prev.pagination.current - 1),
+                            },
+                          }));
+                        }}
+                        disabled={searchState.pagination.current <= 1}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="flex items-center gap-1">
+                        {(() => {
+                          const totalPages = Math.ceil(searchState.pagination.total / searchState.pagination.size);
+                          const currentPage = searchState.pagination.current;
+                          const pages = [];
+                          
+                          // 显示页码逻辑
+                          let startPage = Math.max(1, currentPage - 2);
+                          let endPage = Math.min(totalPages, currentPage + 2);
+                          
+                          if (endPage - startPage < 4) {
+                            if (startPage === 1) {
+                              endPage = Math.min(totalPages, startPage + 4);
+                            } else {
+                              startPage = Math.max(1, endPage - 4);
+                            }
+                          }
+                          
+                          for (let i = startPage; i <= endPage; i++) {
+                            pages.push(
+                              <Button
+                                key={i}
+                                variant={i === currentPage ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  setSearchState((prev) => ({
+                                    ...prev,
+                                    pagination: {
+                                      ...prev.pagination,
+                                      current: i,
+                                    },
+                                  }));
+                                }}
+                                className="h-8 w-8 p-0 text-xs"
+                              >
+                                {i}
+                              </Button>
+                            );
+                          }
+                          
+                          return pages;
+                        })()}
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const totalPages = Math.ceil(searchState.pagination.total / searchState.pagination.size);
+                          setSearchState((prev) => ({
+                            ...prev,
+                            pagination: {
+                              ...prev.pagination,
+                              current: Math.min(totalPages, prev.pagination.current + 1),
+                            },
+                          }));
+                        }}
+                        disabled={searchState.pagination.current >= Math.ceil(searchState.pagination.total / searchState.pagination.size)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
