@@ -21,6 +21,11 @@ func NewOpenSearchHandler(baseURL, username, password string) *OpenSearchHandler
 	}
 }
 
+// GetOpenSearchService 获取OpenSearch服务实例（用于其他handler）
+func (h *OpenSearchHandler) GetOpenSearchService() *opensearch.OpenSearchService {
+	return h.opensearchService
+}
+
 // GetOpenSearchHealth 获取 OpenSearch 健康状态
 // @Summary 获取 OpenSearch 健康状态
 // @Description 获取 OpenSearch 集群的健康状态和连接信息

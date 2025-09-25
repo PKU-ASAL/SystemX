@@ -1,6 +1,6 @@
 "use client";
 
-import { HealthStatus } from "@/components/health-status";
+import { HealthStatus } from "@/components/common/health-status";
 
 export default function HealthPage() {
   return <HealthStatus />;

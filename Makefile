@@ -18,32 +18,21 @@ init: ## 初始化项目环境
 	fi
 	@echo "✅ 项目初始化完成"
 
-deploy: ## 🎯 完整部署 (推荐) - 支持 DEV_UI=true 启用开发UI
-	@echo "🔨 构建并启动SysArmor EDR系统..."
+deploy: ## 🎯 部署基础设施 (不含前端) - Manager + Middleware + Processor + Indexer
+	@echo "🔨 构建并启动SysArmor EDR基础设施..."
 	@if [ ! -f .env ]; then cp .env.example .env; fi
-	@if [ "$(DEV_UI)" = "true" ]; then \
-		echo "🔥 使用开发UI模式 (热更新)..."; \
-		docker compose build --no-cache; \
-		docker compose up -d --scale ui=0; \
-		echo "🚀 启动UI开发环境..."; \
-		cd apps/ui && docker compose -f docker-compose.dev.yml up -d --build; \
-	else \
-		docker compose build --no-cache; \
-		docker compose up -d; \
-	fi
-	@echo "✅ 所有服务构建并启动完成"
+	@echo "🏗️  构建基础设施服务..."
+	@docker compose build --no-cache
+	@echo "🚀 启动基础设施服务 (排除前端)..."
+	@docker compose up -d --scale ui=0
+	@echo "✅ 基础设施服务构建并启动完成"
 	@echo ""
 	@echo "🚀 自动初始化数据处理流程..."
 	@./scripts/auto-init-processor.sh
 	@echo ""
-	@echo "🎉 SysArmor EDR 系统完全就绪！"
+	@echo "🎉 SysArmor EDR 基础设施就绪！"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📋 系统访问地址:"
-	@if [ "$(DEV_UI)" = "true" ]; then \
-		echo "   🔥 Web界面 (开发): http://localhost:3000 (热更新)"; \
-	else \
-		echo "   🎨 Web界面: http://localhost:3000"; \
-	fi
+	@echo "📋 基础设施访问地址:"
 	@echo "   🌐 Manager API: http://localhost:8080"
 	@echo "   📖 API文档: http://localhost:8080/swagger/index.html"
 	@echo "   🔧 Flink监控: http://localhost:8081"
@@ -55,18 +44,76 @@ deploy: ## 🎯 完整部署 (推荐) - 支持 DEV_UI=true 启用开发UI
 	@echo "   ./tests/test-system-api.sh        # 完整API测试"
 	@echo "   ./tests/import-events-data.sh     # 事件数据导入"
 	@echo ""
-	@if [ "$(DEV_UI)" = "true" ]; then \
-		echo "🔥 开发模式特性:"; \
-		echo "   热更新已启用，修改UI代码后会自动刷新"; \
-		echo "   查看UI日志: make dev-ui-logs"; \
-		echo "   停止开发UI: make dev-ui-stop"; \
-		echo ""; \
-	fi
+	@echo "🎨 前端部署命令:"
+	@echo "   make deploy-ui        # 部署生产前端"
+	@echo "   make deploy-ui-dev    # 部署开发前端 (热更新)"
+	@echo ""
 	@echo "📊 数据流状态: auditd → events → alerts (已激活)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-deploy-dev: ## 🔥 开发部署 (带热更新UI)
-	@$(MAKE) deploy DEV_UI=true
+deploy-full: ## 🎯 完整部署 (基础设施 + 前端)
+	@echo "🔨 构建并启动完整SysArmor EDR系统..."
+	@if [ ! -f .env ]; then cp .env.example .env; fi
+	@docker compose build --no-cache
+	@docker compose up -d
+	@echo "✅ 完整系统构建并启动完成"
+	@echo ""
+	@echo "🚀 自动初始化数据处理流程..."
+	@./scripts/auto-init-processor.sh
+	@echo ""
+	@echo "🎉 SysArmor EDR 完整系统就绪！"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📋 系统访问地址:"
+	@echo "   🎨 Web界面: http://localhost:3000"
+	@echo "   🌐 Manager API: http://localhost:8080"
+	@echo "   📖 API文档: http://localhost:8080/swagger/index.html"
+	@echo "   🔧 Flink监控: http://localhost:8081"
+	@echo "   📊 Prometheus: http://localhost:9090"
+	@echo "   🔍 OpenSearch: http://localhost:9200"
+	@echo ""
+	@echo "🧪 系统测试命令:"
+	@echo "   ./tests/test-system-health.sh     # 快速健康检查"
+	@echo "   ./tests/test-system-api.sh        # 完整API测试"
+	@echo "   ./tests/import-events-data.sh     # 事件数据导入"
+	@echo ""
+	@echo "📊 数据流状态: auditd → events → alerts (已激活)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+deploy-ui: ## 🎨 部署生产前端 (需要先部署基础设施)
+	@echo "🎨 部署SysArmor前端界面..."
+	@if ! docker network ls | grep -q sysarmor-net; then \
+		echo "❌ 基础设施网络不存在，请先运行: make deploy"; \
+		exit 1; \
+	fi
+	@if ! docker ps | grep -q sysarmor-manager; then \
+		echo "❌ Manager服务未运行，请先运行: make deploy"; \
+		exit 1; \
+	fi
+	@cd apps/ui && docker compose up -d --build
+	@echo "✅ 前端部署完成"
+	@echo "🎨 Web界面: http://localhost:3000"
+
+deploy-ui-dev: ## 🔥 部署开发前端 (热更新)
+	@echo "🔥 部署SysArmor开发前端 (热更新)..."
+	@if ! docker network ls | grep -q sysarmor-net; then \
+		echo "❌ 基础设施网络不存在，请先运行: make deploy"; \
+		exit 1; \
+	fi
+	@if ! docker ps | grep -q sysarmor-manager; then \
+		echo "❌ Manager服务未运行，请先运行: make deploy"; \
+		exit 1; \
+	fi
+	@cd apps/ui && docker compose -f docker-compose.dev.yml up -d --build
+	@echo "✅ 开发前端部署完成"
+	@echo "🔥 Web界面 (开发): http://localhost:3000 (热更新)"
+	@echo "💡 修改UI代码后会自动刷新"
+
+deploy-dev: ## 🔥 开发部署 (基础设施 + 开发前端)
+	@echo "🔥 部署SysArmor EDR开发环境..."
+	@$(MAKE) deploy
+	@echo ""
+	@echo "🎨 部署开发前端..."
+	@$(MAKE) deploy-ui-dev
 
 up: ## 启动服务 (不重新构建)
 	@echo "🚀 启动SysArmor EDR服务..."
@@ -129,20 +176,24 @@ info: ## 显示项目信息
 	@echo "  Prometheus: 9090  (监控)"
 	@echo ""
 	@echo "快速开始:"
-	@echo "  make init        # 初始化环境"
-	@echo "  make deploy      # 完整部署 (生产UI)"
-	@echo "  make deploy-dev  # 开发部署 (热更新UI)"
-	@echo "  make test        # 系统测试"
+	@echo "  make init         # 初始化环境"
+	@echo "  make deploy       # 部署基础设施 (不含前端)"
+	@echo "  make deploy-full  # 完整部署 (基础设施 + 前端)"
+	@echo "  make deploy-dev   # 开发部署 (基础设施 + 开发前端)"
+	@echo "  make test         # 系统测试"
+	@echo ""
+	@echo "部署命令:"
+	@echo "  make deploy       # 基础设施部署"
+	@echo "  make deploy-ui    # 生产前端部署"
+	@echo "  make deploy-ui-dev # 开发前端部署 (热更新)"
+	@echo "  make deploy-full  # 完整系统部署"
+	@echo "  make deploy-dev   # 开发环境部署"
 	@echo ""
 	@echo "常用命令:"
-	@echo "  make status      # 查看服务状态"
-	@echo "  make health      # 健康检查"
-	@echo "  make test        # 完整测试"
-	@echo "  make clean       # 清理环境"
-	@echo ""
-	@echo "开发模式:"
-	@echo "  make deploy DEV_UI=true  # 使用参数启用开发UI"
-	@echo "  make deploy-dev          # 快捷开发部署命令"
+	@echo "  make status       # 查看服务状态"
+	@echo "  make health       # 健康检查"
+	@echo "  make test         # 完整测试"
+	@echo "  make clean        # 清理环境"
 
 # 允许make命令接受参数
 %:

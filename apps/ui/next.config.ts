@@ -21,9 +21,24 @@ const nextConfig: NextConfig = {
     return config;
   },
   async rewrites() {
-    // UI容器内部访问Manager使用专门的环境变量
-    const managerHost = process.env.UI_MANAGER_HOST || 'sysarmor-manager-1';
-    const managerPort = process.env.UI_MANAGER_PORT || '8080';
+    // 支持宿主机开发和容器部署两种模式
+    const isHostDevelopment = process.env.NODE_ENV === 'development' && !process.env.UI_MANAGER_HOST;
+
+    let managerHost: string;
+    let managerPort: string;
+
+    if (isHostDevelopment) {
+      // 宿主机开发模式：直接连接 localhost
+      managerHost = process.env.NEXT_PUBLIC_API_HOST || 'localhost';
+      managerPort = process.env.NEXT_PUBLIC_API_PORT || '8080';
+    } else {
+      // Docker 容器模式：使用内部网络地址
+      managerHost = process.env.UI_MANAGER_HOST || 'sysarmor-manager-1';
+      managerPort = process.env.UI_MANAGER_PORT || '8080';
+    }
+
+    console.log(`🔗 API Proxy: /api/* -> http://${managerHost}:${managerPort}/api/*`);
+    console.log(`📍 Mode: ${isHostDevelopment ? 'Host Development' : 'Docker Container'}`);
 
     return [
       {
