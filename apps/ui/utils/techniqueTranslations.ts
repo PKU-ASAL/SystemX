@@ -19,7 +19,7 @@ async function loadTechniqueTranslations(): Promise<void> {
   if (isLoaded) return;
 
   try {
-    const response = await fetch('/data/mitre-techniques-with-chinese.json');
+    const response = await fetch('/artifacts/mitre-techniques-with-chinese.json');
     if (!response.ok) {
       throw new Error(`Failed to load MITRE translations: ${response.status}`);
     }
