@@ -44,7 +44,7 @@ services:
       - WORKER_URLS=${VECTOR_HOST}:http://${VECTOR_HOST}:${VECTOR_TCP_PORT}:http://${VECTOR_HOST}:8686/health
       # Vector 配置：区分内部通信和外部访问
       - VECTOR_HOST=${VECTOR_HOST}
-      - WAZUH_ENABLED=true
+      - WAZUH_ENABLED=${WAZUH_ENABLED}
       - EXTERNAL_VECTOR_HOST=${EXTERNAL_VECTOR_HOST}
     ports:
       - "${MANAGER_PORT}:${MANAGER_PORT}"
