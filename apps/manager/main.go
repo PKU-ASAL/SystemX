@@ -379,6 +379,37 @@ func main() {
 	)
 	log.Printf("✅ OpenSearch handler initialized successfully")
 
+	// Dashboard API 路由
+	log.Printf("📊 Initializing Dashboard handler...")
+	dashboardHandler := handlers.NewDashboardHandler(
+		opensearchHandler.GetOpenSearchService(),
+		db.DB(),
+	)
+
+	dashboard := api.Group("/dashboard")
+	{
+		// 告警相关统计
+		alerts := dashboard.Group("/alerts")
+		{
+			alerts.GET("/severity-distribution", dashboardHandler.GetAlertsSeverityDistribution)
+			alerts.GET("/trends", dashboardHandler.GetAlertsTrends)
+			alerts.GET("/event-types", dashboardHandler.GetEventTypesDistribution)
+		}
+
+		// Collector状态概览
+		collectors := dashboard.Group("/collectors")
+		{
+			collectors.GET("/overview", dashboardHandler.GetCollectorsOverview)
+		}
+
+		// 系统性能概览
+		system := dashboard.Group("/system")
+		{
+			system.GET("/performance", dashboardHandler.GetSystemPerformanceOverview)
+		}
+	}
+	log.Printf("✅ Dashboard routes registered successfully")
+
 	if opensearchHandler != nil {
 		opensearch := services.Group("/opensearch")
 		{

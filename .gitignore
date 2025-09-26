@@ -2,6 +2,7 @@
 .env*
 !.env.example
 
+services/indexer/configs/opensearch/certs/root-ca.srl
 data
 docs/specs
 .scratchpad
@@ -179,3 +180,4 @@ temp/
 *.bak
 *.backup
 *.old
+

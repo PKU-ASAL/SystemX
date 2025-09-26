@@ -1,0 +1,217 @@
+/* EUI 主题适配 - 与 shadcn/ui 主题保持一致 */
+
+/* 亮色模式 EUI 主题变量 */
+:root {
+    /* EUI 基础颜色 */
+    --euiColorPrimary: oklch(0.637 0.237 25.331);
+    --euiColorSecondary: oklch(0.967 0.001 286.375);
+    --euiColorAccent: oklch(0.637 0.237 25.331);
+    --euiColorSuccess: oklch(0.646 0.222 41.116);
+    --euiColorWarning: oklch(0.828 0.189 84.429);
+    --euiColorDanger: oklch(0.577 0.245 27.325);
+
+    /* EUI 背景颜色 */
+    --euiColorEmptyShade: oklch(1 0 0);
+    --euiColorLightestShade: oklch(0.985 0 0);
+    --euiColorLightShade: oklch(0.967 0.001 286.375);
+    --euiColorMediumShade: oklch(0.92 0.004 286.32);
+    --euiColorDarkShade: oklch(0.552 0.016 285.938);
+    --euiColorDarkestShade: oklch(0.141 0.005 285.823);
+    --euiColorFullShade: oklch(0.141 0.005 285.823);
+
+    /* EUI 文本颜色 */
+    --euiTextColor: oklch(0.141 0.005 285.823);
+    --euiTitleColor: oklch(0.141 0.005 285.823);
+    --euiTextSubduedColor: oklch(0.552 0.016 285.938);
+
+    /* EUI 边框颜色 */
+    --euiBorderColor: oklch(0.92 0.004 286.32);
+    --euiBorderColorSubdued: oklch(0.967 0.001 286.375);
+
+    /* EUI 表单控件 */
+    --euiFormBackgroundColor: oklch(1 0 0);
+    --euiFormBorderColor: oklch(0.92 0.004 286.32);
+    --euiFormControlDisabledColor: oklch(0.967 0.001 286.375);
+
+    /* EUI 按钮 */
+    --euiButtonColorDisabled: oklch(0.967 0.001 286.375);
+    --euiButtonColorDisabledText: oklch(0.552 0.016 285.938);
+}
+
+/* 暗色模式 EUI 主题变量 */
+.dark {
+    /* EUI 基础颜色 */
+    --euiColorPrimary: oklch(0.637 0.237 25.331);
+    --euiColorSecondary: oklch(0.274 0.006 286.033);
+    --euiColorAccent: oklch(0.637 0.237 25.331);
+    --euiColorSuccess: oklch(0.488 0.243 264.376);
+    --euiColorWarning: oklch(0.627 0.265 303.9);
+    --euiColorDanger: oklch(0.704 0.191 22.216);
+
+    /* EUI 背景颜色 */
+    --euiColorEmptyShade: oklch(0.141 0.005 285.823);
+    --euiColorLightestShade: oklch(0.21 0.006 285.885);
+    --euiColorLightShade: oklch(0.274 0.006 286.033);
+    --euiColorMediumShade: oklch(0.705 0.015 286.067);
+    --euiColorDarkShade: oklch(0.705 0.015 286.067);
+    --euiColorDarkestShade: oklch(0.985 0 0);
+    --euiColorFullShade: oklch(0.985 0 0);
+
+    /* EUI 文本颜色 */
+    --euiTextColor: oklch(0.985 0 0);
+    --euiTitleColor: oklch(0.985 0 0);
+    --euiTextSubduedColor: oklch(0.705 0.015 286.067);
+
+    /* EUI 边框颜色 */
+    --euiBorderColor: oklch(1 0 0 / 10%);
+    --euiBorderColorSubdued: oklch(0.274 0.006 286.033);
+
+    /* EUI 表单控件 */
+    --euiFormBackgroundColor: oklch(0.21 0.006 285.885);
+    --euiFormBorderColor: oklch(1 0 0 / 10%);
+    --euiFormControlDisabledColor: oklch(0.274 0.006 286.033);
+
+    /* EUI 按钮 */
+    --euiButtonColorDisabled: oklch(0.274 0.006 286.033);
+    --euiButtonColorDisabledText: oklch(0.705 0.015 286.067);
+}
+
+/* EUI 组件样式覆盖 */
+.euiSearchBar {
+    background-color: var(--euiFormBackgroundColor) !important;
+}
+
+.euiFieldSearch {
+    background-color: var(--euiFormBackgroundColor) !important;
+    border-color: var(--euiFormBorderColor) !important;
+    color: var(--euiTextColor) !important;
+}
+
+.euiFieldSearch::placeholder {
+    color: var(--euiTextSubduedColor) !important;
+}
+
+.euiSuperSelect {
+    background-color: var(--euiFormBackgroundColor) !important;
+    border-color: var(--euiFormBorderColor) !important;
+    color: var(--euiTextColor) !important;
+}
+
+.euiSuperSelectControl {
+    background-color: var(--euiFormBackgroundColor) !important;
+    border-color: var(--euiFormBorderColor) !important;
+    color: var(--euiTextColor) !important;
+}
+
+.euiFormControlLayout {
+    background-color: var(--euiFormBackgroundColor) !important;
+}
+
+.euiFormControlLayout__childrenWrapper {
+    background-color: var(--euiFormBackgroundColor) !important;
+}
+
+.euiButton {
+    border-color: var(--euiFormBorderColor) !important;
+}
+
+.euiButtonEmpty {
+    color: var(--euiTextColor) !important;
+}
+
+.euiFilterButton {
+    background-color: var(--euiFormBackgroundColor) !important;
+    border-color: var(--euiFormBorderColor) !important;
+    color: var(--euiTextColor) !important;
+}
+
+.euiPopover__panel {
+    background-color: var(--euiFormBackgroundColor) !important;
+    border-color: var(--euiBorderColor) !important;
+}
+
+.euiContextMenuItem {
+    color: var(--euiTextColor) !important;
+}
+
+.euiContextMenuItem:hover {
+    background-color: var(--euiColorLightShade) !important;
+}
+
+.euiDatePopoverButton {
+    background-color: var(--euiFormBackgroundColor) !important;
+    border-color: var(--euiFormBorderColor) !important;
+    color: var(--euiTextColor) !important;
+}
+
+.euiDatePickerRange {
+    background-color: var(--euiFormBackgroundColor) !important;
+}
+
+.euiFormControlLayoutDelimited {
+    background-color: var(--euiFormBackgroundColor) !important;
+}
+
+.euiText {
+    color: var(--euiTextColor) !important;
+}
+
+.euiTextColor--subdued {
+    color: var(--euiTextSubduedColor) !important;
+}
+
+/* 修复 EUI 组件在小屏幕上的布局问题 */
+@media (max-width: 768px) {
+    .euiFlexGroup--responsive {
+        flex-direction: column !important;
+    }
+
+    .euiFlexItem {
+        flex-basis: auto !important;
+        width: 100% !important;
+    }
+
+    .euiSuperDatePicker {
+        width: 100% !important;
+    }
+
+    .euiDatePickerRange {
+        width: 100% !important;
+    }
+
+    .euiFormControlLayout {
+        width: 100% !important;
+    }
+
+    .euiSearchBar {
+        width: 100% !important;
+    }
+
+    .euiFilterGroup {
+        flex-wrap: wrap !important;
+    }
+
+    .euiFilterButton {
+        margin-bottom: 8px !important;
+    }
+}
+
+/* 确保 EUI 组件在容器中正确显示 */
+.eui-fullHeight {
+    height: 100% !important;
+}
+
+.euiFlexGroup--responsive.euiFlexGroup--gutterMedium>.euiFlexItem {
+    margin-bottom: 16px;
+}
+
+@media (min-width: 768px) {
+    .euiFlexGroup--responsive.euiFlexGroup--gutterMedium>.euiFlexItem {
+        margin-bottom: 0;
+        margin-right: 16px;
+    }
+
+    .euiFlexGroup--responsive.euiFlexGroup--gutterMedium>.euiFlexItem:last-child {
+        margin-right: 0;
+    }
+}

@@ -10,6 +10,8 @@ include:
     env_file: .env
   - path: ./services/indexer/docker-compose.yml
     env_file: .env
+  - path: ./apps/ui/docker-compose.yml
+    env_file: .env
 
 # 全局网络定义 (支持环境变量配置)
 networks:
