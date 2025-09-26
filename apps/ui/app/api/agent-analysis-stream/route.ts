@@ -156,8 +156,73 @@ export async function POST(request: NextRequest) {
                     }
                 })}\n\n`));
 
-                // 8. 最终分析结果
+                // 8. 输出分析结果阶段
                 await delay(500);
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    type: 'task',
+                    task: {
+                        id: 'task-3',
+                        title: '生成分析报告',
+                        status: 'active',
+                        items: [
+                            { text: '整合分析结果', status: 'active' },
+                            { text: '生成攻击链图表', status: 'pending' },
+                            { text: '计算风险评分', status: 'pending' },
+                            { text: '制定安全建议', status: 'pending' }
+                        ]
+                    }
+                })}\n\n`));
+
+                await delay(800);
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    type: 'task',
+                    task: {
+                        id: 'task-3',
+                        title: '生成分析报告',
+                        status: 'active',
+                        items: [
+                            { text: '整合分析结果', status: 'complete' },
+                            { text: '生成攻击链图表', status: 'active' },
+                            { text: '计算风险评分', status: 'pending' },
+                            { text: '制定安全建议', status: 'pending' }
+                        ]
+                    }
+                })}\n\n`));
+
+                await delay(600);
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    type: 'task',
+                    task: {
+                        id: 'task-3',
+                        title: '生成分析报告',
+                        status: 'active',
+                        items: [
+                            { text: '整合分析结果', status: 'complete' },
+                            { text: '生成攻击链图表', status: 'complete' },
+                            { text: '计算风险评分', status: 'active' },
+                            { text: '制定安全建议', status: 'pending' }
+                        ]
+                    }
+                })}\n\n`));
+
+                await delay(500);
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    type: 'task',
+                    task: {
+                        id: 'task-3',
+                        title: '生成分析报告',
+                        status: 'complete',
+                        items: [
+                            { text: '整合分析结果', status: 'complete' },
+                            { text: '生成攻击链图表', status: 'complete' },
+                            { text: '计算风险评分', status: 'complete' },
+                            { text: '制定安全建议', status: 'complete' }
+                        ]
+                    }
+                })}\n\n`));
+
+                // 9. 最终分析结果
+                await delay(300);
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({
                     type: 'analysis_result',
                     result: {

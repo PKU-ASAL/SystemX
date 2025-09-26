@@ -150,6 +150,7 @@ export default function AgentAnalysisPage() {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [showAlertSearch, setShowAlertSearch] = useState(false);
   const [expandedArtifact, setExpandedArtifact] = useState<string | null>(null);
+  const [inputText, setInputText] = useState("");
   
   // 模拟告警数据
   const [mockAlerts] = useState<Alert[]>([
@@ -197,6 +198,7 @@ export default function AgentAnalysisPage() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    setInputText(""); // 清空输入框
     setIsAnalyzing(true);
 
     // 创建流式分析消息
@@ -330,76 +332,24 @@ export default function AgentAnalysisPage() {
   };
 
   return (
-    <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-      {/* 页面标题 */}
-      <div className="border-b border-border px-4 lg:px-6 py-4 flex-shrink-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-3">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
-                <Brain className="h-4 w-4 text-primary" />
-              </div>
-              智能体分析
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              基于AI的威胁检测和行为分析系统
-            </p>
-          </div>
-        </div>
+    <div className="overscroll-behavior-contain flex h-full min-w-0 touch-pan-y flex-col bg-background">
+      {/* 页面标题 - 简化版 */}
+      <div className="border-b border-border px-4 lg:px-6 py-3 flex-shrink-0">
+        <h1 className="text-lg font-semibold flex items-center gap-2">
+          <Brain className="h-4 w-4 text-primary" />
+          智能体分析
+        </h1>
       </div>
 
       {/* 消息区域 - 完全按照 AI chatbot 的布局 */}
       <Conversation className="flex-1">
-        <ConversationContent className="mx-auto max-w-4xl pb-16">
+        <ConversationContent className="mx-auto max-w-4xl pb-4">
           {messages.length === 0 ? (
             <ConversationEmptyState
               icon={<Brain className="size-12 text-primary" />}
               title="开始智能分析"
               description="描述您想要分析的安全事件或告警，AI 将为您提供详细的威胁分析和攻击链重构"
-            >
-              <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => {
-                    handleSubmit({ text: "分析最近的高危告警，重点关注进程注入攻击" });
-                  }}
-                >
-                  进程注入分析
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => {
-                    handleSubmit({ text: "检查网络异常连接和横向移动行为" });
-                  }}
-                >
-                  网络行为分析
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => {
-                    handleSubmit({ text: "分析恶意软件感染路径和影响范围" });
-                  }}
-                >
-                  恶意软件分析
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => {
-                    handleSubmit({ text: "评估当前系统的整体安全态势" });
-                  }}
-                >
-                  安全态势评估
-                </Button>
-              </div>
-            </ConversationEmptyState>
+            />
           ) : (
             <div className="space-y-6">
               {messages.map((message) => (
@@ -550,130 +500,113 @@ export default function AgentAnalysisPage() {
                               ))}
                             </div>
 
-                            {/* 分析总结 - 使用 Artifact */}
-                            <Artifact>
-                              <ArtifactHeader>
-                                <div>
-                                  <ArtifactTitle>威胁分析总结</ArtifactTitle>
-                                  <ArtifactDescription>
-                                    基于 MITRE ATT&CK 框架的威胁评估和攻击链分析
-                                  </ArtifactDescription>
+                            {/* 威胁分析总结 - 简洁版 Artifact */}
+                            <div className="relative rounded-lg border bg-background shadow-sm overflow-hidden">
+                              {/* 简洁的标题栏 */}
+                              <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                                <div className="flex items-center gap-2">
+                                  <Brain className="h-4 w-4 text-primary" />
+                                  <span className="font-medium text-sm">威胁分析总结</span>
                                 </div>
-                                <ArtifactActions>
-                                  <ArtifactAction
-                                    icon={Maximize2}
-                                    label="展开查看"
-                                    tooltip="展开查看完整分析"
-                                    onClick={() => {
-                                      setExpandedArtifact(expandedArtifact === message.id ? null : message.id);
-                                    }}
-                                  />
-                                  <ArtifactAction
-                                    icon={AlertTriangle}
-                                    label="复制分析"
-                                    tooltip="复制分析结果"
-                                    onClick={() => {
-                                      if (message.analysisResult) {
-                                        const summary = `威胁分析总结
-总体风险: ${message.analysisResult.summary.overallRisk}
-置信度: ${(message.analysisResult.summary.confidence * 100).toFixed(1)}%
-建议: ${message.analysisResult.summary.recommendation}`;
-                                        navigator.clipboard.writeText(summary);
-                                      }
-                                    }}
-                                  />
-                                </ArtifactActions>
-                              </ArtifactHeader>
-                              <ArtifactContent className={expandedArtifact === message.id ? "max-h-none" : "max-h-96"}>
-                                {/* 攻击链关系图 */}
-                                <div className="mb-6">
-                                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                                    <svg className="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                    攻击链关系图
-                                  </h4>
-                                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-xl p-6 border">
-                                    <div className="flex items-center justify-between space-x-4">
-                                      <div className="flex flex-col items-center space-y-2">
-                                        <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-                                          <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                          </svg>
-                                        </div>
-                                        <span className="text-xs font-medium">初始访问</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => {
+                                    setExpandedArtifact(expandedArtifact === message.id ? null : message.id);
+                                  }}
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              
+                              {/* 内容区域 */}
+                              <div className={`p-6 ${expandedArtifact === message.id ? "" : "max-h-96 overflow-auto"}`}>
+                                {/* Mermaid 风格的攻击链图 */}
+                                <div className="mb-8">
+                                  <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 rounded-lg p-6 border">
+                                    <div className="font-mono text-sm space-y-4">
+                                      <div className="text-center text-muted-foreground mb-6">
+                                        攻击链分析 (MITRE ATT&CK)
                                       </div>
-                                      <div className="flex-1 h-0.5 bg-gradient-to-r from-red-300 to-orange-300"></div>
-                                      <div className="flex flex-col items-center space-y-2">
-                                        <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
-                                          <svg className="h-6 w-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                          </svg>
+                                      
+                                      <div className="flex items-center justify-center space-x-8">
+                                        <div className="text-center">
+                                          <div className="w-16 h-16 rounded-lg bg-red-100 dark:bg-red-900/30 border-2 border-red-300 flex items-center justify-center mb-2">
+                                            <span className="text-red-600 font-bold text-xs">T1055</span>
+                                          </div>
+                                          <div className="text-xs font-medium">初始访问</div>
+                                          <div className="text-xs text-muted-foreground">进程注入</div>
                                         </div>
-                                        <span className="text-xs font-medium">权限提升</span>
-                                      </div>
-                                      <div className="flex-1 h-0.5 bg-gradient-to-r from-orange-300 to-yellow-300"></div>
-                                      <div className="flex flex-col items-center space-y-2">
-                                        <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center">
-                                          <svg className="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m0 0a2 2 0 012 2m-2-2a2 2 0 00-2 2m2-2V5a2 2 0 00-2-2" />
-                                          </svg>
+                                        
+                                        <div className="flex items-center">
+                                          <div className="w-8 h-0.5 bg-gradient-to-r from-red-300 to-orange-300"></div>
+                                          <div className="w-2 h-2 bg-orange-400 rounded-full mx-1"></div>
+                                          <div className="w-8 h-0.5 bg-gradient-to-r from-orange-300 to-yellow-300"></div>
                                         </div>
-                                        <span className="text-xs font-medium">凭据访问</span>
-                                      </div>
-                                      <div className="flex-1 h-0.5 bg-gradient-to-r from-yellow-300 to-green-300"></div>
-                                      <div className="flex flex-col items-center space-y-2">
-                                        <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                                          <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                          </svg>
+                                        
+                                        <div className="text-center">
+                                          <div className="w-16 h-16 rounded-lg bg-orange-100 dark:bg-orange-900/30 border-2 border-orange-300 flex items-center justify-center mb-2">
+                                            <span className="text-orange-600 font-bold text-xs">T1071</span>
+                                          </div>
+                                          <div className="text-xs font-medium">权限提升</div>
+                                          <div className="text-xs text-muted-foreground">网络连接</div>
                                         </div>
-                                        <span className="text-xs font-medium">横向移动</span>
+                                        
+                                        <div className="flex items-center">
+                                          <div className="w-8 h-0.5 bg-gradient-to-r from-yellow-300 to-green-300"></div>
+                                          <div className="w-2 h-2 bg-green-400 rounded-full mx-1"></div>
+                                          <div className="w-8 h-0.5 bg-gradient-to-r from-green-300 to-blue-300"></div>
+                                        </div>
+                                        
+                                        <div className="text-center">
+                                          <div className="w-16 h-16 rounded-lg bg-green-100 dark:bg-green-900/30 border-2 border-green-300 flex items-center justify-center mb-2">
+                                            <span className="text-green-600 font-bold text-xs">T1548</span>
+                                          </div>
+                                          <div className="text-xs font-medium">横向移动</div>
+                                          <div className="text-xs text-muted-foreground">权限提升</div>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
                                 </div>
 
-                                {/* 风险评估指标 */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                  <div className="text-center p-4 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950/30 dark:to-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
-                                    <div className="text-2xl font-bold text-red-600 mb-1">
+                                {/* 简洁的风险指标 */}
+                                <div className="grid grid-cols-3 gap-6 mb-8">
+                                  <div className="text-center">
+                                    <div className="text-3xl font-bold text-red-600 mb-1">
                                       {message.analysisResult.summary.overallRisk}
                                     </div>
-                                    <div className="text-xs text-red-600 dark:text-red-400">总体风险</div>
+                                    <div className="text-sm text-muted-foreground">总体风险</div>
                                   </div>
-                                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-                                    <div className="text-2xl font-bold text-blue-600 mb-1">
-                                      {(message.analysisResult.summary.confidence * 100).toFixed(1)}%
+                                  <div className="text-center">
+                                    <div className="text-3xl font-bold text-blue-600 mb-1">
+                                      {(message.analysisResult.summary.confidence * 100).toFixed(0)}%
                                     </div>
-                                    <div className="text-xs text-blue-600 dark:text-blue-400">分析置信度</div>
+                                    <div className="text-sm text-muted-foreground">置信度</div>
                                   </div>
-                                  <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950/30 dark:to-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
-                                    <div className="text-2xl font-bold text-green-600 mb-1">
-                                      {message.analysisResult.summary.completedSteps}/{message.analysisResult.summary.totalSteps}
+                                  <div className="text-center">
+                                    <div className="text-3xl font-bold text-green-600 mb-1">
+                                      {message.analysisResult.summary.completedSteps}
                                     </div>
-                                    <div className="text-xs text-green-600 dark:text-green-400">分析步骤</div>
+                                    <div className="text-sm text-muted-foreground">完成步骤</div>
                                   </div>
                                 </div>
 
-                                {/* 建议措施 */}
-                                <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                                {/* 简洁的建议 */}
+                                <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-4 border-l-4 border-amber-400">
                                   <div className="flex items-start gap-3">
-                                    <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center flex-shrink-0">
-                                      <svg className="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                    </div>
+                                    <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
                                     <div>
-                                      <h4 className="font-medium text-sm text-amber-800 dark:text-amber-200 mb-2">安全建议</h4>
-                                      <p className="text-sm text-amber-700 dark:text-amber-300 leading-relaxed">
+                                      <h4 className="font-medium text-sm mb-2">安全建议</h4>
+                                      <p className="text-sm text-muted-foreground leading-relaxed">
                                         {message.analysisResult.summary.recommendation}
                                       </p>
                                     </div>
                                   </div>
                                 </div>
-                              </ArtifactContent>
-                            </Artifact>
+                              </div>
+                            </div>
                           </>
                         )}
                       </div>
@@ -689,30 +622,6 @@ export default function AgentAnalysisPage() {
 
       {/* 输入区域 - 完全按照 AI chatbot 的布局 */}
       <div className="sticky bottom-0 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
-        {/* 选中的告警上下文显示 */}
-        {selectedAlert && (
-          <div className="absolute -top-16 left-2 right-2 md:left-4 md:right-4">
-            <div className="flex items-center gap-2 rounded-lg border bg-background/95 backdrop-blur px-3 py-2 shadow-sm">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{selectedAlert.title}</p>
-                <p className="text-xs text-muted-foreground truncate">{selectedAlert.host}</p>
-              </div>
-              <Badge variant={selectedAlert.severity === "critical" ? "destructive" : selectedAlert.severity === "high" ? "default" : "secondary"}>
-                {selectedAlert.severity}
-              </Badge>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0"
-                onClick={() => setSelectedAlert(null)}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-        
         <PromptInput
           onSubmit={(message) => {
             if (!message.text?.trim() || isAnalyzing) return;
@@ -724,8 +633,41 @@ export default function AgentAnalysisPage() {
             <PromptInputAttachments>
               {(attachment) => <PromptInputAttachment data={attachment} />}
             </PromptInputAttachments>
+            
+            {/* 选中的告警上下文显示 - 内嵌在输入框内 */}
+            {selectedAlert && (
+              <div className="flex items-center gap-2 px-3 py-2 border-b">
+                <div className="flex items-center gap-2 bg-secondary/50 rounded-md px-2 py-1">
+                  <AlertTriangle className="h-3 w-3 text-orange-500" />
+                  <span className="text-xs font-medium truncate max-w-48">
+                    {selectedAlert.title}
+                  </span>
+                  <Badge 
+                    variant={selectedAlert.severity === "critical" ? "destructive" : selectedAlert.severity === "high" ? "default" : "secondary"}
+                    className="text-xs px-1 py-0"
+                  >
+                    {selectedAlert.severity}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-4 w-4 p-0 hover:bg-destructive/20"
+                    onClick={() => setSelectedAlert(null)}
+                  >
+                    <X className="h-2 w-2" />
+                  </Button>
+                </div>
+                <span className="text-xs text-muted-foreground">作为分析上下文</span>
+              </div>
+            )}
+            
             <PromptInputTextarea
-              placeholder="描述您想要分析的安全事件或告警... (输入 @ 搜索告警)"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={selectedAlert ? 
+                `基于告警 "${selectedAlert.title}" 进行分析...` : 
+                "描述您想要分析的安全事件或告警... (输入 @ 搜索告警)"
+              }
               disabled={isAnalyzing}
               onKeyDown={(e) => {
                 if (e.key === "@" && !isAnalyzing) {
@@ -739,9 +681,12 @@ export default function AgentAnalysisPage() {
                 <PromptInputButton 
                   disabled={isAnalyzing}
                   onClick={() => setShowAlertSearch(true)}
+                  variant={selectedAlert ? "default" : "ghost"}
                 >
                   <Search size={14} />
-                  <span className="hidden text-xs sm:block">搜索告警</span>
+                  <span className="hidden text-xs sm:block">
+                    {selectedAlert ? "更换告警" : "搜索告警"}
+                  </span>
                 </PromptInputButton>
                 <PromptInputButton disabled={isAnalyzing}>
                   <PaperclipIcon size={14} />
@@ -753,7 +698,7 @@ export default function AgentAnalysisPage() {
                 </PromptInputButton>
               </PromptInputTools>
               <PromptInputSubmit
-                disabled={isAnalyzing}
+                disabled={!inputText.trim() || isAnalyzing}
                 status={isAnalyzing ? "submitted" : "ready"}
               />
             </PromptInputToolbar>
