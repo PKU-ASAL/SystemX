@@ -37,7 +37,7 @@ func NewCollectorHandler(db *sql.DB) *CollectorHandler {
 		// 创建一个默认配置以防止崩溃
 		cfg = &config.Config{}
 	}
-	
+
 	// 创建模板服务并加载模板
 	templateService := template.NewTemplateService(cfg)
 	if err := templateService.LoadTemplates("./shared/templates"); err != nil {
@@ -102,15 +102,6 @@ func (h *CollectorHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   fmt.Sprintf("Unsupported deployment_type: %s. Supported types: %s", deploymentType, getSupportedDeploymentTypes()),
-		})
-		return
-	}
-
-	// 目前只支持 agentless 类型
-	if deploymentType != models.DeploymentTypeAgentless {
-		c.JSON(http.StatusNotImplemented, gin.H{
-			"success": false,
-			"error":   fmt.Sprintf("Deployment type '%s' is not implemented yet. Currently only 'agentless' is supported.", deploymentType),
 		})
 		return
 	}
@@ -291,7 +282,7 @@ func (h *CollectorHandler) DownloadScript(c *gin.Context) {
 // @Router /collectors [get]
 func (h *CollectorHandler) ListCollectors(c *gin.Context) {
 	ctx := c.Request.Context()
-	
+
 	// 解析查询参数
 	filters := h.parseQueryFilters(c)
 	pagination := h.parseQueryPagination(c)
@@ -415,7 +406,7 @@ func (h *CollectorHandler) Heartbeat(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	
+
 	// 验证 Collector 是否存在
 	_, err := h.repo.GetByID(ctx, collectorID)
 	if err != nil {
@@ -432,7 +423,7 @@ func (h *CollectorHandler) Heartbeat(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	// 更新心跳状态
 	err = h.repo.UpdateHeartbeatWithStatus(ctx, collectorID, req.Status)
 	if err != nil {
@@ -442,14 +433,14 @@ func (h *CollectorHandler) Heartbeat(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// 返回响应
 	response := models.HeartbeatResponse{
 		Success:               true,
 		NextHeartbeatInterval: 60, // 60秒间隔
 		ServerTime:            time.Now(),
 	}
-	
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -481,14 +472,14 @@ func (h *CollectorHandler) ProbeHeartbeat(c *gin.Context) {
 		// 如果没有请求体，使用默认值
 		req.Timeout = 10
 	}
-	
+
 	// 验证超时参数
 	if req.Timeout <= 0 || req.Timeout > 60 {
 		req.Timeout = 10 // 默认10秒
 	}
 
 	ctx := c.Request.Context()
-	
+
 	// 获取 Collector 信息
 	collector, err := h.repo.GetByID(ctx, collectorID)
 	if err != nil {
@@ -505,7 +496,7 @@ func (h *CollectorHandler) ProbeHeartbeat(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	// 执行探测
 	probeResponse, err := h.sendProbeRequest(ctx, collector, req.Timeout)
 	if err != nil {
@@ -515,7 +506,7 @@ func (h *CollectorHandler) ProbeHeartbeat(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, probeResponse)
 }
 
@@ -524,20 +515,20 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 	// 1. 生成唯一 probe ID
 	probeID := uuid.New().String()[:8]
 	sentAt := time.Now()
-	
+
 	// 2. 记录探测前的心跳时间
 	var heartbeatBefore *time.Time
 	if collector.LastHeartbeat != nil {
 		hb := *collector.LastHeartbeat
 		heartbeatBefore = &hb
 	}
-	
+
 	// 3. 构造 RFC3164 格式的 syslog 消息
-	message := fmt.Sprintf("<134>%s %s sysarmor-manager: SYSARMOR_PROBE:%s", 
-		sentAt.Format("Jan 2 15:04:05"), 
-		"manager", 
+	message := fmt.Sprintf("<134>%s %s sysarmor-manager: SYSARMOR_PROBE:%s",
+		sentAt.Format("Jan 2 15:04:05"),
+		"manager",
 		probeID)
-	
+
 	// 4. 发送 UDP 消息到 collector:514
 	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:514", collector.IPAddress), time.Duration(timeoutSeconds)*time.Second)
 	if err != nil {
@@ -551,7 +542,7 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 		}, nil
 	}
 	defer conn.Close()
-	
+
 	// 5. 发送消息
 	conn.SetWriteDeadline(time.Now().Add(time.Duration(timeoutSeconds) * time.Second))
 	_, err = conn.Write([]byte(message))
@@ -565,7 +556,7 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 			ErrorMessage:    fmt.Sprintf("Failed to send UDP message: %v", err),
 		}, nil
 	}
-	
+
 	// 6. 轮询检查心跳更新 (每秒检查一次)
 	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 	for time.Now().Before(deadline) {
@@ -585,7 +576,7 @@ func (h *CollectorHandler) sendProbeRequest(ctx context.Context, collector *mode
 		}
 		time.Sleep(1 * time.Second)
 	}
-	
+
 	// 7. 超时返回失败
 	return &models.ProbeResponse{
 		CollectorID:     collector.CollectorID,
@@ -606,7 +597,7 @@ func isValidDeploymentType(deploymentType string) bool {
 		models.DeploymentTypeSysArmor,
 		models.DeploymentTypeWazuh,
 	}
-	
+
 	for _, validType := range validTypes {
 		if deploymentType == validType {
 			return true
@@ -617,13 +608,12 @@ func isValidDeploymentType(deploymentType string) bool {
 
 // getSupportedDeploymentTypes 获取支持的部署类型列表
 func getSupportedDeploymentTypes() string {
-	return fmt.Sprintf("[%s, %s, %s]", 
+	return fmt.Sprintf("[%s, %s, %s]",
 		models.DeploymentTypeAgentless,
 		models.DeploymentTypeSysArmor,
 		models.DeploymentTypeWazuh,
 	)
 }
-
 
 // parseWorkerURL 解析 Worker URL
 func parseWorkerURL(workerURL string) (host, port string) {
@@ -635,12 +625,12 @@ func parseWorkerURL(workerURL string) (host, port string) {
 		// 分割获取第一部分 (localhost:514)
 		parts := strings.Split(urlWithoutProtocol, ":")
 		if len(parts) >= 2 {
-			host = parts[0]  // localhost
-			port = parts[1]  // 514
+			host = parts[0] // localhost
+			port = parts[1] // 514
 			return host, port
 		}
 	}
-	
+
 	// 回退到简单的 host:port 格式
 	parts := strings.Split(workerURL, ":")
 	if len(parts) == 2 {
@@ -763,7 +753,7 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	
+
 	// 首先获取 collector 信息，用于清理相关资源
 	collector, err := h.repo.GetByID(ctx, collectorID)
 	if err != nil {
@@ -783,7 +773,7 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 
 	// 检查是否强制删除
 	force := c.Query("force") == "true"
-	
+
 	// 如果不是强制删除，先将状态设置为 inactive
 	if !force {
 		if err := h.repo.UpdateStatus(ctx, collectorID, models.CollectorStatusInactive); err != nil {
@@ -798,8 +788,8 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 			"success": true,
 			"message": "Collector deactivated successfully. Use force=true to permanently delete.",
 			"data": gin.H{
-				"collector_id": collectorID,
-				"status":       models.CollectorStatusInactive,
+				"collector_id":         collectorID,
+				"status":               models.CollectorStatusInactive,
 				"uninstall_script_url": fmt.Sprintf("/api/v1/scripts/uninstall-terminal.sh?collector_id=%s", collectorID),
 			},
 		})
@@ -844,7 +834,7 @@ func (h *CollectorHandler) Unregister(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	
+
 	// 获取 collector 信息
 	collector, err := h.repo.GetByID(ctx, collectorID)
 	if err != nil {
@@ -975,9 +965,9 @@ func (h *CollectorHandler) GetByGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"group":       group,
-			"collectors":  statuses,
-			"total":       len(statuses),
+			"group":      group,
+			"collectors": statuses,
+			"total":      len(statuses),
 		},
 	})
 }
@@ -1022,9 +1012,9 @@ func (h *CollectorHandler) GetByTag(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"tag":         tag,
-			"collectors":  statuses,
-			"total":       len(statuses),
+			"tag":        tag,
+			"collectors": statuses,
+			"total":      len(statuses),
 		},
 	})
 }
