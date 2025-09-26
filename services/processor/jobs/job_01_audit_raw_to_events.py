@@ -134,9 +134,15 @@ class AuditdLogParser:
         if not line:
             return None
         
-        # 匹配auditd日志格式
-        pattern = r'type=([^ ]+) msg=audit\(([\d.]+):(\d+)\): (.*)'
-        match = re.match(pattern, line)
+        # 匹配auditd日志格式 - 支持两种格式：
+        # 1. type=SYSCALL msg=audit(...)
+        # 2. node=hostname type=SYSCALL msg=audit(...)
+        pattern1 = r'type=([^ ]+) msg=audit\(([\d.]+):(\d+)\): (.*)'
+        pattern2 = r'node=[^ ]+ type=([^ ]+) msg=audit\(([\d.]+):(\d+)\): (.*)'
+        
+        match = re.match(pattern1, line)
+        if not match:
+            match = re.match(pattern2, line)
         
         if not match:
             return None
@@ -294,6 +300,14 @@ class RawAuditdToEventsConverter(MapFunction):
         if sysdig_event["evt.type"] in EVENT_CATEGORIES:
             sysdig_event["evt.category"] = EVENT_CATEGORIES[sysdig_event["evt.type"]]
         
+        # 处理网络事件的fd.name格式
+        if sysdig_event["evt.type"] in ["sendmsg", "recvmsg", "recvfrom", "send", "sendto", "connect"]:
+            net_info = sysdig_event.get('net.sockaddr', {})
+            if net_info and isinstance(net_info, dict):
+                address = net_info.get('address', '')
+                if address:
+                    sysdig_event["fd.name"] = f"127.0.0.1:0->{address}"
+        
         # 构建SysArmor扩展格式 - 将sysdig数据包装在sysdig字段中
         result = {
             # SysArmor元数据
@@ -403,30 +417,42 @@ class RawAuditdToEventsConverter(MapFunction):
         """解析网络地址信息"""
         try:
             if len(hex_str) < 4:
-                return {"family": "unknown", "address": hex_str}
+                return {"family": "unknown", "type": "raw", "address": hex_str}
             
             # 前两个字节是协议族（小端序）
             family_hex = hex_str[:4]
             family = int.from_bytes(bytes.fromhex(family_hex), byteorder="little")
             
-            if family == 2:  # AF_INET
+            if family == 1:  # AF_UNIX
+                path_bytes = bytes.fromhex(hex_str[4:])
+                end_index = path_bytes.find(b'\x00')
+                if end_index != -1:
+                    path = path_bytes[:end_index].decode('utf-8', errors='replace')
+                else:
+                    path = path_bytes.decode('utf-8', errors='replace')
+                return {"family": "AF_UNIX", "type": "unix_socket", "address": path}
+                
+            elif family == 2:  # AF_INET
                 if len(hex_str) >= 16:
                     port_bytes = bytes.fromhex(hex_str[4:8])
                     port = int.from_bytes(port_bytes, byteorder="big")
                     ip_bytes = bytes.fromhex(hex_str[8:16])
                     ip = socket.inet_ntop(socket.AF_INET, ip_bytes)
-                    return {
-                        "family": "AF_INET",
-                        "type": "ipv4",
-                        "source_ip": ip,
-                        "source_port": port,
-                        "address": f"{ip}:{port}"
-                    }
+                    return {"family": "AF_INET", "type": "ipv4", "address": f"{ip}:{port}"}
+                    
+            elif family == 10:  # AF_INET6
+                if len(hex_str) >= 44:
+                    port_bytes = bytes.fromhex(hex_str[4:8])
+                    port = int.from_bytes(port_bytes, byteorder="big")
+                    ip_bytes = bytes.fromhex(hex_str[12:44])
+                    ip = socket.inet_ntop(socket.AF_INET6, ip_bytes)
+                    return {"family": "AF_INET6", "type": "ipv6", "address": f"[{ip}]:{port}"}
             
-            return {"family": f"family_{family}", "address": hex_str}
+            return {"family": f"family_{family}", "type": "raw", "address": hex_str}
             
-        except Exception:
-            return {"family": "error", "address": hex_str}
+        except Exception as e:
+            logger.debug(f"Failed to parse sockaddr {hex_str}: {e}")
+            return {"family": "error", "type": "parse_error", "address": hex_str}
 
 class ValidStructuredEventFilter(FilterFunction):
     """过滤有效的结构化事件"""
