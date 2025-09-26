@@ -443,14 +443,19 @@ export function TerminalListTable() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Page Description */}
-      <div className="px-4 lg:px-6 py-4 border-b">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">终端列表</h1>
-          <p className="text-muted-foreground text-sm">
-            管理和监控所有 EDR Collector 实例
-          </p>
+    <div className="flex h-full flex-col bg-background">
+      {/* 页面标题 - 统一布局 */}
+      <div className="border-b border-border px-4 lg:px-6 py-3 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold flex items-center gap-2">
+              <IconLayoutColumns className="h-4 w-4 text-primary" />
+              终端列表
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              管理和监控所有 EDR Collector 实例
+            </p>
+          </div>
         </div>
       </div>
 

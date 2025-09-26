@@ -333,17 +333,19 @@ export function OpenSearchAlerts() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* 页面标题 */}
-      <div className="border-b border-border px-4 lg:px-6 py-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <AlertTriangle className="h-6 w-6 text-destructive" />
-            攻击告警
-          </h1>
-          <p className="text-muted-foreground">
-            实时安全事件监控和威胁告警分析系统
-          </p>
+    <div className="flex h-full flex-col bg-background">
+      {/* 页面标题 - 统一布局 */}
+      <div className="border-b border-border px-4 lg:px-6 py-3 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-primary" />
+              攻击告警
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              实时安全事件监控和威胁告警分析系统
+            </p>
+          </div>
         </div>
       </div>
 

@@ -333,13 +333,7 @@ export default function AgentAnalysisPage() {
 
   return (
     <div className="overscroll-behavior-contain flex h-full min-w-0 touch-pan-y flex-col bg-background">
-      {/* 页面标题 - 简化版 */}
-      <div className="border-b border-border px-4 lg:px-6 py-3 flex-shrink-0">
-        <h1 className="text-lg font-semibold flex items-center gap-2">
-          <Brain className="h-4 w-4 text-primary" />
-          智能体分析
-        </h1>
-      </div>
+      {/* 智能体分析页面不需要 nav，直接开始聊天界面 */}
 
       {/* 消息区域 - 完全按照 AI chatbot 的布局 */}
       <Conversation className="flex-1">

@@ -189,14 +189,19 @@ export function TerminalCreate() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Page Header */}
-      <div className="flex items-center justify-between px-4 lg:px-6 py-4 border-b">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">新建终端</h1>
-          <p className="text-muted-foreground text-sm">
-            部署新的 EDR Collector 到目标主机
-          </p>
+    <div className="flex h-full flex-col bg-background">
+      {/* 页面标题 - 统一布局 */}
+      <div className="border-b border-border px-4 lg:px-6 py-3 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold flex items-center gap-2">
+              <Plus className="h-4 w-4 text-primary" />
+              新建终端
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              部署新的 EDR Collector 到目标主机
+            </p>
+          </div>
         </div>
       </div>
 

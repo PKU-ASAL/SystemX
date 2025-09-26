@@ -5,17 +5,19 @@ import { GitBranch } from "lucide-react";
 
 export default function AttackTimelinePage() {
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* 页面标题 */}
-      <div className="border-b border-border px-4 lg:px-6 py-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <GitBranch className="h-6 w-6 text-primary" />
-            攻击溯源图
-          </h1>
-          <p className="text-muted-foreground">
-            基于威胁情报的攻击时间线可视化分析工具
-          </p>
+    <div className="flex h-full flex-col bg-background">
+      {/* 页面标题 - 统一布局 */}
+      <div className="border-b border-border px-4 lg:px-6 py-3 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-primary" />
+              攻击溯源图
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              基于威胁情报的攻击时间线可视化分析工具
+            </p>
+          </div>
         </div>
       </div>
       

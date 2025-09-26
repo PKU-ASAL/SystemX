@@ -15,6 +15,8 @@ import {
   IconNetwork,
   IconEye,
   IconGitBranch,
+  IconPlus,
+  IconChartBar,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/common/nav-main";
@@ -40,7 +42,7 @@ const data = {
   // 主要功能分区
   mainFeatures: [
     {
-      title: "Dashboard",
+      title: "仪表盘",
       url: "/dashboard",
       icon: IconShield,
     },
@@ -51,10 +53,12 @@ const data = {
         {
           title: "新建终端",
           url: "/collectors/create",
+          icon: IconPlus,
         },
         {
           title: "终端列表",
           url: "/collectors/list",
+          icon: IconList,
         },
       ],
     },
@@ -81,12 +85,14 @@ const data = {
       icon: IconList,
       items: [
         {
-          title: "日志查询",
+          title: "日志搜索",
           url: "/logs/search",
+          icon: IconSearch,
         },
         {
           title: "日志分析",
           url: "/logs/analysis",
+          icon: IconChartBar,
         },
       ],
     },
@@ -98,16 +104,12 @@ const data = {
       icon: IconDatabase,
       items: [
         {
-          title: "Kafka 服务",
-          url: "/services/kafka/brokers",
-        },
-        {
-          title: "Flink 作业",
-          url: "/services/flink",
+          title: "消息队列",
+          url: "/services/kafka",
         },
         {
           title: "工作流管理",
-          url: "/services/workflows",
+          url: "/services/flink",
         },
       ],
     },
@@ -128,11 +130,6 @@ const data = {
       title: "帮助文档",
       url: "/help",
       icon: IconHelp,
-    },
-    {
-      title: "全局搜索",
-      url: "/search",
-      icon: IconSearch,
     },
   ],
 };
