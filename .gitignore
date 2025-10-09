@@ -181,3 +181,6 @@ temp/
 *.backup
 *.old
 
+
+*.md
+.serena

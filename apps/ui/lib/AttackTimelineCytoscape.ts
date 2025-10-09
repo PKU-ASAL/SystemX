@@ -1,7 +1,7 @@
 import cytoscape from 'cytoscape';
 import { NodeExpansionManager } from './NodeExpansionManager';
 import { ThreatAPI } from './threatApi';
-import { formatTechniqueDisplay } from '../utils/techniqueTranslations';
+import { formatTechniqueDisplay, initializeTechniqueTranslations } from '../utils/techniqueTranslations';
 
 // 节点类型定义 - 更新图标路径
 const NODE_TYPES = {
@@ -65,6 +65,11 @@ export class AttackTimelineCytoscape {
     
     // 初始化展开管理器
     this.expansionManager = new NodeExpansionManager();
+    
+    // 初始化技术翻译数据
+    initializeTechniqueTranslations().catch(err => {
+      console.warn('⚠️ [TRANSLATION] 翻译数据初始化失败:', err);
+    });
     
     // 确保容器有正确的尺寸
     this.setupContainer();
@@ -847,6 +852,7 @@ export class AttackTimelineCytoscape {
       max-height: 80%;
       overflow-y: auto;
       box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      color: #333;
     `;
 
     console.log('🔍 [EDGE-DETAIL] 边详细信息:', {
@@ -858,7 +864,7 @@ export class AttackTimelineCytoscape {
       time_stamp: edgeData.time_stamp
     });
 
-    let detailsHtml = '<h3>🔗 边连接详情</h3>';
+    let detailsHtml = '<h3 style="color: #333;">🔗 边连接详情</h3>';
     
     // 获取源和目标节点的详细信息
     const sourceNode = this.cy.getElementById(edgeData.source).data();
@@ -866,7 +872,7 @@ export class AttackTimelineCytoscape {
     
     // 显示源和目标节点信息，包括阶段
     detailsHtml += `<div style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px;">`;
-    detailsHtml += `<p style="margin: 0;"><strong>📤 源节点:</strong> <code>${edgeData.source}</code></p>`;
+    detailsHtml += `<p style="margin: 0; color: #333;"><strong>📤 源节点:</strong> <code>${edgeData.source}</code></p>`;
     if (sourceNode) {
       detailsHtml += `<p style="margin: 2px 0 0 20px; font-size: 0.9em; color: #666;">节点名: ${sourceNode.label || '未知'}</p>`;
       if (sourceNode.phaseId) {
@@ -874,7 +880,7 @@ export class AttackTimelineCytoscape {
       }
     }
     
-    detailsHtml += `<p style="margin: 8px 0 0 0;"><strong>📥 目标节点:</strong> <code>${edgeData.target}</code></p>`;
+    detailsHtml += `<p style="margin: 8px 0 0 0; color: #333;"><strong>📥 目标节点:</strong> <code>${edgeData.target}</code></p>`;
     if (targetNode) {
       detailsHtml += `<p style="margin: 2px 0 0 20px; font-size: 0.9em; color: #666;">节点名: ${targetNode.label || '未知'}</p>`;
       if (targetNode.phaseId) {
@@ -884,24 +890,24 @@ export class AttackTimelineCytoscape {
     detailsHtml += `</div>`;
     
     // 显示完整的4个字段信息
-    detailsHtml += `<h4>📋 边属性信息</h4>`;
+    detailsHtml += `<h4 style="color: #333;">📋 边属性信息</h4>`;
     if (edgeData.technique) {
       const techniqueText = formatTechniqueDisplay(edgeData.technique);
-      detailsHtml += `<p><strong>🎯 攻击技术 (Technique):</strong> <span style="word-wrap: break-word; display: inline-block; max-width: 500px;">${techniqueText}</span></p>`;
+      detailsHtml += `<p style="color: #333;"><strong>🎯 攻击技术 (Technique):</strong> <span style="word-wrap: break-word; display: inline-block; max-width: 500px;">${techniqueText}</span></p>`;
     } else {
-      detailsHtml += `<p><strong>🎯 攻击技术 (Technique):</strong> <span style="color: #666;">无</span></p>`;
+      detailsHtml += `<p style="color: #333;"><strong>🎯 攻击技术 (Technique):</strong> <span style="color: #666;">无</span></p>`;
     }
     
     if (edgeData.syscall) {
-      detailsHtml += `<p><strong>⚙️ 系统调用 (Syscall):</strong> ${edgeData.syscall}</p>`;
+      detailsHtml += `<p style="color: #333;"><strong>⚙️ 系统调用 (Syscall):</strong> ${edgeData.syscall}</p>`;
     } else {
-      detailsHtml += `<p><strong>⚙️ 系统调用 (Syscall):</strong> <span style="color: #666;">无</span></p>`;
+      detailsHtml += `<p style="color: #333;"><strong>⚙️ 系统调用 (Syscall):</strong> <span style="color: #666;">无</span></p>`;
     }
     
     if (edgeData.tactic) {
-      detailsHtml += `<p><strong>🛡️ 攻击战术 (Tactic):</strong> ${edgeData.tactic}</p>`;
+      detailsHtml += `<p style="color: #333;"><strong>🛡️ 攻击战术 (Tactic):</strong> ${edgeData.tactic}</p>`;
     } else {
-      detailsHtml += `<p><strong>🛡️ 攻击战术 (Tactic):</strong> <span style="color: #666;">无</span></p>`;
+      detailsHtml += `<p style="color: #333;"><strong>🛡️ 攻击战术 (Tactic):</strong> <span style="color: #666;">无</span></p>`;
     }
     
     if (edgeData.time_stamp) {
@@ -916,15 +922,15 @@ export class AttackTimelineCytoscape {
       } catch (e) {
         // 如果转换失败，保持原始值
       }
-      detailsHtml += `<p><strong>⏰ 时间戳 (Time Stamp):</strong> ${formattedTime}</p>`;
+      detailsHtml += `<p style="color: #333;"><strong>⏰ 时间戳 (Time Stamp):</strong> ${formattedTime}</p>`;
     } else {
-      detailsHtml += `<p><strong>⏰ 时间戳 (Time Stamp):</strong> <span style="color: #666;">无</span></p>`;
+      detailsHtml += `<p style="color: #333;"><strong>⏰ 时间戳 (Time Stamp):</strong> <span style="color: #666;">无</span></p>`;
     }
     
     // 其他信息
     if (edgeData.edge_desc) {
-      detailsHtml += `<h4>📝 其他信息</h4>`;
-      detailsHtml += `<p><strong>描述:</strong> ${edgeData.edge_desc}</p>`;
+      detailsHtml += `<h4 style="color: #333;">📝 其他信息</h4>`;
+      detailsHtml += `<p style="color: #333;"><strong>描述:</strong> ${edgeData.edge_desc}</p>`;
     }
 
     detailsHtml += '<button id="close-modal" style="margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">关闭</button>';
@@ -1217,43 +1223,62 @@ export class AttackTimelineCytoscape {
    * 格式化节点信息
    */
   private formatNodeInfo(data: any): string {
-    if (!data) return '<p>无数据</p>';
+    if (!data) return '<p style="color: #333;">无数据</p>';
     
-    let html = '<div class="node-info-grid" style="line-height: 1.6;">';
+    let html = '<div class="node-info-grid" style="line-height: 1.6; color: #333;">';
     
     // 基本信息
     html += '<h4 style="color: #007bff; margin-top: 0;">🔧 基本信息</h4>';
-    html += `<p><strong>进程信息:</strong> ${data.process_info || '无'}</p>`;
-    html += `<p><strong>机器信息:</strong> ${data.machine_info || '无'}</p>`;
-    html += `<p><strong>节点类型:</strong> ${data.node_type || '无'}</p>`;
-    html += `<p><strong>节点分数:</strong> ${data.node_score || '无'}</p>`;
+    html += `<p style="color: #333;"><strong>当前进程:</strong> ${data.node_current_process || '无'}</p>`;
+    html += `<p style="color: #333;"><strong>当前命令:</strong> ${data.node_current_command || '无'}</p>`;
+    html += `<p style="color: #333;"><strong>当前阶段:</strong> ${data.node_current_period || '无'}</p>`;
+    html += `<p style="color: #333;"><strong>节点分数:</strong> ${data.node_current_score || '无'}</p>`;
+    html += `<p style="color: #333;"><strong>攻击技术:</strong> ${data.node_current_tech || '无'}</p>`;
+    
+    // 父进程信息
+    if (data.node_father_name || data.node_faher_command) {
+      html += '<h4 style="color: #28a745; margin-top: 20px;">👨‍👦 父进程信息</h4>';
+      html += `<p style="color: #333;"><strong>父进程名:</strong> ${data.node_father_name || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>父进程命令:</strong> ${data.node_faher_command || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>父进程ID:</strong> ${data.node_father_process_num || '无'}</p>`;
+    }
     
     // 时间信息
-    if (data.start_time || data.end_time || data.timestamp) {
-      html += '<h4 style="color: #28a745; margin-top: 20px;">⏰ 时间信息</h4>';
-      html += `<p><strong>开始时间:</strong> ${data.start_time || '无'}</p>`;
-      html += `<p><strong>结束时间:</strong> ${data.end_time || '无'}</p>`;
-      html += `<p><strong>时间戳:</strong> ${data.timestamp || '无'}</p>`;
+    if (data.node_start_time || data.node_end_time) {
+      html += '<h4 style="color: #ffc107; margin-top: 20px;">⏰ 时间信息</h4>';
+      const startTime = data.node_start_time === '-1' ? '未知' : data.node_start_time;
+      const endTime = data.node_end_time === '-1' ? '未知' : data.node_end_time;
+      html += `<p style="color: #333;"><strong>开始时间:</strong> ${startTime || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>结束时间:</strong> ${endTime || '无'}</p>`;
     }
     
-    // 网络信息
-    if (data.source_ip || data.dest_ip || data.source_port || data.dest_port) {
-      html += '<h4 style="color: #17a2b8; margin-top: 20px;">🌐 网络信息</h4>';
-      html += `<p><strong>源IP:</strong> ${data.source_ip || '无'}</p>`;
-      html += `<p><strong>目标IP:</strong> ${data.dest_ip || '无'}</p>`;
-      html += `<p><strong>源端口:</strong> ${data.source_port || '无'}</p>`;
-      html += `<p><strong>目标端口:</strong> ${data.dest_port || '无'}</p>`;
+    // 机器信息
+    if (data.node_current_machine_id || data.node_current_machine_name) {
+      html += '<h4 style="color: #17a2b8; margin-top: 20px;">💻 机器信息</h4>';
+      html += `<p style="color: #333;"><strong>机器ID:</strong> ${data.node_current_machine_id || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>机器名称:</strong> ${data.node_current_machine_name || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>机器位置:</strong> ${data.node_current_machine_location || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>风险等级:</strong> <span style="color: #dc3545; font-weight: bold;">${data.node_current_machine_risk || '无'}</span></p>`;
+      html += `<p style="color: #333;"><strong>机器状态:</strong> ${data.node_current_machine_state || '无'}</p>`;
+      html += `<p style="color: #333;"><strong>部署情况:</strong> ${data.node_current_machine_Deployment || '无'}</p>`;
     }
     
-    // 其他信息
-    html += '<h4 style="color: #6c757d; margin-top: 20px;">📝 其他信息</h4>';
-    Object.keys(data).forEach(key => {
-      if (!['process_info', 'machine_info', 'node_type', 'node_score', 
-            'start_time', 'end_time', 'timestamp', 'source_ip', 'dest_ip', 
-            'source_port', 'dest_port'].includes(key)) {
-        html += `<p><strong>${key}:</strong> ${data[key] || '无'}</p>`;
-      }
-    });
+    // 其他未分类信息（过滤已显示的字段）
+    const displayedFields = [
+      'node_current_process', 'node_current_command', 'node_current_period', 'node_current_score',
+      'node_current_tech', 'node_father_name', 'node_faher_command', 'node_father_process_num',
+      'node_start_time', 'node_end_time', 'node_current_machine_id', 'node_current_machine_name',
+      'node_current_machine_location', 'node_current_machine_risk', 'node_current_machine_state',
+      'node_current_machine_Deployment', 'node_current_process_num'
+    ];
+    
+    const otherFields = Object.keys(data).filter(key => !displayedFields.includes(key));
+    if (otherFields.length > 0) {
+      html += '<h4 style="color: #6c757d; margin-top: 20px;">📝 其他信息</h4>';
+      otherFields.forEach(key => {
+        html += `<p style="color: #333;"><strong>${key}:</strong> ${data[key] || '无'}</p>`;
+      });
+    }
     
     html += '</div>';
     return html;

@@ -174,21 +174,24 @@ export class ThreatAPI {
    */
   static async getThreatList(): Promise<string[]> {
     try {
-      console.log(`📋 [THREAT_LIST] 获取威胁ID列表`);
+      console.log(`📋 [THREAT_LIST] 开始动态探测威胁ID列表`);
 
-      // 尝试调用威胁列表API，如果没有专门的API，可以从测试已知威胁ID
-      const knownThreatIds = ['th-001', 'th-002', 'th-003', 'th-004', 'th-005', 'th-006'];
-
-      // 并发测试所有威胁ID，看哪些返回有效数据
       const availableThreatIds: string[] = [];
-
-      const testPromises = knownThreatIds.map(async (threatId) => {
+      const config = getThreatApiConfig();
+      const url = `${config.baseUrl}/alert/alert_chain_new_new_new`;
+      
+      let consecutiveFailures = 0;
+      const maxConsecutiveFailures = 10; // 增加到连续10个ID失败后停止
+      let idNumber = 1;
+      
+      // 从th-001开始逐个探测，直到连续失败多次
+      while (true) {
+        const threatId = `th-${String(idNumber).padStart(3, '0')}`;
+        
         try {
-          const config = getThreatApiConfig();
-          const url = `${config.baseUrl}/alert/alert_chain_new_new_new`;
           const response = await axios.get(url, {
             params: { threat_id: threatId },
-            timeout: 10000, // 增加到10秒超时
+            timeout: 3000, // 3秒超时
             headers: config.headers
           });
 
@@ -197,37 +200,96 @@ export class ThreatAPI {
             response.data.data &&
             Array.isArray(response.data.data) &&
             response.data.data.length > 0) {
-            return threatId;
+            availableThreatIds.push(threatId);
+            consecutiveFailures = 0; // 重置连续失败计数
+            console.log(`✅ [THREAT_TEST] 发现可用威胁ID: ${threatId}`);
+          } else {
+            consecutiveFailures++;
           }
-          return null;
         } catch (error) {
-          console.log(`⚠️ [THREAT_TEST] 威胁ID ${threatId} 测试失败`);
-          return null;
+          // 请求失败，增加连续失败计数
+          consecutiveFailures++;
+          console.log(`❌ [THREAT_TEST] 威胁ID ${threatId} 探测失败: ${error instanceof Error ? error.message : '未知错误'}`);
         }
-      });
-
-      const results = await Promise.allSettled(testPromises);
-
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-          availableThreatIds.push(result.value);
+        
+        // 如果连续失败太多次，停止探测
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          console.log(`🛑 [THREAT_TEST] 连续${maxConsecutiveFailures}个ID未找到，停止探测`);
+          break;
         }
-      });
+        
+        // 安全限制：最多探测1000个ID
+        if (idNumber >= 1000) {
+          console.log(`⚠️ [THREAT_TEST] 已达到最大探测限制(1000个ID)`);
+          break;
+        }
+        
+        idNumber++;
+      }
 
-      console.log(`✅ [THREAT_LIST] 发现 ${availableThreatIds.length} 个可用威胁ID:`, availableThreatIds);
+      console.log(`✅ [THREAT_LIST] 探测完成，发现 ${availableThreatIds.length} 个可用威胁ID:`, availableThreatIds);
 
-      // 如果没有找到可用的威胁ID，返回默认列表
+      // 如果没有找到任何可用的威胁ID，返回空数组
       if (availableThreatIds.length === 0) {
-        console.log(`⚠️ [THREAT_LIST] 未找到可用威胁ID，使用默认列表`);
-        return knownThreatIds;
+        console.log(`⚠️ [THREAT_LIST] 未找到任何可用威胁ID`);
+        return [];
       }
 
       return availableThreatIds.sort();
 
     } catch (error) {
       console.error(`❌ [THREAT_LIST] 获取威胁列表失败:`, error);
-      // 返回默认威胁ID列表
-      return ['th-001', 'th-002', 'th-003', 'th-004', 'th-005', 'th-006'];
+      // 返回空数组
+      return [];
+    }
+  }
+
+  /**
+   * 获取威胁PDF报告
+   */
+  static async getThreatReportPdf(threatId: string): Promise<{
+    pdf_base64: string;
+    filename?: string;
+  }> {
+    try {
+      console.log(`📄 [PDF] 获取威胁PDF报告: ${threatId}`);
+
+      if (!this.isEnabled()) {
+        throw new Error('威胁图谱API功能已禁用');
+      }
+
+      const config = getThreatApiConfig();
+      const url = `${config.baseUrl}/alert/alert_pdf`;
+      
+      const response = await axios.get(url, {
+        params: { threat_id: threatId },
+        timeout: config.timeout || 30000, // PDF生成可能需要更长时间
+        headers: config.headers
+      });
+
+      console.log(`✅ [PDF] PDF报告API响应:`, {
+        code: response.data.code,
+        message: response.data.message,
+        hasData: !!response.data.data
+      });
+
+      // 验证API响应格式
+      if (response.data.code !== '0000' || response.data.message !== 'success') {
+        throw new Error(`PDF报告API错误: ${response.data.message} (${response.data.code})`);
+      }
+
+      if (!response.data.data || !response.data.data.pdf_base64) {
+        throw new Error(`威胁 ${threatId} PDF报告数据为空`);
+      }
+
+      return {
+        pdf_base64: response.data.data.pdf_base64,
+        filename: `threat-report-${threatId}.pdf`
+      };
+
+    } catch (error) {
+      console.error(`❌ [PDF] 获取威胁PDF报告失败:`, error);
+      throw error;
     }
   }
 

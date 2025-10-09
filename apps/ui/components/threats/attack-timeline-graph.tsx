@@ -10,13 +10,14 @@ import { RefreshCw, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { AttackTimelineCytoscape } from '@/lib/AttackTimelineCytoscape';
 import { ThreatAPI } from '@/lib/threatApi';
 import { ThreatGraphData } from '@/types/threat';
+import { ThreatReportSection } from '@/components/threats/threat-report-section';
 
 interface AttackTimelineGraphProps {
-  threatId?: string;
+  threatId: string;
   className?: string;
 }
 
-function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', className }: AttackTimelineGraphProps) {
+function AttackTimelineGraphClient({ threatId, className }: AttackTimelineGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<AttackTimelineCytoscape | null>(null);
   const [loading, setLoading] = useState(false); // 改为false，让容器先渲染
@@ -24,56 +25,26 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
   const [error, setError] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<ThreatGraphData | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [selectedThreatId, setSelectedThreatId] = useState(initialThreatId);
-
-  // 威胁ID选择器状态
-  const [threatOptions, setThreatOptions] = useState<Array<{ value: string; label: string }>>([]);
-  const [loadingOptions, setLoadingOptions] = useState(true);
+  // 移除威胁选择器相关状态
 
   // 测试useEffect是否工作
   useEffect(() => {
     console.log('✅ [MOUNT-TEST] 组件已挂载，useEffect正常工作');
   }, []);
 
-  // 加载威胁ID列表
-  useEffect(() => {
-    const loadThreatOptions = async () => {
-      try {
-        console.log('🎯 [OPTIONS] 开始加载威胁ID选项');
-        setLoadingOptions(true);
-        const threatIds = await ThreatAPI.getThreatList();
-        console.log('🎯 [OPTIONS] 威胁ID列表获取成功:', threatIds);
-        const options = threatIds.map(id => ({
-          value: id,
-          label: `威胁 ${id.toUpperCase()}`
-        }));
-        setThreatOptions(options);
-        console.log('🎯 [OPTIONS] 威胁选项设置完成');
-      } catch (error) {
-        console.error('❌ [OPTIONS] 加载威胁ID列表失败:', error);
-        // 使用默认选项
-        setThreatOptions([{ value: initialThreatId, label: `威胁 ${initialThreatId.toUpperCase()}` }]);
-      } finally {
-        setLoadingOptions(false);
-        console.log('🎯 [OPTIONS] 威胁选项加载完成，loadingOptions设为false');
-      }
-    };
-
-    loadThreatOptions();
-  }, [initialThreatId]);
+  // 威胁选择器相关代码已移除
 
 
   // 图表初始化useEffect
   useEffect(() => {
     console.log('🔥 [SIMPLE-EFFECT] useEffect 触发，准备初始化图表', {
-      selectedThreatId,
-      hasContainer: !!containerRef.current,
-      loadingOptions
+      threatId,
+      hasContainer: !!containerRef.current
     });
-
-    // 如果威胁选项还在加载，先等待
-    if (loadingOptions) {
-      console.log('⏳ [SIMPLE-EFFECT] 威胁选项还在加载，等待...');
+    
+    // 如果没有威胁ID，不初始化图表
+    if (!threatId) {
+      console.log('⚠️ [SIMPLE-EFFECT] 没有威胁ID，跳过初始化');
       return;
     }
 
@@ -94,14 +65,14 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
         const containerId = `attack-timeline-${Math.random().toString(36).substr(2, 9)}`;
         containerRef.current.id = containerId;
         
-        console.log('📡 [SIMPLE-EFFECT] 正在获取威胁数据:', selectedThreatId);
+        console.log('📡 [SIMPLE-EFFECT] 正在获取威胁数据:', threatId);
         
         // 获取威胁数据
-        console.log('📡 [API-CALL] 准备调用威胁API，URL:', `http://110.40.136.112:1334/api/alert/threat-graph?threat_id=${selectedThreatId}`);
+        console.log('📡 [API-CALL] 准备调用威胁API，URL:', `http://110.40.136.112:1334/api/alert/threat-graph?threat_id=${threatId}`);
         
         let data;
         try {
-          data = await ThreatAPI.getThreatGraphData(selectedThreatId);
+          data = await ThreatAPI.getThreatGraphData(threatId);
           console.log('📊 [API-SUCCESS] 威胁数据获取成功，数据结构:', {
             hasNodes: !!data?.nodes,
             hasEdges: !!data?.edges,
@@ -122,7 +93,7 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
         // 初始化Cytoscape组件
         console.log('📊 [CYTOSCAPE] 开始初始化Cytoscape组件');
         timelineRef.current = new AttackTimelineCytoscape(containerId);
-        timelineRef.current.loadData(data, selectedThreatId);
+        timelineRef.current.loadData(data, threatId);
         timelineRef.current.render();
 
         console.log('✅ [SIMPLE-EFFECT] 图表初始化完成');
@@ -147,7 +118,7 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
         }
       }
     };
-  }, [selectedThreatId, loadingOptions]);
+  }, [threatId]);
 
 
   // 刷新数据
@@ -157,9 +128,9 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
     try {
       setGraphLoading(true);
       ThreatAPI.clearCache();
-      const data = await ThreatAPI.getThreatGraphData(selectedThreatId);
+      const data = await ThreatAPI.getThreatGraphData(threatId);
       setGraphData(data);
-      timelineRef.current.loadData(data, selectedThreatId);
+      timelineRef.current.loadData(data, threatId);
       timelineRef.current.render();
     } catch (err) {
       setError(err instanceof Error ? err.message : '刷新失败');
@@ -187,12 +158,7 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
     setIsFullscreen(!isFullscreen);
   };
 
-  // 威胁ID切换处理
-  const handleThreatIdChange = (newThreatId: string) => {
-    if (newThreatId !== selectedThreatId) {
-      setSelectedThreatId(newThreatId);
-    }
-  };
+  // 威胁ID切换处理已移除（由父组件管理）
 
   // 获取统计信息
   const getStats = () => {
@@ -213,56 +179,39 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
 
   const stats = getStats();
 
-  console.log('🎯 [RENDER] AttackTimelineGraph组件正在渲染！', { selectedThreatId, graphLoading, error });
+  console.log('🎯 [RENDER] AttackTimelineGraph组件正在渲染！', { threatId, graphLoading, error });
   
   return (
-    <Card className={`${className} ${isFullscreen ? 'fixed inset-0 z-50 rounded-none' : ''}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-4">
-              <CardTitle className="flex items-center gap-2">
-                攻击时间线溯源图
-                <Badge variant="outline" className="text-xs">
-                  威胁ID: {selectedThreatId}
-                </Badge>
-              </CardTitle>
-              
-              {/* 威胁ID选择器 */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">选择威胁:</span>
-                <Select
-                  value={selectedThreatId}
-                  onValueChange={handleThreatIdChange}
-                  disabled={loadingOptions || graphLoading}
-                >
-                  <SelectTrigger className="w-32 h-8 text-xs">
-                    <SelectValue placeholder={loadingOptions ? "加载中..." : "选择威胁"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {threatOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value} className="text-xs">
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+    <div className={`${className} ${isFullscreen ? 'fixed inset-0 z-50 bg-background' : 'p-4 lg:p-6 space-y-6'}`}>
+      {/* 攻击时间线图表 - 移除多余卡片嵌套 */}
+      <div className={`bg-white border rounded-lg ${isFullscreen ? 'h-full' : ''}`}>
+        {/* 图表头部 */}
+        <div className="p-4 border-b">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  攻击时间线溯源图
+                  <Badge variant="outline" className="text-xs">
+                    威胁ID: {threatId}
+                  </Badge>
+                </h3>
               </div>
-            </div>
             
-            {graphData && (
-              <div className="flex gap-2 mt-2">
-                <Badge variant="secondary" className="text-xs">
-                  节点: {stats.nodes}
-                </Badge>
-                <Badge variant="secondary" className="text-xs">
-                  边: {stats.edges}
-                </Badge>
-                <Badge variant="secondary" className="text-xs">
-                  阶段: {stats.phases}
-                </Badge>
-              </div>
-            )}
+              {graphData && (
+                <div className="flex gap-2 mt-2">
+                  <Badge variant="secondary" className="text-xs">
+                    节点: {stats.nodes}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    边: {stats.edges}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    阶段: {stats.phases}
+                  </Badge>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -300,12 +249,11 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
             </Button>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-{/* 始终显示容器，但在加载时显示加载状态 */}
+        
+        {/* 图表内容区域 */}
         <div 
           ref={containerRef}
-          className={`bg-white border-t ${isFullscreen ? 'h-full' : 'h-96'} relative`}
+          className={`bg-white ${isFullscreen ? 'h-full' : 'h-96'} relative`}
           style={{ 
             width: '100%',
             minHeight: isFullscreen ? '100vh' : '600px'
@@ -313,13 +261,11 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
           onLoad={() => console.log('📊 [CONTAINER] 容器已加载')}
         >
           {/* 加载状态覆盖层 */}
-          {(graphLoading || loadingOptions) && (
+          {graphLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
               <div className="text-center">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-blue-600" />
-                <p className="text-sm text-gray-600">
-                  {loadingOptions ? '正在加载威胁选项...' : '正在加载攻击时间线...'}
-                </p>
+                <p className="text-sm text-gray-600">正在加载攻击时间线...</p>
               </div>
             </div>
           )}
@@ -347,21 +293,26 @@ function AttackTimelineGraphClient({ threatId: initialThreatId = 'th-001', class
             {/* 这是Cytoscape图表的实际容器 */}
           </div>
         </div>
-      </CardContent>
-      
-      {/* 操作提示 */}
-      {!graphLoading && !error && (
-        <div className="px-4 py-2 bg-gray-50 border-t text-xs text-gray-600">
-          <div className="flex flex-wrap gap-4">
-            <span>• 点击抽象节点展开/收缩阶段</span>
-            <span>• 点击具体节点展开子节点</span>
-            <span>• 双击节点查看详情</span>
-            <span>• 鼠标悬停边查看技术信息</span>
-            <span>• 双击边查看详细信息</span>
+        
+        {/* 操作提示 */}
+        {!graphLoading && !error && (
+          <div className="px-4 py-2 bg-gray-50 border-t text-xs text-gray-600">
+            <div className="flex flex-wrap gap-4">
+              <span>• 点击抽象节点展开/收缩阶段</span>
+              <span>• 点击具体节点展开子节点</span>
+              <span>• 双击节点查看详情</span>
+              <span>• 鼠标悬停边查看技术信息</span>
+              <span>• 双击边查看详细信息</span>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+      
+      {/* PDF报告功能 */}
+      {!isFullscreen && (
+        <ThreatReportSection threatId={threatId} />
       )}
-    </Card>
+    </div>
   );
 }
 
