@@ -1,30 +1,24 @@
 FROM flink:1.18.1
 
-# 完全禁用GPG验证和签名检查
-RUN echo 'APT::Get::AllowUnauthenticated "true";' > /etc/apt/apt.conf.d/99allow-unauthenticated && \
-    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99disable-check-valid-until && \
-    echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/99assume-yes && \
-    echo 'Acquire::AllowInsecureRepositories "true";' > /etc/apt/apt.conf.d/99allow-insecure && \
-    echo 'Acquire::AllowDowngradeToInsecureRepositories "true";' > /etc/apt/apt.conf.d/99allow-downgrade && \
-    rm -rf /etc/apt/trusted.gpg.d/* && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Python (强制忽略所有验证)
-RUN apt-get update -o Acquire::Check-Valid-Until=false -o APT::Get::AllowUnauthenticated=true -o Acquire::AllowInsecureRepositories=true --allow-insecure-repositories || true && \
-    apt-get install -y --allow-unauthenticated --allow-downgrades --allow-remove-essential --allow-change-held-packages python3 python3-pip python3-dev || apt-get install -y --force-yes python3 python3-pip python3-dev && \
+# 更换为清华镜像源（HTTPS）并安装 Python 3
+RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update && \
+    apt-get install -y python3 python3-pip python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Ensure python command points to python3
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# 设置 pip 镜像源配置
-RUN pip config set global.index-url https://pypi.org/simple && \
-    pip config set global.extra-index-url "https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple" && \
-    pip config set install.trusted-host "pypi.org pypi.tuna.tsinghua.edu.cn mirrors.aliyun.com"
+# 设置 pip 镜像源配置（使用清华源）
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip config set install.trusted-host "pypi.tuna.tsinghua.edu.cn"
 
-# install Java & updates (强制忽略所有验证)
-RUN apt-get update -o Acquire::Check-Valid-Until=false -o APT::Get::AllowUnauthenticated=true -o Acquire::AllowInsecureRepositories=true --allow-insecure-repositories || true && \
-    apt-get install -y --allow-unauthenticated --allow-downgrades --allow-remove-essential --allow-change-held-packages openjdk-21-jdk ant || apt-get install -y --force-yes openjdk-21-jdk ant && \
+# 安装 Java
+RUN apt-get update && \
+    apt-get install -y openjdk-21-jdk ant && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
