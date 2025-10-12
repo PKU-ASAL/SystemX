@@ -4,7 +4,10 @@
 
 services/indexer/configs/opensearch/certs/root-ca.srl
 data
-docs/specs
+docs
+!docs/development
+!docs/releases
+
 .scratchpad
 
 # Binaries for programs and plugins
