@@ -68,7 +68,7 @@ function AttackTimelineGraphClient({ threatId, className }: AttackTimelineGraphP
         console.log('📡 [SIMPLE-EFFECT] 正在获取威胁数据:', threatId);
         
         // 获取威胁数据
-        console.log('📡 [API-CALL] 准备调用威胁API，URL:', `http://110.40.136.112:1334/api/alert/threat-graph?threat_id=${threatId}`);
+        console.log('📡 [API-CALL] 准备调用威胁API，threatId:', threatId);
         
         let data;
         try {

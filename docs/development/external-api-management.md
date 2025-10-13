@@ -12,7 +12,7 @@ SysArmor系统采用统一的外部API配置管理方案，用于管理所有第
 
 ```bash
 # 外部API服务配置 (第三方服务)
-THREAT_API_BASE_URL=http://110.40.136.112:1334/api  # 威胁图谱API服务地址
+THREAT_API_BASE_URL=http://external-threat-api:1334/api  # 威胁图谱API服务地址
 THREAT_API_ENABLED=true                              # 是否启用威胁图谱功能
 ```
 
@@ -25,7 +25,7 @@ THREAT_API_ENABLED=true                              # 是否启用威胁图谱�
 const config = {
   baseUrl: process.env.NEXT_PUBLIC_THREAT_API_BASE_URL || 
            process.env.THREAT_API_BASE_URL || 
-           'http://110.40.136.112:1334/api',
+           'http://external-threat-api:1334/api',
   enabled: process.env.NEXT_PUBLIC_THREAT_API_ENABLED === 'true' || 
            process.env.THREAT_API_ENABLED === 'true' || 
            true
@@ -52,7 +52,7 @@ const url = `${config.baseUrl}/alert/alert_chain_new_new_new`;
 
 ```dockerfile
 # Build-time environment variables for external APIs
-ARG THREAT_API_BASE_URL=http://110.40.136.112:1334/api
+ARG THREAT_API_BASE_URL=http://external-threat-api:1334/api
 ARG THREAT_API_ENABLED=true
 ENV NEXT_PUBLIC_THREAT_API_BASE_URL=$THREAT_API_BASE_URL
 ENV NEXT_PUBLIC_THREAT_API_ENABLED=$THREAT_API_ENABLED
@@ -65,10 +65,10 @@ ENV NEXT_PUBLIC_THREAT_API_ENABLED=$THREAT_API_ENABLED
 ```yaml
 build:
   args:
-    THREAT_API_BASE_URL: ${THREAT_API_BASE_URL:-http://110.40.136.112:1334/api}
+    THREAT_API_BASE_URL: ${THREAT_API_BASE_URL:-http://external-threat-api:1334/api}
     THREAT_API_ENABLED: ${THREAT_API_ENABLED:-true}
 environment:
-  - NEXT_PUBLIC_THREAT_API_BASE_URL=${THREAT_API_BASE_URL:-http://110.40.136.112:1334/api}
+  - NEXT_PUBLIC_THREAT_API_BASE_URL=${THREAT_API_BASE_URL:-http://external-threat-api:1334/api}
   - NEXT_PUBLIC_THREAT_API_ENABLED=${THREAT_API_ENABLED:-true}
 ```
 

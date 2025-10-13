@@ -1,5 +1,5 @@
 # SysArmor EDR/HIDS 开发环境配置
-# 连接到远程middleware (49.232.13.155)，本地运行manager + processor + indexer
+# 连接到远程middleware，本地运行manager + processor + indexer
 
 include:
   - path: ./deployments/compose/manager.yml
