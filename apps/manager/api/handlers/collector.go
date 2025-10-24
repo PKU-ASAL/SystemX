@@ -139,7 +139,7 @@ func (h *CollectorHandler) Register(c *gin.Context) {
 	resp.Success = true
 	resp.Data.CollectorID = collectorID
 	resp.Data.WorkerURL = workerURL
-	resp.Data.ScriptDownloadURL = fmt.Sprintf("/api/v1/scripts/setup-terminal.sh?collector_id=%s", collectorID)
+	resp.Data.ScriptDownloadURL = fmt.Sprintf("/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=%s", collectorID)
 
 	// 记录日志
 	fmt.Printf("✅ Collector registered: %s (hostname: %s, worker: %s)\n",
@@ -206,8 +206,8 @@ func (h *CollectorHandler) GetStatus(c *gin.Context) {
 		"success": true,
 		"data":    status,
 		"scripts": gin.H{
-			"install_script_url":   fmt.Sprintf("/api/v1/scripts/setup-terminal.sh?collector_id=%s", collector.CollectorID),
-			"uninstall_script_url": fmt.Sprintf("/api/v1/scripts/uninstall-terminal.sh?collector_id=%s", collector.CollectorID),
+			"install_script_url":   fmt.Sprintf("/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=%s", collector.CollectorID),
+			"uninstall_script_url": fmt.Sprintf("/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=%s", collector.CollectorID),
 		},
 	})
 }
@@ -790,7 +790,7 @@ func (h *CollectorHandler) Delete(c *gin.Context) {
 			"data": gin.H{
 				"collector_id":         collectorID,
 				"status":               models.CollectorStatusInactive,
-				"uninstall_script_url": fmt.Sprintf("/api/v1/scripts/uninstall-terminal.sh?collector_id=%s", collectorID),
+				"uninstall_script_url": fmt.Sprintf("/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=%s", collectorID),
 			},
 		})
 		return
@@ -870,7 +870,7 @@ func (h *CollectorHandler) Unregister(c *gin.Context) {
 		"data": gin.H{
 			"collector_id":         collectorID,
 			"status":               models.CollectorStatusUnregistered,
-			"uninstall_script_url": fmt.Sprintf("/api/v1/scripts/uninstall-terminal.sh?collector_id=%s", collectorID),
+			"uninstall_script_url": fmt.Sprintf("/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=%s", collectorID),
 		},
 	})
 }

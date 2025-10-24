@@ -519,7 +519,7 @@ export function TerminalCreate() {
                   <Label>安装脚本下载链接</Label>
                   <div className="flex items-center gap-2">
                     <Input
-                      value={`{API_BASE_URL}/api/v1/scripts/setup-terminal.sh?collector_id=${createResult.collector_id}`}
+                      value={`{API_BASE_URL}/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=${createResult.collector_id}`}
                       readOnly
                       className="font-mono text-sm bg-gray-50"
                     />
@@ -528,7 +528,7 @@ export function TerminalCreate() {
                       size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText(
-                          `{API_BASE_URL}/api/v1/scripts/setup-terminal.sh?collector_id=${createResult.collector_id}`
+                          `{API_BASE_URL}/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=${createResult.collector_id}`
                         );
                       }}
                     >
