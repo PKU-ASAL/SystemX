@@ -1,5 +1,5 @@
-# SysArmor 增强威胁检测规则配置
-# 基于采集脚本中的 auditd 规则优化的威胁检测规则集
+# SysArmor 威胁检测规则配置 - Falco 风格版本
+# 使用 Falco 风格的条件字符串语法，支持列表和宏
 # 
 # 规则结构说明:
 # - id: 规则唯一标识符
@@ -9,30 +9,274 @@
 # - severity: 严重程度 (low/medium/high/critical)
 # - base_score: 基础风险评分 (0-100)
 # - enabled: 是否启用规则
-# - keywords: 关键词匹配列表
-# - patterns: 正则表达式匹配列表
-# - conditions: 字段条件匹配
-# - frequency_threshold: 频率阈值
-# - time_window: 时间窗口 (秒)
-# - score_multiplier: 评分乘数
+# - condition: Falco 风格条件字符串
+# - frequency_threshold: 频率阈值 (可选)
+# - time_window: 时间窗口/秒 (可选)
+# - score_multiplier: 评分乘数 (可选)
+
 version: "3.0"
 metadata:
-  name: "SysArmor Adapted Threat Detection Rules"
-  description: "适配 SysArmor 现有数据结构的威胁检测规则集"
+  name: "SysArmor Falco-Style Threat Detection Rules"
+  description: "使用 Falco 风格条件字符串的威胁检测规则集"
   author: "SysArmor Team"
-  created_at: "2025-10-09"
-  updated_at: "2025-10-11"
+  created_at: "2025-10-13"
+  updated_at: "2025-10-16"
+  format: "falco"
 
 # 全局设置
 global_settings:
-  engine_version: "2.0"
+  engine_version: "3.0"
   default_severity: "medium"
   enable_frequency_detection: true
   default_time_window: 300
 
-# 威胁检测规则 - 基于现有数据结构
+# ========================================
+# 列表定义 - 可复用的值集合
+# ========================================
+lists:
+  # 文件操作相关
+  - list: file_open_syscalls
+    items:
+      - open
+      - openat
+      - openat2
+  
+  - list: file_create_syscalls
+    items:
+      - open
+      - openat
+      - openat2
+      - creat
+  
+  - list: exec_syscalls
+    items:
+      - execve
+      - execveat
+  
+  - list: dup_syscalls
+    items:
+      - dup
+      - dup2
+      - dup3
+  
+  - list: symlink_syscalls
+    items:
+      - symlink
+      - symlinkat
+  
+  - list: module_syscalls
+    items:
+      - init_module
+      - finit_module
+  
+  # Shell 程序列表
+  - list: shell_binaries
+    items:
+      - sh
+      - bash
+      - zsh
+      - dash
+  
+  # 网络服务进程
+  - list: web_server_binaries
+    items:
+      - nginx
+      - httpd
+      - apache2
+      - lighttpd
+  
+  - list: database_binaries
+    items:
+      - mysqld
+      - postgres
+      - postgresql
+  
+  - list: network_server_binaries
+    items:
+      - nginx
+      - httpd
+      - apache2
+      - lighttpd
+      - mysqld
+      - postgres
+  
+  # 敏感文件列表
+  - list: sensitive_files
+    items:
+      - /etc/shadow
+      - /etc/passwd
+      - /etc/sudoers
+      - /root/.ssh/id_rsa
+      - /root/.ssh/id_dsa
+      - /root/.ssh/id_ecdsa
+      - /root/.ssh/id_ed25519
+  
+  - list: ssh_config_files
+    items:
+      - /etc/ssh/sshd_config
+      - /etc/ssh/ssh_config
+  
+  # 系统二进制目录
+  - list: system_binary_dirs
+    items:
+      - /bin/
+      - /sbin/
+      - /usr/bin/
+      - /usr/sbin/
+  
+  # 临时目录
+  - list: temp_dirs
+    items:
+      - /tmp/
+      - /var/tmp/
+      - /dev/shm/
+  
+  # 系统用户 UID
+  - list: system_user_uids
+    items:
+      - 1
+      - 2
+      - 65534
+  
+  # 可信系统进程
+  - list: trusted_system_processes
+    items:
+      - sshd
+      - login
+      - su
+      - sudo
+      - passwd
+      - systemd
+      - ssh
+      - scp
+      - rsync
+  
+  # 网络工具
+  - list: network_tools
+    items:
+      - nc
+      - ncat
+      - netcat
+      - socat
+  
+  - list: network_scanners
+    items:
+      - nmap
+      - masscan
+      - zmap
+      - hping
+      - tcpdump
+      - wireshark
+  
+  # 数据销毁工具
+  - list: data_destruction_tools
+    items:
+      - shred
+      - mkfs
+      - mke2fs
+      - dd
+      - wipe
+  
+  # 搜索工具
+  - list: search_tools
+    items:
+      - grep
+      - egrep
+      - fgrep
+      - find
+      - cat
+  
+  # 网络套接字族
+  - list: internet_socket_families
+    items:
+      - AF_INET
+      - AF_INET6
+  
+  # 日志目录和文件
+  - list: log_files_keywords
+    items:
+      - /var/log/
+      - syslog
+      - auth.log
+  
+  # SetUID/SetGID 系统调用 (使用事件类型名称而非系统调用号)
+  - list: setuid_syscalls
+    items:
+      - setuid
+      - setgid
+      - setreuid
+      - setregid
+  
+  # 文件权限修改系统调用 (使用事件类型名称而非系统调用号)
+  - list: chmod_syscalls
+    items:
+      - chmod
+      - fchmod
+  
+  # 进程注入相关系统调用
+  - list: process_injection_syscalls
+    items:
+      - ptrace
+      - process_vm_writev
+      - process_vm_readv
+
+# ========================================
+# 宏定义 - 可复用的条件片段
+# ========================================
+macros:
+  # 文件操作宏
+  - macro: file_open
+    condition: evt.type in (file_open_syscalls)
+  
+  - macro: file_create
+    condition: evt.type in (file_create_syscalls)
+  
+  - macro: spawned_process
+    condition: evt.type in (exec_syscalls)
+  
+  - macro: is_shell
+    condition: proc.name in (shell_binaries)
+  
+  # 网络相关宏
+  - macro: is_web_server
+    condition: proc.name in (web_server_binaries) or proc.pname in (web_server_binaries)
+  
+  - macro: is_database
+    condition: proc.name in (database_binaries) or proc.pname in (database_binaries)
+  
+  - macro: is_network_server
+    condition: proc.name in (network_server_binaries) or proc.pname in (network_server_binaries) or proc.pcmdline contains "nginx"
+  
+  - macro: internet_socket_family
+    condition: net.sockaddr.family in (internet_socket_families)
+  
+  # 进程身份宏
+  - macro: is_system_user
+    condition: proc.uid in (system_user_uids)
+  
+  - macro: is_trusted_process
+    condition: proc.name in (trusted_system_processes)
+  
+  # 路径相关宏
+  - macro: is_temp_dir
+    condition: proc.exe startswith "/tmp/" or proc.exe startswith "/var/tmp/" or proc.exe startswith "/dev/shm/"
+  
+  - macro: is_system_binary_dir
+    condition: proc.exe startswith "/usr/" or proc.exe startswith "/bin/" or proc.exe startswith "/sbin/"
+  
+  # 敏感操作宏
+  - macro: sensitive_file_access
+    condition: fd.name in (sensitive_files)
+  
+  - macro: log_file_access
+    condition: fd.name startswith "/var/log/" or fd.name contains "syslog" or fd.name contains "auth.log"
+
+# ========================================
+# 威胁检测规则 - Falco 风格条件
+# ========================================
 rules:
-  # 1. 目录遍历攻击检测
+  # ========== 文件访问威胁 ==========
+  
   - id: "directory_traversal_attack"
     name: "目录遍历攻击检测"
     description: "检测通过目录遍历访问敏感文件的攻击行为"
@@ -40,43 +284,8 @@ rules:
     severity: "high"
     base_score: 80
     enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["open", "openat", "openat2"]
-        - field: "fd.name"
-          operator: "contains"
-          value: "../"
-        - field: "fd.name"
-          operator: "startswith"
-          value: "/etc/"
-
-  # 2. Shell 进程异常生成检测
-  - id: "untrusted_shell_spawn"
-    name: "不可信进程生成Shell"
-    description: "检测非Shell应用程序异常生成Shell进程"
-    category: "process_execution"
-    severity: "high"
-    base_score: 85
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "in"
-          values: ["sh", "bash", "zsh", "dash"]
-        - or:  # 检查父进程名或父进程命令行
-          - field: "proc.pname"
-            operator: "in"
-            values: ["nginx", "httpd", "apache2", "lighttpd", "mysqld", "postgres"]
-          - field: "proc.pcmdline"
-            operator: "contains"
-            value: "nginx"
-
-  # 3. 敏感文件访问检测
+    condition: file_open and fd.name contains "../" and fd.name contains "/etc/"
+  
   - id: "sensitive_file_access"
     name: "敏感文件访问检测"
     description: "检测访问敏感系统文件的行为"
@@ -84,492 +293,8 @@ rules:
     severity: "medium"
     base_score: 70
     enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["open", "openat", "openat2"]
-        - field: "fd.name"
-          operator: "in"
-          values: ["/etc/shadow", "/etc/passwd", "/etc/sudoers", "/root/.ssh/id_rsa"]
-        - field: "proc.name"
-          operator: "not_in"
-          values: ["sshd", "login", "su", "sudo", "passwd", "systemd"]
-
-  # 4. 系统用户异常活动检测
-  - id: "system_user_activity"
-    name: "系统用户异常活动"
-    description: "检测系统服务账户的异常活动"
-    category: "suspicious_activity"
-    severity: "medium"
-    base_score: 60
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.uid"
-          operator: "in"
-          values: [1, 2, 65534]  # daemon, bin, nobody
-        - field: "proc.name"
-          operator: "in"
-          values: ["sh", "bash", "zsh", "dash"]
-
-  # 5. 内存文件执行检测
-  - id: "memfd_execution"
-    name: "内存文件执行检测"
-    description: "检测可疑的内存文件执行"
-    category: "suspicious_activity"
-    severity: "critical"
-    base_score: 95
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "execve"
-        - field: "proc.exe"
-          operator: "contains"
-          value: "memfd"
-
-  # 6. /dev/shm 执行检测
-  - id: "dev_shm_execution"
-    name: "/dev/shm目录执行检测"
-    description: "检测从/dev/shm目录执行程序"
-    category: "suspicious_activity"
-    severity: "high"
-    base_score: 80
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - or:
-          - field: "proc.exe"
-            operator: "startswith"
-            values: "/dev/shm/"
-          - field: "proc.exe"
-            operator: "startswith"
-            values: "/tmp/"
-          - field: "proc.exe"
-            operator: "startswith"
-            values: "/var/tmp/"
-
-  # 7. 网络连接重定向检测
-  - id: "network_redirect_stdio"
-    name: "网络重定向检测"
-    description: "检测可疑的网络重定向行为"
-    category: "network_activity"
-    severity: "high"
-    base_score: 85
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["dup", "dup2", "dup3"]
-        - field: "net.sockaddr.family"
-          operator: "in"
-          values: ["AF_INET", "AF_INET6"]
-
-  # 8. 内核模块注入检测
-  - id: "kernel_module_injection"
-    name: "内核模块注入检测"
-    description: "检测内核模块加载行为"
-    category: "privilege_escalation"
-    severity: "critical"
-    base_score: 95
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["init_module", "finit_module"]
-
-  # 9. PTRACE 进程调试检测
-  - id: "ptrace_attach"
-    name: "PTRACE进程附加检测"
-    description: "检测使用PTRACE附加到进程的行为"
-    category: "privilege_escalation"
-    severity: "high"
-    base_score: 80
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "ptrace"
-        - field: "evt.args"
-          operator: "contains"
-          value: "PTRACE_ATTACH"
-
-  # 10. 数据清除检测
-  - id: "bulk_data_removal"
-    name: "批量数据清除检测"
-    description: "检测批量数据删除或覆盖行为"
-    category: "suspicious_activity"
-    severity: "high"
-    base_score: 85
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "in"
-          values: ["shred", "mkfs", "mke2fs", "dd"]
-
-  # 11. 网络工具执行检测
-  - id: "netcat_execution"
-    name: "网络工具执行检测"
-    description: "检测网络工具的执行"
-    category: "network_activity"
-    severity: "high"
-    base_score: 85
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "in"
-          values: ["nc", "ncat", "netcat", "socat"]
-
-  # 12. 私钥密码搜索检测
-  - id: "search_private_keys_passwords"
-    name: "搜索私钥密码活动"
-    description: "检测搜索私钥或密码的活动"
-    category: "credential_access"
-    severity: "medium"
-    base_score: 72
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "in"
-          values: ["grep", "egrep", "fgrep"]
-        - field: "proc.cmdline"
-          operator: "contains"
-          value: "password"
-
-  # 13. 日志访问或修改活动检测
-  - id: "clear_log_activities"
-    name: "日志访问或修改活动检测"
-    description: "检测访问或修改系统日志的活动"
-    category: "defense_evasion"
-    severity: "medium"
-    base_score: 75
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["open", "openat", "openat2"]
-        - or:
-          - field: "fd.name"
-            operator: "startswith"
-            value: "/var/log/"
-          - field: "fd.name"
-            operator: "contains"
-            value: "syslog"
-          - field: "fd.name"
-            operator: "contains"
-            value: "auth.log"
-
-  # 14. 符号链接创建检测 - 简化版本
-  - id: "create_symlink_sensitive_files"
-    name: "敏感文件符号链接创建"
-    description: "检测在敏感文件上创建符号链接"
-    category: "file_access"
-    severity: "medium"
-    base_score: 70
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["symlink", "symlinkat"]
-        - field: "evt.args"
-          operator: "contains"
-          value: "/etc/shadow"
-
-  # 15. 数据包套接字创建检测
-  - id: "packet_socket_created"
-    name: "数据包套接字创建检测"
-    description: "检测创建数据包套接字的行为"
-    category: "network_activity"
-    severity: "medium"
-    base_score: 65
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "socket"
-        - field: "evt.args"
-          operator: "contains"
-          value: "AF_PACKET"
-
-  # 16. Release Agent 文件访问检测
-  - id: "release_agent_file_access"
-    name: "Release Agent文件访问检测"
-    description: "检测访问release_agent文件的行为"
-    category: "privilege_escalation"
-    severity: "critical"
-    base_score: 95
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["open", "openat", "openat2"]
-        - field: "fd.name"
-          operator: "contains"
-          value: "release_agent"
-
-  # 17. PTRACE 反调试检测
-  - id: "ptrace_antidebug"
-    name: "PTRACE反调试尝试检测"
-    description: "检测PTRACE反调试技术的使用"
-    category: "defense_evasion"
-    severity: "medium"
-    base_score: 70
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "ptrace"
-        - field: "evt.args"
-          operator: "contains"
-          value: "PTRACE_TRACEME"
-
-  # 18. AWS 凭证查找检测
-  - id: "find_aws_credentials"
-    name: "AWS凭证查找检测"
-    description: "检测搜索AWS凭证的活动"
-    category: "credential_access"
-    severity: "high"
-    base_score: 82
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "in"
-          values: ["grep", "find", "cat"]
-        - or:
-          - field: "proc.cmdline"
-            operator: "contains"
-            value: "aws_access_key_id"
-          - field: "proc.cmdline"
-            operator: "contains"
-            value: "aws_secret_access_key"
-
-  # 19. 可疑二进制执行检测
-  - id: "suspicious_binary_execution"
-    name: "可疑二进制执行检测"
-    description: "检测从非标准位置执行的二进制文件"
-    category: "persistence"
-    severity: "high"
-    base_score: 85
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "execve"
-        - field: "proc.exe"
-          operator: "not_startswith"
-          value: "/usr/"
-        - field: "proc.exe"
-          operator: "not_startswith"
-          value: "/bin/"
-        - field: "proc.exe"
-          operator: "not_startswith"
-          value: "/sbin/"
-
-  # 20. 非标准端口网络连接检测
-  - id: "nonstandard_port_connection"
-    name: "非标准端口网络连接检测"
-    description: "检测连接到非标准端口的行为"
-    category: "network_activity"
-    severity: "medium"
-    base_score: 65
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "connect"
-        - field: "fd.name"
-          operator: "contains"
-          value: ":4444"
-
-  # 21. 可疑网络工具执行检测
-  - id: "suspicious_network_tool_execution"
-    name: "可疑网络工具执行检测"
-    description: "检测可疑网络工具的执行"
-    category: "network_activity"
-    severity: "medium"
-    base_score: 70
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "in"
-          values: ["nmap", "masscan", "zmap", "hping", "tcpdump", "wireshark"]
-
-  # 22. 根目录写入检测
-  - id: "root_directory_write"
-    name: "根目录写入检测"
-    description: "检测向根目录写入文件的行为"
-    category: "persistence"
-    severity: "high"
-    base_score: 75
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["open", "openat", "openat2", "creat"]
-        - field: "fd.name"
-          operator: "startswith"
-          value: "/root/"
-        - field: "proc.name"
-          operator: "not_in"
-          values: ["ssh", "scp", "rsync", "systemd"]
-
-  # 23. 进程注入检测
-  - id: "process_injection_detection"
-    name: "进程注入检测"
-    description: "检测进程注入相关的系统调用"
-    category: "privilege_escalation"
-    severity: "high"
-    base_score: 85
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["ptrace", "process_vm_writev", "process_vm_readv"]
-
-  # 24. 异常网络监听检测
-  - id: "unusual_network_listen"
-    name: "异常网络监听检测"
-    description: "检测异常的网络监听行为"
-    category: "network_activity"
-    severity: "medium"
-    base_score: 60
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "equals"
-          value: "listen"
-        - field: "proc.name"
-          operator: "not_in"
-          values: ["sshd", "nginx", "httpd", "apache2", "mysql", "postgres"]
-
-  # 25. 临时目录可执行文件创建
-  - id: "temp_executable_creation"
-    name: "临时目录可执行文件创建"
-    description: "检测在临时目录创建可执行文件"
-    category: "persistence"
-    severity: "high"
-    base_score: 80
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - or:
-          - field: "proc.exe"
-            operator: "startswith"
-            value: "/tmp/"
-          - field: "proc.exe"
-            operator: "startswith"
-            value: "/var/tmp/"
-
-  - id: "privilege_escalation_setuid"
-    name: "SetUID/SetGID 权限提升"
-    description: "检测 setuid、setgid、setreuid、setregid 系统调用"
-    category: "privilege_escalation"
-    severity: "critical"
-    base_score: 90
-    enabled: true
-    keywords:
-      - "setuid"
-      - "setgid"
-      - "setreuid"
-      - "setregid"
-    patterns:
-      - 'syscall=105'  # setuid
-      - 'syscall=106'  # setgid
-      - 'syscall=113'  # setreuid
-      - 'syscall=114'  # setregid
-      - 'type=SYSCALL.*syscall=105'
-      - 'type=SYSCALL.*syscall=106'
-      - 'type=SYSCALL.*syscall=113'
-      - 'type=SYSCALL.*syscall=114'
-    frequency_threshold: 1
-    time_window: 300
-    score_multiplier: 1.8
-
-  - id: "sudo_privilege_escalation"
-    name: "可疑Sudo权限提升检测"
-    description: "检测可疑的sudo权限提升行为，包括执行高风险命令"
-    category: "privilege_escalation"
-    severity: "medium"
-    base_score: 70
-    enabled: true
-    condition:
-      and:
-        - field: "evt.type"
-          operator: "in"
-          values: ["execve", "execveat"]
-        - field: "proc.name"
-          operator: "equals"
-          value: "sudo"
-        - field: "proc.exe"
-          operator: "equals"
-          value: "/usr/bin/sudo"
-        - or:  # 检测可疑的sudo使用模式
-          - field: "proc.cmdline"
-            operator: "contains"
-            value: "sudo su"
-          - field: "proc.cmdline"
-            operator: "contains"
-            value: "sudo bash"
-          - field: "proc.cmdline"
-            operator: "contains"
-            value: "sudo sh"
-          - field: "proc.cmdline"
-            operator: "regex"
-            value: "sudo.*(rm|mv|cp|chmod|chown|passwd|usermod|useradd|userdel).*"
-          - and:
-            - field: "proc.cmdline"
-              operator: "startswith"
-              value: "sudo"
-            - field: "proc.cmdline"
-              operator: "not_contains"
-              value: "systemctl status"
-    time_window: 300
-    score_multiplier: 1.2
-
+    condition: file_open and sensitive_file_access and not is_trusted_process
+  
   - id: "ssh_config_access"
     name: "SSH 配置文件访问"
     description: "检测对 SSH 配置文件的访问和修改"
@@ -577,16 +302,230 @@ rules:
     severity: "medium"
     base_score: 65
     enabled: true
-    keywords:
-      - "/etc/ssh/sshd_config"
-      - "sshd_config"
-    patterns:
-      - 'name="/etc/ssh/sshd_config"'
-      - 'name="/etc/ssh/[^"]*"'
+    condition: file_open and fd.name in (ssh_config_files)
     frequency_threshold: 1
     time_window: 300
     score_multiplier: 1.1
-
+  
+  - id: "create_symlink_sensitive_files"
+    name: "敏感文件符号链接创建"
+    description: "检测在敏感文件上创建符号链接"
+    category: "file_access"
+    severity: "medium"
+    base_score: 70
+    enabled: true
+    condition: evt.type in (symlink_syscalls) and evt.args contains "/etc/shadow"
+  
+  - id: "clear_log_activities"
+    name: "日志访问或修改活动检测"
+    description: "检测访问或修改系统日志的活动"
+    category: "defense_evasion"
+    severity: "medium"
+    base_score: 75
+    enabled: true
+    condition: file_open and log_file_access
+  
+  - id: "root_directory_write"
+    name: "根目录写入检测"
+    description: "检测向根目录写入文件的行为"
+    category: "persistence"
+    severity: "high"
+    base_score: 75
+    enabled: true
+    condition: file_create and fd.name startswith "/root/" and not is_trusted_process
+  
+  # ========== 进程执行威胁 ==========
+  
+  - id: "untrusted_shell_spawn"
+    name: "不可信进程生成Shell"
+    description: "检测非Shell应用程序异常生成Shell进程"
+    category: "process_execution"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    condition: spawned_process and is_shell and is_network_server
+  
+  - id: "system_user_activity"
+    name: "系统用户异常活动"
+    description: "检测系统服务账户的异常活动"
+    category: "suspicious_activity"
+    severity: "medium"
+    base_score: 60
+    enabled: true
+    condition: spawned_process and is_system_user and is_shell
+  
+  - id: "memfd_execution"
+    name: "内存文件执行检测"
+    description: "检测可疑的内存文件执行"
+    category: "suspicious_activity"
+    severity: "critical"
+    base_score: 95
+    enabled: true
+    condition: evt.type = "execve" and proc.exe contains "memfd"
+  
+  - id: "dev_shm_execution"
+    name: "/dev/shm目录执行检测"
+    description: "检测从/dev/shm目录执行程序"
+    category: "suspicious_activity"
+    severity: "high"
+    base_score: 80
+    enabled: true
+    condition: spawned_process and is_temp_dir
+  
+  - id: "temp_executable_creation"
+    name: "临时目录可执行文件创建"
+    description: "检测在临时目录创建可执行文件"
+    category: "persistence"
+    severity: "high"
+    base_score: 80
+    enabled: true
+    condition: spawned_process and is_temp_dir
+  
+  - id: "suspicious_binary_execution"
+    name: "可疑二进制执行检测"
+    description: "检测从非标准位置执行的二进制文件"
+    category: "persistence"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    condition: evt.type = "execve" and not is_system_binary_dir
+  
+  - id: "bulk_data_removal"
+    name: "批量数据清除检测"
+    description: "检测批量数据删除或覆盖行为"
+    category: "suspicious_activity"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    condition: spawned_process and proc.name in (data_destruction_tools)
+  
+  # ========== 网络威胁 ==========
+  
+  - id: "network_redirect_stdio"
+    name: "网络重定向检测"
+    description: "检测可疑的网络重定向行为"
+    category: "network_activity"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    condition: evt.type in (dup_syscalls) and internet_socket_family
+  
+  - id: "netcat_execution"
+    name: "网络工具执行检测"
+    description: "检测网络工具的执行"
+    category: "network_activity"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    condition: spawned_process and proc.name in (network_tools)
+  
+  - id: "suspicious_network_tool_execution"
+    name: "可疑网络工具执行检测"
+    description: "检测可疑网络工具的执行"
+    category: "network_activity"
+    severity: "medium"
+    base_score: 70
+    enabled: true
+    condition: spawned_process and proc.name in (network_scanners)
+  
+  - id: "nonstandard_port_connection"
+    name: "非标准端口网络连接检测"
+    description: "检测连接到非标准端口的行为"
+    category: "network_activity"
+    severity: "medium"
+    base_score: 65
+    enabled: true
+    condition: evt.type = "connect" and fd.name contains ":4444"
+  
+  - id: "packet_socket_created"
+    name: "数据包套接字创建检测"
+    description: "检测创建数据包套接字的行为"
+    category: "network_activity"
+    severity: "medium"
+    base_score: 65
+    enabled: true
+    condition: evt.type = "socket" and evt.args contains "AF_PACKET"
+  
+  - id: "unusual_network_listen"
+    name: "异常网络监听检测"
+    description: "检测异常的网络监听行为"
+    category: "network_activity"
+    severity: "medium"
+    base_score: 60
+    enabled: true
+    condition: evt.type = "listen" and not is_network_server
+  
+  # ========== 权限提升威胁 ==========
+  
+  - id: "kernel_module_injection"
+    name: "内核模块注入检测"
+    description: "检测内核模块加载行为"
+    category: "privilege_escalation"
+    severity: "critical"
+    base_score: 95
+    enabled: true
+    condition: evt.type in (module_syscalls)
+  
+  - id: "ptrace_attach"
+    name: "PTRACE进程附加检测"
+    description: "检测使用PTRACE附加到进程的行为"
+    category: "privilege_escalation"
+    severity: "high"
+    base_score: 80
+    enabled: true
+    condition: evt.type = "ptrace" and evt.args contains "PTRACE_ATTACH"
+  
+  - id: "process_injection_detection"
+    name: "进程注入检测"
+    description: "检测进程注入相关的系统调用"
+    category: "privilege_escalation"
+    severity: "high"
+    base_score: 85
+    enabled: true
+    condition: evt.type in (process_injection_syscalls)
+  
+  - id: "release_agent_file_access"
+    name: "Release Agent文件访问检测"
+    description: "检测访问release_agent文件的行为"
+    category: "privilege_escalation"
+    severity: "critical"
+    base_score: 95
+    enabled: true
+    condition: file_open and fd.name contains "release_agent"
+  
+  - id: "privilege_escalation_setuid"
+    name: "SetUID/SetGID 权限提升"
+    description: "检测 setuid、setgid、setreuid、setregid 系统调用"
+    category: "privilege_escalation"
+    severity: "critical"
+    base_score: 90
+    enabled: true
+    condition: evt.type in (setuid_syscalls)
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.8
+  
+  - id: "sudo_privilege_escalation"
+    name: "可疑Sudo权限提升检测"
+    description: "检测可疑的sudo权限提升行为，包括执行高风险命令"
+    category: "privilege_escalation"
+    severity: "medium"
+    base_score: 70
+    enabled: true
+    condition: >
+      spawned_process and 
+      proc.name = "sudo" and 
+      proc.exe = "/usr/bin/sudo" and 
+      (proc.cmdline contains "sudo su" or 
+       proc.cmdline contains "sudo bash" or 
+       proc.cmdline contains "sudo sh" or 
+       proc.cmdline regex "sudo.*(rm|mv|cp|chmod|chown|passwd|usermod|useradd|userdel).*" or 
+       (proc.cmdline startswith "sudo" and not proc.cmdline contains "systemctl status"))
+    time_window: 300
+    score_multiplier: 1.2
+  
+  # ========== 系统配置威胁 ==========
+  
   - id: "system_binary_modification"
     name: "系统二进制文件修改"
     description: "检测对系统二进制文件的写入或修改操作"
@@ -594,46 +533,21 @@ rules:
     severity: "critical"
     base_score: 95
     enabled: true
-    keywords:
-      - "type=SYSCALL"
-      - "syscall=2"   # open
-      - "syscall=257" # openat
-      - "syscall=90"  # chmod
-      - "syscall=91"  # fchmod
-    patterns:
-      - 'type=SYSCALL.*syscall=2.*name="/bin/[^/]*".*a1=[0-9]*[2367][0-9]*'  # open with write flags
-      - 'type=SYSCALL.*syscall=2.*name="/sbin/[^/]*".*a1=[0-9]*[2367][0-9]*'
-      - 'type=SYSCALL.*syscall=2.*name="/usr/bin/[^/]*".*a1=[0-9]*[2367][0-9]*'
-      - 'type=SYSCALL.*syscall=2.*name="/usr/sbin/[^/]*".*a1=[0-9]*[2367][0-9]*'
-      - 'type=SYSCALL.*syscall=257.*name="/bin/[^/]*".*a2=[0-9]*[2367][0-9]*' # openat with write flags
-      - 'type=SYSCALL.*syscall=257.*name="/sbin/[^/]*".*a2=[0-9]*[2367][0-9]*'
-      - 'type=SYSCALL.*syscall=257.*name="/usr/bin/[^/]*".*a2=[0-9]*[2367][0-9]*'
-      - 'type=SYSCALL.*syscall=257.*name="/usr/sbin/[^/]*".*a2=[0-9]*[2367][0-9]*'
-      - 'type=SYSCALL.*syscall=(90|91).*name="/bin/[^/]*"'  # chmod/fchmod
-      - 'type=SYSCALL.*syscall=(90|91).*name="/sbin/[^/]*"'
-      - 'type=SYSCALL.*syscall=(90|91).*name="/usr/bin/[^/]*"'
-      - 'type=SYSCALL.*syscall=(90|91).*name="/usr/sbin/[^/]*"'
+    condition: >
+      ((evt.type = "open" or evt.type = "openat") and 
+       (fd.name startswith "/bin/" or 
+        fd.name startswith "/sbin/" or 
+        fd.name startswith "/usr/bin/" or 
+        fd.name startswith "/usr/sbin/")) or 
+      (evt.type in (chmod_syscalls) and 
+       (fd.name startswith "/bin/" or 
+        fd.name startswith "/sbin/" or 
+        fd.name startswith "/usr/bin/" or 
+        fd.name startswith "/usr/sbin/"))
     frequency_threshold: 1
     time_window: 300
     score_multiplier: 2.0
-
-  - id: "pam_authentication_failure"
-    name: "PAM 认证失败"
-    description: "检测 PAM 认证失败事件"
-    category: "authentication"
-    severity: "low"
-    base_score: 35
-    enabled: true
-    keywords:
-      - "op=PAM:authentication"
-      - "res=failed"
-    patterns:
-      - 'op=PAM:authentication.*res=failed'
-      - 'type=USER_AUTH.*res=failed'
-    frequency_threshold: 5
-    time_window: 300
-    score_multiplier: 1.1
-
+  
   - id: "crontab_modification"
     name: "Crontab 定时任务修改"
     description: "检测对 crontab 和定时任务的修改"
@@ -641,163 +555,15 @@ rules:
     severity: "medium"
     base_score: 65
     enabled: true
-    keywords:
-      - "crontab"
-      - "/etc/cron"
-      - "/var/spool/cron"
-    patterns:
-      - 'name="/etc/crontab"'
-      - 'name="/etc/cron\.d/[^"]*"'
-      - 'name="/var/spool/cron/[^"]*"'
-      - 'comm="crontab"'
+    condition: >
+      fd.name = "/etc/crontab" or 
+      fd.name startswith "/etc/cron.d/" or 
+      fd.name startswith "/var/spool/cron/" or 
+      proc.name = "crontab"
     frequency_threshold: 1
     time_window: 300
     score_multiplier: 1.2
-
-  - id: "file_deletion_dangerous"
-    name: "危险文件删除操作"
-    description: "检测危险的文件删除操作"
-    category: "file_manipulation"
-    severity: "critical"
-    base_score: 88
-    enabled: true
-    keywords:
-      - "rm -rf"
-      - "rm -f"
-      - "shred"
-      - "wipe"
-    patterns:
-      - 'rm\s+.*-[rf]'
-      - 'rm\s+.*--recursive'
-      - 'rm\s+.*--force'
-      - 'comm="shred"'
-      - 'comm="wipe"'
-    frequency_threshold: 1
-    time_window: 300
-    score_multiplier: 1.4
-
-  - id: "permission_modification"
-    name: "文件权限修改"
-    description: "检测危险的文件权限修改"
-    category: "file_manipulation"
-    severity: "high"
-    base_score: 75
-    enabled: true
-    keywords:
-      - "chmod 777"
-      - "chmod 755"
-      - "chmod +x"
-    patterns:
-      - 'chmod\s+777'
-      - 'chmod\s+755'
-      - 'chmod\s+\+x'
-      - 'comm="chmod"'
-    frequency_threshold: 2
-    time_window: 300
-    score_multiplier: 1.3
-
-  - id: "command_injection_indicators"
-    name: "命令注入指标检测"
-    description: "检测可能的命令注入攻击指标"
-    category: "command_injection"
-    severity: "critical"
-    base_score: 85
-    enabled: true
-    condition:
-      or:
-        - and:
-          - field: "evt.type"
-            operator: "equals"
-            value: "execve"
-          - or:
-            - field: "proc.cmdline"
-              operator: "regex"
-              value: '\bbash\s+.*-[ic]\b'
-            - field: "proc.cmdline"
-              operator: "regex"
-              value: '\bsh\s+.*-[ic]\b'
-            - field: "proc.cmdline"
-              operator: "regex"
-              value: '\bpython\s+.*-c\s+'
-            - field: "proc.cmdline"
-              operator: "regex"
-              value: '\bperl\s+.*-e\s+'
-            - field: "proc.cmdline"
-              operator: "regex"
-              value: '\bnc\s+.*-e\s+'
-            - field: "proc.cmdline"
-              operator: "regex"
-              value: '\bnetcat\s+.*-e\s+'
-        - and:
-          - field: "evt.type"
-            operator: "equals"
-            value: "execve"
-          - field: "proc.name"
-            operator: "in"
-            values: ["nc", "ncat", "netcat", "socat"]
-          - field: "proc.cmdline"
-            operator: "contains"
-            value: "-e"
-    frequency_threshold: 1
-    time_window: 300
-    score_multiplier: 1.5
-
-  - id: "service_manipulation"
-    name: "系统服务操作"
-    description: "检测系统服务的启动、停止或配置修改"
-    category: "system_configuration"
-    severity: "medium"
-    base_score: 55
-    enabled: true
-    condition:
-      or:
-        - and:
-          - field: "evt.type"
-            operator: "equals"
-            value: "execve"
-          - field: "proc.name"
-            operator: "contains"
-            value: "systemctl"
-          - or:
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: "start "
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: "stop "
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: "restart "
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: "reload "
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: "enable "
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: "disable "
-        - and:
-          - field: "evt.type"
-            operator: "equals"
-            value: "execve"
-          - field: "proc.name"
-            operator: "equals"
-            value: "service"
-          - or:
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: " start"
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: " stop"
-            - field: "proc.cmdline"
-              operator: "contains"
-              value: " restart"
-    frequency_threshold: 1
-    time_window: 300
-    score_multiplier: 1.1
-
+  
   - id: "kernel_module_loading"
     name: "内核模块加载"
     description: "检测内核模块的加载，可能表示 rootkit 安装"
@@ -805,21 +571,134 @@ rules:
     severity: "critical"
     base_score: 85
     enabled: true
-    keywords:
-      - "insmod"
-      - "modprobe"
-      - "rmmod"
-    patterns:
-      - 'comm="insmod"'
-      - 'comm="modprobe"'
-      - 'comm="rmmod"'
-      - 'exe=".*/insmod"'
-      - 'exe=".*/modprobe"'
+    condition: proc.name in ("insmod", "modprobe", "rmmod")
     frequency_threshold: 1
     time_window: 300
     score_multiplier: 1.6
+  
+  - id: "service_manipulation"
+    name: "系统服务操作"
+    description: "检测系统服务的启动、停止或配置修改"
+    category: "system_configuration"
+    severity: "medium"
+    base_score: 55
+    enabled: true
+    condition: >
+      (proc.name contains "systemctl" and 
+       (proc.cmdline contains "start " or 
+        proc.cmdline contains "stop " or 
+        proc.cmdline contains "restart " or 
+        proc.cmdline contains "reload " or 
+        proc.cmdline contains "enable " or 
+        proc.cmdline contains "disable ")) or 
+      (proc.name = "service" and 
+       (proc.cmdline contains " start" or 
+        proc.cmdline contains " stop" or 
+        proc.cmdline contains " restart"))
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.1
+  
+  - id: "permission_modification"
+    name: "文件权限修改"
+    description: "检测危险的文件权限修改"
+    category: "file_manipulation"
+    severity: "high"
+    base_score: 75
+    enabled: true
+    condition: proc.name = "chmod" and (proc.cmdline contains "777" or proc.cmdline contains "755" or proc.cmdline contains "+x")
+    frequency_threshold: 2
+    time_window: 300
+    score_multiplier: 1.3
+  
+  # ========== 凭证访问威胁 ==========
+  
+  - id: "search_private_keys_passwords"
+    name: "搜索私钥密码活动"
+    description: "检测搜索私钥或密码的活动"
+    category: "credential_access"
+    severity: "medium"
+    base_score: 72
+    enabled: true
+    condition: spawned_process and proc.name in (search_tools) and proc.cmdline contains "password"
+  
+  - id: "find_aws_credentials"
+    name: "AWS凭证查找检测"
+    description: "检测搜索AWS凭证的活动"
+    category: "credential_access"
+    severity: "high"
+    base_score: 82
+    enabled: true
+    condition: >
+      spawned_process and 
+      proc.name in (search_tools) and 
+      (proc.cmdline contains "aws_access_key_id" or 
+       proc.cmdline contains "aws_secret_access_key")
+  
+  # ========== 认证威胁 ==========
+  
+  - id: "pam_authentication_failure"
+    name: "PAM 认证失败"
+    description: "检测 PAM 认证失败事件"
+    category: "authentication"
+    severity: "low"
+    base_score: 35
+    enabled: true
+    condition: >
+      evt.args contains "res=failed" and 
+      proc.name in ("login", "sshd", "su", "sudo", "passwd")
+    frequency_threshold: 5
+    time_window: 300
+    score_multiplier: 1.1
+  
+  # ========== 防御规避威胁 ==========
+  
+  - id: "ptrace_antidebug"
+    name: "PTRACE反调试尝试检测"
+    description: "检测PTRACE反调试技术的使用"
+    category: "defense_evasion"
+    severity: "medium"
+    base_score: 70
+    enabled: true
+    condition: evt.type = "ptrace" and evt.args contains "PTRACE_TRACEME"
+  
+  - id: "file_deletion_dangerous"
+    name: "危险文件删除操作"
+    description: "检测危险的文件删除操作"
+    category: "file_manipulation"
+    severity: "critical"
+    base_score: 88
+    enabled: true
+    condition: proc.name in ("rm", "shred", "wipe") and (proc.cmdline regex "rm\\s+.*-[rf]" or proc.cmdline contains "shred" or proc.cmdline contains "wipe")
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.4
+  
+  # ========== 命令注入威胁 ==========
+  
+  - id: "command_injection_indicators"
+    name: "命令注入指标检测"
+    description: "检测可能的命令注入攻击指标"
+    category: "command_injection"
+    severity: "critical"
+    base_score: 85
+    enabled: true
+    condition: >
+      evt.type = "execve" and 
+      (proc.cmdline contains "bash -c" or 
+       proc.cmdline contains "bash -i" or
+       proc.cmdline contains "sh -c" or 
+       proc.cmdline contains "sh -i" or 
+       proc.cmdline contains "python -c" or 
+       proc.cmdline contains "perl -e" or 
+       (proc.name in (network_tools) and proc.cmdline contains "-e"))
+    frequency_threshold: 1
+    time_window: 300
+    score_multiplier: 1.5
 
+# ========================================
 # 规则组配置 - 基于威胁类型和攻击场景的规则分类
+# ========================================
 rule_groups:
   critical_threats:
     description: "关键威胁 - 需要立即响应"
