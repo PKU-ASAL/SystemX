@@ -43,7 +43,7 @@ export function DeploymentInstructions({
                 size="sm"
                 className="h-6 px-2"
                 onClick={() => {
-                  const downloadCmd = `wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/scripts/setup-terminal.sh?collector_id=${collectorId}"`;
+                  const downloadCmd = `wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=${collectorId}"`;
                   navigator.clipboard.writeText(downloadCmd);
                 }}
               >
@@ -51,7 +51,7 @@ export function DeploymentInstructions({
               </Button>
             </div>
             <div className="bg-black text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
-              {`wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/scripts/setup-terminal.sh?collector_id=${collectorId}"`}
+              {`wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=${collectorId}"`}
             </div>
           </div>
 
@@ -108,7 +108,7 @@ export function DeploymentInstructions({
                 size="sm"
                 className="h-6 px-2"
                 onClick={() => {
-                  const fullCmd = `wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/scripts/setup-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-install.sh && sudo ./sysarmor-install.sh`;
+                  const fullCmd = `wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-install.sh && sudo ./sysarmor-install.sh`;
                   navigator.clipboard.writeText(fullCmd);
                 }}
               >
@@ -116,7 +116,7 @@ export function DeploymentInstructions({
               </Button>
             </div>
             <div className="bg-black text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
-              {`wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/scripts/setup-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-install.sh && sudo ./sysarmor-install.sh`}
+              {`wget -O sysarmor-install.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/setup-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-install.sh && sudo ./sysarmor-install.sh`}
             </div>
           </div>
         </div>
@@ -142,7 +142,7 @@ export function DeploymentInstructions({
                 size="sm"
                 className="h-6 px-2"
                 onClick={() => {
-                  const downloadCmd = `wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/scripts/uninstall-terminal.sh?collector_id=${collectorId}"`;
+                  const downloadCmd = `wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=${collectorId}"`;
                   navigator.clipboard.writeText(downloadCmd);
                 }}
               >
@@ -150,7 +150,7 @@ export function DeploymentInstructions({
               </Button>
             </div>
             <div className="bg-black text-red-400 p-3 rounded font-mono text-sm overflow-x-auto">
-              {`wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/scripts/uninstall-terminal.sh?collector_id=${collectorId}"`}
+              {`wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=${collectorId}"`}
             </div>
           </div>
 
@@ -209,7 +209,7 @@ export function DeploymentInstructions({
                 size="sm"
                 className="h-6 px-2"
                 onClick={() => {
-                  const fullUninstallCmd = `wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/scripts/uninstall-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-uninstall.sh && sudo ./sysarmor-uninstall.sh`;
+                  const fullUninstallCmd = `wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-uninstall.sh && sudo ./sysarmor-uninstall.sh`;
                   navigator.clipboard.writeText(fullUninstallCmd);
                 }}
               >
@@ -217,7 +217,7 @@ export function DeploymentInstructions({
               </Button>
             </div>
             <div className="bg-black text-red-400 p-3 rounded font-mono text-sm overflow-x-auto">
-              {`wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/scripts/uninstall-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-uninstall.sh && sudo ./sysarmor-uninstall.sh`}
+              {`wget -O sysarmor-uninstall.sh "{API_BASE_URL}/api/v1/resources/scripts/agentless/uninstall-terminal.sh?collector_id=${collectorId}" && chmod +x sysarmor-uninstall.sh && sudo ./sysarmor-uninstall.sh`}
             </div>
           </div>
         </div>
