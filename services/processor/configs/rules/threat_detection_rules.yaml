@@ -199,19 +199,19 @@ lists:
       - syslog
       - auth.log
   
-  # SetUID/SetGID 系统调用号
+  # SetUID/SetGID 系统调用 (使用事件类型名称而非系统调用号)
   - list: setuid_syscalls
     items:
-      - "105"  # setuid
-      - "106"  # setgid
-      - "113"  # setreuid
-      - "114"  # setregid
+      - setuid
+      - setgid
+      - setreuid
+      - setregid
   
-  # 文件权限修改系统调用
+  # 文件权限修改系统调用 (使用事件类型名称而非系统调用号)
   - list: chmod_syscalls
     items:
-      - "90"   # chmod
-      - "91"   # fchmod
+      - chmod
+      - fchmod
   
   # 进程注入相关系统调用
   - list: process_injection_syscalls
@@ -644,7 +644,9 @@ rules:
     severity: "low"
     base_score: 35
     enabled: true
-    condition: evt.type = "USER_AUTH" and evt.args contains "res=failed"
+    condition: >
+      evt.args contains "res=failed" and 
+      proc.name in ("login", "sshd", "su", "sudo", "passwd")
     frequency_threshold: 5
     time_window: 300
     score_multiplier: 1.1

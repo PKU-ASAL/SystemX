@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SysArmor Threat Detection Engine
-威胁检测规则引擎 - 可被多个Job复用
+威胁检测规则引擎
 基于 Falco/Sysdig 规则引擎设计
 """
 

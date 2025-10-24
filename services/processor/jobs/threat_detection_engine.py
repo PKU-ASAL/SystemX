@@ -3,7 +3,7 @@
 SysArmor Threat Detection Engine
 威胁检测规则引擎
 基于 Falco/Sysdig 规则引擎设计
-支持 Falco 风格的条件字符串解析、列表和宏
+支持 Falco 风格的条件字符串解析、列表和宏，实现类型索引，短路评估，字段缓存等优化
 """
 
 import os
@@ -12,11 +12,160 @@ import logging
 import re
 import yaml
 import uuid
+import time
+import fnmatch
+from collections import defaultdict, deque
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Set
 from abc import ABC, abstractmethod
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# 匹配策略
+# ============================================================================
+
+class RuleMatchStrategy(Enum):
+    """规则匹配策略"""
+    ALL = "all"           # 匹配所有规则（默认）
+    FIRST = "first"       # 匹配第一个规则即停止（最快）
+    HIGHEST = "highest"   # 只返回最高优先级的规则
+
+
+# ============================================================================
+# 字段缓存
+# ============================================================================
+
+class CachedEventData:
+    """带缓存的事件数据包装器
+    
+    避免在多个条件中重复解析相同字段
+    """
+    
+    def __init__(self, event_data: Dict):
+        self.event_data = event_data
+        self._field_cache: Dict[str, Any] = {}
+    
+    def get_field(self, field_path: str, extractor_func) -> Any:
+        if field_path in self._field_cache:
+            return self._field_cache[field_path]
+        
+        value = extractor_func(field_path, self.event_data)
+        self._field_cache[field_path] = value
+        return value
+
+
+# ============================================================================
+# 统计管理
+# ============================================================================
+
+class RuleStats:
+    """规则统计信息"""
+    
+    def __init__(self, rule_id: str):
+        self.rule_id = rule_id
+        self.matched_count = 0
+        self.evaluated_count = 0
+        self.total_eval_time_ms = 0.0
+        self.last_matched_at: Optional[datetime] = None
+    
+    @property
+    def match_rate(self) -> float:
+        """匹配率"""
+        return self.matched_count / self.evaluated_count if self.evaluated_count > 0 else 0
+    
+    @property
+    def avg_eval_time_ms(self) -> float:
+        """平均评估时间（毫秒）"""
+        return self.total_eval_time_ms / self.evaluated_count if self.evaluated_count > 0 else 0
+
+
+class StatsManager:
+    """统计管理器"""
+    
+    def __init__(self):
+        self.stats: Dict[str, RuleStats] = {}
+        self.global_stats = {
+            'total_events': 0,
+            'total_alerts': 0,
+            'start_time': time.time()
+        }
+    
+    def record_evaluation(self, rule_id: str, matched: bool, eval_time_ms: float):
+        """记录规则评估"""
+        if rule_id not in self.stats:
+            self.stats[rule_id] = RuleStats(rule_id)
+        
+        stats = self.stats[rule_id]
+        stats.evaluated_count += 1
+        stats.total_eval_time_ms += eval_time_ms
+        
+        if matched:
+            stats.matched_count += 1
+            stats.last_matched_at = datetime.utcnow()
+    
+    def record_event(self, alert_count: int):
+        """记录事件处理"""
+        self.global_stats['total_events'] += 1
+        self.global_stats['total_alerts'] += alert_count
+    
+    def print_stats(self):
+        """打印统计信息"""
+        uptime = time.time() - self.global_stats['start_time']
+        
+        print("\n" + "="*100)
+        print("规则引擎统计信息")
+        print("="*100)
+        print(f"运行时间: {uptime:.2f}s | "
+              f"总事件: {self.global_stats['total_events']} | "
+              f"总告警: {self.global_stats['total_alerts']}")
+        print("-"*100)
+        print(f"{'规则ID':<40s} | {'匹配':<8s} | {'评估':<8s} | {'匹配率':<8s} | {'平均耗时'}")
+        print("-"*100)
+        
+        for rule_id, stats in sorted(
+            self.stats.items(), 
+            key=lambda x: x[1].matched_count, 
+            reverse=True
+        ):
+            print(f"{rule_id:<40s} | "
+                  f"{stats.matched_count:<8d} | "
+                  f"{stats.evaluated_count:<8d} | "
+                  f"{stats.match_rate:<8.2%} | "
+                  f"{stats.avg_eval_time_ms:.3f}ms")
+        
+        print("="*100 + "\n")
+
+
+# ============================================================================
+# 限流器
+# ============================================================================
+
+class RateLimiter:
+    """规则触发频率限制器"""
+    
+    def __init__(self, max_alerts_per_minute: int = 100):
+        self.max_alerts = max_alerts_per_minute
+        self.alert_counts: Dict[str, deque] = defaultdict(deque)
+    
+    def should_drop_alert(self, rule_id: str) -> bool:
+        """判断是否应该丢弃告警"""
+        now = time.time()
+        
+        # 清理 1 分钟前的记录
+        while self.alert_counts[rule_id] and \
+              self.alert_counts[rule_id][0] < now - 60:
+            self.alert_counts[rule_id].popleft()
+        
+        # 检查是否超过限制
+        if len(self.alert_counts[rule_id]) >= self.max_alerts:
+            logger.warning(f"规则 {rule_id} 触发频率超限，丢弃告警")
+            return True
+        
+        self.alert_counts[rule_id].append(now)
+        return False
 
 
 # ============================================================================
@@ -88,9 +237,12 @@ class ComparisonNode(ASTNode):
         self.operator = operator
         self.value = value
     
-    def evaluate(self, event_data: Dict) -> bool:
-        # 从事件中提取字段值
-        field_value = self._get_field_value(self.field, event_data)
+    def evaluate(self, event_data: Union[Dict, CachedEventData]) -> bool:
+        # 支持缓存的事件数据
+        if isinstance(event_data, CachedEventData):
+            field_value = event_data.get_field(self.field, self._get_field_value)
+        else:
+            field_value = self._get_field_value(self.field, event_data)
         
         if field_value is None:
             logger.debug(f"字段 {self.field} 值为 None")
@@ -721,16 +873,52 @@ class EventNormalizer:
 # ============================================================================
 
 class ThreatDetectionRules:
-    """威胁检测规则引擎 - 基于 Falco 规则设计，支持条件字符串解析"""
+    """威胁检测规则引擎
+    基于 Falco 规则设计，支持条件字符串解析
+    """
     
-    def __init__(self, rules_file: str = "/opt/flink/configs/rules/threat_detection_rules.yaml"):
+    def __init__(self, 
+                 rules_file: str = "/opt/flink/configs/rules/threat_detection_rules.yaml",
+                 enable_index: bool = True,
+                 enable_stats: bool = True,
+                 enable_rate_limit: bool = True,
+                 max_alerts_per_minute: int = 100):
+        """初始化规则引擎
+        
+        Args:
+            rules_file: 规则文件路径
+            enable_index: 是否启用事件类型索引（默认启用）
+            enable_stats: 是否启用统计（默认启用）
+            enable_rate_limit: 是否启用频率限制（默认启用）
+            max_alerts_per_minute: 每规则每分钟最大告警数
+        """
         self.rules = {}
         self.compiled_conditions = {}  # 存储编译后的 AST
         self.rule_groups = {}
         self.global_settings = {}
         self.compiler = ConditionCompiler()
         self.event_normalizer = EventNormalizer()
+        
+        # 优化特性开关
+        self.enable_index = enable_index
+        self.enable_stats = enable_stats
+        self.enable_rate_limit = enable_rate_limit
+        
+        # 事件类型索引
+        self.rules_by_event_type: Dict[str, Set[str]] = defaultdict(set)
+        self.wildcard_rules: Set[str] = set()
+        self.rule_priorities: Dict[str, int] = {}
+        
+        # 统计和限流
+        self.stats_manager = StatsManager() if enable_stats else None
+        self.rate_limiter = RateLimiter(max_alerts_per_minute) if enable_rate_limit else None
+        
+        # 加载规则
         self.load_rules(rules_file)
+        
+        # 构建索引
+        if self.enable_index:
+            self._build_event_type_index()
         
     def load_rules(self, rules_file: str):
         """加载威胁检测规则"""
@@ -829,19 +1017,285 @@ class ThreatDetectionRules:
         
         logger.info("✅ 加载了默认威胁检测规则")
     
-    def evaluate_event(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """评估事件是否触发威胁检测规则"""
-        alerts = []
+    def _build_event_type_index(self):
+        """构建事件类型索引"""
+        logger.info("🔨 开始构建事件类型索引...")
+        
+        for rule_id, rule in self.rules.items():
+            # 提取规则优先级
+            priority = self._get_rule_priority(rule)
+            self.rule_priorities[rule_id] = priority
+            
+            # 分析规则条件，提取事件类型
+            event_types = self._extract_event_types(rule_id)
+            
+            if not event_types:
+                # 无法确定事件类型，加入通配规则
+                self.wildcard_rules.add(rule_id)
+                logger.debug(f"  规则 {rule_id} -> 通配规则")
+            else:
+                # 为每个事件类型添加规则索引
+                for evt_type in event_types:
+                    self.rules_by_event_type[evt_type].add(rule_id)
+                logger.debug(f"  规则 {rule_id} -> 事件类型 {event_types}")
+        
+        logger.info("✅ 事件类型索引构建完成:")
+        logger.info(f"  - 总规则数: {len(self.rules)}")
+        logger.info(f"  - 事件类型数: {len(self.rules_by_event_type)}")
+        logger.info(f"  - 通配规则数: {len(self.wildcard_rules)}")
+        
+        # 打印每个事件类型的规则数量
+        for evt_type in sorted(self.rules_by_event_type.keys()):
+            rule_count = len(self.rules_by_event_type[evt_type])
+            logger.info(f"  - {evt_type}: {rule_count} 个规则")
+    
+    def _get_rule_priority(self, rule: Dict) -> int:
+        """获取规则优先级（数字越小优先级越高）"""
+        severity_to_priority = {
+            'critical': 1,
+            'high': 2,
+            'medium': 3,
+            'low': 4,
+            'info': 5
+        }
+        severity = rule.get('severity', 'medium')
+        return severity_to_priority.get(severity, 3)
+    
+    def _extract_event_types(self, rule_id: str) -> Set[str]:
+        """从规则 AST 中提取事件类型"""
+        event_types = set()
+        
+        if rule_id not in self.compiled_conditions:
+            return event_types
+        
+        ast = self.compiled_conditions[rule_id]
+        self._traverse_ast_for_event_types(ast, event_types)
+        
+        return event_types
+    
+    def _traverse_ast_for_event_types(self, node: ASTNode, event_types: Set[str]):
+        """递归遍历 AST 提取事件类型"""
+        if isinstance(node, ComparisonNode):
+            # 检查是否为事件类型条件
+            if node.field in ('evt.type', 'event_type', 'evt.category'):
+                if node.operator in ('=', '=='):
+                    event_types.add(str(node.value))
+                elif node.operator == 'in':
+                    if isinstance(node.value, (list, tuple)):
+                        event_types.update(str(v) for v in node.value)
+        
+        elif isinstance(node, AndNode):
+            for child in node.children:
+                self._traverse_ast_for_event_types(child, event_types)
+        
+        elif isinstance(node, OrNode):
+            for child in node.children:
+                self._traverse_ast_for_event_types(child, event_types)
+        
+        elif isinstance(node, NotNode):
+            # NOT: 无法优化，不提取事件类型
+            pass
+        
+        elif isinstance(node, MacroNode):
+            if node.expanded:
+                self._traverse_ast_for_event_types(node.expanded, event_types)
+    
+    def evaluate_event(
+        self, 
+        event: Dict[str, Any],
+        strategy: RuleMatchStrategy = RuleMatchStrategy.ALL
+    ) -> List[Dict[str, Any]]:
+        """评估事件是否触发威胁检测规则
+        
+        Args:
+            event: 原始事件数据
+            strategy: 规则匹配策略
+                - ALL: 匹配所有规则（默认）
+                - FIRST: 匹配第一个规则即停止
+                - HIGHEST: 只返回最高优先级的规则
+        
+        Returns:
+            告警列表
+        """
+        start_time = time.time()
         
         # 标准化事件数据结构
         normalized_event = self.event_normalizer.normalize_event_data(event)
         
-        for rule_id, rule in self.rules.items():
-            if self._match_rule(rule_id, normalized_event, rule):
-                alert = self._create_alert(event, rule)
+        # 使用缓存包装
+        cached_event = CachedEventData(normalized_event)
+        
+        # 获取需要检查的规则
+        if self.enable_index:
+            rules_to_check = self._get_indexed_rules(normalized_event)
+        else:
+            rules_to_check = list(self.rules.keys())
+        
+        # 按优先级排序规则
+        sorted_rules = sorted(
+            rules_to_check,
+            key=lambda rid: self.rule_priorities.get(rid, 999)
+        )
+        
+        logger.debug(f"🎯 检查 {len(sorted_rules)}/{len(self.rules)} 个规则")
+        
+        # 根据策略执行匹配
+        if strategy == RuleMatchStrategy.ALL:
+            alerts = self._match_all_rules(sorted_rules, cached_event, event)
+        elif strategy == RuleMatchStrategy.FIRST:
+            alerts = self._match_first_rule(sorted_rules, cached_event, event)
+        elif strategy == RuleMatchStrategy.HIGHEST:
+            alerts = self._match_highest_priority(sorted_rules, cached_event, event)
+        else:
+            alerts = []
+        
+        # 记录统计
+        if self.enable_stats:
+            elapsed_ms = (time.time() - start_time) * 1000
+            self.stats_manager.record_event(len(alerts))
+            logger.debug(f"⏱️  事件评估耗时: {elapsed_ms:.2f}ms")
+        
+        return alerts
+    
+    def _get_indexed_rules(self, normalized_event: Dict) -> List[str]:
+        """获取需要检查的规则 ID 列表"""
+        # 获取事件类型
+        event_type = normalized_event.get('evt.type') or \
+                     normalized_event.get('event_type', 'unknown')
+        
+        # 收集需要检查的规则
+        rules_to_check = set(self.wildcard_rules)  # 始终包含通配规则
+        
+        # 添加该事件类型的专属规则
+        if event_type in self.rules_by_event_type:
+            rules_to_check.update(self.rules_by_event_type[event_type])
+        
+        # 也检查事件类别
+        event_category = self._get_event_category(event_type)
+        if event_category and event_category in self.rules_by_event_type:
+            rules_to_check.update(self.rules_by_event_type[event_category])
+        
+        return list(rules_to_check)
+    
+    def _get_event_category(self, event_type: str) -> Optional[str]:
+        """根据事件类型推断事件类别"""
+        file_events = {'open', 'openat', 'openat2', 'read', 'write', 'close', 'unlink'}
+        process_events = {'execve', 'execveat', 'fork', 'clone', 'exit'}
+        network_events = {'socket', 'connect', 'bind', 'listen', 'accept', 'send', 'recv'}
+        
+        if event_type in file_events:
+            return 'file'
+        elif event_type in process_events:
+            return 'process'
+        elif event_type in network_events:
+            return 'network'
+        
+        return None
+    
+    def _match_all_rules(
+        self, 
+        rule_ids: List[str], 
+        cached_event: CachedEventData, 
+        original_event: Dict
+    ) -> List[Dict[str, Any]]:
+        """匹配所有规则"""
+        alerts = []
+        for rule_id in rule_ids:
+            rule = self.rules[rule_id]
+            matched, eval_time = self._match_rule_timed(rule_id, cached_event, rule)
+            
+            if self.enable_stats:
+                self.stats_manager.record_evaluation(rule_id, matched, eval_time)
+            
+            if matched:
+                # 检查频率限制
+                if self.enable_rate_limit and self.rate_limiter.should_drop_alert(rule_id):
+                    continue
+                
+                alert = self._create_alert(original_event, rule)
                 alerts.append(alert)
         
         return alerts
+    
+    def _match_first_rule(
+        self, 
+        rule_ids: List[str], 
+        cached_event: CachedEventData, 
+        original_event: Dict
+    ) -> List[Dict[str, Any]]:
+        """匹配第一个规则即停止（短路评估）"""
+        for rule_id in rule_ids:
+            rule = self.rules[rule_id]
+            matched, eval_time = self._match_rule_timed(rule_id, cached_event, rule)
+            
+            if self.enable_stats:
+                self.stats_manager.record_evaluation(rule_id, matched, eval_time)
+            
+            if matched:
+                # 检查频率限制
+                if self.enable_rate_limit and self.rate_limiter.should_drop_alert(rule_id):
+                    continue
+                
+                alert = self._create_alert(original_event, rule)
+                return [alert]
+        
+        return []
+    
+    def _match_highest_priority(
+        self, 
+        rule_ids: List[str], 
+        cached_event: CachedEventData, 
+        original_event: Dict
+    ) -> List[Dict[str, Any]]:
+        """只返回最高优先级的规则"""
+        alerts = []
+        highest_priority = None
+        
+        for rule_id in rule_ids:
+            rule = self.rules[rule_id]
+            priority = self.rule_priorities.get(rule_id, 999)
+            
+            # 如果已经找到更高优先级的规则，跳过当前规则
+            if highest_priority is not None and priority > highest_priority:
+                continue
+            
+            matched, eval_time = self._match_rule_timed(rule_id, cached_event, rule)
+            
+            if self.enable_stats:
+                self.stats_manager.record_evaluation(rule_id, matched, eval_time)
+            
+            if matched:
+                # 检查频率限制
+                if self.enable_rate_limit and self.rate_limiter.should_drop_alert(rule_id):
+                    continue
+                
+                alert = self._create_alert(original_event, rule)
+                
+                # 如果是更高优先级，清空之前的告警
+                if highest_priority is None or priority < highest_priority:
+                    alerts = [alert]
+                    highest_priority = priority
+                # 如果是相同优先级，添加到列表
+                elif priority == highest_priority:
+                    alerts.append(alert)
+        
+        return alerts
+    
+    def _match_rule_timed(
+        self, 
+        rule_id: str, 
+        event_data: Union[Dict, CachedEventData], 
+        rule: Dict
+    ) -> tuple:
+        """匹配规则并计时
+        
+        Returns:
+            (matched: bool, eval_time_ms: float)
+        """
+        start = time.time()
+        matched = self._match_rule(rule_id, event_data, rule)
+        eval_time_ms = (time.time() - start) * 1000
+        return matched, eval_time_ms
     
     def _match_rule(self, rule_id: str, event_data: Dict, rule: Dict) -> bool:
         """检查事件是否匹配规则"""
@@ -963,3 +1417,241 @@ class ThreatDetectionRules:
         }
         
         return alert
+    
+    def print_stats(self):
+        """打印统计信息"""
+        if self.enable_stats:
+            self.stats_manager.print_stats()
+        else:
+            logger.warning("统计功能未启用")
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        if self.enable_stats:
+            return self.stats_manager.get_stats()
+        return {}
+    
+    def print_index_stats(self):
+        """打印索引统计信息"""
+        if not self.enable_index:
+            logger.warning("索引功能未启用")
+            return
+        
+        print("\n" + "="*80)
+        print("事件类型索引统计")
+        print("="*80)
+        print(f"总规则数:                {len(self.rules)}")
+        print(f"索引的事件类型数:        {len(self.rules_by_event_type)}")
+        print(f"通配规则数:              {len(self.wildcard_rules)}")
+        
+        if self.rules_by_event_type:
+            total_indexed = sum(len(rules) for rules in self.rules_by_event_type.values())
+            avg_per_type = total_indexed / len(self.rules_by_event_type)
+            print(f"平均每事件类型规则数:    {avg_per_type:.2f}")
+        
+        print("="*80)
+        
+        # 计算预估性能提升
+        if len(self.wildcard_rules) > 0 and self.rules_by_event_type:
+            avg_check = len(self.wildcard_rules) + avg_per_type
+            speedup = len(self.rules) / avg_check if avg_check > 0 else 1
+            print(f"预估性能提升:            {speedup:.1f}x")
+        
+        print("="*80 + "\n")
+
+ThreatDetectionEngine = ThreatDetectionRules
+
+# ============================================================================
+# 测试代码
+# ============================================================================
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    print("🚀 测试威胁检测规则引擎 - 使用真实规则和数据")
+    print("=" * 100)
+    
+    # 获取脚本所在目录的绝对路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 构建规则文件和数据文件的路径
+    rules_file = os.path.join(script_dir, "../configs/rules/threat_detection_rules.yaml")
+    data_file = os.path.join(
+        script_dir, 
+        "../../../data/kafka-exports/sysarmor.events.audit_20251023_203740/sysarmor.events.audit_20251023_203740.jsonl"
+    )
+    
+    print(f"📋 规则文件: {rules_file}")
+    print(f"📄 数据文件: {data_file}")
+    print("=" * 100)
+    
+    # 创建引擎（启用所有优化）
+    print("\n⚙️  初始化威胁检测引擎...")
+    engine = ThreatDetectionRules(
+        rules_file=rules_file,
+        enable_index=True,
+        enable_stats=True,
+        enable_rate_limit=True,
+        max_alerts_per_minute=100
+    )
+    
+    # 打印索引统计
+    engine.print_index_stats()
+    
+    # 加载测试事件数据
+    print("\n📥 加载测试事件数据...")
+    test_events = []
+    
+    if os.path.exists(data_file):
+        with open(data_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if line:
+                    try:
+                        event = json.loads(line)
+                        test_events.append(event)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"跳过无效JSON (行 {line_num}): {e}")
+        
+        print(f"✅ 成功加载 {len(test_events)} 个事件")
+    else:
+        print(f"❌ 数据文件不存在: {data_file}")
+        print("使用默认测试事件...")
+        test_events = [
+            {
+                "event_id": "test-1",
+                "timestamp": "2025-10-22T10:00:00Z",
+                "event_type": "execve",
+                "message": {
+                    "evt.type": "execve",
+                    "proc.name": "bash",
+                    "proc.exe": "/tmp/malicious.sh",
+                    "proc.cmdline": "/tmp/malicious.sh --payload",
+                    "proc.pid": 12345
+                }
+            }
+        ]
+    
+    # 测试不同匹配策略
+    print("\n" + "=" * 100)
+    print("🧪 测试不同匹配策略")
+    print("=" * 100)
+    
+    strategies_results = {}
+    
+    for strategy in RuleMatchStrategy:
+        print(f"\n{'='*40} 策略: {strategy.value.upper()} {'='*40}")
+        
+        total_alerts = 0
+        alert_by_severity = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+        alert_by_category = {}
+        matched_events = 0
+        
+        start_time = time.time()
+        
+        for idx, event in enumerate(test_events):
+            alerts = engine.evaluate_event(event, strategy=strategy)
+            
+            if alerts:
+                matched_events += 1
+                total_alerts += len(alerts)
+                
+                # 统计告警
+                for alert in alerts:
+                    severity = alert['alert']['severity']
+                    category = alert['alert']['category']
+                    
+                    if severity in alert_by_severity:
+                        alert_by_severity[severity] += 1
+                    
+                    alert_by_category[category] = alert_by_category.get(category, 0) + 1
+                
+                # 显示前5个匹配事件的详情
+                if matched_events <= 5:
+                    print(f"\n  事件 #{idx+1}: {event.get('event_id')} ({event.get('event_type')})")
+                    for alert in alerts:
+                        rule = alert['alert']['rule']
+                        severity = alert['alert']['severity']
+                        score = alert['alert']['risk_score']
+                        print(f"    🚨 [{severity.upper():8s}] {rule['name']} (评分: {score})")
+        
+        elapsed_time = time.time() - start_time
+        
+        # 保存结果
+        strategies_results[strategy.value] = {
+            'total_events': len(test_events),
+            'matched_events': matched_events,
+            'total_alerts': total_alerts,
+            'alerts_by_severity': alert_by_severity,
+            'alerts_by_category': alert_by_category,
+            'elapsed_time': elapsed_time
+        }
+        
+        # 打印策略统计
+        print(f"\n  📊 策略统计:")
+        print(f"     总事件数:        {len(test_events)}")
+        print(f"     匹配事件数:      {matched_events} ({matched_events/len(test_events)*100:.1f}%)")
+        print(f"     总告警数:        {total_alerts}")
+        print(f"     处理耗时:        {elapsed_time:.2f}s")
+        print(f"     平均耗时/事件:   {elapsed_time/len(test_events)*1000:.2f}ms")
+        
+        print(f"\n  按严重程度分布:")
+        for severity in ['critical', 'high', 'medium', 'low', 'info']:
+            count = alert_by_severity.get(severity, 0)
+            if count > 0:
+                print(f"     {severity.upper():8s}: {count}")
+        
+        if alert_by_category:
+            print(f"\n  按类别分布:")
+            for category, count in sorted(alert_by_category.items(), key=lambda x: x[1], reverse=True):
+                print(f"     {category:25s}: {count}")
+    
+    # 策略对比
+    print("\n" + "=" * 100)
+    print("📊 策略性能对比")
+    print("=" * 100)
+    print(f"\n{'策略':<10s} | {'匹配事件':<10s} | {'总告警':<10s} | {'耗时(s)':<10s} | {'ms/事件':<10s}")
+    print("-" * 100)
+    
+    for strategy_name, results in strategies_results.items():
+        matched = results['matched_events']
+        alerts = results['total_alerts']
+        elapsed = results['elapsed_time']
+        ms_per_event = elapsed / results['total_events'] * 1000
+        
+        print(f"{strategy_name:<10s} | {matched:<10d} | {alerts:<10d} | {elapsed:<10.2f} | {ms_per_event:<10.2f}")
+    
+    # 打印规则引擎统计
+    print("\n" + "=" * 100)
+    print("� 规则引擎性能统计")
+    print("=" * 100)
+    engine.print_stats()
+    
+    # 生成测试报告
+    print("\n" + "=" * 100)
+    print("📝 测试总结")
+    print("=" * 100)
+    print(f"✅ 测试完成！")
+    print(f"   - 加载规则数:     {len(engine.rules)}")
+    print(f"   - 测试事件数:     {len(test_events)}")
+    print(f"   - 测试策略数:     {len(RuleMatchStrategy)}")
+    
+    # 推荐策略
+    print(f"\n💡 策略推荐:")
+    all_result = strategies_results.get('all', {})
+    first_result = strategies_results.get('first', {})
+    highest_result = strategies_results.get('highest', {})
+    
+    print(f"   - 完整分析(ALL):      {all_result.get('total_alerts', 0)} 个告警, "
+          f"{all_result.get('elapsed_time', 0):.2f}s")
+    print(f"   - 快速响应(FIRST):    {first_result.get('total_alerts', 0)} 个告警, "
+          f"{first_result.get('elapsed_time', 0):.2f}s (推荐生产环境)")
+    print(f"   - 降噪过滤(HIGHEST):  {highest_result.get('total_alerts', 0)} 个告警, "
+          f"{highest_result.get('elapsed_time', 0):.2f}s")
+    
+    print("\n" + "=" * 100)
+
