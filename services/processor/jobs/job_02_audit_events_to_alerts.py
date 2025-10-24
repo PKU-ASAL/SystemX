@@ -9,10 +9,7 @@ SysArmor Processor - Events to Alerts Job
 import os
 import json
 import logging
-import re
-import yaml
 import requests
-import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from collections import defaultdict, deque
@@ -26,194 +23,13 @@ from pyflink.datastream.state import ValueStateDescriptor
 from pyflink.datastream.functions import KeyedProcessFunction, ProcessFunction
 from pyflink.common import Time
 
+# 导入威胁检测引擎（复用模块）
+from threat_detection_engine import ThreatDetectionRules
+
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class ThreatDetectionRules:
-    """威胁检测规则引擎 - 基于 Falco 规则设计"""
-    
-    def __init__(self, rules_file: str = "/opt/flink/configs/rules/threat_detection_rules.yaml"):
-        self.rules = {}
-        self.rule_groups = {}
-        self.global_settings = {}
-        self.load_rules(rules_file)
-        
-    def load_rules(self, rules_file: str):
-        """加载威胁检测规则"""
-        try:
-            if os.path.exists(rules_file):
-                with open(rules_file, 'r', encoding='utf-8') as f:
-                    config = yaml.safe_load(f)
-                
-                # 加载规则
-                for rule in config.get('rules', []):
-                    if rule.get('enabled', True):
-                        self.rules[rule['id']] = rule
-                
-                # 加载规则组
-                self.rule_groups = config.get('rule_groups', {})
-                
-                # 加载全局设置
-                self.global_settings = config.get('global_settings', {})
-                
-                logger.info(f"✅ 加载了 {len(self.rules)} 个威胁检测规则")
-                logger.info(f"📋 规则组: {list(self.rule_groups.keys())}")
-            else:
-                logger.warning(f"规则文件不存在: {rules_file}，使用默认规则")
-                self._load_default_rules()
-                
-        except Exception as e:
-            logger.error(f"加载规则失败: {e}，使用默认规则")
-            self._load_default_rules()
-    
-    def _load_default_rules(self):
-        """加载默认规则"""
-        self.rules = {
-            "suspicious_tmp_execution": {
-                "id": "suspicious_tmp_execution",
-                "name": "可疑临时目录程序执行",
-                "category": "suspicious_activity",
-                "severity": "high",
-                "base_score": 85,
-                "patterns": [r'proc\.exe.*"/tmp/', r'proc\.exe.*"/dev/shm/'],
-                "frequency_threshold": 1,
-                "time_window": 300
-            },
-            "privilege_escalation_setuid": {
-                "id": "privilege_escalation_setuid",
-                "name": "SetUID权限提升",
-                "category": "privilege_escalation", 
-                "severity": "critical",
-                "base_score": 90,
-                "patterns": [r'evt\.type.*setuid', r'evt\.type.*setgid'],
-                "frequency_threshold": 1,
-                "time_window": 300
-            }
-        }
-        logger.info("✅ 加载了默认威胁检测规则")
-    
-    def evaluate_event(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """评估事件是否触发威胁检测规则"""
-        alerts = []
-        
-        # 获取事件的 sysdig 数据
-        sysdig_data = event.get('message', {})
-        event_str = json.dumps(event, ensure_ascii=False)
-        
-        for rule_id, rule in self.rules.items():
-            if self._match_rule(event, sysdig_data, event_str, rule):
-                alert = self._create_alert(event, rule)
-                alerts.append(alert)
-        
-        return alerts
-    
-    def _match_rule(self, event: Dict, sysdig_data: Dict, event_str: str, rule: Dict) -> bool:
-        """检查事件是否匹配规则"""
-        try:
-            # 检查关键词匹配
-            keywords = rule.get('keywords', [])
-            for keyword in keywords:
-                if keyword in event_str:
-                    return True
-            
-            # 检查正则表达式匹配
-            patterns = rule.get('patterns', [])
-            for pattern in patterns:
-                if re.search(pattern, event_str, re.IGNORECASE):
-                    return True
-            
-            # 检查字段条件匹配
-            conditions = rule.get('conditions', {})
-            if conditions:
-                # 简单的字段匹配逻辑
-                for field, expected_value in conditions.items():
-                    if field in event and event[field] == expected_value:
-                        return True
-                    if field in sysdig_data and sysdig_data[field] == expected_value:
-                        return True
-            
-            return False
-            
-        except Exception as e:
-            logger.debug(f"规则匹配异常 {rule_id}: {e}")
-            return False
-    
-    def _create_alert(self, event: Dict, rule: Dict) -> Dict[str, Any]:
-        """创建告警事件"""
-        now = datetime.utcnow()
-        
-        # 计算风险评分
-        base_score = rule.get('base_score', 50)
-        score_multiplier = rule.get('score_multiplier', 1.0)
-        final_score = min(100, int(base_score * score_multiplier))
-        
-        # 确定严重程度
-        severity = rule.get('severity', 'medium')
-        if final_score >= 90:
-            severity = 'critical'
-        elif final_score >= 70:
-            severity = 'high'
-        elif final_score >= 50:
-            severity = 'medium'
-        else:
-            severity = 'low'
-        
-        alert = {
-            # OpenSearch 标准主时间字段
-            "@timestamp": now.isoformat() + 'Z',
-            
-            # 告警核心信息
-            "alert": {
-                "id": str(uuid.uuid4()),
-                "type": "rule_based_detection",
-                "category": rule.get('category', 'unknown'),
-                "severity": severity,
-                "risk_score": final_score,
-                "confidence": 0.8,
-                "rule": {
-                    "id": rule['id'],
-                    "name": rule.get('name', ''),
-                    "description": rule.get('description', ''),
-                    "title": f"{rule.get('name', 'Unknown Threat')}: {event.get('event_type', 'unknown')}",
-                    "mitigation": f"检查 {rule.get('category', 'unknown')} 相关活动",
-                    "references": [f"SysArmor Rule: {rule['id']}"]
-                },
-                "evidence": {
-                    "event_type": event.get('event_type', ''),
-                    "process_name": event.get('message', {}).get('proc.name', ''),
-                    "process_cmdline": event.get('message', {}).get('proc.cmdline', ''),
-                    "file_path": event.get('message', {}).get('fd.name', ''),
-                    "network_info": event.get('message', {}).get('net.sockaddr', {})
-                }
-            },
-            
-            # 原始事件数据
-            "event": {
-                "raw": {
-                    "event_id": event.get('event_id', ''),
-                    "timestamp": event.get('timestamp', ''),
-                    "source": event.get('source', 'auditd'),
-                    "message": event.get('message', {})  # 完整的 sysdig 数据，包含 evt.time
-                }
-            },
-            
-            # 时间信息
-            "timing": {
-                "created_at": now.isoformat() + 'Z',
-                "processed_at": now.isoformat() + 'Z'
-            },
-            
-            # 元数据信息
-            "metadata": {
-                "collector_id": event.get('collector_id', ''),
-                "host": event.get('host', 'unknown'),
-                "source": "sysarmor-threat-detector",
-                "processor": "flink-events-to-alerts"
-            }
-        }
-        
-        return alert
 
 class EventToAlertsProcessor(MapFunction):
     """事件到告警处理器 - 简化版本，先测试基本功能"""
@@ -242,6 +58,7 @@ class EventToAlertsProcessor(MapFunction):
             logger.error(f"处理事件异常: {e}")
             return None
 
+
 class AlertSeverityRouter(FilterFunction):
     """告警严重程度路由器"""
     
@@ -260,6 +77,7 @@ class AlertSeverityRouter(FilterFunction):
                 
         except Exception:
             return False
+
 
 def main():
     """主函数：创建事件到告警的处理作业"""
@@ -431,6 +249,7 @@ def main():
     except Exception as e:
         logger.error(f"❌ Events to Alerts job failed: {e}")
         raise
+
 
 if __name__ == "__main__":
     main()

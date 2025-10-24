@@ -1,0 +1,4306 @@
+{
+  "T1055.011": {
+    "name_en": "Extra Window Memory Injection",
+    "name_cn": "窗口内存注入"
+  },
+  "T1053.005": {
+    "name_en": "Scheduled Task",
+    "name_cn": "计划任务"
+  },
+  "T1205.002": {
+    "name_en": "Socket Filters",
+    "name_cn": "套接字过滤器"
+  },
+  "T1066": {
+    "name_en": "Indicator Removal from Tools",
+    "name_cn": "工具指标清除"
+  },
+  "T1560.001": {
+    "name_en": "Archive via Utility",
+    "name_cn": "工具压缩归档"
+  },
+  "T1021.005": {
+    "name_en": "VNC",
+    "name_cn": "VNC远程控制"
+  },
+  "T1047": {
+    "name_en": "Windows Management Instrumentation",
+    "name_cn": "Windows管理工具"
+  },
+  "T1156": {
+    "name_en": "Malicious Shell Modification",
+    "name_cn": "恶意Shell修改"
+  },
+  "T1113": {
+    "name_en": "Screen Capture",
+    "name_cn": "屏幕截图"
+  },
+  "T1027.011": {
+    "name_en": "Fileless Storage",
+    "name_cn": "无文件存储"
+  },
+  "T1067": {
+    "name_en": "Bootkit",
+    "name_cn": "引导程序工具包"
+  },
+  "T1037": {
+    "name_en": "Boot or Logon Initialization Scripts",
+    "name_cn": "启动或登录初始化脚本"
+  },
+  "T1557": {
+    "name_en": "Adversary-in-the-Middle",
+    "name_cn": "中间人攻击"
+  },
+  "T1033": {
+    "name_en": "System Owner/User Discovery",
+    "name_cn": "系统所有者/用户发现"
+  },
+  "T1583": {
+    "name_en": "Acquire Infrastructure",
+    "name_cn": "获取基础设施"
+  },
+  "T1218.011": {
+    "name_en": "Rundll32",
+    "name_cn": "Rundll32程序执行"
+  },
+  "T1613": {
+    "name_en": "Container and Resource Discovery",
+    "name_cn": "容器和资源发现"
+  },
+  "T1583.007": {
+    "name_en": "Serverless",
+    "name_cn": "无服务器计算"
+  },
+  "T1143": {
+    "name_en": "Hidden Window",
+    "name_cn": "隐藏窗口"
+  },
+  "T1161": {
+    "name_en": "LC_LOAD_DYLIB Addition",
+    "name_cn": "LC_LOAD_DYLIB添加"
+  },
+  "T1132.001": {
+    "name_en": "Standard Encoding",
+    "name_cn": "标准编码"
+  },
+  "T1027.009": {
+    "name_en": "Embedded Payloads",
+    "name_cn": "嵌入式载荷"
+  },
+  "T1150": {
+    "name_en": "Plist Modification",
+    "name_cn": "属性列表修改"
+  },
+  "T1556.003": {
+    "name_en": "Pluggable Authentication Modules",
+    "name_cn": "可插拔认证模块"
+  },
+  "T1578.004": {
+    "name_en": "Revert Cloud Instance",
+    "name_cn": "恢复云实例"
+  },
+  "T1148": {
+    "name_en": "HISTCONTROL",
+    "name_cn": "历史控制"
+  },
+  "T1592": {
+    "name_en": "Gather Victim Host Information",
+    "name_cn": "收集受害者主机信息"
+  },
+  "T1596.003": {
+    "name_en": "Digital Certificates",
+    "name_cn": "数字证书"
+  },
+  "T1056.001": {
+    "name_en": "Keylogging",
+    "name_cn": "键盘记录"
+  },
+  "T1564.012": {
+    "name_en": "File/Path Exclusions",
+    "name_cn": "文件/路径排除"
+  },
+  "T1222.002": {
+    "name_en": "Linux and Mac File and Directory Permissions Modification",
+    "name_cn": "Linux和Mac文件目录权限修改"
+  },
+  "T1110.001": {
+    "name_en": "Password Guessing",
+    "name_cn": "密码猜测"
+  },
+  "T1216.001": {
+    "name_en": "PubPrn",
+    "name_cn": "PubPrn工具"
+  },
+  "T1597.002": {
+    "name_en": "Purchase Technical Data",
+    "name_cn": "购买技术数据"
+  },
+  "T1003": {
+    "name_en": "OS Credential Dumping",
+    "name_cn": "操作系统凭据转储"
+  },
+  "T1129": {
+    "name_en": "Shared Modules",
+    "name_cn": "共享模块"
+  },
+  "T1602": {
+    "name_en": "Data from Configuration Repository",
+    "name_cn": "从配置库获取数据"
+  },
+  "T1561.002": {
+    "name_en": "Disk Structure Wipe",
+    "name_cn": "磁盘结构擦除"
+  },
+  "T1498.001": {
+    "name_en": "Direct Network Flood",
+    "name_cn": "直接网络洪水攻击"
+  },
+  "T1492": {
+    "name_en": "Stored Data Manipulation",
+    "name_cn": "存储数据操纵"
+  },
+  "T1574.007": {
+    "name_en": "Path Interception by PATH Environment Variable",
+    "name_cn": "PATH环境变量路径拦截"
+  },
+  "T1213.002": {
+    "name_en": "Sharepoint",
+    "name_cn": "SharePoint"
+  },
+  "T1006": {
+    "name_en": "Direct Volume Access",
+    "name_cn": "直接卷访问"
+  },
+  "T1044": {
+    "name_en": "File System Permissions Weakness",
+    "name_cn": "文件系统权限弱点"
+  },
+  "T1588.007": {
+    "name_en": "Artificial Intelligence",
+    "name_cn": "人工智能"
+  },
+  "T1666": {
+    "name_en": "Modify Cloud Resource Hierarchy",
+    "name_cn": "修改云资源层次结构"
+  },
+  "T1564.008": {
+    "name_en": "Email Hiding Rules",
+    "name_cn": "邮件隐藏规则"
+  },
+  "T1491.002": {
+    "name_en": "External Defacement",
+    "name_cn": "外部网页篡改"
+  },
+  "T1027.013": {
+    "name_en": "Encrypted/Encoded File",
+    "name_cn": "加密/编码文件"
+  },
+  "T1171": {
+    "name_en": "LLMNR/NBT-NS Poisoning and Relay",
+    "name_cn": "LLMNR/NBT-NS中毒和中继"
+  },
+  "T1590.005": {
+    "name_en": "IP Addresses",
+    "name_cn": "IP地址"
+  },
+  "T1499.001": {
+    "name_en": "OS Exhaustion Flood",
+    "name_cn": "操作系统耗尽洪水攻击"
+  },
+  "T1014": {
+    "name_en": "Rootkit",
+    "name_cn": "根工具包"
+  },
+  "T1546.013": {
+    "name_en": "PowerShell Profile",
+    "name_cn": "PowerShell配置文件"
+  },
+  "T1059.007": {
+    "name_en": "JavaScript",
+    "name_cn": "JavaScript脚本"
+  },
+  "T1590.002": {
+    "name_en": "DNS",
+    "name_cn": "DNS协议"
+  },
+  "T1501": {
+    "name_en": "Systemd Service",
+    "name_cn": "Systemd服务"
+  },
+  "T1485.001": {
+    "name_en": "Lifecycle-Triggered Deletion",
+    "name_cn": "生命周期触发删除"
+  },
+  "T1514": {
+    "name_en": "Elevated Execution with Prompt",
+    "name_cn": "提权执行"
+  },
+  "T1123": {
+    "name_en": "Audio Capture",
+    "name_cn": "音频捕获"
+  },
+  "T1543": {
+    "name_en": "Create or Modify System Process",
+    "name_cn": "创建或修改系统进程"
+  },
+  "T1133": {
+    "name_en": "External Remote Services",
+    "name_cn": "外部远程服务"
+  },
+  "T1109": {
+    "name_en": "Component Firmware",
+    "name_cn": "组件固件"
+  },
+  "T1546.006": {
+    "name_en": "LC_LOAD_DYLIB Addition",
+    "name_cn": "LC_LOAD_DYLIB添加"
+  },
+  "T1539": {
+    "name_en": "Steal Web Session Cookie",
+    "name_cn": "窃取Web会话Cookie"
+  },
+  "T1053.007": {
+    "name_en": "Container Orchestration Job",
+    "name_cn": "容器编排作业"
+  },
+  "T1568.002": {
+    "name_en": "Domain Generation Algorithms",
+    "name_cn": "域名生成算法"
+  },
+  "T1036.007": {
+    "name_en": "Double File Extension",
+    "name_cn": "双重文件扩展名"
+  },
+  "T1548.002": {
+    "name_en": "Bypass User Account Control",
+    "name_cn": "绕过用户账户控制"
+  },
+  "T1099": {
+    "name_en": "Timestomp",
+    "name_cn": "时间戳篡改"
+  },
+  "T1496.003": {
+    "name_en": "SMS Pumping",
+    "name_cn": "短信轰炸"
+  },
+  "T1016.001": {
+    "name_en": "Internet Connection Discovery",
+    "name_cn": "Internet Connection 发现"
+  },
+  "T1548.003": {
+    "name_en": "Sudo and Sudo Caching",
+    "name_cn": "Sudo和Sudo缓存"
+  },
+  "T1560.003": {
+    "name_en": "Archive via Custom Method",
+    "name_cn": "Custom MethodArchive"
+  },
+  "T1578": {
+    "name_en": "Modify Cloud Compute Infrastructure",
+    "name_cn": "修改云计算基础设施"
+  },
+  "T1584.008": {
+    "name_en": "Network Devices",
+    "name_cn": "Network Devices"
+  },
+  "T1583.008": {
+    "name_en": "Malvertising",
+    "name_cn": "Malvertising"
+  },
+  "T1069": {
+    "name_en": "Permission Groups Discovery",
+    "name_cn": "权限组发现"
+  },
+  "T1114": {
+    "name_en": "Email Collection",
+    "name_cn": "电子邮件收集"
+  },
+  "T1003.002": {
+    "name_en": "Security Account Manager",
+    "name_cn": "Security Account Manager"
+  },
+  "T1596.002": {
+    "name_en": "WHOIS",
+    "name_cn": "WHOIS"
+  },
+  "T1542.001": {
+    "name_en": "System Firmware",
+    "name_cn": "系统固件"
+  },
+  "T1594": {
+    "name_en": "Search Victim-Owned Websites",
+    "name_cn": "搜索受害者拥有的网站"
+  },
+  "T1069.003": {
+    "name_en": "Cloud Groups",
+    "name_cn": "云组"
+  },
+  "T1574.011": {
+    "name_en": "Services Registry Permissions Weakness",
+    "name_cn": "服务注册表权限弱点"
+  },
+  "T1596.001": {
+    "name_en": "DNS/Passive DNS",
+    "name_cn": "DNS/Passive DNS"
+  },
+  "T1499.003": {
+    "name_en": "Application Exhaustion Flood",
+    "name_cn": "Application Exhaustion Flood"
+  },
+  "T1163": {
+    "name_en": "Rc.common",
+    "name_cn": "Rc.common"
+  },
+  "T1195.001": {
+    "name_en": "Compromise Software Dependencies and Development Tools",
+    "name_cn": "Compromise Software Dependencies and Development Tools"
+  },
+  "T1588.004": {
+    "name_en": "Digital Certificates",
+    "name_cn": "数字证书"
+  },
+  "T1583.002": {
+    "name_en": "DNS Server",
+    "name_cn": "DNS Server"
+  },
+  "T1561": {
+    "name_en": "Disk Wipe",
+    "name_cn": "磁盘擦除"
+  },
+  "T1071.004": {
+    "name_en": "DNS",
+    "name_cn": "DNS协议"
+  },
+  "T1552.005": {
+    "name_en": "Cloud Instance Metadata API",
+    "name_cn": "云实例元数据API"
+  },
+  "T1555.002": {
+    "name_en": "Securityd Memory",
+    "name_cn": "Securityd Memory"
+  },
+  "T1615": {
+    "name_en": "Group Policy Discovery",
+    "name_cn": "组策略发现"
+  },
+  "T1542.003": {
+    "name_en": "Bootkit",
+    "name_cn": "引导程序工具包"
+  },
+  "T1025": {
+    "name_en": "Data from Removable Media",
+    "name_cn": "从可移动媒体获取数据"
+  },
+  "T1116": {
+    "name_en": "Code Signing",
+    "name_cn": "Code Signing"
+  },
+  "T1218.013": {
+    "name_en": "Mavinject",
+    "name_cn": "Mavinject工具"
+  },
+  "T1522": {
+    "name_en": "Cloud Instance Metadata API",
+    "name_cn": "云实例元数据API"
+  },
+  "T1093": {
+    "name_en": "Process Hollowing",
+    "name_cn": "Process Hollowing"
+  },
+  "T1074.001": {
+    "name_en": "Local Data Staging",
+    "name_cn": "Local Data Staging"
+  },
+  "T1036.005": {
+    "name_en": "Match Legitimate Resource Name or Location",
+    "name_cn": "Match Legitimate Resource Name or Location"
+  },
+  "T1172": {
+    "name_en": "Domain Fronting",
+    "name_cn": "Domain Fronting"
+  },
+  "T1587.003": {
+    "name_en": "Digital Certificates",
+    "name_cn": "数字证书"
+  },
+  "T1565.001": {
+    "name_en": "Stored Data Manipulation",
+    "name_cn": "存储数据操纵"
+  },
+  "T1110.002": {
+    "name_en": "Password Cracking",
+    "name_cn": "Password Cracking"
+  },
+  "T1178": {
+    "name_en": "SID-History Injection",
+    "name_cn": "SID-History Injection"
+  },
+  "T1114.001": {
+    "name_en": "Local Email Collection",
+    "name_cn": "Local Email 收集"
+  },
+  "T1555.001": {
+    "name_en": "Keychain",
+    "name_cn": "Keychain"
+  },
+  "T1547": {
+    "name_en": "Boot or Logon Autostart Execution",
+    "name_cn": "启动或登录自启动执行"
+  },
+  "T1003.004": {
+    "name_en": "LSA Secrets",
+    "name_cn": "LSA Secrets"
+  },
+  "T1013": {
+    "name_en": "Port Monitors",
+    "name_cn": "端口监视器"
+  },
+  "T1600": {
+    "name_en": "Weaken Encryption",
+    "name_cn": "削弱加密"
+  },
+  "T1606.002": {
+    "name_en": "SAML Tokens",
+    "name_cn": "SAML Tokens"
+  },
+  "T1192": {
+    "name_en": "Spearphishing Link",
+    "name_cn": "Spearphishing Link"
+  },
+  "T1036.008": {
+    "name_en": "Masquerade File Type",
+    "name_cn": "Masquerade File Type"
+  },
+  "T1489": {
+    "name_en": "Service Stop",
+    "name_cn": "服务停止"
+  },
+  "T1587.001": {
+    "name_en": "Malware",
+    "name_cn": "Malware"
+  },
+  "T1121": {
+    "name_en": "Regsvcs/Regasm",
+    "name_cn": "Regsvcs/Regasm工具"
+  },
+  "T1652": {
+    "name_en": "Device Driver Discovery",
+    "name_cn": "Device Driver 发现"
+  },
+  "T1206": {
+    "name_en": "Sudo Caching",
+    "name_cn": "Sudo Caching"
+  },
+  "T1087.002": {
+    "name_en": "Domain Account",
+    "name_cn": "Domain Account"
+  },
+  "T1547.014": {
+    "name_en": "Active Setup",
+    "name_cn": "Active Setup"
+  },
+  "T1564": {
+    "name_en": "Hide Artifacts",
+    "name_cn": "隐藏工件"
+  },
+  "T1559.002": {
+    "name_en": "Dynamic Data Exchange",
+    "name_cn": "Dynamic Data Exchange"
+  },
+  "T1204.002": {
+    "name_en": "Malicious File",
+    "name_cn": "Malicious File"
+  },
+  "T1591.003": {
+    "name_en": "Identify Business Tempo",
+    "name_cn": "Identify Business Tempo"
+  },
+  "T1063": {
+    "name_en": "Security Software Discovery",
+    "name_cn": "Security Software 发现"
+  },
+  "T1071.005": {
+    "name_en": "Publish/Subscribe Protocols",
+    "name_cn": "Publish/Subscribe Protocols"
+  },
+  "T1592.001": {
+    "name_en": "Hardware",
+    "name_cn": "Hardware"
+  },
+  "T1080": {
+    "name_en": "Taint Shared Content",
+    "name_cn": "污染共享内容"
+  },
+  "T1484.002": {
+    "name_en": "Trust Modification",
+    "name_cn": "Trust Modification"
+  },
+  "T1573.001": {
+    "name_en": "Symmetric Cryptography",
+    "name_cn": "Symmetric Cryptography"
+  },
+  "T1087.001": {
+    "name_en": "Local Account",
+    "name_cn": "Local Account"
+  },
+  "T1167": {
+    "name_en": "Securityd Memory",
+    "name_cn": "Securityd Memory"
+  },
+  "T1586.001": {
+    "name_en": "Social Media Accounts",
+    "name_cn": "Social Media Accounts"
+  },
+  "T1176.001": {
+    "name_en": "Browser Extensions",
+    "name_cn": "浏览器扩展"
+  },
+  "T1527": {
+    "name_en": "Application Access Token",
+    "name_cn": "Application Access Token"
+  },
+  "T1562.009": {
+    "name_en": "Safe Mode Boot",
+    "name_cn": "Safe Mode Boot"
+  },
+  "T1180": {
+    "name_en": "Screensaver",
+    "name_cn": "Screensaver"
+  },
+  "T1542.005": {
+    "name_en": "TFTP Boot",
+    "name_cn": "TFTP Boot"
+  },
+  "T1543.003": {
+    "name_en": "Windows Service",
+    "name_cn": "Windows Service"
+  },
+  "T1568.001": {
+    "name_en": "Fast Flux DNS",
+    "name_cn": "Fast Flux DNS"
+  },
+  "T1497.001": {
+    "name_en": "System Checks",
+    "name_cn": "System Checks"
+  },
+  "T1053.003": {
+    "name_en": "Cron",
+    "name_cn": "Cron"
+  },
+  "T1069.002": {
+    "name_en": "Domain Groups",
+    "name_cn": "Domain Groups"
+  },
+  "T1588.006": {
+    "name_en": "Vulnerabilities",
+    "name_cn": "Vulnerabilities"
+  },
+  "T1566.002": {
+    "name_en": "Spearphishing Link",
+    "name_cn": "Spearphishing Link"
+  },
+  "T1165": {
+    "name_en": "Startup Items",
+    "name_cn": "Startup Items"
+  },
+  "T1070.002": {
+    "name_en": "Clear Linux or Mac System Logs",
+    "name_cn": "Clear Linux or Mac System Logs"
+  },
+  "T1499.004": {
+    "name_en": "Application or System Exploitation",
+    "name_cn": "Application or System Exploitation"
+  },
+  "T1137": {
+    "name_en": "Office Application Startup",
+    "name_cn": "Office应用程序启动"
+  },
+  "T1218.004": {
+    "name_en": "InstallUtil",
+    "name_cn": "InstallUtil工具"
+  },
+  "T1598.003": {
+    "name_en": "Spearphishing Link",
+    "name_cn": "Spearphishing Link"
+  },
+  "T1021.004": {
+    "name_en": "SSH",
+    "name_cn": "SSH"
+  },
+  "T1098.003": {
+    "name_en": "Additional Cloud Roles",
+    "name_cn": "Additional Cloud Roles"
+  },
+  "T1547.012": {
+    "name_en": "Print Processors",
+    "name_cn": "Print Processors"
+  },
+  "T1089": {
+    "name_en": "Disabling Security Tools",
+    "name_cn": "Disabling Security Tools"
+  },
+  "T1487": {
+    "name_en": "Disk Structure Wipe",
+    "name_cn": "磁盘结构擦除"
+  },
+  "T1566.001": {
+    "name_en": "Spearphishing Attachment",
+    "name_cn": "Spearphishing Attachment"
+  },
+  "T1214": {
+    "name_en": "Credentials in Registry",
+    "name_cn": "Registry中的Credentials"
+  },
+  "T1027.008": {
+    "name_en": "Stripped Payloads",
+    "name_cn": "Stripped Payloads"
+  },
+  "T1559.001": {
+    "name_en": "Component Object Model",
+    "name_cn": "Component Object Model"
+  },
+  "T1574.001": {
+    "name_en": "DLL",
+    "name_cn": "DLL"
+  },
+  "T1119": {
+    "name_en": "Automated Collection",
+    "name_cn": "自动化收集"
+  },
+  "T1115": {
+    "name_en": "Clipboard Data",
+    "name_cn": "剪贴板数据"
+  },
+  "T1003.007": {
+    "name_en": "Proc Filesystem",
+    "name_cn": "Proc Filesystem"
+  },
+  "T1583.005": {
+    "name_en": "Botnet",
+    "name_cn": "Botnet"
+  },
+  "T1555.005": {
+    "name_en": "Password Managers",
+    "name_cn": "Password Managers"
+  },
+  "T1103": {
+    "name_en": "AppInit DLLs",
+    "name_cn": "AppInit动态链接库"
+  },
+  "T1553.001": {
+    "name_en": "Gatekeeper Bypass",
+    "name_cn": "Gatekeeper Bypass"
+  },
+  "T1675": {
+    "name_en": "ESXi Administration Command",
+    "name_cn": "ESXi Administration Command"
+  },
+  "T1608.004": {
+    "name_en": "Drive-by Target",
+    "name_cn": "Drive-by Target"
+  },
+  "T1007": {
+    "name_en": "System Service Discovery",
+    "name_cn": "系统服务发现"
+  },
+  "T1040": {
+    "name_en": "Network Sniffing",
+    "name_cn": "网络嗅探"
+  },
+  "T1017": {
+    "name_en": "Application Deployment Software",
+    "name_cn": "Application Deployment Software"
+  },
+  "T1553.002": {
+    "name_en": "Code Signing",
+    "name_cn": "Code Signing"
+  },
+  "T1530": {
+    "name_en": "Data from Cloud Storage",
+    "name_cn": "云存储数据"
+  },
+  "T1565.003": {
+    "name_en": "Runtime Data Manipulation",
+    "name_cn": "Runtime Data Manipulation"
+  },
+  "T1552.002": {
+    "name_en": "Credentials in Registry",
+    "name_cn": "Registry中的Credentials"
+  },
+  "T1135": {
+    "name_en": "Network Share Discovery",
+    "name_cn": "网络共享发现"
+  },
+  "T1120": {
+    "name_en": "Peripheral Device Discovery",
+    "name_cn": "外围设备发现"
+  },
+  "T1036.009": {
+    "name_en": "Break Process Trees",
+    "name_cn": "Break Process Trees"
+  },
+  "T1590.004": {
+    "name_en": "Network Topology",
+    "name_cn": "Network Topology"
+  },
+  "T1587.002": {
+    "name_en": "Code Signing Certificates",
+    "name_cn": "Code Signing Certificates"
+  },
+  "T1222.001": {
+    "name_en": "Windows File and Directory Permissions Modification",
+    "name_cn": "Windows File and Directory Permissions Modification"
+  },
+  "T1137.006": {
+    "name_en": "Add-ins",
+    "name_cn": "Add-ins"
+  },
+  "T1505.002": {
+    "name_en": "Transport Agent",
+    "name_cn": "Transport Agent"
+  },
+  "T1082": {
+    "name_en": "System Information Discovery",
+    "name_cn": "系统信息发现"
+  },
+  "T1071": {
+    "name_en": "Application Layer Protocol",
+    "name_cn": "应用层协议"
+  },
+  "T1574.014": {
+    "name_en": "AppDomainManager",
+    "name_cn": "AppDomainManager"
+  },
+  "T1074.002": {
+    "name_en": "Remote Data Staging",
+    "name_cn": "Remote Data Staging"
+  },
+  "T1098.006": {
+    "name_en": "Additional Container Cluster Roles",
+    "name_cn": "Additional Container Cluster Roles"
+  },
+  "T1053": {
+    "name_en": "Scheduled Task/Job",
+    "name_cn": "计划任务/作业"
+  },
+  "T1218.007": {
+    "name_en": "Msiexec",
+    "name_cn": "Msiexec工具"
+  },
+  "T1162": {
+    "name_en": "Login Item",
+    "name_cn": "登录项"
+  },
+  "T1590.003": {
+    "name_en": "Network Trust Dependencies",
+    "name_cn": "Network Trust Dependencies"
+  },
+  "T1498.002": {
+    "name_en": "Reflection Amplification",
+    "name_cn": "Reflection Amplification"
+  },
+  "T1556.002": {
+    "name_en": "Password Filter DLL",
+    "name_cn": "Password Filter DLL"
+  },
+  "T1505.005": {
+    "name_en": "Terminal Services DLL",
+    "name_cn": "Terminal Services DLL"
+  },
+  "T1059.002": {
+    "name_en": "AppleScript",
+    "name_cn": "AppleScript脚本"
+  },
+  "T1176": {
+    "name_en": "Software Extensions",
+    "name_cn": "Software Extensions"
+  },
+  "T1499.002": {
+    "name_en": "Service Exhaustion Flood",
+    "name_cn": "Service Exhaustion Flood"
+  },
+  "T1195.003": {
+    "name_en": "Compromise Hardware Supply Chain",
+    "name_cn": "Compromise Hardware Supply Chain"
+  },
+  "T1106": {
+    "name_en": "Native API",
+    "name_cn": "本地API"
+  },
+  "T1558.005": {
+    "name_en": "Ccache Files",
+    "name_cn": "Ccache Files"
+  },
+  "T1070.007": {
+    "name_en": "Clear Network Connection History and Configurations",
+    "name_cn": "Clear Network Connection History and Configurations"
+  },
+  "T1558.004": {
+    "name_en": "AS-REP Roasting",
+    "name_cn": "AS-REP Roasting"
+  },
+  "T1058": {
+    "name_en": "Service Registry Permissions Weakness",
+    "name_cn": "Service Registry Permissions Weakness"
+  },
+  "T1584.003": {
+    "name_en": "Virtual Private Server",
+    "name_cn": "Virtual Private Server"
+  },
+  "T1059.010": {
+    "name_en": "AutoHotKey & AutoIT",
+    "name_cn": "AutoHotKey & AutoIT"
+  },
+  "T1600.001": {
+    "name_en": "Reduce Key Space",
+    "name_cn": "Reduce Key Space"
+  },
+  "T1070.003": {
+    "name_en": "Clear Command History",
+    "name_cn": "Clear Command History"
+  },
+  "T1202": {
+    "name_en": "Indirect Command Execution",
+    "name_cn": "间接命令执行"
+  },
+  "T1024": {
+    "name_en": "Custom Cryptographic Protocol",
+    "name_cn": "Custom Cryptographic Protocol"
+  },
+  "T1536": {
+    "name_en": "Revert Cloud Instance",
+    "name_cn": "恢复云实例"
+  },
+  "T1091": {
+    "name_en": "Replication Through Removable Media",
+    "name_cn": "通过可移动媒体复制"
+  },
+  "T1005": {
+    "name_en": "Data from Local System",
+    "name_cn": "从本地系统获取数据"
+  },
+  "T1140": {
+    "name_en": "Deobfuscate/Decode Files or Information",
+    "name_cn": "反混淆/解码文件或信息"
+  },
+  "T1137.005": {
+    "name_en": "Outlook Rules",
+    "name_cn": "Outlook Rules"
+  },
+  "T1562": {
+    "name_en": "Impair Defenses",
+    "name_cn": "削弱防御"
+  },
+  "T1586.003": {
+    "name_en": "Cloud Accounts",
+    "name_cn": "云账户"
+  },
+  "T1586.002": {
+    "name_en": "Email Accounts",
+    "name_cn": "Email Accounts"
+  },
+  "T1098.007": {
+    "name_en": "Additional Local or Domain Groups",
+    "name_cn": "Additional Local or Domain Groups"
+  },
+  "T1608.001": {
+    "name_en": "Upload Malware",
+    "name_cn": "Upload Malware"
+  },
+  "T1195": {
+    "name_en": "Supply Chain Compromise",
+    "name_cn": "供应链入侵"
+  },
+  "T1190": {
+    "name_en": "Exploit Public-Facing Application",
+    "name_cn": "利用面向公众的应用程序"
+  },
+  "T1558": {
+    "name_en": "Steal or Forge Kerberos Tickets",
+    "name_cn": "窃取或伪造Kerberos票据"
+  },
+  "T1555": {
+    "name_en": "Credentials from Password Stores",
+    "name_cn": "从密码存储获取凭据"
+  },
+  "T1567": {
+    "name_en": "Exfiltration Over Web Service",
+    "name_cn": "通过Web服务渗透"
+  },
+  "T1219": {
+    "name_en": "Remote Access Tools",
+    "name_cn": "Remote Access Tools"
+  },
+  "T1583.001": {
+    "name_en": "Domains",
+    "name_cn": "Domains"
+  },
+  "T1560.002": {
+    "name_en": "Archive via Library",
+    "name_cn": "LibraryArchive"
+  },
+  "T1055.003": {
+    "name_en": "Thread Execution Hijacking",
+    "name_cn": "Thread 执行 Hijacking"
+  },
+  "T1079": {
+    "name_en": "Multilayer Encryption",
+    "name_cn": "Multilayer Encryption"
+  },
+  "T1036": {
+    "name_en": "Masquerading",
+    "name_cn": "伪装"
+  },
+  "T1546.011": {
+    "name_en": "Application Shimming",
+    "name_cn": "应用程序填充"
+  },
+  "T1552": {
+    "name_en": "Unsecured Credentials",
+    "name_cn": "不安全的凭据"
+  },
+  "T1547.010": {
+    "name_en": "Port Monitors",
+    "name_cn": "端口监视器"
+  },
+  "T1070.008": {
+    "name_en": "Clear Mailbox Data",
+    "name_cn": "Clear Mailbox Data"
+  },
+  "T1037.002": {
+    "name_en": "Login Hook",
+    "name_cn": "Login Hook"
+  },
+  "T1659": {
+    "name_en": "Content Injection",
+    "name_cn": "Content Injection"
+  },
+  "T1055": {
+    "name_en": "Process Injection",
+    "name_cn": "进程注入"
+  },
+  "T1567.004": {
+    "name_en": "Exfiltration Over Webhook",
+    "name_cn": "数据窃取 Over Webhook"
+  },
+  "T1139": {
+    "name_en": "Bash History",
+    "name_cn": "Bash History"
+  },
+  "T1205": {
+    "name_en": "Traffic Signaling",
+    "name_cn": "流量信号"
+  },
+  "T1021.008": {
+    "name_en": "Direct Cloud VM Connections",
+    "name_cn": "Direct Cloud VM Connections"
+  },
+  "T1503": {
+    "name_en": "Credentials from Web Browsers",
+    "name_cn": "从Web Browsers的Credentials"
+  },
+  "T1218": {
+    "name_en": "System Binary Proxy Execution",
+    "name_cn": "系统二进制代理执行"
+  },
+  "T1153": {
+    "name_en": "Source",
+    "name_cn": "Source"
+  },
+  "T1038": {
+    "name_en": "DLL Search Order Hijacking",
+    "name_cn": "DLL搜索顺序劫持"
+  },
+  "T1050": {
+    "name_en": "New Service",
+    "name_cn": "New Service"
+  },
+  "T1070.006": {
+    "name_en": "Timestomp",
+    "name_cn": "时间戳篡改"
+  },
+  "T1557.004": {
+    "name_en": "Evil Twin",
+    "name_cn": "Evil Twin"
+  },
+  "T1620": {
+    "name_en": "Reflective Code Loading",
+    "name_cn": "反射代码加载"
+  },
+  "T1016.002": {
+    "name_en": "Wi-Fi Discovery",
+    "name_cn": "Wi-Fi 发现"
+  },
+  "T1480.002": {
+    "name_en": "Mutual Exclusion",
+    "name_cn": "Mutual Exclusion"
+  },
+  "T1564.011": {
+    "name_en": "Ignore Process Interrupts",
+    "name_cn": "Ignore Process Interrupts"
+  },
+  "T1611": {
+    "name_en": "Escape to Host",
+    "name_cn": "逃逸到主机"
+  },
+  "T1547.009": {
+    "name_en": "Shortcut Modification",
+    "name_cn": "Shortcut Modification"
+  },
+  "T1010": {
+    "name_en": "Application Window Discovery",
+    "name_cn": "应用程序窗口发现"
+  },
+  "T1569.003": {
+    "name_en": "Systemctl",
+    "name_cn": "Systemctl"
+  },
+  "T1032": {
+    "name_en": "Standard Cryptographic Protocol",
+    "name_cn": "Standard Cryptographic Protocol"
+  },
+  "T1087.003": {
+    "name_en": "Email Account",
+    "name_cn": "Email Account"
+  },
+  "T1062": {
+    "name_en": "Hypervisor",
+    "name_cn": "Hypervisor"
+  },
+  "T1497.003": {
+    "name_en": "Time Based Evasion",
+    "name_cn": "Time Based Evasion"
+  },
+  "T1182": {
+    "name_en": "AppCert DLLs",
+    "name_cn": "AppCert动态链接库"
+  },
+  "T1218.003": {
+    "name_en": "CMSTP",
+    "name_cn": "CMSTP工具"
+  },
+  "T1563.001": {
+    "name_en": "SSH Hijacking",
+    "name_cn": "SSH Hijacking"
+  },
+  "T1562.002": {
+    "name_en": "Disable Windows Event Logging",
+    "name_cn": "Disable Windows Event Logging"
+  },
+  "T1029": {
+    "name_en": "Scheduled Transfer",
+    "name_cn": "计划传输"
+  },
+  "T1021.002": {
+    "name_en": "SMB/Windows Admin Shares",
+    "name_cn": "SMB/Windows Admin Shares"
+  },
+  "T1525": {
+    "name_en": "Implant Internal Image",
+    "name_cn": "植入内部映像"
+  },
+  "T1572": {
+    "name_en": "Protocol Tunneling",
+    "name_cn": "协议隧道"
+  },
+  "T1218.002": {
+    "name_en": "Control Panel",
+    "name_cn": "控制面板"
+  },
+  "T1599.001": {
+    "name_en": "Network Address Translation Traversal",
+    "name_cn": "Network Address Translation Traversal"
+  },
+  "T1608.002": {
+    "name_en": "Upload Tool",
+    "name_cn": "Upload Tool"
+  },
+  "T1547.005": {
+    "name_en": "Security Support Provider",
+    "name_cn": "安全支持提供程序"
+  },
+  "T1036.011": {
+    "name_en": "Overwrite Process Arguments",
+    "name_cn": "Overwrite Process Arguments"
+  },
+  "T1004": {
+    "name_en": "Winlogon Helper DLL",
+    "name_cn": "Winlogon助手DLL"
+  },
+  "T1009": {
+    "name_en": "Binary Padding",
+    "name_cn": "二进制填充"
+  },
+  "T1550": {
+    "name_en": "Use Alternate Authentication Material",
+    "name_cn": "使用替代身份验证材料"
+  },
+  "T1076": {
+    "name_en": "Remote Desktop Protocol",
+    "name_cn": "Remote Desktop Protocol"
+  },
+  "T1597.001": {
+    "name_en": "Threat Intel Vendors",
+    "name_cn": "Threat Intel Vendors"
+  },
+  "T1011": {
+    "name_en": "Exfiltration Over Other Network Medium",
+    "name_cn": "通过其他网络媒介渗透"
+  },
+  "T1602.002": {
+    "name_en": "Network Device Configuration Dump",
+    "name_cn": "Network Device Configuration Dump"
+  },
+  "T1589": {
+    "name_en": "Gather Victim Identity Information",
+    "name_cn": "收集受害者身份信息"
+  },
+  "T1131": {
+    "name_en": "Authentication Package",
+    "name_cn": "认证包"
+  },
+  "T1181": {
+    "name_en": "Extra Window Memory Injection",
+    "name_cn": "窗口内存注入"
+  },
+  "T1562.004": {
+    "name_en": "Disable or Modify System Firewall",
+    "name_cn": "Disable or Modify System Firewall"
+  },
+  "T1560": {
+    "name_en": "Archive Collected Data",
+    "name_cn": "归档收集的数据"
+  },
+  "T1152": {
+    "name_en": "Launchctl",
+    "name_cn": "Launchctl"
+  },
+  "T1553.003": {
+    "name_en": "SIP and Trust Provider Hijacking",
+    "name_cn": "SIP and Trust Provider Hijacking"
+  },
+  "T1483": {
+    "name_en": "Domain Generation Algorithms",
+    "name_cn": "域名生成算法"
+  },
+  "T1185": {
+    "name_en": "Browser Session Hijacking",
+    "name_cn": "浏览器会话劫持"
+  },
+  "T1021": {
+    "name_en": "Remote Services",
+    "name_cn": "远程服务"
+  },
+  "T1071.003": {
+    "name_en": "Mail Protocols",
+    "name_cn": "邮件协议"
+  },
+  "T1556.007": {
+    "name_en": "Hybrid Identity",
+    "name_cn": "Hybrid Identity"
+  },
+  "T1595.002": {
+    "name_en": "Vulnerability Scanning",
+    "name_cn": "Vulnerability Scanning"
+  },
+  "T1059.009": {
+    "name_en": "Cloud API",
+    "name_cn": "Cloud API"
+  },
+  "T1596": {
+    "name_en": "Search Open Technical Databases",
+    "name_cn": "搜索开放技术数据库"
+  },
+  "T1218.015": {
+    "name_en": "Electron Applications",
+    "name_cn": "Electron Applications"
+  },
+  "T1562.012": {
+    "name_en": "Disable or Modify Linux Audit System",
+    "name_cn": "Disable or Modify Linux Audit System"
+  },
+  "T1207": {
+    "name_en": "Rogue Domain Controller",
+    "name_cn": "恶意域控制器"
+  },
+  "T1553.006": {
+    "name_en": "Code Signing Policy Modification",
+    "name_cn": "Code Signing Policy Modification"
+  },
+  "T1610": {
+    "name_en": "Deploy Container",
+    "name_cn": "部署容器"
+  },
+  "T1107": {
+    "name_en": "File Deletion",
+    "name_cn": "File Deletion"
+  },
+  "T1145": {
+    "name_en": "Private Keys",
+    "name_cn": "Private Keys"
+  },
+  "T1112": {
+    "name_en": "Modify Registry",
+    "name_cn": "修改注册表"
+  },
+  "T1543.004": {
+    "name_en": "Launch Daemon",
+    "name_cn": "Launch Daemon"
+  },
+  "T1580": {
+    "name_en": "Cloud Infrastructure Discovery",
+    "name_cn": "云基础设施发现"
+  },
+  "T1555.003": {
+    "name_en": "Credentials from Web Browsers",
+    "name_cn": "从Web Browsers的Credentials"
+  },
+  "T1574.008": {
+    "name_en": "Path Interception by Search Order Hijacking",
+    "name_cn": "搜索顺序劫持路径拦截"
+  },
+  "T1491": {
+    "name_en": "Defacement",
+    "name_cn": "篡改"
+  },
+  "T1535": {
+    "name_en": "Unused/Unsupported Cloud Regions",
+    "name_cn": "未使用/不支持的云区域"
+  },
+  "T1557.003": {
+    "name_en": "DHCP Spoofing",
+    "name_cn": "DHCP欺骗"
+  },
+  "T1155": {
+    "name_en": "AppleScript",
+    "name_cn": "AppleScript脚本"
+  },
+  "T1563": {
+    "name_en": "Remote Service Session Hijacking",
+    "name_cn": "远程服务会话劫持"
+  },
+  "T1564.013": {
+    "name_en": "Bind Mounts",
+    "name_cn": "Bind Mounts"
+  },
+  "T1027.001": {
+    "name_en": "Binary Padding",
+    "name_cn": "二进制填充"
+  },
+  "T1505.003": {
+    "name_en": "Web Shell",
+    "name_cn": "Web Shell"
+  },
+  "T1484.001": {
+    "name_en": "Group Policy Modification",
+    "name_cn": "Group Policy Modification"
+  },
+  "T1217": {
+    "name_en": "Browser Information Discovery",
+    "name_cn": "浏览器信息发现"
+  },
+  "T1552.004": {
+    "name_en": "Private Keys",
+    "name_cn": "Private Keys"
+  },
+  "T1583.004": {
+    "name_en": "Server",
+    "name_cn": "Server"
+  },
+  "T1021.006": {
+    "name_en": "Windows Remote Management",
+    "name_cn": "Windows Remote Management"
+  },
+  "T1011.001": {
+    "name_en": "Exfiltration Over Bluetooth",
+    "name_cn": "通过蓝牙窃取"
+  },
+  "T1078.001": {
+    "name_en": "Default Accounts",
+    "name_cn": "Default Accounts"
+  },
+  "T1547.003": {
+    "name_en": "Time Providers",
+    "name_cn": "时间提供程序"
+  },
+  "T1183": {
+    "name_en": "Image File Execution Options Injection",
+    "name_cn": "镜像文件执行选项注入"
+  },
+  "T1085": {
+    "name_en": "Rundll32",
+    "name_cn": "Rundll32程序执行"
+  },
+  "T1031": {
+    "name_en": "Modify Existing Service",
+    "name_cn": "Modify Existing Service"
+  },
+  "T1546.005": {
+    "name_en": "Trap",
+    "name_cn": "Trap"
+  },
+  "T1574.006": {
+    "name_en": "Dynamic Linker Hijacking",
+    "name_cn": "Dynamic Linker Hijacking"
+  },
+  "T1136.001": {
+    "name_en": "Local Account",
+    "name_cn": "Local Account"
+  },
+  "T1674": {
+    "name_en": "Input Injection",
+    "name_cn": "Input Injection"
+  },
+  "T1092": {
+    "name_en": "Communication Through Removable Media",
+    "name_cn": "通过可移动媒体通信"
+  },
+  "T1070.001": {
+    "name_en": "Clear Windows Event Logs",
+    "name_cn": "Clear Windows Event Logs"
+  },
+  "T1585.002": {
+    "name_en": "Email Accounts",
+    "name_cn": "Email Accounts"
+  },
+  "T1557.001": {
+    "name_en": "LLMNR/NBT-NS Poisoning and SMB Relay",
+    "name_cn": "LLMNR/NBT-NS中毒和SMB中继"
+  },
+  "T1222": {
+    "name_en": "File and Directory Permissions Modification",
+    "name_cn": "文件和目录权限修改"
+  },
+  "T1003.001": {
+    "name_en": "LSASS Memory",
+    "name_cn": "LSASS Memory"
+  },
+  "T1053.001": {
+    "name_en": "At (Linux)",
+    "name_cn": "At (Linux)"
+  },
+  "T1176.002": {
+    "name_en": "IDE Extensions",
+    "name_cn": "IDE Extensions"
+  },
+  "T1179": {
+    "name_en": "Hooking",
+    "name_cn": "Hooking"
+  },
+  "T1595": {
+    "name_en": "Active Scanning",
+    "name_cn": "主动扫描"
+  },
+  "T1027.016": {
+    "name_en": "Junk Code Insertion",
+    "name_cn": "Junk Code Insertion"
+  },
+  "T1547.011": {
+    "name_en": "Plist Modification",
+    "name_cn": "属性列表修改"
+  },
+  "T1548": {
+    "name_en": "Abuse Elevation Control Mechanism",
+    "name_cn": "滥用权限提升控制机制"
+  },
+  "T1134.002": {
+    "name_en": "Create Process with Token",
+    "name_cn": "Create Process with Token"
+  },
+  "T1548.001": {
+    "name_en": "Setuid and Setgid",
+    "name_cn": "设置用户ID和组ID"
+  },
+  "T1547.004": {
+    "name_en": "Winlogon Helper DLL",
+    "name_cn": "Winlogon助手DLL"
+  },
+  "T1019": {
+    "name_en": "System Firmware",
+    "name_cn": "系统固件"
+  },
+  "T1021.003": {
+    "name_en": "Distributed Component Object Model",
+    "name_cn": "Distributed Component Object Model"
+  },
+  "T1042": {
+    "name_en": "Change Default File Association",
+    "name_cn": "更改默认文件关联"
+  },
+  "T1117": {
+    "name_en": "Regsvr32",
+    "name_cn": "Regsvr32工具"
+  },
+  "T1110.003": {
+    "name_en": "Password Spraying",
+    "name_cn": "Password Spraying"
+  },
+  "T1090.002": {
+    "name_en": "External Proxy",
+    "name_cn": "External Proxy"
+  },
+  "T1056.003": {
+    "name_en": "Web Portal Capture",
+    "name_cn": "Web Portal Capture"
+  },
+  "T1589.002": {
+    "name_en": "Email Addresses",
+    "name_cn": "Email Addresses"
+  },
+  "T1164": {
+    "name_en": "Re-opened Applications",
+    "name_cn": "Re-opened Applications"
+  },
+  "T1054": {
+    "name_en": "Indicator Blocking",
+    "name_cn": "Indicator Blocking"
+  },
+  "T1598.004": {
+    "name_en": "Spearphishing Voice",
+    "name_cn": "Spearphishing Voice"
+  },
+  "T1108": {
+    "name_en": "Redundant Access",
+    "name_cn": "Redundant Access"
+  },
+  "T1193": {
+    "name_en": "Spearphishing Attachment",
+    "name_cn": "Spearphishing Attachment"
+  },
+  "T1003.005": {
+    "name_en": "Cached Domain Credentials",
+    "name_cn": "Cached Domain Credentials"
+  },
+  "T1098.004": {
+    "name_en": "SSH Authorized Keys",
+    "name_cn": "SSH Authorized Keys"
+  },
+  "T1673": {
+    "name_en": "Virtual Machine Discovery",
+    "name_cn": "Virtual Machine 发现"
+  },
+  "T1215": {
+    "name_en": "Kernel Modules and Extensions",
+    "name_cn": "Kernel Modules and Extensions"
+  },
+  "T1101": {
+    "name_en": "Security Support Provider",
+    "name_cn": "安全支持提供程序"
+  },
+  "T1590.006": {
+    "name_en": "Network Security Appliances",
+    "name_cn": "网络安全设备"
+  },
+  "T1546.012": {
+    "name_en": "Image File Execution Options Injection",
+    "name_cn": "镜像文件执行选项注入"
+  },
+  "T1218.008": {
+    "name_en": "Odbcconf",
+    "name_cn": "Odbcconf工具"
+  },
+  "T1593.002": {
+    "name_en": "Search Engines",
+    "name_cn": "Search Engines"
+  },
+  "T1177": {
+    "name_en": "LSASS Driver",
+    "name_cn": "LSASS Driver"
+  },
+  "T1591.002": {
+    "name_en": "Business Relationships",
+    "name_cn": "Business Relationships"
+  },
+  "T1548.005": {
+    "name_en": "Temporary Elevated Cloud Access",
+    "name_cn": "Temporary Elevated Cloud Access"
+  },
+  "T1125": {
+    "name_en": "Video Capture",
+    "name_cn": "视频捕获"
+  },
+  "T1144": {
+    "name_en": "Gatekeeper Bypass",
+    "name_cn": "Gatekeeper Bypass"
+  },
+  "T1045": {
+    "name_en": "Software Packing",
+    "name_cn": "软件打包"
+  },
+  "T1055.013": {
+    "name_en": "Process Doppelgänging",
+    "name_cn": "Process Doppelgänging"
+  },
+  "T1016": {
+    "name_en": "System Network Configuration Discovery",
+    "name_cn": "系统网络配置发现"
+  },
+  "T1578.003": {
+    "name_en": "Delete Cloud Instance",
+    "name_cn": "Delete Cloud Instance"
+  },
+  "T1593.003": {
+    "name_en": "Code Repositories",
+    "name_cn": "Code Repositories"
+  },
+  "T1574.005": {
+    "name_en": "Executable Installer File Permissions Weakness",
+    "name_cn": "可执行安装程序文件权限弱点"
+  },
+  "T1546.008": {
+    "name_en": "Accessibility Features",
+    "name_cn": "辅助功能"
+  },
+  "T1496.002": {
+    "name_en": "Bandwidth Hijacking",
+    "name_cn": "Bandwidth Hijacking"
+  },
+  "T1504": {
+    "name_en": "PowerShell Profile",
+    "name_cn": "PowerShell配置文件"
+  },
+  "T1198": {
+    "name_en": "SIP and Trust Provider Hijacking",
+    "name_cn": "SIP and Trust Provider Hijacking"
+  },
+  "T1087": {
+    "name_en": "Account Discovery",
+    "name_cn": "账户发现"
+  },
+  "T1090": {
+    "name_en": "Proxy",
+    "name_cn": "代理"
+  },
+  "T1059": {
+    "name_en": "Command and Scripting Interpreter",
+    "name_cn": "命令和脚本解释器"
+  },
+  "T1562.006": {
+    "name_en": "Indicator Blocking",
+    "name_cn": "Indicator Blocking"
+  },
+  "T1136.002": {
+    "name_en": "Domain Account",
+    "name_cn": "Domain Account"
+  },
+  "T1564.014": {
+    "name_en": "Extended Attributes",
+    "name_cn": "Extended Attributes"
+  },
+  "T1589.003": {
+    "name_en": "Employee Names",
+    "name_cn": "Employee Names"
+  },
+  "T1482": {
+    "name_en": "Domain Trust Discovery",
+    "name_cn": "域信任发现"
+  },
+  "T1558.001": {
+    "name_en": "Golden Ticket",
+    "name_cn": "Golden Ticket"
+  },
+  "T1175": {
+    "name_en": "Component Object Model and Distributed COM",
+    "name_cn": "Component Object Model and Distributed COM"
+  },
+  "T1020": {
+    "name_en": "Automated Exfiltration",
+    "name_cn": "自动化渗透"
+  },
+  "T1592.004": {
+    "name_en": "Client Configurations",
+    "name_cn": "Client Configurations"
+  },
+  "T1562.007": {
+    "name_en": "Disable or Modify Cloud Firewall",
+    "name_cn": "Disable or Modify Cloud Firewall"
+  },
+  "T1219.001": {
+    "name_en": "IDE Tunneling",
+    "name_cn": "IDE Tunneling"
+  },
+  "T1036.002": {
+    "name_en": "Right-to-Left Override",
+    "name_cn": "从右到左覆盖"
+  },
+  "T1588.001": {
+    "name_en": "Malware",
+    "name_cn": "Malware"
+  },
+  "T1027.017": {
+    "name_en": "SVG Smuggling",
+    "name_cn": "SVG Smuggling"
+  },
+  "T1542.002": {
+    "name_en": "Component Firmware",
+    "name_cn": "组件固件"
+  },
+  "T1070": {
+    "name_en": "Indicator Removal",
+    "name_cn": "指标移除"
+  },
+  "T1048.001": {
+    "name_en": "Exfiltration Over Symmetric Encrypted Non-C2 Protocol",
+    "name_cn": "数据窃取 Over Symmetric Encrypted Non-C2 Protocol"
+  },
+  "T1137.001": {
+    "name_en": "Office Template Macros",
+    "name_cn": "Office Template Macros"
+  },
+  "T1583.003": {
+    "name_en": "Virtual Private Server",
+    "name_cn": "Virtual Private Server"
+  },
+  "T1213.001": {
+    "name_en": "Confluence",
+    "name_cn": "Confluence"
+  },
+  "T1550.003": {
+    "name_en": "Pass the Ticket",
+    "name_cn": "Pass the Ticket"
+  },
+  "T1609": {
+    "name_en": "Container Administration Command",
+    "name_cn": "容器管理命令"
+  },
+  "T1083": {
+    "name_en": "File and Directory Discovery",
+    "name_cn": "文件和目录发现"
+  },
+  "T1568": {
+    "name_en": "Dynamic Resolution",
+    "name_cn": "动态解析"
+  },
+  "T1036.004": {
+    "name_en": "Masquerade Task or Service",
+    "name_cn": "Masquerade Task or Service"
+  },
+  "T1055.004": {
+    "name_en": "Asynchronous Procedure Call",
+    "name_cn": "Asynchronous Procedure Call"
+  },
+  "T1020.001": {
+    "name_en": "Traffic Duplication",
+    "name_cn": "流量复制"
+  },
+  "T1138": {
+    "name_en": "Application Shimming",
+    "name_cn": "应用程序填充"
+  },
+  "T1647": {
+    "name_en": "Plist File Modification",
+    "name_cn": "Plist文件修改"
+  },
+  "T1127.003": {
+    "name_en": "JamPlus",
+    "name_cn": "JamPlus"
+  },
+  "T1546.009": {
+    "name_en": "AppCert DLLs",
+    "name_cn": "AppCert动态链接库"
+  },
+  "T1191": {
+    "name_en": "CMSTP",
+    "name_cn": "CMSTP工具"
+  },
+  "T1188": {
+    "name_en": "Multi-hop Proxy",
+    "name_cn": "Multi-hop Proxy"
+  },
+  "T1114.003": {
+    "name_en": "Email Forwarding Rule",
+    "name_cn": "Email Forwarding Rule"
+  },
+  "T1074": {
+    "name_en": "Data Staged",
+    "name_cn": "数据暂存"
+  },
+  "T1649": {
+    "name_en": "Steal or Forge Authentication Certificates",
+    "name_cn": "窃取或伪造认证证书"
+  },
+  "T1098.005": {
+    "name_en": "Device Registration",
+    "name_cn": "Device Registration"
+  },
+  "T1049": {
+    "name_en": "System Network Connections Discovery",
+    "name_cn": "系统网络连接发现"
+  },
+  "T1584": {
+    "name_en": "Compromise Infrastructure",
+    "name_cn": "Compromise Infrastructure"
+  },
+  "T1553.005": {
+    "name_en": "Mark-of-the-Web Bypass",
+    "name_cn": "网络标记绕过"
+  },
+  "T1600.002": {
+    "name_en": "Disable Crypto Hardware",
+    "name_cn": "Disable Crypto Hardware"
+  },
+  "T1542": {
+    "name_en": "Pre-OS Boot",
+    "name_cn": "系统启动前"
+  },
+  "T1064": {
+    "name_en": "Scripting",
+    "name_cn": "脚本"
+  },
+  "T1612": {
+    "name_en": "Build Image on Host",
+    "name_cn": "在主机上构建映像"
+  },
+  "T1051": {
+    "name_en": "Shared Webroot",
+    "name_cn": "Shared Webroot"
+  },
+  "T1055.002": {
+    "name_en": "Portable Executable Injection",
+    "name_cn": "Portable Executable Injection"
+  },
+  "T1218.012": {
+    "name_en": "Verclsid",
+    "name_cn": "Verclsid工具"
+  },
+  "T1586": {
+    "name_en": "Compromise Accounts",
+    "name_cn": "Compromise Accounts"
+  },
+  "T1569.001": {
+    "name_en": "Launchctl",
+    "name_cn": "Launchctl"
+  },
+  "T1584.005": {
+    "name_en": "Botnet",
+    "name_cn": "Botnet"
+  },
+  "T1059.008": {
+    "name_en": "Network Device CLI",
+    "name_cn": "网络设备CLI"
+  },
+  "T1552.003": {
+    "name_en": "Bash History",
+    "name_cn": "Bash History"
+  },
+  "T1562.010": {
+    "name_en": "Downgrade Attack",
+    "name_cn": "Downgrade Attack"
+  },
+  "T1559.003": {
+    "name_en": "XPC Services",
+    "name_cn": "XPC Services"
+  },
+  "T1497": {
+    "name_en": "Virtualization/Sandbox Evasion",
+    "name_cn": "虚拟化/沙箱规避"
+  },
+  "T1102": {
+    "name_en": "Web Service",
+    "name_cn": "Web服务"
+  },
+  "T1552.001": {
+    "name_en": "Credentials In Files",
+    "name_cn": "Files中的Credentials"
+  },
+  "T1568.003": {
+    "name_en": "DNS Calculation",
+    "name_cn": "DNS Calculation"
+  },
+  "T1218.005": {
+    "name_en": "Mshta",
+    "name_cn": "Mshta工具"
+  },
+  "T1547.015": {
+    "name_en": "Login Items",
+    "name_cn": "Login Items"
+  },
+  "T1608": {
+    "name_en": "Stage Capabilities",
+    "name_cn": "阶段能力"
+  },
+  "T1608.005": {
+    "name_en": "Link Target",
+    "name_cn": "Link Target"
+  },
+  "T1104": {
+    "name_en": "Multi-Stage Channels",
+    "name_cn": "多阶段通道"
+  },
+  "T1657": {
+    "name_en": "Financial Theft",
+    "name_cn": "Financial Theft"
+  },
+  "T1480": {
+    "name_en": "Execution Guardrails",
+    "name_cn": "执行护栏"
+  },
+  "T1619": {
+    "name_en": "Cloud Storage Object Discovery",
+    "name_cn": "云存储对象发现"
+  },
+  "T1606.001": {
+    "name_en": "Web Cookies",
+    "name_cn": "Web Cookies"
+  },
+  "T1654": {
+    "name_en": "Log Enumeration",
+    "name_cn": "Log Enumeration"
+  },
+  "T1134.001": {
+    "name_en": "Token Impersonation/Theft",
+    "name_cn": "Token Impersonation/Theft"
+  },
+  "T1567.001": {
+    "name_en": "Exfiltration to Code Repository",
+    "name_cn": "到Code Repository的Exfiltration"
+  },
+  "T1021.007": {
+    "name_en": "Cloud Services",
+    "name_cn": "Cloud Services"
+  },
+  "T1205.001": {
+    "name_en": "Port Knocking",
+    "name_cn": "Port Knocking"
+  },
+  "T1027.012": {
+    "name_en": "LNK Icon Smuggling",
+    "name_cn": "LNK Icon Smuggling"
+  },
+  "T1583.006": {
+    "name_en": "Web Services",
+    "name_cn": "Web Services"
+  },
+  "T1528": {
+    "name_en": "Steal Application Access Token",
+    "name_cn": "窃取应用程序访问令牌"
+  },
+  "T1598.002": {
+    "name_en": "Spearphishing Attachment",
+    "name_cn": "Spearphishing Attachment"
+  },
+  "T1098.001": {
+    "name_en": "Additional Cloud Credentials",
+    "name_cn": "Additional Cloud Credentials"
+  },
+  "T1204": {
+    "name_en": "User Execution",
+    "name_cn": "用户执行"
+  },
+  "T1491.001": {
+    "name_en": "Internal Defacement",
+    "name_cn": "Internal Defacement"
+  },
+  "T1564.002": {
+    "name_en": "Hidden Users",
+    "name_cn": "Hidden Users"
+  },
+  "T1134.003": {
+    "name_en": "Make and Impersonate Token",
+    "name_cn": "Make and Impersonate Token"
+  },
+  "T1552.006": {
+    "name_en": "Group Policy Preferences",
+    "name_cn": "Group Policy Preferences"
+  },
+  "T1196": {
+    "name_en": "Control Panel Items",
+    "name_cn": "Control Panel Items"
+  },
+  "T1048.002": {
+    "name_en": "Exfiltration Over Asymmetric Encrypted Non-C2 Protocol",
+    "name_cn": "数据窃取 Over Asymmetric Encrypted Non-C2 Protocol"
+  },
+  "T1087.004": {
+    "name_en": "Cloud Account",
+    "name_cn": "Cloud Account"
+  },
+  "T1057": {
+    "name_en": "Process Discovery",
+    "name_cn": "进程发现"
+  },
+  "T1562.003": {
+    "name_en": "Impair Command History Logging",
+    "name_cn": "Impair Command History Logging"
+  },
+  "T1053.004": {
+    "name_en": "Launchd",
+    "name_cn": "Launchd"
+  },
+  "T1556.008": {
+    "name_en": "Network Provider DLL",
+    "name_cn": "Network Provider DLL"
+  },
+  "T1546.003": {
+    "name_en": "Windows Management Instrumentation Event Subscription",
+    "name_cn": "Windows Management Instrumentation Event Subscription"
+  },
+  "T1596.004": {
+    "name_en": "CDNs",
+    "name_cn": "CDNs"
+  },
+  "T1497.002": {
+    "name_en": "User Activity Based Checks",
+    "name_cn": "User Activity Based Checks"
+  },
+  "T1141": {
+    "name_en": "Input Prompt",
+    "name_cn": "Input Prompt"
+  },
+  "T1496.004": {
+    "name_en": "Cloud Service Hijacking",
+    "name_cn": "Cloud Service Hijacking"
+  },
+  "T1585.003": {
+    "name_en": "Cloud Accounts",
+    "name_cn": "云账户"
+  },
+  "T1072": {
+    "name_en": "Software Deployment Tools",
+    "name_cn": "软件部署工具"
+  },
+  "T1041": {
+    "name_en": "Exfiltration Over C2 Channel",
+    "name_cn": "通过C2通道渗透"
+  },
+  "T1134.004": {
+    "name_en": "Parent PID Spoofing",
+    "name_cn": "Parent PID Spoofing"
+  },
+  "T1591": {
+    "name_en": "Gather Victim Org Information",
+    "name_cn": "收集受害者组织信息"
+  },
+  "T1060": {
+    "name_en": "Registry Run Keys / Startup Folder",
+    "name_cn": "注册表运行键/启动文件夹"
+  },
+  "T1606": {
+    "name_en": "Forge Web Credentials",
+    "name_cn": "伪造Web凭据"
+  },
+  "T1621": {
+    "name_en": "Multi-Factor Authentication Request Generation",
+    "name_cn": "多因素认证请求生成"
+  },
+  "T1554": {
+    "name_en": "Compromise Host Software Binary",
+    "name_cn": "Compromise Host Software Binary"
+  },
+  "T1552.008": {
+    "name_en": "Chat Messages",
+    "name_cn": "Chat Messages"
+  },
+  "T1059.001": {
+    "name_en": "PowerShell",
+    "name_cn": "PowerShell脚本"
+  },
+  "T1023": {
+    "name_en": "Shortcut Modification",
+    "name_cn": "Shortcut Modification"
+  },
+  "T1546.001": {
+    "name_en": "Change Default File Association",
+    "name_cn": "更改默认文件关联"
+  },
+  "T1055.014": {
+    "name_en": "VDSO Hijacking",
+    "name_cn": "VDSO Hijacking"
+  },
+  "T1026": {
+    "name_en": "Multiband Communication",
+    "name_cn": "Multiband Communication"
+  },
+  "T1071.002": {
+    "name_en": "File Transfer Protocols",
+    "name_cn": "文件传输协议"
+  },
+  "T1122": {
+    "name_en": "Component Object Model Hijacking",
+    "name_cn": "组件对象模型劫持"
+  },
+  "T1015": {
+    "name_en": "Accessibility Features",
+    "name_cn": "辅助功能"
+  },
+  "T1212": {
+    "name_en": "Exploitation for Credential Access",
+    "name_cn": "凭据访问漏洞利用"
+  },
+  "T1546.014": {
+    "name_en": "Emond",
+    "name_cn": "Emond"
+  },
+  "T1102.003": {
+    "name_en": "One-Way Communication",
+    "name_cn": "One-Way Communication"
+  },
+  "T1590": {
+    "name_en": "Gather Victim Network Information",
+    "name_cn": "收集受害者网络信息"
+  },
+  "T1210": {
+    "name_en": "Exploitation of Remote Services",
+    "name_cn": "远程服务漏洞利用"
+  },
+  "T1502": {
+    "name_en": "Parent PID Spoofing",
+    "name_cn": "Parent PID Spoofing"
+  },
+  "T1142": {
+    "name_en": "Keychain",
+    "name_cn": "Keychain"
+  },
+  "T1534": {
+    "name_en": "Internal Spearphishing",
+    "name_cn": "内部鱼叉式钓鱼"
+  },
+  "T1169": {
+    "name_en": "Sudo",
+    "name_cn": "Sudo"
+  },
+  "T1574.010": {
+    "name_en": "Services File Permissions Weakness",
+    "name_cn": "服务文件权限弱点"
+  },
+  "T1547.001": {
+    "name_en": "Registry Run Keys / Startup Folder",
+    "name_cn": "注册表运行键/启动文件夹"
+  },
+  "T1199": {
+    "name_en": "Trusted Relationship",
+    "name_cn": "可信关系"
+  },
+  "T1136.003": {
+    "name_en": "Cloud Account",
+    "name_cn": "Cloud Account"
+  },
+  "T1069.001": {
+    "name_en": "Local Groups",
+    "name_cn": "Local Groups"
+  },
+  "T1149": {
+    "name_en": "LC_MAIN Hijacking",
+    "name_cn": "LC_MAIN Hijacking"
+  },
+  "T1593": {
+    "name_en": "Search Open Websites/Domains",
+    "name_cn": "搜索开放网站/域名"
+  },
+  "T1098": {
+    "name_en": "Account Manipulation",
+    "name_cn": "账户操纵"
+  },
+  "T1170": {
+    "name_en": "Mshta",
+    "name_cn": "Mshta工具"
+  },
+  "T1048": {
+    "name_en": "Exfiltration Over Alternative Protocol",
+    "name_cn": "通过替代协议渗透"
+  },
+  "T1547.006": {
+    "name_en": "Kernel Modules and Extensions",
+    "name_cn": "Kernel Modules and Extensions"
+  },
+  "T1056.002": {
+    "name_en": "GUI Input Capture",
+    "name_cn": "GUI Input Capture"
+  },
+  "T1097": {
+    "name_en": "Pass the Ticket",
+    "name_cn": "Pass the Ticket"
+  },
+  "T1588.002": {
+    "name_en": "Tool",
+    "name_cn": "Tool"
+  },
+  "T1052.001": {
+    "name_en": "Exfiltration over USB",
+    "name_cn": "数据窃取 over USB"
+  },
+  "T1574.013": {
+    "name_en": "KernelCallbackTable",
+    "name_cn": "KernelCallbackTable"
+  },
+  "T1597": {
+    "name_en": "Search Closed Sources",
+    "name_cn": "搜索封闭源"
+  },
+  "T1053.006": {
+    "name_en": "Systemd Timers",
+    "name_cn": "Systemd定时器"
+  },
+  "T1566": {
+    "name_en": "Phishing",
+    "name_cn": "钓鱼攻击"
+  },
+  "T1061": {
+    "name_en": "Graphical User Interface",
+    "name_cn": "Graphical User Interface"
+  },
+  "T1542.004": {
+    "name_en": "ROMMONkit",
+    "name_cn": "ROMMONkit"
+  },
+  "T1218.001": {
+    "name_en": "Compiled HTML File",
+    "name_cn": "Compiled HTML File"
+  },
+  "T1496.001": {
+    "name_en": "Compute Hijacking",
+    "name_cn": "Compute Hijacking"
+  },
+  "T1070.005": {
+    "name_en": "Network Share Connection Removal",
+    "name_cn": "Network Share Connection Removal"
+  },
+  "T1090.003": {
+    "name_en": "Multi-hop Proxy",
+    "name_cn": "Multi-hop Proxy"
+  },
+  "T1110": {
+    "name_en": "Brute Force",
+    "name_cn": "暴力破解"
+  },
+  "T1059.004": {
+    "name_en": "Unix Shell",
+    "name_cn": "Unix Shell"
+  },
+  "T1137.003": {
+    "name_en": "Outlook Forms",
+    "name_cn": "Outlook Forms"
+  },
+  "T1219.003": {
+    "name_en": "Remote Access Hardware",
+    "name_cn": "Remote Access Hardware"
+  },
+  "T1157": {
+    "name_en": "Dylib Hijacking",
+    "name_cn": "Dylib劫持"
+  },
+  "T1562.001": {
+    "name_en": "Disable or Modify Tools",
+    "name_cn": "Disable or Modify Tools"
+  },
+  "T1565": {
+    "name_en": "Data Manipulation",
+    "name_cn": "数据操纵"
+  },
+  "T1559": {
+    "name_en": "Inter-Process Communication",
+    "name_cn": "进程间通信"
+  },
+  "T1001": {
+    "name_en": "Data Obfuscation",
+    "name_cn": "数据混淆"
+  },
+  "T1039": {
+    "name_en": "Data from Network Shared Drive",
+    "name_cn": "从网络共享驱动器获取数据"
+  },
+  "T1584.006": {
+    "name_en": "Web Services",
+    "name_cn": "Web Services"
+  },
+  "T1601": {
+    "name_en": "Modify System Image",
+    "name_cn": "修改系统映像"
+  },
+  "T1574": {
+    "name_en": "Hijack Execution Flow",
+    "name_cn": "劫持执行流"
+  },
+  "T1059.011": {
+    "name_en": "Lua",
+    "name_cn": "Lua"
+  },
+  "T1027.005": {
+    "name_en": "Indicator Removal from Tools",
+    "name_cn": "工具指标清除"
+  },
+  "T1204.003": {
+    "name_en": "Malicious Image",
+    "name_cn": "Malicious Image"
+  },
+  "T1543.005": {
+    "name_en": "Container Service",
+    "name_cn": "Container Service"
+  },
+  "T1078": {
+    "name_en": "Valid Accounts",
+    "name_cn": "有效账户"
+  },
+  "T1571": {
+    "name_en": "Non-Standard Port",
+    "name_cn": "非标准端口"
+  },
+  "T1585.001": {
+    "name_en": "Social Media Accounts",
+    "name_cn": "Social Media Accounts"
+  },
+  "T1073": {
+    "name_en": "DLL Side-Loading",
+    "name_cn": "DLL侧加载"
+  },
+  "T1055.012": {
+    "name_en": "Process Hollowing",
+    "name_cn": "Process Hollowing"
+  },
+  "T1068": {
+    "name_en": "Exploitation for Privilege Escalation",
+    "name_cn": "权限提升漏洞利用"
+  },
+  "T1564.009": {
+    "name_en": "Resource Forking",
+    "name_cn": "Resource Forking"
+  },
+  "T1531": {
+    "name_en": "Account Access Removal",
+    "name_cn": "账户访问移除"
+  },
+  "T1110.004": {
+    "name_en": "Credential Stuffing",
+    "name_cn": "Credential Stuffing"
+  },
+  "T1208": {
+    "name_en": "Kerberoasting",
+    "name_cn": "Kerberoasting"
+  },
+  "T1027": {
+    "name_en": "Obfuscated Files or Information",
+    "name_cn": "混淆文件或信息"
+  },
+  "T1556.006": {
+    "name_en": "Multi-Factor Authentication",
+    "name_cn": "Multi-Factor Authentication"
+  },
+  "T1114.002": {
+    "name_en": "Remote Email Collection",
+    "name_cn": "Remote Email 收集"
+  },
+  "T1505.004": {
+    "name_en": "IIS Components",
+    "name_cn": "IIS Components"
+  },
+  "T1036.001": {
+    "name_en": "Invalid Code Signature",
+    "name_cn": "Invalid Code Signature"
+  },
+  "T1564.006": {
+    "name_en": "Run Virtual Instance",
+    "name_cn": "Run Virtual Instance"
+  },
+  "T1154": {
+    "name_en": "Trap",
+    "name_cn": "Trap"
+  },
+  "T1027.014": {
+    "name_en": "Polymorphic Code",
+    "name_cn": "Polymorphic Code"
+  },
+  "T1201": {
+    "name_en": "Password Policy Discovery",
+    "name_cn": "密码策略发现"
+  },
+  "T1546": {
+    "name_en": "Event Triggered Execution",
+    "name_cn": "事件触发执行"
+  },
+  "T1546.004": {
+    "name_en": "Unix Shell Configuration Modification",
+    "name_cn": "Unix Shell Configuration Modification"
+  },
+  "T1187": {
+    "name_en": "Forced Authentication",
+    "name_cn": "强制身份验证"
+  },
+  "T1134.005": {
+    "name_en": "SID-History Injection",
+    "name_cn": "SID-History Injection"
+  },
+  "T1599": {
+    "name_en": "Network Boundary Bridging",
+    "name_cn": "网络边界桥接"
+  },
+  "T1486": {
+    "name_en": "Data Encrypted for Impact",
+    "name_cn": "为影响而加密数据"
+  },
+  "T1488": {
+    "name_en": "Disk Content Wipe",
+    "name_cn": "Disk Content Wipe"
+  },
+  "T1553": {
+    "name_en": "Subvert Trust Controls",
+    "name_cn": "颠覆信任控制"
+  },
+  "T1548.004": {
+    "name_en": "Elevated Execution with Prompt",
+    "name_cn": "提权执行"
+  },
+  "T1592.003": {
+    "name_en": "Firmware",
+    "name_cn": "Firmware"
+  },
+  "T1573": {
+    "name_en": "Encrypted Channel",
+    "name_cn": "加密通道"
+  },
+  "T1174": {
+    "name_en": "Password Filter DLL",
+    "name_cn": "Password Filter DLL"
+  },
+  "T1547.002": {
+    "name_en": "Authentication Package",
+    "name_cn": "认证包"
+  },
+  "T1218.010": {
+    "name_en": "Regsvr32",
+    "name_cn": "Regsvr32工具"
+  },
+  "T1002": {
+    "name_en": "Data Compressed",
+    "name_cn": "Data Compressed"
+  },
+  "T1567.003": {
+    "name_en": "Exfiltration to Text Storage Sites",
+    "name_cn": "到Text Storage Sites的Exfiltration"
+  },
+  "T1081": {
+    "name_en": "Credentials in Files",
+    "name_cn": "Files中的Credentials"
+  },
+  "T1592.002": {
+    "name_en": "Software",
+    "name_cn": "Software"
+  },
+  "T1128": {
+    "name_en": "Netsh Helper DLL",
+    "name_cn": "Netsh助手DLL"
+  },
+  "T1056": {
+    "name_en": "Input Capture",
+    "name_cn": "输入捕获"
+  },
+  "T1566.004": {
+    "name_en": "Spearphishing Voice",
+    "name_cn": "Spearphishing Voice"
+  },
+  "T1587.004": {
+    "name_en": "Exploits",
+    "name_cn": "Exploits"
+  },
+  "T1593.001": {
+    "name_en": "Social Media",
+    "name_cn": "Social Media"
+  },
+  "T1213.004": {
+    "name_en": "Customer Relationship Management Software",
+    "name_cn": "Customer Relationship Management Software"
+  },
+  "T1546.015": {
+    "name_en": "Component Object Model Hijacking",
+    "name_cn": "组件对象模型劫持"
+  },
+  "T1589.001": {
+    "name_en": "Credentials",
+    "name_cn": "Credentials"
+  },
+  "T1195.002": {
+    "name_en": "Compromise Software Supply Chain",
+    "name_cn": "Compromise Software Supply Chain"
+  },
+  "T1036.003": {
+    "name_en": "Rename Legitimate Utilities",
+    "name_cn": "Rename Legitimate Utilities"
+  },
+  "T1102.002": {
+    "name_en": "Bidirectional Communication",
+    "name_cn": "Bidirectional Communication"
+  },
+  "T1203": {
+    "name_en": "Exploitation for Client Execution",
+    "name_cn": "客户端执行漏洞利用"
+  },
+  "T1595.003": {
+    "name_en": "Wordlist Scanning",
+    "name_cn": "Wordlist Scanning"
+  },
+  "T1667": {
+    "name_en": "Email Bombing",
+    "name_cn": "Email Bombing"
+  },
+  "T1562.011": {
+    "name_en": "Spoof Security Alerting",
+    "name_cn": "Spoof Security Alerting"
+  },
+  "T1137.004": {
+    "name_en": "Outlook Home Page",
+    "name_cn": "Outlook Home Page"
+  },
+  "T1573.002": {
+    "name_en": "Asymmetric Cryptography",
+    "name_cn": "Asymmetric Cryptography"
+  },
+  "T1567.002": {
+    "name_en": "Exfiltration to Cloud Storage",
+    "name_cn": "到Cloud Storage的Exfiltration"
+  },
+  "T1570": {
+    "name_en": "Lateral Tool Transfer",
+    "name_cn": "横向工具传输"
+  },
+  "T1574.009": {
+    "name_en": "Path Interception by Unquoted Path",
+    "name_cn": "未引用路径拦截"
+  },
+  "T1608.003": {
+    "name_en": "Install Digital Certificate",
+    "name_cn": "Install Digital Certificate"
+  },
+  "T1168": {
+    "name_en": "Local Job Scheduling",
+    "name_cn": "Local Job Scheduling"
+  },
+  "T1166": {
+    "name_en": "Setuid and Setgid",
+    "name_cn": "设置用户ID和组ID"
+  },
+  "T1037.005": {
+    "name_en": "Startup Items",
+    "name_cn": "Startup Items"
+  },
+  "T1100": {
+    "name_en": "Web Shell",
+    "name_cn": "Web Shell"
+  },
+  "T1186": {
+    "name_en": "Process Doppelgänging",
+    "name_cn": "Process Doppelgänging"
+  },
+  "T1184": {
+    "name_en": "SSH Hijacking",
+    "name_cn": "SSH Hijacking"
+  },
+  "T1614.001": {
+    "name_en": "System Language Discovery",
+    "name_cn": "System Language 发现"
+  },
+  "T1095": {
+    "name_en": "Non-Application Layer Protocol",
+    "name_cn": "非应用层协议"
+  },
+  "T1075": {
+    "name_en": "Pass the Hash",
+    "name_cn": "Pass the Hash"
+  },
+  "T1027.003": {
+    "name_en": "Steganography",
+    "name_cn": "隐写术"
+  },
+  "T1584.002": {
+    "name_en": "DNS Server",
+    "name_cn": "DNS Server"
+  },
+  "T1671": {
+    "name_en": "Cloud Application Integration",
+    "name_cn": "Cloud Application Integration"
+  },
+  "T1001.003": {
+    "name_en": "Protocol or Service Impersonation",
+    "name_cn": "Protocol or Service Impersonation"
+  },
+  "T1012": {
+    "name_en": "Query Registry",
+    "name_cn": "查询注册表"
+  },
+  "T1030": {
+    "name_en": "Data Transfer Size Limits",
+    "name_cn": "数据传输大小限制"
+  },
+  "T1028": {
+    "name_en": "Windows Remote Management",
+    "name_cn": "Windows Remote Management"
+  },
+  "T1550.004": {
+    "name_en": "Web Session Cookie",
+    "name_cn": "Web Session Cookie"
+  },
+  "T1078.002": {
+    "name_en": "Domain Accounts",
+    "name_cn": "Domain Accounts"
+  },
+  "T1218.009": {
+    "name_en": "Regsvcs/Regasm",
+    "name_cn": "Regsvcs/Regasm工具"
+  },
+  "T1034": {
+    "name_en": "Path Interception",
+    "name_cn": "Path Interception"
+  },
+  "T1506": {
+    "name_en": "Web Session Cookie",
+    "name_cn": "Web Session Cookie"
+  },
+  "T1553.004": {
+    "name_en": "Install Root Certificate",
+    "name_cn": "安装根证书"
+  },
+  "T1037.003": {
+    "name_en": "Network Logon Script",
+    "name_cn": "Network Logon Script"
+  },
+  "T1499": {
+    "name_en": "Endpoint Denial of Service",
+    "name_cn": "端点拒绝服务"
+  },
+  "T1027.004": {
+    "name_en": "Compile After Delivery",
+    "name_cn": "传递后编译"
+  },
+  "T1065": {
+    "name_en": "Uncommonly Used Port",
+    "name_cn": "Uncommonly Used Port"
+  },
+  "T1614": {
+    "name_en": "System Location Discovery",
+    "name_cn": "系统位置发现"
+  },
+  "T1564.007": {
+    "name_en": "VBA Stomping",
+    "name_cn": "VBA Stomping"
+  },
+  "T1197": {
+    "name_en": "BITS Jobs",
+    "name_cn": "BITS作业"
+  },
+  "T1127.001": {
+    "name_en": "MSBuild",
+    "name_cn": "MSBuild"
+  },
+  "T1656": {
+    "name_en": "Impersonation",
+    "name_cn": "Impersonation"
+  },
+  "T1578.005": {
+    "name_en": "Modify Cloud Compute Configurations",
+    "name_cn": "Modify Cloud Compute Configurations"
+  },
+  "T1088": {
+    "name_en": "Bypass User Account Control",
+    "name_cn": "绕过用户账户控制"
+  },
+  "T1494": {
+    "name_en": "Runtime Data Manipulation",
+    "name_cn": "Runtime Data Manipulation"
+  },
+  "T1090.004": {
+    "name_en": "Domain Fronting",
+    "name_cn": "Domain Fronting"
+  },
+  "T1557.002": {
+    "name_en": "ARP Cache Poisoning",
+    "name_cn": "ARP Cache Poisoning"
+  },
+  "T1562.008": {
+    "name_en": "Disable or Modify Cloud Logs",
+    "name_cn": "Disable or Modify Cloud Logs"
+  },
+  "T1518.001": {
+    "name_en": "Security Software Discovery",
+    "name_cn": "Security Software 发现"
+  },
+  "T1564.003": {
+    "name_en": "Hidden Window",
+    "name_cn": "隐藏窗口"
+  },
+  "T1493": {
+    "name_en": "Transmitted Data Manipulation",
+    "name_cn": "Transmitted Data Manipulation"
+  },
+  "T1127.002": {
+    "name_en": "ClickOnce",
+    "name_cn": "ClickOnce"
+  },
+  "T1059.006": {
+    "name_en": "Python",
+    "name_cn": "Python脚本"
+  },
+  "T1070.010": {
+    "name_en": "Relocate Malware",
+    "name_cn": "Relocate Malware"
+  },
+  "T1591.004": {
+    "name_en": "Identify Roles",
+    "name_cn": "Identify Roles"
+  },
+  "T1132": {
+    "name_en": "Data Encoding",
+    "name_cn": "数据编码"
+  },
+  "T1546.010": {
+    "name_en": "AppInit DLLs",
+    "name_cn": "AppInit动态链接库"
+  },
+  "T1598": {
+    "name_en": "Phishing for Information",
+    "name_cn": "钓鱼获取信息"
+  },
+  "T1496": {
+    "name_en": "Resource Hijacking",
+    "name_cn": "资源劫持"
+  },
+  "T1585": {
+    "name_en": "Establish Accounts",
+    "name_cn": "建立账户"
+  },
+  "T1588": {
+    "name_en": "Obtain Capabilities",
+    "name_cn": "获取能力"
+  },
+  "T1546.002": {
+    "name_en": "Screensaver",
+    "name_cn": "Screensaver"
+  },
+  "T1147": {
+    "name_en": "Hidden Users",
+    "name_cn": "Hidden Users"
+  },
+  "T1556.009": {
+    "name_en": "Conditional Access Policies",
+    "name_cn": "Conditional Access Policies"
+  },
+  "T1578.002": {
+    "name_en": "Create Cloud Instance",
+    "name_cn": "Create Cloud Instance"
+  },
+  "T1500": {
+    "name_en": "Compile After Delivery",
+    "name_cn": "传递后编译"
+  },
+  "T1555.006": {
+    "name_en": "Cloud Secrets Management Stores",
+    "name_cn": "Cloud Secrets Management Stores"
+  },
+  "T1213.003": {
+    "name_en": "Code Repositories",
+    "name_cn": "Code Repositories"
+  },
+  "T1565.002": {
+    "name_en": "Transmitted Data Manipulation",
+    "name_cn": "Transmitted Data Manipulation"
+  },
+  "T1003.008": {
+    "name_en": "/etc/passwd and /etc/shadow",
+    "name_cn": "/etc/passwd and /etc/shadow"
+  },
+  "T1543.001": {
+    "name_en": "Launch Agent",
+    "name_cn": "Launch Agent"
+  },
+  "T1569": {
+    "name_en": "System Services",
+    "name_cn": "系统服务"
+  },
+  "T1059.003": {
+    "name_en": "Windows Command Shell",
+    "name_cn": "Windows命令Shell"
+  },
+  "T1055.009": {
+    "name_en": "Proc Memory",
+    "name_cn": "Proc Memory"
+  },
+  "T1223": {
+    "name_en": "Compiled HTML File",
+    "name_cn": "Compiled HTML File"
+  },
+  "T1650": {
+    "name_en": "Acquire Access",
+    "name_cn": "Acquire Access"
+  },
+  "T1601.001": {
+    "name_en": "Patch System Image",
+    "name_cn": "Patch System Image"
+  },
+  "T1558.002": {
+    "name_en": "Silver Ticket",
+    "name_cn": "Silver Ticket"
+  },
+  "T1213": {
+    "name_en": "Data from Information Repositories",
+    "name_cn": "从信息库获取数据"
+  },
+  "T1070.009": {
+    "name_en": "Clear Persistence",
+    "name_cn": "Clear 持久化"
+  },
+  "T1059.012": {
+    "name_en": "Hypervisor CLI",
+    "name_cn": "Hypervisor CLI"
+  },
+  "T1146": {
+    "name_en": "Clear Command History",
+    "name_cn": "Clear Command History"
+  },
+  "T1555.004": {
+    "name_en": "Windows Credential Manager",
+    "name_cn": "Windows Credential Manager"
+  },
+  "T1036.010": {
+    "name_en": "Masquerade Account Name",
+    "name_cn": "Masquerade Account Name"
+  },
+  "T1519": {
+    "name_en": "Emond",
+    "name_cn": "Emond"
+  },
+  "T1194": {
+    "name_en": "Spearphishing via Service",
+    "name_cn": "ServiceSpearphishing"
+  },
+  "T1200": {
+    "name_en": "Hardware Additions",
+    "name_cn": "硬件增加"
+  },
+  "T1219.002": {
+    "name_en": "Remote Desktop Software",
+    "name_cn": "Remote Desktop Software"
+  },
+  "T1505": {
+    "name_en": "Server Software Component",
+    "name_cn": "服务器软件组件"
+  },
+  "T1485": {
+    "name_en": "Data Destruction",
+    "name_cn": "数据破坏"
+  },
+  "T1132.002": {
+    "name_en": "Non-Standard Encoding",
+    "name_cn": "Non-Standard Encoding"
+  },
+  "T1556.001": {
+    "name_en": "Domain Controller Authentication",
+    "name_cn": "Domain Controller Authentication"
+  },
+  "T1537": {
+    "name_en": "Transfer Data to Cloud Account",
+    "name_cn": "将数据传输到云账户"
+  },
+  "T1027.006": {
+    "name_en": "HTML Smuggling",
+    "name_cn": "HTML走私"
+  },
+  "T1556.005": {
+    "name_en": "Reversible Encryption",
+    "name_cn": "Reversible Encryption"
+  },
+  "T1027.010": {
+    "name_en": "Command Obfuscation",
+    "name_cn": "Command Obfuscation"
+  },
+  "T1130": {
+    "name_en": "Install Root Certificate",
+    "name_cn": "安装根证书"
+  },
+  "T1022": {
+    "name_en": "Data Encrypted",
+    "name_cn": "Data Encrypted"
+  },
+  "T1070.004": {
+    "name_en": "File Deletion",
+    "name_cn": "File Deletion"
+  },
+  "T1189": {
+    "name_en": "Drive-by Compromise",
+    "name_cn": "路过式入侵"
+  },
+  "T1498": {
+    "name_en": "Network Denial of Service",
+    "name_cn": "网络拒绝服务"
+  },
+  "T1651": {
+    "name_en": "Cloud Administration Command",
+    "name_cn": "Cloud Administration Command"
+  },
+  "T1546.016": {
+    "name_en": "Installer Packages",
+    "name_cn": "Installer Packages"
+  },
+  "T1595.001": {
+    "name_en": "Scanning IP Blocks",
+    "name_cn": "Scanning IP Blocks"
+  },
+  "T1158": {
+    "name_en": "Hidden Files and Directories",
+    "name_cn": "Hidden Files and Directories"
+  },
+  "T1221": {
+    "name_en": "Template Injection",
+    "name_cn": "模板注入"
+  },
+  "T1037.004": {
+    "name_en": "RC Scripts",
+    "name_cn": "RC Scripts"
+  },
+  "T1134": {
+    "name_en": "Access Token Manipulation",
+    "name_cn": "访问令牌操纵"
+  },
+  "T1209": {
+    "name_en": "Time Providers",
+    "name_cn": "时间提供程序"
+  },
+  "T1111": {
+    "name_en": "Multi-Factor Authentication Interception",
+    "name_cn": "多因素认证拦截"
+  },
+  "T1159": {
+    "name_en": "Launch Agent",
+    "name_cn": "Launch Agent"
+  },
+  "T1027.002": {
+    "name_en": "Software Packing",
+    "name_cn": "软件打包"
+  },
+  "T1584.007": {
+    "name_en": "Serverless",
+    "name_cn": "无服务器计算"
+  },
+  "T1071.001": {
+    "name_en": "Web Protocols",
+    "name_cn": "Web协议"
+  },
+  "T1059.005": {
+    "name_en": "Visual Basic",
+    "name_cn": "Visual Basic脚本"
+  },
+  "T1564.005": {
+    "name_en": "Hidden File System",
+    "name_cn": "Hidden File System"
+  },
+  "T1543.002": {
+    "name_en": "Systemd Service",
+    "name_cn": "Systemd服务"
+  },
+  "T1668": {
+    "name_en": "Exclusive Control",
+    "name_cn": "Exclusive Control"
+  },
+  "T1563.002": {
+    "name_en": "RDP Hijacking",
+    "name_cn": "RDP Hijacking"
+  },
+  "T1136": {
+    "name_en": "Create Account",
+    "name_cn": "创建账户"
+  },
+  "T1547.013": {
+    "name_en": "XDG Autostart Entries",
+    "name_cn": "XDG Autostart Entries"
+  },
+  "T1584.004": {
+    "name_en": "Server",
+    "name_cn": "Server"
+  },
+  "T1672": {
+    "name_en": "Email Spoofing",
+    "name_cn": "Email Spoofing"
+  },
+  "T1526": {
+    "name_en": "Cloud Service Discovery",
+    "name_cn": "云服务发现"
+  },
+  "T1204.004": {
+    "name_en": "Malicious Copy and Paste",
+    "name_cn": "Malicious Copy and Paste"
+  },
+  "T1151": {
+    "name_en": "Space after Filename",
+    "name_cn": "文件名后空格"
+  },
+  "T1018": {
+    "name_en": "Remote System Discovery",
+    "name_cn": "远程系统发现"
+  },
+  "T1046": {
+    "name_en": "Network Service Discovery",
+    "name_cn": "网络服务发现"
+  },
+  "T1590.001": {
+    "name_en": "Domain Properties",
+    "name_cn": "Domain Properties"
+  },
+  "T1518": {
+    "name_en": "Software Discovery",
+    "name_cn": "软件发现"
+  },
+  "T1538": {
+    "name_en": "Cloud Service Dashboard",
+    "name_cn": "云服务仪表板"
+  },
+  "T1055.005": {
+    "name_en": "Thread Local Storage",
+    "name_cn": "Thread Local Storage"
+  },
+  "T1622": {
+    "name_en": "Debugger Evasion",
+    "name_cn": "调试器规避"
+  },
+  "T1036.006": {
+    "name_en": "Space after Filename",
+    "name_cn": "文件名后空格"
+  },
+  "T1547.007": {
+    "name_en": "Re-opened Applications",
+    "name_cn": "Re-opened Applications"
+  },
+  "T1608.006": {
+    "name_en": "SEO Poisoning",
+    "name_cn": "SEO Poisoning"
+  },
+  "T1550.002": {
+    "name_en": "Pass the Hash",
+    "name_cn": "Pass the Hash"
+  },
+  "T1052": {
+    "name_en": "Exfiltration Over Physical Medium",
+    "name_cn": "通过物理媒介渗透"
+  },
+  "T1574.002": {
+    "name_en": "DLL Side-Loading",
+    "name_cn": "DLL侧加载"
+  },
+  "T1105": {
+    "name_en": "Ingress Tool Transfer",
+    "name_cn": "入站工具传输"
+  },
+  "T1216.002": {
+    "name_en": "SyncAppvPublishingServer",
+    "name_cn": "SyncAppvPublishingServer"
+  },
+  "T1098.002": {
+    "name_en": "Additional Email Delegate Permissions",
+    "name_cn": "Additional Email Delegate Permissions"
+  },
+  "T1588.003": {
+    "name_en": "Code Signing Certificates",
+    "name_cn": "Code Signing Certificates"
+  },
+  "T1126": {
+    "name_en": "Network Share Connection Removal",
+    "name_cn": "Network Share Connection Removal"
+  },
+  "T1648": {
+    "name_en": "Serverless Execution",
+    "name_cn": "Serverless 执行"
+  },
+  "T1548.006": {
+    "name_en": "TCC Manipulation",
+    "name_cn": "TCC Manipulation"
+  },
+  "T1084": {
+    "name_en": "Windows Management Instrumentation Event Subscription",
+    "name_cn": "Windows Management Instrumentation Event Subscription"
+  },
+  "T1160": {
+    "name_en": "Launch Daemon",
+    "name_cn": "Launch Daemon"
+  },
+  "T1055.008": {
+    "name_en": "Ptrace System Calls",
+    "name_cn": "Ptrace System Calls"
+  },
+  "T1653": {
+    "name_en": "Power Settings",
+    "name_cn": "Power Settings"
+  },
+  "T1027.007": {
+    "name_en": "Dynamic API Resolution",
+    "name_cn": "Dynamic API Resolution"
+  },
+  "T1021.001": {
+    "name_en": "Remote Desktop Protocol",
+    "name_cn": "Remote Desktop Protocol"
+  },
+  "T1037.001": {
+    "name_en": "Logon Script (Windows)",
+    "name_cn": "Logon Script (Windows)"
+  },
+  "T1055.015": {
+    "name_en": "ListPlanting",
+    "name_cn": "ListPlanting"
+  },
+  "T1665": {
+    "name_en": "Hide Infrastructure",
+    "name_cn": "Hide Infrastructure"
+  },
+  "T1484": {
+    "name_en": "Domain or Tenant Policy Modification",
+    "name_cn": "Domain or Tenant Policy Modification"
+  },
+  "T1220": {
+    "name_en": "XSL Script Processing",
+    "name_cn": "XSL脚本处理"
+  },
+  "T1596.005": {
+    "name_en": "Scan Databases",
+    "name_cn": "Scan Databases"
+  },
+  "T1564.001": {
+    "name_en": "Hidden Files and Directories",
+    "name_cn": "Hidden Files and Directories"
+  },
+  "T1578.001": {
+    "name_en": "Create Snapshot",
+    "name_cn": "Create Snapshot"
+  },
+  "T1591.001": {
+    "name_en": "Determine Physical Locations",
+    "name_cn": "Determine Physical Locations"
+  },
+  "T1137.002": {
+    "name_en": "Office Test",
+    "name_cn": "Office Test"
+  },
+  "T1587": {
+    "name_en": "Develop Capabilities",
+    "name_cn": "开发能力"
+  },
+  "T1173": {
+    "name_en": "Dynamic Data Exchange",
+    "name_cn": "Dynamic Data Exchange"
+  },
+  "T1003.003": {
+    "name_en": "NTDS",
+    "name_cn": "NTDS"
+  },
+  "T1602.001": {
+    "name_en": "SNMP (MIB Dump)",
+    "name_cn": "SNMP (MIB Dump)"
+  },
+  "T1001.002": {
+    "name_en": "Steganography",
+    "name_cn": "隐写术"
+  },
+  "T1204.001": {
+    "name_en": "Malicious Link",
+    "name_cn": "Malicious Link"
+  },
+  "T1550.001": {
+    "name_en": "Application Access Token",
+    "name_cn": "Application Access Token"
+  },
+  "T1547.008": {
+    "name_en": "LSASS Driver",
+    "name_cn": "LSASS Driver"
+  },
+  "T1569.002": {
+    "name_en": "Service Execution",
+    "name_cn": "Service 执行"
+  },
+  "T1078.004": {
+    "name_en": "Cloud Accounts",
+    "name_cn": "云账户"
+  },
+  "T1480.001": {
+    "name_en": "Environmental Keying",
+    "name_cn": "Environmental Keying"
+  },
+  "T1008": {
+    "name_en": "Fallback Channels",
+    "name_cn": "后备通道"
+  },
+  "T1564.004": {
+    "name_en": "NTFS File Attributes",
+    "name_cn": "NTFS文件属性"
+  },
+  "T1558.003": {
+    "name_en": "Kerberoasting",
+    "name_cn": "Kerberoasting"
+  },
+  "T1096": {
+    "name_en": "NTFS File Attributes",
+    "name_cn": "NTFS文件属性"
+  },
+  "T1003.006": {
+    "name_en": "DCSync",
+    "name_cn": "DCSync"
+  },
+  "T1124": {
+    "name_en": "System Time Discovery",
+    "name_cn": "系统时间发现"
+  },
+  "T1053.002": {
+    "name_en": "At",
+    "name_cn": "At"
+  },
+  "T1035": {
+    "name_en": "Service Execution",
+    "name_cn": "Service 执行"
+  },
+  "T1055.001": {
+    "name_en": "Dynamic-link Library Injection",
+    "name_cn": "Dynamic-link Library Injection"
+  },
+  "T1086": {
+    "name_en": "PowerShell",
+    "name_cn": "PowerShell脚本"
+  },
+  "T1588.005": {
+    "name_en": "Exploits",
+    "name_cn": "Exploits"
+  },
+  "T1556": {
+    "name_en": "Modify Authentication Process",
+    "name_cn": "修改身份验证过程"
+  },
+  "T1546.017": {
+    "name_en": "Udev Rules",
+    "name_cn": "Udev Rules"
+  },
+  "T1056.004": {
+    "name_en": "Credential API Hooking",
+    "name_cn": "Credential API Hooking"
+  },
+  "T1495": {
+    "name_en": "Firmware Corruption",
+    "name_cn": "固件损坏"
+  },
+  "T1490": {
+    "name_en": "Inhibit System Recovery",
+    "name_cn": "抑制系统恢复"
+  },
+  "T1546.007": {
+    "name_en": "Netsh Helper DLL",
+    "name_cn": "Netsh助手DLL"
+  },
+  "T1566.003": {
+    "name_en": "Spearphishing via Service",
+    "name_cn": "ServiceSpearphishing"
+  },
+  "T1090.001": {
+    "name_en": "Internal Proxy",
+    "name_cn": "Internal Proxy"
+  },
+  "T1216": {
+    "name_en": "System Script Proxy Execution",
+    "name_cn": "System Script Proxy 执行"
+  },
+  "T1094": {
+    "name_en": "Custom Command and Control Protocol",
+    "name_cn": "Custom 命令控制 Protocol"
+  },
+  "T1102.001": {
+    "name_en": "Dead Drop Resolver",
+    "name_cn": "Dead Drop Resolver"
+  },
+  "T1118": {
+    "name_en": "InstallUtil",
+    "name_cn": "InstallUtil工具"
+  },
+  "T1001.001": {
+    "name_en": "Junk Data",
+    "name_cn": "Junk Data"
+  },
+  "T1598.001": {
+    "name_en": "Spearphishing Service",
+    "name_cn": "Spearphishing Service"
+  },
+  "T1043": {
+    "name_en": "Commonly Used Port",
+    "name_cn": "Commonly Used Port"
+  },
+  "T1505.006": {
+    "name_en": "vSphere Installation Bundles",
+    "name_cn": "vSphere Installation Bundles"
+  },
+  "T1552.007": {
+    "name_en": "Container API",
+    "name_cn": "容器API"
+  },
+  "T1584.001": {
+    "name_en": "Domains",
+    "name_cn": "Domains"
+  },
+  "T1505.001": {
+    "name_en": "SQL Stored Procedures",
+    "name_cn": "SQL Stored Procedures"
+  },
+  "T1556.004": {
+    "name_en": "Network Device Authentication",
+    "name_cn": "Network Device Authentication"
+  },
+  "T1561.001": {
+    "name_en": "Disk Content Wipe",
+    "name_cn": "Disk Content Wipe"
+  },
+  "T1213.005": {
+    "name_en": "Messaging Applications",
+    "name_cn": "Messaging Applications"
+  },
+  "T1048.003": {
+    "name_en": "Exfiltration Over Unencrypted Non-C2 Protocol",
+    "name_cn": "数据窃取 Over Unencrypted Non-C2 Protocol"
+  },
+  "T1027.015": {
+    "name_en": "Compression",
+    "name_cn": "Compression"
+  },
+  "T1574.004": {
+    "name_en": "Dylib Hijacking",
+    "name_cn": "Dylib劫持"
+  },
+  "T1601.002": {
+    "name_en": "Downgrade System Image",
+    "name_cn": "Downgrade System Image"
+  },
+  "T1078.003": {
+    "name_en": "Local Accounts",
+    "name_cn": "Local Accounts"
+  },
+  "T1669": {
+    "name_en": "Wi-Fi Networks",
+    "name_cn": "Wi-Fi Networks"
+  },
+  "T1211": {
+    "name_en": "Exploitation for Defense Evasion",
+    "name_cn": "防御规避漏洞利用"
+  },
+  "T1127": {
+    "name_en": "Trusted Developer Utilities Proxy Execution",
+    "name_cn": "可信开发者工具代理执行"
+  },
+  "T1529": {
+    "name_en": "System Shutdown/Reboot",
+    "name_cn": "系统关闭/重启"
+  },
+  "T1218.014": {
+    "name_en": "MMC",
+    "name_cn": "Microsoft管理控制台"
+  },
+  "T1564.010": {
+    "name_en": "Process Argument Spoofing",
+    "name_cn": "Process Argument Spoofing"
+  },
+  "T1077": {
+    "name_en": "Windows Admin Shares",
+    "name_cn": "Windows Admin Shares"
+  },
+  "T1574.012": {
+    "name_en": "COR_PROFILER",
+    "name_cn": "COR_PROFILER"
+  },
+  "T1603": {
+    "name_en": "Scheduled Task/Job",
+    "name_cn": "计划任务/作业"
+  },
+  "T1540": {
+    "name_en": "Code Injection",
+    "name_cn": "Code Injection"
+  },
+  "T1638": {
+    "name_en": "Adversary-in-the-Middle",
+    "name_cn": "中间人攻击"
+  },
+  "T1626": {
+    "name_en": "Abuse Elevation Control Mechanism",
+    "name_cn": "滥用权限提升控制机制"
+  },
+  "T1663": {
+    "name_en": "Remote Access Software",
+    "name_cn": "远程访问软件"
+  },
+  "T1470": {
+    "name_en": "Obtain Device Cloud Backups",
+    "name_cn": "Obtain Device Cloud Backups"
+  },
+  "T1630.001": {
+    "name_en": "Uninstall Malicious Application",
+    "name_cn": "Uninstall Malicious Application"
+  },
+  "T1630": {
+    "name_en": "Indicator Removal on Host",
+    "name_cn": "主机上的指标移除"
+  },
+  "T1474": {
+    "name_en": "Supply Chain Compromise",
+    "name_cn": "供应链入侵"
+  },
+  "T1430.002": {
+    "name_en": "Impersonate SS7 Nodes",
+    "name_cn": "Impersonate SS7 Nodes"
+  },
+  "T1655.001": {
+    "name_en": "Match Legitimate Name or Location",
+    "name_cn": "Match Legitimate Name or Location"
+  },
+  "T1636": {
+    "name_en": "Protected User Data",
+    "name_cn": "Protected User Data"
+  },
+  "T1521.002": {
+    "name_en": "Asymmetric Cryptography",
+    "name_cn": "Asymmetric Cryptography"
+  },
+  "T1418": {
+    "name_en": "Software Discovery",
+    "name_cn": "软件发现"
+  },
+  "T1424": {
+    "name_en": "Process Discovery",
+    "name_cn": "进程发现"
+  },
+  "T1636.002": {
+    "name_en": "Call Log",
+    "name_cn": "Call Log"
+  },
+  "T1418.001": {
+    "name_en": "Security Software Discovery",
+    "name_cn": "Security Software 发现"
+  },
+  "T1631.001": {
+    "name_en": "Ptrace System Calls",
+    "name_cn": "Ptrace System Calls"
+  },
+  "T1629": {
+    "name_en": "Impair Defenses",
+    "name_cn": "削弱防御"
+  },
+  "T1428": {
+    "name_en": "Exploitation of Remote Services",
+    "name_cn": "远程服务漏洞利用"
+  },
+  "T1437.001": {
+    "name_en": "Web Protocols",
+    "name_cn": "Web协议"
+  },
+  "T1635": {
+    "name_en": "Steal Application Access Token",
+    "name_cn": "窃取应用程序访问令牌"
+  },
+  "T1628.002": {
+    "name_en": "User Evasion",
+    "name_cn": "User Evasion"
+  },
+  "T1633": {
+    "name_en": "Virtualization/Sandbox Evasion",
+    "name_cn": "虚拟化/沙箱规避"
+  },
+  "T1579": {
+    "name_en": "Keychain",
+    "name_cn": "Keychain"
+  },
+  "T1661": {
+    "name_en": "Application Versioning",
+    "name_cn": "应用程序版本控制"
+  },
+  "T1413": {
+    "name_en": "Access Sensitive Data in Device Logs",
+    "name_cn": "Device Logs中的Access Sensitive Data"
+  },
+  "T1623": {
+    "name_en": "Command and Scripting Interpreter",
+    "name_cn": "命令和脚本解释器"
+  },
+  "T1629.003": {
+    "name_en": "Disable or Modify Tools",
+    "name_cn": "Disable or Modify Tools"
+  },
+  "T1544": {
+    "name_en": "Ingress Tool Transfer",
+    "name_cn": "入站工具传输"
+  },
+  "T1637": {
+    "name_en": "Dynamic Resolution",
+    "name_cn": "动态解析"
+  },
+  "T1477": {
+    "name_en": "Exploit via Radio Interfaces",
+    "name_cn": "无线接口利用"
+  },
+  "T1423": {
+    "name_en": "Network Service Scanning",
+    "name_cn": "网络服务扫描"
+  },
+  "T1618": {
+    "name_en": "User Evasion",
+    "name_cn": "User Evasion"
+  },
+  "T1646": {
+    "name_en": "Exfiltration Over C2 Channel",
+    "name_cn": "通过C2通道渗透"
+  },
+  "T1404": {
+    "name_en": "Exploitation for Privilege Escalation",
+    "name_cn": "权限提升漏洞利用"
+  },
+  "T1616": {
+    "name_en": "Call Control",
+    "name_cn": "Call Control"
+  },
+  "T1639.001": {
+    "name_en": "Exfiltration Over Unencrypted Non-C2 Protocol",
+    "name_cn": "数据窃取 Over Unencrypted Non-C2 Protocol"
+  },
+  "T1624.001": {
+    "name_en": "Broadcast Receivers",
+    "name_cn": "Broadcast Receivers"
+  },
+  "T1436": {
+    "name_en": "Commonly Used Port",
+    "name_cn": "Commonly Used Port"
+  },
+  "T1439": {
+    "name_en": "Eavesdrop on Insecure Network Communication",
+    "name_cn": "Insecure Network Communication上的Eavesdrop"
+  },
+  "T1517": {
+    "name_en": "Access Notifications",
+    "name_cn": "访问通知"
+  },
+  "T1410": {
+    "name_en": "Network Traffic Capture or Redirection",
+    "name_cn": "网络流量捕获或重定向"
+  },
+  "T1411": {
+    "name_en": "Input Prompt",
+    "name_cn": "Input Prompt"
+  },
+  "T1639": {
+    "name_en": "Exfiltration Over Alternative Protocol",
+    "name_cn": "通过替代协议渗透"
+  },
+  "T1422.001": {
+    "name_en": "Internet Connection Discovery",
+    "name_cn": "Internet Connection 发现"
+  },
+  "T1398": {
+    "name_en": "Boot or Logon Initialization Scripts",
+    "name_cn": "启动或登录初始化脚本"
+  },
+  "T1627": {
+    "name_en": "Execution Guardrails",
+    "name_cn": "执行护栏"
+  },
+  "T1417.002": {
+    "name_en": "GUI Input Capture",
+    "name_cn": "GUI Input Capture"
+  },
+  "T1432": {
+    "name_en": "Access Contact List",
+    "name_cn": "Access Contact List"
+  },
+  "T1645": {
+    "name_en": "Compromise Client Software Binary",
+    "name_cn": "破坏客户端软件二进制文件"
+  },
+  "T1406.002": {
+    "name_en": "Software Packing",
+    "name_cn": "软件打包"
+  },
+  "T1450": {
+    "name_en": "Exploit SS7 to Track Device Location",
+    "name_cn": "到Track Device Location的Exploit SS7"
+  },
+  "T1575": {
+    "name_en": "Native API",
+    "name_cn": "本地API"
+  },
+  "T1476": {
+    "name_en": "Deliver Malicious App via Other Means",
+    "name_cn": "Other MeansDeliver Malicious App"
+  },
+  "T1469": {
+    "name_en": "Remotely Wipe Data Without Authorization",
+    "name_cn": "Remotely Wipe Data Without Authorization"
+  },
+  "T1658": {
+    "name_en": "Exploitation for Client Execution",
+    "name_cn": "客户端执行漏洞利用"
+  },
+  "T1604": {
+    "name_en": "Proxy Through Victim",
+    "name_cn": "Proxy Through Victim"
+  },
+  "T1520": {
+    "name_en": "Domain Generation Algorithms",
+    "name_cn": "域名生成算法"
+  },
+  "T1435": {
+    "name_en": "Access Calendar Entries",
+    "name_cn": "Access Calendar Entries"
+  },
+  "T1465": {
+    "name_en": "Rogue Wi-Fi Access Points",
+    "name_cn": "Rogue Wi-Fi Access Points"
+  },
+  "T1541": {
+    "name_en": "Foreground Persistence",
+    "name_cn": "Foreground 持久化"
+  },
+  "T1458": {
+    "name_en": "Replication Through Removable Media",
+    "name_cn": "通过可移动媒体复制"
+  },
+  "T1429": {
+    "name_en": "Audio Capture",
+    "name_cn": "音频捕获"
+  },
+  "T1625": {
+    "name_en": "Hijack Execution Flow",
+    "name_cn": "劫持执行流"
+  },
+  "T1623.001": {
+    "name_en": "Unix Shell",
+    "name_cn": "Unix Shell"
+  },
+  "T1437": {
+    "name_en": "Application Layer Protocol",
+    "name_cn": "应用层协议"
+  },
+  "T1407": {
+    "name_en": "Download New Code at Runtime",
+    "name_cn": "运行时下载新代码"
+  },
+  "T1664": {
+    "name_en": "Exploitation for Initial Access",
+    "name_cn": "为Initial Access的Exploitation"
+  },
+  "T1468": {
+    "name_en": "Remotely Track Device Without Authorization",
+    "name_cn": "Remotely Track Device Without Authorization"
+  },
+  "T1633.001": {
+    "name_en": "System Checks",
+    "name_cn": "System Checks"
+  },
+  "T1409": {
+    "name_en": "Stored Application Data",
+    "name_cn": "Stored Application Data"
+  },
+  "T1513": {
+    "name_en": "Screen Capture",
+    "name_cn": "屏幕截图"
+  },
+  "T1641.001": {
+    "name_en": "Transmitted Data Manipulation",
+    "name_cn": "Transmitted Data Manipulation"
+  },
+  "T1452": {
+    "name_en": "Manipulate App Store Rankings or Ratings",
+    "name_cn": "操纵应用商店排名或评级"
+  },
+  "T1416": {
+    "name_en": "URI Hijacking",
+    "name_cn": "URI Hijacking"
+  },
+  "T1474.001": {
+    "name_en": "Compromise Software Dependencies and Development Tools",
+    "name_cn": "Compromise Software Dependencies and Development Tools"
+  },
+  "T1523": {
+    "name_en": "Evade Analysis Environment",
+    "name_cn": "Evade Analysis Environment"
+  },
+  "T1635.001": {
+    "name_en": "URI Hijacking",
+    "name_cn": "URI Hijacking"
+  },
+  "T1632": {
+    "name_en": "Subvert Trust Controls",
+    "name_cn": "颠覆信任控制"
+  },
+  "T1433": {
+    "name_en": "Access Call Log",
+    "name_cn": "Access Call Log"
+  },
+  "T1581": {
+    "name_en": "Geofencing",
+    "name_cn": "地理围栏"
+  },
+  "T1401": {
+    "name_en": "Device Administrator Permissions",
+    "name_cn": "Device Administrator Permissions"
+  },
+  "T1634.001": {
+    "name_en": "Keychain",
+    "name_cn": "Keychain"
+  },
+  "T1403": {
+    "name_en": "Modify Cached Executable Code",
+    "name_cn": "修改缓存的可执行代码"
+  },
+  "T1576": {
+    "name_en": "Uninstall Malicious Application",
+    "name_cn": "Uninstall Malicious Application"
+  },
+  "T1670": {
+    "name_en": "Virtualization Solution",
+    "name_cn": "Virtualization Solution"
+  },
+  "T1447": {
+    "name_en": "Delete Device Data",
+    "name_cn": "Delete Device Data"
+  },
+  "T1448": {
+    "name_en": "Carrier Billing Fraud",
+    "name_cn": "Carrier Billing Fraud"
+  },
+  "T1481.002": {
+    "name_en": "Bidirectional Communication",
+    "name_cn": "Bidirectional Communication"
+  },
+  "T1509": {
+    "name_en": "Non-Standard Port",
+    "name_cn": "非标准端口"
+  },
+  "T1474.003": {
+    "name_en": "Compromise Software Supply Chain",
+    "name_cn": "Compromise Software Supply Chain"
+  },
+  "T1481.001": {
+    "name_en": "Dead Drop Resolver",
+    "name_cn": "Dead Drop Resolver"
+  },
+  "T1430": {
+    "name_en": "Location Tracking",
+    "name_cn": "位置跟踪"
+  },
+  "T1626.001": {
+    "name_en": "Device Administrator Permissions",
+    "name_cn": "Device Administrator Permissions"
+  },
+  "T1446": {
+    "name_en": "Device Lockout",
+    "name_cn": "Device Lockout"
+  },
+  "T1430.001": {
+    "name_en": "Remote Device Management Services",
+    "name_cn": "Remote Device Management Services"
+  },
+  "T1662": {
+    "name_en": "Data Destruction",
+    "name_cn": "数据破坏"
+  },
+  "T1427": {
+    "name_en": "Attack PC via USB Connection",
+    "name_cn": "USB ConnectionAttack PC"
+  },
+  "T1467": {
+    "name_en": "Rogue Cellular Base Station",
+    "name_cn": "Rogue Cellular Base Station"
+  },
+  "T1451": {
+    "name_en": "SIM Card Swap",
+    "name_cn": "SIM卡交换"
+  },
+  "T1417": {
+    "name_en": "Input Capture",
+    "name_cn": "输入捕获"
+  },
+  "T1643": {
+    "name_en": "Generate Traffic from Victim",
+    "name_cn": "从Victim的Generate Traffic"
+  },
+  "T1630.003": {
+    "name_en": "Disguise Root/Jailbreak Indicators",
+    "name_cn": "Disguise Root/Jailbreak Indicators"
+  },
+  "T1444": {
+    "name_en": "Masquerade as Legitimate Application",
+    "name_cn": "Masquerade as Legitimate Application"
+  },
+  "T1636.001": {
+    "name_en": "Calendar Entries",
+    "name_cn": "Calendar Entries"
+  },
+  "T1630.002": {
+    "name_en": "File Deletion",
+    "name_cn": "File Deletion"
+  },
+  "T1629.002": {
+    "name_en": "Device Lockout",
+    "name_cn": "Device Lockout"
+  },
+  "T1417.001": {
+    "name_en": "Keylogging",
+    "name_cn": "键盘记录"
+  },
+  "T1582": {
+    "name_en": "SMS Control",
+    "name_cn": "短信控制"
+  },
+  "T1408": {
+    "name_en": "Disguise Root/Jailbreak Indicators",
+    "name_cn": "Disguise Root/Jailbreak Indicators"
+  },
+  "T1438": {
+    "name_en": "Exfiltration Over Other Network Medium",
+    "name_cn": "通过其他网络媒介渗透"
+  },
+  "T1631": {
+    "name_en": "Process Injection",
+    "name_cn": "进程注入"
+  },
+  "T1521.001": {
+    "name_en": "Symmetric Cryptography",
+    "name_cn": "Symmetric Cryptography"
+  },
+  "T1402": {
+    "name_en": "Broadcast Receivers",
+    "name_cn": "Broadcast Receivers"
+  },
+  "T1422.002": {
+    "name_en": "Wi-Fi Discovery",
+    "name_cn": "Wi-Fi 发现"
+  },
+  "T1474.002": {
+    "name_en": "Compromise Hardware Supply Chain",
+    "name_cn": "Compromise Hardware Supply Chain"
+  },
+  "T1414": {
+    "name_en": "Clipboard Data",
+    "name_cn": "剪贴板数据"
+  },
+  "T1400": {
+    "name_en": "Modify System Partition",
+    "name_cn": "修改系统分区"
+  },
+  "T1641": {
+    "name_en": "Data Manipulation",
+    "name_cn": "数据操纵"
+  },
+  "T1636.004": {
+    "name_en": "SMS Messages",
+    "name_cn": "SMS Messages"
+  },
+  "T1481": {
+    "name_en": "Web Service",
+    "name_cn": "Web服务"
+  },
+  "T1625.001": {
+    "name_en": "System Runtime API Hijacking",
+    "name_cn": "System Runtime API Hijacking"
+  },
+  "T1634": {
+    "name_en": "Credentials from Password Store",
+    "name_cn": "从Password Store的Credentials"
+  },
+  "T1617": {
+    "name_en": "Hooking",
+    "name_cn": "Hooking"
+  },
+  "T1478": {
+    "name_en": "Install Insecure or Malicious Configuration",
+    "name_cn": "Install Insecure or Malicious Configuration"
+  },
+  "T1420": {
+    "name_en": "File and Directory Discovery",
+    "name_cn": "文件和目录发现"
+  },
+  "T1406": {
+    "name_en": "Obfuscated Files or Information",
+    "name_cn": "混淆文件或信息"
+  },
+  "T1516": {
+    "name_en": "Input Injection",
+    "name_cn": "Input Injection"
+  },
+  "T1464": {
+    "name_en": "Network Denial of Service",
+    "name_cn": "网络拒绝服务"
+  },
+  "T1577": {
+    "name_en": "Compromise Application Executable",
+    "name_cn": "Compromise Application Executable"
+  },
+  "T1624": {
+    "name_en": "Event Triggered Execution",
+    "name_cn": "事件触发执行"
+  },
+  "T1422": {
+    "name_en": "System Network Configuration Discovery",
+    "name_cn": "系统网络配置发现"
+  },
+  "T1463": {
+    "name_en": "Manipulate Device Communication",
+    "name_cn": "Manipulate Device Communication"
+  },
+  "T1512": {
+    "name_en": "Video Capture",
+    "name_cn": "视频捕获"
+  },
+  "T1481.003": {
+    "name_en": "One-Way Communication",
+    "name_cn": "One-Way Communication"
+  },
+  "T1475": {
+    "name_en": "Deliver Malicious App via Authorized App Store",
+    "name_cn": "Authorized App StoreDeliver Malicious App"
+  },
+  "T1471": {
+    "name_en": "Data Encrypted for Impact",
+    "name_cn": "为影响而加密数据"
+  },
+  "T1629.001": {
+    "name_en": "Prevent Application Removal",
+    "name_cn": "Prevent Application Removal"
+  },
+  "T1421": {
+    "name_en": "System Network Connections Discovery",
+    "name_cn": "系统网络连接发现"
+  },
+  "T1660": {
+    "name_en": "Phishing",
+    "name_cn": "钓鱼攻击"
+  },
+  "T1521.003": {
+    "name_en": "SSL Pinning",
+    "name_cn": "SSL Pinning"
+  },
+  "T1461": {
+    "name_en": "Lockscreen Bypass",
+    "name_cn": "Lockscreen Bypass"
+  },
+  "T1605": {
+    "name_en": "Command-Line Interface",
+    "name_cn": "命令行界面"
+  },
+  "T1636.003": {
+    "name_en": "Contact List",
+    "name_cn": "Contact List"
+  },
+  "T1533": {
+    "name_en": "Data from Local System",
+    "name_cn": "从本地系统获取数据"
+  },
+  "T1640": {
+    "name_en": "Account Access Removal",
+    "name_cn": "账户访问移除"
+  },
+  "T1426": {
+    "name_en": "System Information Discovery",
+    "name_cn": "系统信息发现"
+  },
+  "T1510": {
+    "name_en": "Clipboard Modification",
+    "name_cn": "Clipboard Modification"
+  },
+  "T1532": {
+    "name_en": "Archive Collected Data",
+    "name_cn": "归档收集的数据"
+  },
+  "T1627.001": {
+    "name_en": "Geofencing",
+    "name_cn": "地理围栏"
+  },
+  "T1507": {
+    "name_en": "Network Information Discovery",
+    "name_cn": "Network Information 发现"
+  },
+  "T1412": {
+    "name_en": "Capture SMS Messages",
+    "name_cn": "捕获短信"
+  },
+  "T1628.003": {
+    "name_en": "Conceal Multimedia Files",
+    "name_cn": "Conceal Multimedia Files"
+  },
+  "T1642": {
+    "name_en": "Endpoint Denial of Service",
+    "name_cn": "端点拒绝服务"
+  },
+  "T1644": {
+    "name_en": "Out of Band Data",
+    "name_cn": "Out of Band Data"
+  },
+  "T1521": {
+    "name_en": "Encrypted Channel",
+    "name_cn": "加密通道"
+  },
+  "T1405": {
+    "name_en": "Exploit TEE Vulnerability",
+    "name_cn": "Exploit TEE Vulnerability"
+  },
+  "T1628.001": {
+    "name_en": "Suppress Application Icon",
+    "name_cn": "Suppress Application Icon"
+  },
+  "T1399": {
+    "name_en": "Modify Trusted Execution Environment",
+    "name_cn": "Modify Trusted 执行 Environment"
+  },
+  "T1466": {
+    "name_en": "Downgrade to Insecure Protocols",
+    "name_cn": "到Insecure Protocols的Downgrade"
+  },
+  "T1655": {
+    "name_en": "Masquerading",
+    "name_cn": "伪装"
+  },
+  "T1472": {
+    "name_en": "Generate Fraudulent Advertising Revenue",
+    "name_cn": "Generate Fraudulent Advertising Revenue"
+  },
+  "T1406.001": {
+    "name_en": "Steganography",
+    "name_cn": "隐写术"
+  },
+  "T1449": {
+    "name_en": "Exploit SS7 to Redirect Phone Calls/SMS",
+    "name_cn": "到Redirect Phone Calls/SMS的Exploit SS7"
+  },
+  "T1628": {
+    "name_en": "Hide Artifacts",
+    "name_cn": "隐藏工件"
+  },
+  "T1632.001": {
+    "name_en": "Code Signing Policy Modification",
+    "name_cn": "Code Signing Policy Modification"
+  },
+  "T1637.001": {
+    "name_en": "Domain Generation Algorithms",
+    "name_cn": "域名生成算法"
+  },
+  "T1456": {
+    "name_en": "Drive-By Compromise",
+    "name_cn": "Drive-By Compromise"
+  },
+  "T1508": {
+    "name_en": "Suppress Application Icon",
+    "name_cn": "Suppress Application Icon"
+  },
+  "T0803": {
+    "name_en": "Block Command Message",
+    "name_cn": "阻止命令消息"
+  },
+  "T0881": {
+    "name_en": "Service Stop",
+    "name_cn": "服务停止"
+  },
+  "T0836": {
+    "name_en": "Modify Parameter",
+    "name_cn": "修改参数"
+  },
+  "T0821": {
+    "name_en": "Modify Controller Tasking",
+    "name_cn": "Modify Controller Tasking"
+  },
+  "T0887": {
+    "name_en": "Wireless Sniffing",
+    "name_cn": "Wireless Sniffing"
+  },
+  "T0829": {
+    "name_en": "Loss of View",
+    "name_cn": "Loss of View"
+  },
+  "T0800": {
+    "name_en": "Activate Firmware Update Mode",
+    "name_cn": "激活固件更新模式"
+  },
+  "T0831": {
+    "name_en": "Manipulation of Control",
+    "name_cn": "Manipulation of Control"
+  },
+  "T0814": {
+    "name_en": "Denial of Service",
+    "name_cn": "拒绝服务"
+  },
+  "T0805": {
+    "name_en": "Block Serial COM",
+    "name_cn": "阻止串行COM"
+  },
+  "T0894": {
+    "name_en": "System Binary Proxy Execution",
+    "name_cn": "系统二进制代理执行"
+  },
+  "T0807": {
+    "name_en": "Command-Line Interface",
+    "name_cn": "命令行界面"
+  },
+  "T0861": {
+    "name_en": "Point & Tag Identification",
+    "name_cn": "点和标签识别"
+  },
+  "T0816": {
+    "name_en": "Device Restart/Shutdown",
+    "name_cn": "设备重启/关闭"
+  },
+  "T0863": {
+    "name_en": "User Execution",
+    "name_cn": "用户执行"
+  },
+  "T0860": {
+    "name_en": "Wireless Compromise",
+    "name_cn": "无线攻击"
+  },
+  "T0858": {
+    "name_en": "Change Operating Mode",
+    "name_cn": "更改操作模式"
+  },
+  "T0878": {
+    "name_en": "Alarm Suppression",
+    "name_cn": "报警抑制"
+  },
+  "T0868": {
+    "name_en": "Detect Operating Mode",
+    "name_cn": "Detect Operating Mode"
+  },
+  "T0837": {
+    "name_en": "Loss of Protection",
+    "name_cn": "Loss of Protection"
+  },
+  "T0801": {
+    "name_en": "Monitor Process State",
+    "name_cn": "监控进程状态"
+  },
+  "T0853": {
+    "name_en": "Scripting",
+    "name_cn": "脚本"
+  },
+  "T0888": {
+    "name_en": "Remote System Information Discovery",
+    "name_cn": "远程系统信息发现"
+  },
+  "T0845": {
+    "name_en": "Program Upload",
+    "name_cn": "程序上传"
+  },
+  "T0819": {
+    "name_en": "Exploit Public-Facing Application",
+    "name_cn": "利用面向公众的应用程序"
+  },
+  "T0811": {
+    "name_en": "Data from Information Repositories",
+    "name_cn": "从信息库获取数据"
+  },
+  "T0864": {
+    "name_en": "Transient Cyber Asset",
+    "name_cn": "Transient Cyber Asset"
+  },
+  "T0835": {
+    "name_en": "Manipulate I/O Image",
+    "name_cn": "Manipulate I/O Image"
+  },
+  "T0842": {
+    "name_en": "Network Sniffing",
+    "name_cn": "网络嗅探"
+  },
+  "T0851": {
+    "name_en": "Rootkit",
+    "name_cn": "根工具包"
+  },
+  "T0802": {
+    "name_en": "Automated Collection",
+    "name_cn": "自动化收集"
+  },
+  "T0804": {
+    "name_en": "Block Reporting Message",
+    "name_cn": "阻止报告消息"
+  },
+  "T0855": {
+    "name_en": "Unauthorized Command Message",
+    "name_cn": "未授权命令消息"
+  },
+  "T0809": {
+    "name_en": "Data Destruction",
+    "name_cn": "数据破坏"
+  },
+  "T0832": {
+    "name_en": "Manipulation of View",
+    "name_cn": "Manipulation of View"
+  },
+  "T0872": {
+    "name_en": "Indicator Removal on Host",
+    "name_cn": "主机上的指标移除"
+  },
+  "T0877": {
+    "name_en": "I/O Image",
+    "name_cn": "I/O镜像"
+  },
+  "T0815": {
+    "name_en": "Denial of View",
+    "name_cn": "Denial of View"
+  },
+  "T0871": {
+    "name_en": "Execution through API",
+    "name_cn": "通过API执行"
+  },
+  "T0862": {
+    "name_en": "Supply Chain Compromise",
+    "name_cn": "供应链入侵"
+  },
+  "T0880": {
+    "name_en": "Loss of Safety",
+    "name_cn": "Loss of Safety"
+  },
+  "T0828": {
+    "name_en": "Loss of Productivity and Revenue",
+    "name_cn": "Loss of Productivity and Revenue"
+  },
+  "T0865": {
+    "name_en": "Spearphishing Attachment",
+    "name_cn": "Spearphishing Attachment"
+  },
+  "T0895": {
+    "name_en": "Autorun Image",
+    "name_cn": "Autorun Image"
+  },
+  "T0817": {
+    "name_en": "Drive-by Compromise",
+    "name_cn": "路过式入侵"
+  },
+  "T0879": {
+    "name_en": "Damage to Property",
+    "name_cn": "到Property的Damage"
+  },
+  "T0856": {
+    "name_en": "Spoof Reporting Message",
+    "name_cn": "伪造报告消息"
+  },
+  "T0866": {
+    "name_en": "Exploitation of Remote Services",
+    "name_cn": "远程服务漏洞利用"
+  },
+  "T0812": {
+    "name_en": "Default Credentials",
+    "name_cn": "默认凭据"
+  },
+  "T0822": {
+    "name_en": "External Remote Services",
+    "name_cn": "外部远程服务"
+  },
+  "T0806": {
+    "name_en": "Brute Force I/O",
+    "name_cn": "暴力破解I/O"
+  },
+  "T0830": {
+    "name_en": "Adversary-in-the-Middle",
+    "name_cn": "中间人攻击"
+  },
+  "T0820": {
+    "name_en": "Exploitation for Evasion",
+    "name_cn": "规避漏洞利用"
+  },
+  "T0827": {
+    "name_en": "Loss of Control",
+    "name_cn": "Loss of Control"
+  },
+  "T0874": {
+    "name_en": "Hooking",
+    "name_cn": "Hooking"
+  },
+  "T0823": {
+    "name_en": "Graphical User Interface",
+    "name_cn": "Graphical User Interface"
+  },
+  "T0848": {
+    "name_en": "Rogue Master",
+    "name_cn": "Rogue Master"
+  },
+  "T0834": {
+    "name_en": "Native API",
+    "name_cn": "本地API"
+  },
+  "T0826": {
+    "name_en": "Loss of Availability",
+    "name_cn": "Loss of Availability"
+  },
+  "T0882": {
+    "name_en": "Theft of Operational Information",
+    "name_cn": "Theft of Operational Information"
+  },
+  "T0857": {
+    "name_en": "System Firmware",
+    "name_cn": "系统固件"
+  },
+  "T0849": {
+    "name_en": "Masquerading",
+    "name_cn": "伪装"
+  },
+  "T0843": {
+    "name_en": "Program Download",
+    "name_cn": "程序下载"
+  },
+  "T0847": {
+    "name_en": "Replication Through Removable Media",
+    "name_cn": "通过可移动媒体复制"
+  },
+  "T0852": {
+    "name_en": "Screen Capture",
+    "name_cn": "屏幕截图"
+  },
+  "T0891": {
+    "name_en": "Hardcoded Credentials",
+    "name_cn": "硬编码凭据"
+  },
+  "T0859": {
+    "name_en": "Valid Accounts",
+    "name_cn": "有效账户"
+  },
+  "T0890": {
+    "name_en": "Exploitation for Privilege Escalation",
+    "name_cn": "权限提升漏洞利用"
+  },
+  "T0846": {
+    "name_en": "Remote System Discovery",
+    "name_cn": "远程系统发现"
+  },
+  "T0884": {
+    "name_en": "Connection Proxy",
+    "name_cn": "Connection Proxy"
+  },
+  "T0869": {
+    "name_en": "Standard Application Layer Protocol",
+    "name_cn": "Standard Application Layer Protocol"
+  },
+  "T0886": {
+    "name_en": "Remote Services",
+    "name_cn": "远程服务"
+  },
+  "T0813": {
+    "name_en": "Denial of Control",
+    "name_cn": "Denial of Control"
+  },
+  "T0838": {
+    "name_en": "Modify Alarm Settings",
+    "name_cn": "修改报警设置"
+  },
+  "T0885": {
+    "name_en": "Commonly Used Port",
+    "name_cn": "Commonly Used Port"
+  },
+  "T0873": {
+    "name_en": "Project File Infection",
+    "name_cn": "项目文件感染"
+  },
+  "T0840": {
+    "name_en": "Network Connection Enumeration",
+    "name_cn": "网络连接枚举"
+  },
+  "T0867": {
+    "name_en": "Lateral Tool Transfer",
+    "name_cn": "横向工具传输"
+  },
+  "T0839": {
+    "name_en": "Module Firmware",
+    "name_cn": "模块固件"
+  },
+  "T0883": {
+    "name_en": "Internet Accessible Device",
+    "name_cn": "互联网可访问设备"
+  },
+  "T0893": {
+    "name_en": "Data from Local System",
+    "name_cn": "从本地系统获取数据"
+  },
+  "T0892": {
+    "name_en": "Change Credential",
+    "name_cn": "Change Credential"
+  },
+  "T0889": {
+    "name_en": "Modify Program",
+    "name_cn": "修改程序"
+  }
+}

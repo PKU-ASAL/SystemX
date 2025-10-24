@@ -1,0 +1,15 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 传统服务器/计算机图标 -->
+  <rect x="4" y="4" width="24" height="24" rx="2" fill="#4CAF50" stroke="#2E7D32" stroke-width="2"/>
+  <!-- 屏幕区域 -->
+  <rect x="7" y="7" width="18" height="12" fill="#E8F5E8"/>
+  <!-- 屏幕分割线 -->
+  <line x1="7" y1="11" x2="25" y2="11" stroke="#4CAF50" stroke-width="1"/>
+  <line x1="7" y1="15" x2="25" y2="15" stroke="#4CAF50" stroke-width="1"/>
+  <!-- 底部指示灯 -->
+  <circle cx="10" cy="23" r="1.5" fill="#66BB6A"/>
+  <circle cx="16" cy="23" r="1.5" fill="#66BB6A"/>
+  <circle cx="22" cy="23" r="1.5" fill="#66BB6A"/>
+  <!-- 电源按钮 -->
+  <circle cx="16" cy="26" r="1" fill="#E8F5E8"/>
+</svg>

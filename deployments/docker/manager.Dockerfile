@@ -12,8 +12,8 @@ ENV GOSUMDB=off
 ENV GO111MODULE=on
 ENV GOTIMEOUT=300s
 
-# 安装必要的工具
-RUN apk add --no-cache git ca-certificates tzdata make
+# 安装必要的工具 (跳过签名验证)
+RUN apk add --no-cache --allow-untrusted git ca-certificates tzdata make
 
 # 复制 Go workspace 配置
 COPY go.work go.work.sum ./
@@ -45,8 +45,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # 运行阶段
 FROM docker.io/alpine:latest
 
-# 安装运行时依赖
-RUN apk --no-cache add ca-certificates curl tzdata && \
+# 安装运行时依赖 (跳过签名验证)
+RUN apk --no-cache --allow-untrusted add ca-certificates curl tzdata && \
     update-ca-certificates
 
 # 创建非 root 用户

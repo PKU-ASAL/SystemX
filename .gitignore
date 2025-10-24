@@ -1,9 +1,15 @@
 # DIY
 .env*
 !.env.example
+# 例外: 包含必要的第三方jar文件
+!services/middleware/configs/monitoring/jmx-exporter/*.jar
 
+services/indexer/configs/opensearch/certs/root-ca.srl
 data
-docs/specs
+docs
+!docs/development
+!docs/releases
+
 .scratchpad
 
 # Binaries for programs and plugins
@@ -84,8 +90,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -153,9 +157,6 @@ target/
 *.tar.gz
 *.rar
 
-# 例外: 包含必要的第三方jar文件
-!services/middleware/configs/monitoring/jmx-exporter/*.jar
-
 # Temporary files
 tmp/
 temp/
@@ -179,3 +180,7 @@ temp/
 *.bak
 *.backup
 *.old
+
+
+*.md
+.serena

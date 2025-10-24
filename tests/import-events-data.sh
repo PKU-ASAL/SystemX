@@ -44,8 +44,17 @@ SysArmor 事件数据导入脚本
   1. 检测 Middleware 和 Kafka 健康状态
   2. 显示 Kafka 现有 Topics 和消息数量
   3. 导入指定的 JSONL 文件到 Kafka Topic
-  4. 验证数据导入结果和数据流处理
+  4. 验证数据导入结果和 Flink 数据流处理
   5. 验证 OpenSearch 中的告警数据
+
+数据流架构:
+  原始数据 → sysarmor.raw.audit (Kafka)
+           ↓ Flink Job 1 (auditd 解析转换)
+  处理事件 → sysarmor.events.audit (Kafka)
+           ↓ Flink Job 2 (威胁检测规则)
+  告警数据 → sysarmor.alerts.audit (Kafka) → OpenSearch (sysarmor-alerts-audit 索引)
+
+注意: 事件数据保存在 Kafka topics 中，只有告警数据会写入 OpenSearch
 
 示例:
   $0                                           # 交互式选择文件
@@ -465,14 +474,8 @@ main() {
         print_warning "无法查询告警索引"
     fi
     
-    # 查询事件索引状态
-    echo -n "事件索引状态: "
-    if events_data=$(curl -s --max-time $TIMEOUT "$MANAGER_API/api/v1/services/opensearch/events/recent" 2>/dev/null); then
-        local event_count=$(echo "$events_data" | jq -r '.data.hits.total.value // 0' 2>/dev/null)
-        print_info "事件索引查询正常 (当前: $event_count 条)"
-    else
-        print_warning "无法查询事件索引"
-    fi
+    # 注意: 事件数据存储在 Kafka topics 中，不需要写入 OpenSearch 事件索引
+    print_info "事件数据流: Kafka topics → Flink 处理 → 告警写入 OpenSearch"
     
     echo ""
     echo -e "${BLUE}💡 后续操作建议:${NC}"

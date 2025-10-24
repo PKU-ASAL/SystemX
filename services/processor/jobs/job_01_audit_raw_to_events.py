@@ -17,7 +17,7 @@ from pyflink.datastream import StreamExecutionEnvironment, CheckpointingMode
 from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer, FlinkKafkaProducer
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.typeinfo import Types
-from pyflink.datastream.functions import MapFunction, FilterFunction
+from pyflink.datastream.functions import MapFunction, FilterFunction, FlatMapFunction
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -134,9 +134,15 @@ class AuditdLogParser:
         if not line:
             return None
         
-        # 匹配auditd日志格式
-        pattern = r'type=([^ ]+) msg=audit\(([\d.]+):(\d+)\): (.*)'
-        match = re.match(pattern, line)
+        # 匹配auditd日志格式 - 支持两种格式：
+        # 1. type=SYSCALL msg=audit(...)
+        # 2. node=hostname type=SYSCALL msg=audit(...)
+        pattern1 = r'type=([^ ]+) msg=audit\(([\d.]+):(\d+)\): (.*)'
+        pattern2 = r'node=[^ ]+ type=([^ ]+) msg=audit\(([\d.]+):(\d+)\): (.*)'
+        
+        match = re.match(pattern1, line)
+        if not match:
+            match = re.match(pattern2, line)
         
         if not match:
             return None
@@ -188,11 +194,16 @@ class AuditdLogParser:
 class RawAuditdToEventsConverter(MapFunction):
     """原始 Auditd 数据到结构化事件转换器 - 基于NODLINK管道逻辑"""
     
-    def __init__(self):
+    def __init__(self, buffer_size=100, max_events=100):
         self.parser = AuditdLogParser()
         self.tree_builder = ProcessTreeBuilder()
         self.message_count = 0
-        self.event_groups = defaultdict(list)  # 按event_id分组
+        self.buffer_size = buffer_size  # 缓冲区大小，每处理这么多条输出一次
+        self.max_events = max_events    # 最大event_id数量
+        
+        # 事件缓冲区：每个event_id保存最新的audit数据和原始数据
+        self.event_buffer = {}  # {event_id: {'audit_entries': [], 'raw_data': {}, 'timestamp': float}}
+        self.buffer_output = []  # 存储要输出的事件
         
     def map(self, value):
         try:
@@ -208,40 +219,94 @@ class RawAuditdToEventsConverter(MapFunction):
             if not audit_data:
                 return None
             
-            # 按event_id分组处理
             event_id = audit_data['event_id']
-            self.event_groups[event_id].append(audit_data)
+            current_timestamp = float(audit_data['time'])
             
-            # 转换为结构化事件
-            structured_event = self._convert_event_group(event_id, self.event_groups[event_id], raw_data)
-            if not structured_event:
-                return None
+            # 更新缓冲区：为每个event_id保留最新的数据，替换旧数据
+            if event_id not in self.event_buffer:
+                self.event_buffer[event_id] = {
+                    'audit_entries': [audit_data],
+                    'raw_data': raw_data,
+                    'timestamp': current_timestamp,
+                    'last_update': current_timestamp  # 记录最后更新时间
+                }
+            else:
+                # 如果是更新的时间戳，完全替换旧数据
+                if current_timestamp > self.event_buffer[event_id]['timestamp']:
+                    self.event_buffer[event_id] = {
+                        'audit_entries': [audit_data],
+                        'raw_data': raw_data,
+                        'timestamp': current_timestamp,
+                        'last_update': current_timestamp
+                    }
+                elif current_timestamp == self.event_buffer[event_id]['timestamp']:
+                    # 相同时间戳，这是同一个事件的其他记录类型，累积以便生成完整的sysdig记录
+                    self.event_buffer[event_id]['audit_entries'].append(audit_data)
+                    self.event_buffer[event_id]['raw_data'] = raw_data
+                    self.event_buffer[event_id]['last_update'] = current_timestamp
+            
+            # 限制缓冲区大小，避免内存溢出
+            if len(self.event_buffer) > self.max_events:
+                oldest_events = sorted(self.event_buffer.keys(), 
+                                     key=lambda eid: self.event_buffer[eid]['last_update'])[:10]
+                for old_eid in oldest_events:
+                    del self.event_buffer[old_eid]
             
             self.message_count += 1
             
-            # 更新进程缓存
-            sysdig_data = structured_event.get('message', {})
-            if sysdig_data.get('proc.pid'):
-                self.tree_builder.add_process(
-                    sysdig_data['proc.pid'],
-                    sysdig_data.get('proc.ppid', 0),
-                    sysdig_data.get('proc.cmdline', ''),
-                    sysdig_data.get('evt.time', 0)
-                )
+            # 每处理buffer_size条数据，输出一次缓冲区中的所有最新数据
+            if self.message_count % self.buffer_size == 0:
+                return self._flush_buffer()
             
-            # 重建父进程命令行
-            ppid = sysdig_data.get('proc.ppid')
-            if ppid:
-                pcmdline = self.tree_builder.get_parent_cmdline(
-                    ppid, sysdig_data.get('evt.time', 0)
-                )
-                structured_event['message']['proc.pcmdline'] = pcmdline
-            
-            # 返回JSON字符串
-            return json.dumps(structured_event, ensure_ascii=False)
+            # 如果不是输出时机，返回None（不输出）
+            return None
             
         except Exception as e:
             logger.error(f"Error in RawAuditdToEventsConverter: {e}")
+            return None
+    
+    def _flush_buffer(self):
+        """输出缓冲区中每个event_id的最新完整数据"""
+
+        output_events = []
+        
+        for event_id, buffer_data in self.event_buffer.items():
+            audit_entries = buffer_data['audit_entries']
+            raw_data = buffer_data['raw_data']
+            
+            # 转换为结构化事件
+            structured_event = self._convert_event_group(event_id, audit_entries, raw_data)
+            if structured_event:
+                # 更新进程缓存
+                sysdig_data = structured_event.get('message', {})
+                if sysdig_data.get('proc.pid'):
+                    self.tree_builder.add_process(
+                        sysdig_data['proc.pid'],
+                        sysdig_data.get('proc.ppid', 0),
+                        sysdig_data.get('proc.cmdline', ''),
+                        sysdig_data.get('evt.time', 0)
+                    )
+                
+                # 重建父进程命令行
+                ppid = sysdig_data.get('proc.ppid')
+                if ppid:
+                    pcmdline = self.tree_builder.get_parent_cmdline(
+                        ppid, sysdig_data.get('evt.time', 0)
+                    )
+                    structured_event['message']['proc.pcmdline'] = pcmdline
+                
+                output_events.append(structured_event)
+        
+        # 清空缓冲区，为下一批数据做准备
+        self.event_buffer.clear()
+        
+        # 记录输出统计
+        logger.info(f"Buffer flushed: {len(output_events)} unique events from {self.buffer_size} processed messages")
+        
+        # 返回批量输出的JSON字符串，每个事件一行
+        if output_events:
+            return '\n'.join(json.dumps(event, ensure_ascii=False) for event in output_events)
+        else:
             return None
     
     def _convert_event_group(self, event_id: str, entries: List[Dict[str, Any]], 
@@ -293,6 +358,14 @@ class RawAuditdToEventsConverter(MapFunction):
         # 设置事件类别
         if sysdig_event["evt.type"] in EVENT_CATEGORIES:
             sysdig_event["evt.category"] = EVENT_CATEGORIES[sysdig_event["evt.type"]]
+        
+        # 处理网络事件的fd.name格式
+        if sysdig_event["evt.type"] in ["sendmsg", "recvmsg", "recvfrom", "send", "sendto", "connect"]:
+            net_info = sysdig_event.get('net.sockaddr', {})
+            if net_info and isinstance(net_info, dict):
+                address = net_info.get('address', '')
+                if address:
+                    sysdig_event["fd.name"] = f"127.0.0.1:0->{address}"
         
         # 构建SysArmor扩展格式 - 将sysdig数据包装在sysdig字段中
         result = {
@@ -403,30 +476,64 @@ class RawAuditdToEventsConverter(MapFunction):
         """解析网络地址信息"""
         try:
             if len(hex_str) < 4:
-                return {"family": "unknown", "address": hex_str}
+                return {"family": "unknown", "type": "raw", "address": hex_str}
             
             # 前两个字节是协议族（小端序）
             family_hex = hex_str[:4]
             family = int.from_bytes(bytes.fromhex(family_hex), byteorder="little")
             
-            if family == 2:  # AF_INET
+            if family == 1:  # AF_UNIX
+                path_bytes = bytes.fromhex(hex_str[4:])
+                end_index = path_bytes.find(b'\x00')
+                if end_index != -1:
+                    path = path_bytes[:end_index].decode('utf-8', errors='replace')
+                else:
+                    path = path_bytes.decode('utf-8', errors='replace')
+                return {"family": "AF_UNIX", "type": "unix_socket", "address": path}
+                
+            elif family == 2:  # AF_INET
                 if len(hex_str) >= 16:
                     port_bytes = bytes.fromhex(hex_str[4:8])
                     port = int.from_bytes(port_bytes, byteorder="big")
                     ip_bytes = bytes.fromhex(hex_str[8:16])
                     ip = socket.inet_ntop(socket.AF_INET, ip_bytes)
-                    return {
-                        "family": "AF_INET",
-                        "type": "ipv4",
-                        "source_ip": ip,
-                        "source_port": port,
-                        "address": f"{ip}:{port}"
-                    }
+                    return {"family": "AF_INET", "type": "ipv4", "address": f"{ip}:{port}"}
+                    
+            elif family == 10:  # AF_INET6
+                if len(hex_str) >= 44:
+                    port_bytes = bytes.fromhex(hex_str[4:8])
+                    port = int.from_bytes(port_bytes, byteorder="big")
+                    ip_bytes = bytes.fromhex(hex_str[12:44])
+                    ip = socket.inet_ntop(socket.AF_INET6, ip_bytes)
+                    return {"family": "AF_INET6", "type": "ipv6", "address": f"[{ip}]:{port}"}
             
-            return {"family": f"family_{family}", "address": hex_str}
+            return {"family": f"family_{family}", "type": "raw", "address": hex_str}
             
-        except Exception:
-            return {"family": "error", "address": hex_str}
+        except Exception as e:
+            logger.debug(f"Failed to parse sockaddr {hex_str}: {e}")
+            return {"family": "error", "type": "parse_error", "address": hex_str}
+
+class BatchEventSplitter(FlatMapFunction):
+    """将批量输出的事件拆分为单独的事件"""
+    
+    def flat_map(self, value):
+        if not value:
+            return []
+        
+        try:
+            # 如果是单行JSON，直接返回
+            if value.count('\n') == 0:
+                return [value]
+            
+            # 如果是多行JSON，拆分成单独的事件
+            events = []
+            for line in value.strip().split('\n'):
+                if line.strip():
+                    events.append(line.strip())
+            return events
+        except Exception as e:
+            logger.error(f"Error in BatchEventSplitter: {e}")
+            return []
 
 class ValidStructuredEventFilter(FilterFunction):
     """过滤有效的结构化事件"""
@@ -506,11 +613,13 @@ def main():
             producer_config=producer_props
         )
         
-        logger.info("📋 Creating NODLINK-based processing pipeline...")
+        logger.info("📋 Creating NODLINK-based processing pipeline with buffering...")
         
         # 构建数据流处理管道
         processed_stream = env.add_source(kafka_consumer) \
             .map(RawAuditdToEventsConverter(), output_type=Types.STRING()) \
+            .filter(lambda x: x is not None) \
+            .flat_map(BatchEventSplitter(), output_type=Types.STRING()) \
             .filter(ValidStructuredEventFilter())
         
         # 输出到目标topic
@@ -523,7 +632,7 @@ def main():
         ).print()
         
         logger.info("🔄 NODLINK-based Auditd processing pipeline created:")
-        logger.info(f"   {input_topic} -> Auditd Parser -> Event Grouping -> Sysdig Conversion -> Process Tree Rebuild -> {output_topic}")
+        logger.info(f"   {input_topic} -> Auditd Parser -> Dedupe by event_id -> Sysdig Conversion -> Process Tree Rebuild -> {output_topic}")
         logger.info("🎯 NODLINK supported event types:")
         for evt_type in sorted(NODLINK_SUPPORTED_EVENTS):
             logger.info(f"   - {evt_type}")

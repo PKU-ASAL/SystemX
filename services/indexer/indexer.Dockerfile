@@ -7,8 +7,10 @@ WORKDIR /app
 # 复制 requirements 文件
 COPY services/indexer/requirements.txt .
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+# 配置pip镜像源并安装 Python 依赖
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn && \
+    pip install --no-cache-dir -r requirements.txt
 
 # 复制应用代码
 COPY services/indexer/src/ ./src/
