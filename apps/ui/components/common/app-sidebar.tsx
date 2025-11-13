@@ -78,6 +78,10 @@ const data = {
           title: "智能体分析",
           url: "/threats/agent-analysis",
         },
+        {
+          title: "Sample Data",
+          url: "/threats/sample-data",
+        },
       ],
     },
     {
