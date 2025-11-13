@@ -51,8 +51,9 @@ SysArmor 事件数据导入脚本
   原始数据 → sysarmor.raw.audit (Kafka)
            ↓ Flink Job 1 (auditd 解析转换)
   处理事件 → sysarmor.events.audit (Kafka)
-           ↓ Flink Job 2 (威胁检测规则)
-  告警数据 → sysarmor.alerts.audit (Kafka) → OpenSearch (sysarmor-alerts-audit 索引)
+           ↓ Flink Job 2 (威胁检测规则 + 数据规范化)
+           ├─> sysarmor.alerts.audit (Kafka) → OpenSearch (sysarmor-alerts-audit 索引)
+           └─> sysarmor.inference.requests (Kafka) → Flink Job 3 (推理服务HTTP Sink)
 
 注意: 事件数据保存在 Kafka topics 中，只有告警数据会写入 OpenSearch
 
@@ -358,11 +359,13 @@ main() {
     local raw_audit_before=$(get_topic_message_count "sysarmor.raw.audit")
     local events_audit_before=$(get_topic_message_count "sysarmor.events.audit")
     local alerts_audit_before=$(get_topic_message_count "sysarmor.alerts.audit")
+    local inference_before=$(get_topic_message_count "sysarmor.inference.requests")
     
     echo "  📊 关键 Topics 消息数量 (导入前):"
     echo "    🎯 sysarmor.raw.audit: $raw_audit_before"
     echo "    🔄 sysarmor.events.audit: $events_audit_before"
     echo "    🚨 sysarmor.alerts.audit: $alerts_audit_before"
+    echo "    🤖 sysarmor.inference.requests: $inference_before"
     echo ""
     
     get_kafka_topics_info
@@ -387,11 +390,13 @@ main() {
     local raw_audit_after=$(get_topic_message_count "sysarmor.raw.audit")
     local events_audit_after=$(get_topic_message_count "sysarmor.events.audit")
     local alerts_audit_after=$(get_topic_message_count "sysarmor.alerts.audit")
+    local inference_after=$(get_topic_message_count "sysarmor.inference.requests")
     
     echo "  📊 关键 Topics 消息数量 (导入后):"
     echo "    🎯 sysarmor.raw.audit: $raw_audit_after"
     echo "    🔄 sysarmor.events.audit: $events_audit_after"
     echo "    🚨 sysarmor.alerts.audit: $alerts_audit_after"
+    echo "    🤖 sysarmor.inference.requests: $inference_after"
     echo ""
     
     # 计算各个 topic 的变化
@@ -427,6 +432,16 @@ main() {
         fi
     fi
     
+    # 推理请求 topic 变化
+    if [[ "$inference_before" != "N/A" && "$inference_after" != "N/A" ]]; then
+        local inference_diff=$((inference_after - inference_before))
+        if [ $inference_diff -gt 0 ]; then
+            echo "  🤖 sysarmor.inference.requests: +$inference_diff 条消息 ✅ (推理请求生成)"
+        else
+            echo "  🤖 sysarmor.inference.requests: 无变化"
+        fi
+    fi
+    
     echo ""
     get_kafka_topics_info
     
@@ -441,6 +456,7 @@ main() {
     echo "    📥 原始数据: $raw_audit_before → $raw_audit_after (+$((raw_audit_after - raw_audit_before)))"
     echo "    🔄 处理事件: $events_audit_before → $events_audit_after (+$((events_audit_after - events_audit_before)))"
     echo "    🚨 告警事件: $alerts_audit_before → $alerts_audit_after (+$((alerts_audit_after - alerts_audit_before)))"
+    echo "    🤖 推理请求: $inference_before → $inference_after (+$((inference_after - inference_before)))"
     
     # 步骤6: OpenSearch 数据验证
     print_section "6. OpenSearch 数据验证"

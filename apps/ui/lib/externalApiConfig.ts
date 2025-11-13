@@ -9,10 +9,8 @@ export interface ThreatApiConfig {
  * 获取威胁API配置
  */
 export function getThreatApiConfig(): ThreatApiConfig {
-    // 在客户端使用环境变量，需要通过 typeof window 检查
-    const baseUrl = typeof window !== 'undefined'
-        ? (window as any).ENV?.NEXT_PUBLIC_THREAT_API_BASE_URL || ''
-        : process.env.NEXT_PUBLIC_THREAT_API_BASE_URL || '';
+    // Next.js 会自动将 NEXT_PUBLIC_ 开头的环境变量注入到客户端
+    const baseUrl = process.env.NEXT_PUBLIC_THREAT_API_BASE_URL || '';
 
     return {
         baseUrl,
@@ -28,10 +26,8 @@ export function getThreatApiConfig(): ThreatApiConfig {
  * 检查威胁API是否启用
  */
 export function isThreatApiEnabled(): boolean {
-    // 在客户端使用环境变量，需要通过 typeof window 检查
-    const enabled = typeof window !== 'undefined'
-        ? (window as any).ENV?.NEXT_PUBLIC_THREAT_API_ENABLED
-        : process.env.NEXT_PUBLIC_THREAT_API_ENABLED;
+    // Next.js 会自动将 NEXT_PUBLIC_ 开头的环境变量注入到客户端
+    const enabled = process.env.NEXT_PUBLIC_THREAT_API_ENABLED;
 
     // 默认禁用，除非明确设置为 true
     if (enabled === undefined || enabled === null) {

@@ -12,14 +12,28 @@ export interface BreadcrumbItem {
 // 路径映射配置
 const pathMappings: Record<string, string> = {
     '/': '仪表板',
+    '/dashboard': '仪表板',
     '/health': '系统健康',
+    '/collectors': '终端管理',
+    '/collectors/create': '新建终端',
+    '/collectors/list': '终端列表',
+    '/threats': '威胁管理',
+    '/threats/alerts': '攻击告警',
+    '/threats/timeline': '攻击溯源图',
+    '/threats/agent-analysis': '智能体分析',
+    '/threats/sample-data': 'Sample Data',
+    '/logs': '日志管理',
+    '/logs/search': '日志搜索',
+    '/logs/analysis': '日志分析',
+    '/services': '系统服务',
+    '/services/kafka': 'Kafka',
+    '/services/kafka/brokers': 'Broker管理',
+    '/services/kafka/topics': 'Topic管理',
+    '/services/flink': 'Flink',
     '/kafka': 'Kafka管理',
     '/kafka/brokers': 'Broker管理',
     '/kafka/topics': 'Topic管理',
     '/kafka/consumers': 'Consumer管理',
-    '/logs': '日志管理',
-    '/logs/search': '日志搜索',
-    '/logs/analysis': '日志分析',
     '/opensearch': 'OpenSearch',
     '/opensearch/alerts': '告警管理',
     '/terminal-create': '创建终端',
@@ -30,6 +44,14 @@ const pathMappings: Record<string, string> = {
     '/settings': '系统设置',
     '/help': '帮助文档',
 };
+
+// 没有实际页面的分组路径（根据 UX 最佳实践，这些路径在面包屑中会被跳过）
+const groupPathsWithoutPages = new Set([
+    '/collectors',
+    '/threats',
+    '/logs',
+    '/services',
+]);
 
 export function useBreadcrumb(): BreadcrumbItem[] {
     const pathname = usePathname();
@@ -52,6 +74,11 @@ export function useBreadcrumb(): BreadcrumbItem[] {
         pathSegments.forEach((segment, index) => {
             currentPath += `/${segment}`;
             const isLast = index === pathSegments.length - 1;
+
+            // 跳过没有实际页面的分组路径（除非它是最后一个，即当前页面）
+            if (!isLast && groupPathsWithoutPages.has(currentPath)) {
+                return;
+            }
 
             // 获取显示名称
             const label = pathMappings[currentPath] ||

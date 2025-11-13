@@ -15,9 +15,10 @@ import { ThreatReportSection } from '@/components/threats/threat-report-section'
 interface AttackTimelineGraphProps {
   threatId: string;
   className?: string;
+  sampleDataUrl?: string; // 可选的本地 JSON 文件 URL
 }
 
-function AttackTimelineGraphClient({ threatId, className }: AttackTimelineGraphProps) {
+function AttackTimelineGraphClient({ threatId, className, sampleDataUrl }: AttackTimelineGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<AttackTimelineCytoscape | null>(null);
   const [loading, setLoading] = useState(false); // 改为false，让容器先渲染
@@ -68,20 +69,76 @@ function AttackTimelineGraphClient({ threatId, className }: AttackTimelineGraphP
         console.log('📡 [SIMPLE-EFFECT] 正在获取威胁数据:', threatId);
         
         // 获取威胁数据
-        console.log('📡 [API-CALL] 准备调用威胁API，threatId:', threatId);
-        
         let data;
-        try {
-          data = await ThreatAPI.getThreatGraphData(threatId);
-          console.log('📊 [API-SUCCESS] 威胁数据获取成功，数据结构:', {
-            hasNodes: !!data?.nodes,
-            hasEdges: !!data?.edges,
-            hasHopSequence: !!data?.hop_sequence,
-            dataKeys: Object.keys(data || {})
-          });
-        } catch (apiError) {
-          console.error('❌ [API-ERROR] 威胁数据获取失败:', apiError);
-          throw apiError;
+        if (sampleDataUrl) {
+          // 从本地 JSON 文件加载数据
+          console.log('📁 [LOCAL-FILE] 从本地文件加载数据:', sampleDataUrl);
+          try {
+            const response = await fetch(sampleDataUrl);
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const rawData = await response.json();
+
+            // 使用 ThreatAPI 的处理逻辑处理数据（复用现有的数据处理逻辑）
+            data = {
+              threat_id: threatId,
+              nodes: rawData.nodes || [],
+              edges: rawData.edges || [],
+              hop_sequence: (rawData.nodes || []).map((node: any, index: number) => ({
+                hop_id: index,
+                depth: 0,
+                path: String(index),
+                node_id: node.id || String(index),
+                node_desc: node.node_desc || '',
+                node_name: node.node_name || '',
+                node_label: node.node_label || '',
+                node_type: node.node_type || '',
+                node_score: node.node_score || '',
+                node_source: node.node_source || '',
+                is_abstract: node.node_abstract === '1' || node.node_abstract === true,
+                timestamps: [],
+                network_connections: [],
+                children_count: 0,
+                originalNode: node
+              })),
+              max_depth: 0,
+              bfs_analysis: {
+                total_hops: rawData.nodes?.length || 0,
+                depth_distribution: {},
+                timestamped_hops: 0,
+                non_timestamped_hops: rawData.nodes?.length || 0,
+                first_layer_nodes: []
+              },
+              timeline_data: [],
+              network_topology: { nodes: [], edges: [], stats: { total_nodes: 0, total_edges: 0, internal_nodes: 0, external_nodes: 0 } },
+              metadata: {
+                created_at: new Date().toISOString(),
+                status: 'active',
+                severity: 'medium',
+                originalEdges: rawData.edges || []
+              }
+            };
+            console.log('✅ [LOCAL-FILE] 本地数据加载成功');
+          } catch (fileError) {
+            console.error('❌ [LOCAL-FILE] 本地文件加载失败:', fileError);
+            throw fileError;
+          }
+        } else {
+          // 从 API 加载数据
+          console.log('📡 [API-CALL] 准备调用威胁API，threatId:', threatId);
+          try {
+            data = await ThreatAPI.getThreatGraphData(threatId);
+            console.log('📊 [API-SUCCESS] 威胁数据获取成功，数据结构:', {
+              hasNodes: !!data?.nodes,
+              hasEdges: !!data?.edges,
+              hasHopSequence: !!data?.hop_sequence,
+              dataKeys: Object.keys(data || {})
+            });
+          } catch (apiError) {
+            console.error('❌ [API-ERROR] 威胁数据获取失败:', apiError);
+            throw apiError;
+          }
         }
 
         if (!data) {
