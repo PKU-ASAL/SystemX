@@ -1,116 +1,115 @@
-# SysArmor EDR/HIDS 系统
+# SystemX EDR/HIDS System
 
-## 🎯 项目概述
+## 🎯 Project Overview
 
-SysArmor 是一个现代化的端点检测与响应(EDR/HIDS)系统，采用微服务架构，实现 agentless 数据采集、实时威胁检测和告警存储的完整数据流。
+SystemX is a modern Endpoint Detection and Response (EDR/HIDS) system built with a microservices architecture, enabling agentless data collection, real-time threat detection, and alert storage in a complete data pipeline.
 
-### 系统架构
+### System Architecture
 ```mermaid
 graph LR
-    A[终端设备<br/>auditd数据] -->|TCP:6000| B[Middleware<br/>Vector + Kafka]
-    B -->|消息队列| C[Processor<br/>Flink + NODLINK]
-    C -->|告警事件| D[Indexer<br/>OpenSearch]
-    E[Manager<br/>控制平面] -.->|管理| B
-    E -.->|查询| D
+    A[Endpoint Devices<br/>auditd Data] -->|TCP:6000| B[Middleware<br/>Vector + Kafka]
+    B -->|Message Queue| C[Processor<br/>Flink + NODLINK + KnowHow]
+    C -->|Alert Events| D[Indexer<br/>OpenSearch]
+    E[Manager<br/>Control Plane] -.->|Manage| B
+    E -.->|Query| D
     E --- F[(PostgreSQL)]
 ```
 
-### 核心特性
-- 🚀 **Agentless 部署** - 基于 rsyslog + auditd，无需安装 Agent
-- 🔧 **微服务架构** - Manager + Middleware + Processor + Indexer 四大模块
-- 📊 **实时威胁检测** - Flink 流处理 + NODLINK 算法
-- 🔍 **告警存储查询** - OpenSearch 索引和 REST API
-- 🐳 **容器化部署** - Docker Compose 一键部署
+### Core Features
+- 🚀 **Agentless Deployment** - Based on rsyslog + auditd, no agent installation required
+- 🔧 **Microservices Architecture** - Four main modules: Manager, Middleware, Processor, and Indexer
+- 📊 **Real-Time Threat Detection** - Flink stream processing + NODLINK + KnowHow algorithm
+- 🔍 **Alert Storage and Query** - OpenSearch indexing and REST API
+- 🐳 **Containerized Deployment** - One-click deployment with Docker Compose
 
+## 🚀 Quick Start
 
-## 🚀 快速开始
-
-### 一键部署
+### One-Click Deployment
 ```bash
-git clone https://git.pku.edu.cn/oslab/sysarmor.git
+git clone https://github.com/PKU-ASAL/sysarmor.git
 cd sysarmor
 
-# 初始化并部署 (一键完成)
+# Initialize and deploy (one-click)
 make init && make deploy
 ```
 
-**部署完成后，系统会自动**:
-- ✅ 启动所有服务 (Manager、Kafka、Flink、OpenSearch等)
-- ✅ 提交核心Flink作业 (数据转换和告警生成)
-- ✅ 激活完整数据流 (auditd → events → alerts)
+**After deployment, the system will automatically**:
+- ✅ Start all services (Manager, Kafka, Flink, OpenSearch, etc.)
+- ✅ Submit core Flink jobs (data transformation and alert generation)
+- ✅ Activate the complete data pipeline (auditd → events → alerts)
 
-### 快速验证
+### Quick Verification
 
-#### 1. 系统健康检查
+#### 1. System Health Check
 ```bash
 make health
-# 或者
+# Or
 ./tests/test-system-health.sh
 ```
 
-#### 2. API接口测试
+#### 2. API Interface Testing
 ```bash
 ./tests/test-system-api.sh
 ```
 
-#### 3. 数据流测试
+#### 3. Data Pipeline Testing
 ```bash
-# 导入测试数据
+# Import test data
 ./tests/import-events-data.sh ./data/kafka-imports/sysarmor-agentless-samples.jsonl
 
-# 查看处理结果
+# View processing results
 ./scripts/kafka-tools.sh export sysarmor.events.audit 5
 ./scripts/kafka-tools.sh export sysarmor.alerts.audit 5
 
-# 查看OpenSearch中的告警
+# Check alerts in OpenSearch
 curl -s 'http://localhost:8080/api/v1/services/opensearch/events/search?index=sysarmor-alerts-audit&size=10' | jq
 ```
 
-### 系统访问地址
+### System Access URLs
 - **🌐 Manager API**: http://localhost:8080
-- **📖 API 文档**: http://localhost:8080/swagger/index.html
-- **🔧 Flink 监控**: http://localhost:8081
+- **📖 API Documentation**: http://localhost:8080/swagger/index.html
+- **🔧 Flink Monitoring**: http://localhost:8081
 - **📊 Prometheus**: http://localhost:9090
 - **🔍 OpenSearch**: http://localhost:9200
 
-## 🔧 管理命令
+## 🔧 Management Commands
 
-### 基础操作
+### Basic Operations
 ```bash
-make deploy      # 🎯 完整部署 (推荐)
-make up          # 启动服务 (不重新构建)
-make down        # 停止所有服务
-make restart     # 重启所有服务
-make status      # 查看服务状态
-make health      # 快速健康检查
-make test        # 完整系统测试
-make clean       # 清理环境
+make deploy      # 🎯 Full deployment (recommended)
+make up          # Start services (without rebuilding)
+make down        # Stop all services
+make restart     # Restart all services
+make status      # Check service status
+make health      # Quick health check
+make test        # Full system test
+make clean       # Clean up the environment
 ```
 
-### 工具脚本
+### Utility Scripts
 ```bash
-# 系统测试
-./tests/test-system-health.sh        # 快速健康检查
-./tests/test-system-api.sh           # 完整API测试 (53个接口)
-./tests/import-events-data.sh        # 事件数据导入
+# System Testing
+./tests/test-system-health.sh        # Quick health check
+./tests/test-system-api.sh           # Full API test (53 endpoints)
+./tests/import-events-data.sh        # Import event data
 
-# Kafka管理
-./scripts/kafka-tools.sh list        # 列出topics (快速)
-./scripts/kafka-tools.sh list --count # 显示消息数量 (较慢)
+# Kafka Management
+./scripts/kafka-tools.sh list        # List topics (quick)
+./scripts/kafka-tools.sh list --count # Show message count (slower)
 ./scripts/kafka-tools.sh export sysarmor.raw.audit 100
 
-# Flink管理
-./scripts/flink-tools.sh list        # 查看作业状态
-./scripts/flink-tools.sh overview    # 集群概览
+# Flink Management
+./scripts/flink-tools.sh list        # View job status
+./scripts/flink-tools.sh overview    # Cluster overview
 ```
 
-## 📚 文档
+## 📚 Documentation
 
-详细文档请参考 [docs/](docs/) 目录：
-- **[API文档](docs/api-reference.md)** - Manager API接口文档 (53个接口，98%测试通过)
-- **[各模块开发指南](docs/development/)** - Wazuh集成、ML服务等开发文档（实施中）
-- **[版本发布](docs/releases/v0.1.0.md)** - 版本发布说明
+For detailed documentation, refer to the [docs/](docs/) directory:
+- **[API Documentation](docs/api-reference.md)** - Manager API reference (53 endpoints, 98% test coverage)
+- **[Module Development Guides](docs/development/)** - Wazuh integration, ML services, and more (in progress)
+- **[Release Notes](docs/releases/v0.1.0.md)** - Version release details
 
 ---
 
-**SysArmor EDR/HIDS** - 现代化端点检测与响应系统
+**SystemX EDR/HIDS** - A modern Endpoint Detection and Response system
