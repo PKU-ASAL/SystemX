@@ -39,6 +39,7 @@ type SensorConfig struct {
 	TetraPath     string
 	TetragonPath  string
 	PolicyPath    string
+	EventSource   string
 	ObserveOnly   bool
 	Restart       string
 	MaxRestarts   int
@@ -209,6 +210,8 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Sensor.TetragonPath = value
 		case "policy_path":
 			cfg.Sensor.PolicyPath = value
+		case "event_source":
+			cfg.Sensor.EventSource = value
 		case "observe_only":
 			b, err := strconv.ParseBool(value)
 			if err != nil {

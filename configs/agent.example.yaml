@@ -17,6 +17,7 @@ sensor:
   tetra_path: /opt/sysarmor/sensors/tetragon/current/bin/tetra
   tetragon_path: /opt/sysarmor/sensors/tetragon/current/bin/tetragon
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  event_source: "-" # stdin JSONL until managed process subscription is enabled
   observe_only: true
   restart: always
   max_restarts: 5

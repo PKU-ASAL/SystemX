@@ -11,6 +11,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 )
 
 type Options struct {
@@ -96,7 +97,7 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 	case "fake":
 		return fake.New(), nil
 	case "tetragon":
-		return nil, fmt.Errorf("managed tetragon backend is not implemented yet")
+		return tetragon.NewBackend(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version), nil
 	default:
 		return nil, fmt.Errorf("unsupported sensor backend %q", cfg.Sensor.Backend)
 	}
