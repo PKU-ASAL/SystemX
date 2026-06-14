@@ -28,6 +28,9 @@ type Backend struct {
 	parseErrors  uint64
 	lastEventAt  time.Time
 	lastError    string
+
+	sensorSupervisor ProcessSupervisor
+	eventSupervisor  ProcessSupervisor
 }
 
 func NewBackend(policyPath, eventSource, version string) *Backend {
@@ -95,8 +98,14 @@ func (b *Backend) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<
 		b.setError(err)
 		return nil, fmt.Errorf("verify tetragon policy: %w", err)
 	}
-	source, closeSource, err := b.openEventSource()
+	stopSensor, err := b.startManagedSensor(ctx)
 	if err != nil {
+		b.setError(err)
+		return nil, err
+	}
+	source, closeSource, err := b.openEventSource(ctx)
+	if err != nil {
+		stopSensor()
 		b.setError(err)
 		return nil, err
 	}
@@ -110,6 +119,7 @@ func (b *Backend) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<
 	go func() {
 		defer close(out)
 		defer closeSource()
+		defer stopSensor()
 		defer b.setRunning(false)
 		scanner := bufio.NewScanner(source)
 		for scanner.Scan() {
@@ -153,24 +163,60 @@ func (b *Backend) Enforce(_ context.Context, cmd contract.EnforcementCmd) (contr
 
 func (b *Backend) Health(context.Context) (contract.Health, error) {
 	b.mu.Lock()
+	running := b.running
+	lastError := b.lastError
+	b.mu.Unlock()
+	status := b.eventSupervisor.Status()
+	sensorStatus := b.sensorSupervisor.Status()
+	if status.Running || sensorStatus.Running {
+		running = true
+	}
+	restarts := status.RestartCount + sensorStatus.RestartCount
+	lastExit := firstNonEmpty(status.LastExit, sensorStatus.LastExit)
+	if status.LastError != "" {
+		lastError = status.LastError
+	} else if sensorStatus.LastError != "" {
+		lastError = sensorStatus.LastError
+	}
+	b.mu.Lock()
 	defer b.mu.Unlock()
 	return contract.Health{
-		Backend:      "tetragon",
-		Running:      b.running,
-		Installed:    b.installed,
-		Version:      b.Version,
-		PolicyLoaded: b.policyLoaded,
-		EventsSeen:   b.eventsSeen,
-		ParseErrors:  b.parseErrors,
-		LastEventAt:  b.lastEventAt,
-		LastError:    b.lastError,
+		Backend:        "tetragon",
+		Running:        running,
+		Installed:      b.installed,
+		Version:        b.Version,
+		PolicyLoaded:   b.policyLoaded,
+		EventsSeen:     b.eventsSeen,
+		ParseErrors:    b.parseErrors,
+		RestartCount:   restarts,
+		LastEventAt:    b.lastEventAt,
+		LastExitReason: lastExit,
+		LastError:      lastError,
 	}, nil
 }
 
-func (b *Backend) openEventSource() (io.Reader, func(), error) {
+func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
+	if b.Bundle.TetragonPath == "" {
+		return func() {}, nil
+	}
+	if err := b.sensorSupervisor.Start(ctx, ProcessSpec{
+		Name: "tetragon",
+		Path: b.Bundle.TetragonPath,
+		Args: []string{"--config-dir", b.PolicyPath},
+	}); err != nil {
+		return nil, err
+	}
+	return func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = b.sensorSupervisor.Stop(stopCtx)
+	}, nil
+}
+
+func (b *Backend) openEventSource(ctx context.Context) (io.Reader, func(), error) {
 	switch b.EventSource {
 	case "":
-		return nil, func() {}, fmt.Errorf("tetragon event_source is required until managed process subscription is implemented")
+		return b.openManagedEventSource(ctx)
 	case "-":
 		return os.Stdin, func() {}, nil
 	default:
@@ -180,6 +226,26 @@ func (b *Backend) openEventSource() (io.Reader, func(), error) {
 		}
 		return f, func() { _ = f.Close() }, nil
 	}
+}
+
+func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func(), error) {
+	if b.Bundle.TetraPath == "" {
+		return nil, func() {}, fmt.Errorf("tetragon tetra_path is required for managed event subscription")
+	}
+	stdout, err := b.eventSupervisor.StartWithStdout(ctx, ProcessSpec{
+		Name: "tetra-getevents",
+		Path: b.Bundle.TetraPath,
+		Args: []string{"getevents", "-o", "json"},
+	})
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return stdout, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = b.eventSupervisor.Stop(ctx)
+		_ = stdout.Close()
+	}, nil
 }
 
 func (b *Backend) incEvent(at time.Time) {

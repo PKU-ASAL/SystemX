@@ -3,6 +3,7 @@ package tetragon
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -35,17 +36,28 @@ type ProcessSupervisor struct {
 }
 
 func (s *ProcessSupervisor) Start(ctx context.Context, spec ProcessSpec) error {
+	_, err := s.StartWithStdout(ctx, spec)
+	return err
+}
+
+func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpec) (io.ReadCloser, error) {
 	if strings.TrimSpace(spec.Path) == "" {
-		return fmt.Errorf("process path is required")
+		return nil, fmt.Errorf("process path is required")
 	}
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
-		return fmt.Errorf("%s process is already running", firstNonEmpty(spec.Name, spec.Path))
+		return nil, fmt.Errorf("%s process is already running", firstNonEmpty(spec.Name, spec.Path))
 	}
 	procCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(procCtx, spec.Path, spec.Args...)
 	cmd.Env = append(os.Environ(), spec.Env...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		s.mu.Unlock()
+		return nil, err
+	}
 	done := make(chan struct{})
 	s.cmd = cmd
 	s.cancel = cancel
@@ -66,11 +78,11 @@ func (s *ProcessSupervisor) Start(ctx context.Context, spec ProcessSpec) error {
 		s.mu.Unlock()
 		cancel()
 		close(done)
-		return err
+		return nil, err
 	}
 
 	go s.wait(procCtx, cmd, done)
-	return nil
+	return stdout, nil
 }
 
 func (s *ProcessSupervisor) Stop(ctx context.Context) error {
