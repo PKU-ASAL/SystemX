@@ -1,0 +1,17 @@
+# test results (large, regenerated)
+test/.results/*.jsonl
+test/.results/*.txt
+
+# vagrant
+.vagrant/
+**/.vagrant/
+
+# python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# nested git repos (reference material, not our code)
+references/code/detection-rules/
