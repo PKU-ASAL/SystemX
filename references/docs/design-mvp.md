@@ -1,10 +1,39 @@
 # SysArmor MVP 状态与缺口
 
-> 本文不再重复完整产品设计细节,而是记录当前 MVP 已经实现的框架,以及从 MVP 走向完整项目的主要缺口。第一性原理和长期架构背景见 `design-essentials.md`;测试场景见 `design-test-cases.md`;实施计划见 `implementation-plan-mvp.md`。
+> 本文不再重复完整产品设计细节,而是记录当前 MVP 已经实现的框架,以及从 MVP 走向 EDR/XDR 平台原型的主要缺口。第一性原理和长期架构背景见 `design-essentials.md`;测试场景见 `design-test-cases.md`;v2 计划见 `v2-implementation-plan.md`。
+
+## 零、SysArmor Next 的定位
+
+SysArmor Next 的长期定位是 **EDR/XDR 平台原型**,不是 Tetragon 日志转发器,也不是只服务几个测试场景的检测 demo。
+
+当前路线可以这样理解:
+
+```text
+v1: EDR detection path MVP
+  Tetragon/replay event -> agent normalize/fastpath -> manager analytics -> incident
+
+v2: EDR endpoint runtime MVP
+  agent daemon + sensor runtime + policy apply + health + spool + retry
+
+中期: EDR platform
+  长期驻留 agent、端侧检测/响应、策略控制、取证回拉、incident lifecycle
+
+长期: XDR platform
+  endpoint + workload + cloud audit + identity + network + CI/CD 等多源遥测
+  跨域实体图、攻击链收敛、风险裁决、响应编排
+```
+
+因此,本文里的 MVP 不是最终产品形态,而是对长期路线的第一段验证:
+
+- v1 验证 **端点事实 -> Signal -> Incident** 这条检测链路成立。
+- v2 要补齐 **agent daemon + sensor runtime** 这块 EDR 端点地基。
+- 后续 EDR/XDR 工作会继续补齐 policy/control plane、reliable transport、durable store、graph analytics、rule content、incident lifecycle、response plane 和多源 ingestion。
+
+Tetragon 在当前阶段是最现实的 Linux sensor backend,但不是 SysArmor Next 的产品边界。项目真正要守住的边界是:agent 侧统一采集/归一/打标,manager/cloud 侧统一建图/收敛/裁决,控制面统一策略/响应/调查。
 
 ## 一、当前已经实现的 MVP 框架
 
-当前仓库已经实现了一条端到端 SysArmor MVP 链路:
+当前仓库已经实现了一条端到端 SysArmor v1 MVP 链路。它对应的是上面路线里的 **EDR detection path MVP**:
 
 ```text
 Tetragon JSONL / replay SensorEvent JSONL
@@ -181,9 +210,16 @@ make report
   - 跨 lineage 需要云端缝合。
   - 良性 CI 噪音不应靠裸加阈值误报。
 
-但当前仍是 MVP,不是完整产品。算法、daemon lifecycle、policy/control、持久化、传输可靠性和部署运维都还需要补齐。
+但当前仍是 MVP,不是完整 EDR/XDR 产品。它证明了检测路径和抽象边界,还没有补齐端点长期运行、控制面、可靠传输、持久化、图分析、响应编排和多源遥测接入。
 
 ## 二、走向完整项目的主要缺口
+
+从长期定位看,缺口可以分成两类:
+
+- **EDR 底座缺口**: agent daemon、sensor runtime、spool/retry、health、policy apply、registration/auth、systemd、response skeleton。
+- **XDR 平台缺口**: 多源 ingestion adapter、跨域实体模型、全局图/罕见度、incident lifecycle、响应编排、SIEM/SOAR/数据湖出口。
+
+v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoint runtime。XDR 能力应建立在稳定的 EDR 事实模型和图收敛之上,不要在 agent/runtime 尚未稳定前过早扩散。
 
 ### 2.1 Sensor Runtime 还不完整
 
@@ -269,7 +305,7 @@ agent registration
 
 下一步应把规则从 Go 代码迁到内容包,Go 侧只保留执行引擎。
 
-### 2.4 Analytics 还不是完整图分析系统
+### 2.4 Analytics 还不是完整 EDR/XDR 图分析系统
 
 当前状态:
 
@@ -306,6 +342,13 @@ agent registration
   - merge
   - suppress
 - evidence 还不是真正从图中裁剪路径。
+- 没有 XDR 数据域的实体模型和 adapter:
+  - cloud principal / IAM role
+  - K8s object / workload
+  - network flow
+  - identity event
+  - CI job / artifact / registry image
+  - SaaS / cloud audit event
 
 完整结构建议:
 
@@ -480,7 +523,7 @@ health heartbeat
 
 ### 2.11 推荐的下一阶段顺序
 
-建议按下面顺序推进,避免过早投入复杂算法:
+建议按下面顺序推进,先把 v2 的 EDR endpoint runtime 地基夯实,再扩到更完整的 EDR/XDR 平台能力,避免过早投入复杂算法或多源接入:
 
 1. **Agent daemon 化**
    - config file
@@ -525,9 +568,24 @@ health heartbeat
    - resume
    - policy downlink
 
+8. **EDR investigation / response plane**
+   - incident detail
+   - evidence path
+   - raw evidence pullback
+   - observe-only response skeleton
+   - kill/block/quarantine 的授权模型
+
+9. **XDR ingestion adapter**
+   - k8s audit
+   - cloud audit
+   - identity events
+   - network flow
+   - CI/CD and registry events
+   - canonical entity mapping
+
 ## 三、结论
 
-当前实现已经完成"能证明架构成立"的 MVP:
+当前实现已经完成"能证明 EDR detection path 架构成立"的 v1 MVP:
 
 ```text
 container/VM 双拓扑可跑
@@ -536,7 +594,7 @@ container/VM 双拓扑可跑
 proto/agent/manager/ctl 边界已建立
 ```
 
-但完整项目的关键工作还在:
+但走向 EDR/XDR 平台原型的关键工作还在:
 
 ```text
 daemon lifecycle
@@ -546,7 +604,9 @@ graph analytics
 durable store
 reliable Link1
 rule content system
+investigation/response plane
+multi-source XDR ingestion
 deployment/operations
 ```
 
-下一步最值得做的是 **agent daemon + sensor contract + policy 最小闭环**。这三项会把当前"能跑场景的 MVP"推进成"像一个真实端侧产品的基础系统"。
+下一步最值得做的是 **agent daemon + sensor contract + policy 最小闭环**。这三项会把当前"能跑场景的 v1 MVP"推进成"像一个真实 EDR 端侧产品的基础系统"。在这个基础稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。

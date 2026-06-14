@@ -1,14 +1,45 @@
-# SysArmor 设计精要
+# SysArmor Next 设计精要
 
-> 一句话：**端侧在源头给每条内核事实盖上因果上下文、拦住最危险的瞬间、并产出带标签的种子；云端把事实流连成溯源图，用罕见度加权 + 结构收敛裁决告警。**
+> 一句话：**SysArmor Next 是面向 EDR/XDR 的安全平台原型：端侧在源头给每条内核事实盖上因果上下文、拦住最危险的瞬间、并产出带标签的种子；云端把端点、云、身份、网络等事实流连成溯源图，用罕见度加权 + 结构收敛裁决告警。**
 
-本文从零讲清楚 SysArmor 的抽象和分层。它不记录历史决策，只讲"为什么是这样"。完整工程细节与 schema 见 design-mvp.md / design.md。
+本文从零讲清楚 SysArmor Next 的定位、抽象和分层。它不记录历史决策，只讲"为什么是这样"。完整工程细节与 schema 见 design-mvp.md / design.md。
+
+---
+
+## 零、项目定位：从 EDR 走向 XDR
+
+SysArmor Next 的长期目标不是做一个 Tetragon 日志转发器,也不是只做某个单点检测引擎,而是构建一个可演进的 **EDR/XDR 平台原型**。
+
+它的路线可以分成四层:
+
+```text
+v1: EDR detection path MVP
+  endpoint event -> agent -> manager -> signal -> incident
+
+v2: EDR endpoint runtime MVP
+  agent daemon + sensor runtime + health + spool + policy apply
+
+中期: EDR platform
+  长期驻留 agent、策略控制、端侧检测/响应、取证回拉、incident lifecycle
+
+长期: XDR platform
+  endpoint + workload + cloud audit + identity + network + CI/CD 等多源遥测
+  跨域实体图、攻击链收敛、风险裁决、响应编排
+```
+
+因此 SysArmor Next 的核心边界不是某个 sensor、某个规则包或某个测试场景,而是三件长期能力:
+
+1. **端点运行时**: endpoint agent 必须能长期运行、可观测、可恢复、可控、可响应。
+2. **事实与图模型**: 所有数据源最终都要落到统一的 Event / Signal / Incident 事实纵轴和 entity graph 上。
+3. **跨域收敛**: EDR 先从 endpoint 图开始,XDR 再把 cloud、identity、network、workload 等事实并入同一张攻击叙事图。
+
+Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集和检测闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
 
 ---
 
 ## 一、从一个问题开始
 
-现代 EDR 真正难的不是"看见一个坏动作"，而是**看见一条横跨进程、文件、网络、主机、时间的攻击链**。
+现代 EDR/XDR 真正难的不是"看见一个坏动作"，而是**看见一条横跨进程、文件、网络、主机、云资源、身份、时间的攻击链**。
 
 攻击者很少用一个明显的恶意操作暴露自己。他们用的每一步单独看都像正常运维：`curl` 下载文件、`chmod +x`、读一个配置文件、发起一个 SSH 连接。把这些孤立动作各自报警，得到的是误报风暴；把它们沉默处理，得到的是漏报。
 
@@ -75,7 +106,7 @@ Event      一次内核行为。 "pid 4231 exec 了 /bin/bash"
 2. **越往上越稀疏**：百万 Event → 几十 Signal → 一个 Incident。误报在逐层收敛中被抑制。
 3. **告警只在顶层**：单个 Signal 默认不告警，它只是图上的一份（经罕见度加权的）风险；只有当若干**各自独立罕见**的高风险点在因果上被**结构收敛**（扩散/STP）连成紧凑子图，才裁决出 Incident——**不是"风险分累加超阈值"，纯加法是反模式**（见第四节）。例外是端侧高风险 Signal——为抢响应窗口可在授权范围内立即动作，但它仍上云参与裁决。
 
-这一根纵轴同时覆盖了成熟 EDR 里被拆成两类产品的能力：**行为检测**（Falcon 的 IOA、青藤的行为引擎）就是写 Signal 规则，**深度溯源**（SentinelOne 的 Storyline）落在 Incident 的图收敛。它们不再是两套系统，而是同一根轴的不同高度。
+这一根纵轴同时覆盖了成熟 EDR 里被拆成两类产品的能力：**行为检测**（Falcon 的 IOA、青藤的行为引擎）就是写 Signal 规则，**深度溯源**（SentinelOne 的 Storyline）落在 Incident 的图收敛。进一步扩到 XDR 时,云审计、身份、网络、K8s、CI/CD 等数据也不需要另起一套告警模型,只要归一成 Event、派生 Signal、参与 Incident 收敛。它们不再是多套系统，而是同一根轴的不同高度和不同数据域。
 
 ### 横轴：lineage（贯穿三层的索引）
 
@@ -129,18 +160,18 @@ lineage 不是纵轴上的一层，而是贯穿三层的**身份/索引坐标**�
 
 ## 五、架构分层
 
-抽象落到系统上，是清晰的五层。每层只依赖上下相邻层的**稳定契约**，不依赖其实现。
+抽象落到系统上，是清晰的五层。每层只依赖上下相邻层的**稳定契约**，不依赖其实现。EDR 是这套架构的第一落点:XDR 是同一套架构向更多遥测域的自然外延。
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  Control Plane     策略下发、灰度、回滚、响应授权、调查 UI    │
+│  Control Plane     策略下发、灰度、回滚、响应授权、调查 UI    │  ← EDR/XDR 控制面
 ├─────────────────────────────────────────────────────────┤
-│  Cloud Analytics   建图 · 云端 Signal 规则 · 罕见度+结构收敛 │  ← 拼图、裁决
+│  Cloud Analytics   建图 · 云端 Signal 规则 · 罕见度+结构收敛 │  ← 跨端点/跨域拼图、裁决
 │                    (NODLINK/STP) · Incident · 证据         │
 ├─────────────────────────────────────────────────────────┤
-│  Endpoint Core     打标(lineage) · 端侧 Signal 规则 · 上传 │  ← 贴标签、抢时间
+│  Endpoint Core     打标(lineage) · 端侧 Signal 规则 · 上传 │  ← EDR agent 核心
 ├─────────────────────────────────────────────────────────┤
-│  Sensor Runtime    Tetragon today / Native Sensor later    │  ← 看见、阻断
+│  Sensor Runtime    Tetragon today / Native Sensor later    │  ← 端点可见性/阻断
 ├─────────────────────────────────────────────────────────┤
 │  Kernel / Workload Linux kernel · container · K8s          │
 └─────────────────────────────────────────────────────────┘
@@ -152,7 +183,7 @@ lineage 不是纵轴上的一层，而是贯穿三层的**身份/索引坐标**�
 - **Edge-Cloud Analytics Contract**（Endpoint Core ↔ Cloud Analytics）：定义上行流（Event 流、Signal 流、证据包、健康流）和下行回路（细节回拉、增强采集、响应指令）。它与具体图算法解耦——NODLINK 可以换成任何图分析，端侧无感。
 - **DetectionPolicy**（Control Plane → 两侧引擎）：签名的检测内容包。规则用统一 DSL 编写，靠 `where` 属性决定下发到端侧快路径还是云端分析层。这是 P5 的落地：加一条检测 = 下发一份签名内容，不发版、不改代码。
 
-**部署形态**：Cloud Analytics + Control Plane 在实现上拆成三个角色——**Gateway**（连接终结 + 数据摄入 + 策略下发，借鉴 Elkeid AgentCenter，无状态可水平扩展）、**Manager**（控制面：策略编写/签名/灰度、注册、调查）、**Analytics**（建图 + 收敛 + 裁决）。异构数据源（auditd / Wazuh / k8s audit）经 Gateway 的 **Ingestion Adapter** 归一成 CanonicalEvent 入图，但**原生 agent 是一等公民**（源头打标 lineage），**agentless 是二等公民**（云端尽力重建 lineage，上下文降级）。
+**部署形态**：Cloud Analytics + Control Plane 在实现上拆成三个角色——**Gateway**（连接终结 + 数据摄入 + 策略下发，借鉴 Elkeid AgentCenter，无状态可水平扩展）、**Manager**（控制面：策略编写/签名/灰度、注册、调查）、**Analytics**（建图 + 收敛 + 裁决）。EDR 阶段,Gateway 的主输入是 SysArmor agent 上报的 endpoint 事实；XDR 阶段,异构数据源（auditd / Wazuh / k8s audit / cloud audit / identity / network / CI/CD）经 Gateway 的 **Ingestion Adapter** 归一成 CanonicalEvent 入图。但**原生 agent 是一等公民**（源头打标 lineage），**agentless 是二等公民**（云端尽力重建 lineage，上下文降级）。
 
 **传输分两段**：**Agent ↔ Gateway** 用原生 gRPC + 自有契约（双向：上行 Event/Signal/证据，下行策略/回拉/响应；保住强类型契约）；**Manager → 外部** 用 OTel Collector 扇出到 SIEM/SOAR/数据湖（OTel 的主场）。OTel 在云端出口，不在端到云的安全通道。
 
@@ -196,7 +227,7 @@ lineage 不是纵轴上的一层，而是贯穿三层的**身份/索引坐标**�
 
 ## 八、和成熟 EDR 的对标
 
-我们刻意对标 Falcon 和 SentinelOne，但把它们做成两个独立子系统的能力，融进了同一根纵轴：
+我们刻意对标 Falcon 和 SentinelOne，但把它们做成两个独立子系统的能力，融进了同一根纵轴。换句话说,SysArmor Next 的 EDR 目标不是只做"采集 + 规则",而是同时覆盖行为检测、深度溯源、响应和调查闭环；XDR 目标是在同一套事实模型上接入更多安全域。
 
 | 它们的设计 | SysArmor 对应 | 关键差异 |
 |---|---|---|
@@ -205,6 +236,8 @@ lineage 不是纵轴上的一层，而是贯穿三层的**身份/索引坐标**�
 | 青藤云：行为检测、深度溯源是**两款产品** | 一根纵轴覆盖 | Signal 规则 = 行为检测，Incident 图收敛 = 深度溯源，统一在一条管线 |
 
 一句话：**Falcon 把"行为检测"和"关联"做成两套、S1 把关联止于"线"、青藤做成两款产品；我们用"三层事实纵轴 + lineage/图索引"把行为检测和深度溯源统一成一条主线。**
+
+向 XDR 扩展时,这句话仍然成立:只是图上的实体从 endpoint 进程/文件/socket 扩展到 cloud principal、IAM role、K8s object、registry artifact、network flow、CI job 等。真正保持不变的是事实纵轴、实体 join key、罕见度和结构收敛。
 
 ---
 
