@@ -6,8 +6,13 @@ import (
 	"io"
 	"time"
 
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
@@ -53,6 +58,12 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	queue, err := spool.Open(r.Config.Spool.Path)
+	if err != nil {
+		return err
+	}
+	norm := normalize.New(r.Config.Agent.ID, r.Config.Agent.HostID, nil)
+	fp := fastpath.New()
 	if r.Out != nil {
 		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s kinds=%d\n",
 			r.Config.Agent.ID, r.Config.Agent.HostID, r.Config.Agent.TenantID, capability.Backend, capability.Version, len(intent.EventKinds))
@@ -70,9 +81,13 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			if !ok {
 				return nil
 			}
+			batchID, err := r.spoolEvent(queue, norm, fp, ev)
+			if err != nil {
+				return err
+			}
 			if opts.Once {
 				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent daemon event: kind=%s raw_ref=%s\n", ev.SensorEvent.GetKind().String(), ev.RawRef)
+					fmt.Fprintf(r.Out, "agent daemon event: kind=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetKind().String(), ev.RawRef, batchID)
 				}
 				return nil
 			}
@@ -90,6 +105,27 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
+}
+
+func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *fastpath.Engine, ev contract.EventEnvelope) (string, error) {
+	if ev.SensorEvent == nil {
+		return "", fmt.Errorf("sensor event is nil")
+	}
+	if ev.SensorEvent.RawRef == "" {
+		ev.SensorEvent.RawRef = ev.RawRef
+	}
+	canonical := norm.Normalize(ev.SensorEvent)
+	signals := fp.Process(canonical)
+	batch := &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{
+			AgentId: r.Config.Agent.ID,
+			HostId:  r.Config.Agent.HostID,
+			Version: "dev",
+		},
+		Events:  []*eventv1.CanonicalEvent{canonical},
+		Signals: signals,
+	}
+	return queue.Append(batch)
 }
 
 func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {

@@ -43,6 +43,7 @@ func TestRunnerOnceWithFakeSensor(t *testing.T) {
 			t.Fatalf("output %q does not contain %q", got, want)
 		}
 	}
+	assertSpoolBatch(t, cfg.Spool.Path)
 }
 
 func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
@@ -78,6 +79,7 @@ func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 			t.Fatalf("output %q does not contain %q", got, want)
 		}
 	}
+	assertSpoolBatch(t, cfg.Spool.Path)
 }
 
 func TestRunnerTetragonRequiresEventSource(t *testing.T) {
@@ -101,5 +103,23 @@ func TestRunnerTetragonRequiresEventSource(t *testing.T) {
 	err = runner.Run(context.Background(), Options{Once: true})
 	if err == nil {
 		t.Fatal("Run() error = nil")
+	}
+}
+
+func assertSpoolBatch(t *testing.T, dir string) {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, "*.batch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("spool batches = %v", matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "agent-a") {
+		t.Fatalf("spool batch does not contain agent identity: %s", string(data))
 	}
 }
