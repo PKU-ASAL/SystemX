@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,8 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -403,6 +406,51 @@ func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
 	}
 }
 
+func TestRunnerUploadsTamperSignalToManager(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	managerStore := &store.Store{}
+	server := httptest.NewServer(link1.NewServerWithAuth(managerStore, "dev-token").Handler())
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, RestartWindow: time.Hour},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: 5 * time.Millisecond},
+		Upload:  config.UploadConfig{RetryInitial: 5 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: 5 * time.Millisecond},
+	}
+	runner := &Runner{
+		Config: cfg,
+		Sensor: &healthOnlySensor{health: contract.Health{
+			Backend:        "tetragon",
+			Installed:      true,
+			PolicyLoaded:   true,
+			Running:        false,
+			RestartCount:   3,
+			LastExitReason: "exit status 7",
+			LastError:      "exit status 7",
+		}},
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &bytes.Buffer{}})
+	}()
+	waitForManagerSignal(t, server.URL, tamper.SignalName)
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := len(managerStore.ListSignals("agent-health", "endpoint", true)); got != 1 {
+		t.Fatalf("manager tamper signal count = %d, want 1", got)
+	}
+}
+
 func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -470,6 +518,29 @@ func (s *healthOnlySensor) Enforce(_ context.Context, cmd contract.EnforcementCm
 
 func (s *healthOnlySensor) Health(context.Context) (contract.Health, error) {
 	return s.health, nil
+}
+
+func waitForManagerSignal(t *testing.T, managerURL, name string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		resp, err := http.Get(managerURL + "/api/v1/signals?scenario=agent-health&layer=endpoint&terminal=true")
+		if err == nil {
+			body, readErr := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if resp.StatusCode == http.StatusOK && strings.Contains(string(body), name) {
+				return
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for manager signal %q", name)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func assertSpoolBatch(t *testing.T, dir string) {
