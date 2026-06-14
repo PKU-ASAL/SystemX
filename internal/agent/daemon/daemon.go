@@ -61,7 +61,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	queue, err := spool.Open(r.Config.Spool.Path)
+	queue, err := spool.OpenWithLimit(r.Config.Spool.Path, r.Config.Spool.MaxBytes)
 	if err != nil {
 		return err
 	}
@@ -89,8 +89,15 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				return nil
 			}
 			batchID, err := r.spoolEvent(queue, norm, fp, ev)
-			if err != nil {
+			if err != nil && !spool.IsBackpressure(err) {
 				return err
+			}
+			if err != nil && spool.IsBackpressure(err) && r.Out != nil {
+				stats, statErr := queue.Stats()
+				if statErr != nil {
+					return statErr
+				}
+				fmt.Fprintf(r.Out, "agent spool backpressure: dropped_batches=%d dropped_bytes=%d last_error=%q\n", stats.DroppedBatches, stats.DroppedBytes, stats.LastError)
 			}
 			if opts.DrainOnce {
 				stats, err := worker.DrainOnce(ctx)
@@ -112,9 +119,13 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			if err != nil {
 				return err
 			}
+			queueStats, err := queue.Stats()
+			if err != nil {
+				return err
+			}
 			if r.Out != nil {
-				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d\n",
-					health.Backend, health.Running, health.PolicyLoaded, health.EventsSeen)
+				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q\n",
+					health.Backend, health.Running, health.PolicyLoaded, health.EventsSeen, queueStats.QueuedBatches, queueStats.QueuedBytes, queueStats.DroppedBatches, queueStats.LastError)
 			}
 			if opts.Once {
 				return nil

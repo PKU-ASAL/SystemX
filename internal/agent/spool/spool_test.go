@@ -82,6 +82,51 @@ func TestQueueReloadsExistingBatchesInOrder(t *testing.T) {
 	}
 }
 
+func TestQueueBackpressureDropsWhenOverLimit(t *testing.T) {
+	q, err := OpenWithLimit(filepath.Join(t.TempDir(), "spool"), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = q.Append(batch("event-1"))
+	if err == nil {
+		t.Fatal("Append() error = nil")
+	}
+	if !IsBackpressure(err) {
+		t.Fatalf("Append() error = %v, want backpressure", err)
+	}
+	stats, err := q.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.BackpressureCount != 1 || stats.DroppedBatches != 1 || stats.DroppedBytes == 0 || stats.LastError == "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	entries, err := q.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
+func TestQueueLimitAllowsBatchWithinCapacity(t *testing.T) {
+	q, err := OpenWithLimit(filepath.Join(t.TempDir(), "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Append(batch("event-1")); err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+	stats, err := q.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.MaxBytes != 4096 || stats.QueuedBatches != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+}
+
 func batch(id string) *analyticsv1.UploadBatch {
 	return &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", Version: "test"},
