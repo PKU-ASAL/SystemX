@@ -7,6 +7,36 @@ import (
 	"testing"
 )
 
+func TestRepositoryExampleConfigLoads(t *testing.T) {
+	cfg, err := LoadFile(filepath.Join("..", "..", "..", "configs", "agent.example.yaml"))
+	if err != nil {
+		t.Fatalf("LoadFile(agent.example.yaml) error = %v", err)
+	}
+	if cfg.Sensor.EventSource != "" {
+		t.Fatalf("example event_source = %q, want managed mode empty source", cfg.Sensor.EventSource)
+	}
+	if cfg.Sensor.TetraPath == "" || cfg.Sensor.TetragonPath == "" {
+		t.Fatalf("example managed tetragon paths missing: %+v", cfg.Sensor)
+	}
+}
+
+func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "systemd", "sysarmor-agent.service"))
+	if err != nil {
+		t.Fatalf("ReadFile(systemd unit) error = %v", err)
+	}
+	unit := string(data)
+	for _, want := range []string{
+		"ExecStart=/usr/local/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml",
+		"Restart=always",
+		"WantedBy=multi-user.target",
+	} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("systemd unit missing %q:\n%s", want, unit)
+		}
+	}
+}
+
 func TestLoadFileValidatesExampleShape(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
