@@ -11,8 +11,10 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
@@ -20,8 +22,9 @@ import (
 )
 
 type Options struct {
-	Once bool
-	Out  io.Writer
+	Once      bool
+	DrainOnce bool
+	Out       io.Writer
 }
 
 type Runner struct {
@@ -62,6 +65,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	worker, err := r.uploadWorker(queue)
+	if err != nil {
+		return err
+	}
 	norm := normalize.New(r.Config.Agent.ID, r.Config.Agent.HostID, nil)
 	fp := fastpath.New()
 	if r.Out != nil {
@@ -85,6 +92,15 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			if err != nil {
 				return err
 			}
+			if opts.DrainOnce {
+				stats, err := worker.DrainOnce(ctx)
+				if err != nil {
+					return err
+				}
+				if r.Out != nil {
+					fmt.Fprintf(r.Out, "agent upload drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
+				}
+			}
 			if opts.Once {
 				if r.Out != nil {
 					fmt.Fprintf(r.Out, "agent daemon event: kind=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetKind().String(), ev.RawRef, batchID)
@@ -104,6 +120,29 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				return nil
 			}
 		}
+	}
+}
+
+func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) {
+	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport)
+	if err != nil {
+		return nil, err
+	}
+	return &uploadworker.Worker{
+		Queue:    queue,
+		Uploader: up,
+		Backoff:  uploadworker.Backoff{Initial: r.Config.Upload.RetryInitial, Max: r.Config.Upload.RetryMax},
+	}, nil
+}
+
+func newBatchUploader(manager, transport string) (uploader.BatchUploader, error) {
+	switch transport {
+	case "http":
+		return uploader.NewHTTPUploader(manager), nil
+	case "grpc":
+		return uploader.NewGRPCUploader(manager), nil
+	default:
+		return nil, fmt.Errorf("unknown transport %q", transport)
 	}
 }
 
