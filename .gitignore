@@ -14,4 +14,4 @@ __pycache__/
 .DS_Store
 
 # nested git repos (reference material, not our code)
-references/code/detection-rules/
+references/code/
