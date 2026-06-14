@@ -69,6 +69,11 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if !opts.Once && !opts.DrainOnce {
+		uploadCtx, cancelUploads := context.WithCancel(ctx)
+		defer cancelUploads()
+		go runUploadLoop(uploadCtx, worker, r.Config.Spool.FlushInterval)
+	}
 	norm := normalize.New(r.Config.Agent.ID, r.Config.Agent.HostID, nil)
 	fp := fastpath.New()
 	if r.Out != nil {
@@ -130,6 +135,23 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			if opts.Once {
 				return nil
 			}
+		}
+	}
+}
+
+func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Second
+	}
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			_, _ = worker.DrainWithRetry(ctx)
+			timer.Reset(interval)
 		}
 	}
 }

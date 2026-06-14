@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,6 +155,69 @@ func TestRunnerDrainOnceUploadsAndAcksSpool(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "agent upload drain: uploaded=1 remaining=0") {
 		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uploaded := make(chan struct{})
+	var closeUploaded sync.Once
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/upload" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		closeUploaded.Do(func() {
+			close(uploaded)
+		})
+	}))
+	defer server.Close()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: 5 * time.Millisecond},
+		Upload:  config.UploadConfig{RetryInitial: 5 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &bytes.Buffer{}})
+	}()
+	select {
+	case <-uploaded:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for background upload")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) == 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("spool batches after background drain = %v", matches)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
 	}
 }
 
