@@ -9,6 +9,7 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	agentconfig "github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/daemon"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
 )
 
@@ -71,6 +72,7 @@ func runDaemonCommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 	configPath := fs.String("config", "/etc/sysarmor/agent.yaml", "agent config path")
 	dryRun := fs.Bool("dry-run", false, "validate config and exit")
+	once := fs.Bool("once", false, "run until the first daemon event or health tick and exit")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -83,7 +85,11 @@ func runDaemonCommand(args []string) error {
 			cfg.Agent.ID, cfg.Agent.HostID, cfg.Agent.TenantID, cfg.Manager.Address, cfg.Sensor.Backend, cfg.Sensor.Mode)
 		return nil
 	}
-	return fmt.Errorf("daemon runtime not implemented yet; use --dry-run to validate config")
+	runner, err := daemon.New(cfg)
+	if err != nil {
+		return err
+	}
+	return runner.Run(context.Background(), daemon.Options{Once: *once, Out: os.Stdout})
 }
 
 func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) error {

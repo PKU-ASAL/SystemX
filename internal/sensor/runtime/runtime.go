@@ -107,7 +107,9 @@ func (m *Manager) Health(ctx context.Context) (contract.Health, error) {
 	if err != nil {
 		return contract.Health{}, err
 	}
-	health.EventsSeen += m.eventsSeen.Load()
+	if health.EventsSeen == 0 {
+		health.EventsSeen = m.eventsSeen.Load()
+	}
 	return health, nil
 }
 
