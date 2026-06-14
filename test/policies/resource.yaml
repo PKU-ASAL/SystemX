@@ -1,0 +1,14 @@
+# PolicyEnvelope: ResourcePolicy（端侧成本封顶与降级，守 P4/D3）
+meta: { id: res-mvp, type: RESOURCE, version: 1 }
+target: { scope: host, selectors: { host: node-a } }
+spec:
+  resource:
+    max_proctable_entries: 50000
+    max_lineage_states: 20000
+    touchcache_size: 8192
+    lineage_budget: 256          # per-lineage 规则预算，超则熔断该规则
+    proc_ttl_ns: 300000000000    # 5m
+    lineage_ttl_ns: 60000000000  # 1m（apt-staged-drop 的 GAP 需 > 此值以确保过期）
+    ringbuffer_bytes: 67108864   # 64MiB
+    spool_max_bytes: 268435456   # 256MiB
+    degrade: { cpu_pct: 70, rss_mb: 512, on_breach: ["disable_weight", "downsample"] }

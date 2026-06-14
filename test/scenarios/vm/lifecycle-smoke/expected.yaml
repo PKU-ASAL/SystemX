@@ -1,0 +1,17 @@
+# lifecycle-smoke 契约（前置冒烟）
+lifecycle:
+  agent_registered: true
+  policy_applied: true
+  events_visible:
+    kind: EXEC
+    require_lineage_id: true
+    require_stable_id: true
+  soak_seconds: 60          # 可配；TC-LC-04
+  resource:
+    rss_within_policy: true
+    no_oom: true
+    no_panic: true
+  uninstall:
+    exit_code: 0
+    no_bpf_residue: true    # bpftool prog list 无残留
+negative: {}

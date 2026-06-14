@@ -1,0 +1,12 @@
+# 对照档：把收敛切回【裸加阈值】，仅用于 benign-ci-noise 的 control_assertion，
+# 验证"裸加会误报、罕见度+结构不会"。正式运行绝不使用此档。
+meta: { id: det-additive-control, type: DETECTION, version: 1 }
+target: { scope: fleet, selectors: {} }
+spec:
+  detection:
+    rules_ref:
+      endpoint: configs/rules/endpoint/*.yaml
+      cloud: configs/rules/cloud/*.yaml
+    converge:
+      mode: additive_threshold       # ★ 反模式，仅对照
+      additive_risk_threshold: 100

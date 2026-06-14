@@ -1,0 +1,55 @@
+# SysArmor 测试 VM 拓扑
+# 隔离测试网 10.66.0.0/24：
+#   node-a 10.66.0.11  被监控主机（tetragon 直装 + 假凭据），无 Docker
+#   mgr    10.66.0.10   manager（预留）
+#   attacker 10.66.0.99 C2 监听 :443 + 恶意脚本 http :8080
+#
+# 与容器拓扑的区别：3 台独立 VM + 独立内核，tetragon 在 VM 内直接运行（不依赖 Docker）。
+# 默认 provider = libvirt。
+ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
+
+NODES = [
+  { name: "mgr",      ip: "10.66.0.10", mem: 2048, cpus: 2, provisions: [] },
+  { name: "node-a",   ip: "10.66.0.11", mem: 2048, cpus: 2,
+    provisions: ["provision/install-tetragon.sh", "provision/setup-credentials.sh"] },
+  { name: "attacker", ip: "10.66.0.99", mem: 1024, cpus: 1, provisions: ["provision/setup-c2.sh"] },
+]
+
+PRIV_NET = <<-SHELL
+  set -e
+  IP="$1"
+  cat >/etc/netplan/60-sysarmor-priv.yaml <<EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth1:
+      dhcp4: false
+      addresses: [$IP/24]
+EOF
+  chmod 600 /etc/netplan/60-sysarmor-priv.yaml
+  netplan apply
+  ip -br addr show eth1
+SHELL
+
+Vagrant.configure("2") do |c|
+  c.vm.synced_folder "../..", "/vagrant/test", type: "rsync",
+    rsync__exclude: [".vagrant/", "**/__pycache__/", ".results/"]
+
+  NODES.each do |n|
+    c.vm.define n[:name] do |m|
+      m.vm.box = "generic/ubuntu2204"
+      m.vm.hostname = n[:name]
+      m.vm.network "private_network", ip: n[:ip]
+      m.vm.provider "libvirt" do |v|
+        v.driver = "kvm"
+        v.memory = n[:mem]
+        v.cpus = n[:cpus]
+      end
+      m.vm.provision "priv-net", type: "shell", inline: PRIV_NET, args: [n[:ip]]
+      n[:provisions].each do |script|
+        m.vm.provision "shell", path: script
+      end
+    end
+  end
+end

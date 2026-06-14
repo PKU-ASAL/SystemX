@@ -1,0 +1,10 @@
+# PolicyEnvelope: TelemetryPolicy（上行行为：批/重试/优先级）
+meta: { id: tel-mvp, type: TELEMETRY, version: 1 }
+target: { scope: host, selectors: { host: node-a } }
+spec:
+  telemetry:
+    batch_size: 256
+    flush_interval_ns: 1000000000     # 1s
+    retry_max: 8
+    backoff_base_ns: 200000000        # 200ms
+    priority_kinds: [CONNECT, EXEC]   # 拥塞时优先上行

@@ -1,0 +1,29 @@
+# apt-fileless-c2 契约（成功判据①：响——端侧 terminal + 云端缝合）
+events:
+  must_contain:
+    - { kind: EXEC, binary: "*/bash", lineage_inherited: true }
+    - { kind: WRITE, path: "/dev/shm/x.sh" }
+    - { kind: CONNECT, dst: "10.66.0.99:443" }
+    # 后渗透阶段的真实凭据读取（payload 实际 open/read）
+    - { kind: OPEN, path: "/var/run/secrets/kubernetes.io/serviceaccount/token" }
+    - { kind: OPEN, path: "/root/.ssh/id_rsa" }
+endpoint_signals:
+  must_have_entities: true        # D4：每个 Signal 必带 entities
+  must_contain:
+    - { name: web_runtime_spawns_shell }
+    - { name: download_by_lolbin, entities_keys: ["socket:10.66.0.99:8080"] }
+    - { name: payload_dropped, entities_keys: ["file:/dev/shm/x.sh"] }
+    - { name: reverse_shell_pattern, terminal: true,
+        entities_keys: ["socket:10.66.0.99:443"], has_evidence_bundle: true }
+  may_contain:                    # 真实后渗透产生的额外凭据信号
+    - { name: sensitive_cred_read }
+cloud_signals:
+  must_contain: [dropped_payload_executed_and_connects, web_shell_chain]
+incident:
+  count: 1
+  terminals_include_binary: ["bash"]
+  evidence_subgraph_path: ["java-web", "bash", "/dev/shm/x.sh", "10.66.0.99:443"]
+  converge_method: "rarity+causal-topk"
+negative:
+  endpoint_terminal_required: true   # 本场景端侧【应】有 terminal
+  # 同节点正常运维 shell/curl 不应额外产生 Incident（误报可数）

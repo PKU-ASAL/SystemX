@@ -1,0 +1,44 @@
+# 测试用 TracingPolicy：捕获 C2 外联(connect) 与 凭据文件读(open)。
+# 与设计的 CanonicalEvent 对应：NET_CONNECT、FILE_OPEN（携带 lineage 由进程事件关联）。
+# 容器拓扑 / VM 拓扑共用此策略。
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "sysarmor-syscall-capture"
+spec:
+  kprobes:
+  # 网络外联：T1571 C2 回连
+  - call: "security_socket_connect"
+    syscall: false
+    args:
+    - index: 1
+      type: "sockaddr"
+    - index: 2
+      type: "int"
+    selectors:
+    - matchArgs:
+      - index: 1
+        operator: "Family"
+        values:
+        - "AF_INET"
+        - "AF_INET6"
+  # 凭据/敏感文件读：T1552
+  - call: "security_file_permission"
+    syscall: false
+    return: true
+    args:
+    - index: 0
+      type: "file"
+    - index: 1
+      type: "int"
+    returnArg:
+      index: 0
+      type: "int"
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: "Prefix"
+        values:
+        - "/root/.ssh"
+        - "/var/run/secrets"
+        - "/etc/passwd"

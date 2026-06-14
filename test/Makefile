@@ -1,0 +1,76 @@
+# SysArmor 测试环境 Makefile
+# 用法: make <target>   (从 test/ 目录运行)
+#
+# env/       = 搭建 (拓扑定义 + 镜像 + 资源)
+# scenarios/ = 执行 (攻击脚本 + 期望契约 + PolicyEnvelope)
+# harness/   = 编排 (start/stop/cleanup/capture/assert/report)
+
+TOPO      ?= container
+SCENARIO  ?= apt-fileless-c2
+DUR       ?= 30
+
+# ── 拓扑生命周期 ──────────────────────────────────────
+
+.PHONY: up down provision status
+
+up:                           ## 启动拓扑
+	bash harness/start-$(TOPO).sh
+
+down:                         ## 停止拓扑
+	bash harness/stop-$(TOPO).sh
+
+provision:                    ## VM: rsync + re-provision
+	cd env/vm && vagrant rsync node-a && vagrant provision node-a
+
+status:                       ## 查看运行态
+	$(MAKE) status-$(TOPO)
+
+status-container:
+	docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+
+status-vm:
+	cd env/vm && vagrant status
+
+# ── 场景采集 + 断言 ──────────────────────────────────
+
+.PHONY: capture assert report
+
+capture:                      ## 跑场景 + tetragon 抓事件
+	bash harness/capture-$(TOPO).sh $(SCENARIO) $(DUR)
+
+assert:                       ## 断言 (当前 dry-run)
+	python3 harness/assert.py --scenario $(SCENARIO) \
+		--expected scenarios/$(TOPO)/$(SCENARIO)/expected.yaml
+
+report:                       ## 汇总报告矩阵
+	python3 harness/report.py
+
+# ── 常用组合 ──────────────────────────────────────────
+
+.PHONY: e2e clean
+
+e2e: up capture               ## 一键: 起拓扑 → 跑场景
+
+clean:                        ## 全部清理 (含样本)
+	bash harness/cleanup.sh $(TOPO) --results
+
+# ── 帮助 ──────────────────────────────────────────────
+
+.PHONY: help
+
+help:                         ## 显示帮助
+	@echo "SysArmor 测试环境"
+	@echo ""
+	@echo "拓扑:  TOPO=container (默认) | vm"
+	@echo "场景:  SCENARIO=apt-fileless-c2 (默认) | apt-staged-drop | benign-ci-noise"
+	@echo ""
+	@echo "targets:"
+	@echo "  up          启动拓扑"
+	@echo "  down        停止拓扑"
+	@echo "  capture     跑场景 + 抓事件"
+	@echo "  assert      断言 (dry-run)"
+	@echo "  report      汇总报告"
+	@echo "  e2e         up + capture"
+	@echo "  provision   VM: rsync + re-provision"
+	@echo "  status      查看运行态"
+	@echo "  clean       全部清理 + 删样本"

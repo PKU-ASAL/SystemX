@@ -1,0 +1,19 @@
+# PolicyEnvelope: DetectionPolicy（规则包 + 收敛/罕见度参数；靠 where 路由）
+# 规则内容引用 configs/rules/，此处给出 MVP 收敛与罕见度旋钮。
+meta: { id: det-mvp, type: DETECTION, version: 1 }
+target: { scope: fleet, selectors: {} }
+spec:
+  detection:
+    rules_ref:
+      endpoint: configs/rules/endpoint/*.yaml   # 5 条
+      cloud: configs/rules/cloud/*.yaml         # 3 条（含 cross_lineage）
+    converge:
+      mode: rarity_structural        # 默认；对照档改为 additive_threshold
+      top_k: 8
+      max_path_hops: 6
+      # additive_threshold 仅对照用，正式禁用：
+      # additive_risk_threshold: 100
+    rarity:
+      cms_width: 4096
+      cms_depth: 4
+      baseline_window_ns: 86400000000000   # 1d

@@ -1,0 +1,8 @@
+# PolicyEnvelope: ResponsePolicy（MVP 固定 observe-only，只记 intent 不实发）
+meta: { id: resp-mvp, type: RESPONSE, version: 1 }
+target: { scope: fleet, selectors: {} }
+spec:
+  response:
+    mode: OBSERVE          # MVP 固定；ENFORCE 为 [later]
+    allowed: []            # [later]: [KILL, BLOCK_CONNECT, QUARANTINE]
+    guardrail_protect: []  # [later]: 禁止误伤的关键进程
