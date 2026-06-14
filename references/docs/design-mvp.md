@@ -1,748 +1,564 @@
-# SysArmor MVP 设计
+# SysArmor MVP 设计 (v2)
 
-> 抽象与主线见 design-essentials.md，完整工程设计见 design.md。
-> 本文用最小代价跑通主线、证明它成立，并**把贯穿数据面到控制面的 schema 定义清楚**，作为后续技术细节设计的地基。
+> **读者**：接手从零搭建 SysArmor 的工程师 / agent。
+> **目标**：读完本文你应该清楚**造什么、怎么分块、代码怎么摆、按什么顺序搭**，并且搭出来的东西与生产版架构同构,日后能沿着既有接缝长成完整产品,而不是推倒重来。
+> **文档地图**：`design-essentials.md` 讲"为什么这样设计"(第一性原理) · 本文讲"怎么落地" · `design-test-cases.md` 讲"怎么验证它成立"。
 >
-> 四个部分：**一、设计思路** · **二、达成目标** · **三、目录设计** · **四、Schema 设计**。
+> **一条总原则**：先把三道契约(接口)冻结,再在契约背后填实现。MVP 可以把所有进程塞进一个 binary、用最土的算法,但接缝必须是真的,这样从 MVP 长到生产版就是"沿契约拆分 + 替换实现",不返工。
 
 ---
 
-## 一、设计思路
+## 〇、术语速查
 
-### 1.1 主线
-
-```text
-Sensor(看见/阻断) → Agent(打标 lineage + 快路径 Signal + 产 terminal/证据)
-   → 上云(Event 流 + Signal 流 + 证据包)
-   → 云端建图 → 云端 Signal 规则 → 罕见度加权 + 结构收敛 → Incident + 证据子图
-   → 调查界面看到一条可解释的攻击链
-```
-
-一句话：**端侧在源头打标、跑有界快路径、广撒带实体键的种子；云端建溯源图、用罕见度加权 + 结构收敛裁决。**
-
-### 1.2 MVP 阶段必须坚持的设计决断
-
-这些是从 design-essentials 五条原理推导出的硬约束，MVP 再简也不能违背，否则证明的就不是这条主线：
-
-| # | 决断 | 为什么不能让步 |
-|---|---|---|
-| D1 | 事实三层：Event → Signal → Incident | Signal 吸收"中性积木"和"检测发现"，risk 只是属性 |
-| D2 | lineage 是贯穿三层的横轴索引，exec 时继承谱系根 | 源头打标最便宜（P3），云端建图免重建 |
-| D3 | 端侧只维护 O(活跃实体) 的三张表 + 两跳，**不建图** | 端侧成本可封顶（P4） |
-| D4 | 端侧 Signal 必须吐出 `entities`（实体 join key） | 否则云端无法跨 lineage / 跨主机缝合 |
-| D5 | `terminal` 由规则声明（高置信），端侧**不算累计 score** | 端侧加性必溢出；全局判定留云端 |
-| D6 | 云端收敛 = 罕见度加权 + 结构收敛，**禁止裸加阈值** | 裸加是反模式：忙/久的良性实体必然撑爆任何阈值 |
-| D7 | Sensor / Edge-Cloud / DetectionPolicy 三个契约面先冻结 | 上层不依赖 Tetragon / 图算法 / 具体规则实现 |
-
-### 1.3 MVP 对"收敛"的务实实现（穷人版，但不是裸加）
-
-完整版是 NODLINK（行为嵌入异常分 + 在线 STP）。MVP 用可落地的近似，**数据模型已为完整版预留字段**（见 Signal.rarity / NodeRisk）：
-
-```text
-MVP 收敛 = 罕见度加权(Count-Min Sketch 频率 → IDF 权重)
-         + 相关族去重(同一源动作派生的 Signal 只算一次)
-         + 因果路径约束(必须在同一祖先-后代路径上，不是同连通块就算)
-         + top-k 独立异常 + 最短路证据树
-正式版 = 行为嵌入异常分 + Personalized PageRank 局部 push + KMB/在线 Steiner Tree
-```
-
-### 1.4 端云分工与传输
-
-```text
-端侧(Agent)  毫秒级、有界    打标 / 快路径 Signal / 本地罕见度+去重 / terminal+证据包
-云端(Analytics) 秒~分钟、弹性  建图 / 云端 Signal / 全局罕见度 / 结构收敛 / 裁决
-
-Link1  Agent ↔ Gateway   原生 gRPC + 自有 protobuf 契约（MVP：直连 manager 内置 gateway）
-Link2  Manager → 外部     OTel Collector 扇出 SIEM/SOAR（MVP：Out，仅预留）
-```
-
-MVP 把 Gateway / Manager / Analytics 塌缩成一个 binary，但**按契约切好接缝**，后续按规模拆分不返工。
+| 术语 | 一句话 |
+|---|---|
+| **Event** | 一次内核行为的客观记录(exec / connect / open ...),不含任何检测逻辑 |
+| **Signal** | 规则从 Event(或下层 Signal)派生出的命名事实,带 `risk` / `entities` 等属性 |
+| **Incident** | 图上风险收敛后裁决出的"攻击故事",面向人的唯一告警单元 |
+| **lineage** | 进程执行谱系的身份标签,exec 时继承谱系根,盖在该谱系产生的每条 Event 上 |
+| **entities** | Signal 携带的实体键(进程/文件/IP/token),云端据此跨谱系/跨主机缝合 |
+| **terminal** | 端侧高置信判定的攻击锚点,附证据包,作为云端收敛的种子 |
+| **stable_id** | 进程的稳定身份 = hash(host, pid, start_time),跨 PID 复用仍唯一 |
 
 ---
 
-## 二、达成目标
+## 一、要造的东西:一条端到端的线
 
-### 2.1 唯一目标
+### 1.1 产品一句话
 
-证明主线端到端成立，且每一段可观测、可度量。
+SysArmor 是云原生内核级 EDR。**端侧**在源头给每条内核事实打上因果标签(lineage)、跑有界的快路径检测、广撒带实体键的种子;**云端**把事实流连成溯源图,用罕见度加权 + 结构收敛裁决出可解释的攻击故事(Incident)。
 
-### 2.2 验收场景
+它解决的核心问题不是"看见一个坏动作",而是"在海量看起来正常的事件里,把少数真正相关的事件连成一条可解释的因果链,并在造成损害前反应"。
 
-`lifecycle-smoke` 是**前置冒烟**（必须先过，不是成功判据）；两个 apt 场景是**成功判据**：
+### 1.2 端到端数据流(MVP 必须打通的那条线)
 
-| 场景 | 验证什么 | 通过标准 |
+```text
+内核 syscall (exec / connect / open ...)
+   │
+   ▼  ┌─────────────────────────────────────────────── 端侧 (sysarmor-agent) ───┐
+[Sensor]      Tetragon GetEvents ──► SensorEvent        (sensor 中立的原始观测)
+   │
+[Normalize]   打 stable_id + lineage_id ──► CanonicalEvent   (归一事实 L0)
+   │
+[Fastpath]    六模块规则引擎 ──► Signal (低风险种子 / 高风险 terminal + 证据包)
+   │
+[Uploader]    断连可续传的上行队列
+   └──────────────────────────────────────────────────────────────────────────┘
+   │  Link1: 原生 gRPC + 自有 protobuf 契约 (双向)
+   ▼  ┌─────────────────────────────────────────────── 云端 (sysarmor-manager) ─┐
+[Ingest]      接收 Event / Signal / 证据
+   │
+[Graph]       按实体键建溯源图 (进程→文件→socket,边合并)
+   │
+[Rarity]      全局罕见度 (Count-Min Sketch + IDF 权重)
+   │
+[Rules]       云端 Signal 规则 (图模式,可跨 lineage)
+   │
+[Converge]    罕见度加权 + 相关族去重 + 因果路径 top-k ──► Incident + 证据子图
+   │
+[Store]       SQLite 落 Incident / 证据 / 健康
+   └──────────────────────────────────────────────────────────────────────────┘
+   │
+   ▼
+[sysarmorctl] 调查者看到一条可解释的攻击链
+```
+
+**具体走一遍(apt-fileless-c2)**:
+
+1. `java` web 进程 exec `bash`,`bash` exec `curl` 下载 `x.sh`,`bash -i` 反弹到 `10.66.0.99:443`。
+2. 每个 exec 都被 Tetragon 抓到 → agent 归一成 `CanonicalEvent`,沿谱系继承同一个 `lineage_id`。
+3. fastpath 命中 `reverse_shell_pattern`,声明 `terminal=true`,切一个证据包(谱系切片 + 两跳邻居 + raw 引用)。
+4. terminal Signal + 一串低风险 Signal 上云。
+5. 云端建图:`bash → 写 → x.sh`、`x.sh → exec → bash -i → connect → C2` 连成子图。
+6. 收敛:这些点对 web 运行时罕见度高 → 高异常分 → 因果上紧凑相连 → 裁决出 **1 个 Incident**。
+7. `sysarmorctl incident <id>` 打印出 `java → bash → x.sh → 10.66.0.99:443` 的证据链。
+
+### 1.3 MVP 的"完成"长什么样
+
+MVP 不追求覆盖面,只追求**把上面这条线端到端跑通并可度量**。判定标准 = `design-test-cases.md` 的三个场景:
+
+| 场景 | 证明什么 | 通过标准 |
 |---|---|---|
-| `lifecycle-smoke`（前置） | 安装→下发静态策略→采集→可见事件/Signal→优雅卸载 | 全流程无崩溃、无资源失控 |
-| `apt-fileless-c2` | **"响"的攻击**：端侧能高置信产 terminal，云端缝合 | 1 个 Incident，证据子图含 `web→shell→落盘→外联`，不被同节点运维噪声淹没 |
-| `apt-staged-drop` | **云端图的立论**：跨 lineage 共享实体，端侧任一条 lineage 都不成案 | 仅当云端按"共享文件实体"缝合两条独立 lineage 才产出 1 个 Incident |
+| `apt-fileless-c2` | "响"的攻击:端侧能高置信产 terminal,云端缝合 | 1 个 Incident,证据子图含 `web→shell→落盘→外联` |
+| `apt-staged-drop` | 云端图的立论:跨 lineage 共享实体才能成案 | 仅当云端按共享文件实体缝合两条独立 lineage 才产 1 个 Incident;关掉缝合则 0 |
+| `benign-ci-noise` | 收敛不误报:罕见度而非裸加 | Incident = 0;切成裸加阈值则误报 ≥ 1 |
 
-`apt-staged-drop` 是关键：它故意让落盘进程和执行进程分属**不同 lineage**（如一个写入、稍后另一个 exec 该文件），端侧两跳和单 lineage 规则都连不起来，**只有云端图按共享文件实体缝合**才能成案——这才真正验证"为什么需要云端图"。
-
-### 2.3 范围裁剪：In / Out
-
-| 能力 | MVP | 说明 |
-|---|---|---|
-| Tetragon 托管 + GetEvents 消费 | ✅ In | 主线起点 |
-| SensorEvent → CanonicalEvent 归一 + 稳定进程 ID | ✅ In | L0 |
-| lineage 打标 | ✅ In | 横轴索引 |
-| 进程上下文表 + 谱系规则状态 + touch cache | ✅ In | 端侧三张表 |
-| 端侧 Signal 引擎（六模块）+ 规则（YAML） | ✅ In | 证明 L1，含 entities/terminal |
-| 本地罕见度（CMS）+ 相关族去重 | ◻ 最小 | MVP 可固定权重起步，schema 必须就位 |
-| terminal + 证据包 | ✅ In | 至少 reverse_shell 一条 |
-| Event/Signal/证据 上云（Link1 原生 gRPC） | ✅ In | 端云契约最小实现 |
-| 云端建图（单 host、内存图）+ 共享实体缝合 | ✅ In | 证明 L2 + apt-staged-drop |
-| 云端 Signal 规则（图模式，3 条） | ✅ In | 证明跨实体检测 |
-| 收敛（罕见度+去重+因果路径 top-k）→ Incident | ✅ In | **非裸加** |
-| 证据子图裁剪 + sysarmorctl 调查视图 | ✅ In | 证明可解释 |
-| GetEvents 压测基线 | ✅ In | Phase 1 硬性出口 |
-| 响应（kill/block/quarantine） | ❌ Out | observe-only，只记 response intent |
-| Native Sensor | ❌ Out | 压测数据出来再决定 |
-| 跨主机缝合 / Incident 合并 | ❌ Out | 单 host 即可证明主线 |
-| 完整 NODLINK STP + 行为嵌入异常分 | ❌ Out | 穷人版收敛先替代 |
-| 策略签名 / 灰度 / 回滚 | ❌ Out | 静态 YAML，但走 PolicyEnvelope 结构 |
-| Ingestion Adapter（agentless 源） | ❌ Out | 契约预留 source_capability |
-| Link2 OTel Collector → SIEM | ❌ Out | 仅预留出口 |
-| Kafka / ClickHouse / 对象存储 | ❌ Out | 内存图 + SQLite |
-| 多租户 / mTLS enrollment | ❌ Out | 单租户 + 静态 token |
-
-裁剪原则：**凡不影响"主线是否成立"判断的全部后置；但所有跨层 schema 字段先定义好（哪怕 MVP 不填），避免后续返工。**
-
-### 2.4 技术选型
-
-| 组件 | 选型 | 理由 |
-|---|---|---|
-| 语言 | Go | 对齐 Tetragon / Elkeid 生态，eBPF/gRPC 工具链成熟 |
-| Sensor | Tetragon | Day 1 复用，不自研 |
-| Link1 传输 | gRPC + protobuf（自有契约） | 端云强类型契约，重试用 gRPC backoff，断连用本地 spool |
-| 云端图 | 进程内内存图（Go map 邻接表，按 host 分区） | 单 host MVP 够用，避免引图数据库 |
-| 云端存储 | SQLite（Incident / 证据 / health / 罕见度计数快照） | 零运维，后续换 ClickHouse |
-| 规则 | YAML 规则 + Go 解释执行（谓词/序列/两跳/图模式子集） | 热更新内容，不发版 |
-| 罕见度 | Count-Min Sketch（端侧本机 + 云端全局各一份） | 定长内存，O(1) 更新 |
-| 调查视图 | sysarmorctl CLI + Mermaid/JSON 导出 | 不做完整前端 |
-| 部署 | systemd + K8s DaemonSet 两种 manifest | 覆盖裸机与 K8s |
+`apt-staged-drop` 和 `benign-ci-noise` 是两个"立论实验":前者证明"为什么需要云端图",后者证明"为什么收敛不能用加法"。它们通过 = 架构选择被验证。
 
 ---
 
-## 三、目录设计
+## 二、系统架构:五个组件 + 三道契约
+
+### 2.1 五个组件,各一句职责
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  Control Plane   策略下发 · 注册 · 调查 UI                 │
+├─────────────────────────────────────────────────────────┤
+│  Cloud Analytics 建图 · 云端规则 · 罕见度+结构收敛 · 裁决   │ ← 拼图、讲故事
+├─────────────────────────────────────────────────────────┤
+│  Endpoint Core   打标(lineage) · 快路径 Signal · 上传      │ ← 贴标签、抢时间
+├─────────────────────────────────────────────────────────┤
+│  Sensor Runtime  Tetragon 今天 / Native Sensor 以后        │ ← 看见、阻断
+├─────────────────────────────────────────────────────────┤
+│  Kernel / Workload                                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+| 组件 | 唯一职责 | MVP 形态 |
+|---|---|---|
+| **Sensor Runtime** | 在内核看见行为、(以后)阻断 | 托管 Tetragon,消费 GetEvents |
+| **Endpoint Core** (agent) | 打 stable_id/lineage、跑快路径、产 Signal+证据、上传 | `sysarmor-agent` binary |
+| **Cloud Analytics** | 建溯源图、跑云端规则、收敛裁决 | 折叠进 `sysarmor-manager` |
+| **Control Plane** | 策略下发、agent 注册、调查接口 | 折叠进 `sysarmor-manager` |
+| **Store** | 持久化 Incident / 证据 / 健康 / 罕见度快照 | SQLite |
+
+### 2.2 三道契约 —— 可扩展性的全部来源
+
+这是整个架构最重要的部分。系统能长期演进、能把 MVP 长成生产版,靠的就是这三道**接缝**。每道契约定义"两侧如何对话",两侧的实现可以各自替换而互不影响。
+
+| 契约 | 位于 | 定义什么 | 让你以后能换掉 |
+|---|---|---|---|
+| **Sensor Contract** | Sensor ↔ Agent | 一条事件长什么样、采集意图怎么表达、能力怎么探测、怎么阻断 | Tetragon → 自研 Native Sensor,上层无感 |
+| **Edge-Cloud Contract** (Link1) | Agent ↔ Cloud | 上行流(Event/Signal/证据/健康) + 下行回路(策略/回拉/响应) | 云端图算法(穷人版 → NODLINK),端侧无感 |
+| **DetectionPolicy** | Control → 两侧引擎 | 检测内容包,用统一 DSL,靠 `where` 决定下发端侧还是云端 | 加检测 = 下发签名内容,不发版、不改代码 |
+
+**为什么这能让 MVP "与生产版同构"**:MVP 把 gateway/analytics/control/store 塞进一个 manager binary,但它们之间走的是真契约(proto 类型)。生产版要拆成独立可扩展的 Gateway(无状态摄入) + Manager(控制面) + Analytics(建图收敛),只是"沿契约把进程拆开",不是重写。
+
+**实现纪律**:`api/proto/` 是所有 schema 的单一事实源(见 §4.3)。任何跨组件的数据都先在 proto 里定义类型,再生成端云两侧代码,保证契约永不漂移。
+
+### 2.3 部署形态:从单 binary 到可拆分
+
+```text
+MVP                          生产版
+┌────────────┐               ┌────────────┐
+│ agent      │               │ agent (车队)│
+└─────┬──────┘               └─────┬──────┘
+      │ Link1 gRPC                 │ Link1 gRPC
+┌─────▼──────────────┐      ┌──────▼─────┐   无状态、水平扩展
+│ manager (单 binary) │      │ Gateway    │   连接终结 + 摄入 + 策略下发
+│  gateway            │      └──────┬─────┘
+│  analytics          │   ──►  ┌────▼─────┐  ┌──────────┐
+│  control            │      │ Analytics  │  │ Manager  │  控制面/调查
+│  store (SQLite)     │      │ (建图收敛) │  └──────────┘
+└─────────────────────┘      └────┬───────┘
+                                   │ Link2 (OTel) → SIEM/SOAR/数据湖
+```
+
+MVP 即便单 binary,内部也**按契约切好包边界**(见 §3),后续按规模拆分不返工。
+
+---
+
+## 三、代码架构:仓库怎么摆
+
+### 3.1 目录树
 
 ```text
 sysarmor/
-├── cmd/
-│   ├── sysarmor-agent/         # 端侧：sensor 托管 + 打标 + 快路径 + 上传
-│   ├── sysarmor-manager/       # 云端单 binary（MVP 内含 gateway+analytics+control+store）
-│   └── sysarmorctl/            # 调查 CLI
+├── cmd/                        # 可执行入口(薄,只做装配)
+│   ├── sysarmor-agent/         #   端侧
+│   ├── sysarmor-manager/       #   云端单 binary(MVP 内含 gateway+analytics+control+store)
+│   └── sysarmorctl/            #   调查 CLI
 │
-├── api/                        # ★ 所有 schema 的单一事实源（先定义、跨端云共享）
+├── api/                        # ★ 所有 schema 的单一事实源(先定义,跨端云共享)
 │   ├── proto/
-│   │   ├── sensor/v1/          # Sensor Contract（capability/event/enforce/health）
-│   │   ├── event/v1/           # CanonicalEvent
-│   │   ├── signal/v1/          # Signal + EvidenceBundle
-│   │   ├── analytics/v1/       # Edge-Cloud Contract（uplink/downlink streams）
-│   │   ├── incident/v1/        # Incident + EvidenceSubgraph
-│   │   └── policy/v1/          # PolicyEnvelope + 5 类 policy spec
-│   └── schema/                 # 规则 DSL 的 JSON Schema（rule 校验用）
+│   │   ├── sensor/v1/          #   Sensor Contract
+│   │   ├── event/v1/           #   CanonicalEvent
+│   │   ├── signal/v1/          #   Signal + EvidenceBundle
+│   │   ├── analytics/v1/       #   Edge-Cloud Contract(上行/下行流)
+│   │   ├── incident/v1/        #   Incident + EvidenceSubgraph
+│   │   └── policy/v1/          #   PolicyEnvelope + 五类 policy
+│   └── schema/                 #   规则 DSL 的 JSON Schema(校验用)
 │
 ├── internal/
 │   ├── sensor/
-│   │   ├── contract/           # Sensor Contract 的 Go 接口（Capability/Subscribe/Enforce）
-│   │   └── tetragon/           # 实现：runtime 托管 + GetEvents + policycompiler + mapper
+│   │   ├── contract/           # Sensor Contract 的 Go 接口(见 §3.2)
+│   │   └── tetragon/           # 实现:runtime 托管 + GetEvents + policy 编译 + 事件映射
 │   │
 │   ├── endpoint/
-│   │   ├── context/            # ★ 三张表：proctable / lineage / touchcache
-│   │   │   ├── proctable.go
-│   │   │   ├── lineage.go
-│   │   │   └── touchcache.go
-│   │   ├── normalize/          # SensorEvent → CanonicalEvent（打 stable_id + lineage_id）
-│   │   ├── fastpath/           # ★ 端侧 Signal 引擎（六模块，见 §4.6）
-│   │   │   ├── match/          #   ① 无状态谓词
-│   │   │   ├── sequence/       #   ② lineage 内窗口/序列状态机
-│   │   │   ├── join/           #   ③ touch cache 两跳关联
-│   │   │   ├── weight/         #   ④ 本地罕见度加权（CMS）
-│   │   │   ├── dedup/          #   ⑤ 相关族去重
-│   │   │   └── emit/           #   ⑥ 组装 Signal + terminal + 证据包
-│   │   ├── evidence/           # 证据包切片（lineage 子树 + 两跳 + raw ref）
-│   │   ├── ringbuffer/         # 原始事件环形缓冲（供回拉）
-│   │   └── uploader/           # Link1 上行 + spool（断连续传）
+│   │   ├── context/            # ★ 三张表:proctable / lineage / touchcache
+│   │   ├── normalize/          # SensorEvent → CanonicalEvent(打 stable_id + lineage_id)
+│   │   ├── fastpath/           # ★ 端侧 Signal 引擎(六模块,见 §5.1)
+│   │   │   ├── match/  sequence/  join/  weight/  dedup/  emit/
+│   │   ├── evidence/           # 证据包切片
+│   │   ├── ringbuffer/         # 原始事件环形缓冲(供云端回拉)
+│   │   └── uploader/           # Link1 上行 + spool(断连续传)
 │   │
 │   ├── analytics/
-│   │   ├── ingest/             # 上行流接收 + （预留）Ingestion Adapter
-│   │   ├── graph/              # 内存溯源图（节点/边/合并/TTL）
-│   │   ├── rarity/             # 全局罕见度（CMS + IDF 权重）
-│   │   ├── rules/              # 云端 Signal 引擎（图模式）
-│   │   ├── converge/           # ★ 收敛：去重 + 因果路径 + top-k（→ 后续 PPR/STP）
+│   │   ├── ingest/             # 上行流接收 + (预留)异构源 Adapter
+│   │   ├── graph/              # 内存溯源图(节点/边/合并/TTL)
+│   │   ├── rarity/             # 全局罕见度(CMS + IDF)
+│   │   ├── rules/              # 云端 Signal 引擎(图模式)
+│   │   ├── converge/           # ★ 收敛:去重 + 因果路径 + top-k(→ 后续 PPR/STP)
 │   │   ├── incident/           # Incident 组装
 │   │   └── evidence/           # 证据子图裁剪
 │   │
 │   ├── control/
-│   │   ├── policy/             # PolicyEnvelope 加载/校验/下发（MVP 读静态文件）
-│   │   └── registry/           # agent 注册（MVP 静态 token）
+│   │   ├── policy/             # PolicyEnvelope 加载/校验/下发(MVP 读静态文件)
+│   │   └── registry/           # agent 注册(MVP 静态 token)
 │   │
 │   ├── transport/
 │   │   ├── link1/              # Agent↔Gateway gRPC server/client
-│   │   └── link2/              # （预留）OTel Collector 出口
+│   │   └── link2/              # (预留)OTel Collector 出口
 │   │
-│   └── store/                  # SQLite：incident / evidence / health / rarity 快照
+│   └── store/                  # SQLite
 │
 ├── configs/
-│   ├── policies/               # ★ PolicyEnvelope 实例（YAML）
-│   │   ├── collection/         #   CollectionPolicy（编译成 TracingPolicy）
-│   │   ├── resource/           #   ResourcePolicy（端侧预算/TTL/降级）
-│   │   ├── detection/          #   DetectionPolicy（规则包，含 where 路由）
-│   │   ├── response/           #   ResponsePolicy（MVP：observe-only）
-│   │   └── telemetry/          #   TelemetryPolicy（批/spool/优先级）
-│   └── rules/                  # 规则内容（被 DetectionPolicy 引用）
-│       ├── endpoint/           #   端侧规则（5 条）
-│       └── cloud/              #   云端规则（3 条）
+│   ├── policies/               # PolicyEnvelope 实例(YAML):collection/resource/detection/response/telemetry
+│   └── rules/                  # 规则内容(被 DetectionPolicy 引用):endpoint/ + cloud/
 │
 ├── deployments/
-│   ├── systemd/
-│   └── helm/
+│   ├── systemd/                # MVP 主形态
+│   └── helm/                   # K8s DaemonSet(预留)
 │
-└── test/
-    └── scenarios/              # apt-fileless-c2 / apt-staged-drop / lifecycle-smoke
+└── test/                       # 见 design-test-cases.md(已实现的双拓扑测试环境)
 ```
 
-设计要点：
+### 3.2 关键包的职责与边界
 
-- **`api/` 是 schema 的单一事实源**：proto 同时生成端侧和云侧的类型，保证契约不漂移。MVP 即便单 binary 也走这套类型。
-- **`endpoint/context` 三张表独立成包**：它们是端侧的全部"记忆"，边界清晰、可单独压测。
-- **`fastpath` 六个子包对应六模块**：可插拔、可单独关闭（weight/dedup 在资源压力下降级）。
-- **`analytics/converge` 独立**：MVP 是穷人版，正式版换 PPR/STP 时只动这个包，规则与建图不受影响。
+- **`api/`**:proto 同时生成端侧和云侧类型。MVP 即便单 binary 也走这套类型 —— 这是"契约真实"的物理保证。
+- **`internal/sensor/contract`**:定义 `Sensor` Go 接口,Tetragon 只是它的一个实现。上层只依赖接口:
+
+  ```go
+  type Sensor interface {
+      Capability(ctx) (SensorCapability, error)              // 探测这台机器能采/能阻断什么
+      Subscribe(ctx, CollectionIntent) (<-chan SensorEvent, error)  // 采集意图由 CollectionPolicy 编译
+      Enforce(ctx, EnforcementCmd) (EnforcementAck, error)   // MVP 返回 unsupported
+      Health(ctx) (SensorHealth, error)                      // 含 dropped_events 等
+  }
+  ```
+
+- **`internal/endpoint/context`**:端侧的全部"记忆",三张表(见 §5.1)。边界清晰、可单独压测。
+- **`internal/endpoint/fastpath`**:有界 CEP 引擎,三段六模块(detection: match/sequence/join · scoring: weight · output: dedup/emit),可插拔、可在资源压力下单独降级(关 scoring/throttling 段)。
+- **`internal/analytics/converge`**:收敛独立成包。MVP 是穷人版,正式版换 PPR/STP 时**只动这个包**,建图与规则不受影响。
+- **`cmd/*`**:入口只做依赖装配(wire up),不写业务逻辑。
+
+### 3.3 扩展点(明确告诉你以后从哪长出去)
+
+| 想加什么 | 改哪 | 是否动核心 |
+|---|---|---|
+| 新传感器(Native Sensor) | 新增 `internal/sensor/<kind>/` 实现 `Sensor` 接口 | 否 |
+| 新检测规则 | 往 `configs/rules/` 加 YAML,下发 DetectionPolicy | 否,不发版 |
+| 规则规模上去后的性能 | `endpoint/fastpath/match` 加谓词倒排索引 + RETE 式共享 alpha/beta partial match | 仅匹配核心 |
+| 生产级图(图数据库/分布式) | 替换 `analytics/graph` + `analytics/converge` | 仅这两包 |
+| 异构数据源(auditd/k8s audit/agentless) | `analytics/ingest` 加 Adapter,归一成 CanonicalEvent | 否 |
+| 导出到 SIEM/SOAR | 实现 `transport/link2`(OTel Collector) | 否 |
+| 拆分 Gateway/Analytics/Manager | 按 `internal/` 既有包边界拆进程 | 否,沿契约拆 |
+| 真实响应(kill/block) | 实现 `Sensor.Enforce` + ResponsePolicy 放开 ENFORCE | 否 |
 
 ---
 
-## 四、Schema 设计
+## 四、数据模型:一条事实的旅程
 
-自底向上、从数据面到控制面。记号：`type name` + `// 注释`；`[MVP]` 必填，`[later]` 预留字段（结构在、MVP 可空）。
-
-### 数据面
+### 4.1 五个核心类型,逐级转化
 
 ```text
-┌ 控制面 ─ PolicyEnvelope（Collection/Resource/Detection/Response/Telemetry）+ Rule
-├ 数据面 ─ Incident / EvidenceSubgraph        （云端裁决产物）
-│         GraphNode / GraphEdge / NodeRisk     （云端图）
-│         Edge-Cloud Contract（uplink/downlink）（端云传输）
-│         Signal / EvidenceBundle              （端侧派生事实 + 证据）
-│         ProcessContext / Lineage / TouchEntry（端侧三张表）
-│         CanonicalEvent                       （归一事实 L0）
-└ 底层 ── Sensor Contract（Capability/Event/Enforce/Health）（sensor→agent）
+SensorEvent       sensor 中立的原始观测(还没身份)
+   │ normalize:打 stable_id + lineage_id
+   ▼
+CanonicalEvent    归一事实(L0),云端建图的原子记录
+   │ fastpath 规则匹配
+   ▼
+Signal            派生事实(L1),带 entities(缝合键) + 可选 terminal
+   │ 云端建图 + 罕见度 + 收敛
+   ▼
+GraphNode/Edge    溯源图,Signal 挂在节点上,带 NodeRisk
+   │ 收敛裁决
+   ▼
+Incident          攻击故事 + 证据子图,唯一对外告警
 ```
 
----
+### 4.2 关键 schema(只列承重字段;完整定义在 `api/proto/`)
 
-### 4.1 Sensor Contract（sensor → agent，最底层）
+> 记号:`[MVP]` 必填,`[later]` 预留(结构在,MVP 可空)。完整字段、注释、enum 取值以 `.proto` 为准,本节只解释**为什么这几个字段是承重的**。
 
-定义"任意 sensor 必须能提供什么"，让 Tetragon 可被 Native Sensor 替换。
+**Sensor Contract(最底层,sensor → agent)**
 
 ```protobuf
-// 能力探测：agent 启动时问 sensor "这台机器能采集/阻断什么"
-message SensorCapability {
-  string   sensor_kind      // "tetragon" | "native" ...        [MVP]
-  string   sensor_version                                       [MVP]
-  string   kernel_version                                       [MVP]
-  bool     has_btf                                              [MVP]  // CO-RE 前提
-  repeated string lsm_hooks // 可用 LSM 钩子（bpf/selinux...）    [MVP]
-  repeated EventKind supported_events                           [MVP]
-  repeated EnforceKind supported_enforce                        [MVP]  // kill/block/...
-  bool     supports_enforcement                                 [MVP]
+message SensorEvent {                 // sensor 中立,尚未打身份
+  uint64    mono_ns;                  // 单调时钟,排序用            [MVP]
+  EventKind kind;                     // EXEC/EXIT/FORK/OPEN/WRITE/CHMOD/CONNECT/...
+  RawProcess proc;                    // pid,ppid,binary,argv,uid,start_time,cgroup
+  RawObject  object;                  // path | dst_ip:port | target_pid
+  string     container_id;
 }
-
-// sensor 中立的内核观测（尚未打 stable_id / lineage_id）
-message SensorEvent {
-  string   sensor_event_id                                      [MVP]
-  uint64   mono_ns        // sensor 单调时钟，用于排序           [MVP]
-  EventKind kind          // exec/exit/connect/open/write/...    [MVP]
-  RawProcess proc         // pid, tid, ppid, binary, argv, uid, start_time, cgroup [MVP]
-  RawObject  object       // path | dst_ip:port | target_pid     [MVP]
-  bytes      attrs        // kind 专属字段（flags/mode/...）      [MVP]
-  string     container_id // sensor 能给则给                     [MVP]
-}
-
-enum EventKind  { EXEC; EXIT; FORK; OPEN; WRITE; CHMOD; CONNECT; ACCEPT;
-                  SETUID; LOAD_MODULE; MOUNT; PTRACE; ... }       [MVP 子集]
-enum EnforceKind { KILL; BLOCK_CONNECT; BLOCK_FILE; QUARANTINE; } [later]
-
-// 阻断（MVP：仅定义，observe-only 不实发）
-message EnforcementCmd { string id; EnforceKind kind; Selector target; } [later]
-message EnforcementAck { string id; bool applied; string error; }        [later]
-
-// sensor 健康（丢失率是主线数据完整性的关键指标）
-message SensorHealth {
-  double   events_per_sec                                       [MVP]
-  uint64   dropped_events    // ★ GetEvents 丢失计数             [MVP]
-  uint64   queue_depth                                          [MVP]
-  double   cpu_pct; uint64 rss_bytes;                           [MVP]
-}
+message SensorHealth { uint64 dropped_events; double events_per_sec; ... }  // 丢失率是数据完整性命门
 ```
 
-Go 侧契约接口（`internal/sensor/contract`）：
-
-```go
-type Sensor interface {
-    Capability(ctx) (SensorCapability, error)
-    Subscribe(ctx, CollectionIntent) (<-chan SensorEvent, error) // 采集意图由 CollectionPolicy 编译
-    Enforce(ctx, EnforcementCmd) (EnforcementAck, error)         // MVP 返回 unsupported
-    Health(ctx) (SensorHealth, error)
-}
-```
-
----
-
-### 4.2 CanonicalEvent（L0：归一后的客观事实）
-
-agent 的 `normalize` 把 `SensorEvent` + 打标 → `CanonicalEvent`。这是云端建图的原子记录。
+**CanonicalEvent(L0)** —— 承重在三个打标字段:
 
 ```protobuf
 message CanonicalEvent {
-  string    id            // ULID                                [MVP]
-  uint64    seq           // per-agent 单调，丢失检测用            [MVP]
-  int64     time_ns       // 墙钟（mono 校准后）                  [MVP]
-  EventKind kind                                                 [MVP]
-
-  // ★ 主体进程：稳定身份（agent 打）
-  ProcessRef subject_proc                                        [MVP]
-  // 客体：三选一
-  ObjectRef  object       // file_path | socket(5tuple) | target_proc [MVP]
-
-  // ★ 打标结果（agent 加，sensor 给不了）
-  string    parent_stable_id                                     [MVP]
-  string    lineage_id    // exec 时继承谱系根                    [MVP]
-
-  // 环境
-  string    host_id                                              [MVP]
-  string    container_id                                         [MVP]
-  string    pod_uid                                              [later]
-  string    raw_ref       // 指向 ringbuffer，供云端回拉          [MVP]
-
-  string    source_capability  // "full"(原生 agent) | "ingest_only"(agentless) [later]
+  string    id;                       // ULID                        [MVP]
+  uint64    seq;                      // per-agent 单调,丢失检测      [MVP]
+  EventKind kind;
+  ProcessRef subject_proc;            // 主体进程(含 stable_id)
+  ObjectRef  object;                  // file_path | socket(5元组) | target_proc
+  string    parent_stable_id;         // ★ agent 打,sensor 给不了
+  string    lineage_id;               // ★ exec 时继承谱系根
+  string    raw_ref;                  // 指向 ringbuffer,供云端回拉
 }
-
 message ProcessRef {
-  string  stable_id   // ★ = hash(host_id, pid, start_time_ns)，跨 PID 复用稳定 [MVP]
-  uint32  pid                                                    [MVP]
-  string  binary                                                 [MVP]
-  repeated string argv                                           [MVP]
-  uint32  uid                                                    [MVP]
-}
-
-message ObjectRef {
-  oneof target {
-    string  file_path                                            [MVP]
-    Socket  socket      // src/dst ip+port, proto                [MVP]
-    string  target_stable_id                                     [MVP]
-  }
+  string stable_id;                   // ★★ = hash(host_id, pid, start_time_ns)
+  uint32 pid; string binary; repeated string argv; uint32 uid;
 }
 ```
 
-`stable_id` 是整套系统的进程身份基石：**云端图节点身份直接用它**，所以它必须在丢事件、PID 复用下仍稳定（启动扫 `/proc` 重建基线）。
+`stable_id` 是整套系统的进程身份基石:**云端图节点直接用它做 node_id**,所以它必须在丢事件、PID 复用下仍稳定(启动扫 `/proc` 重建基线)。
 
----
-
-### 4.3 端侧三张表（O(活跃实体)，端侧全部"记忆"）
-
-```protobuf
-// 表1：进程上下文表（∝ 活跃进程）
-message ProcessContext {
-  string  stable_id                                              [MVP]
-  string  parent_stable_id                                       [MVP]
-  string  lineage_id                                             [MVP]
-  string  binary; repeated string argv; uint32 uid;             [MVP]
-  int64   start_time_ns                                          [MVP]
-  string  container_id; string pod_uid;                         [MVP/later]
-  int64   last_seen_ns    // 用于 TTL 淘汰                       [MVP]
-}
-
-// 表2：谱系规则状态（∝ 活跃 lineage）——端侧序列/窗口引擎按此分区
-message LineageState {
-  string  lineage_id                                             [MVP]
-  string  root_stable_id                                         [MVP]
-  // 每条有状态规则在该 lineage 上的运行态
-  map<string, SeqMachineState> seq_states  // rule_id → 状态机   [MVP]
-  map<string, WindowCounter>   windows     // rule_id → 计数窗口 [MVP]
-  int64   budget_used     // ★ per-lineage 预算，超则熔断该规则  [MVP]
-  int64   last_seen_ns                                           [MVP]
-}
-
-// 表3：实体接触缓存（固定大小 LRU）——两跳关联的唯一依据
-message TouchEntry {
-  oneof entity { string file_path; Socket socket; }              [MVP]
-  string  last_writer_stable_id   // "谁刚写了这个文件"          [MVP]
-  string  last_actor_lineage_id                                  [MVP]
-  EventKind last_op                                              [MVP]
-  int64   ts_ns                                                  [MVP]
-}
-```
-
----
-
-### 4.4 Signal（L1：规则派生的新事实）—— 跨端云的核心记录
-
-这是 D4/D5 落地处：**必带 `entities`，`terminal` 由规则声明，`rarity` 为收敛预留。**
+**Signal(L1)** —— 承重在 `entities`(缝合键)和 `terminal`:
 
 ```protobuf
 message Signal {
-  string   name           // 规则名，如 "reverse_shell_pattern"  [MVP]
-  string   rule_version                                          [MVP]
-  Where    where          // ENDPOINT | CLOUD                    [MVP]
-  int64    time_ns                                               [MVP]
-
-  // 风险：基础分 + 本地罕见度权重（云端再叠全局罕见度）
-  uint32   base_risk      // 0~100，规则声明                     [MVP]
-  float    local_rarity   // [0,1] 本机/workload 视角的罕见度    [MVP，可先恒为1]
-
-  // ★ 索引与缝合
-  string   lineage_id                                            [MVP]
-  string   subject_stable_id                                     [MVP]
-  repeated EntityRef entities   // ★★ 云端 join key，必填        [MVP]
-
-  // 引用与组合（Signal 可引用 Event 或下层 Signal）
-  repeated string event_refs    // CanonicalEvent.id             [MVP]
-  repeated string signal_refs   // 组合规则引用的下层 Signal      [MVP]
-
-  // ★ terminal：规则级高置信锚点
-  bool          terminal                                         [MVP]
-  EvidenceBundle evidence       // 仅 terminal=true 时附带        [MVP]
-
-  ResponseIntent response       // 仅端侧高风险 Signal，MVP 只记不发 [later]
-  map<string,string> fields     // 规则产出的命名字段             [MVP]
+  string   name;                      // 规则名,如 reverse_shell_pattern
+  Where    where;                     // ENDPOINT | CLOUD
+  uint32   base_risk;                 // 0~100,规则声明
+  float    local_rarity;              // [0,1] 本机视角罕见度(MVP 可恒为 1)
+  string   lineage_id;
+  repeated EntityRef entities;        // ★★ 云端 join key,必填
+  repeated string event_refs;         // 引用 CanonicalEvent
+  repeated string signal_refs;        // 可引用下层 Signal(组合)
+  bool     terminal;                  // 规则声明的高置信锚点
+  EvidenceBundle evidence;            // 仅 terminal=true 时附带
 }
-
-enum Where { ENDPOINT; CLOUD; }
-
-// 缝合键：云端据此把跨 lineage / 跨主机的 Signal 连到同一节点
 message EntityRef {
-  EntityKind kind         // PROCESS | FILE | SOCKET | TOKEN | USER | CONTAINER | POD
-  string     key          // 规范化键：stable_id / 绝对路径+inode / dst_ip:port / token摘要
-  string     role         // "subject" | "object" | "writer" | "reader" ...
+  EntityKind kind;                    // PROCESS|FILE|SOCKET|TOKEN|USER|CONTAINER|POD
+  string     key;                     // 规范化键:stable_id / 绝对路径+inode / dst_ip:port / token摘要
+  string     role;                    // subject|object|writer|reader...
 }
 ```
 
-**为什么 `entities` 必填**：`apt-staged-drop` 中，落盘 Signal 与执行 Signal 分属不同 lineage，唯一能缝起它们的就是共享的 `FILE` 实体键。没有它，云端图建不出这条边。
+`entities` 为什么必填:`apt-staged-drop` 里落盘 Signal 和执行 Signal 分属不同 lineage,唯一能缝起它们的就是共享的 `FILE` 实体键。没有它,云端图建不出这条边。
 
----
-
-### 4.5 EvidenceBundle（端侧证据包，仅随 terminal 上行）
+**Incident(裁决产物)** —— 承重在证据和可解释性:
 
 ```protobuf
-message EvidenceBundle {
-  string   terminal_stable_id      // 锚点进程                   [MVP]
-  // lineage 子树切片：从谱系根（或 N 级祖先）到 terminal 的链 + 直接子节点
-  repeated ProcessContext lineage_slice                          [MVP]
-  // 两跳邻居：terminal 经 touch cache 关联到的文件/socket
-  repeated EntityRef two_hop_neighbors                           [MVP]
-  repeated string raw_refs         // ringbuffer 引用，供云端按需回拉 [MVP]
-  repeated Signal  contributing_signals  // 该 lineage 上触发的 Signal [MVP]
+message Incident {
+  string  summary; uint32 severity; repeated string mitre;
+  repeated string lineage_ids;        // 可跨谱系
+  repeated string terminals;          // 锚点 stable_id
+  EvidenceSubgraph evidence;          // 节点 + 边
+  ConvergeTrace converge;             // ★ 如何收敛出来的(可解释:seed/method/path)
 }
 ```
 
-低风险 Signal **不**带 bundle（省带宽），只带 `entities` + `event_refs` 作云端候选种子。
+### 4.3 单一事实源:api/proto
+
+所有跨组件类型先在 `api/proto/` 定义,`protoc` 生成 Go 类型供端云共用。**禁止在端侧或云侧私自定义"差不多"的结构** —— 这是契约不漂移的硬纪律。规则 DSL(YAML)用 `api/schema/` 下的 JSON Schema 校验。
 
 ---
 
-### 4.6 端侧 Signal 引擎（六模块，`fastpath/`）
+## 五、核心机制:检测与收敛(系统的 IP)
 
-引擎的数据流与每个模块的输入/输出：
+前面是骨架,这一节是肌肉。SysArmor 的价值全在"端侧怎么便宜地打标 + 云端怎么不误报地收敛"。
+
+### 5.1 端侧:打标 + 流式检测引擎 + 三张表
+
+**这是端侧规则引擎,范式是有界 CEP(复杂事件处理),不是图引擎。** 它消费 `CanonicalEvent` 流、输出 Signal;对齐的是 EQL / Esper / Flink CEP / RETE 这一派**有状态的事件相关引擎**,而不是 Falco / 经典 Sigma 那种无状态单事件匹配。图模式匹配能力在**云端**(§5.2 / §5.3 的 `graph_match`),端侧绝不建图。
+
+**三张表 = 端侧的全部记忆**(O(活跃实体),不建图):
+
+| 表 | 存什么 | 规模 |
+|---|---|---|
+| 进程上下文表 (proctable) | 每个活跃进程的身份、父链、lineage_id | ∝ 活跃进程数 |
+| 谱系规则状态 (lineage) | 每条 lineage 的计数器/序列机状态 | ∝ 活跃 lineage 数 |
+| 实体接触缓存 (touchcache) | "谁刚写了这文件/连了这 IP" 的 LRU | 固定大小 |
+
+加上原始事件环形缓冲(供回拉) + 上传队列(断网续传)。touchcache 是"图"在端侧的最小替身,只支持检测要的**两跳关联**(写后执行、落盘后外联),绝不做任意跳图扩展 —— 那是云端的事。这条线让端侧成本可封顶。
+
+**引擎管线明确分三段:detection(匹配)→ scoring(打分)→ output+throttling(输出抑制)。** 前一段是检测逻辑,后两段是富化与管线,不要混为一谈:
 
 ```text
 CanonicalEvent
-  │
-  ├─① match    : 单事件谓词（binary/path/uid/argv/kind）         → AtomMatch
-  ├─② sequence : 按 lineage_id 分区的窗口/序列状态机（读写 LineageState） → SeqMatch
-  ├─③ join     : 查 TouchEntry 做两跳（写后执行 / 落盘后外联）    → JoinMatch
-  ├─④ weight   : 本机罕见度 CMS，算 local_rarity（可关，降级=1.0）
-  ├─⑤ dedup    : 同一源动作派生的多个匹配折叠（窗口内 hashset）
-  └─⑥ emit     : 组装 Signal（填 entities/terminal/evidence/refs）
+│
+├── A. detection  匹配核心(对齐 EQL / RETE / Flink CEP)─────────────────
+│   ① match     单事件谓词(binary/path/uid/argv/kind)        → AtomMatch   [RETE alpha / Sigma selection]
+│   ② sequence  按 lineage_id 分区的窗口/序列状态机           → SeqMatch    [EQL sequence-by-maxspan / Esper `->`]
+│   ③ join      查 touchcache 做两跳(写后执行/落盘后外联)     → JoinMatch   [RETE beta / 有界 stream-table join]
+│
+├── B. scoring   打分富化(不是匹配)──────────────────────────────────────
+│   ④ weight    本机罕见度 CMS,算 local_rarity(可关,降级=1.0)         [UEBA / 风险打分,非检测逻辑]
+│
+└── C. output + throttling  输出与抑制 ───────────────────────────────────
+    ⑤ dedup     同源动作派生的多匹配折叠(窗口内 hashset)               [告警抑制,运维管线]
+    ⑥ emit      组装 Signal(填 entities/terminal/evidence/refs)         [Drools RHS / 产出动作]
 ```
 
-模块边界（决定"合理"的关键）：
+**为什么是 CEP 而非单事件匹配**:我们要判的是"web 起 shell → 落盘 → 60s 内同一 lineage 外联"这类**跨事件时序**模式,单事件谓词(Falco/经典 Sigma)做不到,必须靠 ② 的窗口状态机。`by lineage_id` 分区是关键约束:它把状态机数量绑定到"活跃 lineage 数",天然有界(对齐 I3),避免通用 CEP 因 group-by 基数爆炸而 OOM。③ 的 touchcache join 则是 Flink/Kafka Streams 做有界 join 的标准手法(状态表 + 两跳上限)。
+
+**多规则共享(扩展点,非 MVP 必做)**:当前可"每条规则各跑一遍",MVP 5 条规则无所谓。规则增多后应引入 **RETE 式共享** —— 按 `EventKind`/`binary` 建谓词倒排索引,事件只触发相关规则、共享 alpha/beta 的 partial match,避免重复求值。DSL 设计时给 `sequence` 预留 `until`(否定/缺失模式,如"X 发生但 Y 在窗口内未发生",对齐 EQL `until`)可省后续返工。详见 §3.3。
+
+端侧的本分:**翻译事实、拦住最危险的瞬间、广撒带实体键的种子**;它回答"这个点对本机而言反常吗 + 涉及哪些实体",而**不**回答"这是不是攻击"(那是云端的全局判断)。
+
+### 5.2 云端:建图 + 罕见度 + 结构收敛(为什么不能裸加)
+
+云端把 Signal 流按实体连成 **Provenance Graph**(节点:进程/文件/IP/容器...;边:fork/exec/read/write/connect...;每个节点挂 Signal 和风险)。图在云端而不在端侧,因为图的价值恰恰来自**跨边界**(跨进程、跨容器、跨主机、跨小时),单机看不全。
+
+**收敛绝不能用加法**。最直觉的做法"子图内风险分累加超阈值就告警"是反模式:忙碌或长寿的良性实体(CI runner、特权 agent)做的每件事都有正分,攒够数必然撑爆任何阈值。同样的 `落盘→执行→外联`,在 CI 节点是日常、在 nginx worker 是攻击,加法看不到"对谁而言"。
+
+正确收敛靠两个正交机制:
+
+1. **罕见度加权**:一个行为对所属 workload 越罕见,权重越高;惯常行为权重趋零。`同一动作在 CI 上 rarity≈0、在 nginx 上 rarity≈1`。良性忙碌从构造上就没有可累加的料。
+2. **结构收敛**:判定从"分数和超没超"换成"几个**各自独立罕见**的点是否在因果上**紧凑相连**"。忙碌能产生量,产生不了"多个独立罕见点构成的紧凑因果结构"。
+
+**MVP 的穷人版收敛**(可落地,但不是裸加;数据模型已为正式版预留 `NodeRisk` 字段):
 
 ```text
-能在端侧做：  ①②③ 产 Signal · ④ 本机罕见度 · ⑤ 去重 · 规则级 terminal 判定
-不在端侧做：  全局罕见度 · 任意跳图扩展 · 扩散/STP · 累计 score 裁决  → 全在云端
-```
-
-`emit` 输出契约（与 §4.4 Signal 对齐）：**每个 Signal 必含 `entities`；规则声明 `terminal` 的才调 `evidence` 模块切证据包。** 端侧不计算"谁是攻击"，只回答"这个点对本机而言反常吗 + 它涉及哪些实体"。
-
----
-
-### 4.7 Edge-Cloud Analytics Contract（Link1，双向流）
-
-```protobuf
-// ── 上行（agent → gateway）──
-message UplinkEnvelope {
-  string agent_id; string tenant_id; uint64 stream_seq;          [MVP]
-  oneof payload {
-    CanonicalEvent event;                                        [MVP]
-    Signal         signal;                                       [MVP]
-    EvidenceBundle evidence;   // 也可内嵌在 terminal Signal     [MVP]
-    AgentHealth    health;     // 含 SensorHealth + spool 深度    [MVP]
-  }
-}
-
-// ── 下行（gateway → agent）──
-message DownlinkEnvelope {
-  oneof payload {
-    PolicyEnvelope policy;        // 策略下发                     [MVP：静态/启动期]
-    ExpandedRequest expand;       // 回拉 raw_ref 细节            [later]
-    EnhancedCollection enhance;   // 临时提升某 lineage 采集粒度  [later]
-    ResponseIntent response;      // 响应指令                     [later]
-    HealthAck ack;                                               [MVP]
-  }
-}
-
-message ExpandedRequest { repeated string raw_refs; string lineage_id; } [later]
-```
-
-MVP 上行 event/signal/evidence/health 四类；下行只需 policy 下发 + health ack。重试靠 gRPC backoff，断连靠 agent 本地 spool。
-
----
-
-### 4.8 云端图与收敛产物
-
-```protobuf
-message GraphNode {
-  string  node_id         // 进程=stable_id；文件/socket=规范化实体键  [MVP]
-  EntityKind kind                                                [MVP]
-  map<string,string> attrs                                       [MVP]
-  repeated string signal_ids   // 挂在此节点的 Signal             [MVP]
-  NodeRisk risk                                                  [MVP]
-  int64   first_seen_ns; int64 last_seen_ns; int64 ttl_ns;       [MVP]
-}
-
-message GraphEdge {
-  string  src_id; string dst_id; EdgeKind kind;  // fork/exec/write/connect/... [MVP]
-  int64   first_seen_ns; uint64 merge_count;     // 边合并去重     [MVP]
-}
-
-// ★ 收敛用的节点风险——不是简单累加
-message NodeRisk {
-  float   anomaly_score   // 罕见度加权后的异常分（MVP: base_risk × global_rarity） [MVP]
-  float   global_rarity   // 全局 CMS/IDF 给出                    [MVP]
-  uint32  signal_count                                           [MVP]
-  bool    is_terminal     // 端侧声明 或 云端罕见度浮出           [MVP]
-  // 正式版：行为嵌入向量 / PPR 扩散得分                          [later]
-}
-
-message Incident {
-  string  id; string summary; uint32 severity; repeated string mitre; [MVP]
-  repeated string lineage_ids;                                   [MVP]
-  repeated string terminals;     // stable_id                    [MVP]
-  EvidenceSubgraph evidence;                                     [MVP]
-  repeated Signal contributing_signals;                          [MVP]
-  repeated string raw_refs;                                      [MVP]
-  ConvergeTrace converge;        // 如何收敛出来的（可解释）      [MVP]
-}
-
-message EvidenceSubgraph { repeated GraphNode nodes; repeated GraphEdge edges; } [MVP]
-
-// 可解释性：记录收敛依据，便于调参与复盘
-message ConvergeTrace {
-  repeated string seed_terminals;      // 起点                    [MVP]
-  string  method;   // "rarity+causal-topk"(MVP) | "ppr+stp"(later) [MVP]
-  float   score;    repeated string steiner_path_node_ids;       [MVP]
-}
-```
-
-收敛逻辑（`analytics/converge`，对应 D6）：
-
-```text
-1. 每个 Signal → 给对应实体 GraphNode 叠 anomaly_score = base_risk × global_rarity
-2. 相关族去重：同一 (源事件/源动作) 派生的多 Signal 只取 max
+1. 每个 Signal → 给对应实体节点叠 anomaly_score = base_risk × global_rarity
+2. 相关族去重:同一源动作派生的多 Signal 只取 max
 3. 取 anomaly_score top-k 节点作 seed
-4. 仅当 seed 间存在【因果路径】（祖先-后代 / 共享实体边）才连
-5. 抽最短路证据树 → Incident（method="rarity+causal-topk"）
+4. 仅当 seed 间存在【因果路径】(祖先-后代 / 共享实体边)才连
+5. 抽最短路证据树 → Incident,method="rarity+causal-topk"
    —— 绝不做"连通子图 Σrisk ≥ 阈值"
+正式版:行为嵌入异常分 + Personalized PageRank 局部 push + KMB/在线 Steiner Tree
 ```
 
----
+> 实现细节提醒(影响正确性,但不是架构):terminal 由规则声明、端侧不算累计 score;全局罕见度基线和扩散/STP 都需要全局视角,只能在云端。端侧若偷偷算累计分,就会掉回端侧加性溢出。
 
-### 控制面
+### 5.3 规则 DSL(DetectionPolicy 的核心)
 
-### 4.9 PolicyEnvelope（统一信封）+ 五类 Policy
-
-所有策略共用信封，靠 `type` 区分 spec。MVP 从静态 YAML 读，但走完整结构，为签名/灰度预留。
-
-```protobuf
-message PolicyEnvelope {
-  PolicyMeta   meta;                                             [MVP]
-  PolicyTarget target;                                           [MVP]
-  RolloutSpec  rollout;                                          [later]
-  oneof spec {
-    CollectionPolicy collection;                                 [MVP]
-    ResourcePolicy   resource;                                   [MVP]
-    DetectionPolicy  detection;                                  [MVP]
-    ResponsePolicy   response;                                   [MVP：observe-only]
-    TelemetryPolicy  telemetry;                                  [MVP]
-  }
-}
-
-message PolicyMeta { string id; PolicyType type; uint64 version; string signature; } [sig: later]
-message PolicyTarget {
-  string scope;                 // "fleet" | "host" | "workload"
-  map<string,string> selectors; // 标签选择
-  string source_capability;     // "full" | "ingest_only"  ★ 能力门控 [later]
-}
-message RolloutSpec { string mode; uint32 percent; uint64 rollback_to; }  [later]
-```
-
-五类 spec 的关键旋钮（调参面）：
-
-```protobuf
-// ① 采集：编译成 sensor 的 CollectionIntent / TracingPolicy
-message CollectionPolicy {
-  repeated EventKind kinds;          // 采哪些 syscall            [MVP]
-  repeated Selector  include;        // 进程/容器/路径范围         [MVP]
-  repeated Selector  exclude;                                    [MVP]
-  RateLimit rate_limit;              // 每类事件限速              [MVP]
-  float     sample_rate;                                         [later]
-}
-
-// ② 资源：端侧成本封顶与降级（守 P4 / D3）
-message ResourcePolicy {
-  uint64 max_proctable_entries;                                  [MVP]
-  uint64 max_lineage_states;                                     [MVP]
-  uint64 touchcache_size;                                        [MVP]
-  int64  lineage_budget;             // per-lineage 规则预算       [MVP]
-  int64  proc_ttl_ns; int64 lineage_ttl_ns;                      [MVP]
-  uint64 ringbuffer_bytes;                                       [MVP]
-  uint64 spool_max_bytes;                                        [MVP]
-  DegradeThresholds degrade;         // CPU/RSS 超限时关 weight/降采样 [MVP]
-}
-
-// ③ 检测：规则内容包，靠 where 路由到端/云
-message DetectionPolicy {
-  repeated Rule rules;                                           [MVP]
-  ConvergeParams converge;           // top-k / 路径跳数上限 / 阈值 [MVP]
-  RarityParams   rarity;             // CMS 宽深 / IDF 基线窗口    [MVP]
-}
-
-// ④ 响应：MVP 只授权 observe（记 intent 不实发）
-message ResponsePolicy {
-  enum Mode { OBSERVE; ENFORCE; }
-  Mode   mode;                       // MVP 固定 OBSERVE          [MVP]
-  repeated EnforceKind allowed;                                  [later]
-  repeated Selector    guardrail_protect;  // 禁止误伤的关键进程  [later]
-}
-
-// ⑤ 遥测：上行行为
-message TelemetryPolicy {
-  uint32 batch_size; int64 flush_interval_ns;                    [MVP]
-  uint32 retry_max;  int64 backoff_base_ns;                      [MVP]
-  repeated EventKind priority_kinds; // 拥塞时优先上行            [MVP]
-}
-```
-
----
-
-### 4.10 Rule（规则 schema，DetectionPolicy 的核心）
-
-端侧规则与云端规则同一信封，靠 `where` 路由；端侧规则映射到六模块。
+端侧规则与云端规则同一信封,靠 `where` 路由。端侧规则映射到六模块;云端规则在图上匹配,可跨 lineage。
 
 ```yaml
-# 端侧规则（where: endpoint）—— 编译进 fastpath 六模块
+# 端侧规则 → 编译进 fastpath 六模块
 rule:
   id: reverse_shell_pattern
-  version: "1.0"
   where: endpoint
-  match:                                   # → ① match
-    on: connect
-    when: "proc.is_interactive_shell && proc.stdio_redirected_to_socket"
-  sequence:                                # → ② sequence（可选）
-    after: [web_runtime_spawns_shell, payload_dropped]
-    within: 60s
-    by: lineage_id
-  join:                                    # → ③ join（可选）
-    touch: { entity: file, op: write_then_exec }
-  emit:                                    # → ⑤⑥ emit
+  match: { on: connect, when: "proc.is_interactive_shell && proc.stdio_redirected_to_socket" }
+  sequence: { after: [web_runtime_spawns_shell, payload_dropped], within: 60s, by: lineage_id }
+  emit:
     name: reverse_shell_pattern
     base_risk: 70
-    terminal: true                         # 高置信 → 切证据包
-    entities:                              # ★ 必填：云端 join key
+    terminal: true                          # 高置信 → 切证据包
+    entities:                               # ★ 必填,云端 join key
       - { kind: process, key: "$proc.stable_id", role: subject }
       - { kind: socket,  key: "$conn.dst_ip:port", role: object }
-      - { kind: file,    key: "$payload.file",     role: writer }
-    event_refs: ["$event.id"]
-    response: { action: kill, mode: observe }   # MVP 只记
+    response: { action: kill, mode: observe }   # MVP 只记不发
 ```
 
 ```yaml
-# 云端规则（where: cloud）—— 在图上匹配，可跨 lineage
+# 云端规则 → 在图上匹配,可跨 lineage(apt-staged-drop 的关键)
 rule:
   id: dropped_payload_executed_and_connects
-  version: "1.0"
   where: cloud
-  graph_match:                             # 图模式：进程→文件→socket，≤2 跳
+  graph_match:
     pattern: |
       (p:process)-[:exec]->(f:file {dropped:true}),
       (p)-[:connect]->(s:socket {private:false})
-    cross_lineage: true                    # ★ 允许 f 由别的 lineage 写入 → apt-staged-drop
+    cross_lineage: true                     # ★ 允许 f 由别的 lineage 写入
   emit:
     name: dropped_payload_executed_and_connects
     base_risk: 80
-    entities:
-      - { kind: process, key: "$p.stable_id", role: subject }
-      - { kind: file,    key: "$f.key",       role: object }
-      - { kind: socket,  key: "$s.key",       role: object }
+    entities: [ {kind: process, key: "$p.stable_id"}, {kind: file, key: "$f.key"}, {kind: socket, key: "$s.key"} ]
 ```
 
-字段语义总览：
-
-| 字段 | 端侧 | 云端 | 说明 |
-|---|---|---|---|
-| `where` | endpoint | cloud | 路由到哪个引擎 |
-| `match` / `graph_match` | 单事件谓词 | 图模式 | 端侧无图，云端有图 |
-| `sequence` / `join` | ✅ | — | 端侧 lineage 内时序 + 两跳 |
-| `cross_lineage` | — | ✅ | 云端可跨 lineage 按共享实体缝 |
-| `emit.entities` | ★必填 | ★必填 | 云端缝合 join key |
-| `emit.terminal` | 规则声明 | 罕见度浮出 | 高置信锚点 |
-| `emit.base_risk` | ✅ | ✅ | 与 rarity 相乘，**不直接累加** |
+| 字段 | 端侧 | 云端 |
+|---|---|---|
+| `match` / `graph_match` | 单事件谓词 | 图模式 |
+| `sequence` / `join` | ✅ lineage 内时序 + 两跳 | — |
+| `cross_lineage` | — | ✅ 按共享实体缝 |
+| `emit.entities` | ★必填 | ★必填 |
+| `emit.base_risk` | 与 rarity 相乘,**不直接累加** | 同 |
 
 ---
 
-## 五、里程碑（4 个迭代）
+## 六、构建计划:四个里程碑
+
+每个里程碑有明确出口,出口达成才进下一程。
 
 ```text
-M0  地基（端到端空管道）
-    - Sensor Contract Go 接口 + tetragon 实现；GetEvents → SensorEvent
-    - normalize → CanonicalEvent；proctable + lineage 打标
-    - Link1 gRPC 上行 Event；云端落 SQLite；sysarmorctl 看到事件
-    出口: 一条 exec 事件带正确 stable_id + lineage_id 出现在云端
+M0  地基:端到端空管道
+    范围: Sensor Contract Go 接口 + tetragon 实现;GetEvents → SensorEvent
+          normalize → CanonicalEvent;proctable + lineage 打标
+          Link1 gRPC 上行 Event;云端落 SQLite;sysarmorctl 看到事件
+    出口: 一条 exec 事件带【正确的 stable_id + lineage_id】出现在云端
+    验证: lifecycle-smoke 的 TC-LC-03(采集可见)
 
-M1  端侧检测（六模块 + 三张表）
-    - fastpath ①②③⑥ + 5 条端侧规则（YAML）
-    - touchcache 两跳；emit 带 entities；reverse_shell 产 terminal + 证据包
-    - ④weight/⑤dedup 最小实现（可恒权重起步）
-    出口: 复现落盘+反连，端侧产出带 entities 的 Signal 与 1 个 terminal 证据包
+M1  端侧检测:六模块 + 三张表
+    范围: fastpath ①②③⑥ + 5 条端侧规则(YAML);touchcache 两跳
+          emit 带 entities;reverse_shell 产 terminal + 证据包
+          ④weight/⑤dedup 最小实现(可恒权重起步)
+    出口: 复现 apt-fileless-c2,端侧产出【带 entities 的 Signal + 1 个 terminal 证据包】
 
 M2  云端图与收敛
-    - 内存图按 host 建图 + 边合并 + 共享实体缝合
-    - 全局 rarity（CMS）；3 条云端规则（含 cross_lineage）
-    - converge: 罕见度加权 + 去重 + 因果路径 top-k → Incident + 证据子图 + ConvergeTrace
-    出口: apt-fileless-c2 与 apt-staged-drop 各产 1 个 Incident，证据链完整
+    范围: 内存图按 host 建图 + 边合并 + 共享实体缝合
+          全局 rarity(CMS);3 条云端规则(含 cross_lineage)
+          converge: 罕见度加权 + 去重 + 因果路径 top-k → Incident + 证据子图 + ConvergeTrace
+    出口: apt-fileless-c2 与 apt-staged-drop 各产【1 个 Incident,证据链完整】
+          apt-staged-drop 关掉 cross_lineage → 0(立论验证)
 
 M3  收口与度量
-    - lifecycle-smoke 全流程
-    - GetEvents 压测基线（事件率 vs CPU/RSS/丢失率）
-    - 噪声评估：带正常运维负载（含 CI 类）节点跑，确认收敛不溢出、误报可数
-    出口: 三场景通过 + 压测基线图 + 误报计数 + 一次"裸加会误报、罕见度不会"的对比验证
+    范围: lifecycle-smoke 全流程;GetEvents 压测基线(事件率 vs CPU/RSS/丢失率)
+          噪声评估:带 CI 类负载节点跑,确认收敛不溢出
+    出口: 三场景全过 + 压测基线曲线 + 一次"裸加会误报、罕见度不会"的对比验证
+          (benign-ci-noise:正常模式 0,切裸加 ≥1)
 ```
 
+每个里程碑都映射到 `design-test-cases.md` 的具体用例和断言,做完即可验证。
+
 ---
 
-## 六、关键风险与对策
+## 七、范围边界:In / Out
 
-| 风险 | 影响 | MVP 对策 |
+裁剪原则:**凡不影响"主线是否成立"判断的全部后置;但所有跨层 schema 字段先定义好(哪怕 MVP 不填),避免返工。**
+
+| 能力 | MVP | 说明 |
 |---|---|---|
-| 内核兼容：Tetragon 需较新内核(BTF/CO-RE) | 老内核跑不起来 | 锁定 5.15+ 验证，SensorCapability 暴露能力，兼容矩阵后置 |
-| GetEvents 吞吐/丢失 | 主线数据不全 | M3 必出压测基线；SensorHealth.dropped_events 作为 health 可见 |
-| stable_id 在丢事件/PID 复用下断链 | 图谱错位 | hash(host,pid,start_time) + 启动扫 /proc 重建；丢失率监控 |
-| 罕见度冷启动（基线未建立） | 早期权重不准 | MVP 可恒权重起步，schema 就位；基线随运行积累，必要时导入先验白名单 |
-| 内存图随长跑膨胀 | 云端 OOM | NodeRisk.ttl + 节点上限淘汰（单 host 风险低） |
-| 误报淹没 Incident | 主线"可用性"存疑 | converge 用罕见度+结构而非裸加；M3 在 CI 类脏基线节点专门验证不溢出 |
-| 收敛穷人版 vs 正式版差距 | 后期重写风险 | converge 独立成包；NodeRisk 预留 anomaly 向量字段，换 PPR/STP 不动建图与规则 |
+| Tetragon 托管 + GetEvents 消费 | ✅ | 主线起点 |
+| SensorEvent → CanonicalEvent 归一 + 稳定进程 ID | ✅ | L0 |
+| lineage 打标 | ✅ | 横轴索引 |
+| 端侧三张表 + 六模块引擎 + 5 条规则 | ✅ | 证明 L1,含 entities/terminal |
+| 本地罕见度(CMS)+ 相关族去重 | ◻ 最小 | 可恒权重起步,schema 必须就位 |
+| terminal + 证据包 | ✅ | 至少 reverse_shell 一条 |
+| Link1 原生 gRPC 上行 | ✅ | 端云契约最小实现 |
+| 云端建图(单 host 内存图)+ 共享实体缝合 | ✅ | 证明 L2 + apt-staged-drop |
+| 云端规则(图模式,3 条) | ✅ | 证明跨实体检测 |
+| 收敛(罕见度+去重+因果 top-k)→ Incident | ✅ | **非裸加** |
+| 证据子图裁剪 + sysarmorctl 调查视图 | ✅ | 证明可解释 |
+| GetEvents 压测基线 | ✅ | M3 硬出口 |
+| 响应(kill/block/quarantine) | ❌ | observe-only,只记 intent |
+| Native Sensor | ❌ | 压测数据出来再决定 |
+| 跨主机缝合 / Incident 合并 | ❌ | 单 host 即可证明主线 |
+| 完整 NODLINK(STP + 行为嵌入) | ❌ | 穷人版收敛先替代 |
+| 策略签名 / 灰度 / 回滚 | ❌ | 静态 YAML,但走 PolicyEnvelope 结构 |
+| 异构源 Adapter / Link2 OTel | ❌ | 契约预留 |
+| Kafka / ClickHouse / 对象存储 | ❌ | 内存图 + SQLite |
+| 多租户 / mTLS enrollment | ❌ | 单租户 + 静态 token |
+
+**技术选型**:Go(对齐 Tetragon/Elkeid 生态) · Tetragon(Day 1 复用) · gRPC+protobuf(端云强类型契约) · 内存图(Go map 邻接表) · SQLite(零运维) · YAML 规则 + Go 解释执行 · Count-Min Sketch(罕见度) · sysarmorctl CLI(调查) · systemd + K8s DaemonSet(部署)。
 
 ---
 
-## 七、一句话总结
+## 八、关键风险与对策
 
-MVP = **一个 Tetragon + 一个"打标 lineage、六模块快路径、产 terminal/证据包"的 Agent + 一个"内存建图、全局罕见度、罕见度加权+因果路径收敛、3 条云端规则"的 Manager + 一个看 Incident 的 CLI**。用 `apt-fileless-c2`（响）和 `apt-staged-drop`（跨 lineage，验证云端图立论）两个场景证明主线，并以一张 GetEvents 压测基线为后续 Native Sensor 决策留依据。所有跨层 schema（Sensor Contract → CanonicalEvent → 三张表 → Signal/证据 → Edge-Cloud Contract → 图/Incident → PolicyEnvelope/Rule）先冻结，**收敛坚持罕见度+结构、绝不裸加**，响应/跨主机/STP/签名灰度在主线被证明后再加。
+| 风险 | 影响 | 对策 |
+|---|---|---|
+| Tetragon 需较新内核(BTF/CO-RE) | 老内核跑不起来 | 锁定 5.15+,SensorCapability 暴露能力,兼容矩阵后置 |
+| GetEvents 吞吐/丢失 | 主线数据不全 | M3 必出压测基线;SensorHealth.dropped_events 可见 |
+| stable_id 在丢事件/PID 复用下断链 | 图谱错位 | hash(host,pid,start_time) + 启动扫 /proc 重建;丢失率监控 |
+| 罕见度冷启动(基线未建) | 早期权重不准 | MVP 可恒权重起步,schema 就位;基线随运行积累,可导入先验白名单 |
+| 内存图随长跑膨胀 | 云端 OOM | NodeRisk.ttl + 节点上限淘汰(单 host 风险低) |
+| 误报淹没 Incident | 主线可用性存疑 | converge 用罕见度+结构而非裸加;M3 在 CI 类脏基线节点专门验证 |
+| 穷人版收敛 vs 正式版差距 | 后期重写风险 | converge 独立成包;NodeRisk 预留 anomaly 向量字段,换 PPR/STP 不动建图与规则 |
+
+---
+
+## 九、不可让步的不变量(invariants)
+
+最后,把"如果搞错就等于搭了另一个(更差的)系统"的几条钉死。它们不是细节,是地基:
+
+| # | 不变量 | 破坏的后果 |
+|---|---|---|
+| I1 | 事实严格三层 Event → Signal → Incident,risk 只是 Signal 的属性 | 否则"中性积木"和"检测发现"分裂成两套引擎 |
+| I2 | lineage 在 exec 时继承谱系根,盖在每条 Event 上 | 否则云端要从乱序事件重建谱系,贵且易错 |
+| I3 | 端侧只维护三张表 + 两跳,**绝不建图、绝不算累计 score** | 否则端侧成本不可封顶 + 加性溢出误报 |
+| I4 | 端侧每个 Signal 必带 `entities` | 否则云端无法跨 lineage / 跨主机缝合(apt-staged-drop 失败) |
+| I5 | 云端收敛 = 罕见度加权 + 结构收敛,**禁止裸加阈值** | 否则忙碌良性实体撑爆阈值(benign-ci-noise 失败) |
+| I6 | 三道契约(Sensor / Edge-Cloud / DetectionPolicy)先冻结再填实现 | 否则上层耦合 Tetragon / 图算法 / 具体规则,长不出生产版 |
+| I7 | 所有跨层类型以 `api/proto/` 为单一事实源 | 否则端云契约漂移 |
+
+---
+
+## 十、一句话总结
+
+MVP = **一个 Tetragon + 一个"打标 lineage、六模块快路径、产 terminal/证据包"的 Agent + 一个"内存建图、全局罕见度、罕见度加权+因果路径收敛、3 条云端规则"的 Manager + 一个看 Incident 的 CLI**。先冻结三道契约(Sensor / Edge-Cloud / DetectionPolicy),再在背后填最土的实现;用 `apt-fileless-c2`(响)、`apt-staged-drop`(云端图立论)、`benign-ci-noise`(收敛不裸加)三个场景证明主线端到端成立。所有跨层 schema 先定义好,收敛坚持罕见度+结构、绝不裸加 —— 这样从 MVP 到生产版,是沿契约长出去,不是推倒重来。

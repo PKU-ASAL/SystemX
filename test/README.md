@@ -102,22 +102,73 @@ test/
 ## 快速开始
 
 ```bash
-# 容器拓扑
-make up                              # docker compose up + 加载 TracingPolicy
-make capture SCENARIO=apt-fileless-c2
-make down
+# 容器拓扑: build → manager/agent replay → sysarmorctl assert
+make e2e TOPO=container SCENARIO=apt-fileless-c2
+make e2e TOPO=container SCENARIO=apt-staged-drop
+make e2e TOPO=container SCENARIO=benign-ci-noise
 
-# VM 拓扑
-make up TOPO=vm
-make capture TOPO=vm SCENARIO=apt-fileless-c2
-make down TOPO=vm
-
-# 一键
-make e2e                             # up + capture
+# VM 拓扑: VM 内执行场景和抓 Tetragon,复用同一 manager/CLI 契约
+make e2e TOPO=vm SCENARIO=apt-fileless-c2
 make e2e TOPO=vm SCENARIO=apt-staged-drop
+make e2e TOPO=vm SCENARIO=benign-ci-noise
+
+# 生命周期 smoke
+make e2e TOPO=container SCENARIO=lifecycle-smoke
+make e2e TOPO=vm SCENARIO=lifecycle-smoke
+
+# 性能基线 smoke
+make perf TOPO=container DUR=10
+make perf TOPO=vm DUR=10
+
+# 汇总
+make report
 
 # 清理
 make clean                           # down + 删 .results/
+```
+
+## 当前产品链路
+
+MVP 运行路径是:
+
+```
+Tetragon JSONL / Phase1 replay
+  → sysarmor-agent normalize + fastpath
+  → sysarmor-manager Link1 upload/analytics/store
+  → sysarmorctl JSON query
+  → harness/assert.py
+```
+
+agent 默认用 HTTP upload 兼容 e2e;也支持 gRPC Link1:
+
+```bash
+docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
+  --transport grpc --manager 127.0.0.1:9444 \
+  --scenario grpc-smoke --input-jsonl /tmp/lifecycle.sensor.jsonl
+```
+
+`capture-container` 会按 `node-a` 的 Docker container id 过滤 Tetragon JSONL,避免把宿主机或其他容器噪音喂给 agent。
+`capture-*` 仍会保留实际喂给 agent 的 Tetragon 样本到 `.results/*.tetragon.jsonl`。
+`replay_scenario.py` 生成契约级 SensorEvent 作为稳定 e2e 输入。
+agent 也已支持直接读取 Tetragon raw JSONL,用于 raw adapter smoke。
+
+## 常用调试
+
+```bash
+# 查询 manager 健康
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 status --json
+
+# 查询信号和事件
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario apt-fileless-c2 --layer endpoint --json
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario lifecycle-smoke --kind EXEC --json
+
+# control assertion: 反事实重算,不污染 store
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario apt-staged-drop --disable cloud.cross_lineage --json
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario benign-ci-noise --mode additive_threshold --json
+
+# raw Tetragon adapter smoke
+docker cp .results/apt-fileless-c2.vm.tetragon.jsonl tetragon:/tmp/raw.jsonl
+docker exec tetragon /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --scenario raw-fileless --stream-jsonl /tmp/raw.jsonl
 ```
 
 ## 前提
@@ -134,3 +185,5 @@ make clean                           # down + 删 .results/
 - VM tetragon 从 GitHub release 下载 tarball;VM 内 GitHub 被墙时需手动下载。
 - 容器拓扑 tetragon `--pid=host`,当前靠 TracingPolicy selector 过滤噪音;后续可加 `--cgroup-filter`。
 - VM 拓扑修改脚本后需 `make provision`(rsync + re-provision)。
+- VM topology 在 `mgr` VM 内运行 `sysarmor-manager` 和 `sysarmorctl`,在 `node-a` VM 内运行 agent stream。
+- `perf-getevents` 是短窗口 baseline smoke,EPS 可能为 0;后续可扩展为阶梯负载曲线。

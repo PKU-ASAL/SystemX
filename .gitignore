@@ -1,6 +1,12 @@
 # test results (large, regenerated)
+test/.results/
 test/.results/*.jsonl
 test/.results/*.txt
+test/.results/*.json
+test/.results/*.csv
+
+# build artifacts
+bin/
 
 # vagrant
 .vagrant/
