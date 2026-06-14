@@ -14,8 +14,13 @@ import (
 	"testing"
 	"time"
 
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestRunnerOnceWithFakeSensor(t *testing.T) {
@@ -328,6 +333,76 @@ func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	}
 }
 
+func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "http://127.0.0.1:1", Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, RestartWindow: time.Hour},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		Upload:  config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+		Health:  config.HealthConfig{Interval: 5 * time.Millisecond},
+	}
+	runner := &Runner{
+		Config: cfg,
+		Sensor: &healthOnlySensor{health: contract.Health{
+			Backend:        "tetragon",
+			Installed:      true,
+			PolicyLoaded:   true,
+			Running:        false,
+			RestartCount:   3,
+			LastExitReason: "exit status 7",
+			LastError:      "exit status 7",
+		}},
+	}
+	errCh := make(chan error, 1)
+	var out bytes.Buffer
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &out})
+	}()
+	var batch *analyticsv1.UploadBatch
+	deadline := time.After(2 * time.Second)
+	for batch == nil {
+		matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range matches {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var candidate analyticsv1.UploadBatch
+			if err := protojson.Unmarshal(data, &candidate); err != nil {
+				t.Fatal(err)
+			}
+			if len(candidate.GetSignals()) > 0 && candidate.GetSignals()[0].GetName() == tamper.SignalName {
+				batch = &candidate
+				break
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for tamper spool batch; output=%q", out.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	sig := batch.GetSignals()[0]
+	if sig.GetName() != tamper.SignalName || !sig.GetTerminal() || sig.GetWhere() != signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT {
+		t.Fatalf("tamper signal = %+v", sig)
+	}
+}
+
 func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -370,6 +445,31 @@ func TestTetragonRestartPolicyFromConfig(t *testing.T) {
 	if _, err := tetragonRestartPolicy(config.SensorConfig{Restart: "sometimes"}); err == nil {
 		t.Fatal("tetragonRestartPolicy(unknown) error = nil")
 	}
+}
+
+type healthOnlySensor struct {
+	health contract.Health
+}
+
+func (s *healthOnlySensor) Capability(context.Context) (contract.Capability, error) {
+	return contract.Capability{Backend: s.health.Backend, Version: "test", SupportsHealth: true}, nil
+}
+
+func (s *healthOnlySensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	out := make(chan contract.EventEnvelope)
+	go func() {
+		defer close(out)
+		<-ctx.Done()
+	}()
+	return out, nil
+}
+
+func (s *healthOnlySensor) Enforce(_ context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {
+	return contract.UnsupportedAck(cmd, "test sensor"), nil
+}
+
+func (s *healthOnlySensor) Health(context.Context) (contract.Health, error) {
+	return s.health, nil
 }
 
 func assertSpoolBatch(t *testing.T, dir string) {

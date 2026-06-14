@@ -8,10 +8,12 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
@@ -87,6 +89,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	defer rt.Stop(context.Background())
 	startedAt := time.Now()
 	reporter := agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	tamperDetector := &tamper.Detector{}
 
 	for {
 		select {
@@ -126,6 +129,20 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
 			if err != nil {
 				return err
+			}
+			if sig := tamperDetector.Evaluate(health, time.Now().UTC(), tamper.Options{
+				MaxRestarts:        uint64(r.Config.Sensor.MaxRestarts),
+				MaxParseErrors:     0,
+				MaxDroppedEvents:   0,
+				NoEventGracePeriod: r.Config.Sensor.RestartWindow,
+			}); sig != nil {
+				batchID, err := r.spoolSignals(queue, []*signalv1.Signal{sig})
+				if err != nil && !spool.IsBackpressure(err) {
+					return err
+				}
+				if r.Out != nil {
+					fmt.Fprintf(r.Out, "agent tamper signal: name=%s reason=%q spool_batch=%s\n", sig.GetName(), sig.GetEvidence().GetSummary(), batchID)
+				}
 			}
 			if err := reporter.Report(ctx, health); err != nil && r.Out != nil {
 				fmt.Fprintf(r.Out, "agent health report error: %v\n", err)
@@ -254,6 +271,18 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *
 			Version: "dev",
 		},
 		Events:  []*eventv1.CanonicalEvent{canonical},
+		Signals: signals,
+	}
+	return queue.Append(batch)
+}
+
+func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (string, error) {
+	batch := &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{
+			AgentId: r.Config.Agent.ID,
+			HostId:  r.Config.Agent.HostID,
+			Version: "dev",
+		},
 		Signals: signals,
 	}
 	return queue.Append(batch)
