@@ -19,6 +19,7 @@ type Backend struct {
 	EventSource string
 	Version     string
 	Bundle      BundleConfig
+	Restart     ProcessRestartPolicy
 
 	mu           sync.Mutex
 	policyLoaded bool
@@ -33,6 +34,12 @@ type Backend struct {
 	eventSupervisor  ProcessSupervisor
 }
 
+type ProcessRestartPolicy struct {
+	Enabled     bool
+	MaxRestarts int
+	Delay       time.Duration
+}
+
 func NewBackend(policyPath, eventSource, version string) *Backend {
 	return NewBackendWithBundle(policyPath, eventSource, version, BundleConfig{})
 }
@@ -42,6 +49,12 @@ func NewBackendWithBundle(policyPath, eventSource, version string, bundle Bundle
 		version = "unknown"
 	}
 	return &Backend{PolicyPath: policyPath, EventSource: eventSource, Version: version, Bundle: bundle}
+}
+
+func NewBackendWithOptions(policyPath, eventSource, version string, bundle BundleConfig, restart ProcessRestartPolicy) *Backend {
+	backend := NewBackendWithBundle(policyPath, eventSource, version, bundle)
+	backend.Restart = restart
+	return backend
 }
 
 func (b *Backend) Capability(context.Context) (contract.Capability, error) {
@@ -172,11 +185,9 @@ func (b *Backend) Health(context.Context) (contract.Health, error) {
 		running = true
 	}
 	restarts := status.RestartCount + sensorStatus.RestartCount
-	lastExit := firstNonEmpty(status.LastExit, sensorStatus.LastExit)
-	if status.LastError != "" {
-		lastError = status.LastError
-	} else if sensorStatus.LastError != "" {
-		lastError = sensorStatus.LastError
+	lastExit, processError := mergedProcessExit(status, sensorStatus)
+	if processError != "" {
+		lastError = processError
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -195,15 +206,37 @@ func (b *Backend) Health(context.Context) (contract.Health, error) {
 	}, nil
 }
 
+func mergedProcessExit(statuses ...ProcessStatus) (string, string) {
+	for _, status := range statuses {
+		if status.LastError != "" {
+			return status.LastExit, status.LastError
+		}
+	}
+	for _, status := range statuses {
+		if status.LastExit != "" {
+			return status.LastExit, ""
+		}
+	}
+	return "", ""
+}
+
 func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
 	if b.Bundle.TetragonPath == "" {
 		return func() {}, nil
 	}
-	if err := b.sensorSupervisor.Start(ctx, ProcessSpec{
+	spec := ProcessSpec{
 		Name: "tetragon",
 		Path: b.Bundle.TetragonPath,
 		Args: []string{"--config-dir", b.PolicyPath},
-	}); err != nil {
+	}
+	if b.Restart.Enabled {
+		if err := b.sensorSupervisor.StartRestarting(ctx, spec, RestartPolicy{
+			MaxRestarts: b.Restart.MaxRestarts,
+			Delay:       b.Restart.Delay,
+		}); err != nil {
+			return nil, err
+		}
+	} else if err := b.sensorSupervisor.Start(ctx, spec); err != nil {
 		return nil, err
 	}
 	return func() {

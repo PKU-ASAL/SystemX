@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 )
 
 func TestRunnerOnceWithFakeSensor(t *testing.T) {
@@ -344,6 +345,30 @@ func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
 				t.Fatal("newBatchUploader() = nil")
 			}
 		})
+	}
+}
+
+func TestTetragonRestartPolicyFromConfig(t *testing.T) {
+	policy, err := tetragonRestartPolicy(config.SensorConfig{
+		Restart:       "always",
+		MaxRestarts:   7,
+		RestartWindow: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("tetragonRestartPolicy() error = %v", err)
+	}
+	if policy != (tetragon.ProcessRestartPolicy{Enabled: true, MaxRestarts: 7, Delay: 25 * time.Millisecond}) {
+		t.Fatalf("policy = %+v", policy)
+	}
+	disabled, err := tetragonRestartPolicy(config.SensorConfig{Restart: "never"})
+	if err != nil {
+		t.Fatalf("tetragonRestartPolicy(never) error = %v", err)
+	}
+	if disabled.Enabled {
+		t.Fatalf("disabled policy = %+v", disabled)
+	}
+	if _, err := tetragonRestartPolicy(config.SensorConfig{Restart: "sometimes"}); err == nil {
+		t.Fatal("tetragonRestartPolicy(unknown) error = nil")
 	}
 }
 

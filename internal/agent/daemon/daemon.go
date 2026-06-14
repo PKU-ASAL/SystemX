@@ -264,13 +264,32 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 	case "fake":
 		return fake.New(), nil
 	case "tetragon":
-		return tetragon.NewBackendWithBundle(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version, tetragon.BundleConfig{
+		restart, err := tetragonRestartPolicy(cfg.Sensor)
+		if err != nil {
+			return nil, err
+		}
+		return tetragon.NewBackendWithOptions(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version, tetragon.BundleConfig{
 			BundleDir:    cfg.Sensor.BundleDir,
 			InstallDir:   cfg.Sensor.InstallDir,
 			TetraPath:    cfg.Sensor.TetraPath,
 			TetragonPath: cfg.Sensor.TetragonPath,
-		}), nil
+		}, restart), nil
 	default:
 		return nil, fmt.Errorf("unsupported sensor backend %q", cfg.Sensor.Backend)
+	}
+}
+
+func tetragonRestartPolicy(cfg config.SensorConfig) (tetragon.ProcessRestartPolicy, error) {
+	switch cfg.Restart {
+	case "", "never", "off", "false":
+		return tetragon.ProcessRestartPolicy{}, nil
+	case "always":
+		return tetragon.ProcessRestartPolicy{
+			Enabled:     true,
+			MaxRestarts: cfg.MaxRestarts,
+			Delay:       cfg.RestartWindow,
+		}, nil
+	default:
+		return tetragon.ProcessRestartPolicy{}, fmt.Errorf("unsupported sensor.restart %q", cfg.Restart)
 	}
 }
