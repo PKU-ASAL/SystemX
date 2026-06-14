@@ -9,7 +9,10 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -52,5 +55,46 @@ func TestGRPCUpload(t *testing.T) {
 	}
 	if got := st.ListIncidents("apt-fileless-c2"); len(got) != 1 {
 		t.Fatalf("incidents = %d, want 1", len(got))
+	}
+}
+
+func TestGRPCAuthRequiresDevToken(t *testing.T) {
+	st := &store.Store{}
+	server := NewServerWithAuth(st, "dev-token")
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	_, err = analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
+	})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Upload() error = %v, want unauthenticated", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", "dev-token")
+	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
+	})
+	if err != nil {
+		t.Fatalf("Upload() with token error = %v", err)
+	}
+	if !ack.GetOk() {
+		t.Fatalf("ack = %#v", ack)
 	}
 }

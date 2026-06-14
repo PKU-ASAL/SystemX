@@ -20,8 +20,9 @@ import (
 )
 
 type Server struct {
-	store  *store.Store
-	engine *ingest.Engine
+	store     *store.Store
+	engine    *ingest.Engine
+	authToken string
 }
 
 type UploadResult struct {
@@ -33,6 +34,10 @@ type UploadResult struct {
 
 func NewServer(st *store.Store) *Server {
 	return &Server{store: st, engine: ingest.NewEngine()}
+}
+
+func NewServerWithAuth(st *store.Store, token string) *Server {
+	return &Server{store: st, engine: ingest.NewEngine(), authToken: token}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -71,6 +76,10 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	body, err := io.ReadAll(r.Body)
@@ -151,6 +160,10 @@ func (s *Server) agents(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
+		if !s.authorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var health agenthealth.AgentHealth
 		if err := json.NewDecoder(r.Body).Decode(&health); err != nil {
 			http.Error(w, fmt.Sprintf("decode agent health: %v", err), http.StatusBadRequest)
@@ -182,6 +195,19 @@ func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) authorized(r *http.Request) bool {
+	if s.authToken == "" {
+		return true
+	}
+	if r.Header.Get("X-SysArmor-Agent-Token") == s.authToken {
+		return true
+	}
+	if r.Header.Get("Authorization") == "Bearer "+s.authToken {
+		return true
+	}
+	return false
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

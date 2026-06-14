@@ -156,6 +156,49 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	}
 }
 
+func TestHTTPAuthRequiresDevTokenForUploadAndHealth(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServerWithAuth(st, "dev-token").Handler()
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("upload without token status = %d", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	req.Header.Set("X-SysArmor-Agent-Token", "dev-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload with token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	health := agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"}
+	healthData, err := json.Marshal(health)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/agent-health", strings.NewReader(string(healthData)))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("health without token status = %d", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/agent-health", strings.NewReader(string(healthData)))
+	req.Header.Set("Authorization", "Bearer dev-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health with token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

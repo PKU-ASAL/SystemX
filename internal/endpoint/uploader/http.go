@@ -15,6 +15,7 @@ import (
 type HTTPUploader struct {
 	manager string
 	client  *http.Client
+	token   string
 }
 
 func NewHTTPUploader(manager string) *HTTPUploader {
@@ -22,12 +23,17 @@ func NewHTTPUploader(manager string) *HTTPUploader {
 }
 
 func NewHTTPUploaderWithTimeout(manager string, timeout time.Duration) *HTTPUploader {
+	return NewHTTPUploaderWithOptions(manager, timeout, "")
+}
+
+func NewHTTPUploaderWithOptions(manager string, timeout time.Duration, token string) *HTTPUploader {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	return &HTTPUploader{
 		manager: normalizeManagerURL(manager),
 		client:  &http.Client{Timeout: timeout},
+		token:   token,
 	}
 }
 
@@ -36,7 +42,15 @@ func (u *HTTPUploader) Upload(batch *analyticsv1.UploadBatch) error {
 	if err != nil {
 		return err
 	}
-	resp, err := u.client.Post(u.manager+"/api/v1/upload", "application/json", bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, u.manager+"/api/v1/upload", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if u.token != "" {
+		req.Header.Set("X-SysArmor-Agent-Token", u.token)
+	}
+	resp, err := u.client.Do(req)
 	if err != nil {
 		return err
 	}

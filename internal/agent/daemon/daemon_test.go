@@ -231,6 +231,9 @@ func TestRunnerReportsHealthToManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
+			t.Errorf("token header = %q", got)
+		}
 		if r.URL.Path == "/api/v1/upload" {
 			w.Header().Set("content-type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
@@ -333,7 +336,7 @@ func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
 		{name: "grpc", transport: "grpc"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			up, err := newBatchUploader("127.0.0.1:9443", tc.transport, 250*time.Millisecond)
+			up, err := newBatchUploader("127.0.0.1:9443", tc.transport, 250*time.Millisecond, "dev-token")
 			if err != nil {
 				t.Fatalf("newBatchUploader() error = %v", err)
 			}

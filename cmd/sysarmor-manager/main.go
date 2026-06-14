@@ -20,6 +20,7 @@ func main() {
 	listen := flag.String("listen", ":9443", "manager HTTP listen address")
 	grpcListen := flag.String("grpc-listen", ":9444", "manager Link1 gRPC listen address")
 	storePath := flag.String("store", "/tmp/sysarmor-manager.json", "store path")
+	devToken := flag.String("dev-token", "", "static development agent token; empty disables token checks")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -32,7 +33,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "open store: %v\n", err)
 		os.Exit(1)
 	}
-	linkSrv := link1.NewServer(st)
+	linkSrv := link1.NewServerWithAuth(st, *devToken)
 	grpcServer := grpc.NewServer()
 	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", *grpcListen)
