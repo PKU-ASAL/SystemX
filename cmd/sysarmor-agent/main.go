@@ -8,12 +8,27 @@ import (
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	agentconfig "github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
 )
 
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version":
+			fmt.Println(version)
+			return
+		case "run":
+			if err := runDaemonCommand(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "sysarmor-agent run: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	manager := flag.String("manager", "127.0.0.1:9443", "sysarmor-manager address")
 	transport := flag.String("transport", "http", "upload transport: http or grpc")
 	agentID := flag.String("agent-id", "agent-dev", "agent identifier")
@@ -49,6 +64,26 @@ func main() {
 	}
 
 	fmt.Fprintf(os.Stderr, "sysarmor-agent skeleton: agent_id=%s host_id=%s manager=%s\n", *agentID, *hostID, *manager)
+}
+
+func runDaemonCommand(args []string) error {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "/etc/sysarmor/agent.yaml", "agent config path")
+	dryRun := fs.Bool("dry-run", false, "validate config and exit")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	cfg, err := agentconfig.LoadFile(*configPath)
+	if err != nil {
+		return err
+	}
+	if *dryRun {
+		fmt.Fprintf(os.Stdout, "config ok: agent=%s host=%s tenant=%s manager=%s sensor=%s/%s\n",
+			cfg.Agent.ID, cfg.Agent.HostID, cfg.Agent.TenantID, cfg.Manager.Address, cfg.Sensor.Backend, cfg.Sensor.Mode)
+		return nil
+	}
+	return fmt.Errorf("daemon runtime not implemented yet; use --dry-run to validate config")
 }
 
 func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) error {

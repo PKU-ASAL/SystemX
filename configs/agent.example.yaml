@@ -1,0 +1,37 @@
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  version: "v1.x"
+  bundle_dir: /opt/sysarmor/bundles/tetragon
+  install_dir: /opt/sysarmor/sensors
+  tetra_path: /opt/sysarmor/sensors/tetragon/current/bin/tetra
+  tetragon_path: /opt/sysarmor/sensors/tetragon/current/bin/tetragon
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  observe_only: true
+  restart: always
+  max_restarts: 5
+  restart_window: 60s
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+  max_bytes: 268435456
+  batch_size: 256
+  flush_interval: 1s
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
