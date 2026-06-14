@@ -43,7 +43,7 @@ func NewBackendWithBundle(policyPath, eventSource, version string, bundle Bundle
 
 func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 	if b.Bundle.BundleDir != "" {
-		verified, err := VerifyBundle(b.Bundle)
+		verified, err := b.prepareBundle()
 		if err != nil {
 			b.setError(err)
 			return contract.Capability{}, err
@@ -68,6 +68,23 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 		SupportsFile:    true,
 		SupportsHealth:  true,
 	}, nil
+}
+
+func (b *Backend) prepareBundle() (BundleVerification, error) {
+	if b.Bundle.InstallDir != "" {
+		installed, err := InstallBundle(b.Bundle)
+		if err != nil {
+			return BundleVerification{}, err
+		}
+		b.Bundle.TetraPath = installed.TetraPath
+		b.Bundle.TetragonPath = installed.TetragonPath
+		return BundleVerification{
+			Version:      installed.Version,
+			TetraPath:    installed.TetraPath,
+			TetragonPath: installed.TetragonPath,
+		}, nil
+	}
+	return VerifyBundle(b.Bundle)
 }
 
 func (b *Backend) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {

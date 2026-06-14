@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,62 @@ func TestCapabilityVerifiesBundleAndUpdatesHealth(t *testing.T) {
 	}
 }
 
+func TestCapabilityInstallsBundleWhenInstallDirConfigured(t *testing.T) {
+	dir := writeBundle(t, "v1.2.3", "tetragon-bin", "tetra-bin")
+	installDir := filepath.Join(t.TempDir(), "sensors")
+	backend := NewBackendWithBundle("policy.yaml", "", "", BundleConfig{BundleDir: dir, InstallDir: installDir})
+	if _, err := backend.Capability(nil); err != nil {
+		t.Fatalf("Capability() error = %v", err)
+	}
+	assertFileContains(t, filepath.Join(installDir, "tetragon", "current", "bin", "tetragon"), "tetragon-bin")
+	assertFileContains(t, filepath.Join(installDir, "tetragon", "current", "bin", "tetra"), "tetra-bin")
+}
+
+func TestInstallBundleCopiesVersionAndPointsCurrent(t *testing.T) {
+	dir := writeBundle(t, "v1.2.3", "tetragon-bin", "tetra-bin")
+	installDir := filepath.Join(t.TempDir(), "sensors")
+	got, err := InstallBundle(BundleConfig{BundleDir: dir, InstallDir: installDir})
+	if err != nil {
+		t.Fatalf("InstallBundle() error = %v", err)
+	}
+	if got.Version != "v1.2.3" {
+		t.Fatalf("version = %q", got.Version)
+	}
+	if got.InstallPath != filepath.Join(installDir, "tetragon", "v1.2.3") {
+		t.Fatalf("install path = %q", got.InstallPath)
+	}
+	assertFileContains(t, filepath.Join(got.InstallPath, "bin", "tetragon"), "tetragon-bin")
+	assertFileContains(t, filepath.Join(got.InstallPath, "bin", "tetra"), "tetra-bin")
+	assertFileContains(t, got.TetragonPath, "tetragon-bin")
+	assertFileContains(t, got.TetraPath, "tetra-bin")
+	if runtime.GOOS != "windows" {
+		target, err := os.Readlink(got.CurrentPath)
+		if err != nil {
+			t.Fatalf("Readlink(current) error = %v", err)
+		}
+		if target != "v1.2.3" {
+			t.Fatalf("current target = %q", target)
+		}
+	}
+}
+
+func TestInstallBundleIsIdempotent(t *testing.T) {
+	dir := writeBundle(t, "v1.2.3", "tetragon-bin", "tetra-bin")
+	installDir := filepath.Join(t.TempDir(), "sensors")
+	first, err := InstallBundle(BundleConfig{BundleDir: dir, InstallDir: installDir})
+	if err != nil {
+		t.Fatalf("first InstallBundle() error = %v", err)
+	}
+	second, err := InstallBundle(BundleConfig{BundleDir: dir, InstallDir: installDir})
+	if err != nil {
+		t.Fatalf("second InstallBundle() error = %v", err)
+	}
+	if first.InstallPath != second.InstallPath || first.CurrentPath != second.CurrentPath {
+		t.Fatalf("installations differ: first=%+v second=%+v", first, second)
+	}
+	assertFileContains(t, second.TetraPath, "tetra-bin")
+}
+
 func writeBundle(t *testing.T, version, tetragonContent, tetraContent string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -78,6 +135,17 @@ func writeBundle(t *testing.T, version, tetragonContent, tetraContent string) st
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func assertFileContains(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if string(data) != want {
+		t.Fatalf("file %s = %q, want %q", path, string(data), want)
+	}
 }
 
 func sha256Hex(data string) string {

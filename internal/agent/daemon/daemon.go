@@ -266,6 +266,7 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 	case "tetragon":
 		return tetragon.NewBackendWithBundle(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version, tetragon.BundleConfig{
 			BundleDir:    cfg.Sensor.BundleDir,
+			InstallDir:   cfg.Sensor.InstallDir,
 			TetraPath:    cfg.Sensor.TetraPath,
 			TetragonPath: cfg.Sensor.TetragonPath,
 		}), nil
