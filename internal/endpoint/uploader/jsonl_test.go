@@ -1,0 +1,48 @@
+package uploader
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
+)
+
+func TestReadProtoJSONLStoresSensorRawRefs(t *testing.T) {
+	raw := `{"mono_ns":"1","kind":"EVENT_KIND_EXEC","proc":{"pid":7,"binary":"/bin/bash","start_time_ns":"77"},"raw_ref":"sensor-raw-1"}`
+	ring := ringbuffer.New(8)
+
+	batch, err := ReadProtoJSONLWithRing(strings.NewReader(raw+"\n"), "agent-a", "host-a", "scenario-a", ring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.GetEvents()) != 1 {
+		t.Fatalf("events = %d, want 1", len(batch.GetEvents()))
+	}
+	if got := batch.GetEvents()[0].GetRawRef(); got != "sensor-raw-1" {
+		t.Fatalf("raw ref = %q, want sensor-raw-1", got)
+	}
+	entry, ok := ring.Get("sensor-raw-1")
+	if !ok {
+		t.Fatal("sensor raw line was not stored")
+	}
+	if !strings.Contains(string(entry.Data), `"EVENT_KIND_EXEC"`) {
+		t.Fatalf("stored raw = %s", string(entry.Data))
+	}
+}
+
+func TestReadProtoJSONLAllocatesMissingSensorRawRef(t *testing.T) {
+	raw := `{"mono_ns":"1","kind":"EVENT_KIND_EXEC","proc":{"pid":7,"binary":"/bin/bash","start_time_ns":"77"}}`
+	ring := ringbuffer.New(8)
+
+	batch, err := ReadProtoJSONLWithRing(strings.NewReader(raw+"\n"), "agent-a", "host-a", "scenario-a", ring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := batch.GetEvents()[0].GetRawRef()
+	if ref == "" {
+		t.Fatal("raw ref should be allocated")
+	}
+	if _, ok := ring.Get(ref); !ok {
+		t.Fatalf("allocated raw ref %q missing from ring", ref)
+	}
+}

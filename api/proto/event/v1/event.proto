@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package sysarmor.event.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1";
+
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  EVENT_KIND_EXEC = 1;
+  EVENT_KIND_EXIT = 2;
+  EVENT_KIND_FORK = 3;
+  EVENT_KIND_OPEN = 4;
+  EVENT_KIND_WRITE = 5;
+  EVENT_KIND_CHMOD = 6;
+  EVENT_KIND_CONNECT = 7;
+}
+
+message ProcessRef {
+  string stable_id = 1;
+  uint32 pid = 2;
+  string binary = 3;
+  repeated string argv = 4;
+  uint32 uid = 5;
+  uint64 start_time_ns = 6;
+}
+
+message ObjectRef {
+  string kind = 1;
+  string file_path = 2;
+  string socket_addr = 3;
+  string target_proc_stable_id = 4;
+}
+
+message CanonicalEvent {
+  string id = 1;
+  uint64 seq = 2;
+  string agent_id = 3;
+  string host_id = 4;
+  string scenario = 5;
+  uint64 mono_ns = 6;
+  EventKind kind = 7;
+  ProcessRef subject_proc = 8;
+  ObjectRef object = 9;
+  string parent_stable_id = 10;
+  string lineage_id = 11;
+  string raw_ref = 12;
+}
+

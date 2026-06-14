@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package sysarmor.policy.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1;policyv1";
+
+message ConvergeParams {
+  string mode = 1;
+  uint32 top_k = 2;
+  uint32 max_path_hops = 3;
+  uint32 additive_risk_threshold = 4;
+  bool cross_lineage = 5;
+}
+
+message RarityParams {
+  uint32 cms_width = 1;
+  uint32 cms_depth = 2;
+  uint64 baseline_window_ns = 3;
+}
+
+message DetectionPolicy {
+  repeated string endpoint_rules = 1;
+  repeated string cloud_rules = 2;
+  ConvergeParams converge = 3;
+  RarityParams rarity = 4;
+}
+
+message PolicyEnvelope {
+  string id = 1;
+  string type = 2;
+  uint64 version = 3;
+  DetectionPolicy detection = 4;
+}
+

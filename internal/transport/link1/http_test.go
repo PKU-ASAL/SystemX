@@ -1,0 +1,223 @@
+package link1
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	"google.golang.org/protobuf/encoding/protojson"
+)
+
+func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	batch := &analyticsv1.UploadBatch{
+		Signals: []*signalv1.Signal{
+			endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
+			endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
+			endpointSignal("reverse_shell_pattern", "lin-a", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
+		},
+	}
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/signals?scenario=apt-fileless-c2&layer=cloud", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("signals status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "web_shell_chain") {
+		t.Fatalf("cloud signals missing web_shell_chain: %s", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/incidents?scenario=apt-fileless-c2", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("incidents status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "rarity+causal-topk") {
+		t.Fatalf("incident missing converge method: %s", rec.Body.String())
+	}
+
+	rec = get(t, handler, "/api/v1/metrics")
+	for _, want := range []string{
+		`"upload_batches":1`,
+		`"endpoint_signals_ingested":3`,
+		`"cloud_signals_emitted":2`,
+		`"signals_emitted":5`,
+		`"incidents_created":1`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("metrics missing %s: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestAgentsEventsResetAndRecompute(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	batch := &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", Version: "test"},
+		Events: []*eventv1.CanonicalEvent{{
+			Id:       "ev-1",
+			Scenario: "apt-staged-drop",
+			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+			SubjectProc: &eventv1.ProcessRef{
+				StableId: "p1",
+				Binary:   "/bin/bash",
+			},
+			LineageId: "lin-a",
+		}},
+		Signals: []*signalv1.Signal{
+			endpointSignalForScenario("apt-staged-drop", "payload_dropped", "lin-a", false, fileEntity("/var/lib/app/plugins/helper")),
+			endpointSignalForScenario("apt-staged-drop", "suspicious_exec_connect", "lin-b", false, fileEntity("/var/lib/app/plugins/helper"), socketEntity("10.66.0.99:443")),
+		},
+	}
+	upload(t, handler, batch)
+
+	rec := get(t, handler, "/api/v1/agents")
+	if !strings.Contains(rec.Body.String(), "agent-a") {
+		t.Fatalf("agents response missing agent-a: %s", rec.Body.String())
+	}
+
+	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop&kind=EXEC")
+	if !strings.Contains(rec.Body.String(), "ev-1") {
+		t.Fatalf("events response missing ev-1: %s", rec.Body.String())
+	}
+
+	rec = get(t, handler, "/api/v1/recompute?scenario=apt-staged-drop&disable=cloud.cross_lineage")
+	if strings.Contains(rec.Body.String(), `"inc-`) {
+		t.Fatalf("disabled cross-lineage recompute should not incident: %s", rec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/reset?scenario=apt-staged-drop", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop")
+	if rec.Body.String() != "[]\n" {
+		t.Fatalf("events after reset = %s, want empty list", rec.Body.String())
+	}
+}
+
+func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	scenario := "apt-staged-drop-stream"
+	payload := fileEntity("/var/lib/app/plugins/helper")
+
+	upload(t, handler, &analyticsv1.UploadBatch{
+		Signals: []*signalv1.Signal{
+			endpointSignalForScenario(scenario, "payload_dropped", "lin-drop", false, payload),
+		},
+	})
+	rec := get(t, handler, "/api/v1/incidents?scenario="+scenario)
+	if strings.Contains(rec.Body.String(), `"inc-`) {
+		t.Fatalf("first split batch should not create incident: %s", rec.Body.String())
+	}
+
+	upload(t, handler, &analyticsv1.UploadBatch{
+		Signals: []*signalv1.Signal{
+			endpointSignalForScenario(scenario, "suspicious_exec_connect", "lin-connect", false, payload, socketEntity("10.66.0.99:443")),
+		},
+	})
+
+	rec = get(t, handler, "/api/v1/signals?scenario="+scenario+"&layer=cloud")
+	if got := strings.Count(rec.Body.String(), "dropped_payload_executed_and_connects"); got != 1 {
+		t.Fatalf("cloud signal count = %d, want 1: %s", got, rec.Body.String())
+	}
+
+	rec = get(t, handler, "/api/v1/incidents?scenario="+scenario)
+	body := rec.Body.String()
+	if got := strings.Count(body, `"inc-`); got != 1 {
+		t.Fatalf("incident count = %d, want 1: %s", got, body)
+	}
+	for _, want := range []string{"lin-drop", "lin-connect"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("incident missing lineage %s: %s", want, body)
+		}
+	}
+
+	upload(t, handler, &analyticsv1.UploadBatch{
+		Events: []*eventv1.CanonicalEvent{{Id: "noise-1", Scenario: scenario, Kind: eventv1.EventKind_EVENT_KIND_EXEC}},
+	})
+	rec = get(t, handler, "/api/v1/signals?scenario="+scenario+"&layer=cloud")
+	if got := strings.Count(rec.Body.String(), "dropped_payload_executed_and_connects"); got != 1 {
+		t.Fatalf("cloud signal duplicated after recompute, count = %d: %s", got, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/incidents?scenario="+scenario)
+	if got := strings.Count(rec.Body.String(), `"inc-`); got != 1 {
+		t.Fatalf("incident duplicated after recompute, count = %d: %s", got, rec.Body.String())
+	}
+}
+
+func upload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
+	t.Helper()
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func get(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s status = %d body=%s", path, rec.Code, rec.Body.String())
+	}
+	return rec
+}
+
+func endpointSignal(name, lineage string, terminal bool, entities ...*signalv1.EntityRef) *signalv1.Signal {
+	return endpointSignalForScenario("apt-fileless-c2", name, lineage, terminal, entities...)
+}
+
+func endpointSignalForScenario(scenario, name, lineage string, terminal bool, entities ...*signalv1.EntityRef) *signalv1.Signal {
+	return &signalv1.Signal{
+		Name:         name,
+		Where:        signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+		BaseRisk:     50,
+		GlobalRarity: 1,
+		LineageId:    lineage,
+		Terminal:     terminal,
+		Entities:     entities,
+		Scenario:     scenario,
+	}
+}
+
+func processEntity(key string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "process", Key: key, Role: "subject"}
+}
+
+func fileEntity(key string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "file", Key: "file:" + key, Role: "object"}
+}
+
+func socketEntity(key string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "socket", Key: "socket:" + key, Role: "object"}
+}
