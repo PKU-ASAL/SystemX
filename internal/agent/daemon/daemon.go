@@ -9,6 +9,7 @@ import (
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
@@ -84,6 +85,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	ticker := time.NewTicker(r.Config.Health.Interval)
 	defer ticker.Stop()
 	defer rt.Stop(context.Background())
+	startedAt := time.Now()
+	reporter := agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 
 	for {
 		select {
@@ -120,23 +123,79 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				return nil
 			}
 		case <-ticker.C:
-			health, err := rt.Health(ctx)
+			health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
 			if err != nil {
 				return err
 			}
-			queueStats, err := queue.Stats()
-			if err != nil {
-				return err
+			if err := reporter.Report(ctx, health); err != nil && r.Out != nil {
+				fmt.Fprintf(r.Out, "agent health report error: %v\n", err)
 			}
 			if r.Out != nil {
-				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q\n",
-					health.Backend, health.Running, health.PolicyLoaded, health.EventsSeen, queueStats.QueuedBatches, queueStats.QueuedBytes, queueStats.DroppedBatches, queueStats.LastError)
+				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_upload_error=%q\n",
+					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.Upload.LastError)
 			}
 			if opts.Once {
 				return nil
 			}
 		}
 	}
+}
+
+func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+	sensor, err := rt.Health(ctx)
+	if err != nil {
+		return agenthealth.AgentHealth{}, err
+	}
+	queueStats, err := queue.Stats()
+	if err != nil {
+		return agenthealth.AgentHealth{}, err
+	}
+	uploadStats, err := worker.Stats()
+	if err != nil {
+		return agenthealth.AgentHealth{}, err
+	}
+	status := "ok"
+	if !sensor.Running || sensor.LastError != "" || queueStats.LastError != "" || uploadStats.LastError != "" {
+		status = "degraded"
+	}
+	now := time.Now().UTC()
+	return agenthealth.AgentHealth{
+		AgentID:       r.Config.Agent.ID,
+		HostID:        r.Config.Agent.HostID,
+		TenantID:      r.Config.Agent.TenantID,
+		Status:        status,
+		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
+		ObservedAt:    now,
+		Sensor: agenthealth.SensorHealth{
+			Backend:        sensor.Backend,
+			Installed:      sensor.Installed,
+			Running:        sensor.Running,
+			Version:        sensor.Version,
+			PolicyLoaded:   sensor.PolicyLoaded,
+			EventsSeen:     sensor.EventsSeen,
+			EventsDropped:  sensor.EventsDropped,
+			ParseErrors:    sensor.ParseErrors,
+			RestartCount:   sensor.RestartCount,
+			LastEventAt:    sensor.LastEventAt,
+			LastExitReason: sensor.LastExitReason,
+			LastError:      sensor.LastError,
+		},
+		Queue: agenthealth.QueueHealth{
+			QueuedBatches:     queueStats.QueuedBatches,
+			QueuedBytes:       queueStats.QueuedBytes,
+			MaxBytes:          queueStats.MaxBytes,
+			BackpressureCount: queueStats.BackpressureCount,
+			DroppedBatches:    queueStats.DroppedBatches,
+			DroppedBytes:      queueStats.DroppedBytes,
+			LastError:         queueStats.LastError,
+		},
+		Upload: agenthealth.UploadHealth{
+			UploadedBatches:  uploadStats.UploadedBatches,
+			RemainingBatches: uploadStats.RemainingBatches,
+			RemainingBytes:   uploadStats.RemainingBytes,
+			LastError:        uploadStats.LastError,
+		},
+	}, nil
 }
 
 func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {

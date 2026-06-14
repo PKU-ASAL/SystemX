@@ -16,6 +16,7 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -26,6 +27,7 @@ type Store struct {
 	Events    []*eventv1.CanonicalEvent
 	Signals   []*signalv1.Signal
 	Incidents []*incidentv1.Incident
+	Health    map[string]agenthealth.AgentHealth
 	Metrics   Metrics
 }
 
@@ -49,11 +51,12 @@ type diskState struct {
 	Events    []json.RawMessage `json:"events"`
 	Signals   []json.RawMessage `json:"signals"`
 	Incidents []json.RawMessage `json:"incidents"`
+	Health    []json.RawMessage `json:"health"`
 	Metrics   Metrics           `json:"metrics"`
 }
 
 func Open(path string) (*Store, error) {
-	s := &Store{path: path}
+	s := &Store{path: path, Health: map[string]agenthealth.AgentHealth{}}
 	if path == "" {
 		return s, nil
 	}
@@ -95,6 +98,13 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 		s.Incidents = append(s.Incidents, msg)
+	}
+	for _, raw := range state.Health {
+		var msg agenthealth.AgentHealth
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			return nil, err
+		}
+		s.Health[agentHealthKey(msg.TenantID, msg.AgentID)] = msg
 	}
 	s.Metrics = state.Metrics
 	return s, nil
@@ -164,6 +174,18 @@ func (s *Store) AddIncident(inc *incidentv1.Incident) {
 	s.Incidents = append(s.Incidents, inc)
 }
 
+func (s *Store) UpsertAgentHealth(health agenthealth.AgentHealth) {
+	if health.AgentID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Health == nil {
+		s.Health = map[string]agenthealth.AgentHealth{}
+	}
+	s.Health[agentHealthKey(health.TenantID, health.AgentID)] = health
+}
+
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
 	if scenario == "" {
 		return
@@ -214,6 +236,46 @@ func (s *Store) ListAgents() []*analyticsv1.AgentHello {
 	out := make([]*analyticsv1.AgentHello, len(s.Agents))
 	copy(out, s.Agents)
 	return out
+}
+
+func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]agenthealth.AgentHealth, 0, len(s.Health))
+	for _, health := range s.Health {
+		out = append(out, health)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			return out[i].AgentID < out[j].AgentID
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
+	return out
+}
+
+func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealth, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if agentID == "" {
+		return agenthealth.AgentHealth{}, false
+	}
+	if tenantID != "" {
+		health, ok := s.Health[agentHealthKey(tenantID, agentID)]
+		return health, ok
+	}
+	var found agenthealth.AgentHealth
+	var ok bool
+	for _, health := range s.Health {
+		if health.AgentID == agentID {
+			if ok && found.TenantID != health.TenantID {
+				return agenthealth.AgentHealth{}, false
+			}
+			found = health
+			ok = true
+		}
+	}
+	return found, ok
 }
 
 func (s *Store) ListEvents(scenario, kind string) []*eventv1.CanonicalEvent {
@@ -278,6 +340,7 @@ func (s *Store) DeleteScenario(scenario string) {
 		s.Events = nil
 		s.Signals = nil
 		s.Incidents = nil
+		s.Health = map[string]agenthealth.AgentHealth{}
 		s.Metrics = Metrics{}
 		return
 	}
@@ -341,6 +404,23 @@ func (s *Store) Save() error {
 		}
 		state.Incidents = append(state.Incidents, raw)
 	}
+	health := make([]agenthealth.AgentHealth, 0, len(s.Health))
+	for _, item := range s.Health {
+		health = append(health, item)
+	}
+	sort.Slice(health, func(i, j int) bool {
+		if health[i].TenantID == health[j].TenantID {
+			return health[i].AgentID < health[j].AgentID
+		}
+		return health[i].TenantID < health[j].TenantID
+	})
+	for _, item := range health {
+		raw, err := json.Marshal(item)
+		if err != nil {
+			return err
+		}
+		state.Health = append(state.Health, raw)
+	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -349,6 +429,10 @@ func (s *Store) Save() error {
 		return err
 	}
 	return os.WriteFile(s.path, data, 0o644)
+}
+
+func agentHealthKey(tenantID, agentID string) string {
+	return tenantID + "/" + agentID
 }
 
 func kindName(kind eventv1.EventKind) string {

@@ -1,12 +1,14 @@
 package store
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 )
 
 func TestListSignalsFiltersScenarioLayerAndTerminal(t *testing.T) {
@@ -117,6 +119,47 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	})
 	if got := st.ListIncidents("a"); len(got) != 1 {
 		t.Fatalf("incidents after semantic duplicate upsert = %d, want 1", len(got))
+	}
+}
+
+func TestAgentHealthUpsertAndPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.json")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.UpsertAgentHealth(agenthealth.AgentHealth{
+		AgentID:    "agent-a",
+		HostID:     "host-a",
+		TenantID:   "default",
+		Status:     "ok",
+		ObservedAt: time.Now().UTC(),
+		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 1},
+	})
+	st.UpsertAgentHealth(agenthealth.AgentHealth{
+		AgentID:    "agent-a",
+		HostID:     "host-a",
+		TenantID:   "default",
+		Status:     "degraded",
+		ObservedAt: time.Now().UTC(),
+		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 2},
+	})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := reloaded.GetAgentHealth("default", "agent-a")
+	if !ok {
+		t.Fatal("agent health not found")
+	}
+	if got.Status != "degraded" || got.Sensor.EventsSeen != 2 {
+		t.Fatalf("health = %+v", got)
+	}
+	if got := reloaded.ListAgentHealth(); len(got) != 1 {
+		t.Fatalf("health list len = %d, want 1", len(got))
 	}
 }
 

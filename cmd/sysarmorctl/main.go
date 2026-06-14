@@ -53,6 +53,23 @@ func query(mgr string, args []string) ([]byte, error) {
 	switch args[0] {
 	case "agents":
 		return httpGet(base + "/api/v1/agents")
+	case "agent-health":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+				}
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/agent-health?" + q.Encode())
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
 	case "events":

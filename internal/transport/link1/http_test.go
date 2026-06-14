@@ -1,14 +1,17 @@
 package link1
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -114,6 +117,42 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop")
 	if rec.Body.String() != "[]\n" {
 		t.Fatalf("events after reset = %s, want empty list", rec.Body.String())
+	}
+}
+
+func TestAgentHealthIngestAndQuery(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	health := agenthealth.AgentHealth{
+		AgentID:       "agent-a",
+		HostID:        "host-a",
+		TenantID:      "default",
+		Status:        "ok",
+		UptimeSeconds: 12,
+		ObservedAt:    time.Now().UTC(),
+		Sensor:        agenthealth.SensorHealth{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3},
+		Queue:         agenthealth.QueueHealth{QueuedBatches: 1, QueuedBytes: 256},
+		Upload:        agenthealth.UploadHealth{RemainingBatches: 1},
+	}
+	data, err := json.Marshal(health)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agent-health", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/agent-health?agent_id=agent-a&tenant_id=default")
+	for _, want := range []string{`"agent_id":"agent-a"`, `"sensor_health"`, `"queue_health"`, `"upload_health"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("health response missing %s: %s", want, rec.Body.String())
+		}
+	}
+	rec = get(t, handler, "/api/v1/agent-health")
+	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) {
+		t.Fatalf("health list missing agent-a: %s", rec.Body.String())
 	}
 }
 

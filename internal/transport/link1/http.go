@@ -12,6 +12,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -41,6 +42,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/upload", s.upload)
 	mux.HandleFunc("/api/v1/recompute", s.recompute)
 	mux.HandleFunc("/api/v1/agents", s.agents)
+	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
@@ -144,6 +146,42 @@ func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]bool) (in
 
 func (s *Server) agents(w http.ResponseWriter, _ *http.Request) {
 	writeAgentList(w, s.store.ListAgents())
+}
+
+func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var health agenthealth.AgentHealth
+		if err := json.NewDecoder(r.Body).Decode(&health); err != nil {
+			http.Error(w, fmt.Sprintf("decode agent health: %v", err), http.StatusBadRequest)
+			return
+		}
+		if health.AgentID == "" {
+			http.Error(w, "agent_id is required", http.StatusBadRequest)
+			return
+		}
+		s.store.UpsertAgentHealth(health)
+		if err := s.store.Save(); err != nil {
+			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+	case http.MethodGet:
+		q := r.URL.Query()
+		agentID := q.Get("agent_id")
+		if agentID == "" {
+			writeJSON(w, s.store.ListAgentHealth())
+			return
+		}
+		health, ok := s.store.GetAgentHealth(q.Get("tenant_id"), agentID)
+		if !ok {
+			http.Error(w, "agent health not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, health)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

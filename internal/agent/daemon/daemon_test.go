@@ -221,6 +221,75 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	}
 }
 
+func TestRunnerReportsHealthToManager(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reported := make(chan map[string]any, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/upload" {
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
+		if r.URL.Path != "/api/v1/agent-health" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode health: %v", err)
+		}
+		select {
+		case reported <- body:
+		default:
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		cancel()
+	}))
+	defer server.Close()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: 5 * time.Millisecond},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &bytes.Buffer{}})
+	}()
+	select {
+	case body := <-reported:
+		if body["agent_id"] != "agent-a" || body["tenant_id"] != "default" {
+			t.Fatalf("health body = %+v", body)
+		}
+		if _, ok := body["sensor_health"].(map[string]any); !ok {
+			t.Fatalf("health body missing sensor_health: %+v", body)
+		}
+		if _, ok := body["queue_health"].(map[string]any); !ok {
+			t.Fatalf("health body missing queue_health: %+v", body)
+		}
+		if _, ok := body["upload_health"].(map[string]any); !ok {
+			t.Fatalf("health body missing upload_health: %+v", body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for health report")
+	}
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
 func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
