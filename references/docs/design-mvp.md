@@ -212,7 +212,25 @@ make report
 
 但当前仍是 MVP,不是完整 EDR/XDR 产品。它证明了检测路径和抽象边界,还没有补齐端点长期运行、控制面、可靠传输、持久化、图分析、响应编排和多源遥测接入。
 
-## 二、走向完整项目的主要缺口
+## 二、v2 已经开始补齐的端点运行时
+
+在 v1 MVP 之后,当前仓库已经开始进入 v2: **EDR endpoint runtime MVP**。这些工作还没有让 v2 完整完成,但已经把 agent 从纯 replay/stream 工具推进到可托管 runtime 的骨架:
+
+| v2 增量 | 当前状态 |
+|---|---|
+| agent config | 已有 `internal/agent/config`,支持示例配置和 `sysarmor-agent run --config ... --dry-run` 校验 |
+| daemon run shape | 已有 `sysarmor-agent run --config ...`,可通过 fake sensor 跑 daemon 主路径 |
+| sensor contract | 已有 `internal/sensor/contract`,定义 capability/subscribe/enforce/health 等边界 |
+| sensor runtime skeleton | 已有 `internal/sensor/runtime`,支持 fake backend 生命周期测试 |
+| policy apply path | 已有 `internal/agent/policy` 将最小 collection policy 映射为 `CollectionIntent` |
+| Tetragon backend skeleton | 已有 `internal/sensor/tetragon`,可从 JSONL/stdin 读取事件并维护 health/parse error 计数 |
+| local spool | 已有 `internal/agent/spool`,支持 file-backed append/list/load/ack/stats 和 stable batch id |
+| upload drain | 已有 `internal/agent/uploadworker`,支持 oldest-first drain,成功 ack,失败保留 |
+| queue backpressure | 已有 spool `max_bytes` 限制、backpressure/drop 统计,daemon health 输出队列状态 |
+
+这说明 v2 的实现方向已经从"只规划"进入"可测试骨架"。但它目前仍是骨架阶段:daemon 尚未具备完整后台 retry loop,Tetragon 尚未由 agent 作为本地进程安装/启动/重启,manager 也尚未具备正式 agent health ingest/query。
+
+## 三、走向完整项目的主要缺口
 
 从长期定位看,缺口可以分成两类:
 
@@ -221,22 +239,25 @@ make report
 
 v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoint runtime。XDR 能力应建立在稳定的 EDR 事实模型和图收敛之上,不要在 agent/runtime 尚未稳定前过早扩散。
 
-### 2.1 Sensor Runtime 还不完整
+### 3.1 Sensor Runtime 还不完整
 
 当前状态:
 
-- agent 消费 `tetra getevents -o json` 输出。
-- Tetragon 在测试 harness 中启动和加载 policy。
-- adapter 将 raw Tetragon JSONL 转成 `SensorEvent`。
+- v1 replay/stream 仍可消费 `tetra getevents -o json` 输出。
+- v2 已有 Sensor contract、fake backend、runtime skeleton。
+- v2 已有 Tetragon backend skeleton,但主要还是消费 JSONL/stdin 事件源。
+- Tetragon 在 container/VM 主 e2e 中仍主要由测试 harness 启动和加载 policy。
 
 主要缺口:
 
-- 没有正式的 `internal/sensor/contract` 接口实现。
 - 没有 agent 托管 sensor lifecycle。
-- 没有 capability 探测。
-- 没有 sensor health / dropped events 的严肃上报。
-- 没有 CollectionPolicy 到 Tetragon policy 的编译链路。
-- 没有 Enforce/阻断能力。
+- Tetragon local bundle install / verify 尚未实现。
+- Tetragon process/service start/stop/restart 尚未实现。
+- capability 探测仍是最小骨架,不是完整主机能力探测。
+- sensor health 还没有进入 manager health API。
+- dropped events / restart window / degraded 状态还不完整。
+- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现。
+- Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。
 
 目标形态:
@@ -250,36 +271,37 @@ type Sensor interface {
 }
 ```
 
-### 2.2 Agent 还不是长期运行的 daemon
+### 3.2 Agent 还不是完整长期运行 daemon
 
 当前状态:
 
-- agent 是命令式 uploader/streamer。
-- 支持 replay、stream、HTTP/gRPC 上传。
+- v1 支持 replay、stream、HTTP/gRPC 上传。
+- v2 已有 `run --config` daemon 命令形态、配置校验、fake sensor daemon 路径。
+- v2 已有 file-backed spool、upload drain-once、队列上限和 backpressure/drop accounting。
 
 主要缺口:
 
 - 没有 systemd service。
-- 没有配置文件。
-- 没有本地 spool / WAL / 断点续传。
-- 没有 retry/backoff。
-- 没有上传队列限流和背压。
+- daemon 还没有完整后台 retry/backoff loop。
+- `upload.request_timeout` 尚未贯穿 uploader 请求。
+- graceful shutdown flush 语义还需要明确测试。
 - 没有 agent registration/auth。
-- 没有 heartbeat/health report。
-- 没有 token/tenant/session。
+- 没有 manager 侧 heartbeat/health ingest/query。
+- token/tenant 已进入 config,但还没有完整 upload/health/store 维度和校验。
+- systemd lifecycle 和 VM/container daemon e2e 尚未迁移为主路径。
 
-优先补齐:
+继续收口:
 
 ```text
-config file
 daemon lifecycle
-spool queue
-retry/backoff
-health heartbeat
-agent registration
+background retry/backoff
+health heartbeat/report
+agent registration/auth
+systemd lifecycle
+daemon e2e
 ```
 
-### 2.3 Endpoint fastpath 还是硬编码规则
+### 3.3 Endpoint fastpath 还是硬编码规则
 
 当前状态:
 
@@ -305,7 +327,7 @@ agent registration
 
 下一步应把规则从 Go 代码迁到内容包,Go 侧只保留执行引擎。
 
-### 2.4 Analytics 还不是完整 EDR/XDR 图分析系统
+### 3.4 Analytics 还不是完整 EDR/XDR 图分析系统
 
 当前状态:
 
@@ -364,7 +386,7 @@ analytics/incident
 analytics/evidence
 ```
 
-### 2.5 Policy / Control Plane 基本还未成型
+### 3.5 Policy / Control Plane 基本还未成型
 
 当前状态:
 
@@ -395,7 +417,7 @@ endpoint/cloud rule enable-disable
 observe-only response mode
 ```
 
-### 2.6 Store 仍是 MVP 文件存储
+### 3.6 Store 仍是 MVP 文件存储
 
 当前状态:
 
@@ -429,13 +451,14 @@ indexes
 pagination
 ```
 
-### 2.7 Link1 可靠传输还很薄
+### 3.7 Link1 可靠传输还很薄
 
 当前状态:
 
 - HTTP upload 可用。
 - unary gRPC upload 可用。
 - batch ack 很简单。
+- agent 侧已有 file-backed spool 和 drain worker,但协议层 ack/resume 还没有完整化。
 
 主要缺口:
 
@@ -462,7 +485,7 @@ raw evidence pullback
 health heartbeat
 ```
 
-### 2.8 CLI 还只是测试查询边界
+### 3.8 CLI 还只是测试查询边界
 
 当前状态:
 
@@ -481,18 +504,21 @@ health heartbeat
 
 完整项目中 `sysarmorctl` 应是调查入口,不只是测试工具。
 
-### 2.9 测试还需要从场景通过扩展到长期稳定
+### 3.9 测试还需要从场景通过扩展到长期稳定
 
 当前状态:
 
 - container/VM e2e 场景已经通过。
 - Go unit tests 覆盖核心 MVP 包。
 - stream smoke 能证明真实 Tetragon -> agent -> manager 通路。
+- v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path 的单测。
 
 主要缺口:
 
-- sensor contract tests。
-- policy tests。
+- agent-managed Tetragon process e2e。
+- sensor restart/tamper e2e。
+- manager outage/spool recovery e2e。
+- agent health ingest/query e2e。
 - graph path tests。
 - rarity baseline tests。
 - converge edge-case tests。
@@ -506,7 +532,7 @@ health heartbeat
 
 当前测试证明 MVP 立论,但还不能证明长期运行稳定性。
 
-### 2.10 部署与运维还未产品化
+### 3.10 部署与运维还未产品化
 
 主要缺口:
 
@@ -521,61 +547,68 @@ health heartbeat
 - 没有版本注入。
 - 没有安全默认配置。
 
-### 2.11 推荐的下一阶段顺序
+### 3.11 推荐的下一阶段顺序
 
 建议按下面顺序推进,先把 v2 的 EDR endpoint runtime 地基夯实,再扩到更完整的 EDR/XDR 平台能力,避免过早投入复杂算法或多源接入:
 
-1. **Agent daemon 化**
-   - config file
-   - systemd unit
-   - spool queue
-   - retry/backoff
-   - health heartbeat
+1. **收口 v2 agent runtime**
+   - daemon background upload retry/backoff
+   - upload request timeout
+   - health counters for queue/upload
+   - graceful shutdown
 
-2. **Sensor contract 正式化**
-   - `internal/sensor/contract`
-   - agent 托管 Tetragon subscribe
-   - capability/health/dropped events
+2. **Tetragon managed backend**
+   - local bundle install/verify
+   - binary checksum/path validation
+   - process start/stop/restart
+   - policy install/apply
+   - kill sensor restart e2e
 
-3. **Policy/control 最小闭环**
+3. **Agent health / registration**
+   - dev token 校验
+   - tenant/agent identity 入 upload/health/store
+   - manager latest health store
+   - `sysarmorctl agents` / `agent-health`
+
+4. **Policy/control 最小闭环**
    - static policy loader
    - manager policy endpoint
    - agent fetch/apply policy
    - rule enable/disable
 
-4. **Store 切 SQLite**
+5. **Store 切 SQLite**
    - schema/migrations/indexes
    - query pagination
    - incident/evidence tables
 
-5. **Analytics 包结构补齐**
+6. **Analytics 包结构补齐**
    - graph
    - rarity interface
    - cloud rules
    - converge interface
    - incident lifecycle
 
-6. **规则内容化**
+7. **规则内容化**
    - `configs/rules/endpoint`
    - `configs/rules/cloud`
    - default MVP content pack
    - rule metadata and MITRE tags
 
-7. **Link1 stream 化**
+8. **Link1 stream 化**
    - bidirectional gRPC stream
    - session
    - ack cursor
    - resume
    - policy downlink
 
-8. **EDR investigation / response plane**
+9. **EDR investigation / response plane**
    - incident detail
    - evidence path
    - raw evidence pullback
    - observe-only response skeleton
    - kill/block/quarantine 的授权模型
 
-9. **XDR ingestion adapter**
+10. **XDR ingestion adapter**
    - k8s audit
    - cloud audit
    - identity events
@@ -583,7 +616,7 @@ health heartbeat
    - CI/CD and registry events
    - canonical entity mapping
 
-## 三、结论
+## 四、结论
 
 当前实现已经完成"能证明 EDR detection path 架构成立"的 v1 MVP:
 

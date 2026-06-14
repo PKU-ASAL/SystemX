@@ -1,6 +1,6 @@
 # SysArmor v2 Implementation Plan
 
-Date: 2026-06-14
+Date: 2026-06-15
 
 ## 1. Goal
 
@@ -54,6 +54,44 @@ v1 已经具备：
 - Manager ingest/query/recompute/metrics/store。
 - Container 和 VM e2e harness。
 
+v2 已经落地的骨架：
+
+- `internal/agent/config`:
+  - agent/manager/sensor/spool/upload/health 配置结构。
+  - `configs/agent.example.yaml` 和 `configs/agent.fake.yaml`。
+  - `sysarmor-agent run --config ... --dry-run` 配置校验。
+- `internal/sensor/contract`:
+  - Sensor interface。
+  - Capability / CollectionIntent / EventEnvelope / Health。
+  - observe-only/unsupported Enforce 边界。
+- `internal/sensor/runtime`:
+  - fake backend lifecycle 测试骨架。
+  - Probe / Apply / Subscribe / Stop 的最小路径。
+- `internal/agent/policy`:
+  - 最小 collection policy 解析。
+  - policy 到 `CollectionIntent` 的初步转换。
+- `internal/sensor/tetragon`:
+  - Tetragon backend skeleton。
+  - 从 JSONL/stdin 读取事件。
+  - policy file 存在性校验。
+  - health 计数、parse error、raw ref 记录。
+- `internal/agent/spool`:
+  - file-backed batch queue。
+  - stable batch id。
+  - append/list/load/ack/stats。
+  - `max_bytes`、backpressure/drop accounting。
+- `internal/agent/uploadworker`:
+  - oldest-first drain。
+  - upload 成功后 ack。
+  - upload 失败保留 batch。
+- `internal/agent/daemon`:
+  - fake sensor daemon 路径。
+  - policy apply。
+  - event normalize/fastpath。
+  - spool write。
+  - `--drain-once`。
+  - health 输出 sensor + queue 状态。
+
 v1 的关键缺口：
 
 - Sensor 层还不是完整 runtime：
@@ -67,13 +105,12 @@ v1 的关键缺口：
 
 - Agent 还不是长期运行 daemon：
   - 缺少 systemd service / daemon lifecycle。
-  - 缺少本地 spool / 断点续传。
-  - 缺少 upload retry/backoff。
-  - 缺少队列限流和背压。
-  - 缺少配置文件。
+  - 已有本地 spool 和 drain-once,但缺少完整后台 retry/backoff loop。
+  - 已有队列限流和背压统计,但还未通过 manager health API 暴露。
+  - 已有配置文件骨架,但生产路径配置和 systemd 仍未完成。
   - 缺少 agent registration/auth。
   - 缺少 heartbeat / health report。
-  - 缺少明确的 tenant/token 模型。
+  - tenant/token 已进入 config,但尚未进入完整 upload/health/store 校验链路。
 
 v2 目标形态：
 
@@ -660,15 +697,19 @@ WantedBy=multi-user.target
 
 - 实现 local bundle install。
 - 实现 binary/checksum/policy 校验。
-- agent 启动 Tetragon。
-- agent 启动事件订阅。
+- agent 启动/停止 Tetragon。
+- agent 启动 `tetra getevents` 或等价事件订阅进程。
 - 复用现有 Tetragon JSON adapter。
 - 记录 stderr、exit code、parse errors。
+- 明确 managed mode 和 dev JSONL mode:
+  - managed mode: agent 托管 Tetragon 进程。
+  - dev JSONL mode: 仅用于本地开发和 v1 回归,不作为 v2 主路径。
 
 退出标准：
 
 - container daemon e2e 不再 pipe `tetra getevents`。
 - VM daemon smoke 不再 pipe `tetra getevents`。
+- agent kill/restart Tetragon 的行为可由单测或 integration test 稳定覆盖。
 
 ### Phase 4: Sensor Health, Restart, Tamper Signal
 
@@ -692,10 +733,11 @@ WantedBy=multi-user.target
 任务：
 
 - 完成 daemon run loop。
-- 增加 file-backed spool。
-- 增加 upload worker。
+- 收口已存在的 file-backed spool。
+- 收口已存在的 upload worker。
 - 增加 retry/backoff。
-- 增加 queue limit/backpressure/drop accounting。
+- 将已存在的 queue limit/backpressure/drop accounting 纳入 health payload。
+- 将 `upload.request_timeout` 贯穿 HTTP/gRPC uploader。
 - graceful shutdown flush 已进入 spool 的数据。
 
 退出标准：
@@ -703,6 +745,8 @@ WantedBy=multi-user.target
 - manager unavailable 时 agent 能持续排队。
 - manager 恢复后队列 drain。
 - agent restart 后 unacked batches 不丢。
+- upload worker 不 busy loop,失败重试有可测试 backoff。
+- daemon health 能暴露 queued batches、queued bytes、dropped batches、dropped bytes、last upload error。
 - v1 replay/stream debug path 仍然不经过 spool，或有明确开关选择是否经过 spool。
 
 ### Phase 6: Registration/Auth, Heartbeat, Health API
@@ -711,6 +755,7 @@ WantedBy=multi-user.target
 
 - config 增加 agent/tenant/token。
 - upload/health payload 带 identity。
+- manager dev auth 支持静态 token 校验,并可在测试中关闭或固定。
 - manager 增加 latest health store。
 - `sysarmorctl agents` 和 `sysarmorctl agent-health`。
 
@@ -832,6 +877,13 @@ v2 完成时必须满足：
 
 当前计划整体方向正确：它抓住了 v1 最大缺口，也就是 agent/sensor 还不是长期运行 runtime。下面这些点需要在实现时持续守住。
 
+当前计划需要修正的地方主要有四类：
+
+1. **阶段状态要随实现滚动更新**：config、sensor contract skeleton、spool、upload drain、backpressure 已经不是纯待办,后续计划应写成"收口/接入/暴露",不要重复实现。
+2. **Tetragon managed backend 是最大风险项**：它涉及安装、checksum、进程监督、policy apply、事件订阅和 e2e harness 迁移,应拆成独立可提交的小步,不要和 health API、systemd 一起塞进一个大提交。
+3. **health 是依赖轴,不是附属功能**：tamper、restart、spool backpressure、upload error、agent liveness 都要靠 health 被 manager 看见。Phase 4 和 Phase 6 之间应共享同一套 health model,避免先做一套本地日志再重写。
+4. **spool 正确性不只在 agent**：agent 有 durable queue 以后,manager ingest 的幂等/upsert 和 batch ack 语义就是可靠传输的一半。计划需要持续把 batch id、ack、retry、manager idempotency 放在同一个验收面里。
+
 ### 9.1 范围控制
 
 v2 应聚焦 EDR endpoint runtime。XDR 的方向要在接口和 identity 上留口，但不要在 v2 直接实现 cloud audit、identity、network flow、CI/CD ingestion。否则主线会从“把 agent 做稳”发散成“同时做平台数据湖”。
@@ -858,6 +910,14 @@ file-backed spool 不是简单写文件。它需要和 Link1 ack 语义对齐：
 - store upsert/idempotency 是 spool 正确性的另一半。
 
 v2 可以继续使用 unary HTTP/gRPC upload，但要把 batch id、ack、retry、delete 的语义写清楚。
+
+当前代码已经有 agent-side stable batch id 和 manager store upsert,下一步应补的是：
+
+- upload payload/metadata 显式携带 batch id。
+- manager ack 返回 durable accepted 的 batch id 或 cursor。
+- agent 只在收到成功 ack 后删除 batch。
+- retry 重传不应放大 event/signal/incident。
+- health 暴露 queue depth、last upload error、drop/backpressure counters。
 
 ### 9.4 Policy Apply 的最小闭环
 
@@ -892,6 +952,21 @@ internal/sensor/tetragon
 ```
 
 agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
+
+### 9.7 建议的近期提交切分
+
+为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交：
+
+1. `upload.request_timeout` 接入 uploader,补单测。
+2. daemon 后台 upload retry/backoff loop,保留 `--drain-once` 作为测试/调试入口。
+3. agent health model 本地结构化,包含 sensor/queue/upload 三块。
+4. manager latest health ingest/query + `sysarmorctl agent-health`。
+5. Tetragon local bundle manifest/checksum 校验。
+6. Tetragon process supervisor start/stop/restart。
+7. sensor restart/degraded/tamper signal。
+8. systemd unit + daemon e2e harness 迁移。
+
+这个顺序的好处是每一步都有独立验收,而且 health/identity 会在 sensor restart 和 tamper 之前先变成可查询事实。
 
 ## 10. Guardrails
 
