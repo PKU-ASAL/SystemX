@@ -5,23 +5,48 @@
 binary 就绪后把 _query() 接到真实 CLI 即可。
 断言类型见 design-test-cases.md §5.3：正向存在 / 结构 / 契约完整性 / 负向缺失 / 对照。
 """
-import argparse, json, os, shutil, subprocess, sys
+import argparse, json, os, shlex, shutil, subprocess, sys
 
 try:
     import yaml
 except ImportError:
     sys.exit("need pyyaml: pip install pyyaml")
 
-DRY = shutil.which("sysarmorctl") is None
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+TEST_ROOT = os.path.join(ROOT, "test")
+VM_ENV = os.path.join(TEST_ROOT, "env", "vm")
+LOCAL_CTL = os.path.join(ROOT, "bin", "sysarmorctl")
+CTL = LOCAL_CTL if os.path.exists(LOCAL_CTL) else shutil.which("sysarmorctl")
+DOCKER = shutil.which("docker")
+DRY = CTL is None
 
 
-def _query(mgr, *args):
+def _query(mgr, topology, *args):
     """调 sysarmorctl 取 JSON；DRY-RUN 下返回 None。"""
     if DRY:
         print(f"  [dry-run] sysarmorctl --mgr {mgr} {' '.join(args)} --json")
         return None
-    out = subprocess.check_output(["sysarmorctl", "--mgr", mgr, *args, "--json"])
+    if topology == "vm":
+        cmd = " ".join(shlex.quote(x) for x in ["/tmp/sysarmorctl", "--mgr", "127.0.0.1:9443", *args, "--json"])
+        out = subprocess.check_output([
+            "vagrant", "ssh", "mgr", "-c", cmd,
+        ], cwd=VM_ENV)
+    elif DOCKER and _container_running("mgr"):
+        out = subprocess.check_output([
+            DOCKER, "exec", "mgr", "/opt/sysarmor/bin/sysarmorctl",
+            "--mgr", "127.0.0.1:9443", *args, "--json",
+        ])
+    else:
+        out = subprocess.check_output([CTL, "--mgr", mgr, *args, "--json"])
     return json.loads(out)
+
+
+def _container_running(name):
+    try:
+        out = subprocess.check_output([DOCKER, "ps", "--filter", f"name={name}", "--format", "{{.Names}}"])
+    except Exception:
+        return False
+    return name in out.decode().splitlines()
 
 
 class Result:
@@ -35,11 +60,11 @@ class Result:
             self.failed += 1; print(f"  ✗ FAIL {name}")
 
 
-def assert_incident(exp, mgr, scenario, r):
+def assert_incident(exp, mgr, topology, scenario, r):
     inc = exp.get("incident")
     if not inc:
         return
-    data = _query(mgr, "incidents", "--scenario", scenario)
+    data = _query(mgr, topology, "incidents", "--scenario", scenario)
     if "count" in inc:
         r.check(f"incident.count=={inc['count']}",
                 None if data is None else len(data.get("incidents", [])) == inc["count"])
@@ -53,12 +78,12 @@ def assert_incident(exp, mgr, scenario, r):
             for i in data.get("incidents", [])))
 
 
-def assert_signals(exp, mgr, scenario, r):
+def assert_signals(exp, mgr, topology, scenario, r):
     for layer in ("endpoint_signals", "cloud_signals"):
         spec = exp.get(layer)
         if not spec:
             continue
-        data = _query(mgr, "signals", "--scenario", scenario, "--layer", layer.split("_")[0])
+        data = _query(mgr, topology, "signals", "--scenario", scenario, "--layer", layer.split("_")[0])
         names = [] if data is None else [s.get("name") for s in data]
         for want in spec.get("must_contain", []):
             nm = want["name"] if isinstance(want, dict) else want
@@ -68,45 +93,90 @@ def assert_signals(exp, mgr, scenario, r):
                     None if data is None else all(s.get("entities") for s in data))
 
 
-def assert_negative(exp, mgr, scenario, r):
+def assert_negative(exp, mgr, topology, scenario, r):
     neg = exp.get("negative", {})
     if "endpoint_terminal_count" in neg:
-        data = _query(mgr, "signals", "--scenario", scenario, "--terminal")
+        data = _query(mgr, topology, "signals", "--scenario", scenario, "--terminal")
         r.check(f"negative.endpoint_terminal_count=={neg['endpoint_terminal_count']}",
                 None if data is None else len(data) == neg["endpoint_terminal_count"])
     if neg.get("endpoint_terminal_required"):
-        data = _query(mgr, "signals", "--scenario", scenario, "--terminal")
+        data = _query(mgr, topology, "signals", "--scenario", scenario, "--terminal")
         r.check("negative.endpoint_terminal_required",
                 None if data is None else len(data) >= 1)
 
 
-def assert_controls(exp, mgr, scenario, r):
+def assert_controls(exp, mgr, topology, scenario, r):
     for ctl in exp.get("control_assertions", []):
-        # 对照断言需改一个开关重跑（disable cross_lineage / switch converge.mode）
+        args = ["recompute", "--scenario", scenario]
         label = ctl.get("disable") or ctl.get("switch")
-        print(f"  [control] toggle '{label}' then re-run, expect: "
-              f"{ {k: v for k, v in ctl.items() if k.startswith('then')} }")
-        r.check(f"control[{label}]", None)  # TODO: 接编排后实测
+        if ctl.get("disable"):
+            args.extend(["--disable", ctl["disable"]])
+        if ctl.get("switch"):
+            key, _, value = ctl["switch"].partition("=")
+            if key == "converge.mode" and value:
+                args.extend(["--mode", value])
+        data = _query(mgr, topology, *args)
+        incidents = [] if data is None else data.get("incidents", [])
+        if "then_incident_count" in ctl:
+            r.check(f"control[{label}].incident_count=={ctl['then_incident_count']}",
+                    None if data is None else len(incidents) == ctl["then_incident_count"])
+        if "then_incident_count_min" in ctl:
+            r.check(f"control[{label}].incident_count>={ctl['then_incident_count_min']}",
+                    None if data is None else len(incidents) >= ctl["then_incident_count_min"])
+
+
+def assert_lifecycle(exp, mgr, topology, scenario, r):
+    spec = exp.get("lifecycle")
+    if not spec:
+        return
+    if spec.get("agent_registered"):
+        agents = _query(mgr, topology, "agents")
+        r.check("lifecycle.agent_registered",
+                None if agents is None else any(a.get("agent_id") for a in agents))
+    visible = spec.get("events_visible")
+    if visible:
+        events = _query(mgr, topology, "events", "--scenario", scenario, "--kind", visible.get("kind", ""))
+        r.check("lifecycle.events_visible", None if events is None else len(events) >= 1)
+        if visible.get("require_stable_id"):
+            r.check("lifecycle.events_visible.stable_id",
+                    None if events is None else all(e.get("subject_proc", {}).get("stable_id") for e in events))
+        if visible.get("require_lineage_id"):
+            r.check("lifecycle.events_visible.lineage_id",
+                    None if events is None else all(e.get("lineage_id") for e in events))
+    if spec.get("policy_applied"):
+        status = _query(mgr, topology, "status")
+        r.check("lifecycle.policy_applied", None if status is None else status.get("ok") is True)
+    resource = spec.get("resource", {})
+    if resource.get("no_panic") and DOCKER and _container_running("mgr"):
+        logs = subprocess.check_output([DOCKER, "logs", "--tail", "200", "mgr"], stderr=subprocess.STDOUT).decode(errors="replace").lower()
+        r.check("lifecycle.resource.no_panic", "panic:" not in logs)
+    if resource.get("no_oom") and DOCKER and _container_running("mgr"):
+        inspect = subprocess.check_output([DOCKER, "inspect", "mgr", "--format", "{{.State.OOMKilled}}"]).decode().strip()
+        r.check("lifecycle.resource.no_oom", inspect == "false")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", required=True)
     ap.add_argument("--expected", required=True)
-    ap.add_argument("--mgr", default="10.66.0.10")
+    ap.add_argument("--topology", default="unknown")
+    ap.add_argument("--mgr", default="127.0.0.1:19443")
     a = ap.parse_args()
     exp = yaml.safe_load(open(a.expected))
-    print(f"[assert] scenario={a.scenario} dry_run={DRY}")
+    print(f"[assert] topology={a.topology} scenario={a.scenario} dry_run={DRY}")
     r = Result()
-    assert_signals(exp, a.mgr, a.scenario, r)
-    assert_incident(exp, a.mgr, a.scenario, r)
-    assert_negative(exp, a.mgr, a.scenario, r)
-    assert_controls(exp, a.mgr, a.scenario, r)
-    print(f"[assert] {a.scenario}: pass={r.passed} fail={r.failed} skip={r.skipped}")
+    assert_signals(exp, a.mgr, a.topology, a.scenario, r)
+    assert_incident(exp, a.mgr, a.topology, a.scenario, r)
+    assert_negative(exp, a.mgr, a.topology, a.scenario, r)
+    assert_controls(exp, a.mgr, a.topology, a.scenario, r)
+    assert_lifecycle(exp, a.mgr, a.topology, a.scenario, r)
+    print(f"[assert] {a.topology}/{a.scenario}: pass={r.passed} fail={r.failed} skip={r.skipped}")
     # 把结果落到 .results 供 report.py 汇总
     os.makedirs(".results", exist_ok=True)
-    json.dump({"scenario": a.scenario, "pass": r.passed, "fail": r.failed, "skip": r.skipped},
-              open(f".results/{a.scenario}.json", "w"))
+    result = {"topology": a.topology, "scenario": a.scenario, "pass": r.passed, "fail": r.failed, "skip": r.skipped}
+    json.dump(result, open(f".results/{a.topology}.{a.scenario}.json", "w"))
+    if a.topology == "unknown":
+        json.dump(result, open(f".results/{a.scenario}.json", "w"))
     sys.exit(1 if r.failed else 0)
 
 

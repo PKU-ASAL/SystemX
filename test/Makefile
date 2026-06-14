@@ -33,23 +33,27 @@ status-vm:
 
 # ── 场景采集 + 断言 ──────────────────────────────────
 
-.PHONY: capture assert report
+.PHONY: capture assert perf report
 
 capture:                      ## 跑场景 + tetragon 抓事件
 	bash harness/capture-$(TOPO).sh $(SCENARIO) $(DUR)
 
-assert:                       ## 断言 (当前 dry-run)
+assert:                       ## 通过 sysarmorctl 执行契约断言
 	python3 harness/assert.py --scenario $(SCENARIO) \
+		--topology $(TOPO) \
 		--expected scenarios/$(TOPO)/$(SCENARIO)/expected.yaml
 
 report:                       ## 汇总报告矩阵
 	python3 harness/report.py
 
+perf:                         ## 采集 getevents 性能基线
+	bash harness/perf-getevents.sh $(TOPO) $(DUR)
+
 # ── 常用组合 ──────────────────────────────────────────
 
 .PHONY: e2e clean
 
-e2e: up capture               ## 一键: 起拓扑 → 跑场景
+e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
 clean:                        ## 全部清理 (含样本)
 	bash harness/cleanup.sh $(TOPO) --results
@@ -68,9 +72,10 @@ help:                         ## 显示帮助
 	@echo "  up          启动拓扑"
 	@echo "  down        停止拓扑"
 	@echo "  capture     跑场景 + 抓事件"
-	@echo "  assert      断言 (dry-run)"
+	@echo "  assert      通过 sysarmorctl 执行契约断言"
+	@echo "  perf        采集 getevents 性能基线"
 	@echo "  report      汇总报告"
-	@echo "  e2e         up + capture"
+	@echo "  e2e         up + capture + assert"
 	@echo "  provision   VM: rsync + re-provision"
 	@echo "  status      查看运行态"
 	@echo "  clean       全部清理 + 删样本"

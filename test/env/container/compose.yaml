@@ -5,9 +5,9 @@
 # attacker  10.66.0.99  C2 (http :8080 + nc :443)
 # node-a    10.66.0.11  受害端点（web 运行时 + CI 构建 + 假凭据）
 # mgr       10.66.0.10  manager 预留
-# tetragon  —           eBPF 传感器（--pid=host --privileged，监控宿主内核）
+# tetragon  10.66.0.12  eBPF 传感器 + sysarmor-agent stream smoke
 #
-# tetragon 不在 sysarmor-net 上，它通过 eBPF 在内核层采集，不需要网络连通。
+# tetragon 通过 eBPF 在内核层采集，同时加入 sysarmor-net 以便 agent smoke 上传 manager。
 
 services:
   attacker:
@@ -33,6 +33,11 @@ services:
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.10
+    ports:
+      - "19443:9443"
+    volumes:
+      - ../../../bin:/opt/sysarmor/bin:ro
+      - mgr-store:/var/lib/sysarmor
 
   tetragon:
     image: quay.io/cilium/tetragon:v1.7.0
@@ -40,9 +45,13 @@ services:
     pid: host
     privileged: true
     cgroup: host
+    networks:
+      sysarmor-net:
+        ipv4_address: 10.66.0.12
     volumes:
       - /sys/kernel/btf/vmlinux:/var/lib/tetragon/btf:ro
       - /sys/fs/bpf:/sys/fs/bpf
+      - ../../../bin:/opt/sysarmor/bin:ro
 
 networks:
   sysarmor-net:
@@ -54,3 +63,4 @@ networks:
 volumes:
   app-plugins:
   node-secrets:
+  mgr-store:
