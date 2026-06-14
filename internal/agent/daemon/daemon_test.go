@@ -190,6 +190,26 @@ func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	}
 }
 
+func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		transport string
+	}{
+		{name: "http", transport: "http"},
+		{name: "grpc", transport: "grpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up, err := newBatchUploader("127.0.0.1:9443", tc.transport, 250*time.Millisecond)
+			if err != nil {
+				t.Fatalf("newBatchUploader() error = %v", err)
+			}
+			if up == nil {
+				t.Fatal("newBatchUploader() = nil")
+			}
+		})
+	}
+}
+
 func assertSpoolBatch(t *testing.T, dir string) {
 	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "*.batch.json"))

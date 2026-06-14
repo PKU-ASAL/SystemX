@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -17,9 +18,16 @@ type HTTPUploader struct {
 }
 
 func NewHTTPUploader(manager string) *HTTPUploader {
+	return NewHTTPUploaderWithTimeout(manager, 10*time.Second)
+}
+
+func NewHTTPUploaderWithTimeout(manager string, timeout time.Duration) *HTTPUploader {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	return &HTTPUploader{
 		manager: normalizeManagerURL(manager),
-		client:  http.DefaultClient,
+		client:  &http.Client{Timeout: timeout},
 	}
 }
 

@@ -135,7 +135,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 }
 
 func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) {
-	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport)
+	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.Upload.RequestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +146,12 @@ func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) 
 	}, nil
 }
 
-func newBatchUploader(manager, transport string) (uploader.BatchUploader, error) {
+func newBatchUploader(manager, transport string, timeout time.Duration) (uploader.BatchUploader, error) {
 	switch transport {
 	case "http":
-		return uploader.NewHTTPUploader(manager), nil
+		return uploader.NewHTTPUploaderWithTimeout(manager, timeout), nil
 	case "grpc":
-		return uploader.NewGRPCUploader(manager), nil
+		return uploader.NewGRPCUploaderWithTimeout(manager, timeout), nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}

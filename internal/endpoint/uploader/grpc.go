@@ -13,14 +13,22 @@ import (
 
 type GRPCUploader struct {
 	manager string
+	timeout time.Duration
 }
 
 func NewGRPCUploader(manager string) *GRPCUploader {
-	return &GRPCUploader{manager: normalizeGRPCAddress(manager)}
+	return NewGRPCUploaderWithTimeout(manager, 10*time.Second)
+}
+
+func NewGRPCUploaderWithTimeout(manager string, timeout time.Duration) *GRPCUploader {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	return &GRPCUploader{manager: normalizeGRPCAddress(manager), timeout: timeout}
 }
 
 func (u *GRPCUploader) Upload(batch *analyticsv1.UploadBatch) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), u.timeout)
 	defer cancel()
 	conn, err := grpc.DialContext(ctx, u.manager, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
