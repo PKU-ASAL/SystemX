@@ -18,10 +18,12 @@ type Backend struct {
 	PolicyPath  string
 	EventSource string
 	Version     string
+	Bundle      BundleConfig
 
 	mu           sync.Mutex
 	policyLoaded bool
 	running      bool
+	installed    bool
 	eventsSeen   uint64
 	parseErrors  uint64
 	lastEventAt  time.Time
@@ -29,13 +31,35 @@ type Backend struct {
 }
 
 func NewBackend(policyPath, eventSource, version string) *Backend {
+	return NewBackendWithBundle(policyPath, eventSource, version, BundleConfig{})
+}
+
+func NewBackendWithBundle(policyPath, eventSource, version string, bundle BundleConfig) *Backend {
 	if version == "" {
 		version = "unknown"
 	}
-	return &Backend{PolicyPath: policyPath, EventSource: eventSource, Version: version}
+	return &Backend{PolicyPath: policyPath, EventSource: eventSource, Version: version, Bundle: bundle}
 }
 
 func (b *Backend) Capability(context.Context) (contract.Capability, error) {
+	if b.Bundle.BundleDir != "" {
+		verified, err := VerifyBundle(b.Bundle)
+		if err != nil {
+			b.setError(err)
+			return contract.Capability{}, err
+		}
+		b.mu.Lock()
+		b.installed = true
+		b.lastError = ""
+		if b.Version == "unknown" {
+			b.Version = verified.Version
+		}
+		b.mu.Unlock()
+	} else if b.EventSource != "" {
+		b.mu.Lock()
+		b.installed = true
+		b.mu.Unlock()
+	}
 	return contract.Capability{
 		Backend:         "tetragon",
 		Version:         b.Version,
@@ -116,7 +140,7 @@ func (b *Backend) Health(context.Context) (contract.Health, error) {
 	return contract.Health{
 		Backend:      "tetragon",
 		Running:      b.running,
-		Installed:    b.EventSource != "",
+		Installed:    b.installed,
 		Version:      b.Version,
 		PolicyLoaded: b.policyLoaded,
 		EventsSeen:   b.eventsSeen,

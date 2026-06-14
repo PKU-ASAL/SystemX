@@ -264,7 +264,11 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 	case "fake":
 		return fake.New(), nil
 	case "tetragon":
-		return tetragon.NewBackend(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version), nil
+		return tetragon.NewBackendWithBundle(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version, tetragon.BundleConfig{
+			BundleDir:    cfg.Sensor.BundleDir,
+			TetraPath:    cfg.Sensor.TetraPath,
+			TetragonPath: cfg.Sensor.TetragonPath,
+		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported sensor backend %q", cfg.Sensor.Backend)
 	}
