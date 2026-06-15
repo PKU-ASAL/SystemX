@@ -263,7 +263,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	}
 	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"})
 	rec = get(t, handler, "/api/v1/agents")
-	for _, want := range []string{`"agent_id":"agent-a"`, `"health_status":"ok"`, `"scope":{"type":"container","selector":"abc123"}`} {
+	for _, want := range []string{`"agent_id":"agent-a"`, `"health_status":"ok"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability":{"backend":"fake","version":"dev","supports_exec":true,"supports_health":true,"kernel_release":"test-kernel","btf_available":true,"bpffs_available":true}`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("agents response missing %s: %s", want, rec.Body.String())
 		}

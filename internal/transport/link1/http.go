@@ -35,13 +35,14 @@ type UploadResult struct {
 }
 
 type AgentListItem struct {
-	AgentID        string                   `json:"agent_id"`
-	HostID         string                   `json:"host_id"`
-	TenantID       string                   `json:"tenant_id"`
-	Version        string                   `json:"version,omitempty"`
-	HealthStatus   string                   `json:"health_status,omitempty"`
-	Scope          agenthealth.RuntimeScope `json:"scope,omitempty"`
-	HealthObserved time.Time                `json:"health_observed_at,omitempty"`
+	AgentID        string                       `json:"agent_id"`
+	HostID         string                       `json:"host_id"`
+	TenantID       string                       `json:"tenant_id"`
+	Version        string                       `json:"version,omitempty"`
+	HealthStatus   string                       `json:"health_status,omitempty"`
+	Scope          agenthealth.RuntimeScope     `json:"scope,omitempty"`
+	Capability     agenthealth.SensorCapability `json:"sensor_capability,omitempty"`
+	HealthObserved time.Time                    `json:"health_observed_at,omitempty"`
 }
 
 var ErrInvalidUpload = errors.New("invalid upload")
@@ -216,6 +217,7 @@ func (s *Server) agents(w http.ResponseWriter, _ *http.Request) {
 		if health, ok := s.store.GetAgentHealth(agent.GetTenantId(), agent.GetAgentId()); ok {
 			item.HealthStatus = health.Status
 			item.Scope = health.Scope
+			item.Capability = health.Capability
 			item.HealthObserved = health.ObservedAt
 		}
 		out = append(out, item)
