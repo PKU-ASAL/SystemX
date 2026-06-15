@@ -263,7 +263,15 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *
 		ev.SensorEvent.RawRef = ev.RawRef
 	}
 	canonical := norm.Normalize(ev.SensorEvent)
+	if canonical.Scenario == "" {
+		canonical.Scenario = r.Config.Agent.Scenario
+	}
 	signals := fp.Process(canonical)
+	for _, sig := range signals {
+		if sig.Scenario == "" {
+			sig.Scenario = r.Config.Agent.Scenario
+		}
+	}
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{
 			AgentId: r.Config.Agent.ID,

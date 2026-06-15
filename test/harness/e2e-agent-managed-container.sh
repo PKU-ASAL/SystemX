@@ -57,6 +57,7 @@ agent:
   host_id: container-host
   tenant_id: default
   token: $TOKEN
+  scenario: container-managed
 
 manager:
   address: http://127.0.0.1:9443
@@ -122,6 +123,10 @@ wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-m
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-managed --tenant-id default
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-managed-container.metrics.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json metrics
+wait_contains "scenario events" '"scenario":"container-managed"' "$RESULTS/e2e-agent-managed-container.events.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json events --scenario container-managed
+wait_contains "scenario signals" '"scenario":"container-managed"' "$RESULTS/e2e-agent-managed-container.signals.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario container-managed --layer endpoint
 
 if [[ "$(docker exec mgr cat "$WORK/tetragon.count" 2>/dev/null | tr -d '\r')" != "1" ]]; then
   echo "[e2e-agent-managed-container][ERROR] tetragon process did not start exactly once" >&2

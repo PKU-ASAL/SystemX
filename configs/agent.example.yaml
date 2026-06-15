@@ -3,6 +3,7 @@ agent:
   host_id: node-a
   tenant_id: default
   token: dev-token
+  scenario: "" # optional test/development label for manager scenario queries
 
 manager:
   address: http://10.66.0.10:9443

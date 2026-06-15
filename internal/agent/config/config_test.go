@@ -45,6 +45,7 @@ agent:
   host_id: node-a
   tenant_id: default
   token: dev-token
+  scenario: apt-fileless-c2-managed
 
 manager:
   address: http://10.66.0.10:9443
@@ -77,6 +78,9 @@ health:
 	}
 	if cfg.Agent.ID != "node-a" || cfg.Sensor.Backend != "tetragon" {
 		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
+		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)

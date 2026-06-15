@@ -999,6 +999,7 @@ rule content pack、MITRE metadata、cloud rule DSL 都留到后续。
 - daemon mode 使用子命令 `run`。
 - replay/stream mode 保持兼容。
 - `--dry-run` 只验证 daemon config。
+- daemon config 可带可选 `agent.scenario`,仅用于测试/开发环境复用 manager scenario reset/query 和 e2e 断言；生产语义仍以 tenant/agent/host identity 为主。
 - replay/stream 是否经过 spool 应显式配置，不要隐式改变 v1 结果。
 
 ### 9.6 Tetragon 托管不要变成产品边界

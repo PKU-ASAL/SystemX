@@ -60,6 +60,38 @@ func TestRunnerOnceWithFakeSensor(t *testing.T) {
 	assertSpoolBatch(t, cfg.Spool.Path)
 }
 
+func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "daemon-scenario"},
+		Manager: config.ManagerConfig{Address: "http://127.0.0.1:9443", Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := runner.Run(context.Background(), Options{Once: true}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	batch := loadOnlySpoolBatch(t, cfg.Spool.Path)
+	if got := batch.GetEvents()[0].GetScenario(); got != "daemon-scenario" {
+		t.Fatalf("event scenario = %q", got)
+	}
+	for _, sig := range batch.GetSignals() {
+		if got := sig.GetScenario(); got != "daemon-scenario" {
+			t.Fatalf("signal %s scenario = %q", sig.GetName(), got)
+		}
+	}
+}
+
 func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
@@ -545,6 +577,14 @@ func waitForManagerSignal(t *testing.T, managerURL, name string) {
 
 func assertSpoolBatch(t *testing.T, dir string) {
 	t.Helper()
+	batch := loadOnlySpoolBatch(t, dir)
+	if batch.GetAgent().GetAgentId() != "agent-a" {
+		t.Fatalf("spool batch agent = %+v", batch.GetAgent())
+	}
+}
+
+func loadOnlySpoolBatch(t *testing.T, dir string) *analyticsv1.UploadBatch {
+	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "*.batch.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -556,7 +596,9 @@ func assertSpoolBatch(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "agent-a") {
-		t.Fatalf("spool batch does not contain agent identity: %s", string(data))
+	var batch analyticsv1.UploadBatch
+	if err := protojson.Unmarshal(data, &batch); err != nil {
+		t.Fatalf("decode spool batch: %v\n%s", err, string(data))
 	}
+	return &batch
 }

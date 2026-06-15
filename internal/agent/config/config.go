@@ -23,6 +23,7 @@ type AgentConfig struct {
 	HostID   string
 	TenantID string
 	Token    string
+	Scenario string
 }
 
 type ManagerConfig struct {
@@ -180,6 +181,8 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Agent.TenantID = value
 		case "token":
 			cfg.Agent.Token = value
+		case "scenario":
+			cfg.Agent.Scenario = value
 		default:
 			return unknown(section, key)
 		}
