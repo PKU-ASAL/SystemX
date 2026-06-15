@@ -1,0 +1,24 @@
+{
+  "policy_id": "default-edr-policy",
+  "version": 1,
+  "tenant_id": "default",
+  "endpoint_rules": [
+    "web_runtime_spawns_shell",
+    "download_by_lolbin",
+    "payload_dropped",
+    "reverse_shell_pattern",
+    "suspicious_exec_connect"
+  ],
+  "cloud_rules": [
+    "dropped_payload_executed_and_connects",
+    "web_shell_chain"
+  ],
+  "mode": "observe",
+  "converge": {
+    "mode": "rarity_structural",
+    "top_k": 8,
+    "max_path_hops": 6,
+    "cross_lineage": true
+  },
+  "published": true
+}

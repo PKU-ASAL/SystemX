@@ -1,0 +1,10 @@
+{
+  "rule_id": "web_shell_chain",
+  "version": 1,
+  "enabled": true,
+  "where": "cloud",
+  "severity": "critical",
+  "tags": ["web", "c2"],
+  "mitre": ["T1190", "T1059", "T1571"],
+  "response_intent": "collect"
+}

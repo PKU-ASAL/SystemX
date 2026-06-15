@@ -1,22 +1,25 @@
 # SysArmor Configs
 
-This directory is reserved for policy and rule bundles once the MVP moves from compiled Go heuristics to content-driven detection.
+This directory contains the default v3 rule/policy content pack.
 
-Current MVP status:
+Current status:
 
-- Endpoint rules are implemented in `internal/endpoint/fastpath`.
-- Cloud rules and convergence controls are implemented in `internal/analytics/ingest`.
-- Test-specific expectations and control checks live under `test/scenarios`.
-- Runtime collection policy for e2e lives in `test/env/resources/syscall-capture.yaml`.
+- Endpoint rule execution still lives in `internal/endpoint/fastpath`.
+- Cloud convergence still lives in `internal/analytics/ingest`.
+- The manager can now store policies, assignments, and expose an effective policy API.
+- Rule content files are metadata and enable/disable references for the current hardcoded rules.
 
-Planned layout:
+Layout:
 
 ```text
 configs/
   policies/
+    default-edr-policy.json
   rules/
     endpoint/
+      *.json
     cloud/
+      *.json
 ```
 
 Keep cross-component data contracts in `api/proto`; configs should reference those contracts rather than defining new schemas ad hoc.

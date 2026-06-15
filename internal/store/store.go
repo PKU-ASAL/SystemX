@@ -17,18 +17,22 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type Store struct {
-	mu        sync.RWMutex
-	path      string
-	Agents    []*analyticsv1.AgentHello
-	Events    []*eventv1.CanonicalEvent
-	Signals   []*signalv1.Signal
-	Incidents []*incidentv1.Incident
-	Health    map[string]agenthealth.AgentHealth
-	Metrics   Metrics
+	mu          sync.RWMutex
+	path        string
+	Agents      []*analyticsv1.AgentHello
+	Events      []*eventv1.CanonicalEvent
+	Signals     []*signalv1.Signal
+	Incidents   []*incidentv1.Incident
+	Health      map[string]agenthealth.AgentHealth
+	Rules       []policymodel.RuleContent
+	Policies    []policymodel.Policy
+	Assignments []policymodel.Assignment
+	Metrics     Metrics
 }
 
 type Metrics struct {
@@ -47,12 +51,15 @@ type Metrics struct {
 }
 
 type diskState struct {
-	Agents    []json.RawMessage `json:"agents"`
-	Events    []json.RawMessage `json:"events"`
-	Signals   []json.RawMessage `json:"signals"`
-	Incidents []json.RawMessage `json:"incidents"`
-	Health    []json.RawMessage `json:"health"`
-	Metrics   Metrics           `json:"metrics"`
+	Agents      []json.RawMessage         `json:"agents"`
+	Events      []json.RawMessage         `json:"events"`
+	Signals     []json.RawMessage         `json:"signals"`
+	Incidents   []json.RawMessage         `json:"incidents"`
+	Health      []json.RawMessage         `json:"health"`
+	Rules       []policymodel.RuleContent `json:"rules"`
+	Policies    []policymodel.Policy      `json:"policies"`
+	Assignments []policymodel.Assignment  `json:"assignments"`
+	Metrics     Metrics                   `json:"metrics"`
 }
 
 func Open(path string) (*Store, error) {
@@ -106,6 +113,9 @@ func Open(path string) (*Store, error) {
 		}
 		s.Health[agentHealthKey(msg.TenantID, msg.AgentID)] = msg
 	}
+	s.Rules = state.Rules
+	s.Policies = state.Policies
+	s.Assignments = state.Assignments
 	s.Metrics = state.Metrics
 	return s, nil
 }
@@ -187,6 +197,217 @@ func (s *Store) UpsertAgentHealth(health agenthealth.AgentHealth) {
 		s.Health = map[string]agenthealth.AgentHealth{}
 	}
 	s.Health[agentHealthKey(health.TenantID, health.AgentID)] = health
+}
+
+func (s *Store) EnsureDefaultPolicy(tenantID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.Rules) == 0 {
+		s.Rules = policymodel.DefaultRules()
+	}
+	for _, policy := range s.Policies {
+		if policy.TenantID == tenantID && policy.PolicyID == policymodel.DefaultPolicyID && policy.Version == policymodel.DefaultPolicyVersion {
+			return
+		}
+	}
+	s.Policies = append(s.Policies, policymodel.Normalize(policymodel.DefaultPolicy(tenantID)))
+}
+
+func (s *Store) UpsertRule(rule policymodel.RuleContent) {
+	if rule.RuleID == "" {
+		return
+	}
+	if rule.Version == 0 {
+		rule.Version = 1
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Rules {
+		if existing.RuleID == rule.RuleID && existing.Version == rule.Version {
+			s.Rules[i] = rule
+			return
+		}
+	}
+	s.Rules = append(s.Rules, rule)
+}
+
+func (s *Store) ListRules(where string) []policymodel.RuleContent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]policymodel.RuleContent, 0, len(s.Rules))
+	for _, rule := range s.Rules {
+		if where != "" && rule.Where != where {
+			continue
+		}
+		out = append(out, rule)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Where == out[j].Where {
+			if out[i].RuleID == out[j].RuleID {
+				return out[i].Version < out[j].Version
+			}
+			return out[i].RuleID < out[j].RuleID
+		}
+		return out[i].Where < out[j].Where
+	})
+	return out
+}
+
+func (s *Store) UpsertPolicy(policy policymodel.Policy) policymodel.Policy {
+	if policy.PolicyID == "" {
+		return policymodel.Policy{}
+	}
+	policy = policymodel.Normalize(policy)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Policies {
+		if existing.TenantID == policy.TenantID && existing.PolicyID == policy.PolicyID && existing.Version == policy.Version {
+			if existing.CreatedAt.IsZero() {
+				existing.CreatedAt = policy.CreatedAt
+			}
+			policy.CreatedAt = existing.CreatedAt
+			s.Policies[i] = policy
+			return policy
+		}
+	}
+	s.Policies = append(s.Policies, policy)
+	return policy
+}
+
+func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]policymodel.Policy, 0, len(s.Policies))
+	for _, policy := range s.Policies {
+		if tenantID != "" && policy.TenantID != tenantID {
+			continue
+		}
+		out = append(out, policy)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			if out[i].PolicyID == out[j].PolicyID {
+				return out[i].Version < out[j].Version
+			}
+			return out[i].PolicyID < out[j].PolicyID
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
+	return out
+}
+
+func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymodel.Policy, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var latest policymodel.Policy
+	var ok bool
+	for _, policy := range s.Policies {
+		if tenantID != "" && policy.TenantID != tenantID {
+			continue
+		}
+		if policy.PolicyID != policyID {
+			continue
+		}
+		if version != 0 && policy.Version != version {
+			continue
+		}
+		if version != 0 {
+			return policy, true
+		}
+		if !ok || policy.Version > latest.Version {
+			latest = policy
+			ok = true
+		}
+	}
+	return latest, ok
+}
+
+func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Assignment, bool) {
+	if assignment.PolicyID == "" {
+		return policymodel.Assignment{}, false
+	}
+	if assignment.TenantID == "" {
+		assignment.TenantID = "default"
+	}
+	policy, ok := s.GetPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
+	if !ok {
+		return policymodel.Assignment{}, false
+	}
+	assignment.PolicyVersion = policy.Version
+	if assignment.AssignmentID == "" {
+		assignment.AssignmentID = assignmentKey(assignment)
+	}
+	now := time.Now().UTC()
+	if assignment.CreatedAt.IsZero() {
+		assignment.CreatedAt = now
+	}
+	assignment.UpdatedAt = now
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Assignments {
+		if existing.AssignmentID == assignment.AssignmentID {
+			assignment.CreatedAt = existing.CreatedAt
+			s.Assignments[i] = assignment
+			return assignment, true
+		}
+		if sameAssignmentTarget(existing, assignment) {
+			assignment.CreatedAt = existing.CreatedAt
+			s.Assignments[i] = assignment
+			return assignment, true
+		}
+	}
+	s.Assignments = append(s.Assignments, assignment)
+	return assignment, true
+}
+
+func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]policymodel.Assignment, 0, len(s.Assignments))
+	for _, assignment := range s.Assignments {
+		if tenantID != "" && assignment.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && assignment.AgentID != agentID {
+			continue
+		}
+		out = append(out, assignment)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			return out[i].AssignmentID < out[j].AssignmentID
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
+	return out
+}
+
+func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool) {
+	s.mu.RLock()
+	assignments := append([]policymodel.Assignment(nil), s.Assignments...)
+	s.mu.RUnlock()
+	var best policymodel.Assignment
+	bestRank := -1
+	for _, assignment := range assignments {
+		if tenantID != "" && assignment.TenantID != tenantID {
+			continue
+		}
+		rank := assignmentRank(assignment, agentID, scopeType, scopeSelector)
+		if rank > bestRank {
+			best = assignment
+			bestRank = rank
+		}
+	}
+	if bestRank >= 0 {
+		return s.GetPolicy(best.TenantID, best.PolicyID, best.PolicyVersion)
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if policy, ok := s.GetPolicy(tenantID, policymodel.DefaultPolicyID, 0); ok {
+		return policy, true
+	}
+	return policymodel.DefaultPolicy(tenantID), true
 }
 
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
@@ -424,6 +645,9 @@ func (s *Store) Save() error {
 		}
 		state.Health = append(state.Health, raw)
 	}
+	state.Rules = append([]policymodel.RuleContent(nil), s.Rules...)
+	state.Policies = append([]policymodel.Policy(nil), s.Policies...)
+	state.Assignments = append([]policymodel.Assignment(nil), s.Assignments...)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -531,4 +755,44 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func assignmentKey(assignment policymodel.Assignment) string {
+	parts := []string{
+		assignment.TenantID,
+		assignment.AgentID,
+		assignment.Scope.Type,
+		assignment.Scope.Selector,
+		assignment.PolicyID,
+	}
+	return stableKey(parts...)
+}
+
+func sameAssignmentTarget(a, b policymodel.Assignment) bool {
+	return a.TenantID == b.TenantID &&
+		a.AgentID == b.AgentID &&
+		a.Scope.Type == b.Scope.Type &&
+		a.Scope.Selector == b.Scope.Selector
+}
+
+func assignmentRank(assignment policymodel.Assignment, agentID, scopeType, scopeSelector string) int {
+	if assignment.AgentID != "" {
+		if agentID == "" || assignment.AgentID != agentID {
+			return -1
+		}
+		return 30
+	}
+	if assignment.Scope.Type != "" {
+		if assignment.Scope.Type != scopeType {
+			return -1
+		}
+		if assignment.Scope.Selector != "" && assignment.Scope.Selector != scopeSelector {
+			return -1
+		}
+		if assignment.Scope.Selector != "" {
+			return 20
+		}
+		return 10
+	}
+	return 0
 }

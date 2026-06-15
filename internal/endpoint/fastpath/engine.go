@@ -10,9 +10,10 @@ import (
 )
 
 type Engine struct {
-	nextID  uint64
-	states  map[string]*lineageState
-	writers map[string]string
+	nextID       uint64
+	states       map[string]*lineageState
+	writers      map[string]string
+	enabledRules map[string]bool
 }
 
 type lineageState struct {
@@ -21,6 +22,18 @@ type lineageState struct {
 	stagedPayload       bool
 	payloads            map[string]bool
 	payloadExecStableID map[string]bool
+}
+
+func NewWithRules(rules []string) *Engine {
+	engine := New()
+	if len(rules) == 0 {
+		return engine
+	}
+	engine.enabledRules = map[string]bool{}
+	for _, rule := range rules {
+		engine.enabledRules[rule] = true
+	}
+	return engine
 }
 
 func New() *Engine {
@@ -48,7 +61,7 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 		out = append(out, e.onFileMutation(ev, state)...)
 	}
 
-	return out
+	return compactSignals(out)
 }
 
 func (e *Engine) state(lineage string) *lineageState {
@@ -129,6 +142,9 @@ func (e *Engine) onFileMutation(ev *eventv1.CanonicalEvent, st *lineageState) []
 }
 
 func (e *Engine) signal(ev *eventv1.CanonicalEvent, name string, risk uint32, terminal bool, entities ...*signalv1.EntityRef) *signalv1.Signal {
+	if !e.ruleEnabled(name) {
+		return nil
+	}
 	e.nextID++
 	sig := &signalv1.Signal{
 		Id:           fmt.Sprintf("sig-%020d", e.nextID),
@@ -153,6 +169,23 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, name string, risk uint32, te
 		}
 	}
 	return sig
+}
+
+func (e *Engine) ruleEnabled(name string) bool {
+	if len(e.enabledRules) == 0 {
+		return true
+	}
+	return e.enabledRules[name]
+}
+
+func compactSignals(in []*signalv1.Signal) []*signalv1.Signal {
+	out := in[:0]
+	for _, sig := range in {
+		if sig != nil {
+			out = append(out, sig)
+		}
+	}
+	return out
 }
 
 func processEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {

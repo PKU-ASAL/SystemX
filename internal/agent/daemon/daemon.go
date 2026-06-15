@@ -19,6 +19,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
@@ -226,6 +227,9 @@ func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt 
 		TenantID:      r.Config.Agent.TenantID,
 		Scope:         r.runtimeScope(),
 		Status:        "degraded",
+		PolicyID:      policymodel.DefaultPolicyID,
+		PolicyVersion: policymodel.DefaultPolicyVersion,
+		PolicyMode:    r.policyMode(),
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    time.Now().UTC(),
 		Sensor: agenthealth.SensorHealth{
@@ -304,6 +308,9 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 		TenantID:      r.Config.Agent.TenantID,
 		Scope:         r.runtimeScope(),
 		Status:        status,
+		PolicyID:      policymodel.DefaultPolicyID,
+		PolicyVersion: policymodel.DefaultPolicyVersion,
+		PolicyMode:    r.policyMode(),
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    now,
 		Sensor: agenthealth.SensorHealth{
@@ -360,6 +367,13 @@ func (r *Runner) runtimeScope() agenthealth.RuntimeScope {
 		return agenthealth.RuntimeScope{Type: "host"}
 	}
 	return agenthealth.RuntimeScope{Type: scope.Type, Selector: scope.Selector}
+}
+
+func (r *Runner) policyMode() string {
+	if r.Config.Sensor.ObserveOnly {
+		return "observe"
+	}
+	return "enforce"
 }
 
 func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {

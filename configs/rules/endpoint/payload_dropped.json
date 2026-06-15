@@ -1,0 +1,9 @@
+{
+  "rule_id": "payload_dropped",
+  "version": 1,
+  "enabled": true,
+  "where": "endpoint",
+  "severity": "high",
+  "tags": ["file", "drop"],
+  "mitre": ["T1105"]
+}

@@ -1,0 +1,10 @@
+{
+  "rule_id": "reverse_shell_pattern",
+  "version": 1,
+  "enabled": true,
+  "where": "endpoint",
+  "severity": "critical",
+  "tags": ["c2"],
+  "mitre": ["T1571"],
+  "response_intent": "collect"
+}

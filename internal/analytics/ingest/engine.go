@@ -32,6 +32,9 @@ func (e *Engine) Analyze(events []*eventv1.CanonicalEvent, signals []*signalv1.S
 func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*signalv1.Signal, policy *policyv1.DetectionPolicy) Result {
 	byName := map[string][]*signalv1.Signal{}
 	for _, sig := range signals {
+		if !endpointRuleEnabled(policy, sig.GetName()) {
+			continue
+		}
 		byName[sig.GetName()] = append(byName[sig.GetName()], sig)
 	}
 	scenario := firstScenario(signals)
@@ -45,12 +48,12 @@ func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*
 		crossLineageEnabled = policy.GetConverge().GetCrossLineage()
 	}
 
-	if has(byName, "payload_dropped") && (hasTerminal(byName["reverse_shell_pattern"]) || (crossLineageEnabled && has(byName, "suspicious_exec_connect"))) {
+	if cloudRuleEnabled(policy, "dropped_payload_executed_and_connects") && has(byName, "payload_dropped") && (hasTerminal(byName["reverse_shell_pattern"]) || (crossLineageEnabled && has(byName, "suspicious_exec_connect"))) {
 		cs := e.cloudSignal("dropped_payload_executed_and_connects", scenario, 80, collectEntities(byName, "payload_dropped", "reverse_shell_pattern", "suspicious_exec_connect")...)
 		cs.CrossLineage = has(byName, "suspicious_exec_connect") && !hasTerminal(byName["reverse_shell_pattern"])
 		result.CloudSignals = append(result.CloudSignals, cs)
 	}
-	if has(byName, "web_runtime_spawns_shell") && hasTerminal(byName["reverse_shell_pattern"]) {
+	if cloudRuleEnabled(policy, "web_shell_chain") && has(byName, "web_runtime_spawns_shell") && hasTerminal(byName["reverse_shell_pattern"]) {
 		result.CloudSignals = append(result.CloudSignals, e.cloudSignal("web_shell_chain", scenario, 85, collectEntities(byName, "web_runtime_spawns_shell", "reverse_shell_pattern")...))
 	}
 
@@ -60,6 +63,30 @@ func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*
 		result.Incidents = append(result.Incidents, e.incident(scenario, allSignals))
 	}
 	return result
+}
+
+func endpointRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
+	if policy == nil || len(policy.GetEndpointRules()) == 0 {
+		return true
+	}
+	for _, rule := range policy.GetEndpointRules() {
+		if rule == name {
+			return true
+		}
+	}
+	return false
+}
+
+func cloudRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
+	if policy == nil || len(policy.GetCloudRules()) == 0 {
+		return true
+	}
+	for _, rule := range policy.GetCloudRules() {
+		if rule == name {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldIncident(byName map[string][]*signalv1.Signal, cloud []*signalv1.Signal, policy *policyv1.DetectionPolicy) bool {

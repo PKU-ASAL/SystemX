@@ -1,0 +1,10 @@
+{
+  "rule_id": "dropped_payload_executed_and_connects",
+  "version": 1,
+  "enabled": true,
+  "where": "cloud",
+  "severity": "critical",
+  "tags": ["graph", "cross-lineage"],
+  "mitre": ["T1105", "T1574"],
+  "response_intent": "collect"
+}

@@ -97,6 +97,83 @@ func query(mgr string, args []string) ([]byte, error) {
 		return httpGet(base + "/api/v1/agent-health?" + q.Encode())
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
+	case "rules":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--where" {
+				i++
+				if i < len(args) {
+					q.Set("where", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/rules?" + q.Encode())
+	case "policies":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--policy-id":
+				i++
+				if i < len(args) {
+					q.Set("policy_id", args[i])
+				}
+			case "--version":
+				i++
+				if i < len(args) {
+					q.Set("version", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/policies?" + q.Encode())
+	case "policy-assignments":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/policy-assignments?" + q.Encode())
+	case "effective-policy":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+				}
+			case "--scope-type":
+				i++
+				if i < len(args) {
+					q.Set("scope_type", args[i])
+				}
+			case "--scope-selector":
+				i++
+				if i < len(args) {
+					q.Set("scope_selector", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/effective-policy?" + q.Encode())
 	case "events":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
@@ -162,6 +239,26 @@ func query(mgr string, args []string) ([]byte, error) {
 				i++
 				if i < len(args) {
 					q.Set("mode", args[i])
+				}
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+				}
+			case "--scope-type":
+				i++
+				if i < len(args) {
+					q.Set("scope_type", args[i])
+				}
+			case "--scope-selector":
+				i++
+				if i < len(args) {
+					q.Set("scope_selector", args[i])
 				}
 			}
 		}

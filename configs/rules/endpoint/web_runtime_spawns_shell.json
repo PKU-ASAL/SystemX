@@ -1,0 +1,9 @@
+{
+  "rule_id": "web_runtime_spawns_shell",
+  "version": 1,
+  "enabled": true,
+  "where": "endpoint",
+  "severity": "high",
+  "tags": ["process", "web"],
+  "mitre": ["T1059"]
+}

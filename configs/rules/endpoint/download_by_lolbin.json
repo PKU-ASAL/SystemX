@@ -1,0 +1,9 @@
+{
+  "rule_id": "download_by_lolbin",
+  "version": 1,
+  "enabled": true,
+  "where": "endpoint",
+  "severity": "medium",
+  "tags": ["download"],
+  "mitre": ["T1105"]
+}

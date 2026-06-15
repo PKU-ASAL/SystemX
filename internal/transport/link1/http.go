@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -48,10 +50,12 @@ type AgentListItem struct {
 var ErrInvalidUpload = errors.New("invalid upload")
 
 func NewServer(st *store.Store) *Server {
+	st.EnsureDefaultPolicy("default")
 	return &Server{store: st, engine: ingest.NewEngine()}
 }
 
 func NewServerWithAuth(st *store.Store, token string) *Server {
+	st.EnsureDefaultPolicy("default")
 	return &Server{store: st, engine: ingest.NewEngine(), authToken: token}
 }
 
@@ -61,6 +65,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/reset", s.reset)
 	mux.HandleFunc("/api/v1/upload", s.upload)
 	mux.HandleFunc("/api/v1/recompute", s.recompute)
+	mux.HandleFunc("/api/v1/rules", s.rules)
+	mux.HandleFunc("/api/v1/policies", s.policies)
+	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
+	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/events", s.events)
@@ -130,7 +138,7 @@ func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, err
 		return UploadResult{}, err
 	}
 	s.store.AddAgent(batch.GetAgent())
-	touchedScenarios := map[string]bool{}
+	touchedScenarios := map[string]*analyticsv1.AgentHello{}
 	acceptedEvents := 0
 	acceptedSignals := 0
 	for _, ev := range batch.GetEvents() {
@@ -139,7 +147,7 @@ func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, err
 			acceptedEvents++
 		}
 		if inserted && ev.GetScenario() != "" {
-			touchedScenarios[ev.GetScenario()] = true
+			touchedScenarios[ev.GetScenario()] = batch.GetAgent()
 		}
 	}
 	for _, sig := range batch.GetSignals() {
@@ -148,7 +156,7 @@ func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, err
 			acceptedSignals++
 		}
 		if inserted && sig.GetScenario() != "" {
-			touchedScenarios[sig.GetScenario()] = true
+			touchedScenarios[sig.GetScenario()] = batch.GetAgent()
 		}
 	}
 	start := time.Now()
@@ -187,21 +195,35 @@ func validateUploadIdentity(batch *analyticsv1.UploadBatch) error {
 	return nil
 }
 
-func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]bool) (int, int) {
+func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]*analyticsv1.AgentHello) (int, int) {
 	totalCloud := 0
 	totalIncidents := 0
 	if len(touchedScenarios) == 0 {
 		return 0, 0
 	}
-	for scenario := range touchedScenarios {
+	for scenario, agent := range touchedScenarios {
 		events := s.store.ListEvents(scenario, "")
 		endpointSignals := s.store.ListSignals(scenario, "endpoint", false)
-		analysis := s.engine.Analyze(events, endpointSignals)
+		policy := s.effectiveDetectionPolicyForAgent(agent)
+		analysis := s.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
 		s.store.ReplaceDerivedForScenario(scenario, analysis.CloudSignals, analysis.Incidents)
 		totalCloud += len(analysis.CloudSignals)
 		totalIncidents += len(analysis.Incidents)
 	}
 	return totalCloud, totalIncidents
+}
+
+func (s *Server) effectiveDetectionPolicyForAgent(agent *analyticsv1.AgentHello) *policyv1.DetectionPolicy {
+	if agent == nil {
+		policy, _ := s.store.EffectivePolicy("default", "", "", "")
+		return policy.DetectionPolicy()
+	}
+	var scope agenthealth.RuntimeScope
+	if health, ok := s.store.GetAgentHealth(agent.GetTenantId(), agent.GetAgentId()); ok {
+		scope = health.Scope
+	}
+	policy, _ := s.store.EffectivePolicy(agent.GetTenantId(), agent.GetAgentId(), scope.Type, scope.Selector)
+	return policy.DetectionPolicy()
 }
 
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
@@ -315,12 +337,109 @@ func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.store.MetricsSnapshot())
 }
 
+func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, s.store.ListRules(r.URL.Query().Get("where")))
+}
+
+func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query()
+		if policyID := q.Get("policy_id"); policyID != "" {
+			version := parseUint(q.Get("version"))
+			policy, ok := s.store.GetPolicy(q.Get("tenant_id"), policyID, version)
+			if !ok {
+				http.Error(w, "policy not found", http.StatusNotFound)
+				return
+			}
+			writeJSON(w, policy)
+			return
+		}
+		writeJSON(w, s.store.ListPolicies(q.Get("tenant_id")))
+	case http.MethodPost:
+		var policy policymodel.Policy
+		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
+			http.Error(w, fmt.Sprintf("decode policy: %v", err), http.StatusBadRequest)
+			return
+		}
+		if policy.PolicyID == "" {
+			http.Error(w, "policy_id is required", http.StatusBadRequest)
+			return
+		}
+		policy = s.store.UpsertPolicy(policy)
+		if err := s.store.Save(); err != nil {
+			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, policy)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query()
+		writeJSON(w, s.store.ListAssignments(q.Get("tenant_id"), q.Get("agent_id")))
+	case http.MethodPost:
+		var assignment policymodel.Assignment
+		if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
+			http.Error(w, fmt.Sprintf("decode assignment: %v", err), http.StatusBadRequest)
+			return
+		}
+		saved, ok := s.store.AssignPolicy(assignment)
+		if !ok {
+			http.Error(w, "policy not found or assignment invalid", http.StatusBadRequest)
+			return
+		}
+		if err := s.store.Save(); err != nil {
+			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, saved)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) effectivePolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	policy, ok := s.store.EffectivePolicy(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
+	if !ok {
+		http.Error(w, "effective policy not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, policy)
+}
+
 func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	policy := &policyv1.DetectionPolicy{Converge: &policyv1.ConvergeParams{CrossLineage: true}}
+	effective, _ := s.store.EffectivePolicy(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
+	policy := effective.DetectionPolicy()
+	if policy.Converge == nil {
+		policy.Converge = &policyv1.ConvergeParams{CrossLineage: true}
+	}
 	switch q.Get("disable") {
 	case "cloud.cross_lineage":
 		policy.Converge.CrossLineage = false
+	case "":
+	default:
+		if strings.HasPrefix(q.Get("disable"), "cloud.rule:") {
+			disabled := strings.TrimPrefix(q.Get("disable"), "cloud.rule:")
+			policy.CloudRules = removeString(policy.CloudRules, disabled)
+			break
+		}
+		http.Error(w, fmt.Sprintf("unknown disable %q", q.Get("disable")), http.StatusBadRequest)
+		return
 	}
 	switch q.Get("mode") {
 	case "additive_threshold":
@@ -338,6 +457,24 @@ func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func parseUint(raw string) uint64 {
+	if raw == "" {
+		return 0
+	}
+	v, _ := strconv.ParseUint(raw, 10, 64)
+	return v
+}
+
+func removeString(in []string, value string) []string {
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		if item != value {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func writeProtoJSON(w http.ResponseWriter, msg proto.Message) {
