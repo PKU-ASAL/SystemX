@@ -52,7 +52,27 @@ func query(mgr string, args []string) ([]byte, error) {
 	base := normalizeManagerURL(mgr)
 	switch args[0] {
 	case "agents":
-		return httpGet(base + "/api/v1/agents")
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--scope-type":
+				i++
+				if i < len(args) {
+					q.Set("scope_type", args[i])
+				}
+			case "--health-status":
+				i++
+				if i < len(args) {
+					q.Set("health_status", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/agents?" + q.Encode())
 	case "agent-health":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

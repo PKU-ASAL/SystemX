@@ -262,11 +262,29 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		t.Fatalf("health list missing agent-a: %s", rec.Body.String())
 	}
 	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"})
+	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-b", HostId: "host-b", TenantId: "other", Version: "test"})
+	st.UpsertAgentHealth(agenthealth.AgentHealth{
+		AgentID:    "agent-b",
+		HostID:     "host-b",
+		TenantID:   "other",
+		Scope:      agenthealth.RuntimeScope{Type: "host"},
+		Status:     "degraded",
+		ObservedAt: time.Now().UTC(),
+		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: false},
+	})
 	rec = get(t, handler, "/api/v1/agents")
 	for _, want := range []string{`"agent_id":"agent-a"`, `"health_status":"ok"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability":{"backend":"fake","version":"dev","supports_exec":true,"supports_health":true,"kernel_release":"test-kernel","btf_available":true,"bpffs_available":true}`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("agents response missing %s: %s", want, rec.Body.String())
 		}
+	}
+	rec = get(t, handler, "/api/v1/agents?tenant_id=default&scope_type=container&health_status=ok")
+	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) || strings.Contains(rec.Body.String(), `"agent_id":"agent-b"`) {
+		t.Fatalf("filtered agents response = %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/agents?tenant_id=other&scope_type=host&health_status=degraded")
+	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-b"`) || strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) {
+		t.Fatalf("filtered other agents response = %s", rec.Body.String())
 	}
 }
 

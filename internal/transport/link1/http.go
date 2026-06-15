@@ -204,10 +204,17 @@ func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]bool) (in
 	return totalCloud, totalIncidents
 }
 
-func (s *Server) agents(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	tenantID := q.Get("tenant_id")
+	scopeType := q.Get("scope_type")
+	healthStatus := q.Get("health_status")
 	agents := s.store.ListAgents()
 	out := make([]AgentListItem, 0, len(agents))
 	for _, agent := range agents {
+		if tenantID != "" && agent.GetTenantId() != tenantID {
+			continue
+		}
 		item := AgentListItem{
 			AgentID:  agent.GetAgentId(),
 			HostID:   agent.GetHostId(),
@@ -219,6 +226,12 @@ func (s *Server) agents(w http.ResponseWriter, _ *http.Request) {
 			item.Scope = health.Scope
 			item.Capability = health.Capability
 			item.HealthObserved = health.ObservedAt
+		}
+		if scopeType != "" && item.Scope.Type != scopeType {
+			continue
+		}
+		if healthStatus != "" && item.HealthStatus != healthStatus {
+			continue
 		}
 		out = append(out, item)
 	}
