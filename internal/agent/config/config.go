@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
 type Config struct {
@@ -122,23 +124,10 @@ func (c Config) Validate() error {
 	if c.Sensor.FakeStartupEvents < 0 {
 		return fmt.Errorf("sensor.fake_startup_events must be non-negative")
 	}
-	scopeType := strings.TrimSpace(c.Sensor.ScopeType)
 	scopeSelector := strings.TrimSpace(c.Sensor.ScopeSelector)
 	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
-	if scopeType == "" {
-		scopeType = "host"
-	}
-	switch scopeType {
-	case "host", "container", "cgroup", "namespace", "pod":
-	default:
-		return fmt.Errorf("sensor.scope_type must be one of host, container, cgroup, namespace, pod")
-	}
-	if scopeType == "host" {
-		if scopeSelector != "" {
-			return fmt.Errorf("sensor.scope_selector must be empty when sensor.scope_type=host")
-		}
-	} else if scopeSelector == "" {
-		return fmt.Errorf("sensor.scope_selector is required when sensor.scope_type=%s", scopeType)
+	if _, _, err := contract.NormalizeScope(c.Sensor.ScopeType, scopeSelector); err != nil {
+		return fmt.Errorf("sensor scope: %w", err)
 	}
 	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
 		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")

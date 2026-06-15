@@ -183,7 +183,7 @@ health:
   interval: 10s
 `)
 	_, err := LoadFile(path)
-	if err == nil || !strings.Contains(err.Error(), "sensor.scope_type must be one of") {
+	if err == nil || !strings.Contains(err.Error(), "sensor scope: scope type must be one of") {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
 }
@@ -219,7 +219,7 @@ health:
   interval: 10s
 `)
 	_, err := LoadFile(path)
-	if err == nil || !strings.Contains(err.Error(), "sensor.scope_selector is required when sensor.scope_type=container") {
+	if err == nil || !strings.Contains(err.Error(), "sensor scope: scope selector is required when scope type is container") {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
 }
@@ -256,7 +256,7 @@ health:
   interval: 10s
 `)
 	_, err := LoadFile(path)
-	if err == nil || !strings.Contains(err.Error(), "sensor.scope_selector must be empty when sensor.scope_type=host") {
+	if err == nil || !strings.Contains(err.Error(), "sensor scope: scope selector must be empty when scope type is host") {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
 }
