@@ -76,8 +76,9 @@ sensor:
   tetra_path: $TETRA_PATH
   tetragon_path: $TETRAGON_PATH
   policy_path: $WORK/policy.yaml
-  scope_type: container
-  scope_selector: $NODE_A_DOCKER
+  scope:
+    type: container
+    selector: $NODE_A_DOCKER
   observe_only: true
   restart: always
   max_restarts: 3

@@ -55,8 +55,9 @@ sensor:
   mode: managed
   tetra_path: $TETRA_PATH
   policy_path: $WORK/policy.yaml
-  scope_type: container
-  scope_selector: $NODE_A_DOCKER
+  scope:
+    type: container
+    selector: $NODE_A_DOCKER
   observe_only: true
   restart: never
   max_restarts: 1
