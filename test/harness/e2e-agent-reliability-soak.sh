@@ -19,11 +19,15 @@ SYSARMOR_RETRY_EVENTS="$RETRY_EVENTS" SYSARMOR_RETRY_FAILS="$RETRY_FAILS" bash "
 echo "[e2e-agent-reliability-soak] restart preserves unacked batch"
 bash "$ROOT/test/harness/e2e-agent-restart-unacked.sh"
 
+echo "[e2e-agent-reliability-soak] sensor restart recovers after failure"
+bash "$ROOT/test/harness/e2e-agent-sensor-restart.sh"
+bash "$ROOT/test/harness/e2e-agent-sensor-recover.sh"
+
 echo "[e2e-agent-reliability-soak] graceful shutdown drains queued batch"
 bash "$ROOT/test/harness/e2e-agent-shutdown.sh"
 
 cat > "$RESULTS/e2e-agent-reliability-soak.summary.json" <<EOF
-{"outage_events":$OUTAGE_EVENTS,"retry_events":$RETRY_EVENTS,"retry_failures":$RETRY_FAILS,"restart_unacked":true,"shutdown_flush":true}
+{"outage_events":$OUTAGE_EVENTS,"retry_events":$RETRY_EVENTS,"retry_failures":$RETRY_FAILS,"restart_unacked":true,"sensor_restart":true,"sensor_recover":true,"shutdown_flush":true}
 EOF
 
 echo "[e2e-agent-reliability-soak] ok"
