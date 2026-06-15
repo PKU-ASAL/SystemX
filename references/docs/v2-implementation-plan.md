@@ -124,9 +124,9 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - capability 探测仍偏最小骨架。
   - policy compile/apply 还没有完全迁出 harness。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
-  - process supervisor restart policy 已落地；container 已有真实 `tetra getevents` agent-managed subscription smoke；VM 真实 Tetragon 验收仍需补齐。
+  - process supervisor restart policy 已落地；container 已有真实 `tetra getevents` agent-managed `apt-fileless-c2` detection smoke；VM 真实 Tetragon 验收仍需补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
-  - container 已有 `apt-fileless-c2` agent-managed subscription smoke；container 完整 capture/assert 主路径和 VM 主检测场景仍需迁移到 agent-managed sensor 主路径。
+  - container 已有 `apt-fileless-c2` agent-managed detection smoke；container 完整 capture/assert 主路径和 VM 主检测场景仍需迁移到 agent-managed sensor 主路径。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
@@ -730,7 +730,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke 和 container 真实 `tetra getevents` agent-managed subscription smoke 已落地；VM 真实 Tetragon 验收、完整 policy apply 和主检测场景迁移仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke 和 container 真实 `tetra getevents` agent-managed `apt-fileless-c2` detection smoke 已落地；VM 真实 Tetragon 验收、完整 policy apply 和主检测场景迁移仍未完成。
 
 任务：
 
@@ -816,7 +816,7 @@ WantedBy=multi-user.target
 
 ### Phase 7: Systemd And Harness Migration
 
-状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、container/VM managed fake bundle smoke 和 container `apt-fileless-c2` agent-managed subscription smoke 已落地；container 完整 capture/assert 主路径和 VM 主检测场景迁移仍未完成。
+状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、container/VM managed fake bundle smoke 和 container `apt-fileless-c2` agent-managed detection smoke 已落地；container 完整 capture/assert 主路径和 VM 主检测场景迁移仍未完成。
 
 任务：
 

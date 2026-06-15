@@ -105,6 +105,14 @@ wait_contains "endpoint reverse shell signal" 'reverse_shell_pattern' "$RESULTS/
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer endpoint
 wait_contains "endpoint payload signal" 'payload_dropped' "$RESULTS/e2e-agent-apt-container.signals.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer endpoint
+wait_contains "cloud dropped/connect signal" 'dropped_payload_executed_and_connects' "$RESULTS/e2e-agent-apt-container.cloud-signals.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer cloud
+wait_contains "cloud web shell signal" 'web_shell_chain' "$RESULTS/e2e-agent-apt-container.cloud-signals.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer cloud
+wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-agent-apt-container.incidents.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json incidents --scenario "$SCENARIO"
+wait_contains "incident converge" '"method":"rarity+causal-topk"' "$RESULTS/e2e-agent-apt-container.incidents.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json incidents --scenario "$SCENARIO"
 
 docker exec tetragon cat "$WORK/agent.log" > "$RESULTS/e2e-agent-apt-container.agent.log"
 
