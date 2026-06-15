@@ -208,7 +208,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 ### 2.2 v2 仍未完成的关键缺口
 
 - Sensor/runtime:
-  - capability 探测已从最小骨架推进到 kernel release、BTF、bpffs、配置二进制可执行性检查,并已进入 agent health payload；缺失 BTF / bpffs 的 degraded health smoke 已补。后续仍需在真实 VM/container 主路径上继续验证权限矩阵和 capability 可见性。
+  - capability 探测已从最小骨架推进到 kernel release、BTF、bpffs、配置二进制可执行性检查,并已进入 agent health payload；缺失 BTF / bpffs 的 degraded health smoke 已补。VM/container real owned-path e2e 已验证 capability 可见性,后续作为真实权限矩阵回归继续保留。
   - policy compile/apply 已有 backend apply、generated TracingPolicy 最小路径、backend 内部 `tracingpolicy list` 验证以及 stop 时的 runtime policy cleanup；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 和 VM provision 默认主路径都已不再预加载 TracingPolicy；VM 仅保留显式兼容模式 preload,限定在 replay/debug/perf。
   - dropped events / parse errors / degraded 状态已有阈值配置、health 暴露和本机 e2e 验收；后续重点转向真实 Tetragon 主路径中的 dropped counter 对齐。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
@@ -222,7 +222,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - 新增 `e2e-agent-reliability-soak` 聚合入口,把 outage drain、retry/backoff、restart-unacked、sensor restart/recover、shutdown flush 串成更长窗口的本机可靠性门禁。
   - graceful shutdown flush 已有本机 e2e,并断言 SIGTERM 后 shutdown drain、spool 清空、manager 侧 final degraded health 中 `queued_batches=0` / `remaining_batches=0`；后续仍需更长窗口 soak。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有；container 和 VM owned-process smoke 均已补 agent/service stop 后 owned `tetragon` / `tetra getevents` 不残留并可重启恢复的断言,并且 backend 侧已有 runtime policy cleanup 回归,同时 health payload 也开始携带 capability,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
-- health API、CLI 查询、本机 e2e、`e2e-agent-all` 本机聚合、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke、managed `tetra getevents` 混流 dropped-events 归因回归、owned-path capability 可见性断言，以及 required BTF / bpffs 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
+- health API、CLI 查询、本机 e2e、`e2e-agent-all` 本机聚合、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke、managed `tetra getevents` 混流 dropped-events 归因回归、VM/container owned-path capability 可见性断言，以及 required BTF / bpffs 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵回归。
   - tenant/agent identity 已进入 upload、health 和 store 主链路；manager 已对 upload agent/host/tenant identity 做最小校验,但还不是完整 RBAC/enrollment。
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
@@ -933,7 +933,7 @@ WantedBy=multi-user.target
 
 ### Phase 6: Registration/Auth, Heartbeat, Health API
 
-状态：基本完成。dev token 校验、upload identity validation、agent health ingest/query、`sysarmorctl agent-health`、本机 degraded→recovered health smoke、container 主路径 degraded→recovered health smoke 以及 VM 主路径 degraded→recovered health smoke 已落地；剩余重点是 ownership 更真实验收和后续 RBAC/enrollment。
+状态：基本完成。dev token 校验、upload identity validation、agent health ingest/query、`sysarmorctl agent-health`、sensor capability health、本机 degraded→recovered health smoke、container 主路径 degraded→recovered health smoke 以及 VM 主路径 degraded→recovered health smoke 已落地；剩余重点是 ownership 更真实验收和后续 RBAC/enrollment。
 
 任务：
 
@@ -951,7 +951,7 @@ WantedBy=multi-user.target
 
 ### Phase 7: Systemd And Harness Migration
 
-状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、VM real Tetragon systemd smoke、container/VM managed fake bundle smoke、container `apt-fileless-c2` / `apt-staged-drop` / `benign-ci-noise` agent-managed detection smoke、container detection 聚合验证以及 container/VM 完整 capture/assert 主路径已落地；剩余重点是完整 Tetragon process ownership、policy ownership 和长跑可靠性。
+状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、VM real Tetragon systemd smoke、container/VM managed fake bundle smoke、container `apt-fileless-c2` / `apt-staged-drop` / `benign-ci-noise` agent-managed detection smoke、container detection 聚合验证、container/VM 完整 capture/assert 主路径以及 VM/container owned-path capability 验证已落地；剩余重点是完整 Tetragon process ownership、policy ownership 和长跑可靠性。
 
 任务：
 
