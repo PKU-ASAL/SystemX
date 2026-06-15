@@ -47,6 +47,7 @@ type SensorConfig struct {
 	RequireBPFFS      bool
 	PolicyPath        string
 	EventSource       string
+	Scope             RuntimeScope
 	ScopeType         string
 	ScopeSelector     string
 	ContainerIDPrefix string
@@ -57,6 +58,11 @@ type SensorConfig struct {
 	MaxParseErrors    uint64
 	MaxDroppedEvents  uint64
 	RestartWindow     time.Duration
+}
+
+type RuntimeScope struct {
+	Type     string
+	Selector string
 }
 
 type SpoolConfig struct {
@@ -124,11 +130,12 @@ func (c Config) Validate() error {
 	if c.Sensor.FakeStartupEvents < 0 {
 		return fmt.Errorf("sensor.fake_startup_events must be non-negative")
 	}
-	scopeSelector := strings.TrimSpace(c.Sensor.ScopeSelector)
-	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
-	if _, _, err := contract.NormalizeScope(c.Sensor.ScopeType, scopeSelector); err != nil {
+	scope, err := c.Sensor.EffectiveScope()
+	if err != nil {
 		return fmt.Errorf("sensor scope: %w", err)
 	}
+	scopeSelector := strings.TrimSpace(scope.Selector)
+	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
 	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
 		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")
 	}
@@ -151,6 +158,38 @@ func (c Config) Validate() error {
 		return fmt.Errorf("health.interval must be positive")
 	}
 	return nil
+}
+
+func (s SensorConfig) EffectiveScope() (RuntimeScope, error) {
+	scopeType := strings.TrimSpace(s.Scope.Type)
+	scopeSelector := strings.TrimSpace(s.Scope.Selector)
+	legacyType := strings.TrimSpace(s.ScopeType)
+	legacySelector := strings.TrimSpace(s.ScopeSelector)
+	containerIDPrefix := strings.TrimSpace(s.ContainerIDPrefix)
+
+	if scopeType != "" && legacyType != "" && scopeType != legacyType {
+		return RuntimeScope{}, fmt.Errorf("sensor.scope.type conflicts with sensor.scope_type")
+	}
+	if scopeSelector != "" && legacySelector != "" && scopeSelector != legacySelector {
+		return RuntimeScope{}, fmt.Errorf("sensor.scope.selector conflicts with sensor.scope_selector")
+	}
+	if scopeType == "" {
+		scopeType = legacyType
+	}
+	if scopeSelector == "" {
+		scopeSelector = legacySelector
+	}
+	if scopeType == "" && containerIDPrefix != "" {
+		scopeType = "container"
+	}
+	if scopeSelector == "" && containerIDPrefix != "" {
+		scopeSelector = containerIDPrefix
+	}
+	normalizedType, normalizedSelector, err := contract.NormalizeScope(scopeType, scopeSelector)
+	if err != nil {
+		return RuntimeScope{}, err
+	}
+	return RuntimeScope{Type: normalizedType, Selector: normalizedSelector}, nil
 }
 
 func parse(r *os.File) (Config, error) {
@@ -321,9 +360,9 @@ func assign(cfg *Config, section, key, value string) error {
 	case "sensor.scope":
 		switch key {
 		case "type":
-			cfg.Sensor.ScopeType = value
+			cfg.Sensor.Scope.Type = value
 		case "selector":
-			cfg.Sensor.ScopeSelector = value
+			cfg.Sensor.Scope.Selector = value
 		default:
 			return unknown(section, key)
 		}

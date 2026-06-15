@@ -143,6 +143,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - `internal/agent/config`:
   - agent/manager/sensor/spool/upload/health 配置结构。
+  - `sensor.scope.type + sensor.scope.selector` 已作为 canonical runtime scope 配置,`scope_type/scope_selector/container_id_prefix` 仅作为 legacy alias 归一入口。
   - `configs/agent.example.yaml` 和 `configs/agent.fake.yaml`。
   - `sysarmor-agent run --config ... --dry-run` 配置校验。
 - `internal/sensor/contract`:
@@ -808,7 +809,7 @@ WantedBy=multi-user.target
 
 ### Phase 0: Config And Command Shape
 
-状态：基本完成，后续只做兼容性维护和配置字段补齐。
+状态：基本完成，后续只做兼容性维护。`sensor.scope` 已成为配置主表达,扁平 `scope_type/scope_selector` 和 `container_id_prefix` 仅作为 legacy alias 进入 `EffectiveScope()` 归一。
 
 任务：
 

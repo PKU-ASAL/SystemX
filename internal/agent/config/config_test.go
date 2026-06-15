@@ -92,8 +92,15 @@ health:
 	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
 		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
 	}
-	if cfg.Sensor.ScopeType != "container" || cfg.Sensor.ScopeSelector != "abc123" {
-		t.Fatalf("scope = %q/%q", cfg.Sensor.ScopeType, cfg.Sensor.ScopeSelector)
+	if cfg.Sensor.Scope.Type != "container" || cfg.Sensor.Scope.Selector != "abc123" {
+		t.Fatalf("canonical scope = %q/%q", cfg.Sensor.Scope.Type, cfg.Sensor.Scope.Selector)
+	}
+	scope, err := cfg.Sensor.EffectiveScope()
+	if err != nil {
+		t.Fatalf("EffectiveScope() error = %v", err)
+	}
+	if scope.Type != "container" || scope.Selector != "abc123" {
+		t.Fatalf("effective scope = %q/%q", scope.Type, scope.Selector)
 	}
 	if cfg.Sensor.MaxParseErrors != 3 || cfg.Sensor.MaxDroppedEvents != 4 {
 		t.Fatalf("parse/drop thresholds = %d/%d", cfg.Sensor.MaxParseErrors, cfg.Sensor.MaxDroppedEvents)
@@ -149,6 +156,58 @@ health:
 	}
 	if cfg.Sensor.ScopeType != "container" || cfg.Sensor.ScopeSelector != "abc123" {
 		t.Fatalf("scope = %q/%q", cfg.Sensor.ScopeType, cfg.Sensor.ScopeSelector)
+	}
+	scope, err := cfg.Sensor.EffectiveScope()
+	if err != nil {
+		t.Fatalf("EffectiveScope() error = %v", err)
+	}
+	if scope.Type != "container" || scope.Selector != "abc123" {
+		t.Fatalf("effective scope = %q/%q", scope.Type, scope.Selector)
+	}
+}
+
+func TestLoadFileAcceptsCanonicalNestedScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope:
+    type: pod
+    selector: pod-a
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	scope, err := cfg.Sensor.EffectiveScope()
+	if err != nil {
+		t.Fatalf("EffectiveScope() error = %v", err)
+	}
+	if scope.Type != "pod" || scope.Selector != "pod-a" {
+		t.Fatalf("effective scope = %q/%q", scope.Type, scope.Selector)
 	}
 }
 

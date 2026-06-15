@@ -32,9 +32,9 @@ type Options struct {
 }
 
 type Runner struct {
-	Config config.Config
-	Sensor contract.Sensor
-	Out    io.Writer
+	Config     config.Config
+	Sensor     contract.Sensor
+	Out        io.Writer
 	capability contract.Capability
 }
 
@@ -66,7 +66,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("policy", err)
 	}
-	scope := r.runtimeScope()
+	scope, err := r.Config.Sensor.EffectiveScope()
+	if err != nil {
+		return err
+	}
 	scopeType := scope.Type
 	scopeSelector := scope.Selector
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
@@ -233,8 +236,8 @@ func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt 
 			LastError:    fmt.Sprintf("%s: %v", stage, startupErr),
 		},
 		Capability: r.runtimeCapability(),
-		Queue:  agenthealth.QueueHealth{},
-		Upload: agenthealth.UploadHealth{},
+		Queue:      agenthealth.QueueHealth{},
+		Upload:     agenthealth.UploadHealth{},
 	}
 	if err := reporter.Report(context.Background(), health); err != nil && r.Out != nil {
 		fmt.Fprintf(r.Out, "agent startup health report error: %v\n", err)
@@ -352,18 +355,11 @@ func (r *Runner) runtimeCapability() agenthealth.SensorCapability {
 }
 
 func (r *Runner) runtimeScope() agenthealth.RuntimeScope {
-	scopeType := r.Config.Sensor.ScopeType
-	scopeSelector := r.Config.Sensor.ScopeSelector
-	if scopeType == "" && r.Config.Sensor.ContainerIDPrefix != "" {
-		scopeType = "container"
+	scope, err := r.Config.Sensor.EffectiveScope()
+	if err != nil {
+		return agenthealth.RuntimeScope{Type: "host"}
 	}
-	if scopeType == "" {
-		scopeType = "host"
-	}
-	if scopeSelector == "" && r.Config.Sensor.ContainerIDPrefix != "" {
-		scopeSelector = r.Config.Sensor.ContainerIDPrefix
-	}
-	return agenthealth.RuntimeScope{Type: scopeType, Selector: scopeSelector}
+	return agenthealth.RuntimeScope{Type: scope.Type, Selector: scope.Selector}
 }
 
 func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
@@ -468,8 +464,12 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 			TetraPath:    cfg.Sensor.TetraPath,
 			TetragonPath: cfg.Sensor.TetragonPath,
 		}, restart)
-		backend.ScopeType = cfg.Sensor.ScopeType
-		backend.ScopeSelector = cfg.Sensor.ScopeSelector
+		scope, err := cfg.Sensor.EffectiveScope()
+		if err != nil {
+			return nil, err
+		}
+		backend.ScopeType = scope.Type
+		backend.ScopeSelector = scope.Selector
 		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
 		backend.BTFPath = cfg.Sensor.BTFPath
 		backend.BPFFSPath = cfg.Sensor.BPFFSPath

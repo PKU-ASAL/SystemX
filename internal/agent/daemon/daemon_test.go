@@ -72,7 +72,7 @@ func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
 	cfg := config.Config{
 		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "daemon-scenario"},
 		Manager: config.ManagerConfig{Address: "http://127.0.0.1:9443", Transport: "http"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ScopeType: "container", ScopeSelector: "abc123", ObserveOnly: true},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
 		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
 		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:  config.HealthConfig{Interval: time.Hour},
@@ -446,7 +446,7 @@ func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
 	cfg := config.Config{
 		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ScopeType: "container", ScopeSelector: "abc123", ObserveOnly: true},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
 		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
 		Upload:  config.UploadConfig{RetryInitial: 50 * time.Millisecond, RetryMax: 50 * time.Millisecond, RequestTimeout: time.Second},
 		Health:  config.HealthConfig{Interval: time.Hour},
@@ -631,7 +631,7 @@ func TestRunnerReportsHealthToManager(t *testing.T) {
 	cfg := config.Config{
 		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ScopeType: "container", ScopeSelector: "abc123", ObserveOnly: true},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
 		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
 		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:  config.HealthConfig{Interval: 5 * time.Millisecond},
