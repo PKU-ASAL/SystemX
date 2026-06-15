@@ -124,7 +124,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Sensor/runtime:
   - capability 探测仍偏最小骨架。
-  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 已验证 agent-owned runtime policy,container/VM 通用 harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
+  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy,topology/provision 中仍保留预加载 TracingPolicy 的兼容步骤,需要继续迁出或限定为 replay/debug。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
@@ -720,7 +720,7 @@ WantedBy=multi-user.target
 
 ### Phase 2: Policy Compile / Apply Chain
 
-状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 已不再预加载 harness TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；container/VM 通用 harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
+状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已不再依赖 harness 预加载 TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；topology/provision 中仍保留预加载 TracingPolicy 的兼容步骤,需要继续迁出或限定为 replay/debug。
 
 任务：
 
@@ -1058,7 +1058,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
    - static collection intent。
    - Tetragon policy template/static file。
    - health.policy_loaded / apply error。
-   - container/VM e2e 不再依赖 harness 预先加载 policy。
+   - container/VM managed capture/assert 主路径不再依赖 harness 预先加载 policy。
 5. 补长期运行可靠性:
    - graceful shutdown flush。
    - retry/backoff soak。

@@ -21,12 +21,12 @@ cd "$ENVDIR"
 vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent node-a >/dev/null
 vagrant ssh node-a -c "chmod +x /tmp/sysarmor-agent" >/dev/null
 vagrant ssh node-a -c "sudo systemctl start tetragon 2>/dev/null || true; systemctl is-active tetragon || echo 'NOT RUNNING'" 2>/dev/null
-vagrant ssh node-a -c "sudo tetra tracingpolicy add /vagrant/test/env/resources/syscall-capture.yaml 2>/dev/null | tail -1 || true" 2>/dev/null
 
 if [[ "$CAPTURE_MODE" == "managed" ]]; then
   echo "[capture-vm] v2 managed daemon 主路径: $S（窗口 ${DUR}s）"
   TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
   vagrant ssh mgr -c "curl -sf -X POST 'http://127.0.0.1:9443/api/v1/reset?scenario=$S' >/dev/null" >/dev/null
+  vagrant ssh node-a -c "sudo tetra tracingpolicy delete sysarmor-syscall-capture 2>/dev/null || true; sudo tetra tracingpolicy delete sysarmor-runtime-collection 2>/dev/null || true" >/dev/null
   vagrant ssh node-a -c "sudo bash -c '
     set -euo pipefail
     WORK=/tmp/sysarmor-vm-capture-$S
@@ -77,6 +77,22 @@ EOF
     echo \$! > \"\$WORK/agent.pid\"
   '" >/dev/null
   sleep 1
+  if ! vagrant ssh node-a -c "sudo tetra tracingpolicy list" | grep -Fq 'sysarmor-runtime-collection'; then
+    echo "[capture-vm][ERROR] agent-owned runtime TracingPolicy was not applied"
+    vagrant ssh node-a -c "sudo cat /tmp/sysarmor-vm-capture-$S/agent.log 2>/dev/null || true" >&2 2>/dev/null || true
+    exit 1
+  fi
+  vagrant ssh node-a -c "/bin/true" >/dev/null 2>&1 || true
+  deadline=$((SECONDS + 30))
+  until [[ "$(cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 events --scenario '$S' --json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+    if (( SECONDS >= deadline )); then
+      echo "[capture-vm][ERROR] agent-managed Tetra subscription did not become ready"
+      vagrant ssh node-a -c "sudo cat /tmp/sysarmor-vm-capture-$S/agent.log 2>/dev/null || true" >&2 2>/dev/null || true
+      exit 1
+    fi
+    sleep 1
+  done
+  vagrant ssh mgr -c "curl -sf -X POST 'http://127.0.0.1:9443/api/v1/reset?scenario=$S' >/dev/null" >/dev/null
   vagrant ssh node-a -c "sudo bash -c '
     if [ -f /vagrant/test/scenarios/vm/$S/attack.sh ]; then
       GAP=$GAP CYCLES=$CYCLES C2=$C2 bash /vagrant/test/scenarios/vm/$S/attack.sh
@@ -117,6 +133,7 @@ if [[ "$CAPTURE_MODE" != "replay" ]]; then
 fi
 
 vagrant ssh mgr -c "curl -sf -X POST 'http://127.0.0.1:9443/api/v1/reset?scenario=$S-stream' >/dev/null" >/dev/null
+vagrant ssh node-a -c "sudo tetra tracingpolicy add /vagrant/test/env/resources/syscall-capture.yaml 2>/dev/null | tail -1 || true" 2>/dev/null
 
 echo "[capture-vm] v1 replay/stream 调试路径: $S（窗口 ${DUR}s）"
 vagrant ssh node-a -c "sudo bash -c '

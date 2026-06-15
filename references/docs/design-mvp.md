@@ -261,7 +261,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 
 - capability 探测仍是最小骨架,不是完整主机能力探测。
 - dropped events / parse errors / restart window / degraded 状态还需要继续细化阈值和验收。
-- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现；VM real Tetragon systemd smoke 已验证 agent-owned runtime policy,还需要把 container/VM 通用 harness 预加载兼容步骤继续迁出。
+- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy,还需要把 topology/provision 中的预加载兼容步骤继续迁出或限定为 replay/debug。
 - container/VM 主 e2e 已默认迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent。
 - Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。

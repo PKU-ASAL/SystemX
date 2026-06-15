@@ -20,11 +20,6 @@ docker ps --format '{{.Names}}' | tr '\n' ' '; echo
 NODE_A_DOCKER="$(docker inspect node-a --format '{{.Id}}' | cut -c1-16)"
 echo "[capture-container] 仅保留 node-a docker=$NODE_A_DOCKER 的 Tetragon 事件"
 
-# 加载 TracingPolicy（幂等）
-POLICY="$ROOT/env/resources/syscall-capture.yaml"
-docker cp "$POLICY" tetragon:/tmp/p.yaml 2>/dev/null || true
-docker exec tetragon tetra tracingpolicy add /tmp/p.yaml 2>/dev/null | tail -1 || true
-
 run_attack() {
   if [[ -x "$ROOT/scenarios/container/$S/attack.sh" || -f "$ROOT/scenarios/container/$S/attack.sh" ]]; then
     C2="$C2" GAP="$GAP" CYCLES="$CYCLES" bash "$ROOT/scenarios/container/$S/attack.sh"
@@ -38,6 +33,7 @@ if [[ "$CAPTURE_MODE" == "managed" ]]; then
   WORK="/tmp/sysarmor-capture-$S"
   TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
   TETRA_PATH="$(docker exec tetragon sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
+  docker exec tetragon sh -c "tetra tracingpolicy delete sysarmor-syscall-capture 2>/dev/null || true; tetra tracingpolicy delete sysarmor-runtime-collection 2>/dev/null || true"
   docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
   docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
 kinds: [EXEC, CONNECT, OPEN, WRITE, CHMOD]
@@ -86,6 +82,22 @@ EOF"
   }
   trap cleanup_agent EXIT
   sleep 1
+  if ! docker exec tetragon tetra tracingpolicy list | grep -Fq 'sysarmor-runtime-collection'; then
+    echo "[capture-container][ERROR] agent-owned runtime TracingPolicy was not applied"
+    docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
+    exit 1
+  fi
+  docker exec node-a /bin/true >/dev/null 2>&1 || true
+  deadline=$((SECONDS + 30))
+  until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+    if (( SECONDS >= deadline )); then
+      echo "[capture-container][ERROR] agent-managed Tetra subscription did not become ready"
+      docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
+      exit 1
+    fi
+    sleep 1
+  done
+  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S" >/dev/null
   run_attack
   sleep "$DUR"
   cleanup_agent
@@ -115,6 +127,9 @@ if [[ "$CAPTURE_MODE" != "replay" ]]; then
 fi
 
 echo "[capture-container] v1 replay/stream 调试路径: $S（窗口 ${DUR}s）"
+POLICY="$ROOT/env/resources/syscall-capture.yaml"
+docker cp "$POLICY" tetragon:/tmp/p.yaml 2>/dev/null || true
+docker exec tetragon tetra tracingpolicy add /tmp/p.yaml 2>/dev/null | tail -1 || true
 docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S-stream" >/dev/null
 docker exec -e NODE_A_DOCKER="$NODE_A_DOCKER" tetragon sh -c "rm -f /tmp/cap-$S.json; timeout $DUR tetra getevents -o json 2>/dev/null | grep -F '\"docker\":\"'\$NODE_A_DOCKER | tee /tmp/cap-$S.json | /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --agent-id container-node-a-stream --host-id container-node-a --scenario $S-stream --stream-jsonl - --batch-size 256 --flush-interval 1s" &
 CAP=$!
