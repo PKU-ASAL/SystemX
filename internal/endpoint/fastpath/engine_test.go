@@ -76,6 +76,26 @@ func TestStagedPayloadDownloadDoesNotMakeReverseShellTerminal(t *testing.T) {
 	}
 }
 
+func TestEndpointRuleFilterDisablesSignal(t *testing.T) {
+	e := NewWithRules([]string{"download_by_lolbin"})
+	var names []string
+	for _, ev := range []*eventv1.CanonicalEvent{
+		execEvent("e1", "lin-a", "p1", "parent", "/bin/bash", nil),
+		connectEvent("e2", "lin-a", "p2", "/usr/bin/curl", "10.66.0.99:8080"),
+		writeEvent("e3", "lin-a", "p2", "/usr/bin/curl", "/dev/shm/x.sh"),
+	} {
+		for _, sig := range e.Process(ev) {
+			names = append(names, sig.GetName())
+		}
+	}
+	if !contains(names, "download_by_lolbin") {
+		t.Fatalf("expected enabled download signal in %v", names)
+	}
+	if contains(names, "web_runtime_spawns_shell") || contains(names, "payload_dropped") {
+		t.Fatalf("disabled endpoint rules emitted signals: %v", names)
+	}
+}
+
 func execEvent(id, lineage, stable, parent, bin string, argv []string) *eventv1.CanonicalEvent {
 	return &eventv1.CanonicalEvent{
 		Id: id, Kind: eventv1.EventKind_EVENT_KIND_EXEC, LineageId: lineage, ParentStableId: parent,

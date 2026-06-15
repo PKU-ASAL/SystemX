@@ -140,6 +140,9 @@ make e2e-agent-parse-health
 # queue backpressure/drop health smoke
 make e2e-agent-backpressure
 
+# v3 policy/control-plane smoke
+make e2e-policy-cloud-disable
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10

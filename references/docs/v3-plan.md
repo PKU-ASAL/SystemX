@@ -124,9 +124,35 @@ Link1
 
 ## 6. Phase 1: Policy + Rule Content Minimum Loop
 
+Status: partial implementation started.
+
 ### Goal
 
 把当前硬编码检测能力推进到可运营的最小控制面。
+
+### Current Implementation Slice
+
+已落地的第一刀:
+
+- `internal/policy` 定义 rule content、policy、assignment 的最小模型。
+- `configs/rules/{endpoint,cloud}/` 和 `configs/policies/default-edr-policy.json` 提供默认 content pack。
+- manager store 可持久化 rules、policies、assignments。
+- manager HTTP API 支持:
+  - `GET /api/v1/rules`
+  - `GET|POST /api/v1/policies`
+  - `GET|POST /api/v1/policy-assignments`
+  - `GET /api/v1/effective-policy`
+- `sysarmorctl` 支持查询 rules、policies、policy-assignments、effective-policy。
+- analytics 会按 effective policy 的 cloud rule references 启停 cloud convergence rule。
+- `make -C test e2e-policy-cloud-disable` 验证 manager policy assignment 禁用 cloud rule 后不再收敛 incident。
+
+仍未完成:
+
+- agent 启动时从 manager 拉取 effective policy。
+- policy refresh/downlink。
+- endpoint rule enable/disable 真正下发到 agent endpoint rule engine。
+- manager API 的认证/审计/发布状态完整语义。
+- `e2e-policy-endpoint-disable` 和 `e2e-policy-agent-refresh`。
 
 ### Deliverables
 

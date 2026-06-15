@@ -182,7 +182,22 @@ make -C test e2e-agent-all
 make -C test e2e-agent-detection-container-all
 ```
 
-### 5.3 Container / VM Runtime Ownership
+### 5.3 Policy / Rule Content
+
+这些脚本验证 v3 控制面第一阶段:规则内容和策略能被 manager 管理、分配,并影响 cloud analytics。
+
+| Make target | 脚本 | 证明什么 |
+|---|---|---|
+| `e2e-policy-cloud-disable` | `harness/e2e-policy-cloud-disable.sh` | 创建 policy、分配给 agent、查询 effective policy、禁用 cloud rule 后不产生 cloud signal/incident |
+| `e2e-policy-all` | Make 聚合 | 当前聚合所有 policy/control-plane gate |
+
+聚合入口:
+
+```bash
+make -C test e2e-policy-all
+```
+
+### 5.4 Container / VM Runtime Ownership
 
 这些脚本证明 agent 不只是读取现成事件,而是拥有 sensor process、Tetra subscription 和 runtime policy。
 
@@ -200,7 +215,7 @@ make -C test e2e-agent-detection-container-all
 
 当前 runtime 总门禁只聚合最关键的 owned container / owned VM,不是把所有 managed smoke 都塞进去。
 
-### 5.4 通用 Capture / Replay
+### 5.5 通用 Capture / Replay
 
 通用入口:
 
@@ -228,7 +243,7 @@ make assert
 - `CAPTURE_MODE=replay` 保留 v1 调试兼容:直接 `tetra getevents` + stream/replay。
 - `expected.yaml` 是场景契约,但当前最硬的断言主要在专门的 `e2e-agent-*.sh` 里。
 
-### 5.5 性能 / 资源
+### 5.6 性能 / 资源
 
 | Make target | 脚本 | 当前能证明什么 | 不能证明什么 |
 |---|---|---|---|
@@ -355,7 +370,8 @@ make -C test e2e-agent-benign-container
 | parse/dropped/backpressure health | parse/dropped/backpressure scripts | 已覆盖 |
 | resource CPU/RSS sampling | `perf-resource` | 部分覆盖 |
 | business impact baseline | 无稳定业务压测器/阈值 | 未覆盖 |
-| policy/rule content 下发、版本化、启停 | policies 只有契约样例,脚本多为临时 policy | 未覆盖 |
+| policy/rule content 管理与分配 | manager policy API + `e2e-policy-cloud-disable` | 部分覆盖 |
+| endpoint policy 下发/刷新 | agent 尚未 fetch effective policy | 未覆盖 |
 | response/enforce audit | response policy 只有契约样例 | 未覆盖 |
 | graph/evidence/incident lifecycle API | 当前 incident/evidence 仍偏 MVP | 部分覆盖 |
 | Postgres durable store | 无 e2e | 未覆盖 |

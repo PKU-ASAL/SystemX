@@ -12,6 +12,7 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -387,6 +388,71 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	rec = get(t, handler, "/api/v1/incidents?scenario="+scenario)
 	if got := strings.Count(rec.Body.String(), `"inc-`); got != 1 {
 		t.Fatalf("incident duplicated after recompute, count = %d: %s", got, rec.Body.String())
+	}
+}
+
+func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+
+	rec := get(t, handler, "/api/v1/rules?where=cloud")
+	if !strings.Contains(rec.Body.String(), "dropped_payload_executed_and_connects") {
+		t.Fatalf("rules response missing cloud rule: %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/policies?tenant_id=default")
+	if !strings.Contains(rec.Body.String(), policymodel.DefaultPolicyID) {
+		t.Fatalf("policies response missing default policy: %s", rec.Body.String())
+	}
+
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "no-cross-incident"
+	policy.Version = 1
+	policy.CloudRules = []string{"web_shell_chain"}
+	policyData, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	assignment := policymodel.Assignment{
+		TenantID: "default",
+		AgentID:  "agent-policy",
+		PolicyID: "no-cross-incident",
+	}
+	assignmentData, err := json.Marshal(assignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(string(assignmentData)))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("assignment post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-policy")
+	if !strings.Contains(rec.Body.String(), `"policy_id":"no-cross-incident"`) || strings.Contains(rec.Body.String(), "dropped_payload_executed_and_connects") {
+		t.Fatalf("effective policy response = %s", rec.Body.String())
+	}
+
+	upload(t, handler, &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-policy", HostId: "host-a", TenantId: "default"},
+		Signals: []*signalv1.Signal{
+			endpointSignalForScenario("apt-staged-drop-policy", "payload_dropped", "lin-drop", false, fileEntity("/var/lib/app/plugins/helper")),
+			endpointSignalForScenario("apt-staged-drop-policy", "suspicious_exec_connect", "lin-connect", false, fileEntity("/var/lib/app/plugins/helper"), socketEntity("10.66.0.99:443")),
+		},
+	})
+	rec = get(t, handler, "/api/v1/signals?scenario=apt-staged-drop-policy&layer=cloud")
+	if strings.Contains(rec.Body.String(), "dropped_payload_executed_and_connects") {
+		t.Fatalf("disabled cloud rule still emitted signal: %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/incidents?scenario=apt-staged-drop-policy")
+	if strings.Contains(rec.Body.String(), `"inc-`) {
+		t.Fatalf("disabled cloud rule still created incident: %s", rec.Body.String())
 	}
 }
 

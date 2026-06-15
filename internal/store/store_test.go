@@ -10,6 +10,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 )
 
 func TestListSignalsFiltersScenarioLayerAndTerminal(t *testing.T) {
@@ -216,6 +217,40 @@ func TestDeleteScenario(t *testing.T) {
 	}
 	if got := st.ListIncidents("b"); len(got) != 1 {
 		t.Fatalf("incidents for other scenario = %d, want 1", len(got))
+	}
+}
+
+func TestPolicyAssignmentAndEffectivePolicy(t *testing.T) {
+	st := &Store{}
+	st.EnsureDefaultPolicy("default")
+	if rules := st.ListRules(""); len(rules) == 0 {
+		t.Fatal("default rules were not seeded")
+	}
+	if policy, ok := st.EffectivePolicy("default", "agent-a", "container", "abc123"); !ok || policy.PolicyID != policymodel.DefaultPolicyID || policy.Version != policymodel.DefaultPolicyVersion {
+		t.Fatalf("default effective policy = %+v ok=%t", policy, ok)
+	}
+
+	custom := policymodel.DefaultPolicy("default")
+	custom.PolicyID = "cloud-no-cross"
+	custom.Version = 2
+	custom.CloudRules = []string{"web_shell_chain"}
+	st.UpsertPolicy(custom)
+	assignment, ok := st.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		Scope:         policymodel.ScopeSelector{Type: "container", Selector: "abc123"},
+		PolicyID:      "cloud-no-cross",
+		PolicyVersion: 2,
+	})
+	if !ok || assignment.PolicyVersion != 2 {
+		t.Fatalf("assignment = %+v ok=%t", assignment, ok)
+	}
+	policy, ok := st.EffectivePolicy("default", "agent-a", "container", "abc123")
+	if !ok || policy.PolicyID != "cloud-no-cross" || len(policy.CloudRules) != 1 || policy.CloudRules[0] != "web_shell_chain" {
+		t.Fatalf("effective scoped policy = %+v ok=%t", policy, ok)
+	}
+	other, ok := st.EffectivePolicy("default", "agent-a", "container", "other")
+	if !ok || other.PolicyID != policymodel.DefaultPolicyID {
+		t.Fatalf("effective fallback policy = %+v ok=%t", other, ok)
 	}
 }
 
