@@ -345,6 +345,65 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	}
 }
 
+func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed policy cleanup test requires /bin/sh")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [CONNECT]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	addedPath := filepath.Join(dir, "added")
+	deletedPath := filepath.Join(dir, "deleted")
+	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	tetraPath := filepath.Join(dir, "tetra")
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then cp \"$3\" '" + addedPath + "'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy delete\" ]; then printf '%s' \"$3\" > '" + deletedPath + "'; exit 0; fi\nprintf '%s\\n' '" + raw + "'\nsleep 30\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	intent := contract.CollectionIntent{
+		EventKinds:  []eventv1.EventKind{eventv1.EventKind_EVENT_KIND_CONNECT},
+		ObserveOnly: true,
+	}
+	if err := backend.Apply(context.Background(), intent); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := backend.Subscribe(ctx, intent)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	select {
+	case <-events:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+	cancel()
+	select {
+	case _, ok := <-events:
+		for ok {
+			_, ok = <-events
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subscription close")
+	}
+	if _, err := os.Stat(addedPath); err != nil {
+		t.Fatalf("generated tracing policy was not applied: %v", err)
+	}
+	data, err := os.ReadFile(deletedPath)
+	if err != nil {
+		t.Fatalf("generated tracing policy was not deleted: %v", err)
+	}
+	if string(data) != runtimeTracingPolicyName {
+		t.Fatalf("deleted policy = %q, want %q", string(data), runtimeTracingPolicyName)
+	}
+}
+
 func TestBackendRejectsUnverifiedGeneratedTracingPolicy(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed policy verify test requires /bin/sh")

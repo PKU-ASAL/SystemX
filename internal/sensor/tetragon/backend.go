@@ -46,6 +46,7 @@ type Backend struct {
 	parseErrors   uint64
 	lastEventAt   time.Time
 	lastError     string
+	runtimePolicyApplied bool
 
 	sensorSupervisor ProcessSupervisor
 	eventSupervisor  ProcessSupervisor
@@ -172,6 +173,7 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 	b.mu.Lock()
 	b.intent = intent
 	b.policyLoaded = false
+	b.runtimePolicyApplied = false
 	b.lastError = ""
 	b.mu.Unlock()
 	return nil
@@ -223,9 +225,10 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 	out := make(chan contract.EventEnvelope)
 	go func() {
 		defer close(out)
-		defer closeSource()
-		defer stopSensor()
 		defer b.setRunning(false)
+		defer b.cleanupRuntimePolicy()
+		defer stopSensor()
+		defer closeSource()
 		scanner := bufio.NewScanner(source)
 		for scanner.Scan() {
 			line := append([]byte(nil), scanner.Bytes()...)
@@ -307,9 +310,39 @@ func (b *Backend) applyPreparedPolicy(ctx context.Context) error {
 	}
 	b.mu.Lock()
 	b.policyLoaded = true
+	if b.Bundle.TetraPath != "" && b.EventSource == "" && needsTracingPolicy(intent) {
+		b.runtimePolicyApplied = true
+	}
 	b.lastError = ""
 	b.mu.Unlock()
 	return nil
+}
+
+func (b *Backend) cleanupRuntimePolicy() {
+	b.mu.Lock()
+	shouldCleanup := b.runtimePolicyApplied
+	b.runtimePolicyApplied = false
+	b.mu.Unlock()
+	if !shouldCleanup || b.Bundle.TetraPath == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "delete", runtimeTracingPolicyName)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(string(output))
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "not found") || strings.Contains(lower, "notfound") || strings.Contains(lower, "not exist") {
+		return
+	}
+	if trimmed == "" {
+		b.setError(fmt.Errorf("delete tetragon tracing policy %s: %w", runtimeTracingPolicyName, err))
+		return
+	}
+	b.setError(fmt.Errorf("delete tetragon tracing policy %s: %w: %s", runtimeTracingPolicyName, err, trimmed))
 }
 
 func needsTracingPolicy(intent contract.CollectionIntent) bool {
