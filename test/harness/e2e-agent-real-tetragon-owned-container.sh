@@ -125,6 +125,25 @@ wait_contains() {
   done
 }
 
+wait_process_absent() {
+  local label="$1"
+  local pattern="$2"
+  local out="$3"
+  local deadline=$((SECONDS + 30))
+  while docker exec -e SYSARMOR_PROCESS_PATTERN="$pattern" "$OWNED_CONTAINER" sh -c 'ps -ef | grep -F "$SYSARMOR_PROCESS_PATTERN" | grep -v grep' >"$out" 2>"$out.err"; do
+    if (( SECONDS >= deadline )); then
+      echo "[e2e-agent-real-tetragon-owned-container][ERROR] $label process still present after agent stop" >&2
+      echo "--- matching process ---" >&2
+      cat "$out" >&2 2>/dev/null || true
+      echo "--- agent log ---" >&2
+      docker exec "$OWNED_CONTAINER" cat "$WORK/agent.log" >&2 2>/dev/null || true
+      exit 1
+    fi
+    sleep 1
+  done
+  : >"$out"
+}
+
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
@@ -174,6 +193,8 @@ until ! docker exec "$OWNED_CONTAINER" sh -c "kill -0 $PID_BEFORE" >/dev/null 2>
   fi
   sleep 1
 done
+wait_process_absent "owned tetragon" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-container.ps-after-stop.txt"
+wait_process_absent "owned tetra getevents" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-container.tetra-after-stop.txt"
 
 docker exec "$OWNED_CONTAINER" sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' >> '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
