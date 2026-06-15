@@ -144,6 +144,10 @@ make e2e-agent-backpressure
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10
 
+# 资源占用采样: 容器看宿主机上的 EDR 容器/进程占用,VM 看 node-a 内部进程占用
+make perf-resource TOPO=container SCENARIO=idle DUR=30
+make perf-resource TOPO=vm SCENARIO=idle DUR=30
+
 # 汇总
 make report
 
@@ -211,4 +215,5 @@ docker exec tetragon /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.1
 - 容器拓扑 tetragon `--pid=host`,当前靠 TracingPolicy selector 过滤噪音;后续可加 `--cgroup-filter`。
 - VM 拓扑修改脚本后需 `make provision`(rsync + re-provision)。
 - VM topology 在 `mgr` VM 内运行 `sysarmor-manager` 和 `sysarmorctl`,在 `node-a` VM 内运行 agent stream。
-- `perf-getevents` 是短窗口 baseline smoke,EPS 可能为 0;后续可扩展为阶梯负载曲线。
+- `perf-getevents` 是短窗口采集吞吐 baseline smoke,EPS 可能为 0。
+- `perf-resource` 是 EDR 资源占用采样入口,输出 `.results/perf-resource.<topo>.<scenario>.csv`;容器拓扑看宿主机上的 `tetragon`/`sysarmor-agent` 相关占用,VM 拓扑看 `node-a` 内部的 `sysarmor-agent`/`tetragon`/`tetra` 进程占用。正式评估时应分别跑 baseline、EDR idle、EDR business、EDR detection,并对比业务延迟/吞吐。

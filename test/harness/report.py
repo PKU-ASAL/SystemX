@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""汇总各场景断言结果为通过矩阵；并（待 perf 数据就绪后）渲染基线曲线。"""
+"""汇总各场景断言结果为通过矩阵；并显示最近的 perf/resource 采样。"""
 import csv, glob, json, os, sys
 
 TOPOLOGIES = ["container", "vm"]
 SCENARIOS = ["lifecycle-smoke", "apt-fileless-c2", "apt-staged-drop",
              "benign-ci-noise"]
-EXTRAS = ["perf-getevents"]
 
 
 def main():
@@ -39,6 +38,14 @@ def main():
         print(f"{topo:<10} {'perf-getevents':<20} {1:>5} {0:>5} {0:>5}  "
               f"OK eps={perf['eps']} rss_mb={perf['rss_mb']} dropped={perf['dropped_events']}")
     for topo in TOPOLOGIES:
+        resource = latest_resource(topo)
+        if not resource:
+            print(f"{topo:<10} {'perf-resource':<20} {'-':>5} {'-':>5} {'-':>5}  not-run")
+            continue
+        print(f"{topo:<10} {'perf-resource':<20} {1:>5} {0:>5} {0:>5}  "
+              f"OK scenario={resource['scenario']} edr_cpu={resource['edr_cpu_pct']} "
+              f"edr_rss_mb={resource['edr_rss_mb']}")
+    for topo in TOPOLOGIES:
         for scenario in SCENARIOS:
             d = latest_stream(topo, scenario)
             if not d:
@@ -50,8 +57,8 @@ def main():
                   f"cloud={d.get('stream_cloud_signals', '-')} "
                   f"incidents={d.get('stream_incidents', '-')}")
 
-    # TODO: perf-getevents 读取 /tmp/perf-getevents.csv → 渲染 事件率 vs CPU/RSS/丢失率 曲线
-    print("\nperf baseline: see /tmp/perf-getevents.csv (M3 deliverable)")
+    print("\nperf baseline: see .results/perf-getevents.<topo>.csv")
+    print("resource samples: see .results/perf-resource.<topo>.<scenario>.csv")
     sys.exit(1 if overall else 0)
 
 
@@ -62,6 +69,16 @@ def latest_perf(topo):
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     return rows[-1] if rows else None
+
+
+def latest_resource(topo):
+    paths = sorted(glob.glob(f".results/perf-resource.{topo}.*.csv"))
+    for path in reversed(paths):
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        if rows:
+            return rows[-1]
+    return None
 
 
 def latest_stream(topo, scenario):

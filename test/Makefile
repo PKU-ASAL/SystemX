@@ -33,7 +33,7 @@ status-vm:
 
 # ── 场景采集 + 断言 ──────────────────────────────────
 
-.PHONY: capture assert perf report
+.PHONY: capture assert perf perf-resource report
 
 capture:                      ## 跑场景 + tetragon 抓事件
 	bash harness/capture-$(TOPO).sh $(SCENARIO) $(DUR)
@@ -48,6 +48,9 @@ report:                       ## 汇总报告矩阵
 
 perf:                         ## 采集 getevents 性能基线
 	bash harness/perf-getevents.sh $(TOPO) $(DUR)
+
+perf-resource:                ## 采集 EDR 资源占用时间序列
+	bash harness/perf-resource.sh $(TOPO) $(DUR) $(SCENARIO)
 
 # ── 常用组合 ──────────────────────────────────────────
 
@@ -170,6 +173,7 @@ help:                         ## 显示帮助
 	@echo "  capture     跑场景 + 抓事件"
 	@echo "  assert      通过 sysarmorctl 执行契约断言"
 	@echo "  perf        采集 getevents 性能基线"
+	@echo "  perf-resource  采集 EDR 资源占用时间序列"
 	@echo "  report      汇总报告"
 	@echo "  e2e         up + capture + assert"
 	@echo "  e2e-manager-idempotency  v2 repeated Link1 batch does not amplify manager ingest"

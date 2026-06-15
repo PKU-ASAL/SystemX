@@ -46,19 +46,19 @@ process lineage / network socket / credential file。
 
 ### PolicyEnvelope (policies/)
 
-6 个 PolicyEnvelope 是 sysarmor agent 的配置契约,当前 agent 未构建,**不执行任何东西**。详见 `policies/README.md`。
+6 个 PolicyEnvelope 是 sysarmor agent / manager 控制面的目标契约样例。当前 agent-managed runtime 已经存在,但完整 policy/rule content 下发、版本化、启停闭环还未完成。详见 `policies/README.md`。
 
-| collection.yaml | 采集哪些事件种类 (EXEC/OPEN/CONNECT...) | agent 编译 TracingPolicy 时 |
-| detection.yaml | 检测规则 + 收敛参数 (rarity_structural, top_k=8) | agent 运行检测引擎时 |
+| collection.yaml | 采集哪些事件种类 (EXEC/OPEN/CONNECT...) | 后续控制面下发采集意图时 |
+| detection.yaml | 检测规则 + 收敛参数 (rarity_structural, top_k=8) | 后续规则内容运营时 |
 | detection-additive.yaml | 对照档: additive_threshold (反模式,仅 benign-ci-noise 对照用) | 对照实验时 |
-| resource.yaml | 端侧资源上限 (RSS 512MB, lineage TTL 1min...) | agent 运行时 |
-| telemetry.yaml | 上行批处理/重试/优先级 | agent 上报时 |
-| response.yaml | 响应模式 (MVP 固定 OBSERVE) | agent 产生响应时 |
+| resource.yaml | 端侧资源上限 (RSS 512MB, lineage TTL 1min...) | 后续资源阈值门禁时 |
+| telemetry.yaml | 上行批处理/重试/优先级 | agent 上报配置运营时 |
+| response.yaml | 响应模式 (MVP 固定 OBSERVE) | response 审计闭环落地时 |
 
 详细说明见 `policies/README.md`。
 
-与 TracingPolicy 的区别:TracingPolicy 是 tetragon 原生配置,**现在就在跑**;
-PolicyEnvelope 是 agent 层配置,定义"检测/收敛/资源/上行/响应"策略,**等 agent 构建后才生效**。
+与 TracingPolicy 的区别:TracingPolicy 是 tetragon 原生配置,用于 replay/debug/perf 兼容路径;
+PolicyEnvelope 是 agent/manager 层策略契约,定义"检测/收敛/资源/上行/响应"策略。当前 e2e 主路径会用脚本临时生成的最小 policy 验证 agent-managed runtime;完整 PolicyEnvelope 控制面仍待接入。
 
 ## 输出
 
@@ -214,12 +214,11 @@ negative:                  # 负向
 
 | 层级 | 断言什么 | 当前状态 |
 |---|---|---|
-| events | tetragon 原始事件是否包含指定 kind/binary/dst | 可断言 (直接过滤 jsonl) |
-| endpoint_signals | agent 是否产了指定 Signal + entities | 待 agent 接入 |
-| incident | 云端是否产了指定 Incident + 证据子图 | 待 manager 接入 |
+| events | manager 是否能查到指定 scenario 的事件 | 当前 e2e 已断言 |
+| endpoint_signals | agent/manager 是否产了指定 endpoint Signal + entities | 当前 container detection e2e 已断言核心信号 |
+| incident | 云端是否产了指定 Incident + 证据子图 | 当前 container detection e2e 已断言 incident 存在;完整 evidence graph lifecycle 待补 |
 
-当前 harness/assert.py 为 dry-run,仅检查 jsonl 事件是否包含 expected.yaml 中的 events 条目。
-Signal/Incident 层断言待 sysarmorctl CLI 就绪后接入。
+`harness/assert.py` 仍偏历史通用断言入口;当前更可靠的 Signal/Incident 断言已经放在专门的 `harness/e2e-agent-*.sh` 脚本中,通过 `sysarmorctl` 查询 manager 结果。
 
 ## control_assertions (对照实验)
 
