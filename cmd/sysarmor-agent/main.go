@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
@@ -90,7 +92,9 @@ func runDaemonCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	return runner.Run(context.Background(), daemon.Options{Once: *once, DrainOnce: *drainOnce, Out: os.Stdout})
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runner.Run(ctx, daemon.Options{Once: *once, DrainOnce: *drainOnce, Out: os.Stdout})
 }
 
 func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) error {

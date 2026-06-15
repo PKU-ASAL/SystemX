@@ -315,6 +315,93 @@ func TestRunnerGracefulShutdownLeavesSpoolForLaterDrain(t *testing.T) {
 	}
 }
 
+func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uploaded := make(chan analyticsv1.UploadBatch, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/upload" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read batch body: %v", err)
+		}
+		var batch analyticsv1.UploadBatch
+		if err := protojson.Unmarshal(body, &batch); err != nil {
+			t.Fatalf("decode batch: %v", err)
+		}
+		select {
+		case uploaded <- batch:
+		default:
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		Upload:  config.UploadConfig{RetryInitial: 50 * time.Millisecond, RetryMax: 50 * time.Millisecond, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	var out bytes.Buffer
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &out})
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) == 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for spool batch before shutdown")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	select {
+	case batch := <-uploaded:
+		if len(batch.GetEvents()) != 1 || batch.GetEvents()[0].GetId() == "" {
+			t.Fatalf("uploaded batch = %+v", batch)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for shutdown drain upload; output=%q", out.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("spool batches after shutdown drain = %v", matches)
+	}
+	if !strings.Contains(out.String(), "agent shutdown drain: uploaded=1 remaining=0") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
 func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")

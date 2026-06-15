@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -81,8 +82,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	uploadCtx := ctx
+	cancelUploads := func() {}
 	if !opts.Once && !opts.DrainOnce {
-		uploadCtx, cancelUploads := context.WithCancel(ctx)
+		uploadCtx, cancelUploads = context.WithCancel(ctx)
 		defer cancelUploads()
 		go runUploadLoop(uploadCtx, worker, r.Config.Spool.FlushInterval)
 	}
@@ -95,14 +98,36 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 
 	ticker := time.NewTicker(r.Config.Health.Interval)
 	defer ticker.Stop()
-	defer rt.Stop(context.Background())
 	startedAt := time.Now()
 	reporter := agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 	tamperDetector := &tamper.Detector{}
+	stopped := false
+	stopRuntime := func() {
+		if stopped {
+			return
+		}
+		stopped = true
+		_ = rt.Stop(context.Background())
+	}
+	defer stopRuntime()
 
 	for {
 		select {
 		case <-ctx.Done():
+			cancelUploads()
+			stopRuntime()
+			if opts.DrainOnce {
+				return ctx.Err()
+			}
+			drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
+			stats, drainErr := worker.DrainOnce(drainCtx)
+			cancel()
+			if r.Out != nil {
+				fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
+			}
+			if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
+				return drainErr
+			}
 			return ctx.Err()
 		case ev, ok := <-events:
 			if !ok {
@@ -165,6 +190,17 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
+}
+
+func shutdownDrainTimeout(cfg config.Config) time.Duration {
+	timeout := cfg.Upload.RequestTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if cfg.Upload.RetryInitial > timeout {
+		timeout = cfg.Upload.RetryInitial
+	}
+	return timeout
 }
 
 func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {

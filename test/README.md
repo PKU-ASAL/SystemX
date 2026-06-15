@@ -125,6 +125,9 @@ make e2e-agent-real-tetragon-owned-container
 make e2e TOPO=container SCENARIO=lifecycle-smoke
 make e2e TOPO=vm SCENARIO=lifecycle-smoke
 
+# graceful shutdown / spool flush smoke
+make e2e-agent-shutdown
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10

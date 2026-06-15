@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-shutdown e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -67,10 +67,13 @@ e2e-agent-sensor-recover:     ## v2: fake tetragon bundle → degrade once → r
 e2e-agent-spool:              ## v2: manager outage → durable spool → recovery drain
 	bash harness/e2e-agent-spool.sh
 
+e2e-agent-shutdown:           ## v2: SIGTERM graceful shutdown → shutdown drain flush
+	bash harness/e2e-agent-shutdown.sh
+
 e2e-agent-health:             ## v2: sysarmorctl agents/agent-health/metrics 查询 smoke
 	bash harness/e2e-agent-health.sh
 
-e2e-agent-all: e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-health
+e2e-agent-all: e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-shutdown e2e-agent-health
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
 	bash harness/e2e-agent-daemon-container.sh
@@ -138,6 +141,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-sensor-restart  v2 managed sensor restart + tamper smoke"
 	@echo "  e2e-agent-sensor-recover  v2 managed sensor degraded to recovered smoke"
 	@echo "  e2e-agent-spool  v2 manager outage + durable spool recovery smoke"
+	@echo "  e2e-agent-shutdown  v2 graceful shutdown drain flush smoke"
 	@echo "  e2e-agent-health  v2 sysarmorctl agent health query smoke"
 	@echo "  e2e-agent-all  run all local v2 agent smoke tests"
 	@echo "  e2e-agent-daemon-container  v2 container topology daemon smoke"
