@@ -31,6 +31,8 @@ v2: EDR endpoint runtime MVP
 
 Tetragon 在当前阶段是最现实的 Linux sensor backend,但不是 SysArmor Next 的产品边界。项目真正要守住的边界是:agent 侧统一采集/归一/打标,manager/cloud 侧统一建图/收敛/裁决,控制面统一策略/响应/调查。
 
+这里需要补一句对容器路线很关键的定位: **容器不是天然等价于一台 VM,而是一个 workload scope**。这意味着后续容器版 SysArmor Next 更自然的形态不是“把 agent 塞进业务容器本体”,而是运行一个独立的 `sysarmor-agent + tetragon` sensor container,由它去观测目标 container/cgroup/namespace。
+
 如果把项目按"产品成熟度"来讲,当前可以更明确地理解成:
 
 - **v1 已证明检测链路成立**: endpoint event -> signal -> incident 这条纵轴是真的。
@@ -161,7 +163,7 @@ MVP 已接入 container 和 VM 双拓扑:
 
 | 拓扑 | 当前实现 |
 |---|---|
-| container | `mgr` 容器运行 manager;`tetragon` 容器采集宿主内核事件并运行 agent stream;capture 阶段按 `node-a` Docker id 过滤 Tetragon 事件 |
+| container | `mgr` 容器运行 manager;独立 `tetragon` 容器采集宿主内核事件并运行 agent stream;capture 阶段按 `node-a` Docker id 过滤 Tetragon 事件 |
 | VM | `mgr` VM 运行 manager/ctl;`node-a` VM 运行 Tetragon 与 agent stream |
 
 已验证场景:
@@ -254,6 +256,12 @@ make report
 1. agent 是否真的拥有 sensor process / subscription / policy lifecycle。
 2. manager outage、agent restart、sensor restart、graceful shutdown 后,链路是否还能可靠恢复且不放大结果。
 
+对容器场景,这还意味着一个额外的架构收口方向:
+
+- 当前可以先用 `container_id_prefix` 这类 selector 证明 workload-scoped collection 可行。
+- 中期应把它抽象成正式的 runtime scope contract,而不是长期停留在“容器拓扑特判”。
+- 更合理的部署形态是独立 sensor container 观测目标 workload,而不是让业务容器本体内嵌一套 agent+tetragon。
+
 ## 三、走向完整项目的主要缺口
 
 从长期定位看,缺口可以分成两类:
@@ -271,6 +279,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - v2 已有 Sensor contract、fake backend、runtime skeleton。
 - v2 已有 Tetragon backend,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程和 health 汇总。
 - runtime `Apply` 已下沉调用 backend apply；Tetragon backend 可从 `CollectionIntent` 生成最小 TracingPolicy 并通过 `tetra tracingpolicy add` 应用。
+- container 侧的真实主路径已经证明了“独立 sensor 容器 + workload selector”这条方向可行,只是 scope 目前还主要体现在 `container_id_prefix` 这样的实现级配置上,还没有被提升成正式 contract。
 - process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
 - managed Tetragon 已接入 restart 配置和 health 状态。
 - sensor tamper/blindness 已能作为 endpoint signal 写入 spool 并上传。

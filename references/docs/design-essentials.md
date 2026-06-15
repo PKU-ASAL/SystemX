@@ -35,6 +35,14 @@ v2: EDR endpoint runtime MVP
 2. **事实与图模型**: 所有数据源最终都要落到统一的 Event / Signal / Incident 事实纵轴和 entity graph 上。
 3. **跨域收敛**: EDR 先从 endpoint 图开始,XDR 再把 cloud、identity、network、workload 等事实并入同一张攻击叙事图。
 
+这里还有一个很重要的边界判断: **endpoint 不等于“永远是一台 VM 或物理主机”**。在 SysArmor Next 里,被保护对象更准确地说是一个 **runtime scope**:
+
+- VM / 裸机是 `host scope`
+- 单个容器或 cgroup 是 `container/cgroup scope`
+- K8s workload 是 `pod/namespace scope`
+
+也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。
+
 Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
 
 更具体地说,SysArmor Next 当前选择的是一条 **endpoint-first 的 EDR/XDR 演进路线**:
@@ -44,6 +52,14 @@ Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v
 - 最后再把 cloud audit、identity、network、K8s、CI/CD 等遥测并到同一套事实轴和实体图,扩成 XDR。
 
 这条路线的含义是:短期文档和实现里即便会频繁出现 Tetragon、agent daemon、spool、health、policy apply,它们也不只是"为了把 Linux 采集跑起来",而是在给后续 EDR/XDR 共用的数据面、控制面和运行时地基打桩。
+
+对容器场景,这条路线还有一个直接推论:
+
+- **不建议把业务容器本体直接等价成一台 VM 来处理。**
+- 更自然的做法是:运行一个独立的 `sysarmor-agent + tetragon` sensor container,去观测某个目标容器、某个 cgroup 或某组 workload。
+- 这样做时,agent 拥有 sensor process / policy / health / spool / upload 生命周期;被保护对象则通过 scope selector 来限定。
+
+这让“容器安全”在产品语义上更接近 **workload-scoped EDR runtime**,而不是“把 agent 塞进业务镜像里”。
 
 换句话说,对 SysArmor Next 的定位可以用一句更工程化的话概括:
 
@@ -196,6 +212,23 @@ lineage 不是纵轴上的一层，而是贯穿三层的**身份/索引坐标**�
 - **Sensor Contract**（Sensor Runtime ↔ Endpoint Core）：定义"一条事件长什么样、采集意图怎么表达、能力如何探测、如何阻断"。今天它由 Tetragon 实现，明天可以换成自研 Native Sensor，上层不动。所以 Tetragon 的 `GetEvents` 是实现细节，不是我们的边界。
 - **Edge-Cloud Analytics Contract**（Endpoint Core ↔ Cloud Analytics）：定义上行流（Event 流、Signal 流、证据包、健康流）和下行回路（细节回拉、增强采集、响应指令）。它与具体图算法解耦——NODLINK 可以换成任何图分析，端侧无感。
 - **DetectionPolicy**（Control Plane → 两侧引擎）：签名的检测内容包。规则用统一 DSL 编写，靠 `where` 属性决定下发到端侧快路径还是云端分析层。这是 P5 的落地：加一条检测 = 下发一份签名内容，不发版、不改代码。
+
+其中 **Sensor Contract** 在中期 EDR 里应继续显式扩成带 scope 的模型:
+
+```text
+Sensor Runtime
+  scope:
+    type: host | container | cgroup | namespace | pod
+    selector: ...
+```
+
+这套抽象下:
+
+- VM / 裸机 = `host scope`
+- 容器 = `container` 或 `cgroup scope`
+- K8s workload = `pod` 或 `namespace scope`
+
+这样后续无论 agent 是部署在 VM 里、宿主机上,还是作为独立 sensor container 跑在 workload 旁边,上层都只看统一的 runtime contract,而不是感知具体拓扑细节。
 
 **部署形态**：Cloud Analytics + Control Plane 在实现上拆成三个角色——**Gateway**（连接终结 + 数据摄入 + 策略下发，借鉴 Elkeid AgentCenter，无状态可水平扩展）、**Manager**（控制面：策略编写/签名/灰度、注册、调查）、**Analytics**（建图 + 收敛 + 裁决）。EDR 阶段,Gateway 的主输入是 SysArmor agent 上报的 endpoint 事实；XDR 阶段,异构数据源（auditd / Wazuh / k8s audit / cloud audit / identity / network / CI/CD）经 Gateway 的 **Ingestion Adapter** 归一成 CanonicalEvent 入图。但**原生 agent 是一等公民**（源头打标 lineage），**agentless 是二等公民**（云端尽力重建 lineage，上下文降级）。
 

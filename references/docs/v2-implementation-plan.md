@@ -1,7 +1,7 @@
 # SysArmor v2 Implementation Plan
 
 Date: 2026-06-15
-Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, container policy-preload removal, VM default policy-preload removal, VM real Tetragon systemd smoke, and VM owned-process smoke commits.
+Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, container policy-preload removal, VM default policy-preload removal, VM real Tetragon systemd smoke, VM owned-process smoke, and container owned-process smoke commits.
 
 ## 1. Goal
 
@@ -25,12 +25,39 @@ later: XDR platform
 
 因此 v2 的成功标准不是“功能看起来更多”，而是：agent 能作为一个真实 EDR endpoint runtime 长期运行，sensor 由 agent 托管，数据可缓冲可恢复，健康可观测，策略可应用，v1 detection 行为保持稳定。
 
+对容器场景,这里还要再加一条路线约束: **v2 的默认方向不是把 agent 装进业务容器本体,而是把容器视为一个 workload scope,由独立的 agent+tetragon sensor runtime 去观测它。**
+
 为了避免范围漂移,这个成功标准最好再拆成四个可验收问题:
 
 1. **ownership**: agent 是否真正拥有 sensor process / event subscription / runtime policy apply 的生命周期。
 2. **reliability**: manager outage、agent restart、sensor restart、graceful shutdown 后,数据和检测结果是否可恢复且不放大。
 3. **observability**: manager/ctl 是否能看见 agent、sensor、queue、upload 的 recent/degraded/recovered 状态。
 4. **compatibility**: v1 replay/debug 路径和现有 detection 行为是否保持稳定。
+
+## 1.2 Runtime Scope Model
+
+为了让 VM、容器和后续 K8s workload 能落到同一条 EDR/XDR 路线上,中期应把 Sensor Runtime 显式抽象成带 scope 的模型:
+
+```text
+Sensor Runtime
+  scope:
+    type: host | container | cgroup | namespace | pod
+    selector: ...
+```
+
+在这套模型下:
+
+- VM / 裸机 = `host scope`
+- 单个容器 = `container` 或 `cgroup scope`
+- K8s workload = `pod` 或 `namespace scope`
+
+这意味着容器方案的推荐部署形态是:
+
+- 运行一个独立的 `sysarmor-agent + tetragon` sensor container
+- 由它拥有 sensor process / policy / health / spool / upload 生命周期
+- 通过 scope selector 限定只观测目标 workload
+
+而不是把 agent 直接内嵌进业务容器镜像,把容器硬解释成“迷你 VM”。
 
 ## 1.1 Current Priority
 
@@ -40,6 +67,7 @@ later: XDR platform
    - container 默认主路径已经去掉预加载 TracingPolicy。
    - VM provision 默认主路径已不再 preload policy；兼容性 preload 需显式降级为 replay/debug/perf 专用。
    - container/VM 主路径都应继续朝 agent 完整拥有 Tetragon process 和 policy lifecycle 收口。
+   - container 路线要继续从 `container_id_prefix` 这类实现级过滤,收口成正式的 runtime scope contract。
 2. **把 reliability 做成主路径证据**
    - manager outage drain、graceful shutdown flush、retry/backoff、agent restart 恢复都要继续用 e2e 证明,而不是只停留在局部单测或一次性 smoke。
 3. **避免把真实订阅误当成完整 ownership**
@@ -152,14 +180,14 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
-  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `sensor.container_id_prefix` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。
+  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `sensor.container_id_prefix` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。下一步要把这种 workload 过滤能力从“container-specific config”收口成正式 scope contract。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
 - Agent daemon:
   - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
   - graceful shutdown、flush 语义还未完整验收。
-  - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke 和 VM agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
+  - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
 - health API、CLI 查询、本机 e2e 和 VM recent health smoke 已有,但 degraded/recovered health 断言还需要扩展到 container/VM 主路径。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
 
@@ -167,6 +195,12 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - **主路径 ownership 收口**: 把 container/VM 主路径中残留的 topology/provision 预置 Tetragon process/policy 继续迁出或严格限定在 replay/debug/perf。
 - **长期运行语义收口**: 用更明确的测试证据覆盖 manager outage drain、graceful shutdown flush、retry/backoff soak、degraded/recovered health。
+
+对于容器,还要同步守住一条架构边界:
+
+- 默认部署形态应是独立 sensor container 观测 workload。
+- `scope` 才是容器与 VM 的统一抽象,而不是“容器拓扑特殊分支”。
+- 后续 K8s 方向应在这套 `host | container | cgroup | namespace | pod` scope 模型上自然外延。
 
 如果再说得更直接一点,当前 plan 最容易让人误读的地方有两个:
 
@@ -201,6 +235,7 @@ sysarmor-agent daemon
 - v2 不是“重新实现 v1 检测”，而是把 v1 检测链路放进可长期运行的 endpoint runtime。
 - v2 不是“只做 Tetragon supervisor”，Tetragon 是第一个 backend,抽象边界仍是 Sensor Runtime。
 - v2 也不是 XDR 阶段。XDR 要求多源 ingestion 和跨域实体图,但这些应该等 endpoint runtime 稳定后再进入主线。
+- v2 的容器路线不是“把 agent 塞进业务容器里”，而是“独立 sensor runtime 观测 workload scope”。
 - 当前文档里的 `agent-managed` 已经覆盖两种成熟度:
   - 已落地: agent 托管 `tetra getevents` 订阅、daemon/spool/upload/health/systemd 路径。
   - 待收口: agent 完整拥有 Tetragon 主进程、TracingPolicy apply/verify 和失败恢复。
@@ -775,9 +810,9 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke 以及 VM agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
 
-注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；新增 VM owned-process smoke 进一步证明 agent 可在 systemd 下拥有真实 `/usr/local/bin/tetragon` 进程并跑通检测。Phase 3 完成标准仍然是 agent/runtime 能在 container/VM 主路径上独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
+注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；新增 VM/container owned-process smoke 进一步证明 agent 可拥有真实 `tetragon` 进程并跑通检测。Phase 3 完成标准仍然是 agent/runtime 能在 container/VM 主路径上独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
 
 任务：
 
@@ -801,6 +836,7 @@ WantedBy=multi-user.target
 - container/VM daemon 主路径不再由 harness pipe `tetra getevents` 给 agent。
 - VM real Tetragon smoke 能证明 systemd agent + real `tetra getevents` 订阅 + detection + agent restart。
 - VM owned-process smoke 能证明 systemd agent + real `tetragon` process ownership + real `tetra getevents` + detection + agent restart。
+- container owned-process smoke 能证明 agent + real `tetragon` process ownership + real `tetra getevents` + detection + agent restart。
 - agent/runtime 拥有 Tetragon process lifecycle,不依赖 topology 预先启动 Tetragon 主进程。
 - agent/runtime 拥有 policy apply/verify lifecycle,不依赖 harness 预先加载 TracingPolicy。
 - agent kill/restart Tetragon 的行为可由单测或 integration test 稳定覆盖。
