@@ -183,7 +183,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 ### 2.2 v2 仍未完成的关键缺口
 
 - Sensor/runtime:
-  - capability 探测仍偏最小骨架。
+  - capability 探测已从最小骨架推进到 kernel release、BTF、bpffs、配置二进制可执行性检查；缺失 BTF 的 degraded health smoke 已补。后续仍需在真实 VM/container 主路径上继续验证权限矩阵。
   - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 和 VM provision 默认主路径都已不再预加载 TracingPolicy；VM 仅保留显式兼容模式 preload,限定在 replay/debug/perf。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
@@ -196,7 +196,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
   - graceful shutdown、flush 语义还未完整验收。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
-- health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke 以及 container/VM real owned Tetragon 主路径 degraded/recovered health 断言已落地；后续重点转向更长窗口的 reliability soak 与 capability 缺失场景。
+- health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
@@ -818,7 +818,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
+状态：进行中。bundle verify/install、capability probe、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、required BTF 缺失 degraded smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
 
 注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；新增 VM/container owned-process smoke 进一步证明 agent 可拥有真实 `tetragon` 进程并跑通检测。Phase 3 完成标准仍然是 agent/runtime 能在 container/VM 主路径上独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
 
@@ -851,7 +851,7 @@ WantedBy=multi-user.target
 
 ### Phase 4: Sensor Health, Restart, Tamper Signal
 
-状态：大部分完成。health ingest/query、sensor process health、restart policy、tamper/blindness endpoint signal、本机 restart smoke、本机 degraded→recovered smoke、container managed degraded→recovered smoke 以及 VM managed degraded→recovered smoke 已落地；剩余重点是 parse/drop 阈值和 ownership/更真实主路径验收。
+状态：大部分完成。health ingest/query、sensor process health、restart policy、tamper/blindness endpoint signal、本机 restart smoke、本机 degraded→recovered smoke、container managed degraded→recovered smoke、VM managed degraded→recovered smoke、parse/drop 阈值 degraded smoke 以及 required BTF 缺失 degraded smoke 已落地；剩余重点是 ownership/更真实主路径验收。
 
 任务：
 

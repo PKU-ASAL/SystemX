@@ -39,6 +39,10 @@ type SensorConfig struct {
 	InstallDir        string
 	TetraPath         string
 	TetragonPath      string
+	BTFPath           string
+	BPFFSPath         string
+	RequireBTF        bool
+	RequireBPFFS      bool
 	PolicyPath        string
 	EventSource       string
 	ScopeType         string
@@ -240,6 +244,22 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Sensor.TetraPath = value
 		case "tetragon_path":
 			cfg.Sensor.TetragonPath = value
+		case "btf_path":
+			cfg.Sensor.BTFPath = value
+		case "bpffs_path":
+			cfg.Sensor.BPFFSPath = value
+		case "require_btf":
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("sensor.require_btf: %w", err)
+			}
+			cfg.Sensor.RequireBTF = b
+		case "require_bpffs":
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("sensor.require_bpffs: %w", err)
+			}
+			cfg.Sensor.RequireBPFFS = b
 		case "policy_path":
 			cfg.Sensor.PolicyPath = value
 		case "event_source":

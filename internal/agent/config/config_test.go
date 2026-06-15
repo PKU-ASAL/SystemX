@@ -55,6 +55,10 @@ sensor:
   backend: tetragon
   mode: managed
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  btf_path: /tmp/vmlinux
+  bpffs_path: /tmp/bpf
+  require_btf: true
+  require_bpffs: true
   scope_type: container
   scope_selector: abc123
   observe_only: true
@@ -91,6 +95,9 @@ health:
 	}
 	if cfg.Sensor.MaxParseErrors != 3 || cfg.Sensor.MaxDroppedEvents != 4 {
 		t.Fatalf("parse/drop thresholds = %d/%d", cfg.Sensor.MaxParseErrors, cfg.Sensor.MaxDroppedEvents)
+	}
+	if cfg.Sensor.BTFPath != "/tmp/vmlinux" || cfg.Sensor.BPFFSPath != "/tmp/bpf" || !cfg.Sensor.RequireBTF || !cfg.Sensor.RequireBPFFS {
+		t.Fatalf("capability config = %+v", cfg.Sensor)
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)

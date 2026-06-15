@@ -49,6 +49,68 @@ func TestBackendSubscribesJSONLFile(t *testing.T) {
 	}
 }
 
+func TestCapabilityReportsHostProbeFields(t *testing.T) {
+	dir := t.TempDir()
+	btfPath := filepath.Join(dir, "vmlinux")
+	if err := os.WriteFile(btfPath, []byte("btf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bpffsPath := filepath.Join(dir, "bpf")
+	if err := os.Mkdir(bpffsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tetraPath := filepath.Join(dir, "tetra")
+	if err := os.WriteFile(tetraPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tetragonPath := filepath.Join(dir, "tetragon")
+	if err := os.WriteFile(tetragonPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle("policy.yaml", "", "test", BundleConfig{TetraPath: tetraPath, TetragonPath: tetragonPath})
+	backend.BTFPath = btfPath
+	backend.BPFFSPath = bpffsPath
+	backend.RequireBTF = true
+	backend.RequireBPFFS = true
+	capability, err := backend.Capability(context.Background())
+	if err != nil {
+		t.Fatalf("Capability() error = %v", err)
+	}
+	if capability.KernelRelease == "" || !capability.BTFAvailable || !capability.BPFFSAvailable {
+		t.Fatalf("capability = %+v", capability)
+	}
+}
+
+func TestCapabilityFailsWhenRequiredBTFMissing(t *testing.T) {
+	backend := NewBackend("policy.yaml", "events.jsonl", "test")
+	backend.BTFPath = filepath.Join(t.TempDir(), "missing-vmlinux")
+	backend.RequireBTF = true
+	_, err := backend.Capability(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "btf unavailable") {
+		t.Fatalf("Capability() error = %v, want btf unavailable", err)
+	}
+	health, healthErr := backend.Health(context.Background())
+	if healthErr != nil {
+		t.Fatalf("Health() error = %v", healthErr)
+	}
+	if !strings.Contains(health.LastError, "btf unavailable") {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
+func TestCapabilityFailsWhenConfiguredBinaryNotExecutable(t *testing.T) {
+	dir := t.TempDir()
+	tetraPath := filepath.Join(dir, "tetra")
+	if err := os.WriteFile(tetraPath, []byte("not executable"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle("policy.yaml", "", "test", BundleConfig{TetraPath: tetraPath})
+	_, err := backend.Capability(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "not executable") {
+		t.Fatalf("Capability() error = %v, want not executable", err)
+	}
+}
+
 func TestBackendFiltersByContainerIDPrefix(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")

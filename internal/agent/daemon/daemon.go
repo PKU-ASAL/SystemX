@@ -424,6 +424,10 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 		backend.ScopeType = cfg.Sensor.ScopeType
 		backend.ScopeSelector = cfg.Sensor.ScopeSelector
 		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
+		backend.BTFPath = cfg.Sensor.BTFPath
+		backend.BPFFSPath = cfg.Sensor.BPFFSPath
+		backend.RequireBTF = cfg.Sensor.RequireBTF
+		backend.RequireBPFFS = cfg.Sensor.RequireBPFFS
 		return backend, nil
 	default:
 		return nil, fmt.Errorf("unsupported sensor backend %q", cfg.Sensor.Backend)

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,10 @@ type Backend struct {
 	ScopeType         string
 	ScopeSelector     string
 	ContainerIDPrefix string
+	BTFPath           string
+	BPFFSPath         string
+	RequireBTF        bool
+	RequireBPFFS      bool
 
 	mu           sync.Mutex
 	intent       contract.CollectionIntent
@@ -89,6 +94,15 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 		b.installed = true
 		b.mu.Unlock()
 	}
+	kernelRelease, btfAvailable, bpffsAvailable, err := b.probeHostCapabilities()
+	if err != nil {
+		b.setError(err)
+		return contract.Capability{}, err
+	}
+	if err := b.verifyConfiguredExecutables(); err != nil {
+		b.setError(err)
+		return contract.Capability{}, err
+	}
 	return contract.Capability{
 		Backend:         "tetragon",
 		Version:         b.Version,
@@ -96,7 +110,50 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 		SupportsConnect: true,
 		SupportsFile:    true,
 		SupportsHealth:  true,
+		KernelRelease:   kernelRelease,
+		BTFAvailable:    btfAvailable,
+		BPFFSAvailable:  bpffsAvailable,
 	}, nil
+}
+
+func (b *Backend) probeHostCapabilities() (string, bool, bool, error) {
+	kernelRelease := runtime.GOOS
+	if data, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
+		kernelRelease = strings.TrimSpace(string(data))
+	}
+	btfPath := firstNonEmpty(b.BTFPath, "/sys/kernel/btf/vmlinux")
+	btfAvailable := fileExists(btfPath)
+	bpffsPath := firstNonEmpty(b.BPFFSPath, "/sys/fs/bpf")
+	bpffsAvailable := dirExists(bpffsPath)
+	if b.RequireBTF && !btfAvailable {
+		return kernelRelease, false, bpffsAvailable, fmt.Errorf("btf unavailable at %s", btfPath)
+	}
+	if b.RequireBPFFS && !bpffsAvailable {
+		return kernelRelease, btfAvailable, false, fmt.Errorf("bpffs unavailable at %s", bpffsPath)
+	}
+	return kernelRelease, btfAvailable, bpffsAvailable, nil
+}
+
+func (b *Backend) verifyConfiguredExecutables() error {
+	for name, path := range map[string]string{
+		"tetra":    b.Bundle.TetraPath,
+		"tetragon": b.Bundle.TetragonPath,
+	} {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("verify %s executable %s: %w", name, path, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("verify %s executable %s: is a directory", name, path)
+		}
+		if info.Mode()&0o111 == 0 {
+			return fmt.Errorf("verify %s executable %s: not executable", name, path)
+		}
+	}
+	return nil
 }
 
 func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) error {
@@ -532,6 +589,16 @@ func (b *Backend) setRunning(running bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.running = running
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func rawRefForLine(line []byte) string {
