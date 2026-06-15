@@ -20,6 +20,8 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
+const runtimeTracingPolicyName = "sysarmor-runtime-collection"
+
 type Backend struct {
 	PolicyPath        string
 	EventSource       string
@@ -340,11 +342,11 @@ func (b *Backend) applyTracingPolicy(ctx context.Context, path string) error {
 		cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "add", path)
 		output, err := cmd.CombinedOutput()
 		if err == nil {
-			return nil
+			return b.verifyTracingPolicy(ctx, runtimeTracingPolicyName)
 		}
 		trimmed := strings.TrimSpace(string(output))
 		if strings.Contains(strings.ToLower(trimmed), "already exists") {
-			return nil
+			return b.verifyTracingPolicy(ctx, runtimeTracingPolicyName)
 		}
 		if trimmed == "" {
 			lastErr = fmt.Errorf("apply tetragon tracing policy: %w", err)
@@ -364,12 +366,30 @@ func (b *Backend) applyTracingPolicy(ctx context.Context, path string) error {
 	}
 }
 
+func (b *Backend) verifyTracingPolicy(ctx context.Context, name string) error {
+	cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "list")
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err != nil {
+		if trimmed == "" {
+			return fmt.Errorf("verify tetragon tracing policy %s: %w", name, err)
+		}
+		return fmt.Errorf("verify tetragon tracing policy %s: %w: %s", name, err, trimmed)
+	}
+	if !strings.Contains(trimmed, name) {
+		return fmt.Errorf("verify tetragon tracing policy %s: not listed", name)
+	}
+	return nil
+}
+
 func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 	var out bytes.Buffer
 	out.WriteString("apiVersion: cilium.io/v1alpha1\n")
 	out.WriteString("kind: TracingPolicy\n")
 	out.WriteString("metadata:\n")
-	out.WriteString("  name: \"sysarmor-runtime-collection\"\n")
+	out.WriteString("  name: ")
+	out.WriteString(fmt.Sprintf("%q", runtimeTracingPolicyName))
+	out.WriteString("\n")
 	out.WriteString("spec:\n")
 	out.WriteString("  kprobes:\n")
 	if intentHasKind(intent, eventv1.EventKind_EVENT_KIND_CONNECT) {

@@ -266,7 +266,7 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
 	appliedPath := filepath.Join(dir, "applied")
 	tetraPath := filepath.Join(dir, "tetra")
-	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then cp \"$3\" '" + appliedPath + "'; exit 0; fi\nprintf '%s\\n' '" + raw + "'\n"
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then cp \"$3\" '" + appliedPath + "'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nprintf '%s\\n' '" + raw + "'\n"
 	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -302,6 +302,43 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 		t.Fatalf("Health() error = %v", err)
 	}
 	if !health.PolicyLoaded {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
+func TestBackendRejectsUnverifiedGeneratedTracingPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed policy verify test requires /bin/sh")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [CONNECT]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tetraPath := filepath.Join(dir, "tetra")
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'other-policy'; exit 0; fi\nexit 0\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	intent := contract.CollectionIntent{
+		EventKinds:  []eventv1.EventKind{eventv1.EventKind_EVENT_KIND_CONNECT},
+		ObserveOnly: true,
+	}
+	if err := backend.Apply(context.Background(), intent); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if _, err := backend.Subscribe(context.Background(), intent); err == nil || !strings.Contains(err.Error(), "not listed") {
+		t.Fatalf("Subscribe() error = %v, want not listed", err)
+	}
+	health, err := backend.Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+	if health.PolicyLoaded || !strings.Contains(health.LastError, "not listed") {
 		t.Fatalf("health = %+v", health)
 	}
 }
