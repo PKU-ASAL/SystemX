@@ -231,9 +231,9 @@ make report
 | dev auth | 已有静态 dev token 校验,覆盖 HTTP/gRPC upload 与 health report |
 | sensor restart/tamper | 已有 process supervisor restart、managed Tetragon restart 配置、degraded/tamper signal 生成和上传测试 |
 | systemd | 已有 `deployments/systemd/sysarmor-agent.service` 与 daemon 示例配置 |
-| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e,以及 container fake daemon smoke |
+| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e、container fake/managed smoke、VM fake-sensor systemd smoke,以及 container 三个核心场景的 agent-managed detection smoke |
 
-这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是把 agent-managed sensor 迁移为 container/VM 主路径,补 VM/systemd smoke,并继续压实长期运行语义。
+这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是把 agent-managed sensor 迁移为 container/VM 主路径,补 VM 真实 Tetragon 验收,并继续压实长期运行语义。
 
 ## 三、走向完整项目的主要缺口
 
@@ -254,14 +254,14 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
 - managed Tetragon 已接入 restart 配置和 health 状态。
 - sensor tamper/blindness 已能作为 endpoint signal 写入 spool 并上传。
-- Tetragon 在 container/VM 主 e2e 中仍主要由测试 harness 启动和加载 policy。
+- container 三个核心场景已有 agent-managed `tetra getevents` 专项 smoke,但 Tetragon 主进程和 TracingPolicy 仍主要由测试 topology/harness 启动和加载。
 
 主要缺口:
 
 - capability 探测仍是最小骨架,不是完整主机能力探测。
 - dropped events / parse errors / restart window / degraded 状态还需要继续细化阈值和验收。
 - CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现。
-- container/VM 主 e2e 仍需迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent。
+- container/VM 主 e2e 仍需迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent；container 专项 smoke 已证明订阅路径可行,但还没有替换原 `make e2e TOPO=container ...` 主路径。
 - Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。
 
@@ -288,21 +288,22 @@ type Sensor interface {
 - static dev token/auth 和 tenant/agent identity 已进入 upload/health 主链路。
 - 已有 systemd unit 和 example config。
 - 已有本机 daemon、health CLI、spool recovery、sensor restart/tamper e2e smoke。
-- 已有 container topology 的 fake daemon smoke。
+- 已有 container topology 的 fake/managed daemon smoke、managed restart/tamper smoke、三场景 managed detection smoke。
+- 已有 VM fake-sensor systemd lifecycle smoke。
 
 主要缺口:
 
 - graceful shutdown flush 语义还需要明确测试。
 - retry/backoff 还需要更长时间 soak 和失败恢复验证。
-- systemd lifecycle 还缺 VM smoke。
-- container/VM 主检测场景还没有迁移为 daemon-managed sensor 主路径。
+- VM 真实 Tetragon + systemd 主路径仍需补齐。
+- container/VM 主检测场景还没有迁移为 daemon-managed sensor 主路径；container 三场景已有专项 smoke,但原 capture/assert 主路径仍待迁移。
 - tenant/token 仍是开发形态,不是生产 enrollment/RBAC。
 
 继续收口:
 
 ```text
 graceful shutdown + long-run soak
-VM systemd smoke
+VM real Tetragon systemd smoke
 container/VM agent-managed sensor e2e
 retry/idempotency integration
 tenant/agent identity consistency
@@ -520,12 +521,13 @@ health heartbeat
 - stream smoke 能证明真实 Tetragon -> agent -> manager 通路。
 - v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path、process supervisor、tamper signal 的测试。
 - v2 已有本机 daemon/health/spool/sensor-restart 聚合 smoke。
-- v2 已有 container topology fake daemon smoke。
+- v2 已有 container topology fake/managed daemon smoke、managed restart/tamper smoke 和三场景 managed detection smoke。
+- v2 已有 VM fake-sensor systemd smoke 和 VM managed fake bundle smoke。
 
 主要缺口:
 
 - agent-managed Tetragon process container/VM 主路径 e2e。
-- VM systemd smoke。
+- VM 真实 Tetragon systemd smoke。
 - 更长时间的 manager outage/spool recovery soak。
 - graph path tests。
 - rarity baseline tests。
@@ -544,7 +546,7 @@ health heartbeat
 
 主要缺口:
 
-- 已有 systemd unit,但还缺 VM/systemd smoke 和安装脚本。
+- 已有 systemd unit 和 VM fake-sensor systemd smoke,但还缺 VM 真实 Tetragon systemd smoke 和安装脚本。
 - 没有 Helm/DaemonSet。
 - 没有 packaging/release。
 - 已有 config examples,但还缺生产默认值、升级兼容和安全配置说明。
@@ -564,11 +566,11 @@ health heartbeat
    - VM daemon smoke 不再依赖 harness pipe
    - 保留 replay/stream debug path
 
-2. **补 VM/systemd smoke**
-   - VM 内安装 `sysarmor-agent.service`
-   - systemd 启停 agent
-   - manager 侧断言 recent health
-   - agent 退出后由 systemd 拉起
+2. **补 VM 真实 Tetragon/systemd smoke**
+   - 复用已落地的 VM systemd agent lifecycle smoke
+   - 将 fake sensor 替换为真实 Tetragon/tetra 或真实可验收 bundle
+   - manager 侧断言 recent health、policy_loaded、sensor running/degraded
+   - agent 退出后仍由 systemd 拉起
 
 3. **压实长期运行语义**
    - graceful shutdown flush 验收
@@ -648,4 +650,4 @@ multi-source XDR ingestion
 deployment/operations
 ```
 
-下一步最值得做的是 **agent-managed sensor 主路径 + VM/systemd smoke + policy 最小闭环**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper 的地基已经立起来了,现在要把它们从本机 smoke 推进到 container/VM 主链路。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
+下一步最值得做的是 **agent-managed sensor 主路径 + VM 真实 Tetragon/systemd smoke + policy 最小闭环**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper 和 container managed detection 的地基已经立起来了,现在要把它们从专项 smoke 推进到 container/VM 主链路。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
