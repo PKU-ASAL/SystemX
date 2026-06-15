@@ -222,13 +222,12 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - 后台 upload loop、spool recovery、request timeout、ack batch_id 校验、manager outage 多 batch drain soak、retry/backoff 多 batch 503 soak、agent restart 后 unacked batch 恢复 e2e、sensor restart/recover e2e、manager ingest 幂等计数和重复 batch 不放大 e2e 已有；后续重点转向真实主路径可靠性验收。
   - 新增 `e2e-agent-reliability-soak` 聚合入口,把 outage drain、retry/backoff、restart-unacked、sensor restart/recover、shutdown flush 串成更长窗口的本机可靠性门禁。
   - graceful shutdown flush 已有本机 e2e,并断言 SIGTERM 后 shutdown drain、spool 清空、manager 侧 final degraded health 中 `queued_batches=0` / `remaining_batches=0`；后续仍需更长窗口 soak。
-  - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有；container 和 VM owned-process smoke 均已补 agent/service stop 后 owned `tetragon` / `tetra getevents` 不残留并可重启恢复的断言,并且 backend 侧已有 runtime policy cleanup 回归,同时 health payload 也开始携带 capability,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
-  - health API、CLI 查询、本机 e2e、`e2e-agent-all` 本机聚合、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke、managed `tetra getevents` 混流 dropped-events 归因回归、`sysarmorctl agents` capability/filters e2e、`scope_selector` filter e2e、VM/container owned-path capability 断言，以及 required BTF / bpffs 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵回归。
+  - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有；container 和 VM owned-process smoke 均已补 agent/service stop 后 owned `tetragon` / `tetra getevents` 不残留并可重启恢复的断言,并且 backend 侧已有 runtime policy cleanup 回归,同时 health payload 也开始携带 capability。当前主路径的 process ownership 已有真实 e2e 证据,后续更多是把这条证据持续作为回归门禁维护。
+  - health API、CLI 查询、本机 e2e、`e2e-agent-all` 本机聚合、`e2e-agent-runtime-all` 总门禁、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke、managed `tetra getevents` 混流 dropped-events 归因回归、`sysarmorctl agents` capability/filters e2e、`scope_selector` filter e2e、VM/container owned-path capability 断言，以及 required BTF / bpffs 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵回归。
   - tenant/agent identity 已进入 upload、health 和 store 主链路；manager 已对 upload agent/host/tenant identity 做最小校验,但还不是完整 RBAC/enrollment。
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
 
-- **主路径 ownership 收口**: 把 container/VM 主路径中残留的 topology/provision 预置 Tetragon process/policy 继续迁出或严格限定在 replay/debug/perf。
 - **长期运行语义收口**: 用更明确的测试证据覆盖 manager outage drain、graceful shutdown flush、retry/backoff soak、degraded/recovered health。
 
 对于容器,还要同步守住一条架构边界:
@@ -1189,6 +1188,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
    - 保持正式 `sensor.scope.type=container` + `sensor.scope.selector` 过滤，避免 host 噪音淹没真实 container 场景事件；`scope_type/scope_selector` 只作为兼容入口测试。
    - 新增配置和测试时优先使用 `sensor.scope.type/sensor.scope.selector`,扁平字段只作为兼容入口。
    - 保留 `make -C test e2e-agent-detection-container-all` 作为三场景 smoke。
+   - 保留 `make -C test e2e-agent-runtime-all` 作为本机 runtime、container detection、real owned container/VM 的总门禁。
    - 保持 `make e2e TOPO=container ...` 作为正式 capture/assert 主路径，两者互为补充。
 2. 迁移 container capture/assert 主路径:
    - `make e2e TOPO=container SCENARIO=...` 已默认走 agent-managed sensor。
