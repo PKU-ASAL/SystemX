@@ -125,7 +125,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - policy compile/apply 还没有完全迁出 harness。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地,但还需要更贴近真实 Tetragon 的 integration/VM 验收。
-  - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon bundle smoke；VM managed sensor 仍需补齐。
+  - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container/VM 已有 managed fake Tetragon bundle smoke。
   - container/VM 主检测场景仍需迁移到 agent-managed sensor 主路径。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
@@ -730,7 +730,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke 和 container managed fake bundle smoke 已落地；VM managed sensor smoke、真实 Tetragon 权限/policy 验收和主检测场景迁移仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke、container managed fake bundle smoke 和 VM managed fake bundle smoke 已落地；真实 Tetragon 权限/policy 验收和主检测场景迁移仍未完成。
 
 任务：
 
@@ -816,7 +816,7 @@ WantedBy=multi-user.target
 
 ### Phase 7: Systemd And Harness Migration
 
-状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke 和 container managed fake bundle smoke 已落地；VM managed sensor smoke 与 container/VM 主检测场景迁移仍未完成。
+状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、container managed fake bundle smoke 和 VM managed fake bundle smoke 已落地；container/VM 主检测场景迁移仍未完成。
 
 任务：
 
@@ -883,6 +883,7 @@ make -C test e2e-agent-all
 make -C test e2e-agent-daemon-container
 make -C test e2e-agent-managed-container
 make -C test e2e-agent-systemd-vm
+make -C test e2e-agent-managed-vm
 ```
 
 `e2e-agent-sensor-restart` 应验证：
@@ -1015,14 +1016,14 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 
 为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool/restart/tamper 基础已经基本完成,后续重点应放在 harness 主路径迁移、systemd 和长跑可靠性上：
 
-1. 推进 VM managed sensor smoke:
-   - 复用已落地的 VM/systemd harness。
-   - 先用 fake bundle 验证 agent/runtime/systemd/control 面。
-   - 再评估真实 Tetragon 权限、BTF/bpffs、policy apply 的不稳定因素。
-2. 补 container managed sensor restart/tamper:
+1. 补 container managed sensor restart/tamper:
    - 在 container managed fake bundle smoke 上增加 kill sensor。
    - 断言 restart_count/degraded/recovered。
    - 复用 `sensor_tamper_or_blindness` manager 查询。
+2. 评估真实 Tetragon 权限/policy apply:
+   - 复用已落地的 container/VM managed fake bundle harness。
+   - 逐步替换 fake bundle 为真实 Tetragon/tetra。
+   - 明确 BTF/bpffs/capability 缺失时的 degraded health。
 3. 补长期运行可靠性:
    - graceful shutdown flush。
    - retry/backoff soak。
