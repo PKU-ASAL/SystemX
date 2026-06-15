@@ -132,8 +132,9 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Agent daemon:
   - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
-  - graceful shutdown、flush 语义和 systemd VM lifecycle 还未完整验收。
-  - health API、CLI 查询和本机 e2e 已有,但 VM recent health、degraded/recovered health 断言还需要补齐。
+  - graceful shutdown、flush 语义还未完整验收。
+  - systemd VM fake-sensor lifecycle smoke 已有,但 managed Tetragon systemd 主路径仍需补齐。
+  - health API、CLI 查询、本机 e2e 和 VM recent health smoke 已有,但 degraded/recovered health 断言还需要扩展到 container/VM 主路径。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
 
 v2 目标形态：
@@ -815,12 +816,12 @@ WantedBy=multi-user.target
 
 ### Phase 7: Systemd And Harness Migration
 
-状态：部分完成。systemd unit 和 example config 已落地；VM/systemd smoke、container/VM 主路径迁移仍未完成。
+状态：部分完成。systemd unit、example config 和 VM fake-sensor systemd smoke 已落地；container/VM managed sensor 主路径迁移仍未完成。
 
 任务：
 
 - 保持 systemd unit。
-- 更新 VM harness 可用 systemd 启动 agent。
+- 保持 VM harness 可用 systemd 启动 agent。
 - 更新 container/VM e2e 主路径使用 agent-managed sensor。
 - 保留 replay/stream debug harness。
 
@@ -880,6 +881,7 @@ make -C test e2e-agent-spool
 make -C test e2e-agent-sensor-restart
 make -C test e2e-agent-all
 make -C test e2e-agent-daemon-container
+make -C test e2e-agent-systemd-vm
 ```
 
 `e2e-agent-sensor-restart` 应验证：
@@ -1012,29 +1014,25 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 
 为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool/restart/tamper 基础已经基本完成,后续重点应放在 harness 主路径迁移、systemd 和长跑可靠性上：
 
-1. 增加 VM/systemd smoke:
-   - 上传 `sysarmor-agent`、`sysarmor-agent.service` 和临时 `agent.yaml`。
-   - systemd 启动 agent daemon。
-   - manager 侧用 `sysarmorctl agent-health` 断言 recent health。
-   - agent 退出后验证 systemd 拉起或至少记录重启路径。
-2. 推进 container managed sensor smoke:
+1. 推进 container managed sensor smoke:
    - 从 fake daemon smoke 过渡到 managed fake Tetragon/tetra bundle。
    - 复用现有 restart/tamper 断言。
    - 确保不再由 harness pipe `tetra getevents` 给 agent。
-3. 推进 VM managed sensor smoke:
+2. 推进 VM managed sensor smoke:
+   - 复用已落地的 VM/systemd harness。
    - 先用 fake bundle 验证 agent/runtime/systemd/control 面。
    - 再评估真实 Tetragon 权限、BTF/bpffs、policy apply 的不稳定因素。
-4. 补长期运行可靠性:
+3. 补长期运行可靠性:
    - graceful shutdown flush。
    - retry/backoff soak。
    - agent restart 后 unacked batch 恢复。
    - manager ingest 幂等不放大 event/signal/incident。
-5. 收口 policy apply 主路径:
+4. 收口 policy apply 主路径:
    - static collection intent。
    - Tetragon policy template/static file。
    - health.policy_loaded / apply error。
    - container/VM e2e 不再依赖 harness 预先加载 policy。
-6. 最后迁移原有 capture 主路径:
+5. 最后迁移原有 capture 主路径:
    - container/VM apt-fileless-c2 至少先迁移一个场景。
    - replay/stream debug path 继续保留。
    - 老 v1 场景继续作为回归对照。
