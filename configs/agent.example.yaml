@@ -24,6 +24,8 @@ sensor:
   observe_only: true
   restart: always
   max_restarts: 5
+  max_parse_errors: 10
+  max_dropped_events: 0
   restart_window: 60s
 
 spool:

@@ -21,6 +21,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
@@ -955,6 +956,54 @@ func TestRunnerUploadsTamperSignalToManager(t *testing.T) {
 	}
 	if got := len(managerStore.ListSignals("agent-health", "endpoint", true)); got != 1 {
 		t.Fatalf("manager tamper signal count = %d, want 1", got)
+	}
+}
+
+func TestRunnerMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "http://127.0.0.1:1", Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, MaxParseErrors: 1, RestartWindow: time.Hour},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		Upload:  config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	runner := &Runner{
+		Config: cfg,
+		Sensor: &healthOnlySensor{health: contract.Health{
+			Backend:      "tetragon",
+			Installed:    true,
+			PolicyLoaded: true,
+			Running:      true,
+			ParseErrors:  2,
+		}},
+	}
+	rt := sensorruntime.New(runner.Sensor)
+	if _, err := rt.Probe(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Apply(context.Background(), contract.CollectionIntent{ObserveOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := spool.OpenWithLimit(cfg.Spool.Path, cfg.Spool.MaxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := runner.uploadWorker(queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health, err := runner.collectHealth(context.Background(), rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Status != "degraded" || health.Sensor.ParseErrors != 2 {
+		t.Fatalf("health = %+v", health)
 	}
 }
 

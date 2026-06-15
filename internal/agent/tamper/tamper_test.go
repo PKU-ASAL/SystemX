@@ -57,3 +57,22 @@ func TestReasonDetectsBlindEventStream(t *testing.T) {
 		t.Fatal("Reason() for stale last_event_at = empty")
 	}
 }
+
+func TestReasonDetectsParseAndDropThresholds(t *testing.T) {
+	health := agenthealth.AgentHealth{
+		Sensor: agenthealth.SensorHealth{
+			Backend:       "tetragon",
+			PolicyLoaded:  true,
+			Running:       true,
+			ParseErrors:   3,
+			EventsDropped: 4,
+		},
+	}
+	if got := Reason(health, time.Now(), Options{MaxParseErrors: 2}); got != "parse_errors_exceeded:3>2" {
+		t.Fatalf("parse Reason() = %q", got)
+	}
+	health.Sensor.ParseErrors = 0
+	if got := Reason(health, time.Now(), Options{MaxDroppedEvents: 2}); got != "events_dropped_exceeded:4>2" {
+		t.Fatalf("drop Reason() = %q", got)
+	}
+}

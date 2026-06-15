@@ -47,6 +47,8 @@ type SensorConfig struct {
 	ObserveOnly       bool
 	Restart           string
 	MaxRestarts       int
+	MaxParseErrors    uint64
+	MaxDroppedEvents  uint64
 	RestartWindow     time.Duration
 }
 
@@ -108,6 +110,9 @@ func (c Config) Validate() error {
 	}
 	if c.Sensor.Mode != "managed" && c.Sensor.Mode != "external" {
 		return fmt.Errorf("sensor.mode must be managed or external")
+	}
+	if c.Sensor.MaxRestarts < 0 {
+		return fmt.Errorf("sensor.max_restarts must be non-negative")
 	}
 	scopeType := strings.TrimSpace(c.Sensor.ScopeType)
 	scopeSelector := strings.TrimSpace(c.Sensor.ScopeSelector)
@@ -259,6 +264,18 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("sensor.max_restarts: %w", err)
 			}
 			cfg.Sensor.MaxRestarts = v
+		case "max_parse_errors":
+			v, err := strconv.ParseUint(value, 10, 64)
+			if err != nil {
+				return fmt.Errorf("sensor.max_parse_errors: %w", err)
+			}
+			cfg.Sensor.MaxParseErrors = v
+		case "max_dropped_events":
+			v, err := strconv.ParseUint(value, 10, 64)
+			if err != nil {
+				return fmt.Errorf("sensor.max_dropped_events: %w", err)
+			}
+			cfg.Sensor.MaxDroppedEvents = v
 		case "restart_window":
 			d, err := time.ParseDuration(value)
 			if err != nil {

@@ -59,6 +59,8 @@ sensor:
   scope_selector: abc123
   observe_only: true
   restart: always
+  max_parse_errors: 3
+  max_dropped_events: 4
 
 spool:
   path: /var/lib/sysarmor/agent/spool
@@ -86,6 +88,9 @@ health:
 	}
 	if cfg.Sensor.ScopeType != "container" || cfg.Sensor.ScopeSelector != "abc123" {
 		t.Fatalf("scope = %q/%q", cfg.Sensor.ScopeType, cfg.Sensor.ScopeSelector)
+	}
+	if cfg.Sensor.MaxParseErrors != 3 || cfg.Sensor.MaxDroppedEvents != 4 {
+		t.Fatalf("parse/drop thresholds = %d/%d", cfg.Sensor.MaxParseErrors, cfg.Sensor.MaxDroppedEvents)
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)

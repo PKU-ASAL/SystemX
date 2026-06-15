@@ -180,8 +180,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			}
 			if sig := tamperDetector.Evaluate(health, time.Now().UTC(), tamper.Options{
 				MaxRestarts:        uint64(r.Config.Sensor.MaxRestarts),
-				MaxParseErrors:     0,
-				MaxDroppedEvents:   0,
+				MaxParseErrors:     r.Config.Sensor.MaxParseErrors,
+				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
 				NoEventGracePeriod: r.Config.Sensor.RestartWindow,
 			}); sig != nil {
 				batchID, err := r.spoolSignals(queue, []*signalv1.Signal{sig})
@@ -274,6 +274,12 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 	}
 	status := "ok"
 	if !sensor.Running || sensor.LastError != "" || queueStats.LastError != "" || uploadStats.LastError != "" {
+		status = "degraded"
+	}
+	if r.Config.Sensor.MaxParseErrors > 0 && sensor.ParseErrors > r.Config.Sensor.MaxParseErrors {
+		status = "degraded"
+	}
+	if r.Config.Sensor.MaxDroppedEvents > 0 && sensor.EventsDropped > r.Config.Sensor.MaxDroppedEvents {
 		status = "degraded"
 	}
 	now := time.Now().UTC()

@@ -134,6 +134,9 @@ make e2e-agent-capability
 # upload retry/backoff soak
 make e2e-agent-retry-backoff
 
+# parse error health / tamper smoke
+make e2e-agent-parse-health
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10
