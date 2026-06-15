@@ -305,12 +305,14 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 		if err != nil {
 			return nil, err
 		}
-		return tetragon.NewBackendWithOptions(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version, tetragon.BundleConfig{
+		backend := tetragon.NewBackendWithOptions(cfg.Sensor.PolicyPath, cfg.Sensor.EventSource, cfg.Sensor.Version, tetragon.BundleConfig{
 			BundleDir:    cfg.Sensor.BundleDir,
 			InstallDir:   cfg.Sensor.InstallDir,
 			TetraPath:    cfg.Sensor.TetraPath,
 			TetragonPath: cfg.Sensor.TetragonPath,
-		}, restart), nil
+		}, restart)
+		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
+		return backend, nil
 	default:
 		return nil, fmt.Errorf("unsupported sensor backend %q", cfg.Sensor.Backend)
 	}

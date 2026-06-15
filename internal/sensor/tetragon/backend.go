@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,11 +16,12 @@ import (
 )
 
 type Backend struct {
-	PolicyPath  string
-	EventSource string
-	Version     string
-	Bundle      BundleConfig
-	Restart     ProcessRestartPolicy
+	PolicyPath        string
+	EventSource       string
+	Version           string
+	Bundle            BundleConfig
+	Restart           ProcessRestartPolicy
+	ContainerIDPrefix string
 
 	mu           sync.Mutex
 	policyLoaded bool
@@ -151,6 +153,9 @@ func (b *Backend) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<
 			}
 			rawRef := rawRefForLine(line)
 			for _, event := range events {
+				if !b.matchesContainer(event.GetContainerId()) {
+					continue
+				}
 				if event.RawRef == "" {
 					event.RawRef = rawRef
 				}
@@ -283,6 +288,13 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 		_ = b.eventSupervisor.Stop(ctx)
 		_ = stdout.Close()
 	}, nil
+}
+
+func (b *Backend) matchesContainer(containerID string) bool {
+	if b.ContainerIDPrefix == "" {
+		return true
+	}
+	return strings.HasPrefix(containerID, b.ContainerIDPrefix)
 }
 
 func (b *Backend) incEvent(at time.Time) {

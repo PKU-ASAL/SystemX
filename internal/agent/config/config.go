@@ -32,19 +32,20 @@ type ManagerConfig struct {
 }
 
 type SensorConfig struct {
-	Backend       string
-	Mode          string
-	Version       string
-	BundleDir     string
-	InstallDir    string
-	TetraPath     string
-	TetragonPath  string
-	PolicyPath    string
-	EventSource   string
-	ObserveOnly   bool
-	Restart       string
-	MaxRestarts   int
-	RestartWindow time.Duration
+	Backend           string
+	Mode              string
+	Version           string
+	BundleDir         string
+	InstallDir        string
+	TetraPath         string
+	TetragonPath      string
+	PolicyPath        string
+	EventSource       string
+	ContainerIDPrefix string
+	ObserveOnly       bool
+	Restart           string
+	MaxRestarts       int
+	RestartWindow     time.Duration
 }
 
 type SpoolConfig struct {
@@ -215,6 +216,8 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Sensor.PolicyPath = value
 		case "event_source":
 			cfg.Sensor.EventSource = value
+		case "container_id_prefix":
+			cfg.Sensor.ContainerIDPrefix = value
 		case "observe_only":
 			b, err := strconv.ParseBool(value)
 			if err != nil {

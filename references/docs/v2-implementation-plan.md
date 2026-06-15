@@ -124,9 +124,9 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - capability 探测仍偏最小骨架。
   - policy compile/apply 还没有完全迁出 harness。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
-  - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，并新增聚合 target；聚合长跑/连续运行稳定性仍需压实，VM 真实 Tetragon 验收仍需补齐。
+  - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon 验收仍需补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
-  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；聚合运行暴露出 staged 场景真实订阅/过滤稳定性仍需收口，container 完整 capture/assert 主路径和 VM 主检测场景仍需迁移到 agent-managed sensor 主路径。
+  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `sensor.container_id_prefix` 收紧到 node-a 容器后已稳定通过，container 完整 capture/assert 主路径和 VM 主检测场景仍需迁移到 agent-managed sensor 主路径。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
@@ -730,7 +730,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke 以及聚合入口已落地；聚合连续运行、VM 真实 Tetragon 验收、完整 policy apply 和主检测场景迁移仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke 以及聚合验证已落地；VM 真实 Tetragon 验收、完整 policy apply 和主检测场景迁移仍未完成。
 
 任务：
 
@@ -816,7 +816,7 @@ WantedBy=multi-user.target
 
 ### Phase 7: Systemd And Harness Migration
 
-状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、container/VM managed fake bundle smoke、container `apt-fileless-c2` / `apt-staged-drop` / `benign-ci-noise` agent-managed detection smoke 以及 container detection 聚合入口已落地；聚合运行稳定性、container 完整 capture/assert 主路径和 VM 主检测场景迁移仍未完成。
+状态：部分完成。systemd unit、example config、VM fake-sensor systemd smoke、container/VM managed fake bundle smoke、container `apt-fileless-c2` / `apt-staged-drop` / `benign-ci-noise` agent-managed detection smoke 以及 container detection 聚合验证已落地；container 完整 capture/assert 主路径和 VM 主检测场景迁移仍未完成。
 
 任务：
 
@@ -948,7 +948,7 @@ v2 完成时必须满足：
 
 当前计划需要修正或持续注意的地方主要有六类：
 
-1. **阶段状态必须随实现滚动更新**：config、sensor contract、spool、upload drain、backpressure、health API、dev token、bundle verify/install、restart/tamper 和 container managed detection smoke 已经不是纯待办,后续计划应写成"收口/验证/迁移",不要重复实现；新增聚合 target 需要等 staged 订阅/过滤稳定后再视为常规绿线。
+1. **阶段状态必须随实现滚动更新**：config、sensor contract、spool、upload drain、backpressure、health API、dev token、bundle verify/install、restart/tamper 和 container managed detection 聚合已经不是纯待办,后续计划应写成"收口/验证/迁移",不要重复实现。
 2. **Tetragon managed backend 仍是最大风险项**：基础安装、checksum、进程监督、事件订阅已经有了,但真实 Tetragon 权限、policy ownership、container/VM harness 迁移仍应继续拆成独立可提交的小步。
 3. **当前最关键的未闭环已经变成主路径迁移**：本机和 container 专项 smoke 证明了 daemon、spool、restart、tamper、container detection 的局部闭环,下一步要证明同一能力在 `make e2e TOPO=container/vm ...`、VM 真实 Tetragon 和 systemd lifecycle 下仍成立。
 4. **health 是依赖轴,不是附属功能**：tamper、restart、spool backpressure、upload error、agent liveness 都要靠 health 被 manager 看见。health API 已经落地,后续不要再新增本地-only 的并行状态面。
@@ -1032,7 +1032,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool/restart/tamper 基础已经基本完成,后续重点应放在 harness 主路径迁移、systemd 和长跑可靠性上：
 
 1. 固化 container managed detection 聚合:
-   - 修复 `make -C test e2e-agent-detection-container-all` 暴露的 staged 场景真实订阅/过滤稳定性问题。
+   - 保持 `sensor.container_id_prefix` 或等价拓扑边界过滤，避免 host 噪音淹没真实 container 场景事件。
    - 保留 `make -C test e2e-agent-detection-container-all` 作为三场景 smoke。
    - 明确它是专项 smoke,不是原 `make e2e TOPO=container ...` 主路径完成。
 2. 迁移 container capture/assert 主路径:

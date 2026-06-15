@@ -55,6 +55,7 @@ sensor:
   backend: tetragon
   mode: managed
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  container_id_prefix: abc123
   observe_only: true
   restart: always
 
@@ -81,6 +82,9 @@ health:
 	}
 	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
 		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
+	}
+	if cfg.Sensor.ContainerIDPrefix != "abc123" {
+		t.Fatalf("container id prefix = %q", cfg.Sensor.ContainerIDPrefix)
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)
