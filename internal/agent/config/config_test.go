@@ -57,7 +57,6 @@ sensor:
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: container
   scope_selector: abc123
-  container_id_prefix: abc123
   observe_only: true
   restart: always
 
@@ -85,14 +84,158 @@ health:
 	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
 		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
 	}
-	if cfg.Sensor.ContainerIDPrefix != "abc123" {
-		t.Fatalf("container id prefix = %q", cfg.Sensor.ContainerIDPrefix)
-	}
 	if cfg.Sensor.ScopeType != "container" || cfg.Sensor.ScopeSelector != "abc123" {
 		t.Fatalf("scope = %q/%q", cfg.Sensor.ScopeType, cfg.Sensor.ScopeSelector)
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)
+	}
+}
+
+func TestLoadFileRejectsInvalidScopeType(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope_type: vm
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "sensor.scope_type must be one of") {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+}
+
+func TestLoadFileRejectsMissingSelectorForNonHostScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope_type: container
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "sensor.scope_selector is required when sensor.scope_type=container") {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+}
+
+func TestLoadFileRejectsSelectorForHostScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope_type: host
+  scope_selector: abc123
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "sensor.scope_selector must be empty when sensor.scope_type=host") {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+}
+
+func TestLoadFileRejectsConflictingLegacyContainerPrefix(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope_type: container
+  scope_selector: abc123
+  container_id_prefix: def456
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "sensor.scope_selector conflicts with sensor.container_id_prefix") {
+		t.Fatalf("LoadFile() error = %v", err)
 	}
 }
 

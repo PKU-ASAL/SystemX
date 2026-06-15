@@ -258,7 +258,8 @@ make report
 
 对容器场景,这还意味着一个额外的架构收口方向:
 
-- 当前可以先用 `container_id_prefix` 这类 selector 证明 workload-scoped collection 可行。
+- 当前主路径已经用 `scope_type=container` + `scope_selector=<container id prefix>` 证明 workload-scoped collection 可行。
+- `container_id_prefix` 仅保留为兼容旧配置的过渡入口,不应继续作为长期 contract 呈现。
 - 中期应把它抽象成正式的 runtime scope contract,而不是长期停留在“容器拓扑特判”。
 - 更合理的部署形态是独立 sensor container 观测目标 workload,而不是让业务容器本体内嵌一套 agent+tetragon。
 
@@ -279,7 +280,8 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - v2 已有 Sensor contract、fake backend、runtime skeleton。
 - v2 已有 Tetragon backend,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程和 health 汇总。
 - runtime `Apply` 已下沉调用 backend apply；Tetragon backend 可从 `CollectionIntent` 生成最小 TracingPolicy 并通过 `tetra tracingpolicy add` 应用。
-- container 侧的真实主路径已经证明了“独立 sensor 容器 + workload selector”这条方向可行,只是 scope 目前还主要体现在 `container_id_prefix` 这样的实现级配置上,还没有被提升成正式 contract。
+- container 侧的真实主路径已经证明了“独立 sensor 容器 + workload scope”这条方向可行,而且 `scope_type/scope_selector` 已经进入 agent config、collection intent 和 Tetragon backend。
+- 当前仍保留 `container_id_prefix` 兼容旧配置,但它现在应被视为映射到 `scope_type=container` 的 legacy alias,而不是后续文档和验收的中心概念。
 - process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
 - managed Tetragon 已接入 restart 配置和 health 状态。
 - sensor tamper/blindness 已能作为 endpoint signal 写入 spool 并上传。

@@ -78,7 +78,6 @@ sensor:
   policy_path: $WORK/policy.yaml
   scope_type: container
   scope_selector: $NODE_A_DOCKER
-  container_id_prefix: $NODE_A_DOCKER
   observe_only: true
   restart: never
   max_restarts: 1

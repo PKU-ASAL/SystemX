@@ -109,6 +109,27 @@ func (c Config) Validate() error {
 	if c.Sensor.Mode != "managed" && c.Sensor.Mode != "external" {
 		return fmt.Errorf("sensor.mode must be managed or external")
 	}
+	scopeType := strings.TrimSpace(c.Sensor.ScopeType)
+	scopeSelector := strings.TrimSpace(c.Sensor.ScopeSelector)
+	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
+	if scopeType == "" {
+		scopeType = "host"
+	}
+	switch scopeType {
+	case "host", "container", "cgroup", "namespace", "pod":
+	default:
+		return fmt.Errorf("sensor.scope_type must be one of host, container, cgroup, namespace, pod")
+	}
+	if scopeType == "host" {
+		if scopeSelector != "" {
+			return fmt.Errorf("sensor.scope_selector must be empty when sensor.scope_type=host")
+		}
+	} else if scopeSelector == "" {
+		return fmt.Errorf("sensor.scope_selector is required when sensor.scope_type=%s", scopeType)
+	}
+	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
+		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")
+	}
 	if c.Spool.MaxBytes <= 0 {
 		return fmt.Errorf("spool.max_bytes must be positive")
 	}

@@ -67,7 +67,7 @@ Sensor Runtime
    - container 默认主路径已经去掉预加载 TracingPolicy。
    - VM provision 默认主路径已不再 preload policy；兼容性 preload 需显式降级为 replay/debug/perf 专用。
    - container/VM 主路径都应继续朝 agent 完整拥有 Tetragon process 和 policy lifecycle 收口。
-   - container 路线要继续从 `container_id_prefix` 这类实现级过滤,收口成正式的 runtime scope contract。
+   - container 路线要继续从 legacy `container_id_prefix` 兼容入口,收口到正式的 runtime scope contract: `scope_type + scope_selector`。
 2. **把 reliability 做成主路径证据**
    - manager outage drain、graceful shutdown flush、retry/backoff、agent restart 恢复都要继续用 e2e 证明,而不是只停留在局部单测或一次性 smoke。
 3. **避免把真实订阅误当成完整 ownership**
@@ -180,7 +180,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
-  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `sensor.container_id_prefix` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。下一步要把这种 workload 过滤能力从“container-specific config”收口成正式 scope contract。
+  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `scope_type=container` + `scope_selector=<container id prefix>` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`container_id_prefix` 仅作为 legacy config alias 保留，后续验收应以正式 scope contract 为准。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
@@ -1128,7 +1128,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool/restart/tamper 基础已经基本完成,后续重点应放在 harness 主路径迁移、systemd 和长跑可靠性上：
 
 1. 固化 container managed detection 聚合:
-   - 保持 `sensor.container_id_prefix` 或等价拓扑边界过滤，避免 host 噪音淹没真实 container 场景事件。
+   - 保持 `scope_type=container` + `scope_selector` 这类 runtime scope 过滤，避免 host 噪音淹没真实 container 场景事件。
    - 保留 `make -C test e2e-agent-detection-container-all` 作为三场景 smoke。
    - 保持 `make e2e TOPO=container ...` 作为正式 capture/assert 主路径，两者互为补充。
 2. 迁移 container capture/assert 主路径:
