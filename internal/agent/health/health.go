@@ -6,12 +6,18 @@ type AgentHealth struct {
 	AgentID       string       `json:"agent_id"`
 	HostID        string       `json:"host_id"`
 	TenantID      string       `json:"tenant_id"`
+	Scope         RuntimeScope `json:"scope"`
 	Status        string       `json:"status"`
 	UptimeSeconds int64        `json:"uptime_seconds"`
 	Sensor        SensorHealth `json:"sensor_health"`
 	Queue         QueueHealth  `json:"queue_health"`
 	Upload        UploadHealth `json:"upload_health"`
 	ObservedAt    time.Time    `json:"observed_at"`
+}
+
+type RuntimeScope struct {
+	Type     string `json:"type"`
+	Selector string `json:"selector,omitempty"`
 }
 
 type SensorHealth struct {

@@ -232,6 +232,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		AgentID:       "agent-a",
 		HostID:        "host-a",
 		TenantID:      "default",
+		Scope:         agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
 		Status:        "ok",
 		UptimeSeconds: 12,
 		ObservedAt:    time.Now().UTC(),
@@ -250,7 +251,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		t.Fatalf("health status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = get(t, handler, "/api/v1/agent-health?agent_id=agent-a&tenant_id=default")
-	for _, want := range []string{`"agent_id":"agent-a"`, `"sensor_health"`, `"queue_health"`, `"upload_health"`} {
+	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_health"`, `"queue_health"`, `"upload_health"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("health response missing %s: %s", want, rec.Body.String())
 		}

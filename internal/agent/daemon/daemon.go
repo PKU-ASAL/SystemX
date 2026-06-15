@@ -64,14 +64,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("policy", err)
 	}
-	scopeType := r.Config.Sensor.ScopeType
-	scopeSelector := r.Config.Sensor.ScopeSelector
-	if scopeType == "" && r.Config.Sensor.ContainerIDPrefix != "" {
-		scopeType = "container"
-	}
-	if scopeSelector == "" && r.Config.Sensor.ContainerIDPrefix != "" {
-		scopeSelector = r.Config.Sensor.ContainerIDPrefix
-	}
+	scope := r.runtimeScope()
+	scopeType := scope.Type
+	scopeSelector := scope.Selector
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
@@ -118,34 +113,17 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	for {
 		select {
 		case <-ctx.Done():
-			cancelUploads()
-			stopRuntime()
-			var drainErr error
-			if !opts.DrainOnce {
-				var stats uploadworker.Stats
-				drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
-				stats, drainErr = worker.DrainOnce(drainCtx)
-				cancel()
-				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
-				}
-			}
-			finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
-			if healthErr == nil {
-				if err := reporter.Report(context.Background(), finalHealth); err != nil && r.Out != nil {
-					fmt.Fprintf(r.Out, "agent final health report error: %v\n", err)
-				}
-				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_upload_error=%q\n",
-						finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.Upload.LastError)
-				}
-			}
+			drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, opts.DrainOnce, cancelUploads, stopRuntime)
 			if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 				return drainErr
 			}
 			return ctx.Err()
 		case ev, ok := <-events:
 			if !ok {
+				drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, opts.DrainOnce, cancelUploads, stopRuntime)
+				if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
+					return drainErr
+				}
 				return nil
 			}
 			batchID, err := r.spoolEvent(queue, norm, fp, ev)
@@ -207,6 +185,32 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	}
 }
 
+func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter *agenthealth.Reporter, startedAt time.Time, drainOnce bool, cancelUploads func(), stopRuntime func()) error {
+	cancelUploads()
+	stopRuntime()
+	var drainErr error
+	if !drainOnce {
+		var stats uploadworker.Stats
+		drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
+		stats, drainErr = worker.DrainOnce(drainCtx)
+		cancel()
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
+		}
+	}
+	finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
+	if healthErr == nil {
+		if err := reporter.Report(context.Background(), finalHealth); err != nil && r.Out != nil {
+			fmt.Fprintf(r.Out, "agent final health report error: %v\n", err)
+		}
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_upload_error=%q\n",
+				finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.Upload.LastError)
+		}
+	}
+	return drainErr
+}
+
 func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt time.Time, stage string, startupErr error) {
 	if reporter == nil || startupErr == nil {
 		return
@@ -215,6 +219,7 @@ func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt 
 		AgentID:       r.Config.Agent.ID,
 		HostID:        r.Config.Agent.HostID,
 		TenantID:      r.Config.Agent.TenantID,
+		Scope:         r.runtimeScope(),
 		Status:        "degraded",
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    time.Now().UTC(),
@@ -291,6 +296,7 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 		AgentID:       r.Config.Agent.ID,
 		HostID:        r.Config.Agent.HostID,
 		TenantID:      r.Config.Agent.TenantID,
+		Scope:         r.runtimeScope(),
 		Status:        status,
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    now,
@@ -324,6 +330,21 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 			LastError:        uploadStats.LastError,
 		},
 	}, nil
+}
+
+func (r *Runner) runtimeScope() agenthealth.RuntimeScope {
+	scopeType := r.Config.Sensor.ScopeType
+	scopeSelector := r.Config.Sensor.ScopeSelector
+	if scopeType == "" && r.Config.Sensor.ContainerIDPrefix != "" {
+		scopeType = "container"
+	}
+	if scopeType == "" {
+		scopeType = "host"
+	}
+	if scopeSelector == "" && r.Config.Sensor.ContainerIDPrefix != "" {
+		scopeSelector = r.Config.Sensor.ContainerIDPrefix
+	}
+	return agenthealth.RuntimeScope{Type: scopeType, Selector: scopeSelector}
 }
 
 func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {

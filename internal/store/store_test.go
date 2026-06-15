@@ -161,6 +161,7 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 		AgentID:    "agent-a",
 		HostID:     "host-a",
 		TenantID:   "default",
+		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
 		Status:     "ok",
 		ObservedAt: time.Now().UTC(),
 		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 1},
@@ -169,6 +170,7 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 		AgentID:    "agent-a",
 		HostID:     "host-a",
 		TenantID:   "default",
+		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
 		Status:     "degraded",
 		ObservedAt: time.Now().UTC(),
 		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 2},
@@ -184,7 +186,7 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 	if !ok {
 		t.Fatal("agent health not found")
 	}
-	if got.Status != "degraded" || got.Sensor.EventsSeen != 2 {
+	if got.Status != "degraded" || got.Sensor.EventsSeen != 2 || got.Scope.Type != "container" || got.Scope.Selector != "abc123" {
 		t.Fatalf("health = %+v", got)
 	}
 	if got := reloaded.ListAgentHealth(); len(got) != 1 {

@@ -184,6 +184,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - health payload 已包含 queue/upload/sensor 的主要状态。
 - `internal/agent/health`:
   - agent health model。
+  - health payload 已包含 runtime `scope` identity。
   - agent health reporter。
 - `internal/transport/link1` / `internal/store` / `cmd/sysarmorctl`:
   - manager 已支持 latest agent health ingest/query。
@@ -680,6 +681,7 @@ AgentHealth
   agent_id
   host_id
   tenant_id
+  scope
   status
   uptime_seconds
   sensor_health
