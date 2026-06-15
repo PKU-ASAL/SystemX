@@ -150,6 +150,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - Sensor interface。
   - Capability / CollectionIntent / EventEnvelope / Health。
   - CollectionIntent 已有 runtime scope 归一和校验入口。
+  - `host | container | cgroup | namespace | pod` scope 类型已进入 runtime contract 校验。
   - observe-only/unsupported Enforce 边界。
 - `internal/sensor/runtime`:
   - fake backend lifecycle 测试骨架。
@@ -162,6 +163,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - Tetragon backend skeleton。
   - 从 JSONL/stdin 读取事件。
   - policy file 存在性校验。
+  - runtime scope 过滤已覆盖 `host | container | cgroup | namespace | pod`；当前 Tetragon backend 中 `container/pod` 映射到 `container_id` 前缀,`cgroup/namespace` 映射到 `proc.cgroup` 前缀。
   - 根据 `CollectionIntent` 生成最小 Tetragon TracingPolicy,并在 managed `tetra` 路径执行 `tetra tracingpolicy add` 后用 `tetra tracingpolicy list` 验证 `sysarmor-runtime-collection` 已加载。
   - health 计数、parse error、raw ref 记录。
 - `internal/agent/spool`:
@@ -214,7 +216,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - dropped events / parse errors / degraded 状态已有阈值配置、health 暴露和本机 e2e 验收；后续重点转向真实 Tetragon 主路径中的 dropped counter 对齐。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和带 runtime scope entity 的 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
-  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅已通过正式 `sensor.scope.type=container` + `sensor.scope.selector=<container id prefix>` 收紧到 node-a workload scope,并完成聚合验证。container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`scope_type/scope_selector` 仅作为扁平兼容入口,`container_id_prefix` 仅作为 legacy config alias 保留。
+  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅已通过正式 `sensor.scope.type=container` + `sensor.scope.selector=<container id prefix>` 收紧到 node-a workload scope,并完成聚合验证。container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`host/container/cgroup/namespace/pod` scope 均有 backend 过滤语义和单测覆盖,`scope_type/scope_selector` 仅作为扁平兼容入口,`container_id_prefix` 仅作为 legacy config alias 保留。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
