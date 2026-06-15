@@ -47,10 +47,10 @@ Sensor Runtime
 其中:
 
 - VM / 裸机是 `host scope`
-- 单个容器或 cgroup 是 `container/cgroup scope`
+- 单个容器或 cgroup workload 是 `container/cgroup scope`
 - K8s workload 是 `pod/namespace scope`
 
-也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。VM 只是 `scope.type=host` 的一个部署形态;容器、cgroup、pod、namespace 则是同一 runtime contract 下的不同采集边界。这个 contract 也是后续代码、配置和测试的共同语言:配置表达 scope,policy 编译使用 scope,health 归属到某个 runtime scope,manager 侧则按同一 identity 观察 agent 状态。
+也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。VM 只是 `scope.type=host` 的一个部署形态;容器、cgroup、pod、namespace 则是同一 runtime contract 下的不同采集边界。这个 contract 也是后续代码、配置和测试的共同语言:配置表达 scope,policy 编译使用 scope,health 归属到某个 runtime scope,manager 侧则按同一 identity 观察 agent 状态。对容器来说,默认形态应是独立 privileged `sysarmor-agent + tetragon` sensor container 观测目标 workload,而不是把业务容器本体当成“迷你 VM”来塞入 agent。
 
 Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
 
