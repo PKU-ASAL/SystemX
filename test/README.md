@@ -1,7 +1,7 @@
 # SysArmor 测试环境
 
 两种独立拓扑(容器 / VM),验证 EDR 采集能**跨 namespace 和终端类型**工作:
-同一套 TracingPolicy,不管 endpoint 是容器还是 VM,tetragon 都产出结构一致的 Event。
+同一套场景与事实契约,不管 endpoint 是容器还是 VM,都应产出结构一致的 Event/Signal/Incident。
 
 ## 拓扑
 
@@ -79,7 +79,7 @@ test/
 │   │   ├── Vagrantfile       VM 拓扑声明
 │   │   └── provision/        install-tetragon / setup-c2 / setup-credentials
 │   └── resources/            共享资源
-│       ├── syscall-capture.yaml   TracingPolicy (唯一真正执行的 policy)
+│       ├── syscall-capture.yaml   replay/debug/perf 兼容 TracingPolicy
 │       └── registry-token         假凭据
 │
 ├── scenarios/               执行:攻击脚本 + 期望契约
@@ -154,7 +154,7 @@ docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
   --scenario grpc-smoke --input-jsonl /tmp/lifecycle.sensor.jsonl
 ```
 
-`capture-container` 和 `capture-vm` 默认启动 v2 daemon,由 agent 托管 `tetra getevents` 订阅。container 拓扑会按 `node-a` 的 Docker container id 过滤 Tetragon 事件,避免宿主机或其他容器噪音淹没场景事件。
+`capture-container` 和 `capture-vm` 默认启动 v2 daemon,由 agent 托管 `tetra getevents` 订阅并 apply runtime policy。container 拓扑会按 `node-a` 的 Docker container id 过滤 Tetragon 事件,避免宿主机或其他容器噪音淹没场景事件。
 如需回归 v1 调试路径,可使用 `CAPTURE_MODE=replay make capture TOPO=container SCENARIO=...` 或 `CAPTURE_MODE=replay make capture TOPO=vm SCENARIO=...`;该模式仍会保留实际喂给 agent 的 Tetragon 样本到 `.results/*.tetragon.jsonl`,并用 `replay_scenario.py` 上传契约级 SensorEvent。
 agent 也仍支持直接读取 Tetragon raw JSONL,用于 raw adapter smoke。
 
@@ -189,6 +189,7 @@ docker exec tetragon /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.1
 - 容器镜像源:`docker.1panel.live`(实测可用);`docker.1ms.run` 坏的。
 - 容器内 apt 源需 sed 为 `mirrors.edge.kernel.org` + 关 https 校验。
 - VM tetragon 从 GitHub release 下载 tarball;VM 内 GitHub 被墙时需手动下载。
+- VM provision 默认不再预加载 `syscall-capture.yaml`;如需兼容 replay/debug/perf，可在 provision 时显式设置 `SYSARMOR_PRELOAD_VM_POLICY=1`。
 - 容器拓扑 tetragon `--pid=host`,当前靠 TracingPolicy selector 过滤噪音;后续可加 `--cgroup-filter`。
 - VM 拓扑修改脚本后需 `make provision`(rsync + re-provision)。
 - VM topology 在 `mgr` VM 内运行 `sysarmor-manager` 和 `sysarmorctl`,在 `node-a` VM 内运行 agent stream。

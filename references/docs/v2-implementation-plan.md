@@ -1,7 +1,7 @@
 # SysArmor v2 Implementation Plan
 
 Date: 2026-06-15
-Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, container policy-preload removal, VM real Tetragon systemd smoke, and VM owned-process smoke commits.
+Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, container policy-preload removal, VM default policy-preload removal, VM real Tetragon systemd smoke, and VM owned-process smoke commits.
 
 ## 1. Goal
 
@@ -38,7 +38,7 @@ later: XDR platform
 
 1. **继续收口 ownership**
    - container 默认主路径已经去掉预加载 TracingPolicy。
-   - VM provision 里仍保留兼容性 policy preload,需要迁出主路径或明确降级成 replay/debug/perf 专用。
+   - VM provision 默认主路径已不再 preload policy；兼容性 preload 需显式降级为 replay/debug/perf 专用。
    - container/VM 主路径都应继续朝 agent 完整拥有 Tetragon process 和 policy lifecycle 收口。
 2. **把 reliability 做成主路径证据**
    - manager outage drain、graceful shutdown flush、retry/backoff、agent restart 恢复都要继续用 e2e 证明,而不是只停留在局部单测或一次性 smoke。
@@ -148,7 +148,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Sensor/runtime:
   - capability 探测仍偏最小骨架。
-  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 默认启动路径已不再预加载 TracingPolicy；VM provision 中仍保留预加载兼容步骤,需要继续迁出或限定为 replay/debug。
+  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 和 VM provision 默认主路径都已不再预加载 TracingPolicy；VM 仅保留显式兼容模式 preload,限定在 replay/debug/perf。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
@@ -165,7 +165,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
 
-- **主路径 ownership 收口**: 把 container/VM 主路径中残留的 topology/provision 预置 Tetragon process/policy 继续迁出或严格限定在 replay/debug。
+- **主路径 ownership 收口**: 把 container/VM 主路径中残留的 topology/provision 预置 Tetragon process/policy 继续迁出或严格限定在 replay/debug/perf。
 - **长期运行语义收口**: 用更明确的测试证据覆盖 manager outage drain、graceful shutdown flush、retry/backoff soak、degraded/recovered health。
 
 如果再说得更直接一点,当前 plan 最容易让人误读的地方有两个:
@@ -758,7 +758,7 @@ WantedBy=multi-user.target
 
 ### Phase 2: Policy Compile / Apply Chain
 
-状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已不再依赖 harness 预加载 TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；container topology 默认启动路径已去掉预加载 TracingPolicy，VM provision 中仍保留兼容步骤,需要继续迁出或限定为 replay/debug。
+状态：大部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已不再依赖 harness/provision 预加载 TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；container topology 与 VM provision 默认启动路径都已去掉预加载 TracingPolicy，VM 仅保留显式兼容模式用于 replay/debug/perf。
 
 任务：
 
@@ -771,7 +771,7 @@ WantedBy=multi-user.target
 
 - policy apply 成功/失败都有明确测试。
 - container/VM e2e policy 由 agent/runtime 管理。
-- VM 默认主路径不再依赖 provision 预加载 policy；若保留兼容路径,必须明确标注为 replay/debug/perf 专用。
+- VM 默认主路径不再依赖 provision 预加载 policy；兼容 preload 必须显式开关控制并明确标注为 replay/debug/perf 专用。
 
 ### Phase 3: Tetragon Managed Backend
 

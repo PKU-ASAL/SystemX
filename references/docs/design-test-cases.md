@@ -64,7 +64,7 @@ Phase 0 证明"传感器原料正确";Phase 1 证明"整个管线成立"。Phase
 └─────────────────────────────────┘        不需要 Docker
 ```
 
-两拓扑共享:同一份 TracingPolicy (`env/resources/syscall-capture.yaml`)、同一套 IP (10.66.0.0/24)、同一套 expected.yaml 契约。
+两拓扑共享:同一套 IP (10.66.0.0/24)、同一套 expected.yaml 契约,以及同一份 replay/debug 兼容 TracingPolicy (`env/resources/syscall-capture.yaml`)。
 区别仅在于 tetragon 运行位置(宿主内核 vs VM 内核)和攻击触发方式。
 
 ### 2.2 节点角色
@@ -89,7 +89,7 @@ Phase 0 证明"传感器原料正确";Phase 1 证明"整个管线成立"。Phase
 
 ### 2.4 TracingPolicy 详情
 
-两拓扑共用 `env/resources/syscall-capture.yaml`,采集两类内核事件:
+在 replay/debug 兼容路径下,两拓扑共用 `env/resources/syscall-capture.yaml`,采集两类内核事件:
 
 | kprobe | 采集什么 | selector |
 |---|---|---|
@@ -401,7 +401,7 @@ test/
 │   │   ├── Vagrantfile       VM 拓扑声明
 │   │   └── provision/        install-tetragon / setup-c2 / setup-credentials
 │   └── resources/            共享资源
-│       ├── syscall-capture.yaml  TracingPolicy (去重,两拓扑共用)
+│       ├── syscall-capture.yaml  replay/debug 兼容 TracingPolicy (两拓扑共用)
 │       └── registry-token        假凭据
 ├── scenarios/               执行:攻击脚本 + 期望契约
 │   ├── container/            容器拓扑场景 (docker exec 触发)

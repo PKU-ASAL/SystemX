@@ -4,6 +4,7 @@
 # 该 tarball 包含二进制(tetragon + tetra) + BPF lib(*.o)，和未来 manager 下发 sensor 是同一模式。
 set -euo pipefail
 TET_VER="${TET_VER:-v1.7.0}"
+SYSARMOR_PRELOAD_VM_POLICY="${SYSARMOR_PRELOAD_VM_POLICY:-0}"
 
 echo "[provision] kernel: $(uname -r)"
 if [[ ! -e /sys/kernel/btf/vmlinux ]]; then
@@ -64,15 +65,18 @@ systemctl daemon-reload
 
 if command -v tetragon >/dev/null 2>&1; then
   systemctl enable --now tetragon || echo "[provision][WARN] tetragon 服务启动失败"
-  # 加载 TracingPolicy
+  # v2 默认主路径不再依赖 provision 预加载 TracingPolicy。
+  # 如需兼容 replay/debug/perf，可显式设置 SYSARMOR_PRELOAD_VM_POLICY=1。
   POLICY="/vagrant/test/env/resources/syscall-capture.yaml"
-  if [[ -f "$POLICY" ]]; then
+  if [[ "$SYSARMOR_PRELOAD_VM_POLICY" == "1" && -f "$POLICY" ]]; then
     for i in $(seq 1 15); do
       tetra tracingpolicy list >/dev/null 2>&1 && break
       sleep 2
     done
     tetra tracingpolicy add "$POLICY" 2>&1 | tail -1 || true
-    echo "[provision] TracingPolicy 加载完成"
+    echo "[provision] 兼容模式: TracingPolicy 预加载完成"
+  else
+    echo "[provision] 跳过 TracingPolicy 预加载（默认由 agent/runtime apply；兼容模式请设 SYSARMOR_PRELOAD_VM_POLICY=1）"
   fi
 else
   echo "[provision][ERROR] tetragon 二进制不可用，服务未启动"

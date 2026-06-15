@@ -12,7 +12,7 @@
 | Vagrantfile | env/vm/ | 声明 3 VM (同 IP 分配) |
 | Dockerfile ×3 | env/container/images/ | attacker: C2 服务; node-a: web 运行时+CI+假凭据; mgr: 预留 |
 | provision 脚本 ×3 | env/vm/provision/ | install-tetragon.sh / setup-c2.sh / setup-credentials.sh |
-| TracingPolicy | env/resources/syscall-capture.yaml | tetragon 采集策略(两拓扑共用) |
+| TracingPolicy | env/resources/syscall-capture.yaml | replay/debug/perf 兼容的 tetragon 采集策略 |
 | 假凭据 | env/resources/registry-token | 植入 node-a 的假 SA token |
 
 ### TracingPolicy 详情
