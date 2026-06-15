@@ -753,6 +753,62 @@ func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
 	}
 }
 
+func TestRunnerReportsStartupFailureHealthToManager(t *testing.T) {
+	reported := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
+			t.Errorf("token header = %q", got)
+		}
+		if r.URL.Path != "/api/v1/agent-health" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode health: %v", err)
+		}
+		select {
+		case reported <- body:
+		default:
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+			Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+			Sensor:  config.SensorConfig{Backend: "tetragon"},
+			Spool:   config.SpoolConfig{Path: filepath.Join(t.TempDir(), "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+			Upload:  config.UploadConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
+			Health:  config.HealthConfig{Interval: time.Hour},
+		},
+		Sensor: &capabilityErrorSensor{err: errors.New("btf unavailable")},
+	}
+	err := runner.Run(context.Background(), Options{Out: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), "btf unavailable") {
+		t.Fatalf("Run() error = %v", err)
+	}
+	select {
+	case body := <-reported:
+		if body["status"] != "degraded" {
+			t.Fatalf("health body = %+v", body)
+		}
+		sensor, ok := body["sensor_health"].(map[string]any)
+		if !ok {
+			t.Fatalf("sensor_health missing: %+v", body)
+		}
+		if sensor["running"] != false {
+			t.Fatalf("sensor running = %v", sensor["running"])
+		}
+		if got, _ := sensor["last_error"].(string); !strings.Contains(got, "probe: btf unavailable") {
+			t.Fatalf("sensor last_error = %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for startup failure health report")
+	}
+}
+
 func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
@@ -948,6 +1004,30 @@ func TestTetragonRestartPolicyFromConfig(t *testing.T) {
 
 type healthOnlySensor struct {
 	health contract.Health
+}
+
+type capabilityErrorSensor struct {
+	err error
+}
+
+func (s *capabilityErrorSensor) Capability(context.Context) (contract.Capability, error) {
+	return contract.Capability{}, s.err
+}
+
+func (s *capabilityErrorSensor) Apply(context.Context, contract.CollectionIntent) error {
+	return nil
+}
+
+func (s *capabilityErrorSensor) Subscribe(context.Context, contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	return nil, nil
+}
+
+func (s *capabilityErrorSensor) Enforce(_ context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {
+	return contract.UnsupportedAck(cmd, "test sensor"), nil
+}
+
+func (s *capabilityErrorSensor) Health(context.Context) (contract.Health, error) {
+	return contract.Health{}, nil
 }
 
 func (s *healthOnlySensor) Capability(context.Context) (contract.Capability, error) {

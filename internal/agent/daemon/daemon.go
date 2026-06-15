@@ -49,14 +49,20 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if opts.Out != nil {
 		r.Out = opts.Out
 	}
+	startedAt := time.Now()
+	reporter := agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	failStartup := func(stage string, err error) error {
+		r.reportStartupFailure(reporter, startedAt, stage, err)
+		return err
+	}
 	rt := sensorruntime.New(r.Sensor)
 	capability, err := rt.Probe(ctx)
 	if err != nil {
-		return err
+		return failStartup("probe", err)
 	}
 	intent, err := policy.LoadCollectionIntent(r.Config.Sensor.PolicyPath, r.Config.Sensor.ObserveOnly)
 	if err != nil {
-		return err
+		return failStartup("policy", err)
 	}
 	scopeType := r.Config.Sensor.ScopeType
 	scopeSelector := r.Config.Sensor.ScopeSelector
@@ -68,19 +74,19 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	}
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
 	if err := rt.Apply(ctx, intent); err != nil {
-		return err
+		return failStartup("apply", err)
 	}
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
-		return err
+		return failStartup("subscribe", err)
 	}
 	queue, err := spool.OpenWithLimit(r.Config.Spool.Path, r.Config.Spool.MaxBytes)
 	if err != nil {
-		return err
+		return failStartup("spool", err)
 	}
 	worker, err := r.uploadWorker(queue)
 	if err != nil {
-		return err
+		return failStartup("upload", err)
 	}
 	uploadCtx := ctx
 	cancelUploads := func() {}
@@ -98,8 +104,6 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 
 	ticker := time.NewTicker(r.Config.Health.Interval)
 	defer ticker.Stop()
-	startedAt := time.Now()
-	reporter := agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 	tamperDetector := &tamper.Detector{}
 	stopped := false
 	stopRuntime := func() {
@@ -199,6 +203,35 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				return nil
 			}
 		}
+	}
+}
+
+func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt time.Time, stage string, startupErr error) {
+	if reporter == nil || startupErr == nil {
+		return
+	}
+	health := agenthealth.AgentHealth{
+		AgentID:       r.Config.Agent.ID,
+		HostID:        r.Config.Agent.HostID,
+		TenantID:      r.Config.Agent.TenantID,
+		Status:        "degraded",
+		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
+		ObservedAt:    time.Now().UTC(),
+		Sensor: agenthealth.SensorHealth{
+			Backend:      r.Config.Sensor.Backend,
+			Installed:    false,
+			Running:      false,
+			PolicyLoaded: false,
+			LastError:    fmt.Sprintf("%s: %v", stage, startupErr),
+		},
+		Queue:  agenthealth.QueueHealth{},
+		Upload: agenthealth.UploadHealth{},
+	}
+	if err := reporter.Report(context.Background(), health); err != nil && r.Out != nil {
+		fmt.Fprintf(r.Out, "agent startup health report error: %v\n", err)
+	}
+	if r.Out != nil {
+		fmt.Fprintf(r.Out, "agent startup failure: stage=%s error=%q\n", stage, startupErr)
 	}
 }
 
