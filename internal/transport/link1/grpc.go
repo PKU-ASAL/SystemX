@@ -2,6 +2,7 @@ package link1
 
 import (
 	"context"
+	"errors"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	"google.golang.org/grpc/codes"
@@ -24,6 +25,9 @@ func (s *grpcServer) Upload(ctx context.Context, batch *analyticsv1.UploadBatch)
 	}
 	result, err := s.srv.AcceptUpload(batch)
 	if err != nil {
+		if errors.Is(err, ErrInvalidUpload) {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "accept upload: %v", err)
 	}
 	return &analyticsv1.UploadAck{

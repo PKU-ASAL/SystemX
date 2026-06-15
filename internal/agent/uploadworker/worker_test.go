@@ -176,7 +176,7 @@ func openQueue(t *testing.T) *spool.Queue {
 func mustAppend(t *testing.T, q *spool.Queue, eventID string) {
 	t.Helper()
 	if _, err := q.Append(&analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", Version: "test"},
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
 			Id:      eventID,
 			AgentId: "agent-a",

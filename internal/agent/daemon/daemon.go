@@ -384,9 +384,10 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *
 	}
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{
-			AgentId: r.Config.Agent.ID,
-			HostId:  r.Config.Agent.HostID,
-			Version: "dev",
+			AgentId:  r.Config.Agent.ID,
+			HostId:   r.Config.Agent.HostID,
+			TenantId: r.Config.Agent.TenantID,
+			Version:  "dev",
 		},
 		Events:  []*eventv1.CanonicalEvent{canonical},
 		Signals: signals,
@@ -397,9 +398,10 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *
 func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (string, error) {
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{
-			AgentId: r.Config.Agent.ID,
-			HostId:  r.Config.Agent.HostID,
-			Version: "dev",
+			AgentId:  r.Config.Agent.ID,
+			HostId:   r.Config.Agent.HostID,
+			TenantId: r.Config.Agent.TenantID,
+			Version:  "dev",
 		},
 		Signals: signals,
 	}

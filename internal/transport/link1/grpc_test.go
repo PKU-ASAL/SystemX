@@ -41,7 +41,7 @@ func TestGRPCUpload(t *testing.T) {
 
 	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
 		BatchId: "00000000000000000007",
-		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
+		Agent:   &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host", TenantId: "default"},
 		Signals: []*signalv1.Signal{
 			endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
 			endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
@@ -83,19 +83,50 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	defer conn.Close()
 
 	_, err = analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
+		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host", TenantId: "default"},
 	})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Upload() error = %v, want unauthenticated", err)
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", "dev-token")
 	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
+		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host", TenantId: "default"},
 	})
 	if err != nil {
 		t.Fatalf("Upload() with token error = %v", err)
 	}
 	if !ack.GetOk() {
 		t.Fatalf("ack = %#v", ack)
+	}
+}
+
+func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
+	st := &store.Store{}
+	server := NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	_, err = analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("Upload() error = %v, want invalid argument", err)
 	}
 }

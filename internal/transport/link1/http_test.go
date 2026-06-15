@@ -20,6 +20,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
 		Signals: []*signalv1.Signal{
 			endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
 			endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
@@ -76,7 +77,7 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	handler := NewServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
 		BatchId: "00000000000000000042",
-		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a"},
+		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
 		Events: []*eventv1.CanonicalEvent{{
 			Id:   "ev-ack",
 			Kind: eventv1.EventKind_EVENT_KIND_EXEC,
@@ -101,11 +102,28 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	}
 }
 
+func TestHTTPUploadRequiresAgentIdentity(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "tenant_id") {
+		t.Fatalf("upload status = %d body=%s, want missing tenant_id bad request", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAgentsEventsResetAndRecompute(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", Version: "test"},
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
 			Id:       "ev-1",
 			Scenario: "apt-staged-drop",
@@ -190,7 +208,7 @@ func TestHTTPAuthRequiresDevTokenForUploadAndHealth(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServerWithAuth(st, "dev-token").Handler()
 	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a"},
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -282,6 +300,9 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 
 func upload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
 	t.Helper()
+	if batch.Agent == nil {
+		batch.Agent = &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"}
+	}
 	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
 	if err != nil {
 		t.Fatal(err)

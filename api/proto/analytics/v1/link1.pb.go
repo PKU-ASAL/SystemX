@@ -28,6 +28,7 @@ type AgentHello struct {
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	HostId        string                 `protobuf:"bytes,2,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	TenantId      string                 `protobuf:"bytes,4,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -79,6 +80,13 @@ func (x *AgentHello) GetHostId() string {
 func (x *AgentHello) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *AgentHello) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
 	}
 	return ""
 }
@@ -231,12 +239,13 @@ var File_api_proto_analytics_v1_link1_proto protoreflect.FileDescriptor
 
 const file_api_proto_analytics_v1_link1_proto_rawDesc = "" +
 	"\n" +
-	"\"api/proto/analytics/v1/link1.proto\x12\x15sysarmor.analytics.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"Z\n" +
+	"\"api/proto/analytics/v1/link1.proto\x12\x15sysarmor.analytics.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"w\n" +
 	"\n" +
 	"AgentHello\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"\xd2\x01\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1b\n" +
+	"\ttenant_id\x18\x04 \x01(\tR\btenantId\"\xd2\x01\n" +
 	"\vUploadBatch\x127\n" +
 	"\x05agent\x18\x01 \x01(\v2!.sysarmor.analytics.v1.AgentHelloR\x05agent\x129\n" +
 	"\x06events\x18\x02 \x03(\v2!.sysarmor.event.v1.CanonicalEventR\x06events\x124\n" +

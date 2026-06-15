@@ -2,9 +2,11 @@ package link1
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
@@ -31,6 +33,8 @@ type UploadResult struct {
 	CloudSignals    int
 	Incidents       int
 }
+
+var ErrInvalidUpload = errors.New("invalid upload")
 
 func NewServer(st *store.Store) *Server {
 	return &Server{store: st, engine: ingest.NewEngine()}
@@ -94,6 +98,10 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.AcceptUpload(batch)
 	if err != nil {
+		if errors.Is(err, ErrInvalidUpload) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -107,6 +115,9 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, error) {
+	if err := validateUploadIdentity(batch); err != nil {
+		return UploadResult{}, err
+	}
 	s.store.AddAgent(batch.GetAgent())
 	touchedScenarios := map[string]bool{}
 	for _, ev := range batch.GetEvents() {
@@ -134,6 +145,27 @@ func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, err
 		CloudSignals:    cloudSignals,
 		Incidents:       incidents,
 	}, nil
+}
+
+func validateUploadIdentity(batch *analyticsv1.UploadBatch) error {
+	if batch == nil || batch.GetAgent() == nil {
+		return fmt.Errorf("%w: agent identity is required", ErrInvalidUpload)
+	}
+	agent := batch.GetAgent()
+	missing := []string{}
+	if agent.GetAgentId() == "" {
+		missing = append(missing, "agent_id")
+	}
+	if agent.GetHostId() == "" {
+		missing = append(missing, "host_id")
+	}
+	if agent.GetTenantId() == "" {
+		missing = append(missing, "tenant_id")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: agent identity missing %s", ErrInvalidUpload, strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]bool) (int, int) {

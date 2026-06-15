@@ -98,6 +98,8 @@ AGENT_PID=$!
 
 wait_contains "sysarmorctl agents" "e2e-agent-health" "$RESULTS/e2e-agent-health.agents.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
+wait_contains "sysarmorctl agents tenant" '"tenant_id":"default"' "$RESULTS/e2e-agent-health.agents.json" \
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
 wait_contains "sysarmorctl agent-health" '"agent_id":"e2e-agent-health"' "$RESULTS/e2e-agent-health.health.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-health.health.json" \

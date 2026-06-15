@@ -117,7 +117,7 @@ func (s *Store) AddAgent(agent *analyticsv1.AgentHello) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, existing := range s.Agents {
-		if existing.GetAgentId() == agent.GetAgentId() {
+		if existing.GetTenantId() == agent.GetTenantId() && existing.GetAgentId() == agent.GetAgentId() {
 			s.Agents[i] = agent
 			return
 		}

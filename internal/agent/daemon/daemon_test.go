@@ -673,8 +673,8 @@ func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	var (
-		mu       sync.Mutex
-		healths  []map[string]any
+		mu      sync.Mutex
+		healths []map[string]any
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
@@ -875,7 +875,7 @@ func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := queue.Append(&analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", Version: "test"},
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
 			Id:      "event-a",
 			AgentId: "agent-a",

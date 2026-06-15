@@ -36,6 +36,7 @@ func main() {
 	transport := flag.String("transport", "http", "upload transport: http or grpc")
 	agentID := flag.String("agent-id", "agent-dev", "agent identifier")
 	hostID := flag.String("host-id", "host-dev", "host identifier")
+	tenantID := flag.String("tenant-id", "default", "tenant identifier")
 	scenario := flag.String("scenario", "", "scenario label for replayed events")
 	input := flag.String("input-jsonl", "", "upload CanonicalEvent/Signal protojson lines from this file")
 	stream := flag.String("stream-jsonl", "", "stream SensorEvent/Tetragon JSONL from this file, or '-' for stdin")
@@ -49,7 +50,7 @@ func main() {
 	}
 
 	if *input != "" {
-		if err := uploadJSONL(*manager, *transport, *agentID, *hostID, *scenario, *input); err != nil {
+		if err := uploadJSONL(*manager, *transport, *agentID, *hostID, *tenantID, *scenario, *input); err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmor-agent: %v\n", err)
 			os.Exit(1)
 		}
@@ -57,7 +58,7 @@ func main() {
 	}
 
 	if *stream != "" {
-		stats, err := streamJSONL(*manager, *transport, *agentID, *hostID, *scenario, *stream, *batchSize, *flushInterval)
+		stats, err := streamJSONL(*manager, *transport, *agentID, *hostID, *tenantID, *scenario, *stream, *batchSize, *flushInterval)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmor-agent: %v\n", err)
 			os.Exit(1)
@@ -97,7 +98,7 @@ func runDaemonCommand(args []string) error {
 	return runner.Run(ctx, daemon.Options{Once: *once, DrainOnce: *drainOnce, Out: os.Stdout})
 }
 
-func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) error {
+func uploadJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string) error {
 	f, err := os.Open(input)
 	if err != nil {
 		return err
@@ -108,9 +109,10 @@ func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) er
 		return err
 	}
 	batch.Agent = &analyticsv1.AgentHello{
-		AgentId: agentID,
-		HostId:  hostID,
-		Version: version,
+		AgentId:  agentID,
+		HostId:   hostID,
+		TenantId: tenantID,
+		Version:  version,
 	}
 	up, err := newUploader(manager, transport)
 	if err != nil {
@@ -120,7 +122,7 @@ func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) er
 	return err
 }
 
-func streamJSONL(manager, transport, agentID, hostID, scenario, input string, batchSize int, flushInterval time.Duration) (uploader.StreamStats, error) {
+func streamJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, batchSize int, flushInterval time.Duration) (uploader.StreamStats, error) {
 	r := os.Stdin
 	if input != "-" {
 		f, err := os.Open(input)
@@ -137,6 +139,7 @@ func streamJSONL(manager, transport, agentID, hostID, scenario, input string, ba
 	return uploader.StreamJSONL(context.Background(), r, up, uploader.StreamOptions{
 		AgentID:       agentID,
 		HostID:        hostID,
+		TenantID:      tenantID,
 		Scenario:      scenario,
 		Version:       version,
 		BatchSize:     batchSize,

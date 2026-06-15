@@ -197,7 +197,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - graceful shutdown、flush 语义还未完整验收。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
 - health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke 以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
-  - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
+  - tenant/agent identity 已进入 upload、health 和 store 主链路；manager 已对 upload agent/host/tenant identity 做最小校验,但还不是完整 RBAC/enrollment。
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
 
@@ -893,12 +893,13 @@ WantedBy=multi-user.target
 
 ### Phase 6: Registration/Auth, Heartbeat, Health API
 
-状态：基本完成。dev token 校验、agent health ingest/query、`sysarmorctl agent-health`、本机 degraded→recovered health smoke、container 主路径 degraded→recovered health smoke 以及 VM 主路径 degraded→recovered health smoke 已落地；剩余重点是 tenant/agent 维度一致性与 ownership 更真实验收。
+状态：基本完成。dev token 校验、upload identity validation、agent health ingest/query、`sysarmorctl agent-health`、本机 degraded→recovered health smoke、container 主路径 degraded→recovered health smoke 以及 VM 主路径 degraded→recovered health smoke 已落地；剩余重点是 ownership 更真实验收和后续 RBAC/enrollment。
 
 任务：
 
 - 保持 config 中 agent/tenant/token 为 daemon 主路径必需身份。
 - 保持 upload/health payload 带 identity。
+- manager upload 对 agent_id / host_id / tenant_id 做最小校验,store 按 tenant_id + agent_id 维度保存 agent/health。
 - 保持 manager dev auth 支持静态 token 校验,并可在测试中关闭或固定。
 - 补齐 health recent/degraded/recovered 的 e2e 断言。
 - 确认 `sysarmorctl agents` 和 `sysarmorctl agent-health` 的输出满足测试与排障需要。

@@ -49,6 +49,9 @@ func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
 	if rec.batches[0].GetAgent().GetAgentId() != "agent-a" {
 		t.Fatalf("agent metadata missing: %#v", rec.batches[0].GetAgent())
 	}
+	if rec.batches[0].GetAgent().GetTenantId() != "default" {
+		t.Fatalf("tenant metadata missing: %#v", rec.batches[0].GetAgent())
+	}
 	firstRef := rec.batches[0].GetEvents()[0].GetRawRef()
 	if firstRef == "" {
 		t.Fatal("first event raw ref is empty")

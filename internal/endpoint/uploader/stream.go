@@ -23,6 +23,7 @@ type BatchUploader interface {
 type StreamOptions struct {
 	AgentID       string
 	HostID        string
+	TenantID      string
 	Scenario      string
 	Version       string
 	BatchSize     int
@@ -135,10 +136,15 @@ func scanLines(r io.Reader) <-chan scannedLine {
 }
 
 func newBatch(opts StreamOptions) *analyticsv1.UploadBatch {
+	tenantID := opts.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
 	return &analyticsv1.UploadBatch{Agent: &analyticsv1.AgentHello{
-		AgentId: opts.AgentID,
-		HostId:  opts.HostID,
-		Version: opts.Version,
+		AgentId:  opts.AgentID,
+		HostId:   opts.HostID,
+		TenantId: tenantID,
+		Version:  opts.Version,
 	}}
 }
 

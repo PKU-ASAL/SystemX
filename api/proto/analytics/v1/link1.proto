@@ -11,6 +11,7 @@ message AgentHello {
   string agent_id = 1;
   string host_id = 2;
   string version = 3;
+  string tenant_id = 4;
 }
 
 message UploadBatch {

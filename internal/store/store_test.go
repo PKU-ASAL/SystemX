@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -119,6 +120,22 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	})
 	if got := st.ListIncidents("a"); len(got) != 1 {
 		t.Fatalf("incidents after semantic duplicate upsert = %d, want 1", len(got))
+	}
+}
+
+func TestAddAgentSeparatesTenants(t *testing.T) {
+	st := &Store{}
+	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "tenant-a"})
+	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-b", TenantId: "tenant-b"})
+	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a2", TenantId: "tenant-a"})
+	agents := st.ListAgents()
+	if len(agents) != 2 {
+		t.Fatalf("agents = %d, want 2 tenant-scoped entries", len(agents))
+	}
+	for _, agent := range agents {
+		if agent.GetTenantId() == "tenant-a" && agent.GetHostId() != "host-a2" {
+			t.Fatalf("tenant-a agent was not updated: %+v", agent)
+		}
 	}
 }
 
