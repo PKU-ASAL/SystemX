@@ -86,6 +86,12 @@ func Signal(health agenthealth.AgentHealth, reason, id string) *signalv1.Signal 
 	if scopeSummary := scopeSummary(health.Scope); scopeSummary != "" {
 		summary += "; scope=" + scopeSummary
 	}
+	summary += fmt.Sprintf("; restarts=%d parse_errors=%d dropped_events=%d events_seen=%d",
+		health.Sensor.RestartCount,
+		health.Sensor.ParseErrors,
+		health.Sensor.EventsDropped,
+		health.Sensor.EventsSeen,
+	)
 	if health.Sensor.LastExitReason != "" {
 		summary += "; last_exit=" + health.Sensor.LastExitReason
 	}

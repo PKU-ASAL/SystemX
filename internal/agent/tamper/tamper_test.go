@@ -23,6 +23,10 @@ func TestDetectorEmitsSensorTamperSignal(t *testing.T) {
 			Backend:        "tetragon",
 			PolicyLoaded:   true,
 			Running:        false,
+			EventsSeen:     11,
+			EventsDropped:  3,
+			ParseErrors:    2,
+			RestartCount:   4,
 			LastExitReason: "exit status 7",
 		},
 	}
@@ -41,6 +45,11 @@ func TestDetectorEmitsSensorTamperSignal(t *testing.T) {
 	}
 	if !hasEntity(sig.GetEvidence().GetEntities(), "scope", "scope:container:abc123") || !contains(sig.GetEvidence().GetSummary(), "scope=container:abc123") {
 		t.Fatalf("signal evidence missing scope: %+v", sig.GetEvidence())
+	}
+	for _, want := range []string{"restarts=4", "parse_errors=2", "dropped_events=3", "events_seen=11"} {
+		if !contains(sig.GetEvidence().GetSummary(), want) {
+			t.Fatalf("signal evidence summary missing %q: %s", want, sig.GetEvidence().GetSummary())
+		}
 	}
 	if got := detector.Evaluate(health, now, DefaultOptions()); got != nil {
 		t.Fatalf("duplicate Evaluate() = %+v", got)
