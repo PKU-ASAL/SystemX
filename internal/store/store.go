@@ -125,9 +125,9 @@ func (s *Store) AddAgent(agent *analyticsv1.AgentHello) {
 	s.Agents = append(s.Agents, agent)
 }
 
-func (s *Store) AddEvent(ev *eventv1.CanonicalEvent) {
+func (s *Store) AddEvent(ev *eventv1.CanonicalEvent) bool {
 	if ev == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -135,16 +135,17 @@ func (s *Store) AddEvent(ev *eventv1.CanonicalEvent) {
 		for i, existing := range s.Events {
 			if existing.GetId() == ev.GetId() {
 				s.Events[i] = ev
-				return
+				return false
 			}
 		}
 	}
 	s.Events = append(s.Events, ev)
+	return true
 }
 
-func (s *Store) AddSignal(sig *signalv1.Signal) {
+func (s *Store) AddSignal(sig *signalv1.Signal) bool {
 	if sig == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,15 +153,16 @@ func (s *Store) AddSignal(sig *signalv1.Signal) {
 	for i, existing := range s.Signals {
 		if key != "" && signalKey(existing) == key {
 			s.Signals[i] = sig
-			return
+			return false
 		}
 	}
 	s.Signals = append(s.Signals, sig)
+	return true
 }
 
-func (s *Store) AddIncident(inc *incidentv1.Incident) {
+func (s *Store) AddIncident(inc *incidentv1.Incident) bool {
 	if inc == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -168,10 +170,11 @@ func (s *Store) AddIncident(inc *incidentv1.Incident) {
 	for i, existing := range s.Incidents {
 		if key != "" && incidentKey(existing) == key {
 			s.Incidents[i] = inc
-			return
+			return false
 		}
 	}
 	s.Incidents = append(s.Incidents, inc)
+	return true
 }
 
 func (s *Store) UpsertAgentHealth(health agenthealth.AgentHealth) {

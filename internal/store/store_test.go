@@ -86,15 +86,23 @@ func TestListIncidentsFiltersScenario(t *testing.T) {
 
 func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	st := &Store{}
-	st.AddEvent(testEvent("ev-1", "a"))
-	st.AddEvent(testEvent("ev-1", "a"))
+	if inserted := st.AddEvent(testEvent("ev-1", "a")); !inserted {
+		t.Fatal("first AddEvent inserted = false")
+	}
+	if inserted := st.AddEvent(testEvent("ev-1", "a")); inserted {
+		t.Fatal("duplicate AddEvent inserted = true")
+	}
 	if got := st.ListEvents("a", ""); len(got) != 1 {
 		t.Fatalf("events after duplicate upsert = %d, want 1", len(got))
 	}
 
 	sig := testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/x")
-	st.AddSignal(sig)
-	st.AddSignal(testSignal("sig-b", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/x"))
+	if inserted := st.AddSignal(sig); !inserted {
+		t.Fatal("first AddSignal inserted = false")
+	}
+	if inserted := st.AddSignal(testSignal("sig-b", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/x")); inserted {
+		t.Fatal("duplicate AddSignal inserted = true")
+	}
 	st.AddSignal(testSignal("sig-c", "a", signalv1.SignalWhere_SIGNAL_WHERE_CLOUD, "payload_dropped", "lin-a", "file:/tmp/x"))
 	st.AddSignal(testSignal("sig-d", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/y"))
 	if got := st.ListSignals("a", "", false); len(got) != 3 {
@@ -109,15 +117,19 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
 		ContributingSignals: []*signalv1.Signal{sig},
 	}
-	st.AddIncident(inc)
-	st.AddIncident(&incidentv1.Incident{
+	if inserted := st.AddIncident(inc); !inserted {
+		t.Fatal("first AddIncident inserted = false")
+	}
+	if inserted := st.AddIncident(&incidentv1.Incident{
 		Id:                  "inc-b",
 		Scenario:            "a",
 		Summary:             "same story",
 		LineageIds:          []string{"lin-b", "lin-a"},
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
 		ContributingSignals: []*signalv1.Signal{sig},
-	})
+	}); inserted {
+		t.Fatal("duplicate AddIncident inserted = true")
+	}
 	if got := st.ListIncidents("a"); len(got) != 1 {
 		t.Fatalf("incidents after semantic duplicate upsert = %d, want 1", len(got))
 	}

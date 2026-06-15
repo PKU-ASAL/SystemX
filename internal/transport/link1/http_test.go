@@ -102,6 +102,63 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	}
 }
 
+func TestHTTPUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	batch := &analyticsv1.UploadBatch{
+		BatchId: "00000000000000000007",
+		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
+		Events: []*eventv1.CanonicalEvent{{
+			Id:       "ev-retry",
+			Scenario: "apt-fileless-c2",
+			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+		}},
+		Signals: []*signalv1.Signal{
+			endpointSignal("web_runtime_spawns_shell", "lin-retry", false, processEntity("p-web")),
+			endpointSignal("payload_dropped", "lin-retry", false, fileEntity("/dev/shm/x.sh")),
+			endpointSignal("reverse_shell_pattern", "lin-retry", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
+		},
+	}
+	first := uploadAndAck(t, handler, batch)
+	if first.GetAcceptedEvents() != 1 || first.GetAcceptedSignals() != 3 {
+		t.Fatalf("first ack = %#v", first)
+	}
+	second := uploadAndAck(t, handler, batch)
+	if second.GetAcceptedEvents() != 0 || second.GetAcceptedSignals() != 0 {
+		t.Fatalf("retry ack = %#v, want zero newly accepted records", second)
+	}
+
+	rec := get(t, handler, "/api/v1/events?scenario=apt-fileless-c2")
+	if got := strings.Count(rec.Body.String(), `"id":"ev-retry"`); got != 1 {
+		t.Fatalf("event count = %d, want 1: %s", got, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/signals?scenario=apt-fileless-c2&layer=endpoint")
+	if got := strings.Count(rec.Body.String(), `"where":"SIGNAL_WHERE_ENDPOINT"`); got != 3 {
+		t.Fatalf("endpoint signal count = %d, want 3: %s", got, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/signals?scenario=apt-fileless-c2&layer=cloud")
+	if got := strings.Count(rec.Body.String(), `"where":"SIGNAL_WHERE_CLOUD"`); got != 2 {
+		t.Fatalf("cloud signal count = %d, want 2: %s", got, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/incidents?scenario=apt-fileless-c2")
+	if got := strings.Count(rec.Body.String(), `"id":"inc-`); got != 1 {
+		t.Fatalf("incident count = %d, want 1: %s", got, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/metrics")
+	for _, want := range []string{
+		`"upload_batches":2`,
+		`"events_ingested":1`,
+		`"endpoint_signals_ingested":3`,
+		`"cloud_signals_emitted":2`,
+		`"signals_emitted":5`,
+		`"incidents_created":1`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("metrics missing %s after retry: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestHTTPUploadRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
@@ -300,6 +357,11 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 
 func upload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
 	t.Helper()
+	_ = uploadAndAck(t, handler, batch)
+}
+
+func uploadAndAck(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) *analyticsv1.UploadAck {
+	t.Helper()
 	if batch.Agent == nil {
 		batch.Agent = &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"}
 	}
@@ -313,6 +375,11 @@ func upload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("upload status = %d body=%s", rec.Code, rec.Body.String())
 	}
+	ack := &analyticsv1.UploadAck{}
+	if err := protojson.Unmarshal(rec.Body.Bytes(), ack); err != nil {
+		t.Fatalf("decode ack: %v body=%s", err, rec.Body.String())
+	}
+	return ack
 }
 
 func get(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {

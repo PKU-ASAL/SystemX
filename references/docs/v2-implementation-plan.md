@@ -193,7 +193,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - native sensor 不在 v2 完整实现范围内。
 
 - Agent daemon:
-  - 后台 upload loop、spool recovery、request timeout、ack batch_id 校验和 agent restart 后 unacked batch 恢复 e2e 已有,但 retry/backoff 的可配置策略和更长时间 soak 还需要继续补齐。
+  - 后台 upload loop、spool recovery、request timeout、ack batch_id 校验、agent restart 后 unacked batch 恢复 e2e、manager ingest 幂等计数和重复 batch 不放大 e2e 已有,但 retry/backoff 的可配置策略和更长时间 soak 还需要继续补齐。
   - graceful shutdown、flush 语义还未完整验收。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
 - health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke 以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
@@ -1163,7 +1163,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
    - retry/backoff soak。
    - agent restart 后 unacked batch 恢复已补本机 e2e,覆盖 mismatched ack 不删 batch、agent restart 后以相同 batch_id 重传并在 valid ack 后 drain。
    - manager outage 后 queued batches drain。
-   - manager ingest 幂等不放大 event/signal/incident。
+   - manager ingest 幂等不放大 event/signal/incident 已补本机 e2e,覆盖重复 Link1 batch 的 ack accepted counts、metrics、events、signals、incidents 不放大。
 6. 迁移 VM 主路径:
    - VM 三个核心场景已默认走 agent-managed capture/assert 主路径。
    - replay/stream debug path 继续保留。

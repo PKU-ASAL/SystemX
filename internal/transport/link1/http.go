@@ -120,28 +120,36 @@ func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, err
 	}
 	s.store.AddAgent(batch.GetAgent())
 	touchedScenarios := map[string]bool{}
+	acceptedEvents := 0
+	acceptedSignals := 0
 	for _, ev := range batch.GetEvents() {
-		s.store.AddEvent(ev)
-		if ev.GetScenario() != "" {
+		inserted := s.store.AddEvent(ev)
+		if inserted {
+			acceptedEvents++
+		}
+		if inserted && ev.GetScenario() != "" {
 			touchedScenarios[ev.GetScenario()] = true
 		}
 	}
 	for _, sig := range batch.GetSignals() {
-		s.store.AddSignal(sig)
-		if sig.GetScenario() != "" {
+		inserted := s.store.AddSignal(sig)
+		if inserted {
+			acceptedSignals++
+		}
+		if inserted && sig.GetScenario() != "" {
 			touchedScenarios[sig.GetScenario()] = true
 		}
 	}
 	start := time.Now()
 	cloudSignals, incidents := s.recomputeTouchedScenarios(touchedScenarios)
 	convergenceLatency := time.Since(start)
-	s.store.RecordUpload(len(batch.GetEvents()), len(batch.GetSignals()), cloudSignals, incidents, convergenceLatency)
+	s.store.RecordUpload(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	if err := s.store.Save(); err != nil {
 		return UploadResult{}, err
 	}
 	return UploadResult{
-		AcceptedEvents:  len(batch.GetEvents()),
-		AcceptedSignals: len(batch.GetSignals()),
+		AcceptedEvents:  acceptedEvents,
+		AcceptedSignals: acceptedSignals,
 		CloudSignals:    cloudSignals,
 		Incidents:       incidents,
 	}, nil
