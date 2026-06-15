@@ -95,6 +95,16 @@ wait_contains "agent-health" '"backend":"tetragon"' "$RESULTS/e2e-agent-apt-cont
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-managed --tenant-id default
 wait_contains "agent-health installed" '"installed":true' "$RESULTS/e2e-agent-apt-container.health.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-managed --tenant-id default
+deadline=$((SECONDS + 30))
+until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+  if (( SECONDS >= deadline )); then
+    echo "[e2e-agent-apt-container][ERROR] managed Tetra subscription did not become ready" >&2
+    docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
+    exit 1
+  fi
+  sleep 1
+done
+docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$SCENARIO" >/dev/null
 
 echo "[e2e-agent-apt-container] running apt-fileless-c2 attack"
 C2="$C2" bash "$ROOT/scenarios/container/apt-fileless-c2/attack.sh"

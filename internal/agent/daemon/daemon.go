@@ -57,6 +57,15 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	scopeType := r.Config.Sensor.ScopeType
+	scopeSelector := r.Config.Sensor.ScopeSelector
+	if scopeType == "" && r.Config.Sensor.ContainerIDPrefix != "" {
+		scopeType = "container"
+	}
+	if scopeSelector == "" && r.Config.Sensor.ContainerIDPrefix != "" {
+		scopeSelector = r.Config.Sensor.ContainerIDPrefix
+	}
+	intent = policy.WithScope(intent, scopeType, scopeSelector)
 	if err := rt.Apply(ctx, intent); err != nil {
 		return err
 	}
@@ -311,6 +320,8 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 			TetraPath:    cfg.Sensor.TetraPath,
 			TetragonPath: cfg.Sensor.TetragonPath,
 		}, restart)
+		backend.ScopeType = cfg.Sensor.ScopeType
+		backend.ScopeSelector = cfg.Sensor.ScopeSelector
 		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
 		return backend, nil
 	default:

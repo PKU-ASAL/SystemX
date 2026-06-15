@@ -61,3 +61,9 @@ func ParseCollectionIntent(data string, observeOnly bool) (contract.CollectionIn
 	}
 	return contract.CollectionIntent{EventKinds: kinds, ObserveOnly: observeOnly}, nil
 }
+
+func WithScope(intent contract.CollectionIntent, scopeType, scopeSelector string) contract.CollectionIntent {
+	intent.ScopeType = strings.TrimSpace(scopeType)
+	intent.ScopeSelector = strings.TrimSpace(scopeSelector)
+	return intent
+}

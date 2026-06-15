@@ -19,6 +19,8 @@ sensor:
   tetragon_path: /opt/sysarmor/sensors/tetragon/current/bin/tetragon
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   event_source: "" # managed mode runs tetra getevents; set "-" only for stdin JSONL debugging
+  scope_type: host # host | container | cgroup | namespace | pod
+  scope_selector: "" # required for non-host scopes, e.g. container id prefix
   observe_only: true
   restart: always
   max_restarts: 5

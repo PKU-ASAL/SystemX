@@ -25,6 +25,8 @@ type Backend struct {
 	Version           string
 	Bundle            BundleConfig
 	Restart           ProcessRestartPolicy
+	ScopeType         string
+	ScopeSelector     string
 	ContainerIDPrefix string
 
 	mu           sync.Mutex
@@ -204,6 +206,13 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 }
 
 func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIntent) error {
+	if strings.TrimSpace(intent.ScopeType) != "" && strings.TrimSpace(intent.ScopeSelector) != "" {
+		b.ScopeType = intent.ScopeType
+		b.ScopeSelector = intent.ScopeSelector
+		if intent.ScopeType == "container" && b.ContainerIDPrefix == "" {
+			b.ContainerIDPrefix = intent.ScopeSelector
+		}
+	}
 	b.mu.Lock()
 	loaded := b.policyLoaded
 	hasIntent := len(b.intent.EventKinds) > 0 || b.intent.ObserveOnly || len(b.intent.FilePrefixes) > 0 || len(b.intent.SocketFamilies) > 0
@@ -488,6 +497,9 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 }
 
 func (b *Backend) matchesContainer(containerID string) bool {
+	if b.ScopeType == "container" && b.ScopeSelector != "" {
+		return strings.HasPrefix(containerID, b.ScopeSelector)
+	}
 	if b.ContainerIDPrefix == "" {
 		return true
 	}

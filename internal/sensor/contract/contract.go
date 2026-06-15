@@ -33,6 +33,8 @@ type CollectionIntent struct {
 	EventKinds     []eventv1.EventKind
 	FilePrefixes   []string
 	SocketFamilies []string
+	ScopeType      string
+	ScopeSelector  string
 	ObserveOnly    bool
 }
 

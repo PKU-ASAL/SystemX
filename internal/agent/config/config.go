@@ -41,6 +41,8 @@ type SensorConfig struct {
 	TetragonPath      string
 	PolicyPath        string
 	EventSource       string
+	ScopeType         string
+	ScopeSelector     string
 	ContainerIDPrefix string
 	ObserveOnly       bool
 	Restart           string
@@ -216,6 +218,10 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Sensor.PolicyPath = value
 		case "event_source":
 			cfg.Sensor.EventSource = value
+		case "scope_type":
+			cfg.Sensor.ScopeType = value
+		case "scope_selector":
+			cfg.Sensor.ScopeSelector = value
 		case "container_id_prefix":
 			cfg.Sensor.ContainerIDPrefix = value
 		case "observe_only":
