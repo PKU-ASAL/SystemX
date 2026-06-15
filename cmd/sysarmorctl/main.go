@@ -65,6 +65,11 @@ func query(mgr string, args []string) ([]byte, error) {
 				if i < len(args) {
 					q.Set("scope_type", args[i])
 				}
+			case "--scope-selector":
+				i++
+				if i < len(args) {
+					q.Set("scope_selector", args[i])
+				}
 			case "--health-status":
 				i++
 				if i < len(args) {

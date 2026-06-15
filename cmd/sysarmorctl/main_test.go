@@ -15,10 +15,10 @@ func TestQueryAgentsFilters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := query(server.URL, []string{"agents", "--tenant-id", "default", "--scope-type", "container", "--health-status", "ok"}); err != nil {
+	if _, err := query(server.URL, []string{"agents", "--tenant-id", "default", "--scope-type", "container", "--scope-selector", "abc123", "--health-status", "ok"}); err != nil {
 		t.Fatalf("query() error = %v", err)
 	}
-	want := "/api/v1/agents?health_status=ok&scope_type=container&tenant_id=default"
+	want := "/api/v1/agents?health_status=ok&scope_selector=abc123&scope_type=container&tenant_id=default"
 	if gotPath != want {
 		t.Fatalf("path = %q, want %q", gotPath, want)
 	}

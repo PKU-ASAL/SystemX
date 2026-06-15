@@ -208,6 +208,7 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	tenantID := q.Get("tenant_id")
 	scopeType := q.Get("scope_type")
+	scopeSelector := q.Get("scope_selector")
 	healthStatus := q.Get("health_status")
 	agents := s.store.ListAgents()
 	out := make([]AgentListItem, 0, len(agents))
@@ -228,6 +229,9 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 			item.HealthObserved = health.ObservedAt
 		}
 		if scopeType != "" && item.Scope.Type != scopeType {
+			continue
+		}
+		if scopeSelector != "" && item.Scope.Selector != scopeSelector {
 			continue
 		}
 		if healthStatus != "" && item.HealthStatus != healthStatus {

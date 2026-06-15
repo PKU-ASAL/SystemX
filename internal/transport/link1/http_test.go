@@ -282,6 +282,14 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) || strings.Contains(rec.Body.String(), `"agent_id":"agent-b"`) {
 		t.Fatalf("filtered agents response = %s", rec.Body.String())
 	}
+	rec = get(t, handler, "/api/v1/agents?tenant_id=default&scope_type=container&scope_selector=abc123&health_status=ok")
+	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) || strings.Contains(rec.Body.String(), `"agent_id":"agent-b"`) {
+		t.Fatalf("filtered selector agents response = %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/agents?tenant_id=default&scope_type=container&scope_selector=missing&health_status=ok")
+	if rec.Body.String() != "[]\n" {
+		t.Fatalf("filtered missing selector response = %s", rec.Body.String())
+	}
 	rec = get(t, handler, "/api/v1/agents?tenant_id=other&scope_type=host&health_status=degraded")
 	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-b"`) || strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) {
 		t.Fatalf("filtered other agents response = %s", rec.Body.String())

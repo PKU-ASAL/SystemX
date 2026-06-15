@@ -108,11 +108,11 @@ wait_contains "sysarmorctl agents health status" '"health_status":"ok"' "$RESULT
 wait_contains "sysarmorctl agents scope" '"scope":{"type":"container","selector":"e2e-scope"}' "$RESULTS/e2e-agent-health.agents.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
 wait_contains "sysarmorctl agents filtered" '"agent_id":"e2e-agent-health"' "$RESULTS/e2e-agent-health.agents-filtered.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --health-status ok
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
 wait_contains "sysarmorctl agents filtered scope" '"scope":{"type":"container","selector":"e2e-scope"}' "$RESULTS/e2e-agent-health.agents-filtered.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --health-status ok
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
 wait_contains "sysarmorctl agents filtered capability" '"sensor_capability"' "$RESULTS/e2e-agent-health.agents-filtered.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --health-status ok
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
 wait_contains "sysarmorctl agent-health" '"agent_id":"e2e-agent-health"' "$RESULTS/e2e-agent-health.health.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-health.health.json" \
