@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -78,6 +78,9 @@ e2e-agent-shutdown:           ## v2: SIGTERM graceful shutdown → shutdown drai
 
 e2e-agent-restart-unacked:    ## v2: mismatched ack keeps batch → agent restart → valid ack drains
 	bash harness/e2e-agent-restart-unacked.sh
+
+e2e-agent-reliability-soak:   ## v2: longer reliability soak for outage/retry/restart/shutdown
+	bash harness/e2e-agent-reliability-soak.sh
 
 e2e-agent-capability:         ## v2: startup capability/bundle failure → degraded health
 	bash harness/e2e-agent-capability.sh
@@ -175,6 +178,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-outage-soak  v2 manager outage queues multiple batches and drains all"
 	@echo "  e2e-agent-shutdown  v2 graceful shutdown drain flush smoke"
 	@echo "  e2e-agent-restart-unacked  v2 agent restart preserves unacked batch smoke"
+	@echo "  e2e-agent-reliability-soak  v2 longer outage/retry/restart/shutdown reliability soak"
 	@echo "  e2e-agent-capability  v2 startup capability/bundle failure degraded health smoke"
 	@echo "  e2e-agent-capability-btf  v2 required BTF capability failure degraded health smoke"
 	@echo "  e2e-agent-capability-bpffs  v2 required bpffs capability failure degraded health smoke"
