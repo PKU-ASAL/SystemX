@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -89,6 +89,9 @@ e2e-agent-systemd-vm:         ## v2: VM systemd agent daemon → health/restart 
 
 e2e-agent-managed-vm:         ## v2: VM systemd managed fake Tetragon bundle → manager 查询
 	bash harness/e2e-agent-managed-vm.sh
+
+e2e-agent-managed-recover-vm: ## v2: VM systemd managed fake Tetragon degraded to recovered smoke
+	bash harness/e2e-agent-managed-recover-vm.sh
 
 e2e-agent-real-tetragon-vm:   ## v2: VM systemd real Tetragon subscription → detection smoke
 	bash harness/e2e-agent-real-tetragon-vm.sh
@@ -140,6 +143,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-managed-restart-container  v2 container managed fake Tetragon restart/tamper smoke"
 	@echo "  e2e-agent-systemd-vm  v2 VM systemd daemon health/restart smoke"
 	@echo "  e2e-agent-managed-vm  v2 VM systemd managed fake Tetragon bundle smoke"
+	@echo "  e2e-agent-managed-recover-vm  v2 VM systemd managed degraded to recovered smoke"
 	@echo "  e2e-agent-real-tetragon-vm  v2 VM systemd real Tetragon detection smoke"
 	@echo "  e2e-agent-real-tetragon-owned-vm  v2 VM systemd agent-owned real Tetragon process smoke"
 	@echo "  e2e-agent-apt-container  v2 container apt-fileless-c2 via agent-managed Tetra"
