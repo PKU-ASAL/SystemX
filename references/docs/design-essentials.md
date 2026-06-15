@@ -35,13 +35,22 @@ v2: EDR endpoint runtime MVP
 2. **事实与图模型**: 所有数据源最终都要落到统一的 Event / Signal / Incident 事实纵轴和 entity graph 上。
 3. **跨域收敛**: EDR 先从 endpoint 图开始,XDR 再把 cloud、identity、network、workload 等事实并入同一张攻击叙事图。
 
-这里还有一个很重要的边界判断: **endpoint 不等于“永远是一台 VM 或物理主机”**。在 SysArmor Next 里,被保护对象更准确地说是一个 **runtime scope**:
+这里还有一个很重要的边界判断: **endpoint 不等于“永远是一台 VM 或物理主机”**。在 SysArmor Next 里,被保护对象更准确地说是一个 **runtime scope**。中期 EDR 应把这个模型显式沉淀为 Sensor Runtime 的稳定契约:
+
+```text
+Sensor Runtime
+  scope:
+    type: host | container | cgroup | namespace | pod
+    selector: ...
+```
+
+其中:
 
 - VM / 裸机是 `host scope`
 - 单个容器或 cgroup 是 `container/cgroup scope`
 - K8s workload 是 `pod/namespace scope`
 
-也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。
+也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。VM 只是 `scope.type=host` 的一个部署形态;容器、cgroup、pod、namespace 则是同一 runtime contract 下的不同采集边界。
 
 Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
 
@@ -56,8 +65,9 @@ Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v
 对容器场景,这条路线还有一个直接推论:
 
 - **不建议把业务容器本体直接等价成一台 VM 来处理。**
-- 更自然的做法是:运行一个独立的 `sysarmor-agent + tetragon` sensor container,去观测某个目标容器、某个 cgroup 或某组 workload。
+- 更自然的做法是:运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container,去观测某个目标容器、某个 cgroup 或某组 workload。
 - 这样做时,agent 拥有 sensor process / policy / health / spool / upload 生命周期;被保护对象则通过 scope selector 来限定。
+- `container_id_prefix` 这类字段只能作为兼容旧配置的 alias,长期 contract 应收敛为 `scope.type + scope.selector`。
 
 这让“容器安全”在产品语义上更接近 **workload-scoped EDR runtime**,而不是“把 agent 塞进业务镜像里”。
 

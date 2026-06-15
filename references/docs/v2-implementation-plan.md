@@ -53,11 +53,18 @@ Sensor Runtime
 
 这意味着容器方案的推荐部署形态是:
 
-- 运行一个独立的 `sysarmor-agent + tetragon` sensor container
+- 运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container
 - 由它拥有 sensor process / policy / health / spool / upload 生命周期
 - 通过 scope selector 限定只观测目标 workload
 
 而不是把 agent 直接内嵌进业务容器镜像,把容器硬解释成“迷你 VM”。
+
+因此 v2 后续实施要按下面的路线收敛:
+
+1. 配置和 policy 表达以 `scope_type + scope_selector` 为主,`container_id_prefix` 只作为 legacy alias。
+2. container harness/e2e 应模拟“sensor container 观测 workload container”,而不是把业务容器改造成 VM。
+3. K8s 方向不另起一套 agent 模型,而是在同一 contract 下把 selector 扩展到 pod/namespace。
+4. capability、health、spool、policy apply、upload retry 都归属于 sensor runtime 实例,其 scope 是 runtime identity 的一部分。
 
 ## 1.1 Current Priority
 
@@ -68,6 +75,7 @@ Sensor Runtime
    - VM provision 默认主路径已不再 preload policy；兼容性 preload 需显式降级为 replay/debug/perf 专用。
    - container/VM 主路径都应继续朝 agent 完整拥有 Tetragon process 和 policy lifecycle 收口。
    - container 路线要继续从 legacy `container_id_prefix` 兼容入口,收口到正式的 runtime scope contract: `scope_type + scope_selector`。
+   - 测试拓扑要表达“独立 sensor container + workload scope”,不要再把业务容器内安装 agent 作为默认目标。
 2. **把 reliability 做成主路径证据**
    - manager outage drain、graceful shutdown flush、retry/backoff、agent restart 恢复都要继续用 e2e 证明,而不是只停留在局部单测或一次性 smoke。
 3. **避免把真实订阅误当成完整 ownership**
@@ -1011,10 +1019,12 @@ v2 完成时必须满足：
 - Sensor interface 和 Sensor Runtime Manager 已建立。
 - runtime 支持 capability、subscribe、health、observe-only enforce skeleton。
 - policy compile/apply 有正式链路和测试。
+- runtime scope contract 已成为主路径: `scope.type` 支持 `host | container | cgroup | namespace | pod`,非 host scope 必须有 selector,host scope 不应带 selector。
 - agent 能从 local bundle 安装/校验 Tetragon binary 和 policy。
 - agent 能启动、停止、重启 Tetragon。
 - agent 能持续订阅 Tetragon 事件。
 - container/VM 主 e2e 不再由 harness pipe `tetra getevents` 给 agent。
+- container 主 e2e 体现独立 sensor container 观测 workload scope;业务容器内安装 agent 只作为兼容/调试模式。
 - sensor dropped events / parse errors / restart count 进入 health。
 - sensor 被 kill 后 agent 能自动拉起。
 - sensor 多次失败后 manager 能看到 degraded health。
@@ -1035,6 +1045,7 @@ v2 完成时必须满足：
 - `reliability`: outage、restart、shutdown 后可恢复且不放大。
 - `observability`: manager/ctl 能看到 recent/degraded/recovered、queue、upload、sensor 状态。
 - `compatibility`: v1 replay/debug 和现有 detection 行为保持稳定。
+- `scope`: VM、容器、K8s workload 都落到统一 Sensor Runtime scope contract;容器路线默认是独立 sensor runtime 观测 workload。
 
 ## 9. Plan Review Notes
 
@@ -1051,6 +1062,7 @@ v2 完成时必须满足：
 7. **当前 plan 容易混淆两种“managed”**：真实 container detection smoke 已由 agent 托管 `tetra getevents` 订阅，但 Tetragon 主进程和 TracingPolicy 仍由拓扑/harness 提前准备；完整 v2 主路径必须把 policy apply 和 sensor lifecycle ownership 继续收口到 agent/runtime。
 8. **VM real Tetragon systemd smoke 是关键增量,但不是终点**：它把真实 `tetra getevents` 订阅、systemd agent restart、检测上传放进同一条 VM 链路；下一步不要再重复做类似 smoke,而应直接推进 process ownership、policy ownership 和长跑恢复。
 9. **成功标准还应更操作化**：当前文档已经有大量“已有/缺口”描述,但真正决定 v2 是否完成的应是 ownership、reliability、observability、compatibility 这四类验收,每个阶段最好显式挂靠到这四类之一,避免做了很多 smoke 却仍然不知道哪里没闭环。
+10. **容器路线要避免回到“容器=迷你 VM”**：默认架构应是独立 privileged sensor container 观测 workload scope。业务容器内安装 agent 可以保留为特殊环境兼容,但不能成为计划主线,否则后续 K8s/pod/namespace scope 会继续长成拓扑特判。
 
 ### 9.1 范围控制
 

@@ -260,8 +260,20 @@ make report
 
 - 当前主路径已经用 `scope_type=container` + `scope_selector=<container id prefix>` 证明 workload-scoped collection 可行。
 - `container_id_prefix` 仅保留为兼容旧配置的过渡入口,不应继续作为长期 contract 呈现。
-- 中期应把它抽象成正式的 runtime scope contract,而不是长期停留在“容器拓扑特判”。
-- 更合理的部署形态是独立 sensor container 观测目标 workload,而不是让业务容器本体内嵌一套 agent+tetragon。
+- 中期应把它抽象成正式的 runtime scope contract,而不是长期停留在“容器拓扑特判”:
+
+```text
+Sensor Runtime
+  scope:
+    type: host | container | cgroup | namespace | pod
+    selector: ...
+```
+
+- VM / 裸机走 `scope.type=host`。
+- 单容器采集走 `scope.type=container` 或更底层的 `scope.type=cgroup`。
+- K8s workload 走 `scope.type=pod` 或 `scope.type=namespace`。
+- 更合理的部署形态是独立 privileged `sysarmor-agent + tetragon` sensor container 观测目标 workload,而不是让业务容器本体内嵌一套 agent+tetragon。
+- 业务容器内安装 agent 可以保留为开发、受限环境或兼容模式,但不应作为默认产品架构。
 
 ## 三、走向完整项目的主要缺口
 
@@ -280,7 +292,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - v2 已有 Sensor contract、fake backend、runtime skeleton。
 - v2 已有 Tetragon backend,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程和 health 汇总。
 - runtime `Apply` 已下沉调用 backend apply；Tetragon backend 可从 `CollectionIntent` 生成最小 TracingPolicy 并通过 `tetra tracingpolicy add` 应用。
-- container 侧的真实主路径已经证明了“独立 sensor 容器 + workload scope”这条方向可行,而且 `scope_type/scope_selector` 已经进入 agent config、collection intent 和 Tetragon backend。
+- container 侧的真实主路径已经证明了“独立 sensor runtime + workload scope”这条方向可行,而且 `scope_type/scope_selector` 已经进入 agent config、collection intent 和 Tetragon backend。
 - 当前仍保留 `container_id_prefix` 兼容旧配置,但它现在应被视为映射到 `scope_type=container` 的 legacy alias,而不是后续文档和验收的中心概念。
 - process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
 - managed Tetragon 已接入 restart 配置和 health 状态。
@@ -299,6 +311,11 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 目标形态:
 
 ```go
+type RuntimeScope struct {
+    Type     ScopeType // host | container | cgroup | namespace | pod
+    Selector string
+}
+
 type Sensor interface {
     Capability(ctx) (SensorCapability, error)
     Subscribe(ctx, CollectionIntent) (<-chan SensorEvent, error)
