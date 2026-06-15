@@ -18,6 +18,7 @@ import (
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
@@ -259,6 +260,97 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	cancel()
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spoolPath := filepath.Join(dir, "spool")
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "http://127.0.0.1:1", Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: spoolPath, MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: 5 * time.Millisecond},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	first, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Run(context.Background(), Options{Once: true}); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	matches, err := filepath.Glob(filepath.Join(spoolPath, "*.batch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("spool batches after first run = %v", matches)
+	}
+
+	oldBatch := loadOnlySpoolBatch(t, spoolPath)
+	oldID := oldBatch.GetEvents()[0].GetId()
+	uploadCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/upload" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read batch body: %v", err)
+		}
+		var batch analyticsv1.UploadBatch
+		if err := protojson.Unmarshal(body, &batch); err != nil {
+			t.Fatalf("decode batch: %v", err)
+		}
+		uploadCount++
+		if uploadCount > 1 {
+			t.Fatalf("unexpected extra upload: %+v", batch)
+		}
+		for _, ev := range batch.GetEvents() {
+			if ev.GetId() != oldID {
+				t.Fatalf("unexpected uploaded id = %q want %q", ev.GetId(), oldID)
+			}
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+
+	worker, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker.Config.Manager.Address = server.URL
+	queue, err := spool.OpenWithLimit(spoolPath, cfg.Spool.MaxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, err := worker.uploadWorker(queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := up.DrainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("DrainOnce() error = %v", err)
+	}
+	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	matches, err = filepath.Glob(filepath.Join(spoolPath, "*.batch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("spool batches after recovery drain = %v", matches)
+	}
+	if uploadCount != 1 {
+		t.Fatalf("uploadCount = %d", uploadCount)
 	}
 }
 
