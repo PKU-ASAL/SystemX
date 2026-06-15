@@ -48,6 +48,7 @@ type SensorConfig struct {
 	ScopeType         string
 	ScopeSelector     string
 	ContainerIDPrefix string
+	FakeStartupEvents int
 	ObserveOnly       bool
 	Restart           string
 	MaxRestarts       int
@@ -117,6 +118,9 @@ func (c Config) Validate() error {
 	}
 	if c.Sensor.MaxRestarts < 0 {
 		return fmt.Errorf("sensor.max_restarts must be non-negative")
+	}
+	if c.Sensor.FakeStartupEvents < 0 {
+		return fmt.Errorf("sensor.fake_startup_events must be non-negative")
 	}
 	scopeType := strings.TrimSpace(c.Sensor.ScopeType)
 	scopeSelector := strings.TrimSpace(c.Sensor.ScopeSelector)
@@ -270,6 +274,12 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Sensor.ScopeSelector = value
 		case "container_id_prefix":
 			cfg.Sensor.ContainerIDPrefix = value
+		case "fake_startup_events":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("sensor.fake_startup_events: %w", err)
+			}
+			cfg.Sensor.FakeStartupEvents = v
 		case "observe_only":
 			b, err := strconv.ParseBool(value)
 			if err != nil {

@@ -412,7 +412,11 @@ func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (s
 func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 	switch cfg.Sensor.Backend {
 	case "fake":
-		return fake.New(), nil
+		count := cfg.Sensor.FakeStartupEvents
+		if count == 0 {
+			count = 1
+		}
+		return fake.NewWithStartupEvents(count), nil
 	case "tetragon":
 		restart, err := tetragonRestartPolicy(cfg.Sensor)
 		if err != nil {

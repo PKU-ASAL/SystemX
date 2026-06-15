@@ -20,14 +20,26 @@ type Sensor struct {
 }
 
 func New() *Sensor {
-	return &Sensor{
-		startupEvents: []contract.EventEnvelope{{
+	return NewWithStartupEvents(1)
+}
+
+func NewWithStartupEvents(count int) *Sensor {
+	if count < 0 {
+		count = 0
+	}
+	events := make([]contract.EventEnvelope, 0, count)
+	now := time.Now().UnixNano()
+	for i := 0; i < count; i++ {
+		events = append(events, contract.EventEnvelope{
 			SensorEvent: &sensorv1.SensorEvent{
 				Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-				Proc: &sensorv1.RawProcess{Pid: 1, Binary: "/usr/bin/fake", StartTimeNs: uint64(time.Now().UnixNano())},
+				Proc: &sensorv1.RawProcess{Pid: uint32(i + 1), Binary: "/usr/bin/fake", StartTimeNs: uint64(now + int64(i))},
 			},
 			RawRef: "fake-startup",
-		}},
+		})
+	}
+	return &Sensor{
+		startupEvents: events,
 	}
 }
 

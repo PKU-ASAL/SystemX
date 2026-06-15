@@ -193,7 +193,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - native sensor 不在 v2 完整实现范围内。
 
 - Agent daemon:
-  - 后台 upload loop、spool recovery、request timeout、ack batch_id 校验、agent restart 后 unacked batch 恢复 e2e、manager ingest 幂等计数和重复 batch 不放大 e2e 已有,但 retry/backoff 的可配置策略和更长时间 soak 还需要继续补齐。
+  - 后台 upload loop、spool recovery、request timeout、ack batch_id 校验、manager outage 多 batch drain soak、agent restart 后 unacked batch 恢复 e2e、manager ingest 幂等计数和重复 batch 不放大 e2e 已有,但 retry/backoff 的更长时间 soak 还需要继续补齐。
   - graceful shutdown flush 已有本机 e2e,并断言 SIGTERM 后 shutdown drain、spool 清空、manager 侧 final degraded health 中 `queued_batches=0` / `remaining_batches=0`；后续仍需更长窗口 soak。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
 - health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke 以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
@@ -870,13 +870,13 @@ WantedBy=multi-user.target
 
 ### Phase 5: Agent Daemon, Spool, Retry
 
-状态：大部分已完成。file-backed spool、oldest-first drain、后台 upload loop、request timeout、backpressure/drop health 已落地；剩余重点是长跑、恢复和 e2e 验收。
+状态：大部分已完成。file-backed spool、oldest-first drain、后台 upload loop、request timeout、backpressure/drop health、manager outage 多 batch drain soak、agent restart 后 unacked batch 恢复、shutdown final health 验收已落地；剩余重点是更长时间 retry/backoff soak 和真实主路径可靠性验收。
 
 任务：
 
 - 完成 daemon run loop 的长跑验证。
 - 收口 retry/backoff 的配置化和测试。
-- 验证 manager outage 后恢复 drain。
+- 验证 manager outage 后恢复 drain：已有本机多 batch soak,覆盖 outage 期间累计 5 个 batch、manager 恢复后全部 drain、health queue/upload 归零。
 - 验证 agent restart 后 unacked batches 恢复。
 - 保持 queue limit/backpressure/drop accounting 纳入 health payload。
 - 保持 `upload.request_timeout` 贯穿 HTTP/gRPC uploader。
@@ -1162,7 +1162,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
    - graceful shutdown flush 已补 final health 验收,覆盖 SIGTERM 后 shutdown drain、spool 清空和 manager health 队列状态归零。
    - retry/backoff soak。
    - agent restart 后 unacked batch 恢复已补本机 e2e,覆盖 mismatched ack 不删 batch、agent restart 后以相同 batch_id 重传并在 valid ack 后 drain。
-   - manager outage 后 queued batches drain。
+   - manager outage 后 queued batches drain 已补本机多 batch soak,覆盖 outage 期间排队、恢复后全部 drain、manager metrics/events 与 health 归零。
    - manager ingest 幂等不放大 event/signal/incident 已补本机 e2e,覆盖重复 Link1 batch 的 ack accepted counts、metrics、events、signals、incidents 不放大。
 6. 迁移 VM 主路径:
    - VM 三个核心场景已默认走 agent-managed capture/assert 主路径。

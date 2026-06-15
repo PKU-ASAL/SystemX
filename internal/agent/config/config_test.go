@@ -61,6 +61,7 @@ sensor:
   require_bpffs: true
   scope_type: container
   scope_selector: abc123
+  fake_startup_events: 5
   observe_only: true
   restart: always
   max_parse_errors: 3
@@ -95,6 +96,9 @@ health:
 	}
 	if cfg.Sensor.MaxParseErrors != 3 || cfg.Sensor.MaxDroppedEvents != 4 {
 		t.Fatalf("parse/drop thresholds = %d/%d", cfg.Sensor.MaxParseErrors, cfg.Sensor.MaxDroppedEvents)
+	}
+	if cfg.Sensor.FakeStartupEvents != 5 {
+		t.Fatalf("fake_startup_events = %d", cfg.Sensor.FakeStartupEvents)
 	}
 	if cfg.Sensor.BTFPath != "/tmp/vmlinux" || cfg.Sensor.BPFFSPath != "/tmp/bpf" || !cfg.Sensor.RequireBTF || !cfg.Sensor.RequireBPFFS {
 		t.Fatalf("capability config = %+v", cfg.Sensor)
