@@ -74,6 +74,9 @@ sensor:
   bundle_dir: $TMP/bundle
   install_dir: $TMP/install
   policy_path: $TMP/policy.yaml
+  scope:
+    type: container
+    selector: e2e-dropped-scope
   observe_only: true
   restart: always
   max_restarts: 1
@@ -138,7 +141,11 @@ wait_contains "agent-health dropped counter" '"events_dropped":' "$RESULTS/e2e-a
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-dropped-health --tenant-id default
 wait_contains "agent-health last error" 'dropped events' "$RESULTS/e2e-agent-dropped-health.health.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-dropped-health --tenant-id default
+wait_contains "agent-health scope" '"scope":{"type":"container","selector":"e2e-dropped-scope"}' "$RESULTS/e2e-agent-dropped-health.health.json" \
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-dropped-health --tenant-id default
 wait_contains "tamper signal" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-dropped-health.signals.json" \
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario agent-health --layer endpoint --terminal true
+wait_contains "tamper signal scope entity" 'scope:container:e2e-dropped-scope' "$RESULTS/e2e-agent-dropped-health.signals.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario agent-health --layer endpoint --terminal true
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-dropped-health.agent.log"
