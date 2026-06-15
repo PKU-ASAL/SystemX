@@ -251,6 +251,45 @@ func TestBackendManagedEventCommandSubscribesStdout(t *testing.T) {
 	}
 }
 
+func TestBackendManagedEventCommandRecordsDroppedEvents(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed dropped-event test requires /bin/sh")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	tetraPath := filepath.Join(dir, "tetra")
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"health\":{\"dropped_events\":2}}'\nprintf '%s\\n' '" + raw + "'\nprintf '%s\\n' '{\"dropped_events\":3}'\n"
+	if err := os.WriteFile(tetraPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	var got []eventv1.EventKind
+	for ev := range events {
+		got = append(got, ev.SensorEvent.GetKind())
+	}
+	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
+		t.Fatalf("got kinds %v, want EXEC", got)
+	}
+	health, err := backend.Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+	if health.EventsDropped != 5 || health.ParseErrors != 0 || !strings.Contains(health.LastError, "dropped events") {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
 func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed policy apply test requires /bin/sh")

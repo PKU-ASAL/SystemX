@@ -222,7 +222,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - 新增 `e2e-agent-reliability-soak` 聚合入口,把 outage drain、retry/backoff、restart-unacked、shutdown flush 串成更长窗口的本机可靠性门禁。
   - graceful shutdown flush 已有本机 e2e,并断言 SIGTERM 后 shutdown drain、spool 清空、manager 侧 final degraded health 中 `queued_batches=0` / `remaining_batches=0`；后续仍需更长窗口 soak。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有；container 和 VM owned-process smoke 均已补 agent/service stop 后 owned `tetragon` / `tetra getevents` 不残留并可重启恢复的断言,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
-- health API、CLI 查询、本机 e2e、`e2e-agent-all` 本机聚合、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke 以及 required BTF / bpffs 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
+- health API、CLI 查询、本机 e2e、`e2e-agent-all` 本机聚合、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke、managed `tetra getevents` 混流 dropped-events 归因回归，以及 required BTF / bpffs 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
   - tenant/agent identity 已进入 upload、health 和 store 主链路；manager 已对 upload agent/host/tenant identity 做最小校验,但还不是完整 RBAC/enrollment。
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
@@ -1097,7 +1097,7 @@ v2 完成时必须满足：
 
 1. **阶段状态必须随实现滚动更新**：config、sensor contract、spool、upload drain、backpressure、health API、dev token、bundle verify/install、restart/tamper 和 container managed detection 聚合已经不是纯待办,后续计划应写成"收口/验证/迁移",不要重复实现。
 2. **Tetragon managed backend 仍是最大风险项**：基础安装、checksum、进程监督、事件订阅已经有了,但真实 Tetragon 权限、policy ownership、container/VM harness 迁移仍应继续拆成独立可提交的小步。
-3. **当前最关键的未闭环已经变成 ownership 和长跑可靠性**：本机和 container 专项 smoke、container/VM `make e2e TOPO=...` 主路径、VM real Tetragon systemd smoke 证明了 daemon、spool、restart、tamper、detection 的局部闭环,下一步要证明 agent 能完整拥有 Tetragon process/policy lifecycle,并在更长失败/恢复窗口内保持可靠。
+3. **当前最关键的未闭环已经变成 ownership 和长跑可靠性**：本机和 container 专项 smoke、container/VM `make e2e TOPO=...` 主路径、VM real Tetragon systemd smoke 以及 managed stdout drop 归因回归证明了 daemon、spool、restart、tamper、detection 和 health 计数的局部闭环,下一步要证明 agent 能完整拥有 Tetragon process/policy lifecycle,并在更长失败/恢复窗口内保持可靠。
 4. **health 是依赖轴,不是附属功能**：tamper、restart、spool backpressure、upload error、agent liveness 都要靠 health 被 manager 看见。health API 已经落地,后续不要再新增本地-only 的并行状态面。
 5. **spool 正确性不只在 agent**：agent 有 durable queue 以后,manager ingest 的幂等/upsert 和 batch ack 语义就是可靠传输的一半。计划需要持续把 batch id、ack、retry、manager idempotency 放在同一个验收面里。
 6. **e2e 主路径迁移已经覆盖 container/VM capture/assert 和 VM real Tetragon systemd smoke**：下一步应把 VM real Tetragon smoke 从“订阅真实 tetra”继续推进到“agent 拥有 Tetragon process/policy lifecycle”。
