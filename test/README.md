@@ -129,7 +129,7 @@ make clean                           # down + 删 .results/
 
 ## 当前产品链路
 
-MVP / v2 container 主运行路径是:
+MVP / v2 container 和 VM 主运行路径是:
 
 ```
 sysarmor-agent run --config ...（agent-managed tetra getevents）
@@ -148,8 +148,8 @@ docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
   --scenario grpc-smoke --input-jsonl /tmp/lifecycle.sensor.jsonl
 ```
 
-`capture-container` 默认启动 v2 daemon,由 agent 托管 `tetra getevents` 订阅,并按 `node-a` 的 Docker container id 过滤 Tetragon 事件,避免宿主机或其他容器噪音淹没场景事件。
-如需回归 v1 调试路径,可使用 `CAPTURE_MODE=replay make capture TOPO=container SCENARIO=...`;该模式仍会保留实际喂给 agent 的 Tetragon 样本到 `.results/*.tetragon.jsonl`,并用 `replay_scenario.py` 上传契约级 SensorEvent。
+`capture-container` 和 `capture-vm` 默认启动 v2 daemon,由 agent 托管 `tetra getevents` 订阅。container 拓扑会按 `node-a` 的 Docker container id 过滤 Tetragon 事件,避免宿主机或其他容器噪音淹没场景事件。
+如需回归 v1 调试路径,可使用 `CAPTURE_MODE=replay make capture TOPO=container SCENARIO=...` 或 `CAPTURE_MODE=replay make capture TOPO=vm SCENARIO=...`;该模式仍会保留实际喂给 agent 的 Tetragon 样本到 `.results/*.tetragon.jsonl`,并用 `replay_scenario.py` 上传契约级 SensorEvent。
 agent 也仍支持直接读取 Tetragon raw JSONL,用于 raw adapter smoke。
 
 ## 常用调试
