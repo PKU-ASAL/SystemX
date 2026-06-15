@@ -70,6 +70,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 - `internal/sensor/runtime`:
   - fake backend lifecycle 测试骨架。
   - Probe / Apply / Subscribe / Stop 的最小路径。
+  - `Apply` 已下沉调用 backend apply,不再只是 runtime 内部记录 intent。
 - `internal/agent/policy`:
   - 最小 collection policy 解析。
   - policy 到 `CollectionIntent` 的初步转换。
@@ -77,6 +78,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - Tetragon backend skeleton。
   - 从 JSONL/stdin 读取事件。
   - policy file 存在性校验。
+  - 根据 `CollectionIntent` 生成最小 Tetragon TracingPolicy,并在 managed `tetra` 路径执行 `tetra tracingpolicy add`。
   - health 计数、parse error、raw ref 记录。
 - `internal/agent/spool`:
   - file-backed batch queue。
@@ -122,7 +124,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Sensor/runtime:
   - capability 探测仍偏最小骨架。
-  - policy compile/apply 还没有完全迁出 harness。
+  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径,但 container/VM harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
@@ -718,7 +720,7 @@ WantedBy=multi-user.target
 
 ### Phase 2: Policy Compile / Apply Chain
 
-状态：部分完成。已有 `CollectionIntent` 和最小 apply path，但 Tetragon policy 仍需要从 harness 迁移成 agent/runtime 主路径。
+状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；container/VM harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
 
 任务：
 
@@ -734,7 +736,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移以及 VM 真实 Tetragon systemd detection smoke 已落地；完整 Tetragon process ownership 和 policy apply ownership 仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移以及 VM 真实 Tetragon systemd detection smoke 已落地；完整 Tetragon process ownership 和端到端 policy ownership 仍未完成。
 
 注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents` 并完成检测上传；它仍复用环境中已运行的 Tetragon service 和预置 TracingPolicy。Phase 3 完成标准仍然是 agent/runtime 能独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
 

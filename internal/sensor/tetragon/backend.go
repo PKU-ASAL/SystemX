@@ -2,16 +2,20 @@ package tetragon
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
@@ -24,6 +28,7 @@ type Backend struct {
 	ContainerIDPrefix string
 
 	mu           sync.Mutex
+	intent       contract.CollectionIntent
 	policyLoaded bool
 	running      bool
 	installed    bool
@@ -92,6 +97,24 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 	}, nil
 }
 
+func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) error {
+	if b.PolicyPath == "" {
+		err := fmt.Errorf("tetragon policy path is required")
+		b.setError(err)
+		return err
+	}
+	if _, err := os.Stat(b.PolicyPath); err != nil {
+		b.setError(err)
+		return fmt.Errorf("verify tetragon policy: %w", err)
+	}
+	b.mu.Lock()
+	b.intent = intent
+	b.policyLoaded = false
+	b.lastError = ""
+	b.mu.Unlock()
+	return nil
+}
+
 func (b *Backend) prepareBundle() (BundleVerification, error) {
 	if b.Bundle.InstallDir != "" {
 		installed, err := InstallBundle(b.Bundle)
@@ -109,16 +132,17 @@ func (b *Backend) prepareBundle() (BundleVerification, error) {
 	return VerifyBundle(b.Bundle)
 }
 
-func (b *Backend) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
-	if b.PolicyPath == "" {
-		return nil, fmt.Errorf("tetragon policy path is required")
-	}
-	if _, err := os.Stat(b.PolicyPath); err != nil {
-		b.setError(err)
-		return nil, fmt.Errorf("verify tetragon policy: %w", err)
+func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	if err := b.ensureIntent(ctx, intent); err != nil {
+		return nil, err
 	}
 	stopSensor, err := b.startManagedSensor(ctx)
 	if err != nil {
+		b.setError(err)
+		return nil, err
+	}
+	if err := b.applyPreparedPolicy(ctx); err != nil {
+		stopSensor()
 		b.setError(err)
 		return nil, err
 	}
@@ -177,6 +201,155 @@ func (b *Backend) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<
 		}
 	}()
 	return out, nil
+}
+
+func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIntent) error {
+	b.mu.Lock()
+	loaded := b.policyLoaded
+	hasIntent := len(b.intent.EventKinds) > 0 || b.intent.ObserveOnly || len(b.intent.FilePrefixes) > 0 || len(b.intent.SocketFamilies) > 0
+	b.mu.Unlock()
+	if loaded || hasIntent {
+		return nil
+	}
+	return b.Apply(ctx, intent)
+}
+
+func (b *Backend) applyPreparedPolicy(ctx context.Context) error {
+	b.mu.Lock()
+	if b.policyLoaded {
+		b.mu.Unlock()
+		return nil
+	}
+	intent := b.intent
+	b.mu.Unlock()
+
+	if b.Bundle.TetraPath != "" && b.EventSource == "" && needsTracingPolicy(intent) {
+		path, err := b.renderTracingPolicy(intent)
+		if err != nil {
+			return err
+		}
+		if err := b.applyTracingPolicy(ctx, path); err != nil {
+			return err
+		}
+	}
+	b.mu.Lock()
+	b.policyLoaded = true
+	b.lastError = ""
+	b.mu.Unlock()
+	return nil
+}
+
+func needsTracingPolicy(intent contract.CollectionIntent) bool {
+	for _, kind := range intent.EventKinds {
+		switch kind {
+		case eventv1.EventKind_EVENT_KIND_CONNECT, eventv1.EventKind_EVENT_KIND_OPEN, eventv1.EventKind_EVENT_KIND_WRITE, eventv1.EventKind_EVENT_KIND_CHMOD:
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Backend) renderTracingPolicy(intent contract.CollectionIntent) (string, error) {
+	dir := filepath.Dir(b.PolicyPath)
+	if dir == "." || dir == "" {
+		dir = os.TempDir()
+	}
+	path := filepath.Join(dir, "sysarmor-runtime-tracingpolicy.yaml")
+	data := buildTracingPolicy(intent)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", fmt.Errorf("write tetragon tracing policy: %w", err)
+	}
+	return path, nil
+}
+
+func (b *Backend) applyTracingPolicy(ctx context.Context, path string) error {
+	cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "add", path)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(string(output))
+	if strings.Contains(strings.ToLower(trimmed), "already exists") {
+		return nil
+	}
+	if trimmed == "" {
+		return fmt.Errorf("apply tetragon tracing policy: %w", err)
+	}
+	return fmt.Errorf("apply tetragon tracing policy: %w: %s", err, trimmed)
+}
+
+func buildTracingPolicy(intent contract.CollectionIntent) []byte {
+	var out bytes.Buffer
+	out.WriteString("apiVersion: cilium.io/v1alpha1\n")
+	out.WriteString("kind: TracingPolicy\n")
+	out.WriteString("metadata:\n")
+	out.WriteString("  name: \"sysarmor-runtime-collection\"\n")
+	out.WriteString("spec:\n")
+	out.WriteString("  kprobes:\n")
+	if intentHasKind(intent, eventv1.EventKind_EVENT_KIND_CONNECT) {
+		out.WriteString(`  - call: "security_socket_connect"
+    syscall: false
+    args:
+    - index: 1
+      type: "sockaddr"
+    - index: 2
+      type: "int"
+    selectors:
+    - matchArgs:
+      - index: 1
+        operator: "Family"
+        values:
+        - "AF_INET"
+        - "AF_INET6"
+`)
+	}
+	if intentHasAnyKind(intent, eventv1.EventKind_EVENT_KIND_OPEN, eventv1.EventKind_EVENT_KIND_WRITE, eventv1.EventKind_EVENT_KIND_CHMOD) {
+		prefixes := intent.FilePrefixes
+		if len(prefixes) == 0 {
+			prefixes = []string{"/root/.ssh", "/var/run/secrets", "/etc/passwd"}
+		}
+		out.WriteString(`  - call: "security_file_permission"
+    syscall: false
+    return: true
+    args:
+    - index: 0
+      type: "file"
+    - index: 1
+      type: "int"
+    returnArg:
+      index: 0
+      type: "int"
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: "Prefix"
+        values:
+`)
+		for _, prefix := range prefixes {
+			out.WriteString("        - ")
+			out.WriteString(fmt.Sprintf("%q", prefix))
+			out.WriteString("\n")
+		}
+	}
+	return out.Bytes()
+}
+
+func intentHasAnyKind(intent contract.CollectionIntent, kinds ...eventv1.EventKind) bool {
+	for _, kind := range kinds {
+		if intentHasKind(intent, kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func intentHasKind(intent contract.CollectionIntent, kind eventv1.EventKind) bool {
+	for _, got := range intent.EventKinds {
+		if got == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Backend) Enforce(_ context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {

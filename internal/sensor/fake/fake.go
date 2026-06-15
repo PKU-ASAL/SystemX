@@ -42,10 +42,20 @@ func (s *Sensor) Capability(context.Context) (contract.Capability, error) {
 	}, nil
 }
 
-func (s *Sensor) Subscribe(ctx context.Context, intent contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+func (s *Sensor) Apply(_ context.Context, intent contract.CollectionIntent) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.intent = intent
 	s.policyLoaded = true
+	return nil
+}
+
+func (s *Sensor) Subscribe(ctx context.Context, intent contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	s.mu.Lock()
+	if !s.policyLoaded {
+		s.intent = intent
+		s.policyLoaded = true
+	}
 	events := append([]contract.EventEnvelope(nil), s.startupEvents...)
 	s.mu.Unlock()
 

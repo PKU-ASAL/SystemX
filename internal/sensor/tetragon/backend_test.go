@@ -130,6 +130,61 @@ func TestBackendManagedEventCommandSubscribesStdout(t *testing.T) {
 	}
 }
 
+func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed policy apply test requires /bin/sh")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC, CONNECT, OPEN]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	appliedPath := filepath.Join(dir, "applied")
+	tetraPath := filepath.Join(dir, "tetra")
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then cp \"$3\" '" + appliedPath + "'; exit 0; fi\nprintf '%s\\n' '" + raw + "'\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	intent := contract.CollectionIntent{
+		EventKinds: []eventv1.EventKind{
+			eventv1.EventKind_EVENT_KIND_EXEC,
+			eventv1.EventKind_EVENT_KIND_CONNECT,
+			eventv1.EventKind_EVENT_KIND_OPEN,
+		},
+		ObserveOnly: true,
+	}
+	if err := backend.Apply(context.Background(), intent); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	events, err := backend.Subscribe(context.Background(), intent)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	for range events {
+	}
+	data, err := os.ReadFile(appliedPath)
+	if err != nil {
+		t.Fatalf("generated tracing policy was not applied: %v", err)
+	}
+	for _, want := range []string{"kind: TracingPolicy", "security_socket_connect", "security_file_permission"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("generated policy missing %q:\n%s", want, string(data))
+		}
+	}
+	health, err := backend.Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+	if !health.PolicyLoaded {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
 func TestBackendRestartsManagedSensorProcess(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed sensor restart test requires /bin/sh")

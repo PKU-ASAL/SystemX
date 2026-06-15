@@ -79,6 +79,10 @@ func (f *fakeSensor) Capability(context.Context) (contract.Capability, error) {
 	return contract.Capability{Backend: "fake", Version: "test", SupportsExec: true, SupportsHealth: true}, nil
 }
 
+func (f *fakeSensor) Apply(context.Context, contract.CollectionIntent) error {
+	return nil
+}
+
 func (f *fakeSensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
 	out := make(chan contract.EventEnvelope)
 	go func() {

@@ -46,6 +46,9 @@ func (m *Manager) Apply(ctx context.Context, intent contract.CollectionIntent) e
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.sensor.Apply(ctx, intent); err != nil {
+		return err
+	}
 	m.intent = intent
 	m.applied = true
 	return nil

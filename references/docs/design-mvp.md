@@ -222,8 +222,8 @@ make report
 | daemon run shape | 已有 `sysarmor-agent run --config ...`,可通过 fake sensor 跑 daemon 主路径 |
 | sensor contract | 已有 `internal/sensor/contract`,定义 capability/subscribe/enforce/health 等边界 |
 | sensor runtime skeleton | 已有 `internal/sensor/runtime`,支持 fake backend 生命周期测试 |
-| policy apply path | 已有 `internal/agent/policy` 将最小 collection policy 映射为 `CollectionIntent` |
-| Tetragon backend | 已有 `internal/sensor/tetragon`,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程订阅和 health 汇总 |
+| policy apply path | 已有 `internal/agent/policy` 将最小 collection policy 映射为 `CollectionIntent`,runtime `Apply` 已下沉到 backend |
+| Tetragon backend | 已有 `internal/sensor/tetragon`,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程订阅、generated TracingPolicy apply 和 health 汇总 |
 | local spool | 已有 `internal/agent/spool`,支持 file-backed append/list/load/ack/stats 和 stable batch id |
 | upload drain | 已有 `internal/agent/uploadworker`,支持 oldest-first drain、成功 ack、失败保留、后台 retry loop 和 request timeout |
 | queue backpressure | 已有 spool `max_bytes` 限制、backpressure/drop 统计,daemon health 输出队列状态 |
@@ -251,6 +251,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - v1 replay/stream 仍可消费 `tetra getevents -o json` 输出。
 - v2 已有 Sensor contract、fake backend、runtime skeleton。
 - v2 已有 Tetragon backend,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程和 health 汇总。
+- runtime `Apply` 已下沉调用 backend apply；Tetragon backend 可从 `CollectionIntent` 生成最小 TracingPolicy 并通过 `tetra tracingpolicy add` 应用。
 - process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
 - managed Tetragon 已接入 restart 配置和 health 状态。
 - sensor tamper/blindness 已能作为 endpoint signal 写入 spool 并上传。
@@ -260,7 +261,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 
 - capability 探测仍是最小骨架,不是完整主机能力探测。
 - dropped events / parse errors / restart window / degraded 状态还需要继续细化阈值和验收。
-- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现。
+- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现,还需要把 container/VM harness 预加载兼容步骤继续迁出。
 - container/VM 主 e2e 已默认迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent。
 - Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。

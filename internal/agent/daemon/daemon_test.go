@@ -535,6 +535,10 @@ func (s *healthOnlySensor) Capability(context.Context) (contract.Capability, err
 	return contract.Capability{Backend: s.health.Backend, Version: "test", SupportsHealth: true}, nil
 }
 
+func (s *healthOnlySensor) Apply(context.Context, contract.CollectionIntent) error {
+	return nil
+}
+
 func (s *healthOnlySensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
 	out := make(chan contract.EventEnvelope)
 	go func() {

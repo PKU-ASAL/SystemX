@@ -10,6 +10,7 @@ import (
 
 type Sensor interface {
 	Capability(ctx context.Context) (Capability, error)
+	Apply(ctx context.Context, intent CollectionIntent) error
 	Subscribe(ctx context.Context, intent CollectionIntent) (<-chan EventEnvelope, error)
 	Enforce(ctx context.Context, cmd EnforcementCmd) (EnforcementAck, error)
 	Health(ctx context.Context) (Health, error)
