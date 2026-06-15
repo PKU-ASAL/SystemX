@@ -190,6 +190,10 @@ echo "[e2e-agent-real-tetragon-owned-container] verifying manual restart keeps o
 docker exec "$OWNED_CONTAINER" sh -c "kill -TERM $PID_BEFORE" >/dev/null
 wait_contains "agent-health degraded after stop" '"status":"degraded"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-degraded.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health queued batches after stop" '"queued_batches":0' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-stop.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health remaining batches after stop" '"remaining_batches":0' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-stop.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 deadline=$((SECONDS + 30))
 until ! docker exec "$OWNED_CONTAINER" sh -c "kill -0 $PID_BEFORE" >/dev/null 2>&1; do
   if (( SECONDS >= deadline )); then

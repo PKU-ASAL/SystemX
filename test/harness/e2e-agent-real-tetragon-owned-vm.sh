@@ -172,6 +172,10 @@ echo "[e2e-agent-real-tetragon-owned-vm] verifying systemd restarts owned real T
 vagrant ssh node-a -c "sudo kill -TERM $PID_BEFORE" >/dev/null
 wait_contains "agent-health degraded after stop" '"status":"degraded"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-degraded.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health queued batches after stop" '"queued_batches":0' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-stop.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health remaining batches after stop" '"remaining_batches":0' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-stop.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 deadline=$((SECONDS + 30))
 PID_AFTER=""
 until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE" ]]; do
