@@ -781,7 +781,7 @@ WantedBy=multi-user.target
 
 ### Phase 4: Sensor Health, Restart, Tamper Signal
 
-状态：大部分完成。health ingest/query、sensor process health、restart policy、tamper/blindness endpoint signal、本机 restart smoke 以及本机 degraded→recovered smoke 已落地；剩余重点是 parse/drop 阈值和 container/VM 主路径验收。
+状态：大部分完成。health ingest/query、sensor process health、restart policy、tamper/blindness endpoint signal、本机 restart smoke、本机 degraded→recovered smoke 以及 container managed degraded→recovered smoke 已落地；剩余重点是 parse/drop 阈值和 VM 主路径验收。
 
 任务：
 
@@ -823,7 +823,7 @@ WantedBy=multi-user.target
 
 ### Phase 6: Registration/Auth, Heartbeat, Health API
 
-状态：基本完成。dev token 校验、agent health ingest/query、`sysarmorctl agent-health` 以及本机 degraded→recovered health smoke 已落地；剩余重点是 container/VM 主路径 e2e 断言和 tenant/agent 维度一致性。
+状态：基本完成。dev token 校验、agent health ingest/query、`sysarmorctl agent-health`、本机 degraded→recovered health smoke 以及 container 主路径 degraded→recovered health smoke 已落地；剩余重点是 VM 主路径 e2e 断言和 tenant/agent 维度一致性。
 
 任务：
 
