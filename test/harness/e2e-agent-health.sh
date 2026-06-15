@@ -42,6 +42,9 @@ sensor:
   backend: fake
   mode: managed
   policy_path: $TMP/policy.yaml
+  scope:
+    type: container
+    selector: e2e-scope
   observe_only: true
   restart: always
   max_restarts: 1
@@ -103,6 +106,8 @@ wait_contains "sysarmorctl agents tenant" '"tenant_id":"default"' "$RESULTS/e2e-
 wait_contains "sysarmorctl agent-health" '"agent_id":"e2e-agent-health"' "$RESULTS/e2e-agent-health.health.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-health.health.json" \
+  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
+wait_contains "sysarmorctl agent-health scope type" '"scope":{"type":"container","selector":"e2e-scope"}' "$RESULTS/e2e-agent-health.health.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl metrics" '"events_ingested":1' "$RESULTS/e2e-agent-health.metrics.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json metrics
