@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart clean
+.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-spool clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -60,6 +60,9 @@ e2e-agent-daemon:             ## v2: 本机 fake sensor daemon → health/upload
 
 e2e-agent-sensor-restart:     ## v2: fake tetragon bundle → restart/degraded/tamper → manager 查询
 	bash harness/e2e-agent-sensor-restart.sh
+
+e2e-agent-spool:              ## v2: manager outage → durable spool → recovery drain
+	bash harness/e2e-agent-spool.sh
 
 clean:                        ## 全部清理 (含样本)
 	bash harness/cleanup.sh $(TOPO) --results
@@ -84,6 +87,7 @@ help:                         ## 显示帮助
 	@echo "  e2e         up + capture + assert"
 	@echo "  e2e-agent-daemon  v2 fake daemon + health/upload manager smoke"
 	@echo "  e2e-agent-sensor-restart  v2 managed sensor restart + tamper smoke"
+	@echo "  e2e-agent-spool  v2 manager outage + durable spool recovery smoke"
 	@echo "  provision   VM: rsync + re-provision"
 	@echo "  status      查看运行态"
 	@echo "  clean       全部清理 + 删样本"
