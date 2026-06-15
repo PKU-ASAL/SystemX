@@ -131,6 +131,9 @@ make e2e-agent-shutdown
 # startup capability/bundle failure -> degraded health
 make e2e-agent-capability
 
+# upload retry/backoff soak
+make e2e-agent-retry-backoff
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10
