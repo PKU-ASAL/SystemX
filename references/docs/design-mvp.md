@@ -275,8 +275,8 @@ make report
 
 对容器场景,这还意味着一个额外的架构收口方向:
 
-- 当前主路径已经用 `scope_type=container` + `scope_selector=<container id prefix>` 证明 workload-scoped collection 可行。
-- `container_id_prefix` 仅保留为兼容旧配置的过渡入口,不应继续作为长期 contract 呈现。
+- 当前主路径已经迁移到正式 `sensor.scope.type=container` + `sensor.scope.selector=<container id prefix>`,证明 workload-scoped collection 可行。
+- `scope_type/scope_selector` 仅保留为扁平兼容入口,`container_id_prefix` 仅保留为兼容旧配置的过渡 alias,不应继续作为长期 contract 呈现。
 - 中期路线已经明确为正式的 runtime scope contract,不能长期停留在“容器拓扑特判”:
 
 ```text
@@ -310,8 +310,8 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - v2 已有 Sensor contract、fake backend、runtime skeleton。
 - v2 已有 Tetragon backend,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程和 health 汇总。
 - runtime `Apply` 已下沉调用 backend apply；Tetragon backend 可从 `CollectionIntent` 生成最小 TracingPolicy 并通过 `tetra tracingpolicy add` 应用。
-- container 侧的真实主路径已经证明了“独立 sensor runtime + workload scope”这条方向可行,而且 `scope_type/scope_selector` 已经进入 agent config、collection intent 和 Tetragon backend。
-- 当前仍保留 `container_id_prefix` 兼容旧配置,但它现在应被视为映射到 `scope_type=container` 的 legacy alias,而不是后续文档和验收的中心概念。
+- container 侧的真实主路径已经证明了“独立 sensor runtime + workload scope”这条方向可行,而且正式 `sensor.scope` 已经进入 agent config、collection intent、Tetragon backend 和 container 聚合 e2e。
+- 当前仍保留 `scope_type/scope_selector` 和 `container_id_prefix` 兼容旧配置,但它们应被视为映射到 `sensor.scope` 的 legacy/compat alias,而不是后续文档和验收的中心概念。
 - process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
 - managed Tetragon 已接入 restart 配置和 health 状态。
 - sensor tamper/blindness 已能作为 endpoint signal 写入 spool 并上传。

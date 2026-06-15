@@ -213,7 +213,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - dropped events / parse errors / degraded 状态已有阈值配置、health 暴露和本机 e2e 验收；后续重点转向真实 Tetragon 主路径中的 dropped counter 对齐。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和带 runtime scope entity 的 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
-  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `scope_type=container` + `scope_selector=<container id prefix>` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`container_id_prefix` 仅作为 legacy config alias 保留，后续验收应以正式 scope contract 为准。
+  - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅已通过正式 `sensor.scope.type=container` + `sensor.scope.selector=<container id prefix>` 收紧到 node-a workload scope,并完成聚合验证。container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`scope_type/scope_selector` 仅作为扁平兼容入口,`container_id_prefix` 仅作为 legacy config alias 保留。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
@@ -857,7 +857,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、capability probe、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、required BTF 缺失 degraded smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
+状态：进行中。bundle verify/install、capability probe、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、required BTF 缺失 degraded smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、正式 `sensor.scope` 配置下的聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
 
 注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；新增 VM/container owned-process smoke 进一步证明 agent 可拥有真实 `tetragon` 进程并跑通检测。Phase 3 完成标准仍然是 agent/runtime 能在 container/VM 主路径上独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
 
@@ -1184,7 +1184,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool/restart/tamper 基础已经基本完成,后续重点应放在 harness 主路径迁移、systemd 和长跑可靠性上：
 
 1. 固化 container managed detection 聚合:
-   - 保持 `scope_type=container` + `scope_selector` 这类 runtime scope 过滤，避免 host 噪音淹没真实 container 场景事件。
+   - 保持正式 `sensor.scope.type=container` + `sensor.scope.selector` 过滤，避免 host 噪音淹没真实 container 场景事件；`scope_type/scope_selector` 只作为兼容入口测试。
    - 新增配置和测试时优先使用 `sensor.scope.type/sensor.scope.selector`,扁平字段只作为兼容入口。
    - 保留 `make -C test e2e-agent-detection-container-all` 作为三场景 smoke。
    - 保持 `make e2e TOPO=container ...` 作为正式 capture/assert 主路径，两者互为补充。
