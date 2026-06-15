@@ -59,6 +59,27 @@ func TestDrainOnceStopsOnFailureAndKeepsBatch(t *testing.T) {
 	}
 }
 
+func TestDrainOnceKeepsBatchOnAckIDMismatch(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{ackBatchID: "different-batch"}
+	worker := &Worker{Queue: queue, Uploader: up}
+	stats, err := worker.DrainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("DrainOnce() error = %v", err)
+	}
+	if stats.UploadedBatches != 0 || stats.RemainingBatches != 1 || stats.LastError == "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	entries, err := queue.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
 func TestDrainWithRetryBacksOffAndRecovers(t *testing.T) {
 	queue := openQueue(t)
 	mustAppend(t, queue, "event-1")
@@ -172,16 +193,21 @@ type recordingUploader struct {
 	failAfter         int
 	failBeforeSuccess int
 	attempts          int
+	ackBatchID        string
 }
 
-func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) error {
+func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
 	u.attempts++
 	if u.failBeforeSuccess > 0 && u.attempts <= u.failBeforeSuccess {
-		return errors.New("temporary upload failure")
+		return nil, errors.New("temporary upload failure")
 	}
 	if u.failAfter > 0 && len(u.ids) >= u.failAfter {
-		return errors.New("upload failed")
+		return nil, errors.New("upload failed")
 	}
 	u.ids = append(u.ids, batch.GetEvents()[0].GetId())
-	return nil
+	ackID := u.ackBatchID
+	if ackID == "" {
+		ackID = batch.GetBatchId()
+	}
+	return &analyticsv1.UploadAck{Ok: true, BatchId: ackID}, nil
 }

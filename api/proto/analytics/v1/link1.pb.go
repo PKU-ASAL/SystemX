@@ -88,6 +88,7 @@ type UploadBatch struct {
 	Agent         *AgentHello            `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
 	Events        []*v1.CanonicalEvent   `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
 	Signals       []*v11.Signal          `protobuf:"bytes,3,rep,name=signals,proto3" json:"signals,omitempty"`
+	BatchId       string                 `protobuf:"bytes,4,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,12 +144,20 @@ func (x *UploadBatch) GetSignals() []*v11.Signal {
 	return nil
 }
 
+func (x *UploadBatch) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
 type UploadAck struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Ok              bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
 	Message         string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	AcceptedEvents  uint64                 `protobuf:"varint,3,opt,name=accepted_events,json=acceptedEvents,proto3" json:"accepted_events,omitempty"`
 	AcceptedSignals uint64                 `protobuf:"varint,4,opt,name=accepted_signals,json=acceptedSignals,proto3" json:"accepted_signals,omitempty"`
+	BatchId         string                 `protobuf:"bytes,5,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -211,6 +220,13 @@ func (x *UploadAck) GetAcceptedSignals() uint64 {
 	return 0
 }
 
+func (x *UploadAck) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
 var File_api_proto_analytics_v1_link1_proto protoreflect.FileDescriptor
 
 const file_api_proto_analytics_v1_link1_proto_rawDesc = "" +
@@ -220,16 +236,18 @@ const file_api_proto_analytics_v1_link1_proto_rawDesc = "" +
 	"AgentHello\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"\xb7\x01\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\xd2\x01\n" +
 	"\vUploadBatch\x127\n" +
 	"\x05agent\x18\x01 \x01(\v2!.sysarmor.analytics.v1.AgentHelloR\x05agent\x129\n" +
 	"\x06events\x18\x02 \x03(\v2!.sysarmor.event.v1.CanonicalEventR\x06events\x124\n" +
-	"\asignals\x18\x03 \x03(\v2\x1a.sysarmor.signal.v1.SignalR\asignals\"\x89\x01\n" +
+	"\asignals\x18\x03 \x03(\v2\x1a.sysarmor.signal.v1.SignalR\asignals\x12\x19\n" +
+	"\bbatch_id\x18\x04 \x01(\tR\abatchId\"\xa4\x01\n" +
 	"\tUploadAck\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12'\n" +
 	"\x0faccepted_events\x18\x03 \x01(\x04R\x0eacceptedEvents\x12)\n" +
-	"\x10accepted_signals\x18\x04 \x01(\x04R\x0facceptedSignals2W\n" +
+	"\x10accepted_signals\x18\x04 \x01(\x04R\x0facceptedSignals\x12\x19\n" +
+	"\bbatch_id\x18\x05 \x01(\tR\abatchId2W\n" +
 	"\x05Link1\x12N\n" +
 	"\x06Upload\x12\".sysarmor.analytics.v1.UploadBatch\x1a .sysarmor.analytics.v1.UploadAckBNZLgithub.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1;analyticsv1b\x06proto3"
 

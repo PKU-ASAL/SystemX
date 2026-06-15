@@ -97,12 +97,12 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":               true,
-		"accepted_events":  result.AcceptedEvents,
-		"accepted_signals": result.AcceptedSignals,
-		"cloud_signals":    result.CloudSignals,
-		"incidents":        result.Incidents,
+	writeProtoJSON(w, &analyticsv1.UploadAck{
+		Ok:              true,
+		Message:         "accepted",
+		AcceptedEvents:  uint64(result.AcceptedEvents),
+		AcceptedSignals: uint64(result.AcceptedSignals),
+		BatchId:         batch.GetBatchId(),
 	})
 }
 
@@ -253,6 +253,16 @@ func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeProtoJSON(w http.ResponseWriter, msg proto.Message) {
+	w.Header().Set("Content-Type", "application/json")
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(msg)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("encode proto json: %v", err), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(append(data, '\n'))
 }
 
 func writeSignalList(w http.ResponseWriter, signals []*signalv1.Signal) {

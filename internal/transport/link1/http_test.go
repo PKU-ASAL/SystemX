@@ -71,6 +71,36 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 	}
 }
 
+func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	batch := &analyticsv1.UploadBatch{
+		BatchId: "00000000000000000042",
+		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a"},
+		Events: []*eventv1.CanonicalEvent{{
+			Id:   "ev-ack",
+			Kind: eventv1.EventKind_EVENT_KIND_EXEC,
+		}},
+	}
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	ack := &analyticsv1.UploadAck{}
+	if err := protojson.Unmarshal(rec.Body.Bytes(), ack); err != nil {
+		t.Fatalf("decode ack: %v body=%s", err, rec.Body.String())
+	}
+	if !ack.GetOk() || ack.GetBatchId() != batch.GetBatchId() || ack.GetAcceptedEvents() != 1 {
+		t.Fatalf("ack = %#v", ack)
+	}
+}
+
 func TestAgentsEventsResetAndRecompute(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

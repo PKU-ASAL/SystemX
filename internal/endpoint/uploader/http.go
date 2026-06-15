@@ -37,14 +37,14 @@ func NewHTTPUploaderWithOptions(manager string, timeout time.Duration, token str
 	}
 }
 
-func (u *HTTPUploader) Upload(batch *analyticsv1.UploadBatch) error {
+func (u *HTTPUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
 	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req, err := http.NewRequest(http.MethodPost, u.manager+"/api/v1/upload", bytes.NewReader(data))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if u.token != "" {
@@ -52,14 +52,21 @@ func (u *HTTPUploader) Upload(batch *analyticsv1.UploadBatch) error {
 	}
 	resp, err := u.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("upload failed: %s: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("upload failed: %s: %s", resp.Status, string(body))
 	}
-	return nil
+	ack := &analyticsv1.UploadAck{}
+	if err := protojson.Unmarshal(body, ack); err != nil {
+		return nil, fmt.Errorf("decode upload ack: %w", err)
+	}
+	if !ack.GetOk() {
+		return ack, fmt.Errorf("upload rejected: %s", ack.GetMessage())
+	}
+	return ack, nil
 }
 
 func normalizeManagerURL(manager string) string {

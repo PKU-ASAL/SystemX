@@ -33,7 +33,7 @@ func NewGRPCUploaderWithOptions(manager string, timeout time.Duration, token str
 	return &GRPCUploader{manager: normalizeGRPCAddress(manager), timeout: timeout, token: token}
 }
 
-func (u *GRPCUploader) Upload(batch *analyticsv1.UploadBatch) error {
+func (u *GRPCUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), u.timeout)
 	defer cancel()
 	if u.token != "" {
@@ -41,17 +41,17 @@ func (u *GRPCUploader) Upload(batch *analyticsv1.UploadBatch) error {
 	}
 	conn, err := grpc.DialContext(ctx, u.manager, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, batch)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !ack.GetOk() {
-		return fmt.Errorf("upload rejected: %s", ack.GetMessage())
+		return ack, fmt.Errorf("upload rejected: %s", ack.GetMessage())
 	}
-	return nil
+	return ack, nil
 }
 
 func normalizeGRPCAddress(manager string) string {

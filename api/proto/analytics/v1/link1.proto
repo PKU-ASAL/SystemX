@@ -17,6 +17,7 @@ message UploadBatch {
   AgentHello agent = 1;
   repeated sysarmor.event.v1.CanonicalEvent events = 2;
   repeated sysarmor.signal.v1.Signal signals = 3;
+  string batch_id = 4;
 }
 
 message UploadAck {
@@ -24,6 +25,7 @@ message UploadAck {
   string message = 2;
   uint64 accepted_events = 3;
   uint64 accepted_signals = 4;
+  string batch_id = 5;
 }
 
 service Link1 {

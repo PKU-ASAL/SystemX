@@ -31,6 +31,7 @@ func (s *grpcServer) Upload(ctx context.Context, batch *analyticsv1.UploadBatch)
 		Message:         "accepted",
 		AcceptedEvents:  uint64(result.AcceptedEvents),
 		AcceptedSignals: uint64(result.AcceptedSignals),
+		BatchId:         batch.GetBatchId(),
 	}, nil
 }
 

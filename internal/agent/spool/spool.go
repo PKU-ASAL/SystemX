@@ -69,6 +69,7 @@ func (q *Queue) Append(batch *analyticsv1.UploadBatch) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	batch.BatchId = id
 	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
 	if err != nil {
 		return "", err

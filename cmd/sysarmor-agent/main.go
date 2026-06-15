@@ -116,7 +116,8 @@ func uploadJSONL(manager, transport, agentID, hostID, scenario, input string) er
 	if err != nil {
 		return err
 	}
-	return up.Upload(batch)
+	_, err = up.Upload(batch)
+	return err
 }
 
 func streamJSONL(manager, transport, agentID, hostID, scenario, input string, batchSize int, flushInterval time.Duration) (uploader.StreamStats, error) {

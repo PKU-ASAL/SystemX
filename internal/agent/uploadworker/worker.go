@@ -55,8 +55,14 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 			stats.LastError = err.Error()
 			return w.withRemaining(stats)
 		}
-		if err := w.Uploader.Upload(batch); err != nil {
+		ack, err := w.Uploader.Upload(batch)
+		if err != nil {
 			stats.LastError = err.Error()
+			w.setLastError(stats.LastError)
+			return w.withRemaining(stats)
+		}
+		if ack != nil && ack.GetBatchId() != "" && ack.GetBatchId() != entry.ID {
+			stats.LastError = fmt.Sprintf("upload ack batch_id mismatch: got %q want %q", ack.GetBatchId(), entry.ID)
 			w.setLastError(stats.LastError)
 			return w.withRemaining(stats)
 		}

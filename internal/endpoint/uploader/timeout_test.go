@@ -47,7 +47,7 @@ func TestHTTPUploaderSendsAgentToken(t *testing.T) {
 	}))
 	defer server.Close()
 	up := NewHTTPUploaderWithOptions(server.URL, time.Second, "dev-token")
-	if err := up.Upload(&analyticsv1.UploadBatch{}); err != nil {
+	if _, err := up.Upload(&analyticsv1.UploadBatch{}); err != nil {
 		t.Fatalf("Upload() error = %v", err)
 	}
 }

@@ -32,6 +32,9 @@ func TestQueueAppendLoadAck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
+	if loaded.GetBatchId() != id {
+		t.Fatalf("batch_id = %q, want %q", loaded.GetBatchId(), id)
+	}
 	if loaded.GetEvents()[0].GetId() != "event-1" {
 		t.Fatalf("loaded batch = %+v", loaded)
 	}

@@ -14,9 +14,9 @@ type recordingUploader struct {
 	batches []*analyticsv1.UploadBatch
 }
 
-func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) error {
+func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
 	u.batches = append(u.batches, batch)
-	return nil
+	return &analyticsv1.UploadAck{Ok: true, BatchId: batch.GetBatchId()}, nil
 }
 
 func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {

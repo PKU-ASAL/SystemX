@@ -40,6 +40,7 @@ func TestGRPCUpload(t *testing.T) {
 	defer conn.Close()
 
 	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+		BatchId: "00000000000000000007",
 		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
 		Signals: []*signalv1.Signal{
 			endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
@@ -50,8 +51,8 @@ func TestGRPCUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ack.GetOk() || ack.GetAcceptedSignals() != 3 {
-		t.Fatalf("ack = %#v, want ok with 3 accepted signals", ack)
+	if !ack.GetOk() || ack.GetAcceptedSignals() != 3 || ack.GetBatchId() != "00000000000000000007" {
+		t.Fatalf("ack = %#v, want ok with 3 accepted signals and batch id", ack)
 	}
 	if got := st.ListIncidents("apt-fileless-c2"); len(got) != 1 {
 		t.Fatalf("incidents = %d, want 1", len(got))

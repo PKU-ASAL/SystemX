@@ -17,7 +17,7 @@ import (
 )
 
 type BatchUploader interface {
-	Upload(batch *analyticsv1.UploadBatch) error
+	Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error)
 }
 
 type StreamOptions struct {
@@ -63,7 +63,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchUploader, opts Stream
 		if len(batch.GetEvents()) == 0 && len(batch.GetSignals()) == 0 {
 			return nil
 		}
-		if err := up.Upload(batch); err != nil {
+		if _, err := up.Upload(batch); err != nil {
 			return err
 		}
 		stats.Batches++

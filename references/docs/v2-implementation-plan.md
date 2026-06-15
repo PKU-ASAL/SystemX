@@ -1092,13 +1092,15 @@ file-backed spool 不是简单写文件。它需要和 Link1 ack 语义对齐：
 
 v2 可以继续使用 unary HTTP/gRPC upload，但要把 batch id、ack、retry、delete 的语义写清楚。
 
-当前代码已经有 agent-side stable batch id 和 manager store upsert,下一步应补的是：
+当前代码已经有 agent-side stable batch id、upload payload 显式 `batch_id`、HTTP/gRPC `UploadAck.batch_id`、manager store upsert,以及 worker 侧 ack id 校验:
 
-- upload payload/metadata 显式携带 batch id。
-- manager ack 返回 durable accepted 的 batch id 或 cursor。
-- agent 只在收到成功 ack 后删除 batch。
-- retry 重传不应放大 event/signal/incident。
-- health 暴露 queue depth、last upload error、drop/backpressure counters。
+- spool append 生成稳定 batch id,并写入 `UploadBatch.batch_id`。
+- manager ack 返回 durable accepted 的 `batch_id`。
+- agent 只在收到成功 ack 后删除 batch；如果 ack batch id 与本地 entry 不一致,保留 batch 并进入 upload error。
+- retry 重传依赖 store upsert/idempotency 避免放大 event/signal/incident。
+- health 已暴露 queue depth、last upload error、drop/backpressure counters。
+
+后续如果 Link1 从 unary 演进到 streaming,应保留同一个 batch/cursor 语义,不要退回“HTTP 200 即删除本地文件”的隐式确认。
 
 ### 9.4 Policy Apply 的最小闭环
 
