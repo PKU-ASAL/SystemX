@@ -753,6 +753,20 @@ func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
 	if sensor["running"] != false {
 		t.Fatalf("final sensor running = %v, want false", sensor["running"])
 	}
+	queue, ok := last["queue_health"].(map[string]any)
+	if !ok {
+		t.Fatalf("final health missing queue_health: %+v", last)
+	}
+	if queue["queued_batches"] != float64(0) {
+		t.Fatalf("final queued_batches = %v, want 0", queue["queued_batches"])
+	}
+	upload, ok := last["upload_health"].(map[string]any)
+	if !ok {
+		t.Fatalf("final health missing upload_health: %+v", last)
+	}
+	if upload["remaining_batches"] != float64(0) {
+		t.Fatalf("final remaining_batches = %v, want 0", upload["remaining_batches"])
+	}
 }
 
 func TestRunnerReportsStartupFailureHealthToManager(t *testing.T) {

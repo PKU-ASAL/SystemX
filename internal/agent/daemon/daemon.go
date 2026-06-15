@@ -120,6 +120,16 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		case <-ctx.Done():
 			cancelUploads()
 			stopRuntime()
+			var drainErr error
+			if !opts.DrainOnce {
+				var stats uploadworker.Stats
+				drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
+				stats, drainErr = worker.DrainOnce(drainCtx)
+				cancel()
+				if r.Out != nil {
+					fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
+				}
+			}
 			finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
 			if healthErr == nil {
 				if err := reporter.Report(context.Background(), finalHealth); err != nil && r.Out != nil {
@@ -129,15 +139,6 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 					fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_upload_error=%q\n",
 						finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.Upload.LastError)
 				}
-			}
-			if opts.DrainOnce {
-				return ctx.Err()
-			}
-			drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
-			stats, drainErr := worker.DrainOnce(drainCtx)
-			cancel()
-			if r.Out != nil {
-				fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
 			}
 			if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 				return drainErr

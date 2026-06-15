@@ -116,6 +116,10 @@ AGENT_PID=""
 
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/metrics" '"events_ingested":1' "$RESULTS/e2e-agent-shutdown.metrics.json"
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/events?scenario=" '"agent_id":"e2e-agent-shutdown"' "$RESULTS/e2e-agent-shutdown.events.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"status":"degraded"' "$RESULTS/e2e-agent-shutdown.health.final.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"running":false' "$RESULTS/e2e-agent-shutdown.health.final.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"queued_batches":0' "$RESULTS/e2e-agent-shutdown.health.final.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"remaining_batches":0' "$RESULTS/e2e-agent-shutdown.health.final.json"
 
 deadline=$((SECONDS + 10))
 while compgen -G "$TMP/spool/*.batch.json" >/dev/null; do
@@ -131,6 +135,11 @@ done
 
 if ! grep -Fq 'agent shutdown drain: uploaded=1 remaining=0' "$TMP/agent.log"; then
   echo "[e2e-agent-shutdown][ERROR] expected shutdown drain evidence in agent log" >&2
+  cat "$TMP/agent.log" >&2
+  exit 1
+fi
+if ! grep -Fq 'agent final health: sensor=fake running=false policy_loaded=true status=degraded queued_batches=0' "$TMP/agent.log"; then
+  echo "[e2e-agent-shutdown][ERROR] expected final health to report drained queue" >&2
   cat "$TMP/agent.log" >&2
   exit 1
 fi

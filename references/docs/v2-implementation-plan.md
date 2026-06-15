@@ -194,7 +194,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Agent daemon:
   - 后台 upload loop、spool recovery、request timeout、ack batch_id 校验、agent restart 后 unacked batch 恢复 e2e、manager ingest 幂等计数和重复 batch 不放大 e2e 已有,但 retry/backoff 的可配置策略和更长时间 soak 还需要继续补齐。
-  - graceful shutdown、flush 语义还未完整验收。
+  - graceful shutdown flush 已有本机 e2e,并断言 SIGTERM 后 shutdown drain、spool 清空、manager 侧 final degraded health 中 `queued_batches=0` / `remaining_batches=0`；后续仍需更长窗口 soak。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
 - health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke 以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
   - tenant/agent identity 已进入 upload、health 和 store 主链路；manager 已对 upload agent/host/tenant identity 做最小校验,但还不是完整 RBAC/enrollment。
@@ -1159,7 +1159,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
    - health.policy_loaded / apply error。
    - container/VM managed capture/assert 主路径不再依赖 harness 预先加载 policy。
 5. 补长期运行可靠性:
-   - graceful shutdown flush。
+   - graceful shutdown flush 已补 final health 验收,覆盖 SIGTERM 后 shutdown drain、spool 清空和 manager health 队列状态归零。
    - retry/backoff soak。
    - agent restart 后 unacked batch 恢复已补本机 e2e,覆盖 mismatched ack 不删 batch、agent restart 后以相同 batch_id 重传并在 valid ack 后 drain。
    - manager outage 后 queued batches drain。
