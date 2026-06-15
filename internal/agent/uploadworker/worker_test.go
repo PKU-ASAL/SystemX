@@ -85,6 +85,64 @@ func TestDrainWithRetryBacksOffAndRecovers(t *testing.T) {
 	}
 }
 
+func TestDrainWithRetryCapsAtMaxBackoff(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{failBeforeSuccess: 4}
+	worker := &Worker{
+		Queue:    queue,
+		Uploader: up,
+		Backoff:  Backoff{Initial: 5 * time.Millisecond, Max: 10 * time.Millisecond},
+	}
+
+	start := time.Now()
+	stats, err := worker.DrainWithRetry(context.Background())
+	if err != nil {
+		t.Fatalf("DrainWithRetry() error = %v", err)
+	}
+	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if up.attempts != 5 {
+		t.Fatalf("attempts = %d, want 5", up.attempts)
+	}
+	if elapsed := time.Since(start); elapsed < 30*time.Millisecond {
+		t.Fatalf("elapsed = %s, want at least capped backoff window", elapsed)
+	}
+	if elapsed := time.Since(start); elapsed > 120*time.Millisecond {
+		t.Fatalf("elapsed = %s, unexpectedly high for capped backoff", elapsed)
+	}
+}
+
+func TestDrainWithRetryStopsOnContextCancel(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{failBeforeSuccess: 100}
+	worker := &Worker{
+		Queue:    queue,
+		Uploader: up,
+		Backoff:  Backoff{Initial: 50 * time.Millisecond, Max: 50 * time.Millisecond},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(20*time.Millisecond, cancel)
+
+	start := time.Now()
+	stats, err := worker.DrainWithRetry(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("DrainWithRetry() error = %v, want context.Canceled", err)
+	}
+	if stats.RemainingBatches != 1 || stats.LastError == "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if up.attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 before cancellation", up.attempts)
+	}
+	if elapsed := time.Since(start); elapsed > 80*time.Millisecond {
+		t.Fatalf("elapsed = %s, cancel should stop retry promptly", elapsed)
+	}
+}
+
 func openQueue(t *testing.T) *spool.Queue {
 	t.Helper()
 	q, err := spool.Open(filepath.Join(t.TempDir(), "spool"))

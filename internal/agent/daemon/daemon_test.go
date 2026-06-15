@@ -263,6 +263,90 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	}
 }
 
+func TestRunnerBackgroundUploadLoopBacksOffAndRecovers(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		mu       sync.Mutex
+		attempts []time.Time
+	)
+	uploaded := make(chan struct{})
+	var closeUploaded sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/upload" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		mu.Lock()
+		attempts = append(attempts, time.Now())
+		n := len(attempts)
+		mu.Unlock()
+		if n < 4 {
+			http.Error(w, "temporary outage", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		closeUploaded.Do(func() {
+			close(uploaded)
+		})
+	}))
+	defer server.Close()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: 5 * time.Millisecond},
+		Upload:  config.UploadConfig{RetryInitial: 5 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &bytes.Buffer{}})
+	}()
+	select {
+	case <-uploaded:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovered upload")
+	}
+	mu.Lock()
+	gotAttempts := append([]time.Time(nil), attempts...)
+	mu.Unlock()
+	if len(gotAttempts) != 4 {
+		t.Fatalf("attempt count = %d, want 4", len(gotAttempts))
+	}
+	if elapsed := gotAttempts[len(gotAttempts)-1].Sub(gotAttempts[0]); elapsed < 20*time.Millisecond {
+		t.Fatalf("elapsed = %s, want retry backoff instead of busy loop", elapsed)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) == 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("spool batches after recovered drain = %v", matches)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
 func TestRunnerGracefulShutdownLeavesSpoolForLaterDrain(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
