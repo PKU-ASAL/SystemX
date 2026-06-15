@@ -113,6 +113,29 @@ wait_contains() {
   done
 }
 
+wait_absent() {
+  local name="$1"
+  local pattern="$2"
+  local out="$3"
+  shift 3
+  local deadline=$((SECONDS + 60))
+  while "$@" >"$out" 2>"$out.err"; do
+    if (( SECONDS >= deadline )); then
+      echo "[e2e-agent-real-tetragon-owned-vm][ERROR] $name still present after service stop" >&2
+      echo "--- matching process ---" >&2
+      cat "$out" >&2 2>/dev/null || true
+      echo "--- agent journal ---" >&2
+      vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 160 || true" >&2 2>/dev/null || true
+      exit 1
+    fi
+    if ! grep -Fq "$pattern" "$out"; then
+      return 0
+    fi
+    sleep 1
+  done
+  : >"$out"
+}
+
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
@@ -163,6 +186,24 @@ wait_contains "agent-health policy after restart" '"policy_loaded":true' "$RESUL
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "owned tetragon process after restart" '/usr/local/bin/tetragon' "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-restart.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
+
+echo "[e2e-agent-real-tetragon-owned-vm] verifying service stop cleans owned Tetragon process"
+vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent" >/dev/null
+wait_absent "owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-stop.txt" \
+  vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
+wait_absent "owned tetra getevents process" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-stop.txt" \
+  vagrant ssh node-a -c "ps -ef | grep tetra | grep getevents | grep -v grep"
+wait_contains "agent-health degraded after service stop" '"status":"degraded"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-stop.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+vagrant ssh node-a -c "sudo systemctl start sysarmor-agent" >/dev/null
+wait_contains "agent-health recovered after service start" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health policy after service start" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "owned tetragon process after service start" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-service-start.txt" \
+  vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
+wait_contains "owned tetra getevents after service start" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-service-start.txt" \
+  vagrant ssh node-a -c "ps -ef | grep tetra | grep getevents | grep -v grep"
 
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-real-tetragon-owned-vm.systemd.txt" 2>&1 || true
 vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 200" > "$RESULTS/e2e-agent-real-tetragon-owned-vm.journal.txt" 2>&1 || true
