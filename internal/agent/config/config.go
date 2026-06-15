@@ -182,11 +182,25 @@ func parse(r *os.File) (Config, error) {
 		if section == "" {
 			return Config{}, fmt.Errorf("line %d: key outside section", lineNo)
 		}
-		key, value, ok := strings.Cut(strings.TrimSpace(raw), ":")
+		trimmed := strings.TrimSpace(raw)
+		if section == "sensor" && strings.HasSuffix(trimmed, ":") {
+			nested := strings.TrimSuffix(trimmed, ":")
+			if nested != "scope" {
+				return Config{}, fmt.Errorf("line %d: unknown config key sensor.%s", lineNo, nested)
+			}
+			section = "sensor.scope"
+			continue
+		}
+		key, value, ok := strings.Cut(trimmed, ":")
 		if !ok {
 			return Config{}, fmt.Errorf("line %d: expected key: value", lineNo)
 		}
-		if err := assign(&cfg, section, strings.TrimSpace(key), unquote(strings.TrimSpace(value))); err != nil {
+		key = strings.TrimSpace(key)
+		assignSection := section
+		if section == "sensor.scope" && key != "type" && key != "selector" {
+			assignSection = "sensor"
+		}
+		if err := assign(&cfg, assignSection, key, unquote(strings.TrimSpace(value))); err != nil {
 			return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
 		}
 	}
@@ -312,6 +326,15 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("sensor.restart_window: %w", err)
 			}
 			cfg.Sensor.RestartWindow = d
+		default:
+			return unknown(section, key)
+		}
+	case "sensor.scope":
+		switch key {
+		case "type":
+			cfg.Sensor.ScopeType = value
+		case "selector":
+			cfg.Sensor.ScopeSelector = value
 		default:
 			return unknown(section, key)
 		}

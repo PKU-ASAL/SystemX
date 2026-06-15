@@ -59,8 +59,9 @@ sensor:
   bpffs_path: /tmp/bpf
   require_btf: true
   require_bpffs: true
-  scope_type: container
-  scope_selector: abc123
+  scope:
+    type: container
+    selector: abc123
   fake_startup_events: 5
   observe_only: true
   restart: always
@@ -100,11 +101,54 @@ health:
 	if cfg.Sensor.FakeStartupEvents != 5 {
 		t.Fatalf("fake_startup_events = %d", cfg.Sensor.FakeStartupEvents)
 	}
+	if !cfg.Sensor.ObserveOnly || cfg.Sensor.Restart != "always" {
+		t.Fatalf("post-scope sensor fields not parsed: %+v", cfg.Sensor)
+	}
 	if cfg.Sensor.BTFPath != "/tmp/vmlinux" || cfg.Sensor.BPFFSPath != "/tmp/bpf" || !cfg.Sensor.RequireBTF || !cfg.Sensor.RequireBPFFS {
 		t.Fatalf("capability config = %+v", cfg.Sensor)
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)
+	}
+}
+
+func TestLoadFileAcceptsLegacyFlatScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope_type: container
+  scope_selector: abc123
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if cfg.Sensor.ScopeType != "container" || cfg.Sensor.ScopeSelector != "abc123" {
+		t.Fatalf("scope = %q/%q", cfg.Sensor.ScopeType, cfg.Sensor.ScopeSelector)
 	}
 }
 

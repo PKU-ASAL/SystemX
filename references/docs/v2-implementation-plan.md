@@ -61,7 +61,7 @@ Sensor Runtime
 
 因此 v2 后续实施要按下面的路线收敛:
 
-1. 配置和 policy 表达以 `scope_type + scope_selector` 为主,`container_id_prefix` 只作为 legacy alias。
+1. 配置和 policy 表达以 `sensor.scope.type + sensor.scope.selector` 为主,`scope_type/scope_selector` 只作为扁平兼容字段,`container_id_prefix` 只作为 legacy alias。
 2. container harness/e2e 应模拟“sensor container 观测 workload container”,而不是把业务容器改造成 VM。
 3. K8s 方向不另起一套 agent 模型,而是在同一 contract 下把 selector 扩展到 pod/namespace。
 4. capability、health、spool、policy apply、upload retry 都归属于 sensor runtime 实例,其 scope 是 runtime identity 的一部分。
@@ -97,7 +97,7 @@ sensor:
    - container 默认主路径已经去掉预加载 TracingPolicy。
    - VM provision 默认主路径已不再 preload policy；兼容性 preload 需显式降级为 replay/debug/perf 专用。
    - container/VM 主路径都应继续朝 agent 完整拥有 Tetragon process 和 policy lifecycle 收口。
-   - container 路线要继续从 legacy `container_id_prefix` 兼容入口,收口到正式的 runtime scope contract: `scope_type + scope_selector`。
+   - container 路线要继续从 legacy `container_id_prefix` 兼容入口,收口到正式的 runtime scope contract: `sensor.scope.type + sensor.scope.selector`。
    - 测试拓扑要表达“独立 sensor container + workload scope”,不要再把业务容器内安装 agent 作为默认目标。
 2. **把 reliability 做成主路径证据**
    - manager outage drain、graceful shutdown flush、retry/backoff、agent restart 恢复都要继续用 e2e 证明,而不是只停留在局部单测或一次性 smoke。
