@@ -122,6 +122,16 @@ while compgen -G "$TMP/spool/*.batch.json" >/dev/null; do
   sleep 0.1
 done
 
+if ! grep -Fq 'connect: connection refused' "$TMP/agent.log"; then
+  echo "[e2e-agent-spool][ERROR] expected outage evidence in agent log" >&2
+  cat "$TMP/agent.log" >&2
+  exit 1
+fi
+
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"queued_batches":0' "$RESULTS/e2e-agent-spool.health.recovered.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"remaining_batches":0' "$RESULTS/e2e-agent-spool.health.upload.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/events?scenario=" '"agent_id":"e2e-agent-spool"' "$RESULTS/e2e-agent-spool.events.json"
+
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-spool.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-spool.manager.log"
 
