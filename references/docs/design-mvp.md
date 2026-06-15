@@ -261,7 +261,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 
 - capability 探测仍是最小骨架,不是完整主机能力探测。
 - dropped events / parse errors / restart window / degraded 状态还需要继续细化阈值和验收。
-- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现,还需要把 container/VM harness 预加载兼容步骤继续迁出。
+- CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现；VM real Tetragon systemd smoke 已验证 agent-owned runtime policy,还需要把 container/VM 通用 harness 预加载兼容步骤继续迁出。
 - container/VM 主 e2e 已默认迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent。
 - Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。
@@ -523,7 +523,7 @@ health heartbeat
 - v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path、process supervisor、tamper signal 的测试。
 - v2 已有本机 daemon/health/spool/sensor-restart 聚合 smoke。
 - v2 已有 container topology fake/managed daemon smoke、managed restart/tamper smoke 和三场景 managed detection smoke。
-- v2 已有 VM fake-sensor systemd smoke、VM managed fake bundle smoke 和 VM real Tetragon systemd detection smoke；后者证明 systemd agent 能订阅真实 `tetra getevents`、完成检测上传并被 systemd 拉起,但 Tetragon 主进程和 TracingPolicy 仍由环境/harness 准备。
+- v2 已有 VM fake-sensor systemd smoke、VM managed fake bundle smoke 和 VM real Tetragon systemd detection smoke；后者证明 systemd agent 能应用 agent-owned runtime policy、订阅真实 `tetra getevents`、完成检测上传并被 systemd 拉起,但 Tetragon 主进程仍由环境准备。
 
 主要缺口:
 

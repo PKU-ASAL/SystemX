@@ -124,7 +124,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Sensor/runtime:
   - capability 探测仍偏最小骨架。
-  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径,但 container/VM harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
+  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 已验证 agent-owned runtime policy,container/VM 通用 harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
@@ -720,7 +720,7 @@ WantedBy=multi-user.target
 
 ### Phase 2: Policy Compile / Apply Chain
 
-状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；container/VM harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
+状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 已不再预加载 harness TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；container/VM 通用 harness 仍有预加载 TracingPolicy 的兼容步骤,需要继续迁出。
 
 任务：
 
@@ -738,7 +738,7 @@ WantedBy=multi-user.target
 
 状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移以及 VM 真实 Tetragon systemd detection smoke 已落地；完整 Tetragon process ownership 和端到端 policy ownership 仍未完成。
 
-注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents` 并完成检测上传；它仍复用环境中已运行的 Tetragon service 和预置 TracingPolicy。Phase 3 完成标准仍然是 agent/runtime 能独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
+注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；它仍复用环境中已运行的 Tetragon service。Phase 3 完成标准仍然是 agent/runtime 能独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
 
 任务：
 

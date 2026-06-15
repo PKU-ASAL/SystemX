@@ -37,7 +37,7 @@ if [[ -z "$TETRA_PATH" ]]; then
   exit 1
 fi
 
-vagrant ssh node-a -c "sudo systemctl start tetragon 2>/dev/null || true; sudo tetra tracingpolicy add /vagrant/test/env/resources/syscall-capture.yaml 2>/dev/null | tail -1 || true" >/dev/null
+vagrant ssh node-a -c "sudo systemctl start tetragon 2>/dev/null || true; sudo tetra tracingpolicy delete sysarmor-syscall-capture 2>/dev/null || true; sudo tetra tracingpolicy delete sysarmor-runtime-collection 2>/dev/null || true" >/dev/null
 
 vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /var/lib/sysarmor/agent/spool-real-tetragon; sudo mkdir -p /etc/sysarmor/policies /var/lib/sysarmor/agent/spool-real-tetragon /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service" >/dev/null
 
@@ -115,6 +115,8 @@ wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-real-tetragon --tenant-id default"
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-vm.health.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-real-tetragon --tenant-id default"
+wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESULTS/e2e-agent-real-tetragon-vm.tracingpolicy.txt" \
+  vagrant ssh node-a -c "sudo tetra tracingpolicy list"
 
 echo "[e2e-agent-real-tetragon-vm] running apt-staged-drop attack"
 vagrant ssh node-a -c "sudo bash -c 'GAP=$GAP C2=$C2 bash /vagrant/test/scenarios/vm/apt-staged-drop/attack.sh'" >/dev/null
