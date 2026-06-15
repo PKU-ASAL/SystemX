@@ -76,6 +76,8 @@ sensor:
   tetra_path: $TETRA_PATH
   tetragon_path: $TETRAGON_PATH
   policy_path: $WORK/policy.yaml
+  scope_type: container
+  scope_selector: $NODE_A_DOCKER
   container_id_prefix: $NODE_A_DOCKER
   observe_only: true
   restart: never
@@ -131,6 +133,16 @@ wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESUL
   docker exec "$OWNED_CONTAINER" tetra tracingpolicy list
 wait_contains "agent-owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-container.ps.txt" \
   docker exec "$OWNED_CONTAINER" sh -c "ps -ef | grep tetragon | grep -v grep"
+deadline=$((SECONDS + 30))
+until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+  if (( SECONDS >= deadline )); then
+    echo "[e2e-agent-real-tetragon-owned-container][ERROR] owned Tetra subscription did not become ready" >&2
+    docker exec "$OWNED_CONTAINER" cat "$WORK/agent.log" >&2 2>/dev/null || true
+    exit 1
+  fi
+  sleep 1
+done
+docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$SCENARIO" >/dev/null
 
 echo "[e2e-agent-real-tetragon-owned-container] running apt-staged-drop attack"
 C2="$C2" GAP="$GAP" bash "$ROOT/scenarios/container/apt-staged-drop/attack.sh"
