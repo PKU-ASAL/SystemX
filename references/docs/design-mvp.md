@@ -31,7 +31,24 @@ v2: EDR endpoint runtime MVP
 
 Tetragon 在当前阶段是最现实的 Linux sensor backend,但不是 SysArmor Next 的产品边界。项目真正要守住的边界是:agent 侧统一采集/归一/打标,manager/cloud 侧统一建图/收敛/裁决,控制面统一策略/响应/调查。
 
-这里需要补一句对容器路线很关键的定位: **容器不是天然等价于一台 VM,而是一个 workload scope**。这意味着后续容器版 SysArmor Next 更自然的形态不是“把 agent 塞进业务容器本体”,而是运行一个独立的 `sysarmor-agent + tetragon` sensor container,由它去观测目标 container/cgroup/namespace。
+这里需要补一句对容器路线很关键的定位: **容器不是天然等价于一台 VM,而是一个 workload scope**。这意味着后续容器版 SysArmor Next 的默认形态不是“把 agent 塞进业务容器本体”,而是运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container,由它去观测目标 container/cgroup/namespace。业务容器内安装 agent 可以保留为调试、受限环境或兼容模式,但不是主线产品架构。
+
+这个模型应该被抽象为统一的 Sensor Runtime contract:
+
+```text
+Sensor Runtime
+  scope:
+    type: host | container | cgroup | namespace | pod
+    selector: ...
+```
+
+对应关系是:
+
+- VM / 裸机 = `scope.type=host`
+- 单容器采集 = `scope.type=container` 或 `scope.type=cgroup`
+- K8s workload = `scope.type=pod` 或 `scope.type=namespace`
+
+所以 `container_id_prefix` 只能作为 legacy alias,映射到正式的 `scope.type=container` + `scope.selector`。v2 后续代码、配置、policy、health 和 e2e 验收都应围绕这个 contract 收口,而不是继续把容器拓扑当成特殊分支。
 
 如果把项目按"产品成熟度"来讲,当前可以更明确地理解成:
 
@@ -260,7 +277,7 @@ make report
 
 - 当前主路径已经用 `scope_type=container` + `scope_selector=<container id prefix>` 证明 workload-scoped collection 可行。
 - `container_id_prefix` 仅保留为兼容旧配置的过渡入口,不应继续作为长期 contract 呈现。
-- 中期应把它抽象成正式的 runtime scope contract,而不是长期停留在“容器拓扑特判”:
+- 中期路线已经明确为正式的 runtime scope contract,不能长期停留在“容器拓扑特判”:
 
 ```text
 Sensor Runtime
@@ -274,6 +291,7 @@ Sensor Runtime
 - K8s workload 走 `scope.type=pod` 或 `scope.type=namespace`。
 - 更合理的部署形态是独立 privileged `sysarmor-agent + tetragon` sensor container 观测目标 workload,而不是让业务容器本体内嵌一套 agent+tetragon。
 - 业务容器内安装 agent 可以保留为开发、受限环境或兼容模式,但不应作为默认产品架构。
+- health、policy apply、spool、upload retry 和 sensor lifecycle 都归属于这个 runtime scope;manager 侧看到的不是“某个容器里装了 agent”,而是“某个 agent runtime 正在保护某个 scope”。
 
 ## 三、走向完整项目的主要缺口
 

@@ -35,7 +35,7 @@ v2: EDR endpoint runtime MVP
 2. **事实与图模型**: 所有数据源最终都要落到统一的 Event / Signal / Incident 事实纵轴和 entity graph 上。
 3. **跨域收敛**: EDR 先从 endpoint 图开始,XDR 再把 cloud、identity、network、workload 等事实并入同一张攻击叙事图。
 
-这里还有一个很重要的边界判断: **endpoint 不等于“永远是一台 VM 或物理主机”**。在 SysArmor Next 里,被保护对象更准确地说是一个 **runtime scope**。中期 EDR 应把这个模型显式沉淀为 Sensor Runtime 的稳定契约:
+这里还有一个很重要的边界判断: **endpoint 不等于“永远是一台 VM 或物理主机”**。在 SysArmor Next 里,被保护对象更准确地说是一个 **runtime scope**。中期 EDR 要把这个模型显式沉淀为 Sensor Runtime 的稳定契约:
 
 ```text
 Sensor Runtime
@@ -50,7 +50,7 @@ Sensor Runtime
 - 单个容器或 cgroup 是 `container/cgroup scope`
 - K8s workload 是 `pod/namespace scope`
 
-也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。VM 只是 `scope.type=host` 的一个部署形态;容器、cgroup、pod、namespace 则是同一 runtime contract 下的不同采集边界。
+也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。VM 只是 `scope.type=host` 的一个部署形态;容器、cgroup、pod、namespace 则是同一 runtime contract 下的不同采集边界。这个 contract 也是后续代码、配置和测试的共同语言:配置表达 scope,policy 编译使用 scope,health 归属到某个 runtime scope,manager 侧则按同一 identity 观察 agent 状态。
 
 Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
 
@@ -65,9 +65,10 @@ Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v
 对容器场景,这条路线还有一个直接推论:
 
 - **不建议把业务容器本体直接等价成一台 VM 来处理。**
-- 更自然的做法是:运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container,去观测某个目标容器、某个 cgroup 或某组 workload。
-- 这样做时,agent 拥有 sensor process / policy / health / spool / upload 生命周期;被保护对象则通过 scope selector 来限定。
+- 默认架构应是:运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container,去观测某个目标容器、某个 cgroup 或某组 workload。
+- 这样做时,agent 拥有 sensor process / policy / health / spool / upload 生命周期;被保护对象则通过 scope selector 来限定,比如 container id、cgroup path、namespace inode、pod identity 或 label selector。
 - `container_id_prefix` 这类字段只能作为兼容旧配置的 alias,长期 contract 应收敛为 `scope.type + scope.selector`。
+- 把 agent 安装进业务容器内部可以保留为调试、受限环境或兼容模式,但不能作为默认产品架构。
 
 这让“容器安全”在产品语义上更接近 **workload-scoped EDR runtime**,而不是“把 agent 塞进业务镜像里”。
 
@@ -238,7 +239,7 @@ Sensor Runtime
 - 容器 = `container` 或 `cgroup scope`
 - K8s workload = `pod` 或 `namespace scope`
 
-这样后续无论 agent 是部署在 VM 里、宿主机上,还是作为独立 sensor container 跑在 workload 旁边,上层都只看统一的 runtime contract,而不是感知具体拓扑细节。
+这样后续无论 agent 是部署在 VM 里、宿主机上,还是作为独立 sensor container 跑在 workload 旁边,上层都只看统一的 runtime contract,而不是感知具体拓扑细节。容器方案尤其要坚持这一点:agent+tetragon sensor container 是 runtime 的承载体,业务容器只是被观测的 scope;K8s 进一步扩展时也只是把 selector 从 container/cgroup 推进到 pod/namespace,而不是重新发明一套容器专用 agent 模型。
 
 **部署形态**：Cloud Analytics + Control Plane 在实现上拆成三个角色——**Gateway**（连接终结 + 数据摄入 + 策略下发，借鉴 Elkeid AgentCenter，无状态可水平扩展）、**Manager**（控制面：策略编写/签名/灰度、注册、调查）、**Analytics**（建图 + 收敛 + 裁决）。EDR 阶段,Gateway 的主输入是 SysArmor agent 上报的 endpoint 事实；XDR 阶段,异构数据源（auditd / Wazuh / k8s audit / cloud audit / identity / network / CI/CD）经 Gateway 的 **Ingestion Adapter** 归一成 CanonicalEvent 入图。但**原生 agent 是一等公民**（源头打标 lineage），**agentless 是二等公民**（云端尽力重建 lineage，上下文降级）。
 

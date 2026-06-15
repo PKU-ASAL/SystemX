@@ -25,7 +25,7 @@ later: XDR platform
 
 因此 v2 的成功标准不是“功能看起来更多”，而是：agent 能作为一个真实 EDR endpoint runtime 长期运行，sensor 由 agent 托管，数据可缓冲可恢复，健康可观测，策略可应用，v1 detection 行为保持稳定。
 
-对容器场景,这里还要再加一条路线约束: **v2 的默认方向不是把 agent 装进业务容器本体,而是把容器视为一个 workload scope,由独立的 agent+tetragon sensor runtime 去观测它。**
+对容器场景,这里还要再加一条路线约束: **v2 的默认方向不是把 agent 装进业务容器本体,而是把容器视为一个 workload scope,由独立的 agent+tetragon sensor runtime 去观测它。** 换句话说,容器主线不是“容器里也跑一套 VM 流程”,而是“一个受控 sensor runtime 保护一个 scope”。
 
 为了避免范围漂移,这个成功标准最好再拆成四个可验收问题:
 
@@ -55,7 +55,7 @@ Sensor Runtime
 
 - 运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container
 - 由它拥有 sensor process / policy / health / spool / upload 生命周期
-- 通过 scope selector 限定只观测目标 workload
+- 通过 scope selector 限定只观测目标 workload,selector 可以是 container id、cgroup path、namespace inode、pod identity 或 label selector
 
 而不是把 agent 直接内嵌进业务容器镜像,把容器硬解释成“迷你 VM”。
 
@@ -65,6 +65,29 @@ Sensor Runtime
 2. container harness/e2e 应模拟“sensor container 观测 workload container”,而不是把业务容器改造成 VM。
 3. K8s 方向不另起一套 agent 模型,而是在同一 contract 下把 selector 扩展到 pod/namespace。
 4. capability、health、spool、policy apply、upload retry 都归属于 sensor runtime 实例,其 scope 是 runtime identity 的一部分。
+5. manager/ctl 的健康与调查视角应表达“agent runtime 正在保护哪个 scope”,而不是只表达“agent 运行在哪台机器或哪个容器里”。
+
+v2 配置层可以先保留扁平字段,但语义上要等价于下面的对象:
+
+```yaml
+sensor:
+  backend: tetragon
+  mode: managed
+  scope:
+    type: container
+    selector: "<container-id-or-cgroup-selector>"
+```
+
+短期兼容:
+
+```yaml
+sensor:
+  scope_type: container
+  scope_selector: "<container-id-prefix>"
+  container_id_prefix: "<legacy-alias>"
+```
+
+其中 `container_id_prefix` 只能映射到 `scope_type=container` 的兼容入口,不能再出现在新的验收标准和产品叙述中心。
 
 ## 1.1 Current Priority
 
@@ -358,6 +381,7 @@ Capability
   bpffs_available
 
 CollectionIntent
+  scope
   event_kinds
   file_prefixes
   socket_families
@@ -392,6 +416,9 @@ EnforcementCmd / EnforcementAck
 - Tetragon backend 实现 `Capability`、`Subscribe`、`Health`。
 - `Enforce` 返回明确 unsupported 或 observe-only ack。
 - 现有 Tetragon parser 继续复用并保持测试覆盖。
+- `CollectionIntent` 携带 runtime scope,并能把 `host` / `container` / `cgroup` / `namespace` / `pod` 的合法性校验清楚。
+- `host` scope 不要求 selector,也不应用 container 过滤；非 host scope 必须有 selector。
+- legacy `container_id_prefix` 只能映射到 `scope.type=container`,不能成为新的 backend contract。
 
 ### 5.2 Sensor Runtime Manager
 
@@ -428,6 +455,7 @@ type Runtime interface {
 - `Probe -> Apply -> Subscribe -> Stop` 路径可重复执行。
 - backend 异常退出会进入 health。
 - backend 被杀后 runtime 可以按策略重启。
+- health、policy_loaded、events_seen、events_dropped、restart_count 都应能归属到当前 runtime scope。
 
 ### 5.3 Policy Compile / Apply
 
@@ -526,6 +554,9 @@ manager:
 sensor:
   backend: tetragon
   mode: managed
+  scope:
+    type: host
+    selector: ""
   bundle_dir: /opt/sysarmor/bundles/tetragon
   install_dir: /opt/sysarmor/sensors
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
@@ -552,6 +583,8 @@ health:
 - missing config 有明确错误，除非显式启用 dev defaults。
 - `sysarmor-agent run --config ... --dry-run` 能校验配置。
 - v1 `--input-jsonl` 和 `--stream-jsonl` 仍可运行。
+- `sensor.scope` 是新配置的主表达;旧的 `scope_type/scope_selector` 可作为扁平兼容字段,`container_id_prefix` 只作为 legacy alias。
+- 非 host scope 缺失 selector 时 dry-run 失败;host scope 携带 container-only alias 时给出明确错误或兼容告警。
 
 ### 5.6 Agent Daemon Lifecycle
 
@@ -1021,6 +1054,7 @@ v2 完成时必须满足：
 - runtime 支持 capability、subscribe、health、observe-only enforce skeleton。
 - policy compile/apply 有正式链路和测试。
 - runtime scope contract 已成为主路径: `scope.type` 支持 `host | container | cgroup | namespace | pod`,非 host scope 必须有 selector,host scope 不应带 selector。
+- agent/manager/ctl 文档和验收都以 runtime scope 描述保护对象;`container_id_prefix` 不再作为主线 contract。
 - agent 能从 local bundle 安装/校验 Tetragon binary 和 policy。
 - agent 能启动、停止、重启 Tetragon。
 - agent 能持续订阅 Tetragon 事件。
@@ -1064,6 +1098,7 @@ v2 完成时必须满足：
 8. **VM real Tetragon systemd smoke 是关键增量,但不是终点**：它把真实 `tetra getevents` 订阅、systemd agent restart、检测上传放进同一条 VM 链路；下一步不要再重复做类似 smoke,而应直接推进 process ownership、policy ownership 和长跑恢复。
 9. **成功标准还应更操作化**：当前文档已经有大量“已有/缺口”描述,但真正决定 v2 是否完成的应是 ownership、reliability、observability、compatibility 这四类验收,每个阶段最好显式挂靠到这四类之一,避免做了很多 smoke 却仍然不知道哪里没闭环。
 10. **容器路线要避免回到“容器=迷你 VM”**：默认架构应是独立 privileged sensor container 观测 workload scope。业务容器内安装 agent 可以保留为特殊环境兼容,但不能成为计划主线,否则后续 K8s/pod/namespace scope 会继续长成拓扑特判。
+11. **scope 要成为运行时 identity 的一部分**：后续新增 health、policy、spool、upload、tamper、e2e 断言时,都应能回答“这个状态属于哪个 runtime scope”。否则 container/K8s 场景会很快退化成按拓扑猜测。
 
 ### 9.1 范围控制
 
@@ -1144,6 +1179,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 
 1. 固化 container managed detection 聚合:
    - 保持 `scope_type=container` + `scope_selector` 这类 runtime scope 过滤，避免 host 噪音淹没真实 container 场景事件。
+   - 新增配置和测试时优先使用 `sensor.scope.type/sensor.scope.selector`,扁平字段只作为兼容入口。
    - 保留 `make -C test e2e-agent-detection-container-all` 作为三场景 smoke。
    - 保持 `make e2e TOPO=container ...` 作为正式 capture/assert 主路径，两者互为补充。
 2. 迁移 container capture/assert 主路径:
