@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-spool e2e-agent-health e2e-agent-all clean
+.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-spool e2e-agent-health e2e-agent-all e2e-agent-daemon-container clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -68,6 +68,9 @@ e2e-agent-health:             ## v2: sysarmorctl agents/agent-health/metrics 查
 	bash harness/e2e-agent-health.sh
 
 e2e-agent-all: e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-spool e2e-agent-health
+
+e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
+	bash harness/e2e-agent-daemon-container.sh
 
 clean:                        ## 全部清理 (含样本)
 	bash harness/cleanup.sh $(TOPO) --results
@@ -95,6 +98,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-spool  v2 manager outage + durable spool recovery smoke"
 	@echo "  e2e-agent-health  v2 sysarmorctl agent health query smoke"
 	@echo "  e2e-agent-all  run all local v2 agent smoke tests"
+	@echo "  e2e-agent-daemon-container  v2 container topology daemon smoke"
 	@echo "  provision   VM: rsync + re-provision"
 	@echo "  status      查看运行态"
 	@echo "  clean       全部清理 + 删样本"
