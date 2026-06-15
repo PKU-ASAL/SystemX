@@ -106,7 +106,7 @@ func TestBackendManagedEventCommandSubscribesStdout(t *testing.T) {
 		t.Fatal(err)
 	}
 	tetragonPath := filepath.Join(dir, "tetragon")
-	if err := os.WriteFile(tetragonPath, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+	if err := os.WriteFile(tetragonPath, []byte("#!/bin/sh\nwhile [ $# -gt 0 ]; do shift; done\nsleep 5\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath, TetragonPath: tetragonPath})
@@ -199,7 +199,7 @@ func TestBackendRestartsManagedSensorProcess(t *testing.T) {
 	}
 	countPath := filepath.Join(dir, "count")
 	tetragonPath := filepath.Join(dir, "tetragon")
-	tetragonScript := "#!/bin/sh\nCOUNT='" + countPath + "'\nn=0\nif [ -f \"$COUNT\" ]; then n=$(cat \"$COUNT\"); fi\nn=$((n+1))\nprintf '%s' \"$n\" > \"$COUNT\"\nexit 7\n"
+	tetragonScript := "#!/bin/sh\nwhile [ $# -gt 0 ]; do shift; done\nCOUNT='" + countPath + "'\nn=0\nif [ -f \"$COUNT\" ]; then n=$(cat \"$COUNT\"); fi\nn=$((n+1))\nprintf '%s' \"$n\" > \"$COUNT\"\nexit 7\n"
 	if err := os.WriteFile(tetragonPath, []byte(tetragonScript), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -263,19 +263,34 @@ func (b *Backend) renderTracingPolicy(intent contract.CollectionIntent) (string,
 }
 
 func (b *Backend) applyTracingPolicy(ctx context.Context, path string) error {
-	cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "add", path)
-	output, err := cmd.CombinedOutput()
-	if err == nil {
-		return nil
+	deadline := time.Now().Add(30 * time.Second)
+	var lastErr error
+	for {
+		cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "add", path)
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		trimmed := strings.TrimSpace(string(output))
+		if strings.Contains(strings.ToLower(trimmed), "already exists") {
+			return nil
+		}
+		if trimmed == "" {
+			lastErr = fmt.Errorf("apply tetragon tracing policy: %w", err)
+		} else {
+			lastErr = fmt.Errorf("apply tetragon tracing policy: %w: %s", err, trimmed)
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	trimmed := strings.TrimSpace(string(output))
-	if strings.Contains(strings.ToLower(trimmed), "already exists") {
-		return nil
-	}
-	if trimmed == "" {
-		return fmt.Errorf("apply tetragon tracing policy: %w", err)
-	}
-	return fmt.Errorf("apply tetragon tracing policy: %w: %s", err, trimmed)
 }
 
 func buildTracingPolicy(intent contract.CollectionIntent) []byte {
@@ -406,10 +421,12 @@ func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
 	if b.Bundle.TetragonPath == "" {
 		return func() {}, nil
 	}
+	_ = os.MkdirAll("/var/run/tetragon", 0o755)
+	_ = os.Remove("/var/run/tetragon/tetragon.pid")
 	spec := ProcessSpec{
 		Name: "tetragon",
 		Path: b.Bundle.TetragonPath,
-		Args: []string{"--config-dir", b.PolicyPath},
+		Args: defaultTetragonArgs(),
 	}
 	if b.Restart.Enabled {
 		if err := b.sensorSupervisor.StartRestarting(ctx, spec, RestartPolicy{
@@ -426,6 +443,13 @@ func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
 		defer cancel()
 		_ = b.sensorSupervisor.Stop(stopCtx)
 	}, nil
+}
+
+func defaultTetragonArgs() []string {
+	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err == nil {
+		return []string{"--btf", "/sys/kernel/btf/vmlinux"}
+	}
+	return nil
 }
 
 func (b *Backend) openEventSource(ctx context.Context) (io.Reader, func(), error) {

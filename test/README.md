@@ -115,6 +115,9 @@ make e2e TOPO=vm SCENARIO=benign-ci-noise
 # VM systemd + real Tetragon subscription smoke
 make e2e-agent-real-tetragon-vm
 
+# VM systemd + agent-owned real Tetragon process smoke
+make e2e-agent-real-tetragon-owned-vm
+
 # 生命周期 smoke
 make e2e TOPO=container SCENARIO=lifecycle-smoke
 make e2e TOPO=vm SCENARIO=lifecycle-smoke

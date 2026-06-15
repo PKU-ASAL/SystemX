@@ -135,7 +135,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 - Agent daemon:
   - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
   - graceful shutdown、flush 语义还未完整验收。
-  - systemd VM fake-sensor lifecycle smoke 和真实 Tetragon systemd detection smoke 已有,但完整 Tetragon process ownership/policy ownership 仍需收口。
+  - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke 和 VM agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
   - health API、CLI 查询、本机 e2e 和 VM recent health smoke 已有,但 degraded/recovered health 断言还需要扩展到 container/VM 主路径。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
 
@@ -736,9 +736,9 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移以及 VM 真实 Tetragon systemd detection smoke 已落地；完整 Tetragon process ownership 和端到端 policy ownership 仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health、tamper signal、generated TracingPolicy apply、本机 restart smoke、container managed fake restart/tamper smoke、container/VM managed fake bundle smoke、container 三个核心场景的真实 `tetra getevents` agent-managed detection smoke、聚合验证、container/VM 主 capture/assert 路径迁移、VM 真实 Tetragon systemd detection smoke 以及 VM agent-owned real Tetragon process smoke 已落地；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍未完成。
 
-注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；它仍复用环境中已运行的 Tetragon service。Phase 3 完成标准仍然是 agent/runtime 能独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
+注意：已通过的真实 Tetragon detection smoke 证明的是 agent 以 daemon/systemd 形态订阅真实 `tetra getevents`、应用 agent-owned generated TracingPolicy 并完成检测上传；新增 VM owned-process smoke 进一步证明 agent 可在 systemd 下拥有真实 `/usr/local/bin/tetragon` 进程并跑通检测。Phase 3 完成标准仍然是 agent/runtime 能在 container/VM 主路径上独立安装/校验、启动/停止、apply/verify policy 并恢复 Tetragon backend。
 
 任务：
 
@@ -761,6 +761,7 @@ WantedBy=multi-user.target
 
 - container/VM daemon 主路径不再由 harness pipe `tetra getevents` 给 agent。
 - VM real Tetragon smoke 能证明 systemd agent + real `tetra getevents` 订阅 + detection + agent restart。
+- VM owned-process smoke 能证明 systemd agent + real `tetragon` process ownership + real `tetra getevents` + detection + agent restart。
 - agent/runtime 拥有 Tetragon process lifecycle,不依赖 topology 预先启动 Tetragon 主进程。
 - agent/runtime 拥有 policy apply/verify lifecycle,不依赖 harness 预先加载 TracingPolicy。
 - agent kill/restart Tetragon 的行为可由单测或 integration test 稳定覆盖。

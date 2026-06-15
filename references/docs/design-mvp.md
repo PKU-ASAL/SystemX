@@ -297,7 +297,7 @@ type Sensor interface {
 - graceful shutdown flush 语义还需要明确测试。
 - retry/backoff 还需要更长时间 soak 和失败恢复验证。
 - container/VM 主检测场景已迁移为 daemon-managed sensor 主路径。
-- VM real Tetragon systemd detection smoke 已有；完整 Tetragon process ownership 和 policy ownership 仍需补齐。
+- VM real Tetragon systemd detection smoke 和 VM owned-process smoke 已有；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍需补齐。
 - tenant/token 仍是开发形态,不是生产 enrollment/RBAC。
 
 继续收口:
@@ -523,7 +523,7 @@ health heartbeat
 - v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path、process supervisor、tamper signal 的测试。
 - v2 已有本机 daemon/health/spool/sensor-restart 聚合 smoke。
 - v2 已有 container topology fake/managed daemon smoke、managed restart/tamper smoke 和三场景 managed detection smoke。
-- v2 已有 VM fake-sensor systemd smoke、VM managed fake bundle smoke 和 VM real Tetragon systemd detection smoke；后者证明 systemd agent 能应用 agent-owned runtime policy、订阅真实 `tetra getevents`、完成检测上传并被 systemd 拉起,但 Tetragon 主进程仍由环境准备。
+- v2 已有 VM fake-sensor systemd smoke、VM managed fake bundle smoke、VM real Tetragon systemd detection smoke 和 VM owned-process smoke；最后者证明 systemd agent 能拥有真实 `/usr/local/bin/tetragon` 进程、应用 agent-owned runtime policy、订阅真实 `tetra getevents`、完成检测上传并在 agent restart 后恢复。
 
 主要缺口:
 
@@ -650,4 +650,4 @@ multi-source XDR ingestion
 deployment/operations
 ```
 
-下一步最值得做的是 **Tetragon process/policy ownership + 长跑可靠性**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper、container/VM managed detection/capture 和 VM real Tetragon systemd smoke 的地基已经立起来了,现在要把它们继续推进到完整 sensor lifecycle ownership。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
+下一步最值得做的是 **container/VM 主路径级别的 Tetragon process ownership 收口 + 长跑可靠性**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper、container/VM managed detection/capture、VM real Tetragon systemd smoke 和 VM owned-process smoke 的地基已经立起来了,现在要把它们继续推进到完整 sensor lifecycle ownership。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
