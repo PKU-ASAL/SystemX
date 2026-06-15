@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-capability e2e-agent-capability-btf e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -85,6 +85,9 @@ e2e-agent-capability:         ## v2: startup capability/bundle failure → degra
 e2e-agent-capability-btf:     ## v2: required BTF capability failure → degraded health
 	bash harness/e2e-agent-capability-btf.sh
 
+e2e-agent-capability-bpffs:   ## v2: required bpffs capability failure → degraded health
+	bash harness/e2e-agent-capability-bpffs.sh
+
 e2e-agent-retry-backoff:      ## v2: upload retry/backoff soak against transient 503s
 	bash harness/e2e-agent-retry-backoff.sh
 
@@ -100,7 +103,7 @@ e2e-agent-backpressure:       ## v2: spool max_bytes backpressure/drop → degra
 e2e-agent-health:             ## v2: sysarmorctl agents/agent-health/metrics 查询 smoke
 	bash harness/e2e-agent-health.sh
 
-e2e-agent-all: e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-capability e2e-agent-capability-btf e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health
+e2e-agent-all: e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
 	bash harness/e2e-agent-daemon-container.sh
@@ -174,6 +177,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-restart-unacked  v2 agent restart preserves unacked batch smoke"
 	@echo "  e2e-agent-capability  v2 startup capability/bundle failure degraded health smoke"
 	@echo "  e2e-agent-capability-btf  v2 required BTF capability failure degraded health smoke"
+	@echo "  e2e-agent-capability-bpffs  v2 required bpffs capability failure degraded health smoke"
 	@echo "  e2e-agent-retry-backoff  v2 upload retry/backoff soak against transient 503s"
 	@echo "  e2e-agent-parse-health  v2 parse error degraded health/tamper smoke"
 	@echo "  e2e-agent-dropped-health  v2 dropped events degraded health/tamper smoke"
