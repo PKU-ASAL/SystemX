@@ -260,6 +260,13 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) {
 		t.Fatalf("health list missing agent-a: %s", rec.Body.String())
 	}
+	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"})
+	rec = get(t, handler, "/api/v1/agents")
+	for _, want := range []string{`"agent_id":"agent-a"`, `"health_status":"ok"`, `"scope":{"type":"container","selector":"abc123"}`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("agents response missing %s: %s", want, rec.Body.String())
+		}
+	}
 }
 
 func TestHTTPAuthRequiresDevTokenForUploadAndHealth(t *testing.T) {

@@ -34,6 +34,16 @@ type UploadResult struct {
 	Incidents       int
 }
 
+type AgentListItem struct {
+	AgentID        string                   `json:"agent_id"`
+	HostID         string                   `json:"host_id"`
+	TenantID       string                   `json:"tenant_id"`
+	Version        string                   `json:"version,omitempty"`
+	HealthStatus   string                   `json:"health_status,omitempty"`
+	Scope          agenthealth.RuntimeScope `json:"scope,omitempty"`
+	HealthObserved time.Time                `json:"health_observed_at,omitempty"`
+}
+
 var ErrInvalidUpload = errors.New("invalid upload")
 
 func NewServer(st *store.Store) *Server {
@@ -194,7 +204,23 @@ func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]bool) (in
 }
 
 func (s *Server) agents(w http.ResponseWriter, _ *http.Request) {
-	writeAgentList(w, s.store.ListAgents())
+	agents := s.store.ListAgents()
+	out := make([]AgentListItem, 0, len(agents))
+	for _, agent := range agents {
+		item := AgentListItem{
+			AgentID:  agent.GetAgentId(),
+			HostID:   agent.GetHostId(),
+			TenantID: agent.GetTenantId(),
+			Version:  agent.GetVersion(),
+		}
+		if health, ok := s.store.GetAgentHealth(agent.GetTenantId(), agent.GetAgentId()); ok {
+			item.HealthStatus = health.Status
+			item.Scope = health.Scope
+			item.HealthObserved = health.ObservedAt
+		}
+		out = append(out, item)
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
@@ -310,15 +336,6 @@ func writeSignalList(w http.ResponseWriter, signals []*signalv1.Signal) {
 	raw := make([]json.RawMessage, 0, len(signals))
 	for _, sig := range signals {
 		raw = append(raw, mustProtoJSON(sig))
-	}
-	_ = json.NewEncoder(w).Encode(raw)
-}
-
-func writeAgentList(w http.ResponseWriter, agents []*analyticsv1.AgentHello) {
-	w.Header().Set("Content-Type", "application/json")
-	raw := make([]json.RawMessage, 0, len(agents))
-	for _, agent := range agents {
-		raw = append(raw, mustProtoJSON(agent))
 	}
 	_ = json.NewEncoder(w).Encode(raw)
 }
