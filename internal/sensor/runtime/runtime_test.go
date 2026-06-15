@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,9 @@ func TestManagerLifecycle(t *testing.T) {
 	}
 	if err := rt.Apply(ctx, intent); err != nil {
 		t.Fatalf("Apply() error = %v", err)
+	}
+	if fake.applied.ScopeType != "host" || fake.applied.ScopeSelector != "" {
+		t.Fatalf("applied scope = %q/%q", fake.applied.ScopeType, fake.applied.ScopeSelector)
 	}
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
@@ -67,8 +71,49 @@ func TestManagerRequiresApplyBeforeSubscribe(t *testing.T) {
 	}
 }
 
+func TestManagerRejectsInvalidScope(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		intent   contract.CollectionIntent
+		wantText string
+	}{
+		{
+			name:     "invalid type",
+			intent:   contract.CollectionIntent{ScopeType: "vm", ObserveOnly: true},
+			wantText: "scope type must be one of",
+		},
+		{
+			name:     "missing selector",
+			intent:   contract.CollectionIntent{ScopeType: "container", ObserveOnly: true},
+			wantText: "scope selector is required",
+		},
+		{
+			name:     "host selector",
+			intent:   contract.CollectionIntent{ScopeType: "host", ScopeSelector: "abc123", ObserveOnly: true},
+			wantText: "scope selector must be empty",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeSensor()
+			rt := New(fake)
+			err := rt.Apply(context.Background(), tc.intent)
+			if err == nil {
+				t.Fatal("Apply() error = nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantText) {
+				t.Fatalf("Apply() error = %v, want %q", err, tc.wantText)
+			}
+			if fake.applyCount != 0 {
+				t.Fatalf("backend Apply called %d times", fake.applyCount)
+			}
+		})
+	}
+}
+
 type fakeSensor struct {
-	events chan contract.EventEnvelope
+	events     chan contract.EventEnvelope
+	applied    contract.CollectionIntent
+	applyCount int
 }
 
 func newFakeSensor() *fakeSensor {
@@ -79,7 +124,9 @@ func (f *fakeSensor) Capability(context.Context) (contract.Capability, error) {
 	return contract.Capability{Backend: "fake", Version: "test", SupportsExec: true, SupportsHealth: true}, nil
 }
 
-func (f *fakeSensor) Apply(context.Context, contract.CollectionIntent) error {
+func (f *fakeSensor) Apply(_ context.Context, intent contract.CollectionIntent) error {
+	f.applied = intent
+	f.applyCount++
 	return nil
 }
 

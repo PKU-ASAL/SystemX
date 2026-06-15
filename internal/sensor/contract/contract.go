@@ -2,6 +2,8 @@ package contract
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
@@ -36,6 +38,42 @@ type CollectionIntent struct {
 	ScopeType      string
 	ScopeSelector  string
 	ObserveOnly    bool
+}
+
+func NormalizeScope(scopeType, scopeSelector string) (string, string, error) {
+	scopeType = strings.TrimSpace(scopeType)
+	scopeSelector = strings.TrimSpace(scopeSelector)
+	if scopeType == "" {
+		scopeType = "host"
+	}
+	switch scopeType {
+	case "host":
+		if scopeSelector != "" {
+			return "", "", fmt.Errorf("scope selector must be empty when scope type is host")
+		}
+	case "container", "cgroup", "namespace", "pod":
+		if scopeSelector == "" {
+			return "", "", fmt.Errorf("scope selector is required when scope type is %s", scopeType)
+		}
+	default:
+		return "", "", fmt.Errorf("scope type must be one of host, container, cgroup, namespace, pod")
+	}
+	return scopeType, scopeSelector, nil
+}
+
+func ValidateScope(scopeType, scopeSelector string) error {
+	_, _, err := NormalizeScope(scopeType, scopeSelector)
+	return err
+}
+
+func (i CollectionIntent) NormalizeScope() (CollectionIntent, error) {
+	scopeType, scopeSelector, err := NormalizeScope(i.ScopeType, i.ScopeSelector)
+	if err != nil {
+		return CollectionIntent{}, err
+	}
+	i.ScopeType = scopeType
+	i.ScopeSelector = scopeSelector
+	return i, nil
 }
 
 type EventEnvelope struct {

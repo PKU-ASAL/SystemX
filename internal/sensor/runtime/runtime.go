@@ -44,12 +44,16 @@ func (m *Manager) Apply(ctx context.Context, intent contract.CollectionIntent) e
 	if m.sensor == nil {
 		return fmt.Errorf("sensor is nil")
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.sensor.Apply(ctx, intent); err != nil {
+	normalized, err := intent.NormalizeScope()
+	if err != nil {
 		return err
 	}
-	m.intent = intent
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.sensor.Apply(ctx, normalized); err != nil {
+		return err
+	}
+	m.intent = normalized
 	m.applied = true
 	return nil
 }

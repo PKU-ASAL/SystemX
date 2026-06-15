@@ -148,6 +148,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 - `internal/sensor/contract`:
   - Sensor interface。
   - Capability / CollectionIntent / EventEnvelope / Health。
+  - CollectionIntent 已有 runtime scope 归一和校验入口。
   - observe-only/unsupported Enforce 边界。
 - `internal/sensor/runtime`:
   - fake backend lifecycle 测试骨架。
@@ -419,6 +420,7 @@ EnforcementCmd / EnforcementAck
 - 现有 Tetragon parser 继续复用并保持测试覆盖。
 - `CollectionIntent` 携带 runtime scope,并能把 `host` / `container` / `cgroup` / `namespace` / `pod` 的合法性校验清楚。
 - `host` scope 不要求 selector,也不应用 container 过滤；非 host scope 必须有 selector。
+- runtime contract 层必须对 scope 做同样校验,不能只依赖 config 层拦截。
 - legacy `container_id_prefix` 只能映射到 `scope.type=container`,不能成为新的 backend contract。
 
 ### 5.2 Sensor Runtime Manager
