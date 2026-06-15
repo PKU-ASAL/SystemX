@@ -79,7 +79,13 @@ func Signal(health agenthealth.AgentHealth, reason, id string) *signalv1.Signal 
 		{Kind: "host", Key: "host:" + health.HostID, Role: "host"},
 		{Kind: "sensor", Key: "sensor:" + firstNonEmpty(health.Sensor.Backend, "unknown"), Role: "object"},
 	}
+	if scopeKey := scopeEntityKey(health.Scope); scopeKey != "" {
+		entities = append(entities, &signalv1.EntityRef{Kind: "scope", Key: scopeKey, Role: "scope"})
+	}
 	summary := fmt.Sprintf("sensor tamper/blindness: %s", reason)
+	if scopeSummary := scopeSummary(health.Scope); scopeSummary != "" {
+		summary += "; scope=" + scopeSummary
+	}
 	if health.Sensor.LastExitReason != "" {
 		summary += "; last_exit=" + health.Sensor.LastExitReason
 	}
@@ -104,9 +110,29 @@ func Signal(health agenthealth.AgentHealth, reason, id string) *signalv1.Signal 
 
 func signalID(health agenthealth.AgentHealth, reason string, now time.Time) string {
 	bucket := now.UTC().Unix() / int64((5 * time.Minute).Seconds())
-	base := strings.Join([]string{health.TenantID, health.AgentID, health.HostID, health.Sensor.Backend, reason, fmt.Sprint(bucket)}, "|")
+	base := strings.Join([]string{health.TenantID, health.AgentID, health.HostID, scopeSummary(health.Scope), health.Sensor.Backend, reason, fmt.Sprint(bucket)}, "|")
 	sum := sha256.Sum256([]byte(base))
 	return "sig-tamper-" + hex.EncodeToString(sum[:8])
+}
+
+func scopeEntityKey(scope agenthealth.RuntimeScope) string {
+	summary := scopeSummary(scope)
+	if summary == "" {
+		return ""
+	}
+	return "scope:" + summary
+}
+
+func scopeSummary(scope agenthealth.RuntimeScope) string {
+	scopeType := strings.TrimSpace(scope.Type)
+	if scopeType == "" {
+		return ""
+	}
+	selector := strings.TrimSpace(scope.Selector)
+	if selector == "" {
+		return scopeType
+	}
+	return scopeType + ":" + selector
 }
 
 func firstNonEmpty(values ...string) string {

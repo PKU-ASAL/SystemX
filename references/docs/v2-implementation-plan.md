@@ -211,7 +211,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - policy compile/apply 已有 backend apply、generated TracingPolicy 最小路径和 backend 内部 `tracingpolicy list` 验证；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 和 VM provision 默认主路径都已不再预加载 TracingPolicy；VM 仅保留显式兼容模式 preload,限定在 replay/debug/perf。
   - dropped events / parse errors / degraded 状态已有阈值配置、health 暴露和本机 e2e 验收；后续重点转向真实 Tetragon 主路径中的 dropped counter 对齐。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
-  - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
+  - sensor kill/restart 和带 runtime scope entity 的 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
   - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `scope_type=container` + `scope_selector=<container id prefix>` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`container_id_prefix` 仅作为 legacy config alias 保留，后续验收应以正式 scope contract 为准。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
@@ -739,6 +739,8 @@ source: agent_health
 agent_id
 host_id
 tenant_id
+scope_type
+scope_selector
 sensor_backend
 reason
 restart_count
