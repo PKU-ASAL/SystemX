@@ -1,6 +1,6 @@
 # SysArmor MVP
 
-SysArmor MVP is a Go prototype of the endpoint-to-manager detection path described in `references/docs/design-mvp.md`.
+SysArmor MVP is a Go prototype of the endpoint-to-manager detection path described in `references/docs/design-essentials.md`.
 
 Current product path:
 

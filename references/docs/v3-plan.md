@@ -1,0 +1,546 @@
+# SysArmor v3 Implementation Plan
+
+Date: 2026-06-15
+Status: proposed plan
+
+## 1. Goal
+
+v3 的目标是把 v2 已经完成的 **EDR endpoint runtime MVP** 往上推进一层,形成可运营的 **EDR platform MVP**。
+
+v2 已经证明:
+
+```text
+agent daemon + sensor runtime + scope contract + policy apply + health + spool + retry
+```
+
+v3 要补的是:
+
+```text
+policy/control plane + rule content + response contract
+  + incident/evidence/graph foundation
+  + durable store + reliable Link1 control/data channel
+```
+
+换句话说,v3 不是重新做采集,也不是直接扩成 XDR。v3 要解决的是:检测内容怎么运营、策略怎么下发、响应怎么授权和审计、incident 证据怎么从图里组织、数据如何可靠持久化、agent 与 manager 之间如何形成双向控制链路。
+
+## 2. Product Positioning
+
+v3 的产品定位是 **EDR platform foundation**。
+
+它仍然是 endpoint-first:
+
+- endpoint runtime 已由 v2 打底。
+- policy/control plane 是 v3 的第一优先级。
+- response/enforce 先做可审计骨架,不急着生产级阻断。
+- graph/evidence 先做包结构和最小可用查询,复杂 rarity/STP 后续迭代。
+- Postgres 与 Link1 stream 是为了支撑 policy、incident、evidence、health 和控制链路,不是为了过早做大型数据平台。
+
+v3 完成后,系统应该从:
+
+```text
+能采集、能检出、能长期运行
+```
+
+推进到:
+
+```text
+能运营规则和策略、能审计响应意图、能沉淀 incident/evidence、能用 durable store 和可靠链路支撑平台化
+```
+
+## 3. Non-goals
+
+v3 不做以下内容:
+
+- 完整 XDR 多源 ingestion。
+- 完整 NODLINK/STP/rarity 生产算法。
+- 生产级 kill/block/quarantine 默认启用。
+- 完整 UI 产品。
+- 完整 SIEM/SOAR/数据湖出口。
+- 完整多租户商业化权限系统。
+- 大规模消息平台强依赖。
+
+v3 可以保留接口、schema 和扩展点,但不要把 cloud audit、identity、network、K8s audit、CI/CD ingestion 全部拉进主线。
+
+## 4. Guiding Principles
+
+1. **先控制面,后响应面**
+   - response 必须被 policy 授权。
+   - 没有 policy assignment / version / audit 时,不要直接做真实阻断。
+
+2. **先规则内容化,后复杂 DSL**
+   - v3 不需要一步到位做完整 CEP/DSL。
+   - 先把硬编码规则迁成可版本化、可启停、可下发的 content pack。
+
+3. **先 evidence/graph 包结构,后复杂算法**
+   - 先让 incident 能从 graph/evidence API 拿路径和实体关系。
+   - rarity/STP 可以先留接口和最小实现。
+
+4. **Postgres 优先于 MQ/Redis**
+   - policy、rule versions、incident lifecycle、evidence、agent health 都需要 durable store。
+   - MQ/Redis 根据吞吐、fanout 和解耦压力再引入。
+
+5. **Link1 stream 先定义语义,再迁移协议**
+   - session、ack cursor、resume、downlink、response command 的语义比传输形态更重要。
+   - HTTP/gRPC unary 可作为兼容路径保留。
+
+## 5. Architecture Target
+
+v3 目标架构:
+
+```text
+sysarmor-agent
+  -> sensor runtime
+  -> endpoint rule engine
+  -> local spool
+  -> Link1 stream client
+  <- policy downlink
+  <- response command
+
+sysarmor-manager
+  -> policy registry
+  -> rule content registry
+  -> agent assignment
+  -> response audit
+  -> incident lifecycle API
+  -> Postgres store
+
+analytics
+  -> ingest
+  -> entity normalization
+  -> graph
+  -> evidence
+  -> correlate
+  -> converge
+  -> incident
+
+Link1
+  agent upload stream
+  health heartbeat
+  policy downlink
+  response command
+  ack cursor / resume
+  evidence pullback
+```
+
+## 6. Phase 1: Policy + Rule Content Minimum Loop
+
+### Goal
+
+把当前硬编码检测能力推进到可运营的最小控制面。
+
+### Deliverables
+
+- Rule content model:
+  - `rule_id`
+  - `version`
+  - `enabled`
+  - `where`: endpoint | cloud
+  - `severity`
+  - `tags`
+  - `mitre`
+  - `response_intent`
+- Policy model:
+  - `policy_id`
+  - `version`
+  - `tenant_id`
+  - `scope`
+  - endpoint rule references
+  - cloud rule references
+  - observe/enforce mode
+- Content pack layout:
+
+```text
+configs/rules/endpoint/
+configs/rules/cloud/
+configs/policies/
+```
+
+- Manager policy API:
+  - create/update/list/get policy
+  - publish policy version
+  - assign policy to agent/scope
+  - get effective policy
+- Agent policy fetch/apply:
+  - fetch policy at startup
+  - refresh policy on interval or downlink signal
+  - apply endpoint rule enable/disable
+  - expose policy version in health
+- Cloud rule enable/disable:
+  - manager/analytics honors cloud rule state
+  - recompute tests can use real policy state instead of ad hoc flags
+
+### Acceptance Criteria
+
+- A policy can disable an endpoint rule and e2e proves the corresponding signal disappears.
+- A policy can disable a cloud rule and e2e proves the corresponding incident does not converge.
+- Agent health reports active policy id/version.
+- Manager can query policy assignment by agent/scope.
+- v1/v2 detection default behavior remains unchanged when default policy is enabled.
+
+### Suggested Tests
+
+```bash
+go test ./...
+make -C test e2e-policy-endpoint-disable
+make -C test e2e-policy-cloud-disable
+make -C test e2e-policy-agent-refresh
+```
+
+## 7. Phase 2: Response / Enforce Observe-only Skeleton
+
+### Goal
+
+建立可审计的 response/enforce 控制链路,但默认不做生产级真实阻断。
+
+### Deliverables
+
+- Response intent in Signal:
+  - `response_intent`
+  - `recommended_action`
+  - `confidence`
+  - `reason`
+- Response policy:
+  - allowed actions
+  - allowed scopes
+  - observe-only / enforce mode
+  - approval requirement
+- Response command model:
+  - `response_id`
+  - `policy_id`
+  - `agent_id`
+  - `scope`
+  - `action`: kill | block | quarantine | collect | noop
+  - `mode`: observe | enforce
+- Agent response executor:
+  - accepts command
+  - validates policy and scope
+  - calls sensor `Enforce`
+  - returns observe-only ack by default
+- Response audit store:
+  - decision
+  - command
+  - result
+  - actor
+  - timestamps
+
+### Acceptance Criteria
+
+- Endpoint terminal signal can produce a response intent.
+- Manager can convert response intent into an observe-only response decision.
+- Agent can receive a response command and return `would_enforce` / `unsupported` / `executed=false`.
+- Response decision and result are persisted and queryable.
+- No test enables destructive enforcement by default.
+
+### Suggested Tests
+
+```bash
+go test ./...
+make -C test e2e-response-observe-only
+make -C test e2e-response-policy-deny
+make -C test e2e-response-audit
+```
+
+## 8. Phase 3: Incident / Evidence / Graph Foundation
+
+### Goal
+
+把 MVP analytics 拆成真正的 graph/evidence/incident 包结构,为后续 rarity/STP/XDR 做地基。
+
+### Deliverables
+
+Package split:
+
+```text
+internal/analytics/ingest
+internal/analytics/entity
+internal/analytics/graph
+internal/analytics/evidence
+internal/analytics/correlate
+internal/analytics/converge
+internal/analytics/incident
+internal/analytics/rarity
+```
+
+Graph foundation:
+
+- node model:
+  - process
+  - file
+  - socket/ip
+  - host
+  - container
+  - pod
+  - user
+- edge model:
+  - fork
+  - exec
+  - read
+  - write
+  - connect
+  - load
+  - owns / belongs_to
+- indexes:
+  - lineage index
+  - entity key index
+  - signal-to-entity index
+- query:
+  - k-hop neighborhood
+  - shortest path between entities
+  - incident evidence subgraph extraction
+
+Incident lifecycle minimum:
+
+- create
+- update
+- merge
+- close
+- suppress
+- attach evidence
+
+Rarity interface:
+
+- define interface
+- provide no-op or simple count-based MVP implementation
+- leave CMS/IDF/workload baseline for later
+
+### Acceptance Criteria
+
+- Existing MVP incidents are produced through the new converge/incident package boundary.
+- Evidence subgraph is produced by graph/evidence APIs, not ad hoc assembly only.
+- CLI can query incident evidence path as JSON.
+- Existing `apt-fileless-c2`, `apt-staged-drop`, and `benign-ci-noise` semantics remain stable.
+
+### Suggested Tests
+
+```bash
+go test ./...
+make -C test e2e-graph-evidence
+make -C test e2e-incident-lifecycle
+make -C test e2e TOPO=container SCENARIO=apt-staged-drop DUR=12
+```
+
+## 9. Phase 4: Postgres Store
+
+### Goal
+
+把 file-backed MVP store 推进到 durable platform store。
+
+### Deliverables
+
+- Postgres schema:
+  - agents
+  - agent_health
+  - policies
+  - policy_versions
+  - policy_assignments
+  - rules
+  - rule_versions
+  - events
+  - signals
+  - incidents
+  - incident_events
+  - evidence
+  - response_audit
+  - metrics
+- Migration system.
+- Store interface split:
+  - MVP file store remains for tests/dev.
+  - Postgres store becomes platform path.
+- Query pagination.
+- Basic indexes:
+  - tenant_id
+  - agent_id
+  - host_id
+  - scope
+  - lineage_id
+  - entity_key
+  - incident_id
+  - observed_at
+- Idempotent upsert semantics preserved.
+
+### Acceptance Criteria
+
+- Manager can run with Postgres store.
+- Existing ingest/query tests pass against Postgres.
+- Duplicate batch idempotency works against Postgres.
+- Policy and incident APIs persist across manager restart.
+- File store remains available for lightweight dev/e2e unless explicitly removed later.
+
+### Suggested Tests
+
+```bash
+go test ./...
+make -C test e2e-postgres-store
+make -C test e2e-postgres-idempotency
+make -C test e2e-postgres-policy-persistence
+```
+
+## 10. Phase 5: Link1 Bidirectional Stream
+
+### Goal
+
+把 Link1 从 unary upload 推进到可靠双向控制/数据通道。
+
+### Deliverables
+
+- Link1 session model:
+  - session id
+  - agent id
+  - tenant id
+  - start time
+  - last ack cursor
+- Stream upload:
+  - event/signal batch frame
+  - health frame
+  - ack frame
+  - error frame
+- Resume:
+  - agent resumes from cursor
+  - manager acks durable cursor
+  - agent keeps local spool until ack
+- Downlink:
+  - policy update notification
+  - response command
+  - evidence pullback request
+- Compatibility:
+  - unary HTTP/gRPC upload remains until stream path is stable.
+
+### Acceptance Criteria
+
+- Agent can upload batches through stream.
+- Manager can ack cursor and agent can delete acked spool entries.
+- Agent can reconnect and resume without duplicate amplification.
+- Manager can send policy update notification over stream.
+- Manager can send observe-only response command over stream.
+- Existing unary upload e2e still passes.
+
+### Suggested Tests
+
+```bash
+go test ./...
+make -C test e2e-link1-stream-upload
+make -C test e2e-link1-stream-resume
+make -C test e2e-link1-policy-downlink
+make -C test e2e-link1-response-command
+```
+
+## 11. Phase 6: Redis / MQ Evaluation
+
+### Goal
+
+只在明确需要时引入 Redis 或 MQ,避免过早增加运维复杂度。
+
+### Redis Candidates
+
+- latest agent heartbeat cache
+- policy assignment cache
+- rate limit
+- distributed lease
+- short-lived response command state
+
+### MQ Candidates
+
+- ingest -> analytics decoupling
+- high-volume event buffering
+- async incident convergence
+- fanout to external sinks
+- XDR adapter ingestion
+
+### Decision Criteria
+
+Introduce Redis when:
+
+- latest health queries become store-heavy
+- policy fanout needs low-latency cache
+- manager becomes horizontally scaled and needs leases
+
+Introduce MQ when:
+
+- ingest throughput blocks synchronous analytics
+- analytics needs async workers
+- XDR adapters produce independent high-volume streams
+- external sink fanout becomes required
+
+### Acceptance Criteria
+
+- No Redis/MQ hard dependency is introduced without a measured bottleneck or architectural need.
+- If introduced, local dev and e2e have reproducible startup targets.
+- Failure behavior is explicit: degraded, retry, or fallback.
+
+## 12. Cross-cutting Requirements
+
+### Compatibility
+
+- v1 replay/stream remains usable.
+- v2 `e2e-agent-runtime-all` remains the runtime regression gate.
+- Default detection semantics for existing scenarios remain stable.
+
+### Security
+
+- Policy and response APIs must be tenant-scoped.
+- Response commands must be auditable.
+- Enforce mode must be disabled by default.
+- Dev token support can remain, but production auth design should not be blocked by it.
+
+### Observability
+
+- Policy version appears in agent health.
+- Response decisions are queryable.
+- Link1 session state is visible.
+- Store backend type and migration version are visible.
+
+### Resource / Performance
+
+- Container deployment measures EDR cost from the host perspective: sensor/agent container CPU and memory, plus workload container impact.
+- VM deployment measures EDR cost inside the protected VM: `sysarmor-agent`, `tetragon`, `tetra`, and business process CPU/RSS.
+- Resource tests compare baseline, EDR idle, EDR business workload, EDR detection workload, and soak windows.
+- Early gates may warn only; release gates should enforce thresholds on fixed runners or fixed VM specs.
+
+### Testing
+
+Recommended v3 aggregate gates:
+
+```bash
+go test ./...
+make -C test e2e-agent-runtime-all
+make -C test e2e-policy-all
+make -C test e2e-response-all
+make -C test e2e-graph-all
+make -C test e2e-postgres-all
+make -C test e2e-link1-stream-all
+make -C test perf-resource TOPO=container SCENARIO=edr-idle DUR=60
+make -C test perf-resource TOPO=vm SCENARIO=edr-idle DUR=60
+```
+
+## 13. Success Criteria
+
+v3 is complete when:
+
+- Rule content is versioned and can be enabled/disabled through policy.
+- Agent receives and applies effective policy.
+- Manager can assign policy by agent/scope.
+- Response intent, response decision, agent command ack, and audit trail exist.
+- Default response path is observe-only and non-destructive.
+- MVP analytics run through graph/evidence/incident package boundaries.
+- Incident evidence can be queried as graph/path JSON.
+- Manager can run on Postgres with migrations and idempotent ingest.
+- Link1 stream supports upload, ack cursor, resume, policy downlink, and observe-only response command.
+- Container/VM resource gates can prove normal EDR operation stays within agreed CPU/memory and business-impact thresholds.
+- v1/v2 regression gates continue to pass.
+- v3 aggregate gates pass.
+
+## 14. Recommended Implementation Order
+
+1. Policy schema and content pack files.
+2. Manager policy registry and assignment APIs.
+3. Agent fetch/apply effective policy.
+4. Endpoint/cloud rule enable-disable e2e.
+5. Response intent and observe-only response audit.
+6. Link1 downlink model for policy/response, initially over simple polling if needed.
+7. Analytics package split and graph/evidence MVP.
+8. Incident lifecycle minimum.
+9. Postgres schema and store adapter.
+10. Link1 bidirectional stream and resume.
+11. Redis/MQ evaluation based on measured bottlenecks.
+
+This order keeps the system useful after every phase: policy makes rules operable, response becomes safe because it is policy-bound, graph/evidence makes incidents explainable, Postgres makes state durable, and Link1 stream turns the runtime into a true control channel.
