@@ -137,6 +137,9 @@ make e2e-agent-retry-backoff
 # parse error health / tamper smoke
 make e2e-agent-parse-health
 
+# queue backpressure/drop health smoke
+make e2e-agent-backpressure
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10

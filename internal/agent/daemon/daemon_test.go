@@ -16,6 +16,7 @@ import (
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
@@ -841,6 +842,59 @@ func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("spool batches = %v", matches)
+	}
+}
+
+func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "http://127.0.0.1:1", Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Hour},
+		Upload:  config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+		Health:  config.HealthConfig{Interval: time.Hour},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := sensorruntime.New(runner.Sensor)
+	if _, err := rt.Probe(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Apply(context.Background(), contract.CollectionIntent{ObserveOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := spool.OpenWithLimit(cfg.Spool.Path, cfg.Spool.MaxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Append(&analyticsv1.UploadBatch{
+		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", Version: "test"},
+		Events: []*eventv1.CanonicalEvent{{
+			Id:      "event-a",
+			AgentId: "agent-a",
+			HostId:  "host-a",
+			Kind:    eventv1.EventKind_EVENT_KIND_EXEC,
+		}},
+	}); !spool.IsBackpressure(err) {
+		t.Fatalf("Append() error = %v, want backpressure", err)
+	}
+	worker, err := runner.uploadWorker(queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health, err := runner.collectHealth(context.Background(), rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Status != "degraded" || health.Queue.BackpressureCount != 1 || health.Queue.DroppedBatches != 1 || health.Queue.LastError == "" {
+		t.Fatalf("health = %+v", health)
 	}
 }
 

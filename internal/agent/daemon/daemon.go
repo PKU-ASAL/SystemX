@@ -276,6 +276,9 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 	if !sensor.Running || sensor.LastError != "" || queueStats.LastError != "" || uploadStats.LastError != "" {
 		status = "degraded"
 	}
+	if queueStats.BackpressureCount > 0 || queueStats.DroppedBatches > 0 || queueStats.DroppedBytes > 0 {
+		status = "degraded"
+	}
 	if r.Config.Sensor.MaxParseErrors > 0 && sensor.ParseErrors > r.Config.Sensor.MaxParseErrors {
 		status = "degraded"
 	}
