@@ -291,6 +291,7 @@ func isBenignEventSourceReadError(err error) bool {
 }
 
 func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIntent) error {
+	explicitScope := strings.TrimSpace(intent.ScopeType) != "" || strings.TrimSpace(intent.ScopeSelector) != ""
 	normalized, err := intent.NormalizeScope()
 	if err != nil {
 		return err
@@ -298,7 +299,7 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	if err := validateSupportedScope(normalized); err != nil {
 		return err
 	}
-	if strings.TrimSpace(normalized.ScopeType) != "" {
+	if explicitScope {
 		b.ScopeType = normalized.ScopeType
 		b.ScopeSelector = normalized.ScopeSelector
 		if normalized.ScopeType == "container" && b.ContainerIDPrefix == "" {
@@ -317,10 +318,8 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 
 func validateSupportedScope(intent contract.CollectionIntent) error {
 	switch intent.ScopeType {
-	case "", "host", "container", "cgroup":
+	case "", "host", "container", "cgroup", "namespace", "pod":
 		return nil
-	case "namespace", "pod":
-		return fmt.Errorf("tetragon backend scope %q is not supported in v2 without namespace/pod metadata", intent.ScopeType)
 	default:
 		return fmt.Errorf("tetragon backend scope %q is not supported", intent.ScopeType)
 	}
@@ -652,15 +651,21 @@ func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
 	scopeType := strings.TrimSpace(b.ScopeType)
 	scopeSelector := strings.TrimSpace(b.ScopeSelector)
 	switch scopeType {
-	case "", "host":
+	case "":
 		if b.ContainerIDPrefix == "" {
 			return true
 		}
 		return strings.HasPrefix(event.GetContainerId(), b.ContainerIDPrefix)
+	case "host":
+		return true
 	case "container":
 		return strings.HasPrefix(event.GetContainerId(), scopeSelector)
 	case "cgroup":
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
+	case "namespace":
+		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
+	case "pod":
+		return strings.HasPrefix(event.GetContainerId(), scopeSelector)
 	default:
 		return false
 	}
