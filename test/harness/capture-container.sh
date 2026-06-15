@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# 跑容器拓扑场景 + tetragon 抓内核事件 → 落盘 test/.results/<scenario>.tetragon.jsonl。
+# 跑容器拓扑场景。默认使用 v2 agent-managed sensor 主路径。
 # 前提: docker compose up -d（env/container/）已就绪。
 # 用法: capture-container.sh <scenario> [duration_s]
 #   scenario: apt-fileless-c2 | apt-staged-drop | benign-ci-noise
+#   CAPTURE_MODE=managed | replay
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 RESULTS="$ROOT/.results"
 S="${1:?用法: capture-container.sh <scenario> [duration_s]}"
 DUR="${2:-30}"
+CAPTURE_MODE="${CAPTURE_MODE:-managed}"
 : "${C2:=10.66.0.99}" "${GAP:=8}" "${CYCLES:=3}"
 mkdir -p "$RESULTS"
 
@@ -23,16 +25,101 @@ POLICY="$ROOT/env/resources/syscall-capture.yaml"
 docker cp "$POLICY" tetragon:/tmp/p.yaml 2>/dev/null || true
 docker exec tetragon tetra tracingpolicy add /tmp/p.yaml 2>/dev/null | tail -1 || true
 
-echo "[capture-container] 抓事件并运行场景: $S（窗口 ${DUR}s）"
+run_attack() {
+  if [[ -x "$ROOT/scenarios/container/$S/attack.sh" || -f "$ROOT/scenarios/container/$S/attack.sh" ]]; then
+    C2="$C2" GAP="$GAP" CYCLES="$CYCLES" bash "$ROOT/scenarios/container/$S/attack.sh"
+  else
+    echo "[capture-container] $S 无 attack.sh，执行 replay-only smoke"
+  fi
+}
+
+if [[ "$CAPTURE_MODE" == "managed" ]]; then
+  echo "[capture-container] v2 managed daemon 主路径: $S（窗口 ${DUR}s）"
+  WORK="/tmp/sysarmor-capture-$S"
+  TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+  TETRA_PATH="$(docker exec tetragon sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
+  docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
+  docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
+kinds: [EXEC, CONNECT, OPEN, WRITE, CHMOD]
+EOF
+cat > '$WORK/agent.yaml' <<EOF
+agent:
+  id: container-node-a
+  host_id: container-node-a
+  tenant_id: default
+  token: $TOKEN
+  scenario: $S
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: http
+
+sensor:
+  backend: tetragon
+  mode: managed
+  tetra_path: $TETRA_PATH
+  policy_path: $WORK/policy.yaml
+  container_id_prefix: $NODE_A_DOCKER
+  observe_only: true
+  restart: never
+  max_restarts: 1
+  restart_window: 1h
+
+spool:
+  path: $WORK/spool
+  max_bytes: 268435456
+  batch_size: 256
+  flush_interval: 200ms
+
+upload:
+  retry_initial: 100ms
+  retry_max: 500ms
+  request_timeout: 2s
+
+health:
+  interval: 500ms
+EOF"
+  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S" >/dev/null
+  docker exec tetragon sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
+  cleanup_agent() {
+    docker exec tetragon sh -c "if [ -f '$WORK/agent.pid' ]; then kill \"\$(cat '$WORK/agent.pid')\" 2>/dev/null || true; fi" >/dev/null 2>&1 || true
+  }
+  trap cleanup_agent EXIT
+  sleep 1
+  run_attack
+  sleep "$DUR"
+  cleanup_agent
+  docker exec tetragon cat "$WORK/agent.log" > "$RESULTS/$S.container.agent.log" 2>/dev/null || true
+  EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario "$S" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario "$S" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
+  python3 - "$RESULTS/container.$S.managed.json" "$S" "$EVENTS" "$ENDPOINT_SIGNALS" "$CLOUD_SIGNALS" "$INCIDENTS" <<'PY'
+import json, sys
+path, scenario = sys.argv[1], sys.argv[2]
+events, endpoint, cloud, incidents = map(int, sys.argv[3:7])
+json.dump({"topology":"container","scenario":scenario,"managed_events":events,"managed_endpoint_signals":endpoint,"managed_cloud_signals":cloud,"managed_incidents":incidents,"pass":1 if events > 0 else 0,"fail":0 if events > 0 else 1,"skip":0}, open(path, "w"))
+PY
+  if [[ "$EVENTS" -le 0 ]]; then
+    echo "[capture-container][ERROR] managed daemon uploaded 0 events"
+    docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
+    exit 1
+  fi
+  echo "[capture-container] managed upload: events=$EVENTS endpoint=$ENDPOINT_SIGNALS cloud=$CLOUD_SIGNALS incidents=$INCIDENTS"
+  exit 0
+fi
+
+if [[ "$CAPTURE_MODE" != "replay" ]]; then
+  echo "[capture-container][ERROR] unsupported CAPTURE_MODE=$CAPTURE_MODE"
+  exit 1
+fi
+
+echo "[capture-container] v1 replay/stream 调试路径: $S（窗口 ${DUR}s）"
 docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S-stream" >/dev/null
 docker exec -e NODE_A_DOCKER="$NODE_A_DOCKER" tetragon sh -c "rm -f /tmp/cap-$S.json; timeout $DUR tetra getevents -o json 2>/dev/null | grep -F '\"docker\":\"'\$NODE_A_DOCKER | tee /tmp/cap-$S.json | /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --agent-id container-node-a-stream --host-id container-node-a --scenario $S-stream --stream-jsonl - --batch-size 256 --flush-interval 1s" &
 CAP=$!
 sleep 3
-if [[ -x "$ROOT/scenarios/container/$S/attack.sh" || -f "$ROOT/scenarios/container/$S/attack.sh" ]]; then
-  C2="$C2" GAP="$GAP" CYCLES="$CYCLES" bash "$ROOT/scenarios/container/$S/attack.sh"
-else
-  echo "[capture-container] $S 无 attack.sh，执行 replay-only smoke"
-fi
+run_attack
 sleep 4
 wait $CAP 2>/dev/null || true
 

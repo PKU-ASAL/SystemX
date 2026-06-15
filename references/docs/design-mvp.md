@@ -231,9 +231,9 @@ make report
 | dev auth | 已有静态 dev token 校验,覆盖 HTTP/gRPC upload 与 health report |
 | sensor restart/tamper | 已有 process supervisor restart、managed Tetragon restart 配置、degraded/tamper signal 生成和上传测试 |
 | systemd | 已有 `deployments/systemd/sysarmor-agent.service` 与 daemon 示例配置 |
-| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e、container fake/managed smoke、VM fake-sensor systemd smoke,以及 container 三个核心场景的 agent-managed detection smoke |
+| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e、container fake/managed smoke、VM fake-sensor systemd smoke、container 三个核心场景的 agent-managed detection smoke,以及 container 主 capture/assert managed daemon 路径 |
 
-这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是把 agent-managed sensor 迁移为 container/VM 主路径,补 VM 真实 Tetragon 验收,并继续压实长期运行语义。
+这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是把 agent-managed sensor 继续迁移到 VM 主路径,补 VM 真实 Tetragon 验收,并继续压实长期运行语义。
 
 ## 三、走向完整项目的主要缺口
 
@@ -261,7 +261,7 @@ v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoin
 - capability 探测仍是最小骨架,不是完整主机能力探测。
 - dropped events / parse errors / restart window / degraded 状态还需要继续细化阈值和验收。
 - CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现。
-- container/VM 主 e2e 仍需迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent；container 专项 smoke 已证明订阅路径可行,但还没有替换原 `make e2e TOPO=container ...` 主路径。
+- container 主 e2e 已默认迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent；VM 主 e2e 仍需迁移。
 - Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。
 
@@ -296,7 +296,7 @@ type Sensor interface {
 - graceful shutdown flush 语义还需要明确测试。
 - retry/backoff 还需要更长时间 soak 和失败恢复验证。
 - VM 真实 Tetragon + systemd 主路径仍需补齐。
-- container/VM 主检测场景还没有迁移为 daemon-managed sensor 主路径；container 三场景已有专项 smoke,但原 capture/assert 主路径仍待迁移。
+- container 主检测场景已迁移为 daemon-managed sensor 主路径；VM 真实 Tetragon + systemd 主路径仍待迁移。
 - tenant/token 仍是开发形态,不是生产 enrollment/RBAC。
 
 继续收口:
@@ -526,7 +526,7 @@ health heartbeat
 
 主要缺口:
 
-- agent-managed Tetragon process container/VM 主路径 e2e。
+- agent-managed Tetragon process VM 主路径 e2e。
 - VM 真实 Tetragon systemd smoke。
 - 更长时间的 manager outage/spool recovery soak。
 - graph path tests。
@@ -562,7 +562,7 @@ health heartbeat
 建议按下面顺序推进,先把 v2 的 EDR endpoint runtime 地基夯实,再扩到更完整的 EDR/XDR 平台能力,避免过早投入复杂算法或多源接入:
 
 1. **迁移 agent-managed sensor 主路径**
-   - container daemon e2e 从 fake backend 推进到 managed Tetragon/tetra
+   - container daemon e2e 已从 fake backend 推进到 managed Tetragon/tetra,并成为默认 capture/assert 主路径
    - VM daemon smoke 不再依赖 harness pipe
    - 保留 replay/stream debug path
 
@@ -650,4 +650,4 @@ multi-source XDR ingestion
 deployment/operations
 ```
 
-下一步最值得做的是 **agent-managed sensor 主路径 + VM 真实 Tetragon/systemd smoke + policy 最小闭环**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper 和 container managed detection 的地基已经立起来了,现在要把它们从专项 smoke 推进到 container/VM 主链路。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
+下一步最值得做的是 **VM 真实 Tetragon/systemd smoke + policy 最小闭环 + 长跑可靠性**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper 和 container managed detection/capture 的地基已经立起来了,现在要把它们继续推进到 VM 主链路。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
