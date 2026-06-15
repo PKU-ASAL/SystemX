@@ -231,9 +231,9 @@ make report
 | dev auth | 已有静态 dev token 校验,覆盖 HTTP/gRPC upload 与 health report |
 | sensor restart/tamper | 已有 process supervisor restart、managed Tetragon restart 配置、degraded/tamper signal 生成和上传测试 |
 | systemd | 已有 `deployments/systemd/sysarmor-agent.service` 与 daemon 示例配置 |
-| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e、container fake/managed smoke、VM fake-sensor systemd smoke、container 三个核心场景的 agent-managed detection smoke,以及 container 主 capture/assert managed daemon 路径 |
+| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e、container fake/managed smoke、VM fake-sensor systemd smoke、VM real Tetragon systemd smoke、container 三个核心场景的 agent-managed detection smoke,以及 container/VM 主 capture/assert managed daemon 路径 |
 
-这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是补 VM 真实 Tetragon systemd 验收、收口 policy ownership,并继续压实长期运行语义。
+这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是收口 Tetragon process/policy ownership,并继续压实长期运行语义。
 
 ## 三、走向完整项目的主要缺口
 
@@ -296,14 +296,14 @@ type Sensor interface {
 - graceful shutdown flush 语义还需要明确测试。
 - retry/backoff 还需要更长时间 soak 和失败恢复验证。
 - container/VM 主检测场景已迁移为 daemon-managed sensor 主路径。
-- VM 真实 Tetragon + systemd 主路径仍需补齐。
+- VM real Tetragon systemd detection smoke 已有；完整 Tetragon process ownership 和 policy ownership 仍需补齐。
 - tenant/token 仍是开发形态,不是生产 enrollment/RBAC。
 
 继续收口:
 
 ```text
 graceful shutdown + long-run soak
-VM real Tetragon systemd smoke
+Tetragon process/policy ownership
 container/VM agent-managed sensor e2e
 retry/idempotency integration
 tenant/agent identity consistency
@@ -522,12 +522,11 @@ health heartbeat
 - v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path、process supervisor、tamper signal 的测试。
 - v2 已有本机 daemon/health/spool/sensor-restart 聚合 smoke。
 - v2 已有 container topology fake/managed daemon smoke、managed restart/tamper smoke 和三场景 managed detection smoke。
-- v2 已有 VM fake-sensor systemd smoke 和 VM managed fake bundle smoke。
+- v2 已有 VM fake-sensor systemd smoke、VM managed fake bundle smoke 和 VM real Tetragon systemd detection smoke；后者证明 systemd agent 能订阅真实 `tetra getevents`、完成检测上传并被 systemd 拉起,但 Tetragon 主进程和 TracingPolicy 仍由环境/harness 准备。
 
 主要缺口:
 
-- agent-managed Tetragon process VM systemd 主路径 e2e。
-- VM 真实 Tetragon systemd smoke。
+- 完整 agent-managed Tetragon process VM systemd 主路径 e2e。
 - 更长时间的 manager outage/spool recovery soak。
 - graph path tests。
 - rarity baseline tests。
@@ -546,7 +545,7 @@ health heartbeat
 
 主要缺口:
 
-- 已有 systemd unit 和 VM fake-sensor systemd smoke,但还缺 VM 真实 Tetragon systemd smoke 和安装脚本。
+- 已有 systemd unit、VM fake-sensor systemd smoke 和 VM real Tetragon systemd smoke,但还缺完整安装脚本和升级路径。
 - 没有 Helm/DaemonSet。
 - 没有 packaging/release。
 - 已有 config examples,但还缺生产默认值、升级兼容和安全配置说明。
@@ -566,10 +565,10 @@ health heartbeat
    - VM daemon capture/assert 已不再依赖 harness pipe
    - 保留 replay/stream debug path
 
-2. **补 VM 真实 Tetragon/systemd smoke**
-   - 复用已落地的 VM systemd agent lifecycle smoke
-   - 将 fake sensor 替换为真实 Tetragon/tetra 或真实可验收 bundle
-   - manager 侧断言 recent health、policy_loaded、sensor running/degraded
+2. **收口 VM 真实 Tetragon/systemd ownership**
+   - VM real Tetragon systemd smoke 已覆盖真实 `tetra getevents` detection 和 agent systemd restart
+   - 下一步将 fake bundle/环境预置替换为真实 Tetragon process ownership 和 policy apply/verify ownership
+   - manager 侧继续断言 recent health、policy_loaded、sensor running/degraded
    - agent 退出后仍由 systemd 拉起
 
 3. **压实长期运行语义**
@@ -650,4 +649,4 @@ multi-source XDR ingestion
 deployment/operations
 ```
 
-下一步最值得做的是 **VM 真实 Tetragon/systemd smoke + policy 最小闭环 + 长跑可靠性**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper 和 container/VM managed detection/capture 的地基已经立起来了,现在要把它们继续推进到 systemd 托管和 policy ownership。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
+下一步最值得做的是 **Tetragon process/policy ownership + 长跑可靠性**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper、container/VM managed detection/capture 和 VM real Tetragon systemd smoke 的地基已经立起来了,现在要把它们继续推进到完整 sensor lifecycle ownership。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。

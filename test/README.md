@@ -112,6 +112,9 @@ make e2e TOPO=vm SCENARIO=apt-fileless-c2
 make e2e TOPO=vm SCENARIO=apt-staged-drop
 make e2e TOPO=vm SCENARIO=benign-ci-noise
 
+# VM systemd + real Tetragon subscription smoke
+make e2e-agent-real-tetragon-vm
+
 # 生命周期 smoke
 make e2e TOPO=container SCENARIO=lifecycle-smoke
 make e2e TOPO=vm SCENARIO=lifecycle-smoke
