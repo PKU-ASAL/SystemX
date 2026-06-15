@@ -138,6 +138,12 @@ wait_absent() {
 
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health capability kernel" '"kernel_release":' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health capability btf" '"btf_available":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health capability bpffs" '"bpffs_available":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESULTS/e2e-agent-real-tetragon-owned-vm.tracingpolicy.txt" \
@@ -180,6 +186,8 @@ done
 
 wait_contains "agent-health recovered after restart" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health capability after restart" '"kernel_release":' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health running after restart" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy after restart" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
@@ -197,6 +205,8 @@ wait_contains "agent-health degraded after service stop" '"status":"degraded"' "
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 vagrant ssh node-a -c "sudo systemctl start sysarmor-agent" >/dev/null
 wait_contains "agent-health recovered after service start" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health capability after service start" '"bpffs_available":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy after service start" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"

@@ -35,6 +35,7 @@ type Runner struct {
 	Config config.Config
 	Sensor contract.Sensor
 	Out    io.Writer
+	capability contract.Capability
 }
 
 func New(cfg config.Config) (*Runner, error) {
@@ -60,6 +61,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("probe", err)
 	}
+	r.capability = capability
 	intent, err := policy.LoadCollectionIntent(r.Config.Sensor.PolicyPath, r.Config.Sensor.ObserveOnly)
 	if err != nil {
 		return failStartup("policy", err)
@@ -230,6 +232,7 @@ func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt 
 			PolicyLoaded: false,
 			LastError:    fmt.Sprintf("%s: %v", stage, startupErr),
 		},
+		Capability: r.runtimeCapability(),
 		Queue:  agenthealth.QueueHealth{},
 		Upload: agenthealth.UploadHealth{},
 	}
@@ -314,6 +317,7 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 			LastExitReason: sensor.LastExitReason,
 			LastError:      sensor.LastError,
 		},
+		Capability: r.runtimeCapability(),
 		Queue: agenthealth.QueueHealth{
 			QueuedBatches:     queueStats.QueuedBatches,
 			QueuedBytes:       queueStats.QueuedBytes,
@@ -330,6 +334,21 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 			LastError:        uploadStats.LastError,
 		},
 	}, nil
+}
+
+func (r *Runner) runtimeCapability() agenthealth.SensorCapability {
+	return agenthealth.SensorCapability{
+		Backend:         r.capability.Backend,
+		Version:         r.capability.Version,
+		SupportsExec:    r.capability.SupportsExec,
+		SupportsConnect: r.capability.SupportsConnect,
+		SupportsFile:    r.capability.SupportsFile,
+		SupportsEnforce: r.capability.SupportsEnforce,
+		SupportsHealth:  r.capability.SupportsHealth,
+		KernelRelease:   r.capability.KernelRelease,
+		BTFAvailable:    r.capability.BTFAvailable,
+		BPFFSAvailable:  r.capability.BPFFSAvailable,
+	}
 }
 
 func (r *Runner) runtimeScope() agenthealth.RuntimeScope {

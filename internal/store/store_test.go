@@ -164,6 +164,7 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
 		Status:     "ok",
 		ObservedAt: time.Now().UTC(),
+		Capability: agenthealth.SensorCapability{Backend: "fake", KernelRelease: "test-kernel", BTFAvailable: true, BPFFSAvailable: true},
 		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 1},
 	})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{
@@ -173,6 +174,7 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
 		Status:     "degraded",
 		ObservedAt: time.Now().UTC(),
+		Capability: agenthealth.SensorCapability{Backend: "fake", KernelRelease: "test-kernel", BTFAvailable: true, BPFFSAvailable: true},
 		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 2},
 	})
 	if err := st.Save(); err != nil {
@@ -186,7 +188,7 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 	if !ok {
 		t.Fatal("agent health not found")
 	}
-	if got.Status != "degraded" || got.Sensor.EventsSeen != 2 || got.Scope.Type != "container" || got.Scope.Selector != "abc123" {
+	if got.Status != "degraded" || got.Sensor.EventsSeen != 2 || got.Scope.Type != "container" || got.Scope.Selector != "abc123" || got.Capability.KernelRelease != "test-kernel" || !got.Capability.BTFAvailable || !got.Capability.BPFFSAvailable {
 		t.Fatalf("health = %+v", got)
 	}
 	if got := reloaded.ListAgentHealth(); len(got) != 1 {

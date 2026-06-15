@@ -236,6 +236,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		Status:        "ok",
 		UptimeSeconds: 12,
 		ObservedAt:    time.Now().UTC(),
+		Capability:    agenthealth.SensorCapability{Backend: "fake", Version: "dev", SupportsExec: true, SupportsHealth: true, KernelRelease: "test-kernel", BTFAvailable: true, BPFFSAvailable: true},
 		Sensor:        agenthealth.SensorHealth{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3},
 		Queue:         agenthealth.QueueHealth{QueuedBatches: 1, QueuedBytes: 256},
 		Upload:        agenthealth.UploadHealth{RemainingBatches: 1},
@@ -251,7 +252,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		t.Fatalf("health status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = get(t, handler, "/api/v1/agent-health?agent_id=agent-a&tenant_id=default")
-	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_health"`, `"queue_health"`, `"upload_health"`} {
+	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability"`, `"kernel_release":"test-kernel"`, `"sensor_health"`, `"queue_health"`, `"upload_health"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("health response missing %s: %s", want, rec.Body.String())
 		}

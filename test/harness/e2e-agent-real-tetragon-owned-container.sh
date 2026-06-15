@@ -146,6 +146,12 @@ wait_process_absent() {
 
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health capability kernel" '"kernel_release":' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health capability btf" '"btf_available":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health capability bpffs" '"bpffs_available":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESULTS/e2e-agent-real-tetragon-owned-container.tracingpolicy.txt" \
@@ -199,6 +205,8 @@ wait_process_absent "owned tetra getevents" "$TETRA_PATH" "$RESULTS/e2e-agent-re
 docker exec "$OWNED_CONTAINER" sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' >> '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
 wait_contains "agent-health recovered after restart" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health capability after restart" '"kernel_release":' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 wait_contains "agent-health running after restart" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default

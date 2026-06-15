@@ -3,16 +3,17 @@ package health
 import "time"
 
 type AgentHealth struct {
-	AgentID       string       `json:"agent_id"`
-	HostID        string       `json:"host_id"`
-	TenantID      string       `json:"tenant_id"`
-	Scope         RuntimeScope `json:"scope"`
-	Status        string       `json:"status"`
-	UptimeSeconds int64        `json:"uptime_seconds"`
-	Sensor        SensorHealth `json:"sensor_health"`
-	Queue         QueueHealth  `json:"queue_health"`
-	Upload        UploadHealth `json:"upload_health"`
-	ObservedAt    time.Time    `json:"observed_at"`
+	AgentID       string          `json:"agent_id"`
+	HostID        string          `json:"host_id"`
+	TenantID      string          `json:"tenant_id"`
+	Scope         RuntimeScope    `json:"scope"`
+	Status        string          `json:"status"`
+	UptimeSeconds int64           `json:"uptime_seconds"`
+	Capability    SensorCapability `json:"sensor_capability,omitempty"`
+	Sensor        SensorHealth    `json:"sensor_health"`
+	Queue         QueueHealth     `json:"queue_health"`
+	Upload        UploadHealth    `json:"upload_health"`
+	ObservedAt    time.Time       `json:"observed_at"`
 }
 
 type RuntimeScope struct {
@@ -33,6 +34,19 @@ type SensorHealth struct {
 	LastEventAt    time.Time `json:"last_event_at,omitempty"`
 	LastExitReason string    `json:"last_exit_reason,omitempty"`
 	LastError      string    `json:"last_error,omitempty"`
+}
+
+type SensorCapability struct {
+	Backend         string `json:"backend,omitempty"`
+	Version         string `json:"version,omitempty"`
+	SupportsExec    bool   `json:"supports_exec,omitempty"`
+	SupportsConnect bool   `json:"supports_connect,omitempty"`
+	SupportsFile    bool   `json:"supports_file,omitempty"`
+	SupportsEnforce bool   `json:"supports_enforce,omitempty"`
+	SupportsHealth  bool   `json:"supports_health,omitempty"`
+	KernelRelease   string `json:"kernel_release,omitempty"`
+	BTFAvailable    bool   `json:"btf_available,omitempty"`
+	BPFFSAvailable  bool   `json:"bpffs_available,omitempty"`
 }
 
 type QueueHealth struct {
