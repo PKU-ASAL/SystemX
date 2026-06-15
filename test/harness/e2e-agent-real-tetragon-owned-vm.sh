@@ -64,9 +64,9 @@ sensor:
   tetragon_path: $TETRAGON_PATH
   policy_path: /etc/sysarmor/policies/sysarmor-owned-tetragon.yaml
   observe_only: true
-  restart: never
-  max_restarts: 1
-  restart_window: 1h
+  restart: always
+  max_restarts: 3
+  restart_window: 500ms
 
 spool:
   path: /var/lib/sysarmor/agent/spool-owned-tetragon
@@ -141,6 +141,8 @@ fi
 
 echo "[e2e-agent-real-tetragon-owned-vm] verifying systemd restarts owned real Tetragon agent"
 vagrant ssh node-a -c "sudo kill -TERM $PID_BEFORE" >/dev/null
+wait_contains "agent-health degraded after stop" '"status":"degraded"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-degraded.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 deadline=$((SECONDS + 30))
 PID_AFTER=""
 until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE" ]]; do
@@ -153,7 +155,11 @@ until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE"
   PID_AFTER="$(vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent" 2>/dev/null | tr -d '\r' | tail -1)"
 done
 
-wait_contains "agent-health after restart" '"agent_id":"vm-owned-tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
+wait_contains "agent-health recovered after restart" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health running after restart" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
+wait_contains "agent-health policy after restart" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "owned tetragon process after restart" '/usr/local/bin/tetragon' "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-restart.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"

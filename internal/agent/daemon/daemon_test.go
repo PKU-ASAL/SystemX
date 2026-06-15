@@ -211,14 +211,19 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/upload" {
+		switch r.URL.Path {
+		case "/api/v1/upload":
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			closeUploaded.Do(func() {
+				close(uploaded)
+			})
+		case "/api/v1/agent-health":
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		w.Header().Set("content-type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
-		closeUploaded.Do(func() {
-			close(uploaded)
-		})
 	}))
 	defer server.Close()
 	cfg := config.Config{
@@ -276,22 +281,27 @@ func TestRunnerBackgroundUploadLoopBacksOffAndRecovers(t *testing.T) {
 	uploaded := make(chan struct{})
 	var closeUploaded sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/upload" {
+		switch r.URL.Path {
+		case "/api/v1/upload":
+			mu.Lock()
+			attempts = append(attempts, time.Now())
+			n := len(attempts)
+			mu.Unlock()
+			if n < 4 {
+				http.Error(w, "temporary outage", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			closeUploaded.Do(func() {
+				close(uploaded)
+			})
+		case "/api/v1/agent-health":
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		mu.Lock()
-		attempts = append(attempts, time.Now())
-		n := len(attempts)
-		mu.Unlock()
-		if n < 4 {
-			http.Error(w, "temporary outage", http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("content-type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
-		closeUploaded.Do(func() {
-			close(uploaded)
-		})
 	}))
 	defer server.Close()
 	cfg := config.Config{
@@ -407,23 +417,28 @@ func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
 	}
 	uploaded := make(chan analyticsv1.UploadBatch, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/upload" {
+		switch r.URL.Path {
+		case "/api/v1/upload":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read batch body: %v", err)
+			}
+			var batch analyticsv1.UploadBatch
+			if err := protojson.Unmarshal(body, &batch); err != nil {
+				t.Fatalf("decode batch: %v", err)
+			}
+			select {
+			case uploaded <- batch:
+			default:
+			}
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		case "/api/v1/agent-health":
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read batch body: %v", err)
-		}
-		var batch analyticsv1.UploadBatch
-		if err := protojson.Unmarshal(body, &batch); err != nil {
-			t.Fatalf("decode batch: %v", err)
-		}
-		select {
-		case uploaded <- batch:
-		default:
-		}
-		w.Header().Set("content-type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	}))
 	defer server.Close()
 	cfg := config.Config{
@@ -646,6 +661,95 @@ func TestRunnerReportsHealthToManager(t *testing.T) {
 	}
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		mu       sync.Mutex
+		healths  []map[string]any
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
+			t.Errorf("token header = %q", got)
+		}
+		if r.URL.Path == "/api/v1/upload" {
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
+		if r.URL.Path != "/api/v1/agent-health" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode health: %v", err)
+		}
+		mu.Lock()
+		healths = append(healths, body)
+		mu.Unlock()
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: server.URL, Transport: "http"},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		Upload:  config.UploadConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
+		Health:  config.HealthConfig{Interval: 5 * time.Millisecond},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: &bytes.Buffer{}})
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		count := len(healths)
+		mu.Unlock()
+		if count > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for initial health report")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(healths) == 0 {
+		t.Fatal("health report count = 0, want at least 1")
+	}
+	last := healths[len(healths)-1]
+	if last["status"] != "degraded" {
+		t.Fatalf("final health status = %v, want degraded", last["status"])
+	}
+	sensor, ok := last["sensor_health"].(map[string]any)
+	if !ok {
+		t.Fatalf("final health missing sensor_health: %+v", last)
+	}
+	if sensor["running"] != false {
+		t.Fatalf("final sensor running = %v, want false", sensor["running"])
 	}
 }
 

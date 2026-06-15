@@ -116,6 +116,16 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		case <-ctx.Done():
 			cancelUploads()
 			stopRuntime()
+			finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
+			if healthErr == nil {
+				if err := reporter.Report(context.Background(), finalHealth); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent final health report error: %v\n", err)
+				}
+				if r.Out != nil {
+					fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_upload_error=%q\n",
+						finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.Upload.LastError)
+				}
+			}
 			if opts.DrainOnce {
 				return ctx.Err()
 			}
@@ -190,6 +200,19 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
+}
+
+func (r *Runner) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+	health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
+	if err != nil {
+		return agenthealth.AgentHealth{}, err
+	}
+	health.Sensor.Running = false
+	if health.Status == "ok" {
+		health.Status = "degraded"
+	}
+	health.ObservedAt = time.Now().UTC()
+	return health, nil
 }
 
 func shutdownDrainTimeout(cfg config.Config) time.Duration {

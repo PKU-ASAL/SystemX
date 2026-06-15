@@ -79,9 +79,9 @@ sensor:
   scope_type: container
   scope_selector: $NODE_A_DOCKER
   observe_only: true
-  restart: never
-  max_restarts: 1
-  restart_window: 1h
+  restart: always
+  max_restarts: 3
+  restart_window: 500ms
 
 spool:
   path: $WORK/spool
@@ -162,6 +162,8 @@ fi
 
 echo "[e2e-agent-real-tetragon-owned-container] verifying manual restart keeps owned real Tetragon path healthy"
 docker exec "$OWNED_CONTAINER" sh -c "kill -TERM $PID_BEFORE" >/dev/null
+wait_contains "agent-health degraded after stop" '"status":"degraded"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-degraded.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 deadline=$((SECONDS + 30))
 until ! docker exec "$OWNED_CONTAINER" sh -c "kill -0 $PID_BEFORE" >/dev/null 2>&1; do
   if (( SECONDS >= deadline )); then
@@ -174,7 +176,11 @@ done
 
 docker exec "$OWNED_CONTAINER" sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' >> '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
-wait_contains "agent-health after restart" '"agent_id":"container-node-a-owned"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
+wait_contains "agent-health recovered after restart" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health running after restart" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
+wait_contains "agent-health policy after restart" '"policy_loaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-container.health-after-restart.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-owned --tenant-id default
 wait_contains "owned tetragon process after restart" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-container.ps-after-restart.txt" \
   docker exec "$OWNED_CONTAINER" sh -c "ps -ef | grep tetragon | grep -v grep"
