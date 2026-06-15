@@ -1,7 +1,7 @@
 # SysArmor v2 Implementation Plan
 
 Date: 2026-06-15
-Status: living plan, updated after the first v2 implementation commits.
+Status: living plan, updated after daemon/spool/health/restart/tamper smoke commits.
 
 ## 1. Goal
 
@@ -123,17 +123,17 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 - Sensor/runtime:
   - capability 探测仍偏最小骨架。
   - policy compile/apply 还没有完全迁出 harness。
-  - dropped events / degraded 状态 / restart window 还不完整。
-  - process supervisor 已有 start/stop,但 restart policy 仍需收口并补测试。
-  - sensor 被 kill 后自动拉起、连续失败降级、tamper/blindness signal 还未形成完整闭环。
+  - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
+  - process supervisor restart policy 已落地,但还需要更贴近真实 Tetragon 的 integration/VM 验收。
+  - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke,但还没有迁移到 container/VM 主路径。
   - container/VM 主 e2e 仍需迁移到 agent-managed sensor 主路径。
   - `Enforce` 仍应保持 observe-only/unsupported skeleton。
   - native sensor 不在 v2 完整实现范围内。
 
 - Agent daemon:
-  - 后台 upload loop 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
-  - graceful shutdown、flush 语义和 systemd lifecycle 还未完整验收。
-  - health API 已有,但 e2e recent health、degraded/recovered health 断言还需要补齐。
+  - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
+  - graceful shutdown、flush 语义和 systemd VM lifecycle 还未完整验收。
+  - health API、CLI 查询和本机 e2e 已有,但 VM recent health、degraded/recovered health 断言还需要补齐。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
 
 v2 目标形态：
@@ -697,7 +697,7 @@ WantedBy=multi-user.target
 
 ### Phase 1: Sensor Contract And Runtime Skeleton
 
-状态：基本完成，后续重点是把 restart/degraded 语义补进 runtime 验收。
+状态：基本完成。restart/tamper 已有本机 smoke,后续重点是更真实的 Tetragon integration 和 VM/container 主路径验收。
 
 任务：
 
@@ -729,7 +729,7 @@ WantedBy=multi-user.target
 
 ### Phase 3: Tetragon Managed Backend
 
-状态：进行中。bundle verify/install、basic process supervisor、managed tetragon/tetra stdout subscribe 已落地；restart policy、degraded health、harness 主路径迁移仍未完成。
+状态：进行中。bundle verify/install、process supervisor restart、managed Tetragon/tetra stdout subscribe、restart health 和 tamper signal 已落地；harness 主路径迁移、VM/systemd smoke 和更真实的 managed Tetragon 场景仍未完成。
 
 任务：
 
@@ -739,7 +739,7 @@ WantedBy=multi-user.target
 - agent 启动 `tetra getevents` 或等价事件订阅进程。
 - 复用现有 Tetragon JSON adapter。
 - 记录 stderr、exit code、parse errors。
-- 完成 process supervisor restart policy:
+- 保持 process supervisor restart policy:
   - restart delay。
   - max restart count。
   - stop cancellation。
@@ -756,15 +756,15 @@ WantedBy=multi-user.target
 
 ### Phase 4: Sensor Health, Restart, Tamper Signal
 
-状态：health ingest/query 已完成，sensor process 状态已进入 health；restart/degraded/tamper 仍是当前最重要的剩余闭环。
+状态：大部分完成。health ingest/query、sensor process health、restart policy、tamper/blindness endpoint signal 和本机 restart smoke 已落地；剩余重点是 parse/drop 阈值、degraded/recovered 状态细化和 container/VM 主路径验收。
 
 任务：
 
 - 实现 dropped/parse error 统计。
-- 实现 restart policy。
-- 实现 restart window/max restarts。
+- 保持 restart policy。
+- 保持 restart window/max restarts。
 - sensor 异常退出进入 health。
-- 多次失败产生 tamper/blindness signal 或 incident。
+- 多次失败产生 tamper/blindness signal,incident 收敛保持可选。
 - tamper/blindness 优先作为 endpoint `Signal` 通过现有 Link1 上行；是否进一步收敛成 `Incident` 保持可选。
 
 退出标准：
@@ -815,11 +815,11 @@ WantedBy=multi-user.target
 
 ### Phase 7: Systemd And Harness Migration
 
-状态：未完成。应放在 managed sensor 和 health/restart 闭环稳定之后。
+状态：部分完成。systemd unit 和 example config 已落地；VM/systemd smoke、container/VM 主路径迁移仍未完成。
 
 任务：
 
-- 增加 systemd unit。
+- 保持 systemd unit。
 - 更新 VM harness 可用 systemd 启动 agent。
 - 更新 container/VM e2e 主路径使用 agent-managed sensor。
 - 保留 replay/stream debug harness。
@@ -874,19 +874,20 @@ make e2e TOPO=vm SCENARIO=benign-ci-noise DUR=12
 新增 v2 场景：
 
 ```bash
-make e2e-agent-daemon TOPO=container SCENARIO=apt-fileless-c2 DUR=12
-make e2e-agent-daemon TOPO=vm SCENARIO=apt-fileless-c2 DUR=12
-make e2e-agent-sensor-restart TOPO=container DUR=20
-make e2e-agent-spool TOPO=container SCENARIO=apt-fileless-c2 DUR=12
-make e2e-agent-health TOPO=vm DUR=20
+make -C test e2e-agent-daemon
+make -C test e2e-agent-health
+make -C test e2e-agent-spool
+make -C test e2e-agent-sensor-restart
+make -C test e2e-agent-all
+make -C test e2e-agent-daemon-container
 ```
 
 `e2e-agent-sensor-restart` 应验证：
 
-1. agent 启动并管理 Tetragon。
-2. 测试杀掉 Tetragon。
-3. agent health 记录 sensor exit。
-4. agent 自动重启 Tetragon。
+1. agent 启动并管理 fake Tetragon/tetra bundle。
+2. 测试杀掉 fake sensor 进程。
+3. agent health 记录 sensor exit/restart。
+4. agent 自动重启 sensor。
 5. manager 收到 degraded/recovered health。
 6. 多次失败路径能产生 tamper/blindness signal 或 incident。
 
@@ -930,12 +931,12 @@ v2 完成时必须满足：
 
 当前计划需要修正或持续注意的地方主要有六类：
 
-1. **阶段状态必须随实现滚动更新**：config、sensor contract skeleton、spool、upload drain、backpressure、health API、dev token、bundle verify/install 已经不是纯待办,后续计划应写成"收口/验证/迁移",不要重复实现。
-2. **Tetragon managed backend 是最大风险项**：它涉及安装、checksum、进程监督、policy apply、事件订阅和 e2e harness 迁移,应继续拆成独立可提交的小步。
-3. **restart/degraded/tamper 是当前最关键的未闭环**：已有 supervisor 和 health API,但还缺 restart policy、连续失败降级、tamper/blindness signal 与 e2e kill-sensor 验收。
-4. **health 是依赖轴,不是附属功能**：tamper、restart、spool backpressure、upload error、agent liveness 都要靠 health 被 manager 看见。现在 health API 已经落地,后续不要再新增本地-only 的并行状态面。
+1. **阶段状态必须随实现滚动更新**：config、sensor contract、spool、upload drain、backpressure、health API、dev token、bundle verify/install、restart/tamper 已经不是纯待办,后续计划应写成"收口/验证/迁移",不要重复实现。
+2. **Tetragon managed backend 仍是最大风险项**：基础安装、checksum、进程监督、事件订阅已经有了,但真实 Tetragon 权限、policy apply、container/VM harness 迁移仍应继续拆成独立可提交的小步。
+3. **当前最关键的未闭环已经变成 harness/systemd 主路径迁移**：本机 smoke 证明了 daemon、spool、restart、tamper 的局部闭环,下一步要证明它们在 container/VM 拓扑和 systemd lifecycle 下仍成立。
+4. **health 是依赖轴,不是附属功能**：tamper、restart、spool backpressure、upload error、agent liveness 都要靠 health 被 manager 看见。health API 已经落地,后续不要再新增本地-only 的并行状态面。
 5. **spool 正确性不只在 agent**：agent 有 durable queue 以后,manager ingest 的幂等/upsert 和 batch ack 语义就是可靠传输的一半。计划需要持续把 batch id、ack、retry、manager idempotency 放在同一个验收面里。
-6. **e2e 主路径迁移应晚于 restart/health 稳定**：在 agent-managed sensor 尚未稳定前强行迁移 harness,容易让测试失败难以定位。更好的顺序是先用单测/integration test 固定 supervisor 和 backend 行为,再迁移 container/VM 主路径。
+6. **e2e 主路径迁移现在可以开始分步推进**：restart/health/tamper 已经有本机 smoke,可以先做 container fake/managed smoke,再做 VM/systemd,最后替换原有 capture 主路径。
 
 ### 9.1 范围控制
 
@@ -949,7 +950,8 @@ tamper/blindness 是安全信号，不只是日志。但它要被 manager 看见
 
 ```text
 agent health model -> manager health ingest/query -> sensor restart health
-  -> tamper/blindness endpoint signal -> optional incident convergence
+  -> tamper/blindness endpoint signal -> container/VM/systemd smoke
+  -> optional incident convergence
 ```
 
 ### 9.3 Spool 与 Link1 Ack 语义
@@ -1008,40 +1010,36 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
 
 ### 9.7 建议的近期提交切分
 
-为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool 基础已经基本完成,后续重点应放在 restart 和 harness 迁移上：
+为了避免 v2 变成难以 review 的大块改动,近期可以按下面顺序提交。前面的 health/token/bundle/spool/restart/tamper 基础已经基本完成,后续重点应放在 harness 主路径迁移、systemd 和长跑可靠性上：
 
-1. 收口 `ProcessSupervisor.StartRestarting`:
-   - max restarts。
-   - restart delay。
-   - stop cancellation。
-   - duplicate start/restart rejection。
-   - race-safe status。
-2. 将 Tetragon 主进程接入 restart policy:
-   - `sensor.restart`。
-   - `sensor.max_restarts`。
-   - `sensor.restart_window` 或等价 delay/window。
-   - health `restart_count` / `last_exit_reason` / `last_error`。
-3. 实现 degraded health:
-   - 连续失败超过阈值。
-   - policy apply failure。
-   - parse/drop 超阈值。
-   - 长时间无事件且 backend 宣称 running。
-4. 生成 `sensor_tamper_or_blindness` endpoint signal:
-   - 复用现有 UploadBatch。
-   - 先保证 manager 能查到 Signal。
-   - Incident 收敛保持可选。
-5. 补 integration/e2e:
-   - fake process backend restart。
-   - managed Tetragon smoke。
-   - kill sensor -> degraded -> recovered。
-   - manager outage -> spool -> drain。
-6. 迁移 container/VM harness 主路径:
-   - daemon 管理 sensor。
-   - harness 不再 pipe `tetra getevents` 给 agent。
+1. 增加 VM/systemd smoke:
+   - 上传 `sysarmor-agent`、`sysarmor-agent.service` 和临时 `agent.yaml`。
+   - systemd 启动 agent daemon。
+   - manager 侧用 `sysarmorctl agent-health` 断言 recent health。
+   - agent 退出后验证 systemd 拉起或至少记录重启路径。
+2. 推进 container managed sensor smoke:
+   - 从 fake daemon smoke 过渡到 managed fake Tetragon/tetra bundle。
+   - 复用现有 restart/tamper 断言。
+   - 确保不再由 harness pipe `tetra getevents` 给 agent。
+3. 推进 VM managed sensor smoke:
+   - 先用 fake bundle 验证 agent/runtime/systemd/control 面。
+   - 再评估真实 Tetragon 权限、BTF/bpffs、policy apply 的不稳定因素。
+4. 补长期运行可靠性:
+   - graceful shutdown flush。
+   - retry/backoff soak。
+   - agent restart 后 unacked batch 恢复。
+   - manager ingest 幂等不放大 event/signal/incident。
+5. 收口 policy apply 主路径:
+   - static collection intent。
+   - Tetragon policy template/static file。
+   - health.policy_loaded / apply error。
+   - container/VM e2e 不再依赖 harness 预先加载 policy。
+6. 最后迁移原有 capture 主路径:
+   - container/VM apt-fileless-c2 至少先迁移一个场景。
    - replay/stream debug path 继续保留。
-7. 增加 systemd unit 和 VM systemd smoke。
+   - 老 v1 场景继续作为回归对照。
 
-这个顺序的好处是每一步都有独立验收,而且已有 health/identity 能直接服务 sensor restart 和 tamper,不用再绕一套临时状态面。
+这个顺序让已经落地的 health/identity/spool/restart/tamper 直接服务下一步验收,也避免一上来就把真实 Tetragon、systemd、VM 网络和场景脚本耦在一起。
 
 ## 10. Guardrails
 

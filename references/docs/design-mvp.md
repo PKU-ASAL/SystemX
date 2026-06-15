@@ -214,7 +214,7 @@ make report
 
 ## 二、v2 已经开始补齐的端点运行时
 
-在 v1 MVP 之后,当前仓库已经开始进入 v2: **EDR endpoint runtime MVP**。这些工作还没有让 v2 完整完成,但已经把 agent 从纯 replay/stream 工具推进到可托管 runtime 的骨架:
+在 v1 MVP 之后,当前仓库已经进入 v2: **EDR endpoint runtime MVP**。这些工作还没有让 v2 完整完成,但已经把 agent 从纯 replay/stream 工具推进到可长期运行、可观测、可恢复的 runtime 雏形:
 
 | v2 增量 | 当前状态 |
 |---|---|
@@ -223,12 +223,17 @@ make report
 | sensor contract | 已有 `internal/sensor/contract`,定义 capability/subscribe/enforce/health 等边界 |
 | sensor runtime skeleton | 已有 `internal/sensor/runtime`,支持 fake backend 生命周期测试 |
 | policy apply path | 已有 `internal/agent/policy` 将最小 collection policy 映射为 `CollectionIntent` |
-| Tetragon backend skeleton | 已有 `internal/sensor/tetragon`,可从 JSONL/stdin 读取事件并维护 health/parse error 计数 |
+| Tetragon backend | 已有 `internal/sensor/tetragon`,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程订阅和 health 汇总 |
 | local spool | 已有 `internal/agent/spool`,支持 file-backed append/list/load/ack/stats 和 stable batch id |
-| upload drain | 已有 `internal/agent/uploadworker`,支持 oldest-first drain,成功 ack,失败保留 |
+| upload drain | 已有 `internal/agent/uploadworker`,支持 oldest-first drain、成功 ack、失败保留、后台 retry loop 和 request timeout |
 | queue backpressure | 已有 spool `max_bytes` 限制、backpressure/drop 统计,daemon health 输出队列状态 |
+| agent health | 已有 health reporter、manager health ingest/query、`sysarmorctl agents` / `agent-health` |
+| dev auth | 已有静态 dev token 校验,覆盖 HTTP/gRPC upload 与 health report |
+| sensor restart/tamper | 已有 process supervisor restart、managed Tetragon restart 配置、degraded/tamper signal 生成和上传测试 |
+| systemd | 已有 `deployments/systemd/sysarmor-agent.service` 与 daemon 示例配置 |
+| v2 smoke | 已有本机 daemon/health/spool/sensor-restart 聚合 e2e,以及 container fake daemon smoke |
 
-这说明 v2 的实现方向已经从"只规划"进入"可测试骨架"。但它目前仍是骨架阶段:daemon 尚未具备完整后台 retry loop,Tetragon 尚未由 agent 作为本地进程安装/启动/重启,manager 也尚未具备正式 agent health ingest/query。
+这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是把 agent-managed sensor 迁移为 container/VM 主路径,补 VM/systemd smoke,并继续压实长期运行语义。
 
 ## 三、走向完整项目的主要缺口
 
@@ -239,24 +244,24 @@ make report
 
 v2 应优先补 EDR 底座,让当前检测链路变成能长期运行的 endpoint runtime。XDR 能力应建立在稳定的 EDR 事实模型和图收敛之上,不要在 agent/runtime 尚未稳定前过早扩散。
 
-### 3.1 Sensor Runtime 还不完整
+### 3.1 Sensor Runtime 还未完全成为主路径
 
 当前状态:
 
 - v1 replay/stream 仍可消费 `tetra getevents -o json` 输出。
 - v2 已有 Sensor contract、fake backend、runtime skeleton。
-- v2 已有 Tetragon backend skeleton,但主要还是消费 JSONL/stdin 事件源。
+- v2 已有 Tetragon backend,支持 JSONL/stdin dev source、本地 bundle verify/install、managed Tetragon/tetra 进程和 health 汇总。
+- process supervisor 已支持 restart delay、max restarts、stop cancellation、duplicate start/restart rejection。
+- managed Tetragon 已接入 restart 配置和 health 状态。
+- sensor tamper/blindness 已能作为 endpoint signal 写入 spool 并上传。
 - Tetragon 在 container/VM 主 e2e 中仍主要由测试 harness 启动和加载 policy。
 
 主要缺口:
 
-- 没有 agent 托管 sensor lifecycle。
-- Tetragon local bundle install / verify 尚未实现。
-- Tetragon process/service start/stop/restart 尚未实现。
 - capability 探测仍是最小骨架,不是完整主机能力探测。
-- sensor health 还没有进入 manager health API。
-- dropped events / restart window / degraded 状态还不完整。
+- dropped events / parse errors / restart window / degraded 状态还需要继续细化阈值和验收。
 - CollectionPolicy 到 Tetragon policy 的编译/安装链路仍是最小实现。
+- container/VM 主 e2e 仍需迁移到 agent-managed sensor,不再由 harness pipe `tetra getevents` 给 agent。
 - Enforce 目前应保持 observe-only/unsupported skeleton,尚不是完整阻断能力。
 - 没有 Native Sensor,当前只支持 Tetragon adapter。
 
@@ -271,34 +276,36 @@ type Sensor interface {
 }
 ```
 
-### 3.2 Agent 还不是完整长期运行 daemon
+### 3.2 Agent daemon 已成型,但还需长期运行验收
 
 当前状态:
 
 - v1 支持 replay、stream、HTTP/gRPC 上传。
 - v2 已有 `run --config` daemon 命令形态、配置校验、fake sensor daemon 路径。
-- v2 已有 file-backed spool、upload drain-once、队列上限和 backpressure/drop accounting。
+- v2 已有 file-backed spool、oldest-first drain、后台 retry loop、队列上限和 backpressure/drop accounting。
+- `upload.request_timeout` 已贯穿 uploader。
+- manager 已有 agent health ingest/query,CLI 已能查询 latest health。
+- static dev token/auth 和 tenant/agent identity 已进入 upload/health 主链路。
+- 已有 systemd unit 和 example config。
+- 已有本机 daemon、health CLI、spool recovery、sensor restart/tamper e2e smoke。
+- 已有 container topology 的 fake daemon smoke。
 
 主要缺口:
 
-- 没有 systemd service。
-- daemon 还没有完整后台 retry/backoff loop。
-- `upload.request_timeout` 尚未贯穿 uploader 请求。
 - graceful shutdown flush 语义还需要明确测试。
-- 没有 agent registration/auth。
-- 没有 manager 侧 heartbeat/health ingest/query。
-- token/tenant 已进入 config,但还没有完整 upload/health/store 维度和校验。
-- systemd lifecycle 和 VM/container daemon e2e 尚未迁移为主路径。
+- retry/backoff 还需要更长时间 soak 和失败恢复验证。
+- systemd lifecycle 还缺 VM smoke。
+- container/VM 主检测场景还没有迁移为 daemon-managed sensor 主路径。
+- tenant/token 仍是开发形态,不是生产 enrollment/RBAC。
 
 继续收口:
 
 ```text
-daemon lifecycle
-background retry/backoff
-health heartbeat/report
-agent registration/auth
-systemd lifecycle
-daemon e2e
+graceful shutdown + long-run soak
+VM systemd smoke
+container/VM agent-managed sensor e2e
+retry/idempotency integration
+tenant/agent identity consistency
 ```
 
 ### 3.3 Endpoint fastpath 还是硬编码规则
@@ -511,14 +518,15 @@ health heartbeat
 - container/VM e2e 场景已经通过。
 - Go unit tests 覆盖核心 MVP 包。
 - stream smoke 能证明真实 Tetragon -> agent -> manager 通路。
-- v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path 的单测。
+- v2 已有 config、sensor runtime、spool、uploadworker、daemon fake path、process supervisor、tamper signal 的测试。
+- v2 已有本机 daemon/health/spool/sensor-restart 聚合 smoke。
+- v2 已有 container topology fake daemon smoke。
 
 主要缺口:
 
-- agent-managed Tetragon process e2e。
-- sensor restart/tamper e2e。
-- manager outage/spool recovery e2e。
-- agent health ingest/query e2e。
+- agent-managed Tetragon process container/VM 主路径 e2e。
+- VM systemd smoke。
+- 更长时间的 manager outage/spool recovery soak。
 - graph path tests。
 - rarity baseline tests。
 - converge edge-case tests。
@@ -536,10 +544,10 @@ health heartbeat
 
 主要缺口:
 
-- 没有 systemd unit。
+- 已有 systemd unit,但还缺 VM/systemd smoke 和安装脚本。
 - 没有 Helm/DaemonSet。
 - 没有 packaging/release。
-- 没有 config examples。
+- 已有 config examples,但还缺生产默认值、升级兼容和安全配置说明。
 - 没有日志规范。
 - 没有 Prometheus 格式 metrics。
 - 没有 tracing。
@@ -551,24 +559,22 @@ health heartbeat
 
 建议按下面顺序推进,先把 v2 的 EDR endpoint runtime 地基夯实,再扩到更完整的 EDR/XDR 平台能力,避免过早投入复杂算法或多源接入:
 
-1. **收口 v2 agent runtime**
-   - daemon background upload retry/backoff
-   - upload request timeout
-   - health counters for queue/upload
-   - graceful shutdown
+1. **迁移 agent-managed sensor 主路径**
+   - container daemon e2e 从 fake backend 推进到 managed Tetragon/tetra
+   - VM daemon smoke 不再依赖 harness pipe
+   - 保留 replay/stream debug path
 
-2. **Tetragon managed backend**
-   - local bundle install/verify
-   - binary checksum/path validation
-   - process start/stop/restart
-   - policy install/apply
-   - kill sensor restart e2e
+2. **补 VM/systemd smoke**
+   - VM 内安装 `sysarmor-agent.service`
+   - systemd 启停 agent
+   - manager 侧断言 recent health
+   - agent 退出后由 systemd 拉起
 
-3. **Agent health / registration**
-   - dev token 校验
-   - tenant/agent identity 入 upload/health/store
-   - manager latest health store
-   - `sysarmorctl agents` / `agent-health`
+3. **压实长期运行语义**
+   - graceful shutdown flush 验收
+   - retry/backoff soak
+   - agent restart 后 unacked batch 不放大结果
+   - degraded/recovered health 状态机
 
 4. **Policy/control 最小闭环**
    - static policy loader
@@ -642,4 +648,4 @@ multi-source XDR ingestion
 deployment/operations
 ```
 
-下一步最值得做的是 **agent daemon + sensor contract + policy 最小闭环**。这三项会把当前"能跑场景的 v1 MVP"推进成"像一个真实 EDR 端侧产品的基础系统"。在这个基础稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
+下一步最值得做的是 **agent-managed sensor 主路径 + VM/systemd smoke + policy 最小闭环**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper 的地基已经立起来了,现在要把它们从本机 smoke 推进到 container/VM 主链路。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
