@@ -185,7 +185,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 - Sensor/runtime:
   - capability 探测已从最小骨架推进到 kernel release、BTF、bpffs、配置二进制可执行性检查；缺失 BTF 的 degraded health smoke 已补。后续仍需在真实 VM/container 主路径上继续验证权限矩阵。
   - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 和 VM provision 默认主路径都已不再预加载 TracingPolicy；VM 仅保留显式兼容模式 preload,限定在 replay/debug/perf。
-  - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
+  - dropped events / parse errors / degraded 状态已有阈值配置、health 暴露和本机 e2e 验收；后续重点转向真实 Tetragon 主路径中的 dropped counter 对齐。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
   - container 已有 `apt-fileless-c2`、`apt-staged-drop`、`benign-ci-noise` agent-managed detection smoke 和 `e2e-agent-detection-container-all` 聚合入口；真实订阅通过 `scope_type=container` + `scope_selector=<container id prefix>` 收紧到 node-a 容器后已稳定通过，container/VM `make e2e TOPO=...` 主路径已默认走 agent-managed sensor。`container_id_prefix` 仅作为 legacy config alias 保留，后续验收应以正式 scope contract 为准。
@@ -196,7 +196,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
   - graceful shutdown、flush 语义还未完整验收。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke、VM agent-owned real Tetragon process smoke 以及 container agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
-- health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
+- health API、CLI 查询、本机 e2e、container/VM managed degraded→recovered smoke、container/VM real owned Tetragon 主路径 degraded/recovered health 断言、parse/drop 阈值 degraded smoke 以及 required BTF 缺失 degraded smoke 已落地；后续重点转向更长窗口的 reliability soak 与真实权限矩阵验收。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
 
 当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:

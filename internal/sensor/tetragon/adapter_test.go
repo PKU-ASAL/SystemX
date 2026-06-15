@@ -48,6 +48,21 @@ func TestParseProcessExitIsRecognizedAndSkipped(t *testing.T) {
 	}
 }
 
+func TestParseDroppedEvents(t *testing.T) {
+	for _, raw := range []string{
+		`{"dropped_events":3}`,
+		`{"health":{"dropped_events":3}}`,
+	} {
+		got, ok := ParseDroppedEvents([]byte(raw))
+		if !ok || got != 3 {
+			t.Fatalf("ParseDroppedEvents(%s) = %d/%v, want 3/true", raw, got, ok)
+		}
+	}
+	if got, ok := ParseDroppedEvents([]byte(`{"process_exit":{}}`)); ok || got != 0 {
+		t.Fatalf("ParseDroppedEvents(process_exit) = %d/%v, want 0/false", got, ok)
+	}
+}
+
 func TestParseStagedHelperStartsNewLineageRoot(t *testing.T) {
 	raw := []byte(`{"process_exec":{"process":{"exec_id":"exec-helper","pid":300,"uid":0,"binary":"/var/lib/app/plugins/helper","arguments":"bash /var/lib/app/plugins/helper --report http://10.66.0.99:443","parent_exec_id":"exec-orchestrator","start_time":"2026-06-14T10:00:02Z"},"parent":{"exec_id":"exec-orchestrator","pid":200,"binary":"/bin/bash","start_time":"2026-06-14T10:00:00Z"}},"node_name":"node-a","time":"2026-06-14T10:00:02Z"}`)
 	events, ok := ParseLine(raw)

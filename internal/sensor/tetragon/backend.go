@@ -34,15 +34,16 @@ type Backend struct {
 	RequireBTF        bool
 	RequireBPFFS      bool
 
-	mu           sync.Mutex
-	intent       contract.CollectionIntent
-	policyLoaded bool
-	running      bool
-	installed    bool
-	eventsSeen   uint64
-	parseErrors  uint64
-	lastEventAt  time.Time
-	lastError    string
+	mu            sync.Mutex
+	intent        contract.CollectionIntent
+	policyLoaded  bool
+	running       bool
+	installed     bool
+	eventsSeen    uint64
+	eventsDropped uint64
+	parseErrors   uint64
+	lastEventAt   time.Time
+	lastError     string
 
 	sensorSupervisor ProcessSupervisor
 	eventSupervisor  ProcessSupervisor
@@ -227,6 +228,10 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 		for scanner.Scan() {
 			line := append([]byte(nil), scanner.Bytes()...)
 			if len(line) == 0 {
+				continue
+			}
+			if dropped, ok := ParseDroppedEvents(line); ok {
+				b.incDroppedEvents(dropped)
 				continue
 			}
 			events, ok := ParseLine(line)
@@ -461,6 +466,7 @@ func (b *Backend) Health(context.Context) (contract.Health, error) {
 		Version:        b.Version,
 		PolicyLoaded:   b.policyLoaded,
 		EventsSeen:     b.eventsSeen,
+		EventsDropped:  b.eventsDropped,
 		ParseErrors:    b.parseErrors,
 		RestartCount:   restarts,
 		LastEventAt:    b.lastEventAt,
@@ -575,6 +581,16 @@ func (b *Backend) incParseError(err error) {
 	defer b.mu.Unlock()
 	b.parseErrors++
 	b.lastError = err.Error()
+}
+
+func (b *Backend) incDroppedEvents(count uint64) {
+	if count == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.eventsDropped += count
+	b.lastError = fmt.Sprintf("tetragon dropped events: %d", b.eventsDropped)
 }
 
 func (b *Backend) setError(err error) {

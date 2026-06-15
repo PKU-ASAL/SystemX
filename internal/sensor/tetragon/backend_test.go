@@ -182,6 +182,32 @@ func TestBackendFiltersByContainerScope(t *testing.T) {
 	}
 }
 
+func TestBackendRecordsDroppedEvents(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventPath := filepath.Join(dir, "events.jsonl")
+	if err := os.WriteFile(eventPath, []byte("{\"health\":{\"dropped_events\":5}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackend(policyPath, eventPath, "test")
+	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	for range events {
+	}
+	health, err := backend.Health(context.Background())
+	if err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+	if health.EventsDropped != 5 || !strings.Contains(health.LastError, "dropped events") {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
 func TestBackendManagedEventCommandSubscribesStdout(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed event command test requires /bin/sh")

@@ -19,6 +19,15 @@ type envelope struct {
 	Raw          map[string]any `json:"-"`
 }
 
+type healthEnvelope struct {
+	DroppedEvents uint64        `json:"dropped_events"`
+	Health        *healthReport `json:"health"`
+}
+
+type healthReport struct {
+	DroppedEvents uint64 `json:"dropped_events"`
+}
+
 type processEvent struct {
 	Process tetragonProcess `json:"process"`
 	Parent  tetragonProcess `json:"parent"`
@@ -80,6 +89,20 @@ func ParseLine(data []byte) ([]*sensorv1.SensorEvent, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func ParseDroppedEvents(data []byte) (uint64, bool) {
+	var env healthEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return 0, false
+	}
+	if env.DroppedEvents > 0 {
+		return env.DroppedEvents, true
+	}
+	if env.Health != nil && env.Health.DroppedEvents > 0 {
+		return env.Health.DroppedEvents, true
+	}
+	return 0, env.Health != nil
 }
 
 func execEvents(env envelope, pe processEvent, raw string) []*sensorv1.SensorEvent {
