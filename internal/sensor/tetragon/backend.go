@@ -75,6 +75,10 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 		b.mu.Lock()
 		b.installed = true
 		b.mu.Unlock()
+	} else if b.Bundle.TetraPath != "" || b.Bundle.TetragonPath != "" {
+		b.mu.Lock()
+		b.installed = true
+		b.mu.Unlock()
 	}
 	return contract.Capability{
 		Backend:         "tetragon",

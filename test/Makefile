@@ -51,7 +51,7 @@ perf:                         ## 采集 getevents 性能基线
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-spool e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm clean
+.PHONY: e2e e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-spool e2e-agent-health e2e-agent-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-apt-container clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -84,6 +84,9 @@ e2e-agent-systemd-vm:         ## v2: VM systemd agent daemon → health/restart 
 e2e-agent-managed-vm:         ## v2: VM systemd managed fake Tetragon bundle → manager 查询
 	bash harness/e2e-agent-managed-vm.sh
 
+e2e-agent-apt-container:      ## v2: container apt-fileless-c2 via agent-managed Tetra subscription
+	bash harness/e2e-agent-apt-container.sh
+
 clean:                        ## 全部清理 (含样本)
 	bash harness/cleanup.sh $(TOPO) --results
 
@@ -115,6 +118,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-managed-restart-container  v2 container managed fake Tetragon restart/tamper smoke"
 	@echo "  e2e-agent-systemd-vm  v2 VM systemd daemon health/restart smoke"
 	@echo "  e2e-agent-managed-vm  v2 VM systemd managed fake Tetragon bundle smoke"
+	@echo "  e2e-agent-apt-container  v2 container apt-fileless-c2 via agent-managed Tetra"
 	@echo "  provision   VM: rsync + re-provision"
 	@echo "  status      查看运行态"
 	@echo "  clean       全部清理 + 删样本"
