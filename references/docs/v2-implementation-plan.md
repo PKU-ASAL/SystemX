@@ -1,7 +1,7 @@
 # SysArmor v2 Implementation Plan
 
 Date: 2026-06-15
-Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, VM real Tetragon systemd smoke, and VM owned-process smoke commits.
+Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, container policy-preload removal, VM real Tetragon systemd smoke, and VM owned-process smoke commits.
 
 ## 1. Goal
 
@@ -31,6 +31,22 @@ later: XDR platform
 2. **reliability**: manager outage、agent restart、sensor restart、graceful shutdown 后,数据和检测结果是否可恢复且不放大。
 3. **observability**: manager/ctl 是否能看见 agent、sensor、queue、upload 的 recent/degraded/recovered 状态。
 4. **compatibility**: v1 replay/debug 路径和现有 detection 行为是否保持稳定。
+
+## 1.1 Current Priority
+
+按当前实现进度,v2 接下来的优先级不应该再平均铺开,而应该集中在下面三件事:
+
+1. **继续收口 ownership**
+   - container 默认主路径已经去掉预加载 TracingPolicy。
+   - VM provision 里仍保留兼容性 policy preload,需要迁出主路径或明确降级成 replay/debug/perf 专用。
+   - container/VM 主路径都应继续朝 agent 完整拥有 Tetragon process 和 policy lifecycle 收口。
+2. **把 reliability 做成主路径证据**
+   - manager outage drain、graceful shutdown flush、retry/backoff、agent restart 恢复都要继续用 e2e 证明,而不是只停留在局部单测或一次性 smoke。
+3. **避免把真实订阅误当成完整 ownership**
+   - agent-managed `tetra getevents`、agent-owned runtime policy、systemd smoke 都是重要进展。
+   - 但它们不自动等于“完整 Tetragon lifecycle ownership 已完成”,后续文档和验收要持续区分这两层成熟度。
+
+这也是当前 plan 最需要强调的地方: v2 的剩余工作已经主要是 **ownership 收口 + 可靠性收口**,而不是再补一轮新的骨架模块。
 
 核心范围分为两条主线：
 
@@ -132,7 +148,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - Sensor/runtime:
   - capability 探测仍偏最小骨架。
-  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy,topology/provision 中仍保留预加载 TracingPolicy 的兼容步骤,需要继续迁出或限定为 replay/debug。
+  - policy compile/apply 已有 backend apply 和 generated TracingPolicy 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已验证 agent-owned runtime policy。container topology 默认启动路径已不再预加载 TracingPolicy；VM provision 中仍保留预加载兼容步骤,需要继续迁出或限定为 replay/debug。
   - dropped events / parse errors / degraded 状态还需要更完整的阈值和验收。
   - process supervisor restart policy 已落地；container 三个核心场景已有真实 `tetra getevents` agent-managed detection smoke，已通过 `e2e-agent-detection-container-all` 聚合验证；VM 真实 Tetragon systemd detection smoke 已补齐。
   - sensor kill/restart 和 tamper/blindness signal 已有本机 smoke；container 已有 managed fake Tetragon restart/tamper smoke；container/VM 已有 managed fake Tetragon bundle smoke。
@@ -151,6 +167,15 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
 
 - **主路径 ownership 收口**: 把 container/VM 主路径中残留的 topology/provision 预置 Tetragon process/policy 继续迁出或严格限定在 replay/debug。
 - **长期运行语义收口**: 用更明确的测试证据覆盖 manager outage drain、graceful shutdown flush、retry/backoff soak、degraded/recovered health。
+
+如果再说得更直接一点,当前 plan 最容易让人误读的地方有两个:
+
+- **“managed” 不是一个单层状态**:
+  - 第一层是 agent 托管订阅、上传、health、runtime policy。
+  - 第二层才是 agent 完整拥有 Tetragon 主进程和 policy lifecycle。
+- **“已有 smoke” 也不等于“已经完成”**:
+  - smoke 证明路径能通。
+  - 完成标准则要求 container/VM 主路径在失败、恢复、重启、断连场景下仍然稳定。
 
 v2 目标形态：
 
@@ -733,7 +758,7 @@ WantedBy=multi-user.target
 
 ### Phase 2: Policy Compile / Apply Chain
 
-状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已不再依赖 harness 预加载 TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；topology/provision 中仍保留预加载 TracingPolicy 的兼容步骤,需要继续迁出或限定为 replay/debug。
+状态：部分完成。已有 `CollectionIntent`、runtime backend apply 调用和 Tetragon generated TracingPolicy apply 最小路径；VM real Tetragon systemd smoke 和 container/VM 通用 capture 主路径已不再依赖 harness 预加载 TracingPolicy,并断言 agent-owned `sysarmor-runtime-collection` 已应用；container topology 默认启动路径已去掉预加载 TracingPolicy，VM provision 中仍保留兼容步骤,需要继续迁出或限定为 replay/debug。
 
 任务：
 
@@ -746,6 +771,7 @@ WantedBy=multi-user.target
 
 - policy apply 成功/失败都有明确测试。
 - container/VM e2e policy 由 agent/runtime 管理。
+- VM 默认主路径不再依赖 provision 预加载 policy；若保留兼容路径,必须明确标注为 replay/debug/perf 专用。
 
 ### Phase 3: Tetragon Managed Backend
 
@@ -966,6 +992,13 @@ v2 完成时必须满足：
 - v1 replay/debug 路径仍然保留并可测试。
 - v2 没有引入 XDR 多源 ingestion 或 analytics 重写范围膨胀。
 - v2 文档能明确说明后续 EDR platform / XDR platform 的衔接点。
+
+建议把这些完成标准再按四类验收理解,避免“测试很多但闭环不清楚”:
+
+- `ownership`: agent 拥有 sensor process / subscription / policy lifecycle。
+- `reliability`: outage、restart、shutdown 后可恢复且不放大。
+- `observability`: manager/ctl 能看到 recent/degraded/recovered、queue、upload、sensor 状态。
+- `compatibility`: v1 replay/debug 和现有 detection 行为保持稳定。
 
 ## 9. Plan Review Notes
 

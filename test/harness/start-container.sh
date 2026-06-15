@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 启动容器拓扑: compose up + 加载 TracingPolicy
+# 启动容器拓扑: compose up
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
@@ -20,7 +20,4 @@ for i in $(seq 1 20); do
   sleep 1
 done
 
-echo ">>> 加载 TracingPolicy"
-docker cp "$ROOT/env/resources/syscall-capture.yaml" tetragon:/tmp/p.yaml
-docker exec tetragon tetra tracingpolicy add /tmp/p.yaml 2>/dev/null || true
 echo "[start-container] done"

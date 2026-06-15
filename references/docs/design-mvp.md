@@ -31,6 +31,14 @@ v2: EDR endpoint runtime MVP
 
 Tetragon 在当前阶段是最现实的 Linux sensor backend,但不是 SysArmor Next 的产品边界。项目真正要守住的边界是:agent 侧统一采集/归一/打标,manager/cloud 侧统一建图/收敛/裁决,控制面统一策略/响应/调查。
 
+如果把项目按"产品成熟度"来讲,当前可以更明确地理解成:
+
+- **v1 已证明检测链路成立**: endpoint event -> signal -> incident 这条纵轴是真的。
+- **v2 正在证明 endpoint runtime 成立**: agent daemon、sensor runtime、spool/retry、health、policy ownership 正在收口。
+- **EDR/XDR 还在后面**: investigation、response、control plane、多源 ingestion 和跨域图收敛都建立在前两步之上。
+
+所以今天讨论"SysArmor Next 的定位"时,最重要的不是它现在已经接了多少数据源,而是它有没有把后续 EDR/XDR 必须依赖的 endpoint 事实面和运行时边界做对。
+
 ## 一、当前已经实现的 MVP 框架
 
 当前仓库已经实现了一条端到端 SysArmor v1 MVP 链路。它对应的是上面路线里的 **EDR detection path MVP**:
@@ -240,6 +248,11 @@ make report
 - **ownership 收尾**: agent 是否真正拥有 Tetragon process 和 runtime policy lifecycle,而不是仍依赖 topology/harness 预置。
 - **reliability 收尾**: manager outage、agent restart、sensor restart、graceful shutdown 后,spool / retry / health / detection 结果是否仍然稳定不放大。
 - **acceptance 收尾**: container / VM 主路径是否都能用同一套 agent-managed runtime 证明上面两件事。
+
+换句话说,v2 现在最关键的判断标准已经不是"有没有更多功能点",而是以下两件事能不能在主路径上被稳定证明:
+
+1. agent 是否真的拥有 sensor process / subscription / policy lifecycle。
+2. manager outage、agent restart、sensor restart、graceful shutdown 后,链路是否还能可靠恢复且不放大结果。
 
 ## 三、走向完整项目的主要缺口
 

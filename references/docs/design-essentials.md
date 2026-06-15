@@ -37,6 +37,14 @@ v2: EDR endpoint runtime MVP
 
 Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
 
+更具体地说,SysArmor Next 当前选择的是一条 **endpoint-first 的 EDR/XDR 演进路线**:
+
+- 先把 endpoint agent、sensor runtime、事实模型和最小控制链路做成真的。
+- 再把 investigation、response、incident lifecycle 做成更完整的 EDR 平台。
+- 最后再把 cloud audit、identity、network、K8s、CI/CD 等遥测并到同一套事实轴和实体图,扩成 XDR。
+
+这条路线的含义是:短期文档和实现里即便会频繁出现 Tetragon、agent daemon、spool、health、policy apply,它们也不只是"为了把 Linux 采集跑起来",而是在给后续 EDR/XDR 共用的数据面、控制面和运行时地基打桩。
+
 换句话说,对 SysArmor Next 的定位可以用一句更工程化的话概括:
 
 > **v1 证明我们能检测,v2 证明我们能常驻运行,后续 EDR/XDR 才是在这块 runtime 地基上扩图、扩域、扩控制面。**
