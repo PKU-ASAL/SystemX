@@ -15,9 +15,11 @@ SysArmor Next 的长期目标不是做一个 Tetragon 日志转发器,也不是�
 ```text
 v1: EDR detection path MVP
   endpoint event -> agent -> manager -> signal -> incident
+  验证"事实纵轴 + 基本收敛"这条检测链路成立
 
 v2: EDR endpoint runtime MVP
   agent daemon + sensor runtime + health + spool + policy apply
+  把 v1 检测链路放进可长期运行、可恢复、可观测的端点 runtime
 
 中期: EDR platform
   长期驻留 agent、策略控制、端侧检测/响应、取证回拉、incident lifecycle
@@ -33,7 +35,11 @@ v2: EDR endpoint runtime MVP
 2. **事实与图模型**: 所有数据源最终都要落到统一的 Event / Signal / Incident 事实纵轴和 entity graph 上。
 3. **跨域收敛**: EDR 先从 endpoint 图开始,XDR 再把 cloud、identity、network、workload 等事实并入同一张攻击叙事图。
 
-Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集和检测闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
+Tetragon 是当前最现实的 Linux sensor backend,不是产品定位本身。v1/v2 的工程重点看起来集中在 Tetragon、agent、Link1 和 manager,但它们服务的是更长线的 EDR/XDR 架构:先把端点事实采集、检测、缓存、恢复和健康闭环跑稳,再把更多安全域接进同一套事实、图和控制平面。
+
+换句话说,对 SysArmor Next 的定位可以用一句更工程化的话概括:
+
+> **v1 证明我们能检测,v2 证明我们能常驻运行,后续 EDR/XDR 才是在这块 runtime 地基上扩图、扩域、扩控制面。**
 
 ---
 

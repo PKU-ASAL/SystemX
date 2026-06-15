@@ -235,6 +235,12 @@ make report
 
 这说明 v2 已经从"可测试骨架"进入"端点 runtime 收口"阶段。当前剩余重点不是再搭一套基础设施,而是收口 Tetragon process/policy ownership,并继续压实长期运行语义。
 
+更具体地说,现在的 v2 已经不再缺"有没有 daemon / spool / health / runtime 这些部件",而是缺三类收尾:
+
+- **ownership 收尾**: agent 是否真正拥有 Tetragon process 和 runtime policy lifecycle,而不是仍依赖 topology/harness 预置。
+- **reliability 收尾**: manager outage、agent restart、sensor restart、graceful shutdown 后,spool / retry / health / detection 结果是否仍然稳定不放大。
+- **acceptance 收尾**: container / VM 主路径是否都能用同一套 agent-managed runtime 证明上面两件事。
+
 ## 三、走向完整项目的主要缺口
 
 从长期定位看,缺口可以分成两类:
@@ -298,6 +304,7 @@ type Sensor interface {
 - retry/backoff 还需要更长时间 soak 和失败恢复验证。
 - container/VM 主检测场景已迁移为 daemon-managed sensor 主路径。
 - VM real Tetragon systemd detection smoke 和 VM owned-process smoke 已有；container/VM 主路径级别的完整 Tetragon process ownership 和更长时间可靠性仍需补齐。
+- manager outage 后 drain、agent restart 后 unacked batch 恢复这些语义虽然已有局部测试/实现,仍需要继续补成长期运行验收证据。
 - tenant/token 仍是开发形态,不是生产 enrollment/RBAC。
 
 继续收口:
@@ -542,6 +549,17 @@ health heartbeat
 
 当前测试证明 MVP 立论,但还不能证明长期运行稳定性。
 
+这里最好把"已经证明了什么"和"还没证明什么"明确分开:
+
+- 已经证明:
+  - v1 检测链路在 container/VM 都成立。
+  - v2 daemon/runtime/spool/health/tamper 的主体代码已经存在且能跑通多条 smoke。
+  - VM owned-process smoke 已经证明 systemd agent 可以拥有真实 `/usr/local/bin/tetragon` 进程并完成真实检测上传。
+- 还没完全证明:
+  - container/VM 主路径都彻底脱离 topology/harness 预置的 Tetragon process/policy ownership。
+  - 更长时间 manager outage、retry/backoff、graceful shutdown、recovered health 的稳定性。
+  - 可靠传输在 batch id / ack / manager 幂等三者联动下不会放大结果。
+
 ### 3.10 部署与运维还未产品化
 
 主要缺口:
@@ -576,6 +594,7 @@ health heartbeat
    - graceful shutdown flush 验收
    - retry/backoff soak
    - agent restart 后 unacked batch 不放大结果
+   - manager outage 后 queued batches 顺序 drain
    - degraded/recovered health 状态机
 
 4. **Policy/control 最小闭环**
@@ -651,3 +670,7 @@ deployment/operations
 ```
 
 下一步最值得做的是 **container/VM 主路径级别的 Tetragon process ownership 收口 + 长跑可靠性**。agent daemon、sensor contract、spool、health、dev auth、restart/tamper、container/VM managed detection/capture、VM real Tetragon systemd smoke 和 VM owned-process smoke 的地基已经立起来了,现在要把它们继续推进到完整 sensor lifecycle ownership。在这个端点 runtime 稳定后,再逐步补 investigation/response plane 和多源 ingestion,把 EDR 图扩展成 XDR 图。
+
+如果用一句话概括当前定位:
+
+> **SysArmor Next 现在已经证明“能检出”,正在证明“能长期跑稳”,而不是要在 v2 里一次性把 EDR/XDR 全平台做完。**

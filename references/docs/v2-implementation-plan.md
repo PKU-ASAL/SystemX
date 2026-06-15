@@ -1,7 +1,7 @@
 # SysArmor v2 Implementation Plan
 
 Date: 2026-06-15
-Status: living plan, updated after daemon/spool/health/restart/tamper and container managed detection smoke commits.
+Status: living plan, updated after daemon/spool/health/restart/tamper, agent-owned runtime policy, VM real Tetragon systemd smoke, and VM owned-process smoke commits.
 
 ## 1. Goal
 
@@ -24,6 +24,13 @@ later: XDR platform
 ```
 
 因此 v2 的成功标准不是“功能看起来更多”，而是：agent 能作为一个真实 EDR endpoint runtime 长期运行，sensor 由 agent 托管，数据可缓冲可恢复，健康可观测，策略可应用，v1 detection 行为保持稳定。
+
+为了避免范围漂移,这个成功标准最好再拆成四个可验收问题:
+
+1. **ownership**: agent 是否真正拥有 sensor process / event subscription / runtime policy apply 的生命周期。
+2. **reliability**: manager outage、agent restart、sensor restart、graceful shutdown 后,数据和检测结果是否可恢复且不放大。
+3. **observability**: manager/ctl 是否能看见 agent、sensor、queue、upload 的 recent/degraded/recovered 状态。
+4. **compatibility**: v1 replay/debug 路径和现有 detection 行为是否保持稳定。
 
 核心范围分为两条主线：
 
@@ -90,6 +97,7 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - upload 成功后 ack。
   - upload 失败保留 batch。
   - request timeout 已贯穿 uploader。
+  - agent restart 后 unacked batch 恢复的单测已补齐。
 - `internal/agent/daemon`:
   - fake sensor daemon 路径。
   - policy apply。
@@ -136,8 +144,13 @@ v2 已经落地的内容已经超过“骨架”阶段，当前可分成三类�
   - 后台 upload loop、spool recovery 和 request timeout 已有,但 retry/backoff 的可配置策略和长跑验证还需要补齐。
   - graceful shutdown、flush 语义还未完整验收。
   - systemd VM fake-sensor lifecycle smoke、真实 Tetragon systemd detection smoke 和 VM agent-owned real Tetragon process smoke 已有,但 container/VM 主路径的完整 Tetragon process ownership 仍需继续收口。
-  - health API、CLI 查询、本机 e2e 和 VM recent health smoke 已有,但 degraded/recovered health 断言还需要扩展到 container/VM 主路径。
+- health API、CLI 查询、本机 e2e 和 VM recent health smoke 已有,但 degraded/recovered health 断言还需要扩展到 container/VM 主路径。
   - tenant/agent identity 已进入主要链路,但还不是完整 RBAC/enrollment。
+
+当前最值得优先收口的,已经不是“再搭新骨架”,而是两件事:
+
+- **主路径 ownership 收口**: 把 container/VM 主路径中残留的 topology/provision 预置 Tetragon process/policy 继续迁出或严格限定在 replay/debug。
+- **长期运行语义收口**: 用更明确的测试证据覆盖 manager outage drain、graceful shutdown flush、retry/backoff soak、degraded/recovered health。
 
 v2 目标形态：
 
@@ -968,6 +981,7 @@ v2 完成时必须满足：
 6. **e2e 主路径迁移已经覆盖 container/VM capture/assert 和 VM real Tetragon systemd smoke**：下一步应把 VM real Tetragon smoke 从“订阅真实 tetra”继续推进到“agent 拥有 Tetragon process/policy lifecycle”。
 7. **当前 plan 容易混淆两种“managed”**：真实 container detection smoke 已由 agent 托管 `tetra getevents` 订阅，但 Tetragon 主进程和 TracingPolicy 仍由拓扑/harness 提前准备；完整 v2 主路径必须把 policy apply 和 sensor lifecycle ownership 继续收口到 agent/runtime。
 8. **VM real Tetragon systemd smoke 是关键增量,但不是终点**：它把真实 `tetra getevents` 订阅、systemd agent restart、检测上传放进同一条 VM 链路；下一步不要再重复做类似 smoke,而应直接推进 process ownership、policy ownership 和长跑恢复。
+9. **成功标准还应更操作化**：当前文档已经有大量“已有/缺口”描述,但真正决定 v2 是否完成的应是 ownership、reliability、observability、compatibility 这四类验收,每个阶段最好显式挂靠到这四类之一,避免做了很多 smoke 却仍然不知道哪里没闭环。
 
 ### 9.1 范围控制
 
@@ -1064,6 +1078,7 @@ agent pipeline 只依赖 contract/runtime，不直接依赖 Tetragon raw JSON。
    - graceful shutdown flush。
    - retry/backoff soak。
    - agent restart 后 unacked batch 恢复。
+   - manager outage 后 queued batches drain。
    - manager ingest 幂等不放大 event/signal/incident。
 6. 迁移 VM 主路径:
    - VM 三个核心场景已默认走 agent-managed capture/assert 主路径。
