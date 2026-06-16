@@ -114,6 +114,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
 		return err
 	}
+	if err := projectMetrics(ctx, db, state.Metrics); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -525,6 +528,46 @@ ON CONFLICT (tenant_id, incident_key) DO UPDATE SET
 		if err := projectIncidentEvidence(ctx, db, inc.GetId(), inc.GetEvidence()); err != nil {
 			return err
 		}
+		if err := projectIncidentEvents(ctx, db, inc.GetId(), &inc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func projectIncidentEvents(ctx context.Context, db *sql.DB, incidentID string, inc *incidentv1.Incident) error {
+	if incidentID == "" || inc == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, sig := range inc.GetContributingSignals() {
+		for _, eventID := range sig.GetEventRefs() {
+			if err := upsertIncidentEvent(ctx, db, incidentID, eventID, seen); err != nil {
+				return err
+			}
+		}
+		for _, eventID := range sig.GetEvidence().GetEventRefs() {
+			if err := upsertIncidentEvent(ctx, db, incidentID, eventID, seen); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func upsertIncidentEvent(ctx context.Context, db *sql.DB, incidentID, eventID string, seen map[string]bool) error {
+	eventID = strings.TrimSpace(eventID)
+	if eventID == "" || seen[eventID] {
+		return nil
+	}
+	seen[eventID] = true
+	_, err := db.ExecContext(ctx, `
+INSERT INTO incident_events (tenant_id, incident_id, event_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (tenant_id, incident_id, event_id) DO NOTHING
+`, "default", incidentID, eventID)
+	if err != nil {
+		return fmt.Errorf("project incident event: %w", err)
 	}
 	return nil
 }
@@ -609,4 +652,22 @@ func edgeEvidenceID(edge *incidentv1.GraphEdge) string {
 		return ""
 	}
 	return "edge:" + edge.GetFrom() + ":" + edge.GetKind() + ":" + edge.GetTo()
+}
+
+func projectMetrics(ctx context.Context, db *sql.DB, metrics store.Metrics) error {
+	data, err := json.Marshal(metrics)
+	if err != nil {
+		return fmt.Errorf("encode metrics projection: %w", err)
+	}
+	_, err = db.ExecContext(ctx, `
+INSERT INTO metrics (tenant_id, metric_key, data)
+VALUES ($1, $2, $3)
+ON CONFLICT (tenant_id, metric_key) DO UPDATE SET
+  updated_at = now(),
+  data = EXCLUDED.data
+`, "default", "manager", data)
+	if err != nil {
+		return fmt.Errorf("project metrics: %w", err)
+	}
+	return nil
 }

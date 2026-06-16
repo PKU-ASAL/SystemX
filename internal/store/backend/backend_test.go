@@ -396,6 +396,55 @@ func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.AddIncident(&incidentv1.Incident{
+		Id:       "inc-event-pg",
+		Scenario: "pg-incident-event",
+		Summary:  "projected incident events",
+		ContributingSignals: []*signalv1.Signal{{
+			Id:        "sig-event-ref-pg",
+			Scenario:  "pg-incident-event",
+			Name:      "reverse_shell_pattern",
+			Where:     signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+			LineageId: "lin-event-pg",
+			EventRefs: []string{"ev-ref-a"},
+			Evidence: &signalv1.EvidenceBundle{
+				EventRefs: []string{"ev-ref-b"},
+			},
+		}},
+	})
+	result.Store.RecordUpload(2, 1, 1, 1, 7*time.Millisecond)
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO incident_events",
+		"inc-event-pg",
+		"ev-ref-a",
+		"ev-ref-b",
+		"INSERT INTO metrics",
+		"manager",
+		`"upload_batches":1`,
+		`"events_ingested":2`,
+		`"signals_emitted":2`,
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
