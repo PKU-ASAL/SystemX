@@ -162,6 +162,10 @@ make e2e-store-status
 make e2e-query-pagination
 make e2e-postgres-all
 
+# v3 Link1 stream foundation smoke
+make e2e-link1-session
+make e2e-link1-stream-all
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10

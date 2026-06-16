@@ -23,7 +23,7 @@ func (s *grpcServer) Upload(ctx context.Context, batch *analyticsv1.UploadBatch)
 	if !s.authorized(ctx) {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	result, err := s.srv.AcceptUpload(batch)
+	result, err := s.srv.AcceptUploadWithTransport(batch, "grpc")
 	if err != nil {
 		if errors.Is(err, ErrInvalidUpload) {
 			return nil, status.Errorf(codes.InvalidArgument, "%v", err)

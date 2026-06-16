@@ -26,19 +26,20 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu           sync.RWMutex
-	path         string
-	Agents       []*analyticsv1.AgentHello
-	Events       []*eventv1.CanonicalEvent
-	Signals      []*signalv1.Signal
-	Incidents    []*incidentv1.Incident
-	Health       map[string]agenthealth.AgentHealth
-	Rules        []policymodel.RuleContent
-	Policies     []policymodel.Policy
-	Assignments  []policymodel.Assignment
-	Responses    []responsemodel.Command
-	ResponseAcks []responsemodel.Ack
-	Metrics      Metrics
+	mu            sync.RWMutex
+	path          string
+	Agents        []*analyticsv1.AgentHello
+	Events        []*eventv1.CanonicalEvent
+	Signals       []*signalv1.Signal
+	Incidents     []*incidentv1.Incident
+	Health        map[string]agenthealth.AgentHealth
+	Rules         []policymodel.RuleContent
+	Policies      []policymodel.Policy
+	Assignments   []policymodel.Assignment
+	Responses     []responsemodel.Command
+	ResponseAcks  []responsemodel.Ack
+	Link1Sessions []Link1Session
+	Metrics       Metrics
 }
 
 type Info struct {
@@ -64,18 +65,29 @@ type Metrics struct {
 	AverageConvergenceLatency float64 `json:"average_convergence_latency_ms"`
 }
 
+type Link1Session struct {
+	SessionID     string    `json:"session_id"`
+	TenantID      string    `json:"tenant_id"`
+	AgentID       string    `json:"agent_id"`
+	StartedAt     time.Time `json:"started_at"`
+	LastSeenAt    time.Time `json:"last_seen_at"`
+	LastAckCursor string    `json:"last_ack_cursor,omitempty"`
+	Transport     string    `json:"transport,omitempty"`
+}
+
 type State struct {
-	Agents       []json.RawMessage         `json:"agents"`
-	Events       []json.RawMessage         `json:"events"`
-	Signals      []json.RawMessage         `json:"signals"`
-	Incidents    []json.RawMessage         `json:"incidents"`
-	Health       []json.RawMessage         `json:"health"`
-	Rules        []policymodel.RuleContent `json:"rules"`
-	Policies     []policymodel.Policy      `json:"policies"`
-	Assignments  []policymodel.Assignment  `json:"assignments"`
-	Responses    []responsemodel.Command   `json:"responses"`
-	ResponseAcks []responsemodel.Ack       `json:"response_acks"`
-	Metrics      Metrics                   `json:"metrics"`
+	Agents        []json.RawMessage         `json:"agents"`
+	Events        []json.RawMessage         `json:"events"`
+	Signals       []json.RawMessage         `json:"signals"`
+	Incidents     []json.RawMessage         `json:"incidents"`
+	Health        []json.RawMessage         `json:"health"`
+	Rules         []policymodel.RuleContent `json:"rules"`
+	Policies      []policymodel.Policy      `json:"policies"`
+	Assignments   []policymodel.Assignment  `json:"assignments"`
+	Responses     []responsemodel.Command   `json:"responses"`
+	ResponseAcks  []responsemodel.Ack       `json:"response_acks"`
+	Link1Sessions []Link1Session            `json:"link1_sessions"`
+	Metrics       Metrics                   `json:"metrics"`
 }
 
 func Open(path string) (*Store, error) {
@@ -148,6 +160,7 @@ func (s *Store) ImportState(state State) error {
 	s.Assignments = state.Assignments
 	s.Responses = state.Responses
 	s.ResponseAcks = state.ResponseAcks
+	s.Link1Sessions = state.Link1Sessions
 	s.Metrics = state.Metrics
 	return nil
 }
@@ -622,11 +635,66 @@ func (s *Store) RecordUpload(events, endpointSignals, cloudSignals, incidents in
 	s.Metrics.AverageConvergenceLatency = float64(s.Metrics.TotalConvergenceLatencyMs) / float64(s.Metrics.UploadBatches)
 }
 
+func (s *Store) RecordLink1Upload(agent *analyticsv1.AgentHello, batchID, transport string, observedAt time.Time) Link1Session {
+	if agent == nil || agent.GetAgentId() == "" {
+		return Link1Session{}
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	}
+	sessionID := link1SessionID(agent.GetTenantId(), agent.GetAgentId())
+	session := Link1Session{
+		SessionID:     sessionID,
+		TenantID:      agent.GetTenantId(),
+		AgentID:       agent.GetAgentId(),
+		StartedAt:     observedAt,
+		LastSeenAt:    observedAt,
+		LastAckCursor: batchID,
+		Transport:     transport,
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Link1Sessions {
+		if existing.SessionID == sessionID {
+			session.StartedAt = existing.StartedAt
+			if session.LastAckCursor == "" {
+				session.LastAckCursor = existing.LastAckCursor
+			}
+			s.Link1Sessions[i] = session
+			return session
+		}
+	}
+	s.Link1Sessions = append(s.Link1Sessions, session)
+	return session
+}
+
 func (s *Store) ListAgents() []*analyticsv1.AgentHello {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*analyticsv1.AgentHello, len(s.Agents))
 	copy(out, s.Agents)
+	return out
+}
+
+func (s *Store) ListLink1Sessions(tenantID, agentID string) []Link1Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Link1Session, 0, len(s.Link1Sessions))
+	for _, session := range s.Link1Sessions {
+		if tenantID != "" && session.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && session.AgentID != agentID {
+			continue
+		}
+		out = append(out, session)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			return out[i].AgentID < out[j].AgentID
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
 	return out
 }
 
@@ -842,6 +910,7 @@ func (s *Store) DeleteScenario(scenario string) {
 		s.Signals = nil
 		s.Incidents = nil
 		s.Health = map[string]agenthealth.AgentHealth{}
+		s.Link1Sessions = nil
 		s.Metrics = Metrics{}
 		return
 	}
@@ -948,11 +1017,16 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Assignments = append([]policymodel.Assignment(nil), s.Assignments...)
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
+	state.Link1Sessions = append([]Link1Session(nil), s.Link1Sessions...)
 	return state, nil
 }
 
 func agentHealthKey(tenantID, agentID string) string {
 	return tenantID + "/" + agentID
+}
+
+func link1SessionID(tenantID, agentID string) string {
+	return stableKey(tenantID, agentID)
 }
 
 func kindName(kind eventv1.EventKind) string {

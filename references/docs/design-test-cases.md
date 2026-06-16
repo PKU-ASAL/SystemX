@@ -258,7 +258,22 @@ make -C test e2e-graph-all
 make -C test e2e-postgres-all
 ```
 
-### 5.7 Container / VM Runtime Ownership
+### 5.7 Link1 Stream Foundation
+
+这些脚本验证 v3 Link1 stream 的早期地基:即使真正双向 stream 尚未实现,manager 也已经能维护 session state 和 last ack cursor,为后续 resume/downlink 做准备。
+
+| Make target | 脚本 | 证明什么 |
+|---|---|---|
+| `e2e-link1-session` | `harness/e2e-link1-session.sh` | 同一 agent 连续 upload 会更新 Link1 session,`last_ack_cursor` 前进到最新 batch |
+| `e2e-link1-stream-all` | Make 聚合 | 当前聚合 Link1 session/cursor foundation gate |
+
+聚合入口:
+
+```bash
+make -C test e2e-link1-stream-all
+```
+
+### 5.8 Container / VM Runtime Ownership
 
 这些脚本证明 agent 不只是读取现成事件,而是拥有 sensor process、Tetra subscription 和 runtime policy。
 
@@ -276,7 +291,7 @@ make -C test e2e-postgres-all
 
 当前 runtime 总门禁只聚合最关键的 owned container / owned VM,不是把所有 managed smoke 都塞进去。
 
-### 5.8 通用 Capture / Replay
+### 5.9 通用 Capture / Replay
 
 通用入口:
 
@@ -450,7 +465,8 @@ make -C test e2e-agent-benign-container
 | Postgres schema + migration runner + store backend 可观测 | `e2e-store-status` + migration/runner 单测 | 部分覆盖 |
 | query pagination | `e2e-query-pagination` + HTTP 单测 | 部分覆盖 |
 | Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
-| Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |
+| Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
+| Link1 bidirectional stream/downlink | 尚未实现真正双向 stream/downlink | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |
 
 ---

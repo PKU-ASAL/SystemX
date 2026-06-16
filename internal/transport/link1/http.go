@@ -52,6 +52,7 @@ type ManagerStore interface {
 	ListAssignments(string, string) []policymodel.Assignment
 	ListEvents(string, string) []*eventv1.CanonicalEvent
 	ListIncidents(string) []*incidentv1.Incident
+	ListLink1Sessions(string, string) []store.Link1Session
 	ListPolicies(string) []policymodel.Policy
 	ListResponses(string, string) []responsemodel.AuditRecord
 	ListRules(string) []policymodel.RuleContent
@@ -59,6 +60,7 @@ type ManagerStore interface {
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
 	PendingResponses(string, string) []responsemodel.Command
+	RecordLink1Upload(*analyticsv1.AgentHello, string, string, time.Time) store.Link1Session
 	RecordUpload(int, int, int, int, time.Duration)
 	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
 	Save() error
@@ -142,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
+	mux.HandleFunc("/api/v1/link1-sessions", s.link1Sessions)
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
@@ -190,7 +193,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("decode upload batch: %v", err), http.StatusBadRequest)
 		return
 	}
-	result, err := s.AcceptUpload(batch)
+	result, err := s.AcceptUploadWithTransport(batch, "http")
 	if err != nil {
 		if errors.Is(err, ErrInvalidUpload) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -209,6 +212,10 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, error) {
+	return s.AcceptUploadWithTransport(batch, "")
+}
+
+func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, transport string) (UploadResult, error) {
 	if err := validateUploadIdentity(batch); err != nil {
 		return UploadResult{}, err
 	}
@@ -238,6 +245,7 @@ func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, err
 	cloudSignals, incidents := s.recomputeTouchedScenarios(touchedScenarios)
 	convergenceLatency := time.Since(start)
 	s.store.RecordUpload(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
+	s.store.RecordLink1Upload(batch.GetAgent(), batch.GetBatchId(), transport, time.Now().UTC())
 	if err := s.store.Save(); err != nil {
 		return UploadResult{}, err
 	}
@@ -390,6 +398,15 @@ func (s *Server) authorized(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+func (s *Server) link1Sessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	writeJSON(w, map[string]any{"sessions": s.store.ListLink1Sessions(q.Get("tenant_id"), q.Get("agent_id"))})
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

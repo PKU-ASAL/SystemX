@@ -347,6 +347,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
 	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
+	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
 
 	state, err := st.ExportState()
@@ -372,8 +373,29 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	if _, ok := reloaded.GetAgentHealth("default", "agent-a"); !ok {
 		t.Fatal("agent health missing after import")
 	}
+	if got := reloaded.ListLink1Sessions("default", "agent-a"); len(got) != 1 || got[0].LastAckCursor != "batch-a" {
+		t.Fatalf("link1 sessions after import = %+v", got)
+	}
 	if got := reloaded.MetricsSnapshot(); got.UploadBatches != 1 || got.SignalsEmitted != 2 {
 		t.Fatalf("metrics after import = %+v", got)
+	}
+}
+
+func TestRecordLink1UploadUpdatesSessionCursor(t *testing.T) {
+	st := &Store{}
+	agent := &analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}
+	first := st.RecordLink1Upload(agent, "batch-1", "http", time.Unix(10, 0).UTC())
+	second := st.RecordLink1Upload(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
+	if first.SessionID == "" || first.SessionID != second.SessionID {
+		t.Fatalf("session ids = %q/%q", first.SessionID, second.SessionID)
+	}
+	sessions := st.ListLink1Sessions("default", "agent-a")
+	if len(sessions) != 1 {
+		t.Fatalf("sessions len = %d, want 1", len(sessions))
+	}
+	got := sessions[0]
+	if got.StartedAt != first.StartedAt || got.LastSeenAt != second.LastSeenAt || got.LastAckCursor != "batch-2" || got.Transport != "grpc" {
+		t.Fatalf("session after update = %+v", got)
 	}
 }
 

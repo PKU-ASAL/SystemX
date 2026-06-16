@@ -495,9 +495,30 @@ make -C test e2e-store-status
 
 ## 10. Phase 5: Link1 Bidirectional Stream
 
+Status: foundation implementation started.
+
 ### Goal
 
 把 Link1 从 unary upload 推进到可靠双向控制/数据通道。
+
+### Current Implementation Slice
+
+已落地的第一刀:
+
+- store 已定义 `Link1Session`,包含 session id、agent id、tenant id、start time、last seen、last ack cursor 和 transport。
+- HTTP/gRPC unary upload 成功后会更新 Link1 session,`last_ack_cursor` 使用当前 accepted `batch_id`。
+- manager `GET /api/v1/link1-sessions` 与 `sysarmorctl link1-sessions` 可查询 Link1 session state。
+- `make -C test e2e-link1-session` 验证同一 agent 连续上传会推进 session cursor。
+- `make -C test e2e-link1-stream-all` 当前聚合 Link1 session/cursor foundation gate。
+
+仍未完成:
+
+- 真正 bidirectional stream RPC。
+- stream frame: upload / health / ack / error。
+- agent resume from cursor。
+- policy downlink notification。
+- response command downlink。
+- evidence pullback request。
 
 ### Deliverables
 

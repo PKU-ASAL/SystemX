@@ -197,6 +197,12 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	if !ack.GetOk() || ack.GetBatchId() != batch.GetBatchId() || ack.GetAcceptedEvents() != 1 {
 		t.Fatalf("ack = %#v", ack)
 	}
+	rec = get(t, handler, "/api/v1/link1-sessions?tenant_id=default&agent_id=agent-a")
+	for _, want := range []string{`"tenant_id":"default"`, `"agent_id":"agent-a"`, `"last_ack_cursor":"00000000000000000042"`, `"transport":"http"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("link1 session missing %s: %s", want, rec.Body.String())
+		}
+	}
 }
 
 func TestQueryPagination(t *testing.T) {
