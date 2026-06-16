@@ -230,6 +230,61 @@ func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.AddEvent(&eventv1.CanonicalEvent{
+		Id:       "ev-table-pg",
+		Scenario: "pg-ingest",
+		Kind:     eventv1.EventKind_EVENT_KIND_CONNECT,
+		AgentId:  "agent-ingest-pg",
+		HostId:   "host-ingest-pg",
+	})
+	result.Store.AddSignal(&signalv1.Signal{
+		Id:        "sig-table-pg",
+		Scenario:  "pg-ingest",
+		Name:      "reverse_shell_pattern",
+		Where:     signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+		LineageId: "lin-table-pg",
+		Terminal:  true,
+		Entities: []*signalv1.EntityRef{{
+			Kind: "socket",
+			Key:  "socket:10.88.0.5:443",
+			Role: "object",
+		}},
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO events",
+		"ev-table-pg",
+		"pg-ingest",
+		"CONNECT",
+		"agent-ingest-pg",
+		"host-ingest-pg",
+		"INSERT INTO signals",
+		"sig-table-pg",
+		"endpoint",
+		"reverse_shell_pattern",
+		"lin-table-pg",
+		"true",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)

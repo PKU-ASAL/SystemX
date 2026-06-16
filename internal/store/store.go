@@ -1486,6 +1486,10 @@ func kindName(kind eventv1.EventKind) string {
 	}
 }
 
+func EventKindName(kind eventv1.EventKind) string {
+	return kindName(kind)
+}
+
 func layerName(where signalv1.SignalWhere) string {
 	switch where {
 	case signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT:
@@ -1495,6 +1499,10 @@ func layerName(where signalv1.SignalWhere) string {
 	default:
 		return ""
 	}
+}
+
+func SignalLayerName(where signalv1.SignalWhere) string {
+	return layerName(where)
 }
 
 func signalKey(sig *signalv1.Signal) string {
@@ -1514,6 +1522,10 @@ func signalKey(sig *signalv1.Signal) string {
 		parts = append(parts, ent)
 	}
 	return stableKey(parts...)
+}
+
+func SignalProjectionKey(sig *signalv1.Signal) string {
+	return signalKey(sig)
 }
 
 func incidentKey(inc *incidentv1.Incident) string {

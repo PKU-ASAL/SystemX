@@ -8,7 +8,9 @@ import (
 	"fmt"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -84,6 +86,12 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	if err := projectAgentHealth(ctx, db, state.Health); err != nil {
+		return err
+	}
+	if err := projectEvents(ctx, db, state.Events); err != nil {
+		return err
+	}
+	if err := projectSignals(ctx, db, state.Signals); err != nil {
 		return err
 	}
 	if err := projectResponseAudit(ctx, db, state.Responses, state.ResponseAcks); err != nil {
@@ -172,6 +180,63 @@ ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
 `, tenantID, health.AgentID, health.HostID, health.Scope.Type, health.Scope.Selector, observedAt, []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project agent health: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectEvents(ctx context.Context, db *sql.DB, eventRows []json.RawMessage) error {
+	for _, raw := range eventRows {
+		var event eventv1.CanonicalEvent
+		if err := protojson.Unmarshal(raw, &event); err != nil {
+			return fmt.Errorf("decode event projection: %w", err)
+		}
+		if event.GetId() == "" {
+			continue
+		}
+		_, err := db.ExecContext(ctx, `
+INSERT INTO events (tenant_id, event_id, scenario, event_kind, agent_id, host_id, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, event_id) DO UPDATE SET
+  scenario = EXCLUDED.scenario,
+  event_kind = EXCLUDED.event_kind,
+  agent_id = EXCLUDED.agent_id,
+  host_id = EXCLUDED.host_id,
+  observed_at = now(),
+  data = EXCLUDED.data
+`, "default", event.GetId(), event.GetScenario(), store.EventKindName(event.GetKind()), event.GetAgentId(), event.GetHostId(), []byte(raw))
+		if err != nil {
+			return fmt.Errorf("project event: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectSignals(ctx context.Context, db *sql.DB, signalRows []json.RawMessage) error {
+	for _, raw := range signalRows {
+		var signal signalv1.Signal
+		if err := protojson.Unmarshal(raw, &signal); err != nil {
+			return fmt.Errorf("decode signal projection: %w", err)
+		}
+		signalKey := store.SignalProjectionKey(&signal)
+		if signalKey == "" {
+			continue
+		}
+		_, err := db.ExecContext(ctx, `
+INSERT INTO signals (tenant_id, signal_key, signal_id, scenario, layer, signal_name, lineage_id, terminal, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (tenant_id, signal_key) DO UPDATE SET
+  signal_id = EXCLUDED.signal_id,
+  scenario = EXCLUDED.scenario,
+  layer = EXCLUDED.layer,
+  signal_name = EXCLUDED.signal_name,
+  lineage_id = EXCLUDED.lineage_id,
+  terminal = EXCLUDED.terminal,
+  observed_at = now(),
+  data = EXCLUDED.data
+`, "default", signalKey, signal.GetId(), signal.GetScenario(), store.SignalLayerName(signal.GetWhere()), signal.GetName(), signal.GetLineageId(), signal.GetTerminal(), []byte(raw))
+		if err != nil {
+			return fmt.Errorf("project signal: %w", err)
 		}
 	}
 	return nil
