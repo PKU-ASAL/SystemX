@@ -319,6 +319,16 @@ func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) 
 	if got := st.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {
 		t.Fatalf("workload baseline count after duplicate = %d, want 1", got)
 	}
+	rec := get(t, handler, "/api/v1/rarity-baseline?workload=container:checkout-api&signal=download_by_lolbin")
+	for _, want := range []string{
+		`"count":1`,
+		`"container:checkout-api":{"download_by_lolbin":1}`,
+		`"global":{"download_by_lolbin":1}`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("rarity baseline response missing %s: %s", want, rec.Body.String())
+		}
+	}
 }
 
 func TestHTTPUploadRequiresAgentIdentity(t *testing.T) {

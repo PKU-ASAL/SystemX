@@ -240,7 +240,7 @@ make -C test e2e-response-all
 
 这些脚本验证 v3 graph/evidence/incident 地基:incident evidence 不是只返回散装节点,而是能通过 graph/evidence 包生成可查询的 evidence subgraph;incident 也开始具备最小 lifecycle 状态。
 
-Go 单测同时覆盖 analytics package 边界:correlate/converge/incident/rarity/graph/evidence。rarity 当前包含 count-based MVP scorer、workload-aware baseline scorer,以及从 signal 流累计 workload/global baseline counts 的 observe/snapshot/merge primitive;manager ingest 主路径会读取 store baseline 注入 analytics scorer,成功接收新 endpoint signals 后更新 baseline,并随 store state 持久化。生产级 CMS/IDF、窗口/TTL 和训练策略仍是后续项。
+Go 单测同时覆盖 analytics package 边界:correlate/converge/incident/rarity/graph/evidence。rarity 当前包含 count-based MVP scorer、workload-aware baseline scorer,以及从 signal 流累计 workload/global baseline counts 的 observe/snapshot/merge primitive;manager ingest 主路径会读取 store baseline 注入 analytics scorer,成功接收新 endpoint signals 后更新 baseline,并随 store state 持久化。manager 与 `sysarmorctl` 可查询当前 rarity baseline 和指定 workload/signal count。生产级 CMS/IDF、窗口/TTL 和训练策略仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -248,7 +248,8 @@ Go 单测同时覆盖 analytics package 边界:correlate/converge/incident/rarit
 | `e2e-incident-lifecycle` | `harness/e2e-incident-lifecycle.sh` | incident 可 suppress / close / reopen,状态、原因和 actor 可查询 |
 | `e2e-incident-attach-evidence` | `harness/e2e-incident-attach-evidence.sh` | incident 可追加 evidence node/edge,并通过 incident evidence graph 查询 |
 | `e2e-incident-merge` | `harness/e2e-incident-merge.sh` | incident 可按显式 id 合并,source evidence/lineage 进入 target,source incident 被移除 |
-| `e2e-graph-all` | Make 聚合 | 当前聚合 graph/evidence/incident gate |
+| `e2e-rarity-baseline` | Go HTTP/CLI contract test | endpoint signal 上传会更新 workload/global rarity baseline,重复 batch 不放大,count 可通过 API/CLI 查询 |
+| `e2e-graph-all` | Make 聚合 | 当前聚合 graph/evidence/incident/rarity gate |
 
 聚合入口:
 
@@ -493,7 +494,7 @@ make -C test e2e-agent-benign-container
 | analytics correlate/converge/incident/rarity 包边界 | correlate/converge/incident/rarity 单测 + graph 聚合门禁 | 部分覆盖 |
 | count-based rarity MVP | rarity 单测 | 部分覆盖 |
 | workload-aware rarity baseline scorer | rarity/incident 单测 | 部分覆盖 |
-| rarity baseline maintenance / persistence / ingest scoring | rarity/ingest/store/HTTP 单测 | 部分覆盖 |
+| rarity baseline maintenance / persistence / ingest scoring / query | `e2e-rarity-baseline` + rarity/ingest/store/HTTP 单测 | 部分覆盖 |
 | graph/evidence subgraph/path/k-hop query | `e2e-graph-evidence` | 部分覆盖 |
 | incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
 | incident lifecycle attach evidence | `e2e-incident-attach-evidence` + store 单测 | 部分覆盖 |

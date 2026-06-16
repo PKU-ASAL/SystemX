@@ -50,6 +50,23 @@ func TestQueryPolicyCommands(t *testing.T) {
 	}
 }
 
+func TestQueryRarityBaseline(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.String()
+		_, _ = fmt.Fprintln(w, "{}")
+	}))
+	defer server.Close()
+
+	if _, err := query(server.URL, []string{"rarity-baseline", "--workload", "container:checkout-api", "--signal", "download_by_lolbin"}); err != nil {
+		t.Fatalf("rarity-baseline query error = %v", err)
+	}
+	want := "/api/v1/rarity-baseline?signal=download_by_lolbin&workload=container%3Acheckout-api"
+	if gotPath != want {
+		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+}
+
 func TestEvidencePullbackCommand(t *testing.T) {
 	var gotMethod string
 	var gotPath string

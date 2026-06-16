@@ -214,6 +214,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/incident-merge", s.incidentMerge)
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
+	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)
 	return mux
 }
 
@@ -791,6 +792,19 @@ func (s *Server) storeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.store.Info())
+}
+
+func (s *Server) rarityBaseline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	baseline := s.store.RarityBaselineSnapshot()
+	writeJSON(w, map[string]any{
+		"baseline": baseline,
+		"count":    baseline.Count(q.Get("workload"), q.Get("signal")),
+	})
 }
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) {

@@ -235,6 +235,23 @@ func query(mgr string, args []string) ([]byte, error) {
 		return httpGet(base + "/api/v1/metrics")
 	case "store-status":
 		return httpGet(base + "/api/v1/store-status")
+	case "rarity-baseline":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--workload":
+				i++
+				if i < len(args) {
+					q.Set("workload", args[i])
+				}
+			case "--signal":
+				i++
+				if i < len(args) {
+					q.Set("signal", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/rarity-baseline?" + q.Encode())
 	case "rules":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

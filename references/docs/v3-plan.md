@@ -346,6 +346,8 @@ Status: partial implementation started.
 - `internal/analytics/rarity` 已提供 workload-aware baseline scorer,可按 workload/signal historical count 对常见信号降权,并可被 incident builder 注入使用。
 - `internal/analytics/rarity` 已提供 baseline maintenance primitive,可从 signal 流自动累计 workload/global signal counts,并支持 snapshot / merge。
 - manager ingest 主路径会从 store 读取 rarity baseline 注入 analytics scorer,并在成功接收新 endpoint signals 后更新 baseline;baseline 已进入 store state,可随 file/Postgres snapshot backend 持久化。
+- manager `GET /api/v1/rarity-baseline` 与 `sysarmorctl rarity-baseline` 可查询当前 baseline,也可按 workload/signal 查询 count。
+- `make -C test e2e-rarity-baseline` 验证 endpoint signal 上传会更新 workload/global rarity baseline,重复 batch 不放大,且 baseline count 可查询。
 - `internal/analytics/graph` 已支持最小 `KHop` 和 `ShortestPath` 查询。
 - manager `GET /api/v1/incident-evidence` 与 `sysarmorctl incident-evidence` 支持 `seed/hops` 和 `path_from/path_to` 查询。
 
@@ -406,7 +408,8 @@ Rarity interface:
 
 - define interface
 - provide no-op or simple count-based MVP implementation
-- leave CMS/IDF/workload baseline for later
+- provide workload baseline observe/snapshot/query contract
+- leave CMS/IDF/windowed baseline for later
 
 ### Acceptance Criteria
 
@@ -425,6 +428,7 @@ make -C test e2e-graph-evidence
 make -C test e2e-incident-lifecycle
 make -C test e2e-incident-attach-evidence
 make -C test e2e-incident-merge
+make -C test e2e-rarity-baseline
 make -C test e2e TOPO=container SCENARIO=apt-staged-drop DUR=12
 ```
 

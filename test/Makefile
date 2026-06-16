@@ -62,7 +62,7 @@ perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 cont
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-all e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-all e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -167,7 +167,10 @@ e2e-incident-attach-evidence: ## v3: incident evidence can be attached and queri
 e2e-incident-merge: ## v3: incidents can be merged by explicit id
 	bash harness/e2e-incident-merge.sh
 
-e2e-graph-all: e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge ## v3: graph/evidence/incident gates
+e2e-rarity-baseline: ## v3: rarity baseline is updated by ingest and queryable
+	cd .. && go test ./internal/transport/link1 -run TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification
+
+e2e-graph-all: e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline ## v3: graph/evidence/incident/rarity gates
 
 e2e-store-status: ## v3: store backend and migration status are queryable
 	bash harness/e2e-store-status.sh
@@ -322,7 +325,8 @@ help:                         ## 显示帮助
 	@echo "  e2e-incident-lifecycle  v3 incident lifecycle status can be updated and queried"
 	@echo "  e2e-incident-attach-evidence  v3 incident evidence can be attached and queried"
 	@echo "  e2e-incident-merge  v3 incidents can be merged by explicit id"
-	@echo "  e2e-graph-all  run all v3 graph/evidence/incident gates"
+	@echo "  e2e-rarity-baseline  v3 rarity baseline is updated by ingest and queryable"
+	@echo "  e2e-graph-all  run all v3 graph/evidence/incident/rarity gates"
 	@echo "  e2e-store-status  v3 store backend and migration status are queryable"
 	@echo "  e2e-query-pagination  v3 query APIs support limit/offset pagination"
 	@echo "  e2e-postgres-all  run current v3 Postgres/store foundation gates"
