@@ -69,6 +69,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		func(tenantID, agentID string) ([]policymodel.Assignment, error) {
 			return queryPolicyAssignments(context.Background(), db, tenantID, agentID)
 		},
+		func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+			return queryPolicy(context.Background(), db, tenantID, policyID, version)
+		},
 	)
 	return st, nil
 }
@@ -304,6 +307,39 @@ ORDER BY tenant_id ASC, policy_id ASC, version ASC
 		return nil, fmt.Errorf("iterate postgres policies: %w", err)
 	}
 	return out, nil
+}
+
+func queryPolicy(ctx context.Context, db *sql.DB, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+	if policyID == "" {
+		return policymodel.Policy{}, false, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM policies
+WHERE ($1 = '' OR tenant_id = $1)
+  AND policy_id = $2
+  AND ($3 = 0 OR version = $3)
+ORDER BY version DESC
+LIMIT 1
+`, tenantID, policyID, version)
+	if err != nil {
+		return policymodel.Policy{}, false, fmt.Errorf("query postgres policy: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return policymodel.Policy{}, false, fmt.Errorf("iterate postgres policy: %w", err)
+		}
+		return policymodel.Policy{}, false, nil
+	}
+	var raw []byte
+	if err := rows.Scan(&raw); err != nil {
+		return policymodel.Policy{}, false, fmt.Errorf("scan postgres policy: %w", err)
+	}
+	var policy policymodel.Policy
+	if err := json.Unmarshal(raw, &policy); err != nil {
+		return policymodel.Policy{}, false, fmt.Errorf("decode postgres policy: %w", err)
+	}
+	return policy, true, nil
 }
 
 func queryPolicyAssignments(ctx context.Context, db *sql.DB, tenantID, agentID string) ([]policymodel.Assignment, error) {

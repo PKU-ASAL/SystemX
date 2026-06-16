@@ -604,6 +604,35 @@ func TestOpenPostgresQueriesPolicyControlTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresGetsPolicyFromTablePath(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "policy-get-table-pg"
+	policy.Version = 21
+	policy.Published = true
+	policyRaw, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatalf("marshal policy: %v", err)
+	}
+	fakeSetPolicyRows(policyRaw)
+	got, ok := result.Store.GetPolicy("default", "policy-get-table-pg", 21)
+	if !ok || got.PolicyID != "policy-get-table-pg" || got.Version != 21 {
+		t.Fatalf("GetPolicy from postgres table = %+v, %v", got, ok)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT data FROM policies") {
+		t.Fatalf("GetPolicy did not query policies table: %s", fakeLastQuery())
+	}
+}
+
 func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)

@@ -39,6 +39,7 @@ type Store struct {
 	listResponses   func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
 	listPolicies    func(tenantID string) ([]policymodel.Policy, error)
 	listAssignments func(tenantID, agentID string) ([]policymodel.Assignment, error)
+	getPolicy       func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
 	Agents          []*analyticsv1.AgentHello
 	Events          []*eventv1.CanonicalEvent
 	Signals         []*signalv1.Signal
@@ -211,6 +212,7 @@ func (s *Store) ConfigureQueryHooks(
 	listResponses func(string, string) ([]responsemodel.AuditRecord, error),
 	listPolicies func(string) ([]policymodel.Policy, error),
 	listAssignments func(string, string) ([]policymodel.Assignment, error),
+	getPolicy func(string, string, uint64) (policymodel.Policy, bool, error),
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -220,6 +222,7 @@ func (s *Store) ConfigureQueryHooks(
 	s.listResponses = listResponses
 	s.listPolicies = listPolicies
 	s.listAssignments = listAssignments
+	s.getPolicy = getPolicy
 }
 
 func (s *Store) Info() Info {
@@ -473,6 +476,15 @@ func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
 }
 
 func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymodel.Policy, bool) {
+	s.mu.RLock()
+	getPolicy := s.getPolicy
+	s.mu.RUnlock()
+	if getPolicy != nil {
+		policy, ok, err := getPolicy(tenantID, policyID, version)
+		if err == nil && ok {
+			return policy, true
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var latest policymodel.Policy
