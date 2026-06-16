@@ -6,9 +6,11 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -151,6 +153,69 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	}
 	if sessions := st.ListLink1Sessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].LastAckCursor != "stream-batch-1" || sessions[0].Transport != "stream" {
 		t.Fatalf("sessions = %+v", sessions)
+	}
+}
+
+func TestGRPCStreamAcceptsHealthHeartbeatFrame(t *testing.T) {
+	st := &store.Store{}
+	server := NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := agenthealth.AgentHealth{
+		AgentID:    "stream-health-agent",
+		HostID:     "stream-health-host",
+		TenantID:   "default",
+		Status:     "ok",
+		ObservedAt: time.Now().UTC(),
+		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "checkout-api"},
+		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 7},
+	}
+	payload, err := json.Marshal(health)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&analyticsv1.StreamFrame{Type: UplinkHealth, PayloadJson: payload}); err != nil {
+		t.Fatalf("send health frame: %v", err)
+	}
+	ack, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv health ack: %v", err)
+	}
+	if ack.GetType() != UplinkHealth {
+		t.Fatalf("ack type = %q", ack.GetType())
+	}
+	var result UplinkFrameResult
+	if err := json.Unmarshal(ack.GetPayloadJson(), &result); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, string(ack.GetPayloadJson()))
+	}
+	if !result.OK || result.Message != "accepted" {
+		t.Fatalf("stream health result = %+v", result)
+	}
+	got, ok := st.GetAgentHealth("default", "stream-health-agent")
+	if !ok || got.Status != "ok" || got.Sensor.EventsSeen != 7 || got.Scope.Selector != "checkout-api" {
+		t.Fatalf("agent health = %+v, ok=%v", got, ok)
 	}
 }
 

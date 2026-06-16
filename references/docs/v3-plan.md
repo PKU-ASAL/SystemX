@@ -542,6 +542,7 @@ Status: foundation implementation started.
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy、pending response command 和 pending evidence pullback request。
 - `make -C test e2e-link1-frames` 验证 upload / health / ack / evidence pullback result / error uplink frame contract。
 - `make -C test e2e-link1-grpc-stream` 验证 gRPC bidi stream 能下发 policy/response/evidence pullback frame 并接收 upload frame。
+- `make -C test e2e-link1-stream-health` 验证 gRPC stream 可接收 agent health heartbeat frame 并更新 manager agent health。
 - `make -C test e2e-link1-stream-upload` 验证 agent uploader 能通过 Link1 gRPC stream 上传 batch 并推进 session cursor。
 - `make -C test e2e-link1-stream-reconnect` 验证 agent stream uploader 重新连接后重复上传同一 batch 不会放大 event/signal。
 - `make -C test e2e-link1-stream-resume` 验证 agent 能通过 Link1 stream 获取 resume cursor 并清理本地已确认 spool batch。
