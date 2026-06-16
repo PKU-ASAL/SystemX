@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -131,6 +133,47 @@ func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
 	}
 	if runner.activePolicy().PolicyID != "no-payload-after-refresh" || runner.activePolicy().Version != 2 {
 		t.Fatalf("active policy = %+v", runner.activePolicy())
+	}
+}
+
+func TestStreamPolicyClientFetchesDownlinkPolicy(t *testing.T) {
+	st := &store.Store{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "stream-policy"
+	policy.Version = 3
+	policy.EndpointRules = []string{"download_by_lolbin"}
+	st.UpsertPolicy(policy)
+	st.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		AgentID:       "agent-stream",
+		PolicyID:      "stream-policy",
+		PolicyVersion: 3,
+	})
+	linkSrv := link1.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	client := NewStreamPolicyClient(lis.Addr().String(), "", time.Second)
+	got, err := client.EffectivePolicy(context.Background(), EffectivePolicyRequest{
+		TenantID: "default",
+		AgentID:  "agent-stream",
+	})
+	if err != nil {
+		t.Fatalf("EffectivePolicy() error = %v", err)
+	}
+	if got.PolicyID != "stream-policy" || got.Version != 3 || got.Mode != "observe" {
+		t.Fatalf("policy = %+v", got)
+	}
+	if len(got.EndpointRules) != 1 || got.EndpointRules[0] != "download_by_lolbin" {
+		t.Fatalf("endpoint rules = %v", got.EndpointRules)
 	}
 }
 

@@ -56,6 +56,8 @@ func policyUpdateFrame(policy policymodel.Policy) DownlinkFrame {
 			"policy_id":      policy.PolicyID,
 			"policy_version": policy.Version,
 			"mode":           policy.Mode,
+			"endpoint_rules": policy.EndpointRules,
+			"cloud_rules":    policy.CloudRules,
 		},
 	}
 }

@@ -168,6 +168,7 @@ make e2e-link1-downlink
 make e2e-link1-frames
 make e2e-link1-grpc-stream
 make e2e-link1-stream-upload
+make e2e-link1-policy-downlink
 make e2e-link1-stream-all
 
 # 性能基线 smoke

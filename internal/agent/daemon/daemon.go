@@ -120,7 +120,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	r.setFastpath(fastpath.NewWithRules(effectivePolicy.EndpointRules))
 	refreshCtx := ctx
 	cancelRefresh := func() {}
-	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && r.Config.Manager.Transport == "http" {
+	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && (r.Config.Manager.Transport == "http" || r.Config.Manager.Transport == "stream") {
 		refreshCtx, cancelRefresh = context.WithCancel(ctx)
 		defer cancelRefresh()
 		go r.runPolicyRefreshLoop(refreshCtx, scopeType, scopeSelector)
@@ -414,11 +414,10 @@ func (r *Runner) policyMode() string {
 func (r *Runner) fetchStartupPolicy(ctx context.Context, scopeType, scopeSelector string) policymodel.Policy {
 	defaultPolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
 	r.setPolicy(defaultPolicy)
-	if r.Config.Manager.Transport != "http" {
+	if r.Config.Manager.Transport != "http" && r.Config.Manager.Transport != "stream" {
 		return defaultPolicy
 	}
-	client := NewPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
-	policy, err := client.EffectivePolicy(ctx, EffectivePolicyRequest{
+	policy, err := r.effectivePolicy(ctx, EffectivePolicyRequest{
 		TenantID:      r.Config.Agent.TenantID,
 		AgentID:       r.Config.Agent.ID,
 		ScopeType:     scopeType,
@@ -491,8 +490,7 @@ func (r *Runner) runPolicyRefreshLoop(ctx context.Context, scopeType, scopeSelec
 }
 
 func (r *Runner) refreshPolicy(ctx context.Context, scopeType, scopeSelector string) (bool, error) {
-	client := NewPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
-	policy, err := client.EffectivePolicy(ctx, EffectivePolicyRequest{
+	policy, err := r.effectivePolicy(ctx, EffectivePolicyRequest{
 		TenantID:      r.Config.Agent.TenantID,
 		AgentID:       r.Config.Agent.ID,
 		ScopeType:     scopeType,
@@ -508,6 +506,17 @@ func (r *Runner) refreshPolicy(ctx context.Context, scopeType, scopeSelector str
 	}
 	r.applyRuntimePolicy(policy)
 	return true, nil
+}
+
+func (r *Runner) effectivePolicy(ctx context.Context, req EffectivePolicyRequest) (policymodel.Policy, error) {
+	switch r.Config.Manager.Transport {
+	case "http":
+		return NewPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout).EffectivePolicy(ctx, req)
+	case "stream":
+		return NewStreamPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout).EffectivePolicy(ctx, req)
+	default:
+		return policymodel.Policy{}, fmt.Errorf("policy fetch unsupported for transport %q", r.Config.Manager.Transport)
+	}
 }
 
 func (r *Runner) applyRuntimePolicy(policy policymodel.Policy) {
