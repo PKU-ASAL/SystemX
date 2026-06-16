@@ -26,6 +26,7 @@ func main() {
 	postgresDriver := flag.String("postgres-driver", "pgx", "database/sql driver name for postgres backend")
 	postgresDSN := flag.String("postgres-dsn", "", "Postgres DSN for postgres backend")
 	devToken := flag.String("dev-token", "", "static development agent token; empty disables token checks")
+	operatorToken := flag.String("operator-token", "", "static development operator token for control-plane writes; empty disables operator checks")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -46,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 	st := storeResult.Store
-	linkSrv := link1.NewServerWithAuth(st, *devToken)
+	linkSrv := link1.NewServerWithTokens(st, *devToken, *operatorToken)
 	grpcServer := grpc.NewServer()
 	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", *grpcListen)

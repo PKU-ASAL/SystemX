@@ -735,7 +735,12 @@ func normalizeManagerURL(mgr string) string {
 }
 
 func httpGet(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	addAuthHeaders(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -764,9 +769,7 @@ func httpPostRaw(url string, data []byte) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if token := os.Getenv("SYSARMOR_DEV_TOKEN"); token != "" {
-		req.Header.Set("X-SysArmor-Agent-Token", token)
-	}
+	addAuthHeaders(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -777,4 +780,16 @@ func httpPostRaw(url string, data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("POST %s: %s: %s", url, resp.Status, string(out))
 	}
 	return out, nil
+}
+
+func addAuthHeaders(req *http.Request) {
+	if token := os.Getenv("SYSARMOR_DEV_TOKEN"); token != "" {
+		req.Header.Set("X-SysArmor-Agent-Token", token)
+	}
+	if token := os.Getenv("SYSARMOR_OPERATOR_TOKEN"); token != "" {
+		req.Header.Set("X-SysArmor-Operator-Token", token)
+	}
+	if actor := os.Getenv("SYSARMOR_ACTOR"); actor != "" {
+		req.Header.Set("X-SysArmor-Actor", actor)
+	}
 }

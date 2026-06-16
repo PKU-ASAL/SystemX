@@ -27,9 +27,10 @@ import (
 )
 
 type Server struct {
-	store     ManagerStore
-	engine    *ingest.Engine
-	authToken string
+	store         ManagerStore
+	engine        *ingest.Engine
+	authToken     string
+	operatorToken string
 }
 
 type ManagerStore interface {
@@ -170,8 +171,12 @@ func NewServer(st ManagerStore) *Server {
 }
 
 func NewServerWithAuth(st ManagerStore, token string) *Server {
+	return NewServerWithTokens(st, token, "")
+}
+
+func NewServerWithTokens(st ManagerStore, agentToken, operatorToken string) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, engine: ingest.NewEngine(), authToken: token}
+	return &Server{store: st, engine: ingest.NewEngine(), authToken: agentToken, operatorToken: operatorToken}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -215,6 +220,10 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.operatorAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	scenario := r.URL.Query().Get("scenario")
@@ -452,6 +461,26 @@ func (s *Server) authorized(r *http.Request) bool {
 	return false
 }
 
+func (s *Server) operatorAuthorized(r *http.Request) bool {
+	if s.operatorToken == "" {
+		return true
+	}
+	if r.Header.Get("X-SysArmor-Operator-Token") == s.operatorToken {
+		return true
+	}
+	if r.Header.Get("Authorization") == "Bearer "+s.operatorToken {
+		return true
+	}
+	return false
+}
+
+func (s *Server) actorFromRequest(r *http.Request, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return r.Header.Get("X-SysArmor-Actor")
+}
+
 func (s *Server) link1Sessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -521,6 +550,10 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		writeJSON(w, s.store.ListEvidencePullbacks(q.Get("tenant_id"), q.Get("agent_id")))
 	case http.MethodPost:
+		if !s.operatorAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var req evidencePullbackRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode evidence pullback: %v", err), http.StatusBadRequest)
@@ -538,7 +571,7 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 			Scenario:   req.Scenario,
 			Target:     req.Target,
 			Reason:     req.Reason,
-			Actor:      req.Actor,
+			Actor:      s.actorFromRequest(r, req.Actor),
 		})
 		if err := s.store.Save(); err != nil {
 			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
@@ -569,6 +602,10 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		if !s.operatorAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		s.attachIncidentEvidence(w, r)
 		return
 	}
@@ -637,6 +674,10 @@ func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.operatorAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	var req incidentLifecycleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode incident lifecycle: %v", err), http.StatusBadRequest)
@@ -646,7 +687,7 @@ func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "incident_id or scenario is required", http.StatusBadRequest)
 		return
 	}
-	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, req.Scenario, req.Status, req.Reason, req.Actor)
+	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, req.Scenario, req.Status, req.Reason, s.actorFromRequest(r, req.Actor))
 	if !ok {
 		http.Error(w, "incident not found or status invalid", http.StatusNotFound)
 		return
@@ -661,6 +702,10 @@ func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) incidentMerge(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.operatorAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req incidentMergeRequest
@@ -720,6 +765,10 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, s.store.ListPolicies(q.Get("tenant_id")))
 	case http.MethodPost:
+		if !s.operatorAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var policy policymodel.Policy
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, fmt.Sprintf("decode policy: %v", err), http.StatusBadRequest)
@@ -735,7 +784,7 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 			Action:        "policy.upsert",
 			PolicyID:      policy.PolicyID,
 			PolicyVersion: policy.Version,
-			Actor:         r.URL.Query().Get("actor"),
+			Actor:         s.actorFromRequest(r, r.URL.Query().Get("actor")),
 			Reason:        r.URL.Query().Get("reason"),
 		})
 		if err := s.store.Save(); err != nil {
@@ -751,6 +800,10 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 func (s *Server) policyPublish(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.operatorAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req policyPublishRequest
@@ -776,7 +829,7 @@ func (s *Server) policyPublish(w http.ResponseWriter, r *http.Request) {
 		Action:        action,
 		PolicyID:      policy.PolicyID,
 		PolicyVersion: policy.Version,
-		Actor:         req.Actor,
+		Actor:         s.actorFromRequest(r, req.Actor),
 		Reason:        req.Reason,
 	})
 	if err := s.store.Save(); err != nil {
@@ -801,6 +854,10 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		writeJSON(w, s.store.ListAssignments(q.Get("tenant_id"), q.Get("agent_id")))
 	case http.MethodPost:
+		if !s.operatorAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var req policyAssignmentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode assignment: %v", err), http.StatusBadRequest)
@@ -818,7 +875,7 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 			PolicyID:      saved.PolicyID,
 			PolicyVersion: saved.PolicyVersion,
 			AssignmentID:  saved.AssignmentID,
-			Actor:         req.Actor,
+			Actor:         s.actorFromRequest(r, req.Actor),
 			Reason:        req.Reason,
 		})
 		if err := s.store.Save(); err != nil {
@@ -859,11 +916,16 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, s.store.ListResponses(q.Get("tenant_id"), q.Get("agent_id")))
 	case http.MethodPost:
+		if !s.operatorAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var cmd responsemodel.Command
 		if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
 			http.Error(w, fmt.Sprintf("decode response command: %v", err), http.StatusBadRequest)
 			return
 		}
+		cmd.Actor = s.actorFromRequest(r, cmd.Actor)
 		s.createResponse(w, cmd)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -873,6 +935,10 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.operatorAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req responseDecisionRequest
@@ -921,7 +987,7 @@ func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
 		Mode:       responsemodel.DefaultMode,
 		Target:     target,
 		Reason:     reason,
-		Actor:      req.Actor,
+		Actor:      s.actorFromRequest(r, req.Actor),
 	}
 	s.createResponse(w, cmd)
 }
@@ -929,6 +995,10 @@ func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) responseApprovals(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.operatorAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req responseApprovalRequest
@@ -940,7 +1010,7 @@ func (s *Server) responseApprovals(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "response_id is required", http.StatusBadRequest)
 		return
 	}
-	cmd, ok := s.store.ApproveResponse(req.TenantID, req.AgentID, req.ResponseID, req.Approved, req.Actor, req.Reason)
+	cmd, ok := s.store.ApproveResponse(req.TenantID, req.AgentID, req.ResponseID, req.Approved, s.actorFromRequest(r, req.Actor), req.Reason)
 	if !ok {
 		http.Error(w, "response command not found", http.StatusNotFound)
 		return

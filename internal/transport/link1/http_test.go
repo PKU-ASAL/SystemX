@@ -636,6 +636,48 @@ func TestPolicyAPIDraftRequiresPublishBeforeAssignment(t *testing.T) {
 	}
 }
 
+func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "guarded-policy"
+	policy.Version = 3
+	policy.Published = false
+	policyData, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies?reason=header-actor", strings.NewReader(string(policyData)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("policy write without operator token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies?reason=header-actor", strings.NewReader(string(policyData)))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Actor", "header-analyst")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy write with operator token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/policy-audit?tenant_id=default&policy_id=guarded-policy")
+	for _, want := range []string{`"action":"policy.upsert"`, `"actor":"header-analyst"`, `"reason":"header-actor"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("policy audit missing %s: %s", want, rec.Body.String())
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","action":"collect"}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response write without operator token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
