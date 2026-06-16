@@ -80,8 +80,10 @@ type Link1Session struct {
 	AgentID       string    `json:"agent_id"`
 	StartedAt     time.Time `json:"started_at"`
 	LastSeenAt    time.Time `json:"last_seen_at"`
+	ClosedAt      time.Time `json:"closed_at,omitempty"`
 	LastAckCursor string    `json:"last_ack_cursor,omitempty"`
 	Transport     string    `json:"transport,omitempty"`
+	Status        string    `json:"status,omitempty"`
 }
 
 type OperatorRoleBinding struct {
@@ -937,6 +939,7 @@ func (s *Store) RecordLink1Upload(agent *analyticsv1.AgentHello, batchID, transp
 		LastSeenAt:    observedAt,
 		LastAckCursor: batchID,
 		Transport:     transport,
+		Status:        "active",
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -949,6 +952,75 @@ func (s *Store) RecordLink1Upload(agent *analyticsv1.AgentHello, batchID, transp
 			s.Link1Sessions[i] = session
 			return session
 		}
+	}
+	s.Link1Sessions = append(s.Link1Sessions, session)
+	return session
+}
+
+func (s *Store) RecordLink1StreamOpen(tenantID, agentID, transport string, observedAt time.Time) Link1Session {
+	return s.updateLink1Session(tenantID, agentID, transport, "", "open", observedAt, false)
+}
+
+func (s *Store) RecordLink1SessionSeen(tenantID, agentID string, observedAt time.Time) Link1Session {
+	return s.updateLink1Session(tenantID, agentID, "", "", "", observedAt, false)
+}
+
+func (s *Store) CloseLink1Session(tenantID, agentID string, observedAt time.Time) Link1Session {
+	return s.updateLink1Session(tenantID, agentID, "", "", "closed", observedAt, true)
+}
+
+func (s *Store) updateLink1Session(tenantID, agentID, transport, cursor, status string, observedAt time.Time, closeSession bool) Link1Session {
+	tenantID = strings.TrimSpace(tenantID)
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return Link1Session{}
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	}
+	sessionID := link1SessionID(tenantID, agentID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, session := range s.Link1Sessions {
+		if session.SessionID != sessionID {
+			continue
+		}
+		session.LastSeenAt = observedAt
+		if transport != "" {
+			session.Transport = transport
+		}
+		if cursor != "" {
+			session.LastAckCursor = cursor
+		}
+		if status != "" {
+			session.Status = status
+		}
+		if closeSession {
+			session.ClosedAt = observedAt
+		} else if status == "open" {
+			session.ClosedAt = time.Time{}
+		}
+		s.Link1Sessions[i] = session
+		return session
+	}
+	session := Link1Session{
+		SessionID:     sessionID,
+		TenantID:      tenantID,
+		AgentID:       agentID,
+		StartedAt:     observedAt,
+		LastSeenAt:    observedAt,
+		LastAckCursor: cursor,
+		Transport:     transport,
+		Status:        status,
+	}
+	if session.Status == "" {
+		session.Status = "active"
+	}
+	if closeSession {
+		session.ClosedAt = observedAt
 	}
 	s.Link1Sessions = append(s.Link1Sessions, session)
 	return session

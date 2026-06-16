@@ -551,6 +551,27 @@ func TestRecordLink1UploadUpdatesSessionCursor(t *testing.T) {
 	}
 }
 
+func TestLink1StreamSessionLifecycle(t *testing.T) {
+	st := &Store{}
+	opened := st.RecordLink1StreamOpen("default", "agent-stream", "stream", time.Unix(10, 0).UTC())
+	if opened.Status != "open" || opened.Transport != "stream" || !opened.ClosedAt.IsZero() {
+		t.Fatalf("opened session = %+v", opened)
+	}
+	seen := st.RecordLink1SessionSeen("default", "agent-stream", time.Unix(20, 0).UTC())
+	if seen.Status != "open" || !seen.LastSeenAt.Equal(time.Unix(20, 0).UTC()) {
+		t.Fatalf("seen session = %+v", seen)
+	}
+	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-stream", TenantId: "default"}, "batch-stream", "stream", time.Unix(25, 0).UTC())
+	closed := st.CloseLink1Session("default", "agent-stream", time.Unix(30, 0).UTC())
+	if closed.Status != "closed" || !closed.ClosedAt.Equal(time.Unix(30, 0).UTC()) || closed.LastAckCursor != "batch-stream" {
+		t.Fatalf("closed session = %+v", closed)
+	}
+	reopened := st.RecordLink1StreamOpen("default", "agent-stream", "stream", time.Unix(40, 0).UTC())
+	if reopened.Status != "open" || !reopened.ClosedAt.IsZero() || reopened.LastAckCursor != "batch-stream" {
+		t.Fatalf("reopened session = %+v", reopened)
+	}
+}
+
 func TestDeleteScenario(t *testing.T) {
 	st := &Store{}
 	st.AddSignal(&signalv1.Signal{Id: "s1", Scenario: "a"})

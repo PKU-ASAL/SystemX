@@ -73,7 +73,10 @@ type ManagerStore interface {
 	PendingEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
+	CloseLink1Session(string, string, time.Time) store.Link1Session
 	RecordLink1Upload(*analyticsv1.AgentHello, string, string, time.Time) store.Link1Session
+	RecordLink1SessionSeen(string, string, time.Time) store.Link1Session
+	RecordLink1StreamOpen(string, string, string, time.Time) store.Link1Session
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
 	RecordUpload(int, int, int, int, time.Duration)
 	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)

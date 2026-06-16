@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	"google.golang.org/grpc/codes"
@@ -45,6 +46,12 @@ func (s *grpcServer) Stream(stream analyticsv1.Link1_StreamServer) error {
 	if !s.authorized(stream.Context()) {
 		return status.Error(codes.Unauthenticated, "unauthorized")
 	}
+	var sessionTenantID, sessionAgentID string
+	defer func() {
+		if sessionAgentID != "" {
+			s.srv.store.CloseLink1Session(sessionTenantID, sessionAgentID, time.Now().UTC())
+		}
+	}()
 	for {
 		frame, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -53,11 +60,23 @@ func (s *grpcServer) Stream(stream analyticsv1.Link1_StreamServer) error {
 		if err != nil {
 			return status.Errorf(codes.Internal, "recv stream frame: %v", err)
 		}
+		if frame.GetType() == "hello" {
+			hello, err := decodeStreamHello(frame)
+			if err == nil && hello.AgentID != "" {
+				sessionTenantID, sessionAgentID = hello.TenantID, hello.AgentID
+			}
+		}
 		out, err := s.acceptStreamFrame(frame)
 		if err != nil {
 			out = &analyticsv1.StreamFrame{
 				Type:        frame.GetType(),
 				PayloadJson: mustJSON(UplinkFrameResult{Type: frame.GetType(), OK: false, Message: err.Error()}),
+			}
+		} else if sessionAgentID != "" {
+			if frame.GetType() == "hello" {
+				s.srv.store.RecordLink1StreamOpen(sessionTenantID, sessionAgentID, "stream", time.Now().UTC())
+			} else {
+				s.srv.store.RecordLink1SessionSeen(sessionTenantID, sessionAgentID, time.Now().UTC())
 			}
 		}
 		if err := stream.Send(out); err != nil {
@@ -72,20 +91,12 @@ func (s *grpcServer) acceptStreamFrame(frame *analyticsv1.StreamFrame) (*analyti
 	}
 	switch frame.GetType() {
 	case "hello":
-		var hello struct {
-			TenantID      string `json:"tenant_id"`
-			AgentID       string `json:"agent_id"`
-			ScopeType     string `json:"scope_type,omitempty"`
-			ScopeSelector string `json:"scope_selector,omitempty"`
-		}
-		if err := json.Unmarshal(frame.GetPayloadJson(), &hello); err != nil {
+		hello, err := decodeStreamHello(frame)
+		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "decode hello frame: %v", err)
 		}
 		if hello.AgentID == "" {
 			return nil, status.Error(codes.InvalidArgument, "agent_id is required")
-		}
-		if hello.TenantID == "" {
-			hello.TenantID = "default"
 		}
 		policy, _ := s.srv.store.EffectivePolicy(hello.TenantID, hello.AgentID, hello.ScopeType, hello.ScopeSelector)
 		frames := []DownlinkFrame{resumeFrame(s.srv.resumeCursor(hello.TenantID, hello.AgentID)), policyUpdateFrame(policy)}
@@ -103,6 +114,24 @@ func (s *grpcServer) acceptStreamFrame(frame *analyticsv1.StreamFrame) (*analyti
 		}
 		return &analyticsv1.StreamFrame{Type: frame.GetType(), PayloadJson: mustJSON(result)}, nil
 	}
+}
+
+type streamHello struct {
+	TenantID      string `json:"tenant_id"`
+	AgentID       string `json:"agent_id"`
+	ScopeType     string `json:"scope_type,omitempty"`
+	ScopeSelector string `json:"scope_selector,omitempty"`
+}
+
+func decodeStreamHello(frame *analyticsv1.StreamFrame) (streamHello, error) {
+	var hello streamHello
+	if err := json.Unmarshal(frame.GetPayloadJson(), &hello); err != nil {
+		return streamHello{}, err
+	}
+	if hello.TenantID == "" {
+		hello.TenantID = "default"
+	}
+	return hello, nil
 }
 
 func mustJSON(v any) []byte {

@@ -280,7 +280,7 @@ make -C test e2e-postgres-all
 
 ### 5.7 Link1 Stream Foundation
 
-这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 resume、policy、response 和 evidence pullback 请求,uplink 也能回传 health heartbeat 和 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。agent 配置默认 transport 已切到 `stream`;历史 runtime 脚本显式使用 `transport: http` 是为了保留 HTTP 兼容回归面。
+这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state、open/seen/closed lifecycle 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 resume、policy、response 和 evidence pullback 请求,uplink 也能回传 health heartbeat 和 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。agent 配置默认 transport 已切到 `stream`;历史 runtime 脚本显式使用 `transport: http` 是为了保留 HTTP 兼容回归面。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -288,6 +288,7 @@ make -C test e2e-postgres-all
 | `e2e-link1-downlink` | `harness/e2e-link1-downlink.sh` | Link1 downlink frame 可返回 effective policy update、pending response command 和 evidence pullback request |
 | `e2e-link1-frames` | `harness/e2e-link1-frames.sh` | Link1 uplink frame 可提交 upload、health、ack、evidence pullback result、error,并落到 session、health、response audit、pullback 状态 |
 | `e2e-link1-grpc-stream` | Go stream contract test | gRPC bidi stream 可先发 hello 获取 downlink frames,再通过同一 stream 提交 upload frame 并推进 session cursor |
+| `e2e-link1-stream-lifecycle` | Go stream/store contract test | gRPC stream hello 会记录 session open,后续 frame 刷新 last_seen,stream close/EOF 记录 closed,且不丢失 cursor |
 | `e2e-link1-stream-health` | Go stream contract test | gRPC stream 可接收 agent health heartbeat frame,并更新 manager agent health |
 | `e2e-link1-stream-upload` | Go stream uploader test | agent uploader 可通过 Link1 gRPC stream 上传 batch,manager session cursor 记录为 stream transport;服务端 error frame 会被客户端识别为失败 |
 | `e2e-link1-stream-reconnect` | Go stream uploader test | agent uploader 重新连接后重复上传同一 batch 不会放大 event/signal |
@@ -507,6 +508,7 @@ make -C test e2e-agent-benign-container
 | Postgres backend policy/incident persistence | `e2e-postgres-policy-persistence` | 部分覆盖 |
 | Postgres-backed manager ingest/query/policy/incident API | `e2e-postgres-manager-api` | 部分覆盖 |
 | Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
+| Link1 stream session lifecycle | `e2e-link1-stream-lifecycle` + store/gRPC 单测 | 部分覆盖 |
 | Link1 resume cursor / local spool cleanup | `e2e-link1-session` / `e2e-link1-stream-resume` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP/gRPC 单测 | 部分覆盖 |
 | Link1 stream health heartbeat frame | `e2e-link1-stream-health` + stream health reporter 单测 | 部分覆盖 |

@@ -62,7 +62,7 @@ perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 cont
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-all e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-all e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-lifecycle e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -209,6 +209,10 @@ e2e-link1-frames: ## v3: Link1 uplink frames accept upload, health, ack, evidenc
 e2e-link1-grpc-stream: ## v3: Link1 gRPC bidi stream exchanges downlink and uplink frames
 	cd .. && go test ./internal/transport/link1 -run TestGRPCStreamExchangesDownlinkAndUplinkFrames
 
+e2e-link1-stream-lifecycle: ## v3: Link1 stream session records open/seen/closed lifecycle
+	cd .. && go test ./internal/transport/link1 -run TestGRPCStreamExchangesDownlinkAndUplinkFrames
+	cd .. && go test ./internal/store -run TestLink1StreamSessionLifecycle
+
 e2e-link1-stream-health: ## v3: Link1 gRPC stream accepts agent health heartbeat frames
 	cd .. && go test ./internal/transport/link1 -run TestGRPCStreamAcceptsHealthHeartbeatFrame
 	cd .. && go test ./internal/agent/daemon -run TestStreamHealthReporterSendsHeartbeatFrame
@@ -232,7 +236,7 @@ e2e-link1-response-command: ## v3: agent can ack observe-only response command t
 e2e-link1-evidence-pullback: ## v3: agent can handle evidence pullback through Link1 stream
 	cd .. && go test ./internal/agent/daemon -run TestStreamEvidenceClientHandlesPullbackResult
 
-e2e-link1-stream-all: e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-evidence-pullback ## v3: current Link1 stream foundation gates
+e2e-link1-stream-all: e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-lifecycle e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-evidence-pullback ## v3: current Link1 stream foundation gates
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
 	bash harness/e2e-agent-daemon-container.sh
@@ -340,6 +344,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-link1-downlink  v3 Link1 downlink frames expose policy and response commands"
 	@echo "  e2e-link1-frames  v3 Link1 uplink frames accept upload, health, ack, evidence pullback result and error"
 	@echo "  e2e-link1-grpc-stream  v3 Link1 gRPC bidi stream exchanges downlink and uplink frames"
+	@echo "  e2e-link1-stream-lifecycle  v3 Link1 stream session records open/seen/closed lifecycle"
 	@echo "  e2e-link1-stream-upload  v3 agent uploader can upload through Link1 gRPC stream"
 	@echo "  e2e-link1-policy-downlink  v3 agent can fetch effective policy through Link1 stream downlink"
 	@echo "  e2e-link1-response-command  v3 agent can ack observe-only response command through Link1 stream"

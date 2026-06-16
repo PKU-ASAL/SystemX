@@ -535,7 +535,7 @@ Status: foundation implementation started.
 
 已落地的第一刀:
 
-- store 已定义 `Link1Session`,包含 session id、agent id、tenant id、start time、last seen、last ack cursor 和 transport。
+- store 已定义 `Link1Session`,包含 session id、agent id、tenant id、start time、last seen、closed at、last ack cursor、transport 和 status。
 - HTTP/gRPC unary upload 成功后会更新 Link1 session,`last_ack_cursor` 使用当前 accepted `batch_id`。
 - manager `GET /api/v1/link1-sessions` 与 `sysarmorctl link1-sessions` 可查询 Link1 session state。
 - manager `GET /api/v1/link1-resume` 与 `sysarmorctl link1-resume` 可按 agent 查询 resume cursor。
@@ -547,6 +547,7 @@ Status: foundation implementation started.
 - `internal/transport/link1` 已定义最小 uplink frame contract:`upload` / `health` / `ack` / `evidence_pullback_result` / `error`。
 - manager `POST /api/v1/link1-frames` 与 `sysarmorctl link1-frames --file` 可通过 HTTP 兼容路径提交 uplink frames;upload frame 会复用 ingest,health frame 会更新 agent health,ack frame 会持久化 response ack,evidence pullback result frame 会完成/失败 pullback request 并可附加 incident evidence,error frame 会返回可确认结果。
 - Link1 gRPC 已提供最小 bidirectional `Stream` RPC:agent/client 发送 `hello` 后 manager 返回当前 downlink frames,随后同一 stream 可提交 upload/health/ack/evidence_pullback_result/error uplink frames 并收到逐帧结果。
+- Link1 gRPC stream `hello` 会记录 session open,后续 stream frame 会刷新 last_seen,stream close/EOF 会记录 session closed,为后续常驻连接 keepalive/reconnect 语义提供状态底座。
 - agent upload worker 已支持 `manager.transport: stream`,可通过 Link1 gRPC `Stream` RPC 上传 spool batch 并推进 manager session cursor。
 - agent stream uploader 会显式处理服务端 `error` frame,返回可诊断失败,避免把协议拒绝误当作成功 ack。
 - agent 在 `manager.transport: stream` 下会通过 Link1 stream `health` frame 上报 health heartbeat;HTTP health 上报保留给显式 `transport: http` 兼容路径。
@@ -560,6 +561,7 @@ Status: foundation implementation started.
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy、pending response command 和 pending evidence pullback request。
 - `make -C test e2e-link1-frames` 验证 upload / health / ack / evidence pullback result / error uplink frame contract。
 - `make -C test e2e-link1-grpc-stream` 验证 gRPC bidi stream 能下发 policy/response/evidence pullback frame 并接收 upload frame。
+- `make -C test e2e-link1-stream-lifecycle` 验证 gRPC stream session 会记录 open/seen/closed lifecycle,且 close 不丢失已确认 cursor。
 - `make -C test e2e-link1-stream-health` 验证 gRPC stream 可接收 agent health heartbeat frame 并更新 manager agent health。
 - `make -C test e2e-link1-stream-upload` 验证 agent uploader 能通过 Link1 gRPC stream 上传 batch 并推进 session cursor,且服务端 error frame 会被客户端识别为失败。
 - `make -C test e2e-link1-stream-reconnect` 验证 agent stream uploader 重新连接后重复上传同一 batch 不会放大 event/signal。
@@ -571,7 +573,7 @@ Status: foundation implementation started.
 
 仍未完成:
 
-- stream 长连接/reconnect 的生产级可靠性语义;当前 heartbeat 已走 stream frame,但仍是按 health tick 建立短 stream,不是生产级常驻长连接 keepalive。
+- stream 长连接/reconnect 的生产级可靠性语义;当前已有 stream session open/seen/closed 状态与 heartbeat frame,但 agent 侧仍是按 health tick 建立短 stream,不是生产级常驻长连接 keepalive。
 
 ### Deliverables
 
@@ -580,7 +582,9 @@ Status: foundation implementation started.
   - agent id
   - tenant id
   - start time
+  - last seen / closed at
   - last ack cursor
+  - status
 - Stream upload:
   - event/signal batch frame
   - health frame
@@ -612,6 +616,7 @@ Status: foundation implementation started.
 go test ./...
 make -C test e2e-link1-stream-upload
 make -C test e2e-link1-grpc-stream
+make -C test e2e-link1-stream-lifecycle
 make -C test e2e-link1-stream-resume
 make -C test e2e-link1-policy-downlink
 make -C test e2e-link1-response-command

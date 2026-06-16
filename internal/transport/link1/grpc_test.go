@@ -119,6 +119,9 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	if downlink.GetType() != "downlink" {
 		t.Fatalf("downlink type = %q", downlink.GetType())
 	}
+	if sessions := st.ListLink1Sessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].Status != "open" || sessions[0].Transport != "stream" || !sessions[0].ClosedAt.IsZero() {
+		t.Fatalf("session after hello = %+v", sessions)
+	}
 	body := string(downlink.GetPayloadJson())
 	for _, want := range []string{`"type":"resume"`, `"type":"policy_update"`, `"type":"response_command"`, `"response_id":"resp-stream"`, `"type":"evidence_pullback"`, `"request_id":"evpb-stream"`} {
 		if !strings.Contains(body, want) {
@@ -153,6 +156,20 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	}
 	if sessions := st.ListLink1Sessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].LastAckCursor != "stream-batch-1" || sessions[0].Transport != "stream" {
 		t.Fatalf("sessions = %+v", sessions)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("close stream: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		sessions := st.ListLink1Sessions("default", "stream-agent")
+		if len(sessions) == 1 && sessions[0].Status == "closed" && !sessions[0].ClosedAt.IsZero() && sessions[0].LastAckCursor == "stream-batch-1" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session did not close: %+v", sessions)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
