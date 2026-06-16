@@ -16,6 +16,7 @@ import (
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -361,6 +362,18 @@ func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
 	inc, ok := s.store.GetIncident(q.Get("incident_id"), q.Get("scenario"))
 	if !ok {
 		http.Error(w, "incident not found", http.StatusNotFound)
+		return
+	}
+	if q.Get("path_from") != "" || q.Get("path_to") != "" {
+		if q.Get("path_from") == "" || q.Get("path_to") == "" {
+			http.Error(w, "path_from and path_to are required together", http.StatusBadRequest)
+			return
+		}
+		writeProtoJSON(w, graph.FromSignals(inc.GetContributingSignals()).ShortestPath(q.Get("path_from"), q.Get("path_to")))
+		return
+	}
+	if q.Get("seed") != "" {
+		writeProtoJSON(w, graph.FromSignals(inc.GetContributingSignals()).KHop(q.Get("seed"), int(parseUint(q.Get("hops")))))
 		return
 	}
 	if inc.GetEvidence() == nil {

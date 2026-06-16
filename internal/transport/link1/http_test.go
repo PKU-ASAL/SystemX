@@ -71,6 +71,16 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 			t.Fatalf("incident evidence missing %s: %s", want, rec.Body.String())
 		}
 	}
+	rec = get(t, handler, "/api/v1/incident-evidence?scenario=apt-fileless-c2&path_from=process:p-bash&path_to=socket:10.66.0.99:443")
+	for _, want := range []string{`"id":"process:p-bash"`, `"id":"socket:10.66.0.99:443"`, `"kind":"connect"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("incident path missing %s: %s", want, rec.Body.String())
+		}
+	}
+	rec = get(t, handler, "/api/v1/incident-evidence?scenario=apt-fileless-c2&seed=process:p-bash&hops=1")
+	if !strings.Contains(rec.Body.String(), `"id":"socket:10.66.0.99:443"`) {
+		t.Fatalf("incident k-hop missing socket node: %s", rec.Body.String())
+	}
 
 	rec = get(t, handler, "/api/v1/metrics")
 	for _, want := range []string{

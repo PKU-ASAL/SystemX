@@ -32,6 +32,34 @@ func TestFromSignalsUsesSubjectEdges(t *testing.T) {
 	}
 }
 
+func TestShortestPathReturnsPathSubgraph(t *testing.T) {
+	g := FromSignals([]*signalv1.Signal{
+		sig("payload_dropped", process("p-curl"), file("/dev/shm/x.sh")),
+		sig("reverse_shell_pattern", process("p-curl"), socket("10.66.0.99:443")),
+	})
+	got := g.ShortestPath("file:/dev/shm/x.sh", "socket:10.66.0.99:443")
+	if !hasNode(got.GetNodes(), "file:/dev/shm/x.sh") || !hasNode(got.GetNodes(), "process:p-curl") || !hasNode(got.GetNodes(), "socket:10.66.0.99:443") {
+		t.Fatalf("path nodes missing: %#v", got.GetNodes())
+	}
+	if len(got.GetEdges()) != 2 {
+		t.Fatalf("path edges = %d, want 2: %#v", len(got.GetEdges()), got.GetEdges())
+	}
+}
+
+func TestKHopReturnsNeighborhood(t *testing.T) {
+	g := FromSignals([]*signalv1.Signal{
+		sig("payload_dropped", process("p-curl"), file("/dev/shm/x.sh")),
+		sig("reverse_shell_pattern", process("p-curl"), socket("10.66.0.99:443")),
+	})
+	got := g.KHop("process:p-curl", 1)
+	if !hasNode(got.GetNodes(), "file:/dev/shm/x.sh") || !hasNode(got.GetNodes(), "socket:10.66.0.99:443") {
+		t.Fatalf("neighborhood nodes missing: %#v", got.GetNodes())
+	}
+	if len(got.GetEdges()) != 2 {
+		t.Fatalf("neighborhood edges = %d, want 2: %#v", len(got.GetEdges()), got.GetEdges())
+	}
+}
+
 func sig(name string, entities ...*signalv1.EntityRef) *signalv1.Signal {
 	return &signalv1.Signal{Name: name, Entities: entities}
 }

@@ -106,5 +106,27 @@ for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:4
   fi
 done
 
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence \
+  --scenario "$SCENARIO" \
+  --path-from "file:/var/lib/app/plugins/helper" \
+  --path-to "socket:10.66.0.99:443" > "$RESULTS/e2e-graph-evidence.path.json"
+for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:443"' '"kind":"connect"'; do
+  if ! grep -Fq "$want" "$RESULTS/e2e-graph-evidence.path.json"; then
+    echo "[e2e-graph-evidence][ERROR] path missing $want" >&2
+    cat "$RESULTS/e2e-graph-evidence.path.json" >&2
+    exit 1
+  fi
+done
+
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence \
+  --scenario "$SCENARIO" \
+  --seed "file:/var/lib/app/plugins/helper" \
+  --hops 1 > "$RESULTS/e2e-graph-evidence.khop.json"
+if ! grep -Fq '"id":"socket:10.66.0.99:443"' "$RESULTS/e2e-graph-evidence.khop.json"; then
+  echo "[e2e-graph-evidence][ERROR] k-hop neighborhood missing socket node" >&2
+  cat "$RESULTS/e2e-graph-evidence.khop.json" >&2
+  exit 1
+fi
+
 cp "$TMP/manager.log" "$RESULTS/e2e-graph-evidence.manager.log"
 echo "[e2e-graph-evidence] ok"

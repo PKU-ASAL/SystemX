@@ -230,7 +230,7 @@ make -C test e2e-response-all
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
-| `e2e-graph-evidence` | `harness/e2e-graph-evidence.sh` | staged-drop 的共享 file 节点和 file -> socket connect edge 可通过 incident evidence graph JSON 查询 |
+| `e2e-graph-evidence` | `harness/e2e-graph-evidence.sh` | staged-drop 的共享 file 节点和 file -> socket connect edge 可通过 incident evidence graph JSON、shortest path、k-hop 查询 |
 | `e2e-incident-lifecycle` | `harness/e2e-incident-lifecycle.sh` | incident 可 suppress / close / reopen,状态、原因和 actor 可查询 |
 | `e2e-graph-all` | Make 聚合 | 当前聚合 graph/evidence/incident gate |
 
@@ -424,7 +424,7 @@ make -C test e2e-agent-benign-container
 | response allowed scopes | `e2e-response-scope-deny` | 部分覆盖 |
 | response approval requirement | 尚未实现 approval | 未覆盖 |
 | analytics converge/incident/rarity 包边界 | converge/incident/rarity 单测 + graph 聚合门禁 | 部分覆盖 |
-| graph/evidence subgraph query | `e2e-graph-evidence` | 部分覆盖 |
+| graph/evidence subgraph/path/k-hop query | `e2e-graph-evidence` | 部分覆盖 |
 | incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
 | incident lifecycle merge/attach evidence | 当前未实现 merge/attach evidence | 未覆盖 |
 | Postgres durable store | 无 e2e | 未覆盖 |

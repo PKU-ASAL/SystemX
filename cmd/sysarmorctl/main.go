@@ -286,6 +286,26 @@ func query(mgr string, args []string) ([]byte, error) {
 				if i < len(args) {
 					q.Set("incident_id", args[i])
 				}
+			case "--path-from":
+				i++
+				if i < len(args) {
+					q.Set("path_from", args[i])
+				}
+			case "--path-to":
+				i++
+				if i < len(args) {
+					q.Set("path_to", args[i])
+				}
+			case "--seed":
+				i++
+				if i < len(args) {
+					q.Set("seed", args[i])
+				}
+			case "--hops":
+				i++
+				if i < len(args) {
+					q.Set("hops", args[i])
+				}
 			}
 		}
 		return httpGet(base + "/api/v1/incident-evidence?" + q.Encode())
