@@ -271,6 +271,65 @@ func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
 	}
 }
 
+func TestStreamResumeClientAcksLocalSpoolThroughCursor(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1, err := queue.Append(&analyticsv1.UploadBatch{BatchId: "local-1", Agent: &analyticsv1.AgentHello{AgentId: "agent-stream", HostId: "host-stream", TenantId: "default"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := queue.Append(&analyticsv1.UploadBatch{BatchId: "local-2", Agent: &analyticsv1.AgentHello{AgentId: "agent-stream", HostId: "host-stream", TenantId: "default"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id3, err := queue.Append(&analyticsv1.UploadBatch{BatchId: "local-3", Agent: &analyticsv1.AgentHello{AgentId: "agent-stream", HostId: "host-stream", TenantId: "default"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &store.Store{}
+	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-stream", HostId: "host-stream", TenantId: "default"}, id2, "stream", time.Now().UTC())
+	linkSrv := link1.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-stream", HostID: "host-stream", TenantID: "default"},
+			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "stream"},
+			Upload:  config.UploadConfig{RequestTimeout: time.Second},
+		},
+	}
+	worker, err := runner.uploadWorker(queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := worker.ResumeOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ResumeOnce() error = %v", err)
+	}
+	if stats.RemainingBatches != 1 || stats.LastError != "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	entries, err := queue.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != id3 || entries[0].ID == id1 {
+		t.Fatalf("remaining entries = %+v, cursor = %s", entries, id2)
+	}
+}
+
 func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")

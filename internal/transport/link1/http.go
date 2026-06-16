@@ -457,7 +457,7 @@ func (s *Server) link1Downlink(w http.ResponseWriter, r *http.Request) {
 		tenantID = "default"
 	}
 	policy, _ := s.store.EffectivePolicy(tenantID, agentID, q.Get("scope_type"), q.Get("scope_selector"))
-	frames := []DownlinkFrame{policyUpdateFrame(policy)}
+	frames := []DownlinkFrame{resumeFrame(s.resumeCursor(tenantID, agentID)), policyUpdateFrame(policy)}
 	for _, cmd := range s.store.PendingResponses(tenantID, agentID) {
 		frames = append(frames, responseCommandFrame(cmd))
 	}
@@ -482,13 +482,17 @@ func (s *Server) link1Resume(w http.ResponseWriter, r *http.Request) {
 	if tenantID == "" {
 		tenantID = "default"
 	}
+	writeJSON(w, s.resumeCursor(tenantID, agentID))
+}
+
+func (s *Server) resumeCursor(tenantID, agentID string) ResumeCursor {
 	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
 	sessions := s.store.ListLink1Sessions(tenantID, agentID)
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
 		resume.ResumeCursor = sessions[0].LastAckCursor
 	}
-	writeJSON(w, resume)
+	return resume
 }
 
 func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {

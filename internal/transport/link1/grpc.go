@@ -88,7 +88,7 @@ func (s *grpcServer) acceptStreamFrame(frame *analyticsv1.StreamFrame) (*analyti
 			hello.TenantID = "default"
 		}
 		policy, _ := s.srv.store.EffectivePolicy(hello.TenantID, hello.AgentID, hello.ScopeType, hello.ScopeSelector)
-		frames := []DownlinkFrame{policyUpdateFrame(policy)}
+		frames := []DownlinkFrame{resumeFrame(s.srv.resumeCursor(hello.TenantID, hello.AgentID)), policyUpdateFrame(policy)}
 		for _, cmd := range s.srv.store.PendingResponses(hello.TenantID, hello.AgentID) {
 			frames = append(frames, responseCommandFrame(cmd))
 		}

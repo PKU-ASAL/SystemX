@@ -522,6 +522,7 @@ Status: foundation implementation started.
 - manager `POST /api/v1/link1-frames` 与 `sysarmorctl link1-frames --file` 可通过 HTTP 兼容路径提交 uplink frames;upload frame 会复用 ingest,health frame 会更新 agent health,ack frame 会持久化 response ack,evidence pullback result frame 会完成/失败 pullback request 并可附加 incident evidence,error frame 会返回可确认结果。
 - Link1 gRPC 已提供最小 bidirectional `Stream` RPC:agent/client 发送 `hello` 后 manager 返回当前 downlink frames,随后同一 stream 可提交 upload/health/ack/evidence_pullback_result/error uplink frames 并收到逐帧结果。
 - agent upload worker 已支持 `manager.transport: stream`,可通过 Link1 gRPC `Stream` RPC 上传 spool batch 并推进 manager session cursor。
+- Link1 stream `hello` downlink 已包含 resume cursor frame,agent stream transport 启动时可据此删除 cursor 及之前的本地 spool batch。
 - agent 已支持通过 Link1 stream `hello` downlink 拉取 effective policy update,并将 endpoint rule references 应用到 runtime fastpath。
 - agent 已支持通过 Link1 stream downlink 拉取 pending response command,执行 observe-only `Enforce`,并通过 stream `ack` frame 回写 response audit。
 - agent 已支持通过 Link1 stream downlink 拉取 pending evidence pullback request,回传最小 target evidence subgraph,result 被 manager 完成并附加到 incident evidence。
@@ -531,6 +532,7 @@ Status: foundation implementation started.
 - `make -C test e2e-link1-frames` 验证 upload / health / ack / evidence pullback result / error uplink frame contract。
 - `make -C test e2e-link1-grpc-stream` 验证 gRPC bidi stream 能下发 policy/response/evidence pullback frame 并接收 upload frame。
 - `make -C test e2e-link1-stream-upload` 验证 agent uploader 能通过 Link1 gRPC stream 上传 batch 并推进 session cursor。
+- `make -C test e2e-link1-stream-resume` 验证 agent 能通过 Link1 stream 获取 resume cursor 并清理本地已确认 spool batch。
 - `make -C test e2e-link1-policy-downlink` 验证 agent 能通过 Link1 stream downlink 拉取 effective policy 并获得 endpoint rule references。
 - `make -C test e2e-link1-response-command` 验证 agent 能通过 Link1 stream 下发 response command 并回写 observe-only ack。
 - `make -C test e2e-link1-evidence-pullback` 验证 agent 能通过 Link1 stream 下发 evidence pullback request 并回写可附加到 incident 的 evidence subgraph。

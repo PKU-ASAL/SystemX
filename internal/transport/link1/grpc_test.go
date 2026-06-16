@@ -118,7 +118,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 		t.Fatalf("downlink type = %q", downlink.GetType())
 	}
 	body := string(downlink.GetPayloadJson())
-	for _, want := range []string{`"type":"policy_update"`, `"type":"response_command"`, `"response_id":"resp-stream"`, `"type":"evidence_pullback"`, `"request_id":"evpb-stream"`} {
+	for _, want := range []string{`"type":"resume"`, `"type":"policy_update"`, `"type":"response_command"`, `"response_id":"resp-stream"`, `"type":"evidence_pullback"`, `"request_id":"evpb-stream"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("downlink missing %s: %s", want, body)
 		}

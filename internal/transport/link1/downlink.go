@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	DownlinkResume               = "resume"
 	DownlinkPolicyUpdate         = "policy_update"
 	DownlinkResponseCommand      = "response_command"
 	DownlinkEvidencePullback     = "evidence_pullback"
@@ -45,6 +46,19 @@ type ResumeCursor struct {
 	AgentID      string `json:"agent_id"`
 	SessionID    string `json:"session_id,omitempty"`
 	ResumeCursor string `json:"resume_cursor,omitempty"`
+}
+
+func resumeFrame(cursor ResumeCursor) DownlinkFrame {
+	return DownlinkFrame{
+		Type:    DownlinkResume,
+		Version: 1,
+		Payload: map[string]interface{}{
+			"tenant_id":     cursor.TenantID,
+			"agent_id":      cursor.AgentID,
+			"session_id":    cursor.SessionID,
+			"resume_cursor": cursor.ResumeCursor,
+		},
+	}
 }
 
 func policyUpdateFrame(policy policymodel.Policy) DownlinkFrame {

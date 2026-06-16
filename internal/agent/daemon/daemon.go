@@ -101,7 +101,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("upload", err)
 	}
-	if r.Config.Manager.Transport == "http" {
+	if r.Config.Manager.Transport == "http" || r.Config.Manager.Transport == "stream" {
 		stats, err := worker.ResumeOnce(ctx)
 		if err != nil {
 			return failStartup("resume", err)
@@ -580,8 +580,17 @@ func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) 
 		Uploader: up,
 		Backoff:  uploadworker.Backoff{Initial: r.Config.Upload.RetryInitial, Max: r.Config.Upload.RetryMax},
 	}
-	if r.Config.Manager.Transport == "http" {
+	switch r.Config.Manager.Transport {
+	case "http":
 		worker.ResumeSource = NewResumeClient(
+			r.Config.Manager.Address,
+			r.Config.Agent.Token,
+			r.Config.Upload.RequestTimeout,
+			r.Config.Agent.TenantID,
+			r.Config.Agent.ID,
+		)
+	case "stream":
+		worker.ResumeSource = NewStreamResumeClient(
 			r.Config.Manager.Address,
 			r.Config.Agent.Token,
 			r.Config.Upload.RequestTimeout,

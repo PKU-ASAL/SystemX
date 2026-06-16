@@ -599,6 +599,7 @@ func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	}
 	rec = get(t, handler, "/api/v1/link1-downlink?tenant_id=default&agent_id=agent-downlink")
 	for _, want := range []string{
+		`"type":"resume"`,
 		`"type":"policy_update"`,
 		`"policy_id":"default-edr-policy"`,
 		`"type":"response_command"`,
@@ -636,6 +637,7 @@ func TestLink1DownlinkFramesIncludeEvidencePullback(t *testing.T) {
 	}
 	rec = get(t, handler, "/api/v1/link1-downlink?tenant_id=default&agent_id=agent-downlink")
 	for _, want := range []string{
+		`"type":"resume"`,
 		`"type":"policy_update"`,
 		`"type":"evidence_pullback"`,
 		`"request_id":"evpb-test"`,

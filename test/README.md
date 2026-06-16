@@ -170,6 +170,7 @@ make e2e-link1-downlink
 make e2e-link1-frames
 make e2e-link1-grpc-stream
 make e2e-link1-stream-upload
+make e2e-link1-stream-resume
 make e2e-link1-policy-downlink
 make e2e-link1-response-command
 make e2e-link1-evidence-pullback
