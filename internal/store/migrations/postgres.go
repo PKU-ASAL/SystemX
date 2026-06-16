@@ -195,6 +195,16 @@ CREATE TABLE IF NOT EXISTS link1_sessions (
   PRIMARY KEY (tenant_id, session_id)
 );
 
+CREATE TABLE IF NOT EXISTS rarity_baseline (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  workload_key TEXT NOT NULL,
+  signal_name TEXT NOT NULL,
+  signal_count BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, workload_key, signal_name)
+);
+
 CREATE TABLE IF NOT EXISTS metrics (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   metric_key TEXT NOT NULL,
@@ -223,6 +233,8 @@ CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_agent ON evidence_pullbacks (t
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_status ON evidence_pullbacks (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_link1_sessions_agent ON link1_sessions (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_link1_sessions_status ON link1_sessions (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_rarity_baseline_workload ON rarity_baseline (tenant_id, workload_key);
+CREATE INDEX IF NOT EXISTS idx_rarity_baseline_signal ON rarity_baseline (tenant_id, signal_name);
 
 INSERT INTO schema_migrations (version) VALUES (1)
 ON CONFLICT (version) DO NOTHING;

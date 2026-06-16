@@ -559,6 +559,44 @@ func TestOpenPostgresProjectsLink1SessionTable(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsRarityBaselineTable(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.ObserveRaritySignals([]*signalv1.Signal{{
+		Name: "download_by_lolbin",
+		Entities: []*signalv1.EntityRef{{
+			Kind: "container",
+			Key:  "checkout-api",
+		}},
+	}, {
+		Name: "reverse_shell_pattern",
+	}})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO rarity_baseline",
+		"container:checkout-api",
+		"download_by_lolbin",
+		"global",
+		"reverse_shell_pattern",
+		`"signal_count":1`,
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)

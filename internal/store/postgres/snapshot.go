@@ -13,6 +13,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -121,6 +122,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	if err := projectLink1Sessions(ctx, db, state.Link1Sessions); err != nil {
+		return err
+	}
+	if err := projectRarityBaseline(ctx, db, state.RarityBaseline); err != nil {
 		return err
 	}
 	if err := projectMetrics(ctx, db, state.Metrics); err != nil {
@@ -764,6 +768,42 @@ ON CONFLICT (tenant_id, metric_key) DO UPDATE SET
 `, "default", "manager", data)
 	if err != nil {
 		return fmt.Errorf("project metrics: %w", err)
+	}
+	return nil
+}
+
+func projectRarityBaseline(ctx context.Context, db *sql.DB, baseline rarity.Baseline) error {
+	for workload, signals := range baseline.WorkloadCounts {
+		workload = strings.TrimSpace(workload)
+		if workload == "" {
+			workload = "global"
+		}
+		for signalName, count := range signals {
+			signalName = strings.TrimSpace(signalName)
+			if signalName == "" || count == 0 {
+				continue
+			}
+			row := map[string]any{
+				"workload_key": workload,
+				"signal_name":  signalName,
+				"signal_count": count,
+			}
+			data, err := json.Marshal(row)
+			if err != nil {
+				return fmt.Errorf("encode rarity baseline projection: %w", err)
+			}
+			_, err = db.ExecContext(ctx, `
+INSERT INTO rarity_baseline (tenant_id, workload_key, signal_name, signal_count, data)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, workload_key, signal_name) DO UPDATE SET
+  signal_count = EXCLUDED.signal_count,
+  updated_at = now(),
+  data = EXCLUDED.data
+`, "default", workload, signalName, count, data)
+			if err != nil {
+				return fmt.Errorf("project rarity baseline: %w", err)
+			}
+		}
 	}
 	return nil
 }
