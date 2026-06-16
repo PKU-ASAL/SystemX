@@ -238,7 +238,7 @@ make -C test e2e-response-all
 
 这些脚本验证 v3 graph/evidence/incident 地基:incident evidence 不是只返回散装节点,而是能通过 graph/evidence 包生成可查询的 evidence subgraph;incident 也开始具备最小 lifecycle 状态。
 
-Go 单测同时覆盖 analytics package 边界:correlate/converge/incident/rarity/graph/evidence。rarity 当前包含 count-based MVP scorer 和 workload-aware baseline scorer,可按 workload/signal historical count 对常见信号降权;生产级 CMS/IDF 在线维护仍是后续项。
+Go 单测同时覆盖 analytics package 边界:correlate/converge/incident/rarity/graph/evidence。rarity 当前包含 count-based MVP scorer、workload-aware baseline scorer,以及从 signal 流累计 workload/global baseline counts 的 observe/snapshot/merge primitive;生产级 CMS/IDF 在线维护和 store 持久化仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -489,6 +489,7 @@ make -C test e2e-agent-benign-container
 | analytics correlate/converge/incident/rarity 包边界 | correlate/converge/incident/rarity 单测 + graph 聚合门禁 | 部分覆盖 |
 | count-based rarity MVP | rarity 单测 | 部分覆盖 |
 | workload-aware rarity baseline scorer | rarity/incident 单测 | 部分覆盖 |
+| rarity baseline maintenance primitive | rarity 单测 | 部分覆盖 |
 | graph/evidence subgraph/path/k-hop query | `e2e-graph-evidence` | 部分覆盖 |
 | incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
 | incident lifecycle attach evidence | `e2e-incident-attach-evidence` + store 单测 | 部分覆盖 |

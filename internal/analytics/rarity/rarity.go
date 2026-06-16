@@ -73,6 +73,57 @@ func (b Baseline) Count(workload, signal string) uint64 {
 	return 0
 }
 
+func (b *Baseline) Observe(signals []*signalv1.Signal) {
+	for _, sig := range signals {
+		signal := signalKey(sig)
+		if signal == "" {
+			continue
+		}
+		workload := workloadKey(sig)
+		b.Add(workload, signal, 1)
+		if workload != "global" {
+			b.Add("global", signal, 1)
+		}
+	}
+}
+
+func (b *Baseline) Add(workload, signal string, count uint64) {
+	workload = strings.TrimSpace(workload)
+	signal = strings.TrimSpace(signal)
+	if workload == "" {
+		workload = "global"
+	}
+	if signal == "" || count == 0 {
+		return
+	}
+	if b.WorkloadCounts == nil {
+		b.WorkloadCounts = map[string]map[string]uint64{}
+	}
+	if b.WorkloadCounts[workload] == nil {
+		b.WorkloadCounts[workload] = map[string]uint64{}
+	}
+	b.WorkloadCounts[workload][signal] += count
+}
+
+func (b *Baseline) Merge(other Baseline) {
+	for workload, signals := range other.WorkloadCounts {
+		for signal, count := range signals {
+			b.Add(workload, signal, count)
+		}
+	}
+}
+
+func (b Baseline) Snapshot() Baseline {
+	out := Baseline{WorkloadCounts: map[string]map[string]uint64{}}
+	for workload, signals := range b.WorkloadCounts {
+		out.WorkloadCounts[workload] = map[string]uint64{}
+		for signal, count := range signals {
+			out.WorkloadCounts[workload][signal] = count
+		}
+	}
+	return out
+}
+
 func signalRarity(sig *signalv1.Signal) float32 {
 	if sig.GetGlobalRarity() == 0 {
 		return 1

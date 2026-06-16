@@ -70,3 +70,50 @@ func TestWorkloadBaselineScorerKeepsUnknownWorkloadRare(t *testing.T) {
 		t.Fatalf("score = %f, want 80", got)
 	}
 }
+
+func TestBaselineObserveUpdatesWorkloadAndGlobalCounts(t *testing.T) {
+	var baseline Baseline
+	baseline.Observe([]*signalv1.Signal{{
+		Name: "download_by_lolbin",
+		Entities: []*signalv1.EntityRef{{
+			Kind: "container",
+			Key:  "checkout-api",
+		}},
+	}})
+	if got := baseline.Count("container:checkout-api", "download_by_lolbin"); got != 1 {
+		t.Fatalf("workload count = %d, want 1", got)
+	}
+	if got := baseline.Count("global", "download_by_lolbin"); got != 1 {
+		t.Fatalf("global count = %d, want 1", got)
+	}
+}
+
+func TestBaselineSnapshotIsDeepCopy(t *testing.T) {
+	baseline := Baseline{WorkloadCounts: map[string]map[string]uint64{
+		"host:node-a": {"reverse_shell_pattern": 2},
+	}}
+	snapshot := baseline.Snapshot()
+	snapshot.Add("host:node-a", "reverse_shell_pattern", 3)
+	if got := baseline.Count("host:node-a", "reverse_shell_pattern"); got != 2 {
+		t.Fatalf("baseline changed through snapshot, count = %d", got)
+	}
+	if got := snapshot.Count("host:node-a", "reverse_shell_pattern"); got != 5 {
+		t.Fatalf("snapshot count = %d, want 5", got)
+	}
+}
+
+func TestBaselineMergeAddsCounts(t *testing.T) {
+	baseline := Baseline{WorkloadCounts: map[string]map[string]uint64{
+		"global": {"payload_dropped": 1},
+	}}
+	baseline.Merge(Baseline{WorkloadCounts: map[string]map[string]uint64{
+		"global":              {"payload_dropped": 2},
+		"pod:checkout-api-01": {"payload_dropped": 4},
+	}})
+	if got := baseline.Count("global", "payload_dropped"); got != 3 {
+		t.Fatalf("global count = %d, want 3", got)
+	}
+	if got := baseline.Count("pod:checkout-api-01", "payload_dropped"); got != 4 {
+		t.Fatalf("pod count = %d, want 4", got)
+	}
+}
