@@ -309,6 +309,68 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/incident-evidence?" + q.Encode())
+	case "incident-evidence-attach":
+		req := map[string]any{}
+		node := map[string]string{}
+		edge := map[string]string{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--scenario":
+				i++
+				if i < len(args) {
+					req["scenario"] = args[i]
+				}
+			case "--incident-id":
+				i++
+				if i < len(args) {
+					req["incident_id"] = args[i]
+				}
+			case "--node-id":
+				i++
+				if i < len(args) {
+					node["id"] = args[i]
+				}
+			case "--node-kind":
+				i++
+				if i < len(args) {
+					node["kind"] = args[i]
+				}
+			case "--node-label":
+				i++
+				if i < len(args) {
+					node["label"] = args[i]
+				}
+			case "--edge-id":
+				i++
+				if i < len(args) {
+					edge["id"] = args[i]
+				}
+			case "--edge-from":
+				i++
+				if i < len(args) {
+					edge["from"] = args[i]
+				}
+			case "--edge-to":
+				i++
+				if i < len(args) {
+					edge["to"] = args[i]
+				}
+			case "--edge-kind":
+				i++
+				if i < len(args) {
+					edge["kind"] = args[i]
+				}
+			}
+		}
+		evidence := map[string]any{}
+		if len(node) > 0 {
+			evidence["nodes"] = []map[string]string{node}
+		}
+		if len(edge) > 0 {
+			evidence["edges"] = []map[string]string{edge}
+		}
+		req["evidence"] = evidence
+		return httpPostJSON(base+"/api/v1/incident-evidence", req)
 	case "incident-lifecycle":
 		req := map[string]string{}
 		for i := 1; i < len(args); i++ {

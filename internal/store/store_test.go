@@ -116,6 +116,46 @@ func TestIncidentLifecycleStatusPersistsAcrossUpsert(t *testing.T) {
 	}
 }
 
+func TestIncidentEvidenceAttachPersistsAcrossUpsert(t *testing.T) {
+	st := &Store{}
+	sig := testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash")
+	inc := &incidentv1.Incident{
+		Id:                  "inc-a",
+		Scenario:            "a",
+		Summary:             "same story",
+		LineageIds:          []string{"lin-a"},
+		Evidence:            &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-bash", Kind: "process"}}},
+		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
+		ContributingSignals: []*signalv1.Signal{sig},
+	}
+	st.AddIncident(inc)
+	if _, ok := st.AttachIncidentEvidence("", "a", &incidentv1.EvidenceSubgraph{
+		Nodes: []*incidentv1.GraphNode{
+			{Id: "user:root", Kind: "user", Label: "root"},
+			{Id: "process:p-bash", Kind: "process"},
+		},
+		Edges: []*incidentv1.GraphEdge{{From: "process:p-bash", To: "user:root", Kind: "ran_as"}},
+	}); !ok {
+		t.Fatal("AttachIncidentEvidence ok = false")
+	}
+	st.AddIncident(&incidentv1.Incident{
+		Id:                  "inc-b",
+		Scenario:            "a",
+		Summary:             "same story",
+		LineageIds:          []string{"lin-a"},
+		Evidence:            &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-bash", Kind: "process"}}},
+		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
+		ContributingSignals: []*signalv1.Signal{sig},
+	})
+	got := st.ListIncidents("a")[0].GetEvidence()
+	if len(got.GetNodes()) != 2 {
+		t.Fatalf("nodes after attach/upsert = %d, want 2: %+v", len(got.GetNodes()), got.GetNodes())
+	}
+	if len(got.GetEdges()) != 1 || got.GetEdges()[0].GetKind() != "ran_as" {
+		t.Fatalf("edges after attach/upsert = %+v", got.GetEdges())
+	}
+}
+
 func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	st := &Store{}
 	if inserted := st.AddEvent(testEvent("ev-1", "a")); !inserted {

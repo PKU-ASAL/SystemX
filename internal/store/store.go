@@ -192,6 +192,7 @@ func (s *Store) AddIncident(inc *incidentv1.Incident) bool {
 				inc.StatusReason = existing.GetStatusReason()
 				inc.StatusActor = existing.GetStatusActor()
 			}
+			inc.Evidence = mergeEvidence(inc.GetEvidence(), existing.GetEvidence())
 			s.Incidents[i] = inc
 			return false
 		}
@@ -557,6 +558,7 @@ func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signa
 			inc.Status = existing.GetStatus()
 			inc.StatusReason = existing.GetStatusReason()
 			inc.StatusActor = existing.GetStatusActor()
+			inc.Evidence = mergeEvidence(inc.GetEvidence(), existing.GetEvidence())
 		}
 	}
 	s.Signals = append(s.Signals, cloudSignals...)
@@ -729,6 +731,25 @@ func (s *Store) UpdateIncidentStatus(id, scenario, status, reason, actor string)
 		}
 		inc.StatusReason = reason
 		inc.StatusActor = actor
+		return inc, true
+	}
+	return nil, false
+}
+
+func (s *Store) AttachIncidentEvidence(id, scenario string, evidence *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool) {
+	if (id == "" && scenario == "") || evidence == nil {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, inc := range s.Incidents {
+		if id != "" && inc.GetId() != id {
+			continue
+		}
+		if scenario != "" && inc.GetScenario() != scenario {
+			continue
+		}
+		inc.Evidence = mergeEvidence(inc.GetEvidence(), evidence)
 		return inc, true
 	}
 	return nil, false
@@ -920,6 +941,64 @@ func defaultIncidentStatus(inc *incidentv1.Incident) {
 	if inc != nil && inc.GetStatus() == "" {
 		inc.Status = "open"
 	}
+}
+
+func mergeEvidence(base, extra *incidentv1.EvidenceSubgraph) *incidentv1.EvidenceSubgraph {
+	if base == nil && extra == nil {
+		return nil
+	}
+	out := &incidentv1.EvidenceSubgraph{}
+	seenNodes := map[string]bool{}
+	seenEdges := map[string]bool{}
+	appendNode := func(node *incidentv1.GraphNode) {
+		if node == nil {
+			return
+		}
+		key := graphNodeKey(node)
+		if key == "" || seenNodes[key] {
+			return
+		}
+		seenNodes[key] = true
+		out.Nodes = append(out.Nodes, node)
+	}
+	appendEdge := func(edge *incidentv1.GraphEdge) {
+		if edge == nil {
+			return
+		}
+		key := graphEdgeKey(edge)
+		if key == "" || seenEdges[key] {
+			return
+		}
+		seenEdges[key] = true
+		out.Edges = append(out.Edges, edge)
+	}
+	for _, node := range base.GetNodes() {
+		appendNode(node)
+	}
+	for _, node := range extra.GetNodes() {
+		appendNode(node)
+	}
+	for _, edge := range base.GetEdges() {
+		appendEdge(edge)
+	}
+	for _, edge := range extra.GetEdges() {
+		appendEdge(edge)
+	}
+	return out
+}
+
+func graphNodeKey(node *incidentv1.GraphNode) string {
+	if node.GetId() != "" {
+		return node.GetId()
+	}
+	return strings.Join([]string{node.GetKind(), node.GetLabel()}, "\x00")
+}
+
+func graphEdgeKey(edge *incidentv1.GraphEdge) string {
+	if edge.GetId() != "" {
+		return edge.GetId()
+	}
+	return strings.Join([]string{edge.GetFrom(), edge.GetTo(), edge.GetKind()}, "\x00")
 }
 
 func sortedStrings(in []string) []string {

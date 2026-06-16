@@ -232,6 +232,7 @@ make -C test e2e-response-all
 |---|---|---|
 | `e2e-graph-evidence` | `harness/e2e-graph-evidence.sh` | staged-drop 的共享 file 节点和 file -> socket connect edge 可通过 incident evidence graph JSON、shortest path、k-hop 查询 |
 | `e2e-incident-lifecycle` | `harness/e2e-incident-lifecycle.sh` | incident 可 suppress / close / reopen,状态、原因和 actor 可查询 |
+| `e2e-incident-attach-evidence` | `harness/e2e-incident-attach-evidence.sh` | incident 可追加 evidence node/edge,并通过 incident evidence graph 查询 |
 | `e2e-graph-all` | Make 聚合 | 当前聚合 graph/evidence/incident gate |
 
 聚合入口:
@@ -427,7 +428,8 @@ make -C test e2e-agent-benign-container
 | count-based rarity MVP | rarity 单测 | 部分覆盖 |
 | graph/evidence subgraph/path/k-hop query | `e2e-graph-evidence` | 部分覆盖 |
 | incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
-| incident lifecycle merge/attach evidence | 当前未实现 merge/attach evidence | 未覆盖 |
+| incident lifecycle attach evidence | `e2e-incident-attach-evidence` + store 单测 | 部分覆盖 |
+| incident lifecycle merge | 当前未实现 incident merge | 未覆盖 |
 | Postgres durable store | 无 e2e | 未覆盖 |
 | Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |

@@ -55,6 +55,12 @@ type incidentLifecycleRequest struct {
 	Actor      string `json:"actor,omitempty"`
 }
 
+type incidentEvidenceAttachRequest struct {
+	IncidentID string          `json:"incident_id"`
+	Scenario   string          `json:"scenario"`
+	Evidence   json.RawMessage `json:"evidence"`
+}
+
 type AgentListItem struct {
 	AgentID        string                       `json:"agent_id"`
 	HostID         string                       `json:"host_id"`
@@ -358,6 +364,14 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.attachIncidentEvidence(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	q := r.URL.Query()
 	inc, ok := s.store.GetIncident(q.Get("incident_id"), q.Get("scenario"))
 	if !ok {
@@ -381,6 +395,37 @@ func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProtoJSON(w, inc.GetEvidence())
+}
+
+func (s *Server) attachIncidentEvidence(w http.ResponseWriter, r *http.Request) {
+	var req incidentEvidenceAttachRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode incident evidence: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.IncidentID == "" && req.Scenario == "" {
+		http.Error(w, "incident_id or scenario is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Evidence) == 0 {
+		http.Error(w, "evidence is required", http.StatusBadRequest)
+		return
+	}
+	evidence := &incidentv1.EvidenceSubgraph{}
+	if err := protojson.Unmarshal(req.Evidence, evidence); err != nil {
+		http.Error(w, fmt.Sprintf("decode evidence: %v", err), http.StatusBadRequest)
+		return
+	}
+	inc, ok := s.store.AttachIncidentEvidence(req.IncidentID, req.Scenario, evidence)
+	if !ok {
+		http.Error(w, "incident not found", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeProtoJSON(w, inc)
 }
 
 func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {

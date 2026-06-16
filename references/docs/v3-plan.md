@@ -320,6 +320,8 @@ Status: partial implementation started.
 - Incident proto 已有最小 lifecycle status 字段: `open` / `closed` / `suppressed`。
 - manager `POST /api/v1/incident-lifecycle` 与 `sysarmorctl incident-lifecycle` 可更新 incident 状态、原因和操作者。
 - `make -C test e2e-incident-lifecycle` 验证 incident 可 suppress / close / reopen 并可查询。
+- manager `POST /api/v1/incident-evidence` 与 `sysarmorctl incident-evidence-attach` 可向既有 incident 追加 evidence subgraph,并在 incident 重新派生/upsert 时保留已追加证据。
+- `make -C test e2e-incident-attach-evidence` 验证 incident 可追加 evidence node/edge 并通过 evidence graph 查询。
 - `internal/analytics/converge` 提供最小 converge decision 边界,从 ingest 中拆出 terminal / cross-lineage / additive threshold 成案判断。
 - `internal/analytics/correlate` 提供最小 signal correlation view,从 ingest 中拆出 signal 分组、scenario 选择、terminal 判断和 entity 聚合。
 - `internal/analytics/incident` 提供 incident builder,从 ingest 中拆出 Incident 构造、evidence 绑定、lineage/terminal 提取和默认 lifecycle status。
@@ -330,7 +332,7 @@ Status: partial implementation started.
 
 仍未完成:
 
-- incident lifecycle API: merge / attach evidence。
+- incident lifecycle API: merge。
 - 生产级 rarity baseline: CMS / IDF / workload baseline。
 
 Package split:
@@ -393,6 +395,7 @@ Rarity interface:
 - Existing MVP incidents are produced through the new converge/incident package boundary.
 - Evidence subgraph is produced by graph/evidence APIs, not ad hoc assembly only.
 - CLI can query incident evidence path as JSON.
+- Incident evidence can be attached and survives incident upsert/recompute.
 - Existing `apt-fileless-c2`, `apt-staged-drop`, and `benign-ci-noise` semantics remain stable.
 
 ### Suggested Tests
@@ -401,6 +404,7 @@ Rarity interface:
 go test ./...
 make -C test e2e-graph-evidence
 make -C test e2e-incident-lifecycle
+make -C test e2e-incident-attach-evidence
 make -C test e2e TOPO=container SCENARIO=apt-staged-drop DUR=12
 ```
 
