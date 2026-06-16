@@ -556,6 +556,54 @@ func TestOpenPostgresQueriesResponseAuditFromTablePath(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresQueriesPolicyControlTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "policy-query-table-pg"
+	policy.Version = 12
+	policy.Published = true
+	policyRaw, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatalf("marshal policy: %v", err)
+	}
+	assignment := policymodel.Assignment{
+		AssignmentID:  "assignment-query-table-pg",
+		TenantID:      "default",
+		AgentID:       "agent-policy-query-pg",
+		PolicyID:      "policy-query-table-pg",
+		PolicyVersion: 12,
+	}
+	assignmentRaw, err := json.Marshal(assignment)
+	if err != nil {
+		t.Fatalf("marshal assignment: %v", err)
+	}
+	fakeSetPolicyRows(policyRaw)
+	policies := result.Store.ListPolicies("default")
+	if len(policies) != 1 || policies[0].PolicyID != "policy-query-table-pg" || policies[0].Version != 12 {
+		t.Fatalf("policies from postgres table = %+v", policies)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT data FROM policies") {
+		t.Fatalf("ListPolicies did not query policies table: %s", fakeLastQuery())
+	}
+	fakeSetAssignmentRows(assignmentRaw)
+	assignments := result.Store.ListAssignments("default", "agent-policy-query-pg")
+	if len(assignments) != 1 || assignments[0].AssignmentID != "assignment-query-table-pg" || assignments[0].PolicyID != "policy-query-table-pg" {
+		t.Fatalf("assignments from postgres table = %+v", assignments)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT data FROM policy_assignments") {
+		t.Fatalf("ListAssignments did not query policy_assignments table: %s", fakeLastQuery())
+	}
+}
+
 func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -1000,15 +1048,17 @@ func init() {
 
 var fakeState struct {
 	sync.Mutex
-	lastQuery    string
-	execLog      []string
-	execErr      error
-	snapshot     []byte
-	eventRows    [][]byte
-	signalRows   [][]byte
-	incidentRows [][]byte
-	responseRows [][]driver.Value
-	closeN       int
+	lastQuery      string
+	execLog        []string
+	execErr        error
+	snapshot       []byte
+	eventRows      [][]byte
+	signalRows     [][]byte
+	incidentRows   [][]byte
+	responseRows   [][]driver.Value
+	policyRows     [][]byte
+	assignmentRows [][]byte
+	closeN         int
 }
 
 func fakeSetExecError(err error) {
@@ -1021,6 +1071,8 @@ func fakeSetExecError(err error) {
 	fakeState.signalRows = nil
 	fakeState.incidentRows = nil
 	fakeState.responseRows = nil
+	fakeState.policyRows = nil
+	fakeState.assignmentRows = nil
 	fakeState.closeN = 0
 }
 
@@ -1068,6 +1120,24 @@ func fakeSetResponseRows(values ...driver.Value) {
 			ack = cloneDriverBytes(values[i+1])
 		}
 		fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+	}
+}
+
+func fakeSetPolicyRows(rows ...[]byte) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.policyRows = nil
+	for _, row := range rows {
+		fakeState.policyRows = append(fakeState.policyRows, append([]byte(nil), row...))
+	}
+}
+
+func fakeSetAssignmentRows(rows ...[]byte) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.assignmentRows = nil
+	for _, row := range rows {
+		fakeState.assignmentRows = append(fakeState.assignmentRows, append([]byte(nil), row...))
 	}
 }
 
@@ -1184,6 +1254,24 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 		ack := cloneDriverBytes(args[8].Value)
 		fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
 	}
+	if strings.Contains(s.query, "INSERT INTO policies") && len(args) >= 7 {
+		dataArg := args[len(args)-1].Value
+		switch data := dataArg.(type) {
+		case []byte:
+			fakeState.policyRows = append(fakeState.policyRows, append([]byte(nil), data...))
+		case string:
+			fakeState.policyRows = append(fakeState.policyRows, []byte(data))
+		}
+	}
+	if strings.Contains(s.query, "INSERT INTO policy_assignments") && len(args) >= 8 {
+		dataArg := args[len(args)-1].Value
+		switch data := dataArg.(type) {
+		case []byte:
+			fakeState.assignmentRows = append(fakeState.assignmentRows, append([]byte(nil), data...))
+		case string:
+			fakeState.assignmentRows = append(fakeState.assignmentRows, []byte(data))
+		}
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -1249,6 +1337,26 @@ func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Row
 			rows = append(rows, append([]driver.Value(nil), row...))
 		}
 		return &fakeRows{cols: []string{"command", "ack"}, rows: rows}, nil
+	}
+	if strings.Contains(s.query, "SELECT data FROM policies") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT data FROM policies") && len(fakeState.policyRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.policyRows))
+		for _, row := range fakeState.policyRows {
+			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
+		}
+		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
+	}
+	if strings.Contains(s.query, "SELECT data FROM policy_assignments") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT data FROM policy_assignments") && len(fakeState.assignmentRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.assignmentRows))
+		for _, row := range fakeState.assignmentRows {
+			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
+		}
+		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
 	}
 	return &fakeRows{}, nil
 }

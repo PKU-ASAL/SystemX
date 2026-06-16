@@ -63,6 +63,12 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		func(tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
 			return queryResponses(context.Background(), db, tenantID, agentID)
 		},
+		func(tenantID string) ([]policymodel.Policy, error) {
+			return queryPolicies(context.Background(), db, tenantID)
+		},
+		func(tenantID, agentID string) ([]policymodel.Assignment, error) {
+			return queryPolicyAssignments(context.Background(), db, tenantID, agentID)
+		},
 	)
 	return st, nil
 }
@@ -268,6 +274,63 @@ ORDER BY updated_at ASC, response_id ASC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate postgres response audit: %w", err)
+	}
+	return out, nil
+}
+
+func queryPolicies(ctx context.Context, db *sql.DB, tenantID string) ([]policymodel.Policy, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM policies
+WHERE ($1 = '' OR tenant_id = $1)
+ORDER BY tenant_id ASC, policy_id ASC, version ASC
+`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres policies: %w", err)
+	}
+	defer rows.Close()
+	out := []policymodel.Policy{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres policy: %w", err)
+		}
+		var policy policymodel.Policy
+		if err := json.Unmarshal(raw, &policy); err != nil {
+			return nil, fmt.Errorf("decode postgres policy: %w", err)
+		}
+		out = append(out, policy)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres policies: %w", err)
+	}
+	return out, nil
+}
+
+func queryPolicyAssignments(ctx context.Context, db *sql.DB, tenantID, agentID string) ([]policymodel.Assignment, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM policy_assignments
+WHERE ($1 = '' OR tenant_id = $1)
+  AND ($2 = '' OR agent_id = $2)
+ORDER BY tenant_id ASC, assignment_id ASC
+`, tenantID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres policy assignments: %w", err)
+	}
+	defer rows.Close()
+	out := []policymodel.Assignment{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres policy assignment: %w", err)
+		}
+		var assignment policymodel.Assignment
+		if err := json.Unmarshal(raw, &assignment); err != nil {
+			return nil, fmt.Errorf("decode postgres policy assignment: %w", err)
+		}
+		out = append(out, assignment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres policy assignments: %w", err)
 	}
 	return out, nil
 }

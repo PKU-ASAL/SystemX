@@ -29,30 +29,32 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu             sync.RWMutex
-	path           string
-	backendInfo    *Info
-	saveState      func(State) error
-	listEvents     func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
-	listSignals    func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
-	listIncidents  func(scenario string) ([]*incidentv1.Incident, error)
-	listResponses  func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
-	Agents         []*analyticsv1.AgentHello
-	Events         []*eventv1.CanonicalEvent
-	Signals        []*signalv1.Signal
-	Incidents      []*incidentv1.Incident
-	Health         map[string]agenthealth.AgentHealth
-	Rules          []policymodel.RuleContent
-	Policies       []policymodel.Policy
-	Assignments    []policymodel.Assignment
-	PolicyAudits   []policymodel.AuditRecord
-	Responses      []responsemodel.Command
-	ResponseAcks   []responsemodel.Ack
-	Pullbacks      []link1model.EvidencePullbackRequest
-	Link1Sessions  []Link1Session
-	OperatorRoles  []OperatorRoleBinding
-	Metrics        Metrics
-	RarityBaseline rarity.Baseline
+	mu              sync.RWMutex
+	path            string
+	backendInfo     *Info
+	saveState       func(State) error
+	listEvents      func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
+	listSignals     func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
+	listIncidents   func(scenario string) ([]*incidentv1.Incident, error)
+	listResponses   func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
+	listPolicies    func(tenantID string) ([]policymodel.Policy, error)
+	listAssignments func(tenantID, agentID string) ([]policymodel.Assignment, error)
+	Agents          []*analyticsv1.AgentHello
+	Events          []*eventv1.CanonicalEvent
+	Signals         []*signalv1.Signal
+	Incidents       []*incidentv1.Incident
+	Health          map[string]agenthealth.AgentHealth
+	Rules           []policymodel.RuleContent
+	Policies        []policymodel.Policy
+	Assignments     []policymodel.Assignment
+	PolicyAudits    []policymodel.AuditRecord
+	Responses       []responsemodel.Command
+	ResponseAcks    []responsemodel.Ack
+	Pullbacks       []link1model.EvidencePullbackRequest
+	Link1Sessions   []Link1Session
+	OperatorRoles   []OperatorRoleBinding
+	Metrics         Metrics
+	RarityBaseline  rarity.Baseline
 }
 
 type Info struct {
@@ -207,6 +209,8 @@ func (s *Store) ConfigureQueryHooks(
 	listSignals func(string, string, bool) ([]*signalv1.Signal, error),
 	listIncidents func(string) ([]*incidentv1.Incident, error),
 	listResponses func(string, string) ([]responsemodel.AuditRecord, error),
+	listPolicies func(string) ([]policymodel.Policy, error),
+	listAssignments func(string, string) ([]policymodel.Assignment, error),
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -214,6 +218,8 @@ func (s *Store) ConfigureQueryHooks(
 	s.listSignals = listSignals
 	s.listIncidents = listIncidents
 	s.listResponses = listResponses
+	s.listPolicies = listPolicies
+	s.listAssignments = listAssignments
 }
 
 func (s *Store) Info() Info {
@@ -437,6 +443,15 @@ func (s *Store) ListPolicyAudits(tenantID, policyID string) []policymodel.AuditR
 
 func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
 	s.mu.RLock()
+	listPolicies := s.listPolicies
+	s.mu.RUnlock()
+	if listPolicies != nil {
+		policies, err := listPolicies(tenantID)
+		if err == nil && len(policies) > 0 {
+			return policies
+		}
+	}
+	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]policymodel.Policy, 0, len(s.Policies))
 	for _, policy := range s.Policies {
@@ -572,6 +587,15 @@ func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Ass
 }
 
 func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignment {
+	s.mu.RLock()
+	listAssignments := s.listAssignments
+	s.mu.RUnlock()
+	if listAssignments != nil {
+		assignments, err := listAssignments(tenantID, agentID)
+		if err == nil && len(assignments) > 0 {
+			return assignments
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]policymodel.Assignment, 0, len(s.Assignments))
