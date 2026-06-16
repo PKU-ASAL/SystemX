@@ -568,6 +568,8 @@ func newBatchUploader(manager, transport string, timeout time.Duration, token st
 		return uploader.NewHTTPUploaderWithOptions(manager, timeout, token), nil
 	case "grpc":
 		return uploader.NewGRPCUploaderWithOptions(manager, timeout, token), nil
+	case "stream":
+		return uploader.NewStreamUploaderWithOptions(manager, timeout, token), nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}

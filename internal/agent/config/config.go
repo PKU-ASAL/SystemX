@@ -120,8 +120,8 @@ func (c Config) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
-	if c.Manager.Transport != "http" && c.Manager.Transport != "grpc" {
-		return fmt.Errorf("manager.transport must be http or grpc")
+	if c.Manager.Transport != "http" && c.Manager.Transport != "grpc" && c.Manager.Transport != "stream" {
+		return fmt.Errorf("manager.transport must be http, grpc or stream")
 	}
 	if c.Sensor.Backend != "tetragon" && c.Sensor.Backend != "fake" {
 		return fmt.Errorf("sensor.backend must be tetragon or fake")

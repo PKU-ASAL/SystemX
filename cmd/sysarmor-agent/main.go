@@ -33,7 +33,7 @@ func main() {
 	}
 
 	manager := flag.String("manager", "127.0.0.1:9443", "sysarmor-manager address")
-	transport := flag.String("transport", "http", "upload transport: http or grpc")
+	transport := flag.String("transport", "http", "upload transport: http, grpc or stream")
 	agentID := flag.String("agent-id", "agent-dev", "agent identifier")
 	hostID := flag.String("host-id", "host-dev", "host identifier")
 	tenantID := flag.String("tenant-id", "default", "tenant identifier")
@@ -153,6 +153,8 @@ func newUploader(manager, transport string) (uploader.BatchUploader, error) {
 		return uploader.NewHTTPUploader(manager), nil
 	case "grpc":
 		return uploader.NewGRPCUploader(manager), nil
+	case "stream":
+		return uploader.NewStreamUploader(manager), nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}

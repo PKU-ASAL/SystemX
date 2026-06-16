@@ -1157,6 +1157,7 @@ func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
 	}{
 		{name: "http", transport: "http"},
 		{name: "grpc", transport: "grpc"},
+		{name: "stream", transport: "stream"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			up, err := newBatchUploader("127.0.0.1:9443", tc.transport, 250*time.Millisecond, "dev-token")
