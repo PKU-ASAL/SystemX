@@ -29,9 +29,25 @@ func TestValidateCommandWithPolicy(t *testing.T) {
 }
 
 func TestApplyPolicyRequirementsMarksApprovalRequired(t *testing.T) {
-	cmd := ApplyPolicyRequirements(Command{Action: "collect"}, Policy{ApprovalRequired: true})
-	if !cmd.ApprovalRequired {
-		t.Fatalf("approval_required = false")
+	cmd := ApplyPolicyRequirements(Command{Action: "collect"}, Policy{ApprovalRequired: true, ApprovalThreshold: 2, ApprovalRoles: []string{"responder", "security_admin"}})
+	if !cmd.ApprovalRequired || cmd.ApprovalThreshold != 2 || len(cmd.ApprovalRoles) != 2 {
+		t.Fatalf("approval requirements = %+v", cmd)
+	}
+}
+
+func TestApprovalCountDeduplicatesActorsAndChecksRoles(t *testing.T) {
+	cmd := Command{
+		ApprovalRoles: []string{"responder"},
+		Approvals: []Approval{
+			{Actor: "alice", Role: "responder", Approved: true},
+			{Actor: "alice", Role: "responder", Approved: true},
+			{Actor: "bob", Role: "viewer", Approved: true},
+			{Actor: "carol", Role: "responder", Approved: false},
+			{Actor: "dave", Role: "responder", Approved: true},
+		},
+	}
+	if got := ApprovalCount(cmd); got != 2 {
+		t.Fatalf("approval count = %d, want 2", got)
 	}
 }
 

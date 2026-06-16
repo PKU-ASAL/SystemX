@@ -13,10 +13,12 @@ const (
 )
 
 type Policy struct {
-	AllowedActions   []string `json:"allowed_actions,omitempty"`
-	AllowedModes     []string `json:"allowed_modes,omitempty"`
-	ApprovalRequired bool     `json:"approval_required,omitempty"`
-	AllowDestructive bool     `json:"allow_destructive,omitempty"`
+	AllowedActions    []string `json:"allowed_actions,omitempty"`
+	AllowedModes      []string `json:"allowed_modes,omitempty"`
+	ApprovalRequired  bool     `json:"approval_required,omitempty"`
+	ApprovalThreshold uint32   `json:"approval_threshold,omitempty"`
+	ApprovalRoles     []string `json:"approval_roles,omitempty"`
+	AllowDestructive  bool     `json:"allow_destructive,omitempty"`
 }
 
 type Decision struct {
@@ -37,26 +39,37 @@ type Intent struct {
 }
 
 type Command struct {
-	ResponseID       string    `json:"response_id"`
-	TenantID         string    `json:"tenant_id"`
-	AgentID          string    `json:"agent_id"`
-	PolicyID         string    `json:"policy_id,omitempty"`
-	PolicyVersion    uint64    `json:"policy_version,omitempty"`
-	SignalID         string    `json:"signal_id,omitempty"`
-	Scenario         string    `json:"scenario,omitempty"`
-	Scope            Scope     `json:"scope,omitempty"`
-	Action           string    `json:"action"`
-	Mode             string    `json:"mode"`
-	Target           string    `json:"target,omitempty"`
-	Reason           string    `json:"reason,omitempty"`
-	Status           string    `json:"status"`
-	Actor            string    `json:"actor,omitempty"`
-	ApprovalRequired bool      `json:"approval_required,omitempty"`
-	ApprovalStatus   string    `json:"approval_status,omitempty"`
-	ApprovedBy       string    `json:"approved_by,omitempty"`
-	ApprovedAt       time.Time `json:"approved_at,omitempty"`
-	CreatedAt        time.Time `json:"created_at,omitempty"`
-	UpdatedAt        time.Time `json:"updated_at,omitempty"`
+	ResponseID        string     `json:"response_id"`
+	TenantID          string     `json:"tenant_id"`
+	AgentID           string     `json:"agent_id"`
+	PolicyID          string     `json:"policy_id,omitempty"`
+	PolicyVersion     uint64     `json:"policy_version,omitempty"`
+	SignalID          string     `json:"signal_id,omitempty"`
+	Scenario          string     `json:"scenario,omitempty"`
+	Scope             Scope      `json:"scope,omitempty"`
+	Action            string     `json:"action"`
+	Mode              string     `json:"mode"`
+	Target            string     `json:"target,omitempty"`
+	Reason            string     `json:"reason,omitempty"`
+	Status            string     `json:"status"`
+	Actor             string     `json:"actor,omitempty"`
+	ApprovalRequired  bool       `json:"approval_required,omitempty"`
+	ApprovalStatus    string     `json:"approval_status,omitempty"`
+	ApprovalThreshold uint32     `json:"approval_threshold,omitempty"`
+	ApprovalRoles     []string   `json:"approval_roles,omitempty"`
+	Approvals         []Approval `json:"approvals,omitempty"`
+	ApprovedBy        string     `json:"approved_by,omitempty"`
+	ApprovedAt        time.Time  `json:"approved_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at,omitempty"`
+	UpdatedAt         time.Time  `json:"updated_at,omitempty"`
+}
+
+type Approval struct {
+	Actor      string    `json:"actor,omitempty"`
+	Role       string    `json:"role,omitempty"`
+	Approved   bool      `json:"approved"`
+	Reason     string    `json:"reason,omitempty"`
+	ObservedAt time.Time `json:"observed_at,omitempty"`
 }
 
 type Ack struct {
@@ -141,8 +154,58 @@ func ValidateCommandWithPolicy(cmd Command, policy Policy) Decision {
 func ApplyPolicyRequirements(cmd Command, policy Policy) Command {
 	if policy.ApprovalRequired {
 		cmd.ApprovalRequired = true
+		if policy.ApprovalThreshold > 0 {
+			cmd.ApprovalThreshold = policy.ApprovalThreshold
+		}
+		if len(policy.ApprovalRoles) > 0 {
+			cmd.ApprovalRoles = append([]string(nil), policy.ApprovalRoles...)
+		}
 	}
 	return cmd
+}
+
+func ApprovalThreshold(cmd Command) uint32 {
+	if cmd.ApprovalThreshold == 0 {
+		return 1
+	}
+	return cmd.ApprovalThreshold
+}
+
+func ApprovalRoleAllowed(cmd Command, role string) bool {
+	if len(cmd.ApprovalRoles) == 0 {
+		return true
+	}
+	role = strings.TrimSpace(role)
+	if role == "admin" {
+		return true
+	}
+	return containsTrimmed(cmd.ApprovalRoles, role)
+}
+
+func ApprovalCount(cmd Command) uint32 {
+	seen := map[string]bool{}
+	var count uint32
+	for _, approval := range cmd.Approvals {
+		if !approval.Approved {
+			continue
+		}
+		if !ApprovalRoleAllowed(cmd, approval.Role) {
+			continue
+		}
+		key := strings.TrimSpace(approval.Actor)
+		if key == "" {
+			key = strings.TrimSpace(approval.Role)
+		}
+		if key == "" {
+			key = fmt.Sprintf("approval-%d", count+1)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		count++
+	}
+	return count
 }
 
 func ScopeDecision(command, runtime Scope, runtimeKnown bool) Decision {

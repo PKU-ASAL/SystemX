@@ -212,7 +212,7 @@ make -C test e2e-policy-all
 
 ### 5.4 Response / Enforce
 
-这些脚本验证 v3 response/enforce 的 observe-only 骨架:manager 能创建 response command,agent 能接收并以非破坏方式返回 ack,manager 能持久化审计记录。需要人工确认的命令可以先停在 `pending_approval`,不会进入 agent pending/downlink,审批通过后才会变成可执行的 pending。
+这些脚本验证 v3 response/enforce 的 observe-only 骨架:manager 能创建 response command,agent 能接收并以非破坏方式返回 ack,manager 能持久化审计记录。需要人工确认的命令可以先停在 `pending_approval`,不会进入 agent pending/downlink;策略可要求多级审批阈值和审批角色,满足阈值后才会变成可执行的 pending。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -221,12 +221,14 @@ make -C test e2e-policy-all
 | `e2e-response-scope-deny` | `harness/e2e-response-scope-deny.sh` | response command 的显式 scope 必须匹配 agent health runtime scope,否则 denied 且不进入 pending |
 | `e2e-response-audit` | `harness/e2e-response-audit.sh` | terminal signal 的结构化 response intent 可转换为 observe-only response decision,并进入 audit |
 | `e2e-response-approval` | `harness/e2e-response-approval.sh` | `approval_required` command 先进入 `pending_approval`,审批前不会 pending,审批后进入 pending |
+| `e2e-response-multi-approval` | Go HTTP/API test | response policy 可要求审批阈值和审批角色,错误角色拒绝,partial 不进入 pending,满足阈值后才 pending |
 | `e2e-response-all` | Make 聚合 | 当前聚合 response/enforce observe-only gate |
 
 Go 单测同时覆盖:
 
 - response policy allowlist: allowed actions / allowed modes / destructive action 显式开关。
 - policy-driven approval requirement: effective policy 的 `response_policy.approval_required` 可让 response command 自动进入 `pending_approval`。
+- response multi-approval contract: `approval_threshold` / `approval_roles` / approval history / partial approval state。
 
 聚合入口:
 
@@ -486,6 +488,7 @@ make -C test e2e-agent-benign-container
 | response allowed scopes | `e2e-response-scope-deny` | 部分覆盖 |
 | response approval requirement | `e2e-response-approval` + store 单测 | 部分覆盖 |
 | response policy allowlist / policy-driven approval | response/HTTP 单测 | 部分覆盖 |
+| response multi-approval threshold/roles | `e2e-response-multi-approval` + response/store/HTTP 单测 | 部分覆盖 |
 | analytics correlate/converge/incident/rarity 包边界 | correlate/converge/incident/rarity 单测 + graph 聚合门禁 | 部分覆盖 |
 | count-based rarity MVP | rarity 单测 | 部分覆盖 |
 | workload-aware rarity baseline scorer | rarity/incident 单测 | 部分覆盖 |

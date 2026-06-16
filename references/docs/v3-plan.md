@@ -254,10 +254,12 @@ Status: partial implementation started.
 - `make -C test e2e-response-audit` 验证 signal intent -> response decision -> audit 查询闭环。
 - manager `POST /api/v1/response-approvals` 与 `sysarmorctl response-approval` 可把 `approval_required` command 从 `pending_approval` 转为 `pending` 或 `denied`。
 - `make -C test e2e-response-approval` 验证待审批 response 不会进入 agent pending,审批通过后才会进入 pending。
+- response policy 支持最小多级审批合约:`approval_threshold` 和 `approval_roles`;response command 会记录 approval history,达到阈值后才会从 `pending_approval` 进入 `pending`。
+- `make -C test e2e-response-multi-approval` 验证错误审批角色不能通过,单次审批只能进入 partial,满足阈值后才会进入 agent pending。
 
 仍未完成:
 
-- 多级审批/RBAC/生产身份认证。
+- 生产身份认证和完整 RBAC;当前已有静态 operator role gate 与 response 多级审批合约,但还没有真实身份、角色绑定、审批组、审批策略继承或审计签名。
 
 ### Deliverables
 
@@ -271,6 +273,7 @@ Status: partial implementation started.
   - allowed scopes
   - observe-only / enforce mode
   - approval requirement
+  - approval threshold and approver roles
 - Response command model:
   - `response_id`
   - `policy_id`

@@ -38,7 +38,7 @@ type ManagerStore interface {
 	AddAgent(*analyticsv1.AgentHello)
 	AddEvent(*eventv1.CanonicalEvent) bool
 	AddSignal(*signalv1.Signal) bool
-	ApproveResponse(string, string, string, bool, string, string) (responsemodel.Command, bool)
+	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(link1model.EvidencePullbackResult) (link1model.EvidencePullbackRequest, bool)
@@ -119,6 +119,7 @@ type responseApprovalRequest struct {
 	AgentID    string `json:"agent_id"`
 	Approved   bool   `json:"approved"`
 	Actor      string `json:"actor,omitempty"`
+	Role       string `json:"role,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 }
 
@@ -514,6 +515,19 @@ func (s *Server) actorFromRequest(r *http.Request, explicit string) string {
 		return explicit
 	}
 	return r.Header.Get("X-SysArmor-Actor")
+}
+
+func (s *Server) roleFromRequest(r *http.Request, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
+		role = strings.TrimSpace(role)
+		if role != "" {
+			return role
+		}
+	}
+	return ""
 }
 
 func (s *Server) link1Sessions(w http.ResponseWriter, r *http.Request) {
@@ -1035,7 +1049,7 @@ func (s *Server) responseApprovals(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "response_id is required", http.StatusBadRequest)
 		return
 	}
-	cmd, ok := s.store.ApproveResponse(req.TenantID, req.AgentID, req.ResponseID, req.Approved, s.actorFromRequest(r, req.Actor), req.Reason)
+	cmd, ok := s.store.ApproveResponse(req.TenantID, req.AgentID, req.ResponseID, req.Approved, s.actorFromRequest(r, req.Actor), s.roleFromRequest(r, req.Role), req.Reason)
 	if !ok {
 		http.Error(w, "response command not found", http.StatusNotFound)
 		return

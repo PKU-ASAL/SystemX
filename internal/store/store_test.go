@@ -117,7 +117,7 @@ func TestApproveResponseMovesPendingApprovalToPending(t *testing.T) {
 	if got := st.PendingResponses("default", "agent-a"); len(got) != 0 {
 		t.Fatalf("pending before approval = %+v", got)
 	}
-	cmd, ok := st.ApproveResponse("default", "agent-a", "resp-approve", true, "analyst", "approved for collection")
+	cmd, ok := st.ApproveResponse("default", "agent-a", "resp-approve", true, "analyst", "", "approved for collection")
 	if !ok {
 		t.Fatal("ApproveResponse ok = false")
 	}
@@ -139,12 +139,51 @@ func TestApproveResponseRejectsNonApprovalCommand(t *testing.T) {
 		Mode:       "observe",
 		Status:     "denied",
 	})
-	if _, ok := st.ApproveResponse("default", "agent-a", "resp-denied", true, "analyst", "no bypass"); ok {
+	if _, ok := st.ApproveResponse("default", "agent-a", "resp-denied", true, "analyst", "", "no bypass"); ok {
 		t.Fatal("ApproveResponse ok = true for non-approval command")
 	}
 	audits := st.ListResponses("default", "agent-a")
 	if len(audits) != 1 || audits[0].Command.Status != "denied" {
 		t.Fatalf("audits = %+v", audits)
+	}
+}
+
+func TestApproveResponseRequiresThresholdAndAllowedRole(t *testing.T) {
+	st := &Store{}
+	st.CreateResponse(responsemodel.Command{
+		ResponseID:        "resp-multi-approve",
+		TenantID:          "default",
+		AgentID:           "agent-a",
+		Action:            "collect",
+		Mode:              "observe",
+		Status:            "pending_approval",
+		ApprovalRequired:  true,
+		ApprovalStatus:    "required",
+		ApprovalThreshold: 2,
+		ApprovalRoles:     []string{"responder", "security_admin"},
+	})
+	if _, ok := st.ApproveResponse("default", "agent-a", "resp-multi-approve", true, "observer", "viewer", "wrong role"); ok {
+		t.Fatal("ApproveResponse ok = true for wrong role")
+	}
+	cmd, ok := st.ApproveResponse("default", "agent-a", "resp-multi-approve", true, "responder-a", "responder", "first approval")
+	if !ok {
+		t.Fatal("first ApproveResponse ok = false")
+	}
+	if cmd.Status != "pending_approval" || cmd.ApprovalStatus != "partial" || len(cmd.Approvals) != 1 {
+		t.Fatalf("after first approval = %+v", cmd)
+	}
+	if got := st.PendingResponses("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending after partial approval = %+v", got)
+	}
+	cmd, ok = st.ApproveResponse("default", "agent-a", "resp-multi-approve", true, "security-b", "security_admin", "second approval")
+	if !ok {
+		t.Fatal("second ApproveResponse ok = false")
+	}
+	if cmd.Status != "pending" || cmd.ApprovalStatus != "approved" || len(cmd.Approvals) != 2 || cmd.ApprovedBy != "security-b" {
+		t.Fatalf("after second approval = %+v", cmd)
+	}
+	if got := st.PendingResponses("default", "agent-a"); len(got) != 1 || got[0].ResponseID != "resp-multi-approve" {
+		t.Fatalf("pending after threshold approval = %+v", got)
 	}
 }
 

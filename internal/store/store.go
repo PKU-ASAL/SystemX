@@ -655,7 +655,7 @@ func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Comma
 	return out
 }
 
-func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved bool, actor, reason string) (responsemodel.Command, bool) {
+func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved bool, actor, role, reason string) (responsemodel.Command, bool) {
 	if responseID == "" {
 		return responsemodel.Command{}, false
 	}
@@ -675,18 +675,33 @@ func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved b
 		if agentID != "" && cmd.AgentID != agentID {
 			continue
 		}
-		if !cmd.ApprovalRequired || cmd.Status != "pending_approval" || cmd.ApprovalStatus != "required" {
+		if !cmd.ApprovalRequired || cmd.Status != "pending_approval" || (cmd.ApprovalStatus != "required" && cmd.ApprovalStatus != "partial") {
 			return responsemodel.Command{}, false
 		}
-		if approved {
+		if !responsemodel.ApprovalRoleAllowed(cmd, role) {
+			return responsemodel.Command{}, false
+		}
+		approval := responsemodel.Approval{
+			Actor:      actor,
+			Role:       role,
+			Approved:   approved,
+			Reason:     reason,
+			ObservedAt: now,
+		}
+		cmd.Approvals = append(cmd.Approvals, approval)
+		if approved && responsemodel.ApprovalCount(cmd) >= responsemodel.ApprovalThreshold(cmd) {
 			cmd.Status = "pending"
 			cmd.ApprovalStatus = "approved"
+			cmd.ApprovedBy = actor
+			cmd.ApprovedAt = now
+		} else if approved {
+			cmd.ApprovalStatus = "partial"
 		} else {
 			cmd.Status = "denied"
 			cmd.ApprovalStatus = "rejected"
+			cmd.ApprovedBy = actor
+			cmd.ApprovedAt = now
 		}
-		cmd.ApprovedBy = actor
-		cmd.ApprovedAt = now
 		cmd.UpdatedAt = now
 		if reason != "" {
 			if cmd.Reason == "" {
