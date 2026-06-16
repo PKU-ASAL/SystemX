@@ -321,6 +321,7 @@ Status: partial implementation started.
 - manager `POST /api/v1/incident-lifecycle` 与 `sysarmorctl incident-lifecycle` 可更新 incident 状态、原因和操作者。
 - `make -C test e2e-incident-lifecycle` 验证 incident 可 suppress / close / reopen 并可查询。
 - `internal/analytics/converge` 提供最小 converge decision 边界,从 ingest 中拆出 terminal / cross-lineage / additive threshold 成案判断。
+- `internal/analytics/correlate` 提供最小 signal correlation view,从 ingest 中拆出 signal 分组、scenario 选择、terminal 判断和 entity 聚合。
 - `internal/analytics/incident` 提供 incident builder,从 ingest 中拆出 Incident 构造、evidence 绑定、lineage/terminal 提取和默认 lifecycle status。
 - `internal/analytics/rarity` 提供最小 scorer interface 和当前兼容的 risk * global rarity scorer。
 - `internal/analytics/rarity` 已提供 count-based MVP scorer,同一 incident 内重复 signal name 会按出现次数降权。
@@ -329,7 +330,6 @@ Status: partial implementation started.
 
 仍未完成:
 
-- 独立 `correlate` 包边界。
 - incident lifecycle API: merge / attach evidence。
 - 生产级 rarity baseline: CMS / IDF / workload baseline。
 

@@ -8,6 +8,7 @@ import (
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/converge"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/correlate"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/entity"
 	incidentbuilder "github.com/sysarmor/sysarmor-next-project/internal/analytics/incident"
 )
@@ -31,17 +32,7 @@ func (e *Engine) Analyze(events []*eventv1.CanonicalEvent, signals []*signalv1.S
 }
 
 func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*signalv1.Signal, policy *policyv1.DetectionPolicy) Result {
-	byName := map[string][]*signalv1.Signal{}
-	for _, sig := range signals {
-		if !endpointRuleEnabled(policy, sig.GetName()) {
-			continue
-		}
-		byName[sig.GetName()] = append(byName[sig.GetName()], sig)
-	}
-	scenario := firstScenario(signals)
-	if scenario == "" {
-		scenario = firstEventScenario(events)
-	}
+	view := correlate.Build(events, signals, policy)
 
 	var result Result
 	crossLineageEnabled := policy == nil || policy.GetConverge() == nil || policy.GetConverge().GetCrossLineage()
@@ -49,34 +40,22 @@ func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*
 		crossLineageEnabled = policy.GetConverge().GetCrossLineage()
 	}
 
-	if cloudRuleEnabled(policy, "dropped_payload_executed_and_connects") && has(byName, "payload_dropped") && (hasTerminal(byName["reverse_shell_pattern"]) || (crossLineageEnabled && has(byName, "suspicious_exec_connect"))) {
-		cs := e.cloudSignal("dropped_payload_executed_and_connects", scenario, 80, collectEntities(byName, "payload_dropped", "reverse_shell_pattern", "suspicious_exec_connect")...)
-		cs.CrossLineage = has(byName, "suspicious_exec_connect") && !hasTerminal(byName["reverse_shell_pattern"])
+	if cloudRuleEnabled(policy, "dropped_payload_executed_and_connects") && view.Has("payload_dropped") && (view.HasTerminal("reverse_shell_pattern") || (crossLineageEnabled && view.Has("suspicious_exec_connect"))) {
+		cs := e.cloudSignal("dropped_payload_executed_and_connects", view.Scenario, 80, view.CollectEntities("payload_dropped", "reverse_shell_pattern", "suspicious_exec_connect")...)
+		cs.CrossLineage = view.Has("suspicious_exec_connect") && !view.HasTerminal("reverse_shell_pattern")
 		result.CloudSignals = append(result.CloudSignals, cs)
 	}
-	if cloudRuleEnabled(policy, "web_shell_chain") && has(byName, "web_runtime_spawns_shell") && hasTerminal(byName["reverse_shell_pattern"]) {
-		result.CloudSignals = append(result.CloudSignals, e.cloudSignal("web_shell_chain", scenario, 85, collectEntities(byName, "web_runtime_spawns_shell", "reverse_shell_pattern")...))
+	if cloudRuleEnabled(policy, "web_shell_chain") && view.Has("web_runtime_spawns_shell") && view.HasTerminal("reverse_shell_pattern") {
+		result.CloudSignals = append(result.CloudSignals, e.cloudSignal("web_shell_chain", view.Scenario, 85, view.CollectEntities("web_runtime_spawns_shell", "reverse_shell_pattern")...))
 	}
 
 	allSignals := append([]*signalv1.Signal{}, signals...)
 	allSignals = append(allSignals, result.CloudSignals...)
-	decision := converge.Decide(byName, result.CloudSignals, policy)
+	decision := converge.Decide(view.ByName, result.CloudSignals, policy)
 	if decision.Incident {
-		result.Incidents = append(result.Incidents, e.incidents.Build(scenario, allSignals, decision))
+		result.Incidents = append(result.Incidents, e.incidents.Build(view.Scenario, allSignals, decision))
 	}
 	return result
-}
-
-func endpointRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
-	if policy == nil || len(policy.GetEndpointRules()) == 0 {
-		return true
-	}
-	for _, rule := range policy.GetEndpointRules() {
-		if rule == name {
-			return true
-		}
-	}
-	return false
 }
 
 func cloudRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
@@ -100,52 +79,7 @@ func (e *Engine) cloudSignal(name, scenario string, risk uint32, entities ...*si
 		BaseRisk:     risk,
 		LocalRarity:  1,
 		GlobalRarity: 1,
-		Entities:     uniqueEntities(entities),
+		Entities:     entity.Unique(entities),
 		Scenario:     scenario,
 	}
-}
-
-func has(byName map[string][]*signalv1.Signal, name string) bool {
-	return len(byName[name]) > 0
-}
-
-func hasTerminal(signals []*signalv1.Signal) bool {
-	for _, sig := range signals {
-		if sig.GetTerminal() {
-			return true
-		}
-	}
-	return false
-}
-
-func collectEntities(byName map[string][]*signalv1.Signal, names ...string) []*signalv1.EntityRef {
-	var out []*signalv1.EntityRef
-	for _, name := range names {
-		for _, sig := range byName[name] {
-			out = append(out, sig.GetEntities()...)
-		}
-	}
-	return uniqueEntities(out)
-}
-
-func uniqueEntities(in []*signalv1.EntityRef) []*signalv1.EntityRef {
-	return entity.Unique(in)
-}
-
-func firstScenario(signals []*signalv1.Signal) string {
-	for _, sig := range signals {
-		if sig.GetScenario() != "" {
-			return sig.GetScenario()
-		}
-	}
-	return ""
-}
-
-func firstEventScenario(events []*eventv1.CanonicalEvent) string {
-	for _, ev := range events {
-		if ev.GetScenario() != "" {
-			return ev.GetScenario()
-		}
-	}
-	return ""
 }
