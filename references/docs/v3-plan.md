@@ -323,6 +323,7 @@ Status: partial implementation started.
 - `internal/analytics/converge` 提供最小 converge decision 边界,从 ingest 中拆出 terminal / cross-lineage / additive threshold 成案判断。
 - `internal/analytics/incident` 提供 incident builder,从 ingest 中拆出 Incident 构造、evidence 绑定、lineage/terminal 提取和默认 lifecycle status。
 - `internal/analytics/rarity` 提供最小 scorer interface 和当前兼容的 risk * global rarity scorer。
+- `internal/analytics/rarity` 已提供 count-based MVP scorer,同一 incident 内重复 signal name 会按出现次数降权。
 - `internal/analytics/graph` 已支持最小 `KHop` 和 `ShortestPath` 查询。
 - manager `GET /api/v1/incident-evidence` 与 `sysarmorctl incident-evidence` 支持 `seed/hops` 和 `path_from/path_to` 查询。
 
@@ -330,7 +331,7 @@ Status: partial implementation started.
 
 - 独立 `correlate` 包边界。
 - incident lifecycle API: merge / attach evidence。
-- count-based rarity MVP。
+- 生产级 rarity baseline: CMS / IDF / workload baseline。
 
 Package split:
 

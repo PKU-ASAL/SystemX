@@ -16,12 +16,12 @@ type Builder struct {
 }
 
 func NewBuilder() *Builder {
-	return &Builder{Scorer: rarity.RiskScorer{}}
+	return &Builder{Scorer: rarity.CountScorer{}}
 }
 
 func (b *Builder) Build(scenario string, signals []*signalv1.Signal, decision converge.Decision) *incidentv1.Incident {
 	if b.Scorer == nil {
-		b.Scorer = rarity.RiskScorer{}
+		b.Scorer = rarity.CountScorer{}
 	}
 	b.nextID++
 	contributing := contributingSignals(scenario, signals)
