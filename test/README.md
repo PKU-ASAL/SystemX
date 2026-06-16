@@ -165,6 +165,7 @@ make e2e-postgres-all
 # v3 Link1 stream foundation smoke
 make e2e-link1-session
 make e2e-link1-downlink
+make e2e-link1-frames
 make e2e-link1-stream-all
 
 # 性能基线 smoke

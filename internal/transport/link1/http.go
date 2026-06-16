@@ -142,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/responses", s.responses)
 	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
+	mux.HandleFunc("/api/v1/link1-frames", s.link1Frames)
 	mux.HandleFunc("/api/v1/link1-downlink", s.link1Downlink)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
@@ -835,6 +836,82 @@ func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *Server) link1Frames(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var frames []UplinkFrame
+	if err := json.NewDecoder(r.Body).Decode(&frames); err != nil {
+		http.Error(w, fmt.Sprintf("decode link1 frames: %v", err), http.StatusBadRequest)
+		return
+	}
+	results := make([]UplinkFrameResult, 0, len(frames))
+	for _, frame := range frames {
+		result, err := s.acceptUplinkFrame(frame)
+		if err != nil {
+			result = UplinkFrameResult{Type: frame.Type, OK: false, Message: err.Error()}
+		}
+		results = append(results, result)
+	}
+	writeJSON(w, map[string]any{"results": results})
+}
+
+func (s *Server) acceptUplinkFrame(frame UplinkFrame) (UplinkFrameResult, error) {
+	switch frame.Type {
+	case UplinkUpload:
+		batch := &analyticsv1.UploadBatch{}
+		if err := protojson.Unmarshal(frame.Payload, batch); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode upload frame: %w", err)
+		}
+		result, err := s.AcceptUploadWithTransport(batch, "frame")
+		if err != nil {
+			return UplinkFrameResult{Type: frame.Type}, err
+		}
+		return UplinkFrameResult{
+			Type:            frame.Type,
+			OK:              true,
+			Message:         "accepted",
+			BatchID:         batch.GetBatchId(),
+			AcceptedEvents:  result.AcceptedEvents,
+			AcceptedSignals: result.AcceptedSignals,
+		}, nil
+	case UplinkHealth:
+		var health agenthealth.AgentHealth
+		if err := json.Unmarshal(frame.Payload, &health); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode health frame: %w", err)
+		}
+		if health.AgentID == "" {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("agent_id is required")
+		}
+		s.store.UpsertAgentHealth(health)
+		if err := s.store.Save(); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, err
+		}
+		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
+	case UplinkAck:
+		var ack responsemodel.Ack
+		if err := json.Unmarshal(frame.Payload, &ack); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode ack frame: %w", err)
+		}
+		if _, ok := s.store.AckResponse(ack); !ok {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("response command not found")
+		}
+		if err := s.store.Save(); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, err
+		}
+		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
+	case UplinkError:
+		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
+	default:
+		return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("unknown frame type %q", frame.Type)
+	}
 }
 
 func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {

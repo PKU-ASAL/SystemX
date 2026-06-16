@@ -607,6 +607,61 @@ func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	}
 }
 
+func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	cmd := `{"response_id":"resp-frame","tenant_id":"default","agent_id":"agent-frame","action":"collect","target":"process:p1"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(cmd))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	frames := `[
+	  {
+	    "type":"upload",
+	    "payload":{
+	      "batch_id":"frame-batch-1",
+	      "agent":{"agent_id":"agent-frame","host_id":"host-frame","tenant_id":"default","version":"test"},
+	      "events":[{"id":"ev-frame","scenario":"frame","kind":"EVENT_KIND_EXEC"}]
+	    }
+	  },
+	  {
+	    "type":"health",
+	    "payload":{"agent_id":"agent-frame","host_id":"host-frame","tenant_id":"default","status":"ok"}
+	  },
+	  {
+	    "type":"ack",
+	    "payload":{"response_id":"resp-frame","tenant_id":"default","agent_id":"agent-frame","accepted":true,"observe_only":true}
+	  },
+	  {
+	    "type":"error",
+	    "payload":{"message":"synthetic"}
+	  }
+	]`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/link1-frames", strings.NewReader(frames))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("frames status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"type":"upload"`, `"batch_id":"frame-batch-1"`, `"type":"health"`, `"type":"ack"`, `"type":"error"`, `"ok":true`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("frame response missing %s: %s", want, rec.Body.String())
+		}
+	}
+	if got := st.ListLink1Sessions("default", "agent-frame"); len(got) != 1 || got[0].LastAckCursor != "frame-batch-1" || got[0].Transport != "frame" {
+		t.Fatalf("session after frame upload = %+v", got)
+	}
+	if health, ok := st.GetAgentHealth("default", "agent-frame"); !ok || health.Status != "ok" {
+		t.Fatalf("health after frame = %+v ok=%t", health, ok)
+	}
+	audits := st.ListResponses("default", "agent-frame")
+	if len(audits) != 1 || audits[0].Ack == nil || !audits[0].Ack.Accepted {
+		t.Fatalf("response audit after ack frame = %+v", audits)
+	}
+}
+
 func upload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
 	t.Helper()
 	_ = uploadAndAck(t, handler, batch)

@@ -510,14 +510,16 @@ Status: foundation implementation started.
 - manager `GET /api/v1/link1-sessions` 与 `sysarmorctl link1-sessions` 可查询 Link1 session state。
 - `internal/transport/link1` 已定义最小 downlink frame contract:`policy_update` 和 `response_command`。
 - manager `GET /api/v1/link1-downlink` 与 `sysarmorctl link1-downlink` 可按 agent 查询 policy update frame 和 pending response command frames。
+- `internal/transport/link1` 已定义最小 uplink frame contract:`upload` / `health` / `ack` / `error`。
+- manager `POST /api/v1/link1-frames` 与 `sysarmorctl link1-frames --file` 可通过 HTTP 兼容路径提交 uplink frames;upload frame 会复用 ingest,health frame 会更新 agent health,ack frame 会持久化 response ack,error frame 会返回可确认结果。
 - `make -C test e2e-link1-session` 验证同一 agent 连续上传会推进 session cursor。
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy 和 pending response command。
+- `make -C test e2e-link1-frames` 验证 upload / health / ack / error uplink frame contract。
 - `make -C test e2e-link1-stream-all` 当前聚合 Link1 session/cursor foundation gate。
 
 仍未完成:
 
 - 真正 bidirectional stream RPC。
-- stream frame: upload / health / ack / error。
 - agent resume from cursor。
 - 真正 stream transport 上的 policy downlink notification。
 - 真正 stream transport 上的 response command downlink。

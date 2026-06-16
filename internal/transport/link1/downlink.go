@@ -1,6 +1,8 @@
 package link1
 
 import (
+	"encoding/json"
+
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
@@ -8,12 +10,30 @@ import (
 const (
 	DownlinkPolicyUpdate    = "policy_update"
 	DownlinkResponseCommand = "response_command"
+	UplinkUpload            = "upload"
+	UplinkHealth            = "health"
+	UplinkAck               = "ack"
+	UplinkError             = "error"
 )
 
 type DownlinkFrame struct {
 	Type    string                 `json:"type"`
 	Version uint64                 `json:"version"`
 	Payload map[string]interface{} `json:"payload"`
+}
+
+type UplinkFrame struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type UplinkFrameResult struct {
+	Type            string `json:"type"`
+	OK              bool   `json:"ok"`
+	Message         string `json:"message,omitempty"`
+	BatchID         string `json:"batch_id,omitempty"`
+	AcceptedEvents  int    `json:"accepted_events,omitempty"`
+	AcceptedSignals int    `json:"accepted_signals,omitempty"`
 }
 
 func policyUpdateFrame(policy policymodel.Policy) DownlinkFrame {

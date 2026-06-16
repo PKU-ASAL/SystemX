@@ -139,6 +139,24 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/link1-downlink?" + q.Encode())
+	case "link1-frames":
+		var file string
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--file" {
+				i++
+				if i < len(args) {
+					file = args[i]
+				}
+			}
+		}
+		if file == "" {
+			return nil, fmt.Errorf("--file is required")
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+		return httpPostRaw(base+"/api/v1/link1-frames", data)
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
 	case "store-status":
@@ -574,7 +592,19 @@ func httpPostJSON(url string, body any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Post(url, "application/json", strings.NewReader(string(data)))
+	return httpPostRaw(url, data)
+}
+
+func httpPostRaw(url string, data []byte) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token := os.Getenv("SYSARMOR_DEV_TOKEN"); token != "" {
+		req.Header.Set("X-SysArmor-Agent-Token", token)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -266,6 +266,7 @@ make -C test e2e-postgres-all
 |---|---|---|
 | `e2e-link1-session` | `harness/e2e-link1-session.sh` | 同一 agent 连续 upload 会更新 Link1 session,`last_ack_cursor` 前进到最新 batch |
 | `e2e-link1-downlink` | `harness/e2e-link1-downlink.sh` | Link1 downlink frame 可返回 effective policy update 和 pending response command |
+| `e2e-link1-frames` | `harness/e2e-link1-frames.sh` | Link1 uplink frame 可提交 upload、health、ack、error,并落到 session、health、response audit |
 | `e2e-link1-stream-all` | Make 聚合 | 当前聚合 Link1 session/cursor foundation gate |
 
 聚合入口:
@@ -468,6 +469,7 @@ make -C test e2e-agent-benign-container
 | Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
 | Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP 单测 | 部分覆盖 |
+| Link1 uplink frame contract | `e2e-link1-frames` + HTTP 单测 | 部分覆盖 |
 | Link1 bidirectional stream/downlink | 尚未实现真正双向 stream/downlink | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |
 
