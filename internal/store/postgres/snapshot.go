@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -94,6 +96,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 	if err := projectSignals(ctx, db, state.Signals); err != nil {
 		return err
 	}
+	if err := projectRules(ctx, db, state.Rules); err != nil {
+		return err
+	}
 	if err := projectResponseAudit(ctx, db, state.Responses, state.ResponseAcks); err != nil {
 		return err
 	}
@@ -104,6 +109,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	if err := projectIncidents(ctx, db, state.Incidents); err != nil {
+		return err
+	}
+	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
 		return err
 	}
 	return nil
@@ -242,6 +250,33 @@ ON CONFLICT (tenant_id, signal_key) DO UPDATE SET
 	return nil
 }
 
+func projectRules(ctx context.Context, db *sql.DB, rules []policymodel.RuleContent) error {
+	for _, rule := range rules {
+		if rule.RuleID == "" || rule.Version == 0 {
+			continue
+		}
+		data, err := json.Marshal(rule)
+		if err != nil {
+			return fmt.Errorf("encode rule projection: %w", err)
+		}
+		_, err = db.ExecContext(ctx, `
+INSERT INTO rules (tenant_id, rule_id, version, rule_where, enabled, severity, tags, mitre, data)
+VALUES ($1, $2, $3, $4, $5, $6, string_to_array($7, E'\x1f'), string_to_array($8, E'\x1f'), $9)
+ON CONFLICT (tenant_id, rule_id, version) DO UPDATE SET
+  rule_where = EXCLUDED.rule_where,
+  enabled = EXCLUDED.enabled,
+  severity = EXCLUDED.severity,
+  tags = EXCLUDED.tags,
+  mitre = EXCLUDED.mitre,
+  data = EXCLUDED.data
+`, "default", rule.RuleID, rule.Version, rule.Where, rule.Enabled, severityRank(rule.Severity), joinTextArray(rule.Tags), joinTextArray(rule.MITRE), data)
+		if err != nil {
+			return fmt.Errorf("project rule: %w", err)
+		}
+	}
+	return nil
+}
+
 func projectResponseAudit(ctx context.Context, db *sql.DB, commands []responsemodel.Command, acks []responsemodel.Ack) error {
 	ackByResponseID := map[string]responsemodel.Ack{}
 	for _, ack := range acks {
@@ -285,6 +320,84 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
 		}
 	}
 	return nil
+}
+
+func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []link1model.EvidencePullbackRequest) error {
+	for _, req := range pullbacks {
+		if req.RequestID == "" {
+			continue
+		}
+		tenantID := req.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		status := req.Status
+		if status == "" {
+			status = link1model.EvidencePullbackStatusPending
+		}
+		data, err := json.Marshal(req)
+		if err != nil {
+			return fmt.Errorf("encode evidence pullback projection: %w", err)
+		}
+		createdAt := req.CreatedAt
+		updatedAt := req.UpdatedAt
+		if createdAt.IsZero() || updatedAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, scenario, status, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, request_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  incident_id = EXCLUDED.incident_id,
+  scenario = EXCLUDED.scenario,
+  status = EXCLUDED.status,
+  updated_at = now(),
+  data = EXCLUDED.data
+`, tenantID, req.RequestID, req.AgentID, req.IncidentID, req.Scenario, status, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, scenario, status, created_at, updated_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (tenant_id, request_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  incident_id = EXCLUDED.incident_id,
+  scenario = EXCLUDED.scenario,
+  status = EXCLUDED.status,
+  updated_at = EXCLUDED.updated_at,
+  data = EXCLUDED.data
+`, tenantID, req.RequestID, req.AgentID, req.IncidentID, req.Scenario, status, createdAt, updatedAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project evidence pullback: %w", err)
+		}
+	}
+	return nil
+}
+
+func severityRank(severity string) int {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "critical":
+		return 4
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func joinTextArray(values []string) string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, strings.ReplaceAll(value, "\x1f", ""))
+	}
+	return strings.Join(out, "\x1f")
 }
 
 func projectPolicies(ctx context.Context, db *sql.DB, policies []policymodel.Policy) error {

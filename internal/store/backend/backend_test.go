@@ -21,6 +21,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
@@ -223,6 +224,63 @@ func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 		"INSERT INTO policy_assignments",
 		assignment.AssignmentID,
 		"agent-policy-pg",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
+func TestOpenPostgresProjectsRuleAndPullbackTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.UpsertRule(policymodel.RuleContent{
+		RuleID:         "rule-table-pg",
+		Version:        3,
+		Enabled:        true,
+		Where:          "endpoint",
+		Severity:       "critical",
+		Tags:           []string{"c2", "network"},
+		MITRE:          []string{"T1571"},
+		ResponseIntent: "collect",
+	})
+	result.Store.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+		RequestID:  "evpb-table-pg",
+		TenantID:   "default",
+		AgentID:    "agent-pullback-pg",
+		IncidentID: "inc-pullback-pg",
+		Scenario:   "pg-pullback",
+		Target:     "process:p1",
+		Status:     link1model.EvidencePullbackStatusPending,
+		CreatedAt:  time.Unix(200, 0).UTC(),
+		UpdatedAt:  time.Unix(201, 0).UTC(),
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO rules",
+		"rule-table-pg",
+		"endpoint",
+		"true",
+		"4",
+		"c2\x1fnetwork",
+		"T1571",
+		"INSERT INTO evidence_pullbacks",
+		"evpb-table-pg",
+		"agent-pullback-pg",
+		"inc-pullback-pg",
+		"pg-pullback",
+		"pending",
 	} {
 		if !strings.Contains(execLog, want) {
 			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
