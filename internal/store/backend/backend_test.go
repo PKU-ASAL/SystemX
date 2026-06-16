@@ -484,6 +484,36 @@ func TestOpenPostgresQueriesSignalsFromTablePath(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresQueriesIncidentsFromTablePath(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	raw, err := protojson.Marshal(&incidentv1.Incident{
+		Id:       "inc-query-table-pg",
+		Scenario: "pg-query-table",
+		Status:   "suppressed",
+		Summary:  "incident from table path",
+	})
+	if err != nil {
+		t.Fatalf("marshal incident: %v", err)
+	}
+	fakeSetIncidentRows(raw)
+	incidents := result.Store.ListIncidents("pg-query-table")
+	if len(incidents) != 1 || incidents[0].GetId() != "inc-query-table-pg" || incidents[0].GetStatus() != "suppressed" {
+		t.Fatalf("incidents from postgres table = %+v", incidents)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT data FROM incidents") {
+		t.Fatalf("ListIncidents did not query incidents table: %s", fakeLastQuery())
+	}
+}
+
 func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -928,13 +958,14 @@ func init() {
 
 var fakeState struct {
 	sync.Mutex
-	lastQuery  string
-	execLog    []string
-	execErr    error
-	snapshot   []byte
-	eventRows  [][]byte
-	signalRows [][]byte
-	closeN     int
+	lastQuery    string
+	execLog      []string
+	execErr      error
+	snapshot     []byte
+	eventRows    [][]byte
+	signalRows   [][]byte
+	incidentRows [][]byte
+	closeN       int
 }
 
 func fakeSetExecError(err error) {
@@ -945,6 +976,7 @@ func fakeSetExecError(err error) {
 	fakeState.execErr = err
 	fakeState.eventRows = nil
 	fakeState.signalRows = nil
+	fakeState.incidentRows = nil
 	fakeState.closeN = 0
 }
 
@@ -969,6 +1001,15 @@ func fakeSetSignalRows(rows ...[]byte) {
 	fakeState.signalRows = nil
 	for _, row := range rows {
 		fakeState.signalRows = append(fakeState.signalRows, append([]byte(nil), row...))
+	}
+}
+
+func fakeSetIncidentRows(rows ...[]byte) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.incidentRows = nil
+	for _, row := range rows {
+		fakeState.incidentRows = append(fakeState.incidentRows, append([]byte(nil), row...))
 	}
 }
 
@@ -1061,6 +1102,14 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			fakeState.signalRows = append(fakeState.signalRows, []byte(data))
 		}
 	}
+	if strings.Contains(s.query, "INSERT INTO incidents") && len(args) >= 7 {
+		switch data := args[6].Value.(type) {
+		case []byte:
+			fakeState.incidentRows = append(fakeState.incidentRows, append([]byte(nil), data...))
+		case string:
+			fakeState.incidentRows = append(fakeState.incidentRows, []byte(data))
+		}
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -1103,6 +1152,16 @@ func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Row
 	if strings.Contains(s.query, "SELECT data FROM signals") && len(fakeState.signalRows) > 0 {
 		rows := make([][]driver.Value, 0, len(fakeState.signalRows))
 		for _, row := range fakeState.signalRows {
+			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
+		}
+		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
+	}
+	if strings.Contains(s.query, "SELECT data FROM incidents") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT data FROM incidents") && len(fakeState.incidentRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.incidentRows))
+		for _, row := range fakeState.incidentRows {
 			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
 		}
 		return &fakeRows{cols: []string{"data"}, rows: rows}, nil

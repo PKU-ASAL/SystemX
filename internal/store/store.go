@@ -35,6 +35,7 @@ type Store struct {
 	saveState      func(State) error
 	listEvents     func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
 	listSignals    func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
+	listIncidents  func(scenario string) ([]*incidentv1.Incident, error)
 	Agents         []*analyticsv1.AgentHello
 	Events         []*eventv1.CanonicalEvent
 	Signals        []*signalv1.Signal
@@ -203,11 +204,13 @@ func (s *Store) ConfigureBackend(info Info, saveState func(State) error) {
 func (s *Store) ConfigureQueryHooks(
 	listEvents func(string, string) ([]*eventv1.CanonicalEvent, error),
 	listSignals func(string, string, bool) ([]*signalv1.Signal, error),
+	listIncidents func(string) ([]*incidentv1.Incident, error),
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.listEvents = listEvents
 	s.listSignals = listSignals
+	s.listIncidents = listIncidents
 }
 
 func (s *Store) Info() Info {
@@ -1232,6 +1235,15 @@ func (s *Store) GetSignal(id string) (*signalv1.Signal, bool) {
 }
 
 func (s *Store) ListIncidents(scenario string) []*incidentv1.Incident {
+	s.mu.RLock()
+	listIncidents := s.listIncidents
+	s.mu.RUnlock()
+	if listIncidents != nil {
+		incidents, err := listIncidents(scenario)
+		if err == nil && len(incidents) > 0 {
+			return incidents
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*incidentv1.Incident, 0, len(s.Incidents))

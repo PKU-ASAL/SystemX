@@ -57,6 +57,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
 			return querySignals(context.Background(), db, scenario, layer, terminalOnly)
 		},
+		func(scenario string) ([]*incidentv1.Incident, error) {
+			return queryIncidents(context.Background(), db, scenario)
+		},
 	)
 	return st, nil
 }
@@ -196,6 +199,34 @@ ORDER BY observed_at ASC, signal_key ASC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate postgres signals: %w", err)
+	}
+	return out, nil
+}
+
+func queryIncidents(ctx context.Context, db *sql.DB, scenario string) ([]*incidentv1.Incident, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM incidents
+WHERE ($1 = '' OR scenario = $1)
+ORDER BY updated_at ASC, incident_id ASC
+`, scenario)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres incidents: %w", err)
+	}
+	defer rows.Close()
+	out := []*incidentv1.Incident{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres incident: %w", err)
+		}
+		incident := &incidentv1.Incident{}
+		if err := protojson.Unmarshal(raw, incident); err != nil {
+			return nil, fmt.Errorf("decode postgres incident: %w", err)
+		}
+		out = append(out, incident)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres incidents: %w", err)
 	}
 	return out, nil
 }
