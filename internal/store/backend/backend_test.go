@@ -423,6 +423,36 @@ func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresQueriesEventsFromTablePath(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	raw, err := protojson.Marshal(&eventv1.CanonicalEvent{
+		Id:       "ev-query-table-pg",
+		Scenario: "pg-query-table",
+		Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+		AgentId:  "agent-query-table-pg",
+	})
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	fakeSetEventRows(raw)
+	events := result.Store.ListEvents("pg-query-table", "EXEC")
+	if len(events) != 1 || events[0].GetId() != "ev-query-table-pg" || events[0].GetScenario() != "pg-query-table" {
+		t.Fatalf("events from postgres table = %+v", events)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT data FROM events") {
+		t.Fatalf("ListEvents did not query events table: %s", fakeLastQuery())
+	}
+}
+
 func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -871,6 +901,7 @@ var fakeState struct {
 	execLog   []string
 	execErr   error
 	snapshot  []byte
+	eventRows [][]byte
 	closeN    int
 }
 
@@ -880,6 +911,7 @@ func fakeSetExecError(err error) {
 	fakeState.lastQuery = ""
 	fakeState.execLog = nil
 	fakeState.execErr = err
+	fakeState.eventRows = nil
 	fakeState.closeN = 0
 }
 
@@ -887,6 +919,15 @@ func fakeSetSnapshot(data []byte) {
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	fakeState.snapshot = data
+}
+
+func fakeSetEventRows(rows ...[]byte) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.eventRows = nil
+	for _, row := range rows {
+		fakeState.eventRows = append(fakeState.eventRows, append([]byte(nil), row...))
+	}
 }
 
 func fakeLastQuery() string {
@@ -962,6 +1003,14 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			fakeState.snapshot = []byte(data)
 		}
 	}
+	if strings.Contains(s.query, "INSERT INTO events") && len(args) >= 7 {
+		switch data := args[6].Value.(type) {
+		case []byte:
+			fakeState.eventRows = append(fakeState.eventRows, append([]byte(nil), data...))
+		case string:
+			fakeState.eventRows = append(fakeState.eventRows, []byte(data))
+		}
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -986,7 +1035,17 @@ func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Row
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	if strings.Contains(s.query, "SELECT data FROM sysarmor_state") && len(fakeState.snapshot) > 0 {
-		return &fakeRows{cols: []string{"data"}, values: []driver.Value{append([]byte(nil), fakeState.snapshot...)}}, nil
+		return &fakeRows{cols: []string{"data"}, rows: [][]driver.Value{{append([]byte(nil), fakeState.snapshot...)}}}, nil
+	}
+	if strings.Contains(s.query, "SELECT data FROM events") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT data FROM events") && len(fakeState.eventRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.eventRows))
+		for _, row := range fakeState.eventRows {
+			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
+		}
+		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
 	}
 	return &fakeRows{}, nil
 }
@@ -1003,8 +1062,8 @@ func (fakeTx) Rollback() error {
 
 type fakeRows struct {
 	cols   []string
-	values []driver.Value
-	done   bool
+	rows   [][]driver.Value
+	cursor int
 }
 
 func (r *fakeRows) Columns() []string {
@@ -1016,10 +1075,10 @@ func (*fakeRows) Close() error {
 }
 
 func (r *fakeRows) Next(dest []driver.Value) error {
-	if r.done || len(r.values) == 0 {
+	if r.cursor >= len(r.rows) {
 		return io.EOF
 	}
-	r.done = true
-	copy(dest, r.values)
+	copy(dest, r.rows[r.cursor])
+	r.cursor++
 	return nil
 }

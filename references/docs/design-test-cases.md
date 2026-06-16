@@ -260,7 +260,7 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` 控制面表、`response_audit` 响应审计表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表、`link1_sessions` 链路状态表、`rarity_baseline` 基线表和 `metrics` 观测表投影开始,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
+这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` 控制面表、`response_audit` 响应审计表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表、`link1_sessions` 链路状态表、`rarity_baseline` 基线表和 `metrics` 观测表投影开始;`events` 已有第一条表读路径,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -272,6 +272,7 @@ make -C test e2e-graph-all
 | `e2e-postgres-manager-api` | Go backend + manager API test | snapshot-backed Postgres backend 可支撑 manager ingest/query/policy/incident lifecycle API,并跨 reopen 保留 API 写入状态 |
 | `e2e-postgres-agent-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `agents` / `agent_health` 表投影 |
 | `e2e-postgres-ingest-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `events` / `signals` 表投影 |
+| `e2e-postgres-event-query` | Go backend adapter test | Postgres backend 的 `ListEvents` 会优先从 `events` 表读出 event JSON |
 | `e2e-postgres-control-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `rules` / `evidence_pullbacks` 表投影 |
 | `e2e-postgres-control-audit-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `policy_audit` / `operator_role_bindings` 表投影 |
 | `e2e-postgres-response-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `response_audit` 表投影,包含 command 与 ack |
@@ -519,6 +520,7 @@ make -C test e2e-agent-benign-container
 | Postgres-backed manager ingest/query/policy/incident API | `e2e-postgres-manager-api` | 部分覆盖 |
 | Postgres agents/agent_health table projection | `e2e-postgres-agent-projection` | 部分覆盖 |
 | Postgres events/signals table projection | `e2e-postgres-ingest-projection` | 部分覆盖 |
+| Postgres events table query path | `e2e-postgres-event-query` | 部分覆盖 |
 | Postgres rules/evidence_pullbacks table projection | `e2e-postgres-control-projection` | 部分覆盖 |
 | Postgres policy_audit/operator_role_bindings table projection | `e2e-postgres-control-audit-projection` | 部分覆盖 |
 | Postgres response_audit table projection | `e2e-postgres-response-projection` | 部分覆盖 |

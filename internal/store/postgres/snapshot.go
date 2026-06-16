@@ -50,6 +50,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 	st.ConfigureBackend(info, func(state store.State) error {
 		return saveSnapshot(context.Background(), db, state)
 	})
+	st.ConfigureQueryHooks(func(scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
+		return queryEvents(context.Background(), db, scenario, kind)
+	})
 	return st, nil
 }
 
@@ -131,6 +134,35 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	return nil
+}
+
+func queryEvents(ctx context.Context, db *sql.DB, scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM events
+WHERE ($1 = '' OR scenario = $1)
+  AND ($2 = '' OR event_kind = $2)
+ORDER BY observed_at ASC, event_id ASC
+`, scenario, kind)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres events: %w", err)
+	}
+	defer rows.Close()
+	out := []*eventv1.CanonicalEvent{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres event: %w", err)
+		}
+		event := &eventv1.CanonicalEvent{}
+		if err := protojson.Unmarshal(raw, event); err != nil {
+			return nil, fmt.Errorf("decode postgres event: %w", err)
+		}
+		out = append(out, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres events: %w", err)
+	}
+	return out, nil
 }
 
 func projectAgents(ctx context.Context, db *sql.DB, agentRows []json.RawMessage) error {

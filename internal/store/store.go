@@ -33,6 +33,7 @@ type Store struct {
 	path           string
 	backendInfo    *Info
 	saveState      func(State) error
+	listEvents     func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
 	Agents         []*analyticsv1.AgentHello
 	Events         []*eventv1.CanonicalEvent
 	Signals        []*signalv1.Signal
@@ -196,6 +197,12 @@ func (s *Store) ConfigureBackend(info Info, saveState func(State) error) {
 	defer s.mu.Unlock()
 	s.backendInfo = &info
 	s.saveState = saveState
+}
+
+func (s *Store) ConfigureQueryHooks(listEvents func(string, string) ([]*eventv1.CanonicalEvent, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listEvents = listEvents
 }
 
 func (s *Store) Info() Info {
@@ -1153,6 +1160,15 @@ func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealt
 }
 
 func (s *Store) ListEvents(scenario, kind string) []*eventv1.CanonicalEvent {
+	s.mu.RLock()
+	listEvents := s.listEvents
+	s.mu.RUnlock()
+	if listEvents != nil {
+		events, err := listEvents(scenario, kind)
+		if err == nil && len(events) > 0 {
+			return events
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*eventv1.CanonicalEvent, 0, len(s.Events))
