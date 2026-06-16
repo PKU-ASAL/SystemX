@@ -514,6 +514,48 @@ func TestOpenPostgresQueriesIncidentsFromTablePath(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresQueriesResponseAuditFromTablePath(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	commandRaw, err := json.Marshal(responsemodel.Command{
+		ResponseID: "resp-query-table-pg",
+		TenantID:   "default",
+		AgentID:    "agent-response-query-pg",
+		Action:     "collect",
+		Mode:       "observe",
+		Status:     "acked",
+	})
+	if err != nil {
+		t.Fatalf("marshal response command: %v", err)
+	}
+	ackRaw, err := json.Marshal(responsemodel.Ack{
+		ResponseID:  "resp-query-table-pg",
+		TenantID:    "default",
+		AgentID:     "agent-response-query-pg",
+		Accepted:    true,
+		ObserveOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("marshal response ack: %v", err)
+	}
+	fakeSetResponseRows(commandRaw, ackRaw)
+	records := result.Store.ListResponses("default", "agent-response-query-pg")
+	if len(records) != 1 || records[0].Command.ResponseID != "resp-query-table-pg" || records[0].Ack == nil || !records[0].Ack.Accepted {
+		t.Fatalf("response audit from postgres table = %+v", records)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT command, ack FROM response_audit") {
+		t.Fatalf("ListResponses did not query response_audit table: %s", fakeLastQuery())
+	}
+}
+
 func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -965,6 +1007,7 @@ var fakeState struct {
 	eventRows    [][]byte
 	signalRows   [][]byte
 	incidentRows [][]byte
+	responseRows [][]driver.Value
 	closeN       int
 }
 
@@ -977,6 +1020,7 @@ func fakeSetExecError(err error) {
 	fakeState.eventRows = nil
 	fakeState.signalRows = nil
 	fakeState.incidentRows = nil
+	fakeState.responseRows = nil
 	fakeState.closeN = 0
 }
 
@@ -1010,6 +1054,31 @@ func fakeSetIncidentRows(rows ...[]byte) {
 	fakeState.incidentRows = nil
 	for _, row := range rows {
 		fakeState.incidentRows = append(fakeState.incidentRows, append([]byte(nil), row...))
+	}
+}
+
+func fakeSetResponseRows(values ...driver.Value) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.responseRows = nil
+	for i := 0; i < len(values); i += 2 {
+		command := cloneDriverBytes(values[i])
+		var ack driver.Value
+		if i+1 < len(values) {
+			ack = cloneDriverBytes(values[i+1])
+		}
+		fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+	}
+}
+
+func cloneDriverBytes(value driver.Value) driver.Value {
+	switch data := value.(type) {
+	case []byte:
+		return append([]byte(nil), data...)
+	case string:
+		return []byte(data)
+	default:
+		return value
 	}
 }
 
@@ -1110,6 +1179,11 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			fakeState.incidentRows = append(fakeState.incidentRows, []byte(data))
 		}
 	}
+	if strings.Contains(s.query, "INSERT INTO response_audit") && len(args) >= 9 {
+		command := cloneDriverBytes(args[7].Value)
+		ack := cloneDriverBytes(args[8].Value)
+		fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -1165,6 +1239,16 @@ func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Row
 			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
 		}
 		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
+	}
+	if strings.Contains(s.query, "SELECT command, ack FROM response_audit") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT command, ack FROM response_audit") && len(fakeState.responseRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.responseRows))
+		for _, row := range fakeState.responseRows {
+			rows = append(rows, append([]driver.Value(nil), row...))
+		}
+		return &fakeRows{cols: []string{"command", "ack"}, rows: rows}, nil
 	}
 	return &fakeRows{}, nil
 }

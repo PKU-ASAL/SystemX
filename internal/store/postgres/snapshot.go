@@ -60,6 +60,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		func(scenario string) ([]*incidentv1.Incident, error) {
 			return queryIncidents(context.Background(), db, scenario)
 		},
+		func(tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
+			return queryResponses(context.Background(), db, tenantID, agentID)
+		},
 	)
 	return st, nil
 }
@@ -227,6 +230,44 @@ ORDER BY updated_at ASC, incident_id ASC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate postgres incidents: %w", err)
+	}
+	return out, nil
+}
+
+func queryResponses(ctx context.Context, db *sql.DB, tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT command, ack FROM response_audit
+WHERE ($1 = '' OR tenant_id = $1)
+  AND ($2 = '' OR agent_id = $2)
+ORDER BY updated_at ASC, response_id ASC
+`, tenantID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres response audit: %w", err)
+	}
+	defer rows.Close()
+	out := []responsemodel.AuditRecord{}
+	for rows.Next() {
+		var commandRaw []byte
+		var ackRaw []byte
+		if err := rows.Scan(&commandRaw, &ackRaw); err != nil {
+			return nil, fmt.Errorf("scan postgres response audit: %w", err)
+		}
+		var command responsemodel.Command
+		if err := json.Unmarshal(commandRaw, &command); err != nil {
+			return nil, fmt.Errorf("decode postgres response command: %w", err)
+		}
+		record := responsemodel.AuditRecord{Command: command}
+		if len(ackRaw) > 0 {
+			var ack responsemodel.Ack
+			if err := json.Unmarshal(ackRaw, &ack); err != nil {
+				return nil, fmt.Errorf("decode postgres response ack: %w", err)
+			}
+			record.Ack = &ack
+		}
+		out = append(out, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres response audit: %w", err)
 	}
 	return out, nil
 }

@@ -460,7 +460,7 @@ Status: foundation implementation started.
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
 - manager `events` / `signals` / `incidents` 查询 API 与 `sysarmorctl` 已支持 `limit` / `offset` 分页参数。
-- Postgres snapshot adapter 已开始接入逐表读路径:当前 `ListEvents` / `ListSignals` / `ListIncidents` 会优先从 `events` / `signals` / `incidents` 表读取,失败或无结果时回退到 snapshot 内存态;policy / response 等主读写路径仍待迁移。
+- Postgres snapshot adapter 已开始接入逐表读路径:当前 `ListEvents` / `ListSignals` / `ListIncidents` / `ListResponses` 会优先从 `events` / `signals` / `incidents` / `response_audit` 表读取,失败或无结果时回退到 snapshot 内存态;policy 等主读写路径仍待迁移。
 - `make -C test e2e-store-status` 验证 manager file backend 和 Postgres schema version 可观测。
 - `make -C test e2e-query-pagination` 验证 query pagination contract。
 - `make -C test e2e-postgres-store` 验证 Postgres backend 可运行 migration、打开 snapshot store、关闭 database handle,并跨 reopen 保留 response audit。
@@ -475,6 +475,7 @@ Status: foundation implementation started.
 - `make -C test e2e-postgres-control-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `rules` 和 `evidence_pullbacks` 表投影。
 - `make -C test e2e-postgres-control-audit-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `policy_audit` 和 `operator_role_bindings` 表投影。
 - `make -C test e2e-postgres-response-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `response_audit` 表投影,包含 command 与 ack。
+- `make -C test e2e-postgres-response-query` 验证 Postgres backend 查询 response audit 时会走 `response_audit` 表读路径。
 - `make -C test e2e-postgres-policy-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `policies` 和 `policy_assignments` 表投影。
 - `make -C test e2e-postgres-incident-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `incidents` 和 `evidence` 表投影。
 - `make -C test e2e-postgres-observability-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `incident_events` 和 `metrics` 表投影。
@@ -486,7 +487,7 @@ Status: foundation implementation started.
 
 - live Postgres migration e2e。
 - manager release 二进制内置/注册真实 Postgres driver 的发布策略;当前为了避免误导,`--postgres-driver` 默认为空,测试使用 fake driver 覆盖 backend contract。
-- 逐表 Postgres adapter:当前已开始投影 `agents` / `agent_health` / `events` / `signals` / `rules` / `response_audit` / `policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` / `incidents` / `incident_events` / `evidence` / `evidence_pullbacks` / `link1_sessions` / `rarity_baseline` / `metrics`,并已接入 `events` / `signals` / `incidents` 表读路径;尚未把 policy/response 等主路径完整迁到逐表读写。
+- 逐表 Postgres adapter:当前已开始投影 `agents` / `agent_health` / `events` / `signals` / `rules` / `response_audit` / `policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` / `incidents` / `incident_events` / `evidence` / `evidence_pullbacks` / `link1_sessions` / `rarity_baseline` / `metrics`,并已接入 `events` / `signals` / `incidents` / `response_audit` 表读路径;尚未把 policy 等主路径完整迁到逐表读写。
 - ingest/query/policy/incident e2e 已有 snapshot-backed Postgres manager API 门禁;仍缺完整逐表 Postgres adapter 路径上的同类 e2e。
 
 ### Deliverables
@@ -550,6 +551,7 @@ make -C test e2e-postgres-incident-query
 make -C test e2e-postgres-control-projection
 make -C test e2e-postgres-control-audit-projection
 make -C test e2e-postgres-response-projection
+make -C test e2e-postgres-response-query
 make -C test e2e-postgres-policy-projection
 make -C test e2e-postgres-incident-projection
 make -C test e2e-postgres-observability-projection

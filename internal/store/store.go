@@ -36,6 +36,7 @@ type Store struct {
 	listEvents     func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
 	listSignals    func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
 	listIncidents  func(scenario string) ([]*incidentv1.Incident, error)
+	listResponses  func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
 	Agents         []*analyticsv1.AgentHello
 	Events         []*eventv1.CanonicalEvent
 	Signals        []*signalv1.Signal
@@ -205,12 +206,14 @@ func (s *Store) ConfigureQueryHooks(
 	listEvents func(string, string) ([]*eventv1.CanonicalEvent, error),
 	listSignals func(string, string, bool) ([]*signalv1.Signal, error),
 	listIncidents func(string) ([]*incidentv1.Incident, error),
+	listResponses func(string, string) ([]responsemodel.AuditRecord, error),
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.listEvents = listEvents
 	s.listSignals = listSignals
 	s.listIncidents = listIncidents
+	s.listResponses = listResponses
 }
 
 func (s *Store) Info() Info {
@@ -634,6 +637,15 @@ func (s *Store) CreateResponse(cmd responsemodel.Command) responsemodel.Command 
 }
 
 func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRecord {
+	s.mu.RLock()
+	listResponses := s.listResponses
+	s.mu.RUnlock()
+	if listResponses != nil {
+		records, err := listResponses(tenantID, agentID)
+		if err == nil && len(records) > 0 {
+			return records
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	acks := map[string]responsemodel.Ack{}
