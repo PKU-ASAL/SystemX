@@ -29,6 +29,12 @@ message UploadAck {
   string batch_id = 5;
 }
 
+message StreamFrame {
+  string type = 1;
+  bytes payload_json = 2;
+}
+
 service Link1 {
   rpc Upload(UploadBatch) returns (UploadAck);
+  rpc Stream(stream StreamFrame) returns (stream StreamFrame);
 }

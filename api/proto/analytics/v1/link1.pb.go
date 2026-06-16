@@ -235,6 +235,58 @@ func (x *UploadAck) GetBatchId() string {
 	return ""
 }
 
+type StreamFrame struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	PayloadJson   []byte                 `protobuf:"bytes,2,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamFrame) Reset() {
+	*x = StreamFrame{}
+	mi := &file_api_proto_analytics_v1_link1_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamFrame) ProtoMessage() {}
+
+func (x *StreamFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_analytics_v1_link1_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamFrame.ProtoReflect.Descriptor instead.
+func (*StreamFrame) Descriptor() ([]byte, []int) {
+	return file_api_proto_analytics_v1_link1_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StreamFrame) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *StreamFrame) GetPayloadJson() []byte {
+	if x != nil {
+		return x.PayloadJson
+	}
+	return nil
+}
+
 var File_api_proto_analytics_v1_link1_proto protoreflect.FileDescriptor
 
 const file_api_proto_analytics_v1_link1_proto_rawDesc = "" +
@@ -256,9 +308,13 @@ const file_api_proto_analytics_v1_link1_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12'\n" +
 	"\x0faccepted_events\x18\x03 \x01(\x04R\x0eacceptedEvents\x12)\n" +
 	"\x10accepted_signals\x18\x04 \x01(\x04R\x0facceptedSignals\x12\x19\n" +
-	"\bbatch_id\x18\x05 \x01(\tR\abatchId2W\n" +
+	"\bbatch_id\x18\x05 \x01(\tR\abatchId\"D\n" +
+	"\vStreamFrame\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12!\n" +
+	"\fpayload_json\x18\x02 \x01(\fR\vpayloadJson2\xad\x01\n" +
 	"\x05Link1\x12N\n" +
-	"\x06Upload\x12\".sysarmor.analytics.v1.UploadBatch\x1a .sysarmor.analytics.v1.UploadAckBNZLgithub.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1;analyticsv1b\x06proto3"
+	"\x06Upload\x12\".sysarmor.analytics.v1.UploadBatch\x1a .sysarmor.analytics.v1.UploadAck\x12T\n" +
+	"\x06Stream\x12\".sysarmor.analytics.v1.StreamFrame\x1a\".sysarmor.analytics.v1.StreamFrame(\x010\x01BNZLgithub.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1;analyticsv1b\x06proto3"
 
 var (
 	file_api_proto_analytics_v1_link1_proto_rawDescOnce sync.Once
@@ -272,22 +328,25 @@ func file_api_proto_analytics_v1_link1_proto_rawDescGZIP() []byte {
 	return file_api_proto_analytics_v1_link1_proto_rawDescData
 }
 
-var file_api_proto_analytics_v1_link1_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_api_proto_analytics_v1_link1_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_api_proto_analytics_v1_link1_proto_goTypes = []any{
 	(*AgentHello)(nil),        // 0: sysarmor.analytics.v1.AgentHello
 	(*UploadBatch)(nil),       // 1: sysarmor.analytics.v1.UploadBatch
 	(*UploadAck)(nil),         // 2: sysarmor.analytics.v1.UploadAck
-	(*v1.CanonicalEvent)(nil), // 3: sysarmor.event.v1.CanonicalEvent
-	(*v11.Signal)(nil),        // 4: sysarmor.signal.v1.Signal
+	(*StreamFrame)(nil),       // 3: sysarmor.analytics.v1.StreamFrame
+	(*v1.CanonicalEvent)(nil), // 4: sysarmor.event.v1.CanonicalEvent
+	(*v11.Signal)(nil),        // 5: sysarmor.signal.v1.Signal
 }
 var file_api_proto_analytics_v1_link1_proto_depIdxs = []int32{
 	0, // 0: sysarmor.analytics.v1.UploadBatch.agent:type_name -> sysarmor.analytics.v1.AgentHello
-	3, // 1: sysarmor.analytics.v1.UploadBatch.events:type_name -> sysarmor.event.v1.CanonicalEvent
-	4, // 2: sysarmor.analytics.v1.UploadBatch.signals:type_name -> sysarmor.signal.v1.Signal
+	4, // 1: sysarmor.analytics.v1.UploadBatch.events:type_name -> sysarmor.event.v1.CanonicalEvent
+	5, // 2: sysarmor.analytics.v1.UploadBatch.signals:type_name -> sysarmor.signal.v1.Signal
 	1, // 3: sysarmor.analytics.v1.Link1.Upload:input_type -> sysarmor.analytics.v1.UploadBatch
-	2, // 4: sysarmor.analytics.v1.Link1.Upload:output_type -> sysarmor.analytics.v1.UploadAck
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
+	3, // 4: sysarmor.analytics.v1.Link1.Stream:input_type -> sysarmor.analytics.v1.StreamFrame
+	2, // 5: sysarmor.analytics.v1.Link1.Upload:output_type -> sysarmor.analytics.v1.UploadAck
+	3, // 6: sysarmor.analytics.v1.Link1.Stream:output_type -> sysarmor.analytics.v1.StreamFrame
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
 	3, // [3:3] is the sub-list for extension extendee
 	0, // [0:3] is the sub-list for field type_name
@@ -304,7 +363,7 @@ func file_api_proto_analytics_v1_link1_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_analytics_v1_link1_proto_rawDesc), len(file_api_proto_analytics_v1_link1_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

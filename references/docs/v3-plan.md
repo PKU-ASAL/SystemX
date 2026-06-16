@@ -516,18 +516,20 @@ Status: foundation implementation started.
 - manager `GET|POST /api/v1/evidence-pullbacks` 与 `sysarmorctl evidence-pullbacks` 可创建/查询 evidence pullback request,并随 file/memory store 状态持久化。
 - `internal/transport/link1` 已定义最小 uplink frame contract:`upload` / `health` / `ack` / `evidence_pullback_result` / `error`。
 - manager `POST /api/v1/link1-frames` 与 `sysarmorctl link1-frames --file` 可通过 HTTP 兼容路径提交 uplink frames;upload frame 会复用 ingest,health frame 会更新 agent health,ack frame 会持久化 response ack,evidence pullback result frame 会完成/失败 pullback request 并可附加 incident evidence,error frame 会返回可确认结果。
+- Link1 gRPC 已提供最小 bidirectional `Stream` RPC:agent/client 发送 `hello` 后 manager 返回当前 downlink frames,随后同一 stream 可提交 upload/health/ack/evidence_pullback_result/error uplink frames 并收到逐帧结果。
 - agent/upload worker 单测覆盖 resume cursor 清理本地 spool、空 cursor no-op、resume source 失败不删除 batch。
 - `make -C test e2e-link1-session` 验证同一 agent 连续上传会推进 session cursor。
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy、pending response command 和 pending evidence pullback request。
 - `make -C test e2e-link1-frames` 验证 upload / health / ack / evidence pullback result / error uplink frame contract。
+- `make -C test e2e-link1-grpc-stream` 验证 gRPC bidi stream 能下发 policy/response/evidence pullback frame 并接收 upload frame。
 - `make -C test e2e-link1-stream-all` 当前聚合 Link1 session/cursor foundation gate。
 
 仍未完成:
 
-- 真正 bidirectional stream RPC。
-- 真正 stream transport 上的 policy downlink notification。
-- 真正 stream transport 上的 response command downlink。
-- evidence pullback result/ack 迁移到真正 stream transport。
+- agent daemon/upload worker 默认使用真正 stream transport。
+- stream transport 上的 policy downlink notification 被 agent 自动应用。
+- stream transport 上的 response command downlink 被 agent 自动执行 observe-only ack。
+- stream transport 上的 evidence pullback request/result 被 agent 自动处理。
 
 ### Deliverables
 
@@ -567,6 +569,7 @@ Status: foundation implementation started.
 ```bash
 go test ./...
 make -C test e2e-link1-stream-upload
+make -C test e2e-link1-grpc-stream
 make -C test e2e-link1-stream-resume
 make -C test e2e-link1-policy-downlink
 make -C test e2e-link1-response-command

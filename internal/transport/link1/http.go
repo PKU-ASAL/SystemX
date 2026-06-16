@@ -945,13 +945,17 @@ func (s *Server) link1Frames(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) acceptUplinkFrame(frame UplinkFrame) (UplinkFrameResult, error) {
+	return s.acceptUplinkFrameWithTransport(frame, "frame")
+}
+
+func (s *Server) acceptUplinkFrameWithTransport(frame UplinkFrame, transport string) (UplinkFrameResult, error) {
 	switch frame.Type {
 	case UplinkUpload:
 		batch := &analyticsv1.UploadBatch{}
 		if err := protojson.Unmarshal(frame.Payload, batch); err != nil {
 			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode upload frame: %w", err)
 		}
-		result, err := s.AcceptUploadWithTransport(batch, "frame")
+		result, err := s.AcceptUploadWithTransport(batch, transport)
 		if err != nil {
 			return UplinkFrameResult{Type: frame.Type}, err
 		}
