@@ -510,10 +510,12 @@ Status: foundation implementation started.
 - manager `GET /api/v1/link1-sessions` 与 `sysarmorctl link1-sessions` 可查询 Link1 session state。
 - manager `GET /api/v1/link1-resume` 与 `sysarmorctl link1-resume` 可按 agent 查询 resume cursor。
 - agent spool 已支持 `AckThrough(cursor)`,可在拿到 manager resume cursor 后删除 cursor 及之前的已确认本地 batch。
+- agent 启动 HTTP upload worker 时会调用 Link1 resume API,并用 `AckThrough(cursor)` 清理 manager 已确认的本地 spool batch;resume API 不可用时 fail-soft,避免阻断 endpoint runtime。
 - `internal/transport/link1` 已定义最小 downlink frame contract:`policy_update` 和 `response_command`。
 - manager `GET /api/v1/link1-downlink` 与 `sysarmorctl link1-downlink` 可按 agent 查询 policy update frame 和 pending response command frames。
 - `internal/transport/link1` 已定义最小 uplink frame contract:`upload` / `health` / `ack` / `error`。
 - manager `POST /api/v1/link1-frames` 与 `sysarmorctl link1-frames --file` 可通过 HTTP 兼容路径提交 uplink frames;upload frame 会复用 ingest,health frame 会更新 agent health,ack frame 会持久化 response ack,error frame 会返回可确认结果。
+- agent/upload worker 单测覆盖 resume cursor 清理本地 spool、空 cursor no-op、resume source 失败不删除 batch。
 - `make -C test e2e-link1-session` 验证同一 agent 连续上传会推进 session cursor。
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy 和 pending response command。
 - `make -C test e2e-link1-frames` 验证 upload / health / ack / error uplink frame contract。
@@ -522,7 +524,6 @@ Status: foundation implementation started.
 仍未完成:
 
 - 真正 bidirectional stream RPC。
-- agent 自动连接 manager 获取 resume cursor 并调用 spool `AckThrough`。
 - 真正 stream transport 上的 policy downlink notification。
 - 真正 stream transport 上的 response command downlink。
 - evidence pullback request。

@@ -1390,6 +1390,14 @@ func waitForManagerSignal(t *testing.T, managerURL, name string) {
 
 func serveDefaultPolicy(t *testing.T, w http.ResponseWriter, r *http.Request) bool {
 	t.Helper()
+	if r.URL.Path == "/api/v1/link1-resume" {
+		writeTestJSON(t, w, map[string]any{
+			"tenant_id":     r.URL.Query().Get("tenant_id"),
+			"agent_id":      r.URL.Query().Get("agent_id"),
+			"resume_cursor": "",
+		})
+		return true
+	}
 	if r.URL.Path != "/api/v1/effective-policy" {
 		return false
 	}

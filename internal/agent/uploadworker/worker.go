@@ -11,12 +11,17 @@ import (
 )
 
 type Worker struct {
-	Queue    *spool.Queue
-	Uploader uploader.BatchUploader
-	Backoff  Backoff
+	Queue        *spool.Queue
+	Uploader     uploader.BatchUploader
+	ResumeSource ResumeSource
+	Backoff      Backoff
 
 	mu        sync.Mutex
 	lastError string
+}
+
+type ResumeSource interface {
+	ResumeCursor(ctx context.Context) (string, error)
 }
 
 type Backoff struct {
@@ -29,6 +34,31 @@ type Stats struct {
 	RemainingBatches int
 	RemainingBytes   int64
 	LastError        string
+}
+
+func (w *Worker) ResumeOnce(ctx context.Context) (Stats, error) {
+	if w.Queue == nil {
+		return Stats{}, fmt.Errorf("spool queue is nil")
+	}
+	if w.ResumeSource == nil {
+		return w.withRemaining(Stats{})
+	}
+	cursor, err := w.ResumeSource.ResumeCursor(ctx)
+	if err != nil {
+		stats, statErr := w.withRemaining(Stats{LastError: err.Error()})
+		w.setLastError(err.Error())
+		return stats, statErr
+	}
+	if cursor == "" {
+		return w.withRemaining(Stats{})
+	}
+	if err := w.Queue.AckThrough(cursor); err != nil {
+		stats, statErr := w.withRemaining(Stats{LastError: err.Error()})
+		w.setLastError(err.Error())
+		return stats, statErr
+	}
+	w.setLastError("")
+	return w.withRemaining(Stats{})
 }
 
 func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {

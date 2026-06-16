@@ -164,6 +164,77 @@ func TestDrainWithRetryStopsOnContextCancel(t *testing.T) {
 	}
 }
 
+func TestResumeOnceAcksThroughCursor(t *testing.T) {
+	queue := openQueue(t)
+	id1 := mustAppend(t, queue, "event-1")
+	id2 := mustAppend(t, queue, "event-2")
+	mustAppend(t, queue, "event-3")
+	worker := &Worker{
+		Queue:        queue,
+		ResumeSource: staticResumeSource{cursor: id2},
+	}
+
+	stats, err := worker.ResumeOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ResumeOnce() error = %v", err)
+	}
+	if stats.RemainingBatches != 1 || stats.LastError != "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	entries, err := queue.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	if entries[0].ID <= id2 || entries[0].ID == id1 {
+		t.Fatalf("remaining entry = %+v, cursor = %s", entries[0], id2)
+	}
+}
+
+func TestResumeOnceNoCursorIsNoop(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	worker := &Worker{
+		Queue:        queue,
+		ResumeSource: staticResumeSource{},
+	}
+
+	stats, err := worker.ResumeOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ResumeOnce() error = %v", err)
+	}
+	if stats.RemainingBatches != 1 || stats.LastError != "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+}
+
+func TestResumeOnceKeepsBatchesOnResumeError(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	resumeErr := errors.New("resume unavailable")
+	worker := &Worker{
+		Queue:        queue,
+		ResumeSource: staticResumeSource{err: resumeErr},
+	}
+
+	stats, err := worker.ResumeOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ResumeOnce() error = %v", err)
+	}
+	if stats.RemainingBatches != 1 || stats.LastError != resumeErr.Error() {
+		t.Fatalf("stats = %+v", stats)
+	}
+	entries, err := queue.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
 func openQueue(t *testing.T) *spool.Queue {
 	t.Helper()
 	q, err := spool.Open(filepath.Join(t.TempDir(), "spool"))
@@ -173,9 +244,9 @@ func openQueue(t *testing.T) *spool.Queue {
 	return q
 }
 
-func mustAppend(t *testing.T, q *spool.Queue, eventID string) {
+func mustAppend(t *testing.T, q *spool.Queue, eventID string) string {
 	t.Helper()
-	if _, err := q.Append(&analyticsv1.UploadBatch{
+	id, err := q.Append(&analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
 			Id:      eventID,
@@ -183,9 +254,11 @@ func mustAppend(t *testing.T, q *spool.Queue, eventID string) {
 			HostId:  "host-a",
 			Kind:    eventv1.EventKind_EVENT_KIND_EXEC,
 		}},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	return id
 }
 
 type recordingUploader struct {
@@ -210,4 +283,13 @@ func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1
 		ackID = batch.GetBatchId()
 	}
 	return &analyticsv1.UploadAck{Ok: true, BatchId: ackID}, nil
+}
+
+type staticResumeSource struct {
+	cursor string
+	err    error
+}
+
+func (s staticResumeSource) ResumeCursor(context.Context) (string, error) {
+	return s.cursor, s.err
 }

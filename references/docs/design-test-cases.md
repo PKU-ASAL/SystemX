@@ -260,7 +260,7 @@ make -C test e2e-postgres-all
 
 ### 5.7 Link1 Stream Foundation
 
-这些脚本验证 v3 Link1 stream 的早期地基:即使真正双向 stream 尚未实现,manager 也已经能维护 session state 和 last ack cursor,为后续 resume/downlink 做准备。
+这些脚本验证 v3 Link1 stream 的早期地基:即使真正双向 stream 尚未实现,manager 也已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,为后续 stream/downlink 做准备。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -468,7 +468,7 @@ make -C test e2e-agent-benign-container
 | query pagination | `e2e-query-pagination` + HTTP 单测 | 部分覆盖 |
 | Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
 | Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
-| Link1 resume cursor / local spool cleanup | `e2e-link1-session` + spool `AckThrough` 单测 | 部分覆盖 |
+| Link1 resume cursor / local spool cleanup | `e2e-link1-session` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP 单测 | 部分覆盖 |
 | Link1 uplink frame contract | `e2e-link1-frames` + HTTP 单测 | 部分覆盖 |
 | Link1 bidirectional stream/downlink | 尚未实现真正双向 stream/downlink | 未覆盖 |

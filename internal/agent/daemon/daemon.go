@@ -96,6 +96,15 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("upload", err)
 	}
+	if r.Config.Manager.Transport == "http" {
+		stats, err := worker.ResumeOnce(ctx)
+		if err != nil {
+			return failStartup("resume", err)
+		}
+		if r.Out != nil && stats.LastError != "" {
+			fmt.Fprintf(r.Out, "agent link1 resume error: %s\n", stats.LastError)
+		}
+	}
 	var responseClient *ResponseClient
 	if r.Config.Manager.Transport == "http" {
 		responseClient = NewResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
@@ -536,11 +545,21 @@ func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &uploadworker.Worker{
+	worker := &uploadworker.Worker{
 		Queue:    queue,
 		Uploader: up,
 		Backoff:  uploadworker.Backoff{Initial: r.Config.Upload.RetryInitial, Max: r.Config.Upload.RetryMax},
-	}, nil
+	}
+	if r.Config.Manager.Transport == "http" {
+		worker.ResumeSource = NewResumeClient(
+			r.Config.Manager.Address,
+			r.Config.Agent.Token,
+			r.Config.Upload.RequestTimeout,
+			r.Config.Agent.TenantID,
+			r.Config.Agent.ID,
+		)
+	}
+	return worker, nil
 }
 
 func newBatchUploader(manager, transport string, timeout time.Duration, token string) (uploader.BatchUploader, error) {
