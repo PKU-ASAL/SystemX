@@ -1,4 +1,4 @@
-package link1
+package agentgateway
 
 import (
 	"context"
@@ -11,9 +11,10 @@ import (
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,9 +26,9 @@ import (
 
 func TestGRPCUpload(t *testing.T) {
 	st := &store.Store{}
-	server := NewServer(st)
+	server := NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, NewGRPCServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -46,7 +47,7 @@ func TestGRPCUpload(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+	ack, err := analyticsv1.NewAgentGatewayClient(conn).Upload(ctx, &analyticsv1.UploadBatch{
 		BatchId: "00000000000000000007",
 		Agent:   &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host", TenantId: "default"},
 		Signals: []*signalv1.Signal{
@@ -75,7 +76,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 		Action:     "collect",
 		Target:     "process:p1",
 	})
-	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
 		RequestID: "evpb-stream",
 		TenantID:  "default",
 		AgentID:   "stream-agent",
@@ -83,7 +84,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	})
 	server := NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, NewGRPCServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -102,7 +103,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	if downlink.GetType() != "downlink" {
 		t.Fatalf("downlink type = %q", downlink.GetType())
 	}
-	if sessions := st.ListLink1Sessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].Status != "open" || sessions[0].Transport != "stream" || !sessions[0].ClosedAt.IsZero() {
+	if sessions := st.ListAgentGatewaySessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].Status != "open" || sessions[0].Transport != "stream" || !sessions[0].ClosedAt.IsZero() {
 		t.Fatalf("session after hello = %+v", sessions)
 	}
 	body := string(downlink.GetPayloadJson())
@@ -154,7 +155,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	if !result.OK || result.BatchID != "stream-batch-1" {
 		t.Fatalf("stream result = %+v", result)
 	}
-	if sessions := st.ListLink1Sessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].LastAckCursor != "stream-batch-1" || sessions[0].Transport != "stream" {
+	if sessions := st.ListAgentGatewaySessions("default", "stream-agent"); len(sessions) != 1 || sessions[0].LastAckCursor != "stream-batch-1" || sessions[0].Transport != "stream" {
 		t.Fatalf("sessions = %+v", sessions)
 	}
 	if err := stream.CloseSend(); err != nil {
@@ -162,7 +163,7 @@ func TestGRPCStreamExchangesDownlinkAndUplinkFrames(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
-		sessions := st.ListLink1Sessions("default", "stream-agent")
+		sessions := st.ListAgentGatewaySessions("default", "stream-agent")
 		if len(sessions) == 1 && sessions[0].Status == "closed" && !sessions[0].ClosedAt.IsZero() && sessions[0].LastAckCursor == "stream-batch-1" {
 			break
 		}
@@ -177,7 +178,7 @@ func TestGRPCStreamAcceptsHealthHeartbeatFrame(t *testing.T) {
 	st := &store.Store{}
 	server := NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, NewGRPCServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -196,7 +197,7 @@ func TestGRPCStreamAcceptsHealthHeartbeatFrame(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +241,7 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	st := &store.Store{}
 	server := NewServerWithAuth(st, "dev-token")
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, NewGRPCServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -259,14 +260,14 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	}
 	defer conn.Close()
 
-	_, err = analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+	_, err = analyticsv1.NewAgentGatewayClient(conn).Upload(ctx, &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host", TenantId: "default"},
 	})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Upload() error = %v, want unauthenticated", err)
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", "dev-token")
-	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+	ack, err := analyticsv1.NewAgentGatewayClient(conn).Upload(ctx, &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host", TenantId: "default"},
 	})
 	if err != nil {
@@ -281,7 +282,7 @@ func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
 	server := NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, NewGRPCServer(server))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, NewGRPCServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -300,7 +301,7 @@ func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
 	}
 	defer conn.Close()
 
-	_, err = analyticsv1.NewLink1Client(conn).Upload(ctx, &analyticsv1.UploadBatch{
+	_, err = analyticsv1.NewAgentGatewayClient(conn).Upload(ctx, &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "grpc-agent", HostId: "grpc-host"},
 	})
 	if status.Code(err) != codes.InvalidArgument {

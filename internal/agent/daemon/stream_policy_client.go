@@ -60,7 +60,7 @@ func (c *StreamPolicyClient) EffectivePolicy(ctx context.Context, req EffectiveP
 		return policymodel.Policy{}, err
 	}
 	defer conn.Close()
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		return policymodel.Policy{}, err
 	}

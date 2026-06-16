@@ -44,7 +44,7 @@ func (u *GRPCUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.Uplo
 		return nil, err
 	}
 	defer conn.Close()
-	ack, err := analyticsv1.NewLink1Client(conn).Upload(ctx, batch)
+	ack, err := analyticsv1.NewAgentGatewayClient(conn).Upload(ctx, batch)
 	if err != nil {
 		return nil, err
 	}

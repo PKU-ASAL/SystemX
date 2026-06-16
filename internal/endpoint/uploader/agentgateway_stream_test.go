@@ -9,16 +9,17 @@ import (
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	transportgateway "github.com/sysarmor/sysarmor-next-project/internal/agentgateway"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	transportlink1 "github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/grpc"
 )
 
-func TestStreamUploaderUploadsThroughLink1Stream(t *testing.T) {
+func TestStreamUploaderUploadsThroughAgentGatewayStream(t *testing.T) {
 	st := &store.Store{}
-	linkSrv := transportlink1.NewServer(st)
+	linkSrv := transportgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, transportlink1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, transportgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +40,7 @@ func TestStreamUploaderUploadsThroughLink1Stream(t *testing.T) {
 	if !ack.GetOk() || ack.GetBatchId() != "stream-uploader-batch" {
 		t.Fatalf("ack = %#v", ack)
 	}
-	sessions := st.ListLink1Sessions("default", "stream-uploader-agent")
+	sessions := st.ListAgentGatewaySessions("default", "stream-uploader-agent")
 	if len(sessions) != 1 || sessions[0].LastAckCursor != "stream-uploader-batch" || sessions[0].Transport != "stream" {
 		t.Fatalf("sessions = %+v", sessions)
 	}
@@ -47,9 +48,9 @@ func TestStreamUploaderUploadsThroughLink1Stream(t *testing.T) {
 
 func TestStreamUploaderReconnectDuplicateBatchDoesNotAmplifyIngest(t *testing.T) {
 	st := &store.Store{}
-	linkSrv := transportlink1.NewServer(st)
+	linkSrv := transportgateway.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, transportlink1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, transportgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +96,7 @@ func TestStreamUploaderReconnectDuplicateBatchDoesNotAmplifyIngest(t *testing.T)
 	if got := st.ListSignals("stream-reconnect", "endpoint", false); len(got) != 1 || got[0].GetId() != "sig-stream-reconnect" {
 		t.Fatalf("signals after reconnect duplicate = %+v", got)
 	}
-	sessions := st.ListLink1Sessions("default", "stream-reconnect-agent")
+	sessions := st.ListAgentGatewaySessions("default", "stream-reconnect-agent")
 	if len(sessions) != 1 || sessions[0].LastAckCursor != batch.GetBatchId() || sessions[0].Transport != "stream" {
 		t.Fatalf("sessions = %+v", sessions)
 	}
@@ -103,9 +104,9 @@ func TestStreamUploaderReconnectDuplicateBatchDoesNotAmplifyIngest(t *testing.T)
 
 func TestStreamUploaderReportsServerErrorFrame(t *testing.T) {
 	st := &store.Store{}
-	linkSrv := transportlink1.NewServer(st)
+	linkSrv := transportgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, transportlink1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, transportgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

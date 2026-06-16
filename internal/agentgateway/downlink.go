@@ -1,9 +1,9 @@
-package link1
+package agentgateway
 
 import (
 	"encoding/json"
 
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
@@ -93,7 +93,7 @@ func responseCommandFrame(cmd responsemodel.Command) DownlinkFrame {
 	}
 }
 
-func evidencePullbackFrame(req link1model.EvidencePullbackRequest) DownlinkFrame {
+func evidencePullbackFrame(req gatewaymodel.EvidencePullbackRequest) DownlinkFrame {
 	return DownlinkFrame{
 		Type:    DownlinkEvidencePullback,
 		Version: 1,

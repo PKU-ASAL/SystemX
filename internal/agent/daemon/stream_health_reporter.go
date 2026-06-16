@@ -44,7 +44,7 @@ func (r *StreamHealthReporter) Report(ctx context.Context, health agenthealth.Ag
 		return err
 	}
 	defer conn.Close()
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		return err
 	}

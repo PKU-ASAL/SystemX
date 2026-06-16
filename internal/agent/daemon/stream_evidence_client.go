@@ -7,7 +7,7 @@ import (
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -26,7 +26,7 @@ func NewStreamEvidenceClient(manager, token string, timeout time.Duration) *Stre
 	return &StreamEvidenceClient{Manager: normalizeGRPCAddress(manager), Token: token, Timeout: timeout}
 }
 
-func (c *StreamEvidenceClient) Pending(ctx context.Context, tenantID, agentID string) ([]link1model.EvidencePullbackRequest, error) {
+func (c *StreamEvidenceClient) Pending(ctx context.Context, tenantID, agentID string) ([]gatewaymodel.EvidencePullbackRequest, error) {
 	frame, err := c.downlink(ctx, tenantID, agentID)
 	if err != nil {
 		return nil, err
@@ -35,21 +35,21 @@ func (c *StreamEvidenceClient) Pending(ctx context.Context, tenantID, agentID st
 	if err := json.Unmarshal(frame.GetPayloadJson(), &envelope); err != nil {
 		return nil, fmt.Errorf("decode stream downlink: %w", err)
 	}
-	var out []link1model.EvidencePullbackRequest
+	var out []gatewaymodel.EvidencePullbackRequest
 	for _, frame := range envelope.Frames {
 		if frame.Type != "evidence_pullback" {
 			continue
 		}
-		var req link1model.EvidencePullbackRequest
+		var req gatewaymodel.EvidencePullbackRequest
 		if err := json.Unmarshal(frame.Payload, &req); err != nil {
 			return nil, fmt.Errorf("decode stream evidence pullback: %w", err)
 		}
-		out = append(out, link1model.NormalizeEvidencePullback(req))
+		out = append(out, gatewaymodel.NormalizeEvidencePullback(req))
 	}
 	return out, nil
 }
 
-func (c *StreamEvidenceClient) Result(ctx context.Context, result link1model.EvidencePullbackResult) error {
+func (c *StreamEvidenceClient) Result(ctx context.Context, result gatewaymodel.EvidencePullbackResult) error {
 	data, err := json.Marshal(result)
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (c *StreamEvidenceClient) Result(ctx context.Context, result link1model.Evi
 		return err
 	}
 	defer conn.Close()
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (c *StreamEvidenceClient) downlink(ctx context.Context, tenantID, agentID s
 		return nil, err
 	}
 	defer conn.Close()
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		return nil, err
 	}

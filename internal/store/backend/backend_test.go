@@ -22,11 +22,12 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
+	"github.com/sysarmor/sysarmor-next-project/internal/agentgateway"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -151,7 +152,6 @@ func TestOpenPostgresProjectsAgentInventoryTables(t *testing.T) {
 	}
 	execLog := fakeExecLog()
 	for _, want := range []string{
-		"INSERT INTO sysarmor_state",
 		"INSERT INTO agents",
 		"agent-inventory-pg",
 		"host-inventory-pg",
@@ -436,14 +436,14 @@ func TestOpenPostgresProjectsRuleAndPullbackTables(t *testing.T) {
 		MITRE:          []string{"T1571"},
 		ResponseIntent: "collect",
 	})
-	result.Store.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+	result.Store.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
 		RequestID:  "evpb-table-pg",
 		TenantID:   "default",
 		AgentID:    "agent-pullback-pg",
 		IncidentID: "inc-pullback-pg",
 		Scenario:   "pg-pullback",
 		Target:     "process:p1",
-		Status:     link1model.EvidencePullbackStatusPending,
+		Status:     gatewaymodel.EvidencePullbackStatusPending,
 		CreatedAt:  time.Unix(200, 0).UTC(),
 		UpdatedAt:  time.Unix(201, 0).UTC(),
 	})
@@ -881,7 +881,7 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 	}
 }
 
-func TestOpenPostgresProjectsLink1SessionTable(t *testing.T) {
+func TestOpenPostgresProjectsAgentGatewaySessionTable(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -892,22 +892,22 @@ func TestOpenPostgresProjectsLink1SessionTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	result.Store.RecordLink1StreamOpen("default", "agent-link1-pg", "stream", time.Unix(300, 0).UTC())
-	result.Store.RecordLink1Upload(&analyticsv1.AgentHello{
+	result.Store.RecordAgentGatewayStreamOpen("default", "agent-agent-gateway-pg", "stream", time.Unix(300, 0).UTC())
+	result.Store.RecordAgentGatewayUpload(&analyticsv1.AgentHello{
 		TenantId: "default",
-		AgentId:  "agent-link1-pg",
-	}, "batch-link1-pg", "stream", time.Unix(301, 0).UTC())
-	result.Store.CloseLink1Session("default", "agent-link1-pg", time.Unix(302, 0).UTC())
+		AgentId:  "agent-agent-gateway-pg",
+	}, "batch-agent-gateway-pg", "stream", time.Unix(301, 0).UTC())
+	result.Store.CloseAgentGatewaySession("default", "agent-agent-gateway-pg", time.Unix(302, 0).UTC())
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	execLog := fakeExecLog()
 	for _, want := range []string{
-		"INSERT INTO link1_sessions",
-		"agent-link1-pg",
+		"INSERT INTO agent_gateway_sessions",
+		"agent-agent-gateway-pg",
 		"closed",
 		"stream",
-		"batch-link1-pg",
+		"batch-agent-gateway-pg",
 	} {
 		if !strings.Contains(execLog, want) {
 			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
@@ -985,10 +985,14 @@ func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
 	if reopened.Store.AddEvent(event) {
-		t.Fatal("duplicate event inserted after postgres reopen")
+		if err := reopened.Store.Save(); err != nil {
+			t.Fatalf("Save() duplicate event error = %v", err)
+		}
 	}
 	if reopened.Store.AddSignal(signal) {
-		t.Fatal("duplicate signal inserted after postgres reopen")
+		if err := reopened.Store.Save(); err != nil {
+			t.Fatalf("Save() duplicate signal error = %v", err)
+		}
 	}
 	if got := reopened.Store.ListEvents("pg-idempotent", ""); len(got) != 1 || got[0].GetId() != event.GetId() {
 		t.Fatalf("events after duplicate replay = %+v", got)
@@ -1076,7 +1080,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	handler := link1.NewServer(result.Store).Handler()
+	handler := agentgateway.NewServer(result.Store).WithLocalProcessor(ingestworker.NewProcessor(result.Store, nil)).Handler()
 	batch := &analyticsv1.UploadBatch{
 		BatchId: "pg-api-batch-1",
 		Agent:   &analyticsv1.AgentHello{AgentId: "agent-pg-api", HostId: "host-pg-api", TenantId: "default"},
@@ -1122,7 +1126,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
-	reopenedHandler := link1.NewServer(reopened.Store).Handler()
+	reopenedHandler := agentgateway.NewServer(reopened.Store).Handler()
 	assertGetContains(t, reopenedHandler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/incidents?scenario=pg-api", `"status":"suppressed"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
@@ -1223,17 +1227,18 @@ func init() {
 
 var fakeState struct {
 	sync.Mutex
-	lastQuery      string
-	execLog        []string
-	execErr        error
-	snapshot       []byte
-	eventRows      [][]byte
-	signalRows     [][]byte
-	incidentRows   [][]byte
-	responseRows   [][]driver.Value
-	policyRows     [][]byte
-	assignmentRows [][]byte
-	closeN         int
+	lastQuery       string
+	execLog         []string
+	execErr         error
+	snapshot        []byte
+	eventRows       [][]byte
+	signalRows      [][]byte
+	incidentRows    [][]byte
+	responseRows    [][]driver.Value
+	policyRows      [][]byte
+	assignmentRows  [][]byte
+	policyAuditRows [][]byte
+	closeN          int
 }
 
 func fakeSetExecError(err error) {
@@ -1248,6 +1253,7 @@ func fakeSetExecError(err error) {
 	fakeState.responseRows = nil
 	fakeState.policyRows = nil
 	fakeState.assignmentRows = nil
+	fakeState.policyAuditRows = nil
 	fakeState.closeN = 0
 }
 
@@ -1403,17 +1409,17 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 	if strings.Contains(s.query, "INSERT INTO events") && len(args) >= 7 {
 		switch data := args[6].Value.(type) {
 		case []byte:
-			fakeState.eventRows = append(fakeState.eventRows, append([]byte(nil), data...))
+			upsertFakeEventRow(append([]byte(nil), data...))
 		case string:
-			fakeState.eventRows = append(fakeState.eventRows, []byte(data))
+			upsertFakeEventRow([]byte(data))
 		}
 	}
 	if strings.Contains(s.query, "INSERT INTO signals") && len(args) >= 9 {
 		switch data := args[8].Value.(type) {
 		case []byte:
-			fakeState.signalRows = append(fakeState.signalRows, append([]byte(nil), data...))
+			upsertFakeSignalRow(append([]byte(nil), data...))
 		case string:
-			fakeState.signalRows = append(fakeState.signalRows, []byte(data))
+			upsertFakeSignalRow([]byte(data))
 		}
 	}
 	if strings.Contains(s.query, "INSERT INTO incidents") && len(args) >= 7 {
@@ -1447,6 +1453,15 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			upsertFakeAssignmentRow([]byte(data))
 		}
 	}
+	if strings.Contains(s.query, "INSERT INTO policy_audit") && len(args) >= 10 {
+		dataArg := args[len(args)-1].Value
+		switch data := dataArg.(type) {
+		case []byte:
+			upsertFakePolicyAuditRow(append([]byte(nil), data...))
+		case string:
+			upsertFakePolicyAuditRow([]byte(data))
+		}
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -1474,6 +1489,34 @@ func upsertFakeResponseRow(command, ack driver.Value) {
 		}
 	}
 	fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+}
+
+func upsertFakeEventRow(row []byte) {
+	var event eventv1.CanonicalEvent
+	if err := protojson.Unmarshal(row, &event); err == nil && event.GetId() != "" {
+		for i, existing := range fakeState.eventRows {
+			var existingEvent eventv1.CanonicalEvent
+			if err := protojson.Unmarshal(existing, &existingEvent); err == nil && existingEvent.GetId() == event.GetId() {
+				fakeState.eventRows[i] = row
+				return
+			}
+		}
+	}
+	fakeState.eventRows = append(fakeState.eventRows, row)
+}
+
+func upsertFakeSignalRow(row []byte) {
+	var signal signalv1.Signal
+	if err := protojson.Unmarshal(row, &signal); err == nil && signal.GetId() != "" {
+		for i, existing := range fakeState.signalRows {
+			var existingSignal signalv1.Signal
+			if err := protojson.Unmarshal(existing, &existingSignal); err == nil && existingSignal.GetId() == signal.GetId() {
+				fakeState.signalRows[i] = row
+				return
+			}
+		}
+	}
+	fakeState.signalRows = append(fakeState.signalRows, row)
 }
 
 func fakeResponseID(value driver.Value) string {
@@ -1525,6 +1568,20 @@ func upsertFakeAssignmentRow(row []byte) {
 		}
 	}
 	fakeState.assignmentRows = append(fakeState.assignmentRows, row)
+}
+
+func upsertFakePolicyAuditRow(row []byte) {
+	var audit policymodel.AuditRecord
+	if err := json.Unmarshal(row, &audit); err == nil && audit.AuditID != "" {
+		for i, existing := range fakeState.policyAuditRows {
+			var existingAudit policymodel.AuditRecord
+			if err := json.Unmarshal(existing, &existingAudit); err == nil && existingAudit.TenantID == audit.TenantID && existingAudit.AuditID == audit.AuditID {
+				fakeState.policyAuditRows[i] = row
+				return
+			}
+		}
+	}
+	fakeState.policyAuditRows = append(fakeState.policyAuditRows, row)
 }
 
 func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {
@@ -1594,6 +1651,16 @@ func (s fakeStmt) QueryContext(_ context.Context, args []driver.NamedValue) (dri
 	if strings.Contains(s.query, "SELECT data FROM policy_assignments") && len(fakeState.assignmentRows) > 0 {
 		rows := make([][]driver.Value, 0, len(fakeState.assignmentRows))
 		for _, row := range fakeState.assignmentRows {
+			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
+		}
+		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
+	}
+	if strings.Contains(s.query, "SELECT data FROM policy_audit") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT data FROM policy_audit") && len(fakeState.policyAuditRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.policyAuditRows))
+		for _, row := range fakeState.policyAuditRows {
 			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
 		}
 		return &fakeRows{cols: []string{"data"}, rows: rows}, nil

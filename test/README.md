@@ -165,17 +165,17 @@ make e2e-query-pagination
 make e2e-postgres-store
 make e2e-postgres-all
 
-# v3 Link1 stream foundation smoke
-make e2e-link1-session
-make e2e-link1-downlink
-make e2e-link1-frames
-make e2e-link1-grpc-stream
-make e2e-link1-stream-upload
-make e2e-link1-stream-resume
-make e2e-link1-policy-downlink
-make e2e-link1-response-command
-make e2e-link1-evidence-pullback
-make e2e-link1-stream-all
+# v3 AgentGateway stream foundation smoke
+make e2e-agent-gateway-session
+make e2e-agent-gateway-downlink
+make e2e-agent-gateway-frames
+make e2e-agent-gateway-grpc-stream
+make e2e-agent-gateway-stream-upload
+make e2e-agent-gateway-stream-resume
+make e2e-agent-gateway-policy-downlink
+make e2e-agent-gateway-response-command
+make e2e-agent-gateway-evidence-pullback
+make e2e-agent-gateway-stream-all
 
 # 性能基线 smoke
 make perf TOPO=container DUR=10
@@ -200,12 +200,12 @@ MVP / v2 container 和 VM 主运行路径是:
 sysarmor-agent run --config ...（agent-managed tetra getevents）
   → normalize + fastpath
   → durable spool + upload worker
-  → sysarmor-manager Link1 upload/analytics/store
+  → sysarmor-manager AgentGateway upload/analytics/store
   → sysarmorctl JSON query
   → harness/assert.py
 ```
 
-agent 默认用 HTTP upload 兼容 e2e;也支持 gRPC Link1:
+agent 默认用 HTTP upload 兼容 e2e;也支持 gRPC AgentGateway:
 
 ```bash
 docker exec mgr /opt/sysarmor/bin/sysarmor-agent \

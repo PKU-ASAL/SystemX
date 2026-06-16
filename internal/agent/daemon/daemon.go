@@ -21,10 +21,10 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -111,7 +111,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			return failStartup("resume", err)
 		}
 		if r.Out != nil && stats.LastError != "" {
-			fmt.Fprintf(r.Out, "agent link1 resume error: %s\n", stats.LastError)
+			fmt.Fprintf(r.Out, "agent agentgateway resume error: %s\n", stats.LastError)
 		}
 	}
 	var responseClient *ResponseClient
@@ -733,8 +733,8 @@ func (r *Runner) pollStreamEvidencePullbacks(ctx context.Context, client *Stream
 	return nil
 }
 
-func (r *Runner) collectEvidencePullback(req link1model.EvidencePullbackRequest) link1model.EvidencePullbackResult {
-	result := link1model.EvidencePullbackResult{
+func (r *Runner) collectEvidencePullback(req gatewaymodel.EvidencePullbackRequest) gatewaymodel.EvidencePullbackResult {
+	result := gatewaymodel.EvidencePullbackResult{
 		RequestID:  req.RequestID,
 		TenantID:   r.Config.Agent.TenantID,
 		AgentID:    r.Config.Agent.ID,

@@ -65,7 +65,7 @@ func Open(ctx context.Context, opts Options) (Result, error) {
 			_ = db.Close()
 			return Result{}, err
 		}
-		st, err := postgres.OpenSnapshotStore(ctx, db, migration)
+		st, err := postgres.OpenTableStore(ctx, db, migration)
 		if err != nil {
 			_ = db.Close()
 			return Result{}, err
@@ -78,7 +78,7 @@ func Open(ctx context.Context, opts Options) (Result, error) {
 
 func normalizeKind(kind string) string {
 	if kind == "" {
-		return KindFile
+		return KindPostgres
 	}
 	return kind
 }

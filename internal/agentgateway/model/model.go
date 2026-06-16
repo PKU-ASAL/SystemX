@@ -1,4 +1,4 @@
-package link1
+package gatewaymodel
 
 import (
 	"encoding/json"

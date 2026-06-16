@@ -1,0 +1,41 @@
+package ingestworker
+
+import (
+	"context"
+	"fmt"
+
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
+	"google.golang.org/protobuf/encoding/protojson"
+)
+
+type Worker struct {
+	consumer  platformkafka.Consumer
+	processor *Processor
+}
+
+func NewWorker(consumer platformkafka.Consumer, processor *Processor) *Worker {
+	return &Worker{consumer: consumer, processor: processor}
+}
+
+func (w *Worker) Run(ctx context.Context) error {
+	if w == nil || w.consumer == nil || w.processor == nil {
+		return fmt.Errorf("ingest worker requires consumer and processor")
+	}
+	for {
+		msg, err := w.consumer.Fetch(ctx)
+		if err != nil {
+			return err
+		}
+		batch := &analyticsv1.UploadBatch{}
+		if err := protojson.Unmarshal(msg.Value, batch); err != nil {
+			return fmt.Errorf("decode raw upload key=%q: %w", msg.Key, err)
+		}
+		if _, err := w.processor.Process(ctx, batch); err != nil {
+			return fmt.Errorf("process raw upload key=%q: %w", msg.Key, err)
+		}
+		if err := w.consumer.Commit(ctx, msg); err != nil {
+			return fmt.Errorf("commit raw upload key=%q: %w", msg.Key, err)
+		}
+	}
+}

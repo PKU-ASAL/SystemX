@@ -25,15 +25,16 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
+	"github.com/sysarmor/sysarmor-next-project/internal/agentgateway"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -153,9 +154,9 @@ func TestStreamPolicyClientFetchesDownlinkPolicy(t *testing.T) {
 		PolicyID:      "stream-policy",
 		PolicyVersion: 3,
 	})
-	linkSrv := link1.NewServer(st)
+	linkSrv := agentgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, agentgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -190,9 +191,9 @@ func TestStreamResponseClientFetchesCommandAndAcks(t *testing.T) {
 		Action:     "collect",
 		Target:     "process:p1",
 	})
-	linkSrv := link1.NewServer(st)
+	linkSrv := agentgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, agentgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +227,7 @@ func TestStreamResponseClientFetchesCommandAndAcks(t *testing.T) {
 func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
 	st := &store.Store{}
 	st.AddIncident(&incidentv1.Incident{Id: "inc-stream", Scenario: "pullback-stream", Summary: "stream incident"})
-	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
 		RequestID:  "evpb-stream-agent",
 		TenantID:   "default",
 		AgentID:    "agent-stream",
@@ -235,9 +236,9 @@ func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
 		Target:     "process:p1",
 		Reason:     "collect graph evidence",
 	})
-	linkSrv := link1.NewServer(st)
+	linkSrv := agentgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, agentgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +260,7 @@ func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
 		t.Fatalf("pollStreamEvidencePullbacks() error = %v", err)
 	}
 	pullbacks := st.ListEvidencePullbacks("default", "agent-stream")
-	if len(pullbacks) != 1 || pullbacks[0].Status != link1model.EvidencePullbackStatusCompleted || !pullbacks[0].ResultOK {
+	if len(pullbacks) != 1 || pullbacks[0].Status != gatewaymodel.EvidencePullbackStatusCompleted || !pullbacks[0].ResultOK {
 		t.Fatalf("pullbacks = %+v", pullbacks)
 	}
 	inc, ok := st.GetIncident("inc-stream", "pullback-stream")
@@ -274,9 +275,9 @@ func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
 
 func TestStreamHealthReporterSendsHeartbeatFrame(t *testing.T) {
 	st := &store.Store{}
-	linkSrv := link1.NewServer(st)
+	linkSrv := agentgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, agentgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -327,10 +328,10 @@ func TestStreamResumeClientAcksLocalSpoolThroughCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store.Store{}
-	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-stream", HostId: "host-stream", TenantId: "default"}, id2, "stream", time.Now().UTC())
-	linkSrv := link1.NewServer(st)
+	st.RecordAgentGatewayUpload(&analyticsv1.AgentHello{AgentId: "agent-stream", HostId: "host-stream", TenantId: "default"}, id2, "stream", time.Now().UTC())
+	linkSrv := agentgateway.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	analyticsv1.RegisterAgentGatewayServer(grpcServer, agentgateway.NewGRPCServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -1297,7 +1298,7 @@ func TestRunnerUploadsTamperSignalToManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	managerStore := &store.Store{}
-	server := httptest.NewServer(link1.NewServerWithAuth(managerStore, "dev-token").Handler())
+	server := httptest.NewServer(agentgateway.NewServerWithAuth(managerStore, "dev-token").WithLocalProcessor(ingestworker.NewProcessor(managerStore, nil)).Handler())
 	defer server.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1624,7 +1625,7 @@ func waitForManagerSignal(t *testing.T, managerURL, name string) {
 
 func serveDefaultPolicy(t *testing.T, w http.ResponseWriter, r *http.Request) bool {
 	t.Helper()
-	if r.URL.Path == "/api/v1/link1-resume" {
+	if r.URL.Path == "/api/v1/agent-gateway-resume" {
 		writeTestJSON(t, w, map[string]any{
 			"tenant_id":     r.URL.Query().Get("tenant_id"),
 			"agent_id":      r.URL.Query().Get("agent_id"),

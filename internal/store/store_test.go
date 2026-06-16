@@ -10,7 +10,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
@@ -78,7 +78,7 @@ func TestMetricsSnapshotAndReset(t *testing.T) {
 
 func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	st := &Store{}
-	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
 		RequestID:  "evpb-a",
 		TenantID:   "default",
 		AgentID:    "agent-a",
@@ -97,7 +97,7 @@ func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("pullbacks = %+v", got)
 	}
-	if got[0].RequestID != "evpb-a" || got[0].Status != link1model.EvidencePullbackStatusPending {
+	if got[0].RequestID != "evpb-a" || got[0].Status != gatewaymodel.EvidencePullbackStatusPending {
 		t.Fatalf("pullback = %+v", got[0])
 	}
 }
@@ -189,12 +189,12 @@ func TestApproveResponseRequiresThresholdAndAllowedRole(t *testing.T) {
 
 func TestCompleteEvidencePullbackUpdatesStatus(t *testing.T) {
 	st := &Store{}
-	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
 		RequestID: "evpb-a",
 		TenantID:  "default",
 		AgentID:   "agent-a",
 	})
-	req, ok := st.CompleteEvidencePullback(link1model.EvidencePullbackResult{
+	req, ok := st.CompleteEvidencePullback(gatewaymodel.EvidencePullbackResult{
 		RequestID: "evpb-a",
 		TenantID:  "default",
 		AgentID:   "agent-a",
@@ -204,7 +204,7 @@ func TestCompleteEvidencePullbackUpdatesStatus(t *testing.T) {
 	if !ok {
 		t.Fatal("CompleteEvidencePullback ok = false")
 	}
-	if req.Status != link1model.EvidencePullbackStatusCompleted || !req.ResultOK || req.Result != "collected" || req.CompletedAt.IsZero() {
+	if req.Status != gatewaymodel.EvidencePullbackStatusCompleted || !req.ResultOK || req.Result != "collected" || req.CompletedAt.IsZero() {
 		t.Fatalf("completed request = %+v", req)
 	}
 	if got := st.PendingEvidencePullbacks("default", "agent-a"); len(got) != 0 {
@@ -485,7 +485,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
 	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
-	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
+	st.RecordAgentGatewayUpload(&analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.UpsertOperatorRoleBinding(OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin", "policy_admin", "responder"}})
 	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
 	st.ObserveRaritySignals([]*signalv1.Signal{{
@@ -519,8 +519,8 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	if _, ok := reloaded.GetAgentHealth("default", "agent-a"); !ok {
 		t.Fatal("agent health missing after import")
 	}
-	if got := reloaded.ListLink1Sessions("default", "agent-a"); len(got) != 1 || got[0].LastAckCursor != "batch-a" {
-		t.Fatalf("link1 sessions after import = %+v", got)
+	if got := reloaded.ListAgentGatewaySessions("default", "agent-a"); len(got) != 1 || got[0].LastAckCursor != "batch-a" {
+		t.Fatalf("agentgateway sessions after import = %+v", got)
 	}
 	if got, ok := reloaded.OperatorRolesForActor("alice"); !ok || len(got) != 2 || got[0] != "policy_admin" || got[1] != "responder" {
 		t.Fatalf("operator roles after import = %+v ok=%v", got, ok)
@@ -533,15 +533,15 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRecordLink1UploadUpdatesSessionCursor(t *testing.T) {
+func TestRecordAgentGatewayUploadUpdatesSessionCursor(t *testing.T) {
 	st := &Store{}
 	agent := &analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}
-	first := st.RecordLink1Upload(agent, "batch-1", "http", time.Unix(10, 0).UTC())
-	second := st.RecordLink1Upload(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
+	first := st.RecordAgentGatewayUpload(agent, "batch-1", "http", time.Unix(10, 0).UTC())
+	second := st.RecordAgentGatewayUpload(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
 	if first.SessionID == "" || first.SessionID != second.SessionID {
 		t.Fatalf("session ids = %q/%q", first.SessionID, second.SessionID)
 	}
-	sessions := st.ListLink1Sessions("default", "agent-a")
+	sessions := st.ListAgentGatewaySessions("default", "agent-a")
 	if len(sessions) != 1 {
 		t.Fatalf("sessions len = %d, want 1", len(sessions))
 	}
@@ -551,22 +551,22 @@ func TestRecordLink1UploadUpdatesSessionCursor(t *testing.T) {
 	}
 }
 
-func TestLink1StreamSessionLifecycle(t *testing.T) {
+func TestAgentGatewayStreamSessionLifecycle(t *testing.T) {
 	st := &Store{}
-	opened := st.RecordLink1StreamOpen("default", "agent-stream", "stream", time.Unix(10, 0).UTC())
+	opened := st.RecordAgentGatewayStreamOpen("default", "agent-stream", "stream", time.Unix(10, 0).UTC())
 	if opened.Status != "open" || opened.Transport != "stream" || !opened.ClosedAt.IsZero() {
 		t.Fatalf("opened session = %+v", opened)
 	}
-	seen := st.RecordLink1SessionSeen("default", "agent-stream", time.Unix(20, 0).UTC())
+	seen := st.RecordAgentGatewaySessionSeen("default", "agent-stream", time.Unix(20, 0).UTC())
 	if seen.Status != "open" || !seen.LastSeenAt.Equal(time.Unix(20, 0).UTC()) {
 		t.Fatalf("seen session = %+v", seen)
 	}
-	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-stream", TenantId: "default"}, "batch-stream", "stream", time.Unix(25, 0).UTC())
-	closed := st.CloseLink1Session("default", "agent-stream", time.Unix(30, 0).UTC())
+	st.RecordAgentGatewayUpload(&analyticsv1.AgentHello{AgentId: "agent-stream", TenantId: "default"}, "batch-stream", "stream", time.Unix(25, 0).UTC())
+	closed := st.CloseAgentGatewaySession("default", "agent-stream", time.Unix(30, 0).UTC())
 	if closed.Status != "closed" || !closed.ClosedAt.Equal(time.Unix(30, 0).UTC()) || closed.LastAckCursor != "batch-stream" {
 		t.Fatalf("closed session = %+v", closed)
 	}
-	reopened := st.RecordLink1StreamOpen("default", "agent-stream", "stream", time.Unix(40, 0).UTC())
+	reopened := st.RecordAgentGatewayStreamOpen("default", "agent-stream", "stream", time.Unix(40, 0).UTC())
 	if reopened.Status != "open" || !reopened.ClosedAt.IsZero() || reopened.LastAckCursor != "batch-stream" {
 		t.Fatalf("reopened session = %+v", reopened)
 	}

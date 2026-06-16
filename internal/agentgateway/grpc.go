@@ -1,4 +1,4 @@
-package link1
+package agentgateway
 
 import (
 	"context"
@@ -14,11 +14,11 @@ import (
 )
 
 type grpcServer struct {
-	analyticsv1.UnimplementedLink1Server
+	analyticsv1.UnimplementedAgentGatewayServer
 	srv *Server
 }
 
-func NewGRPCServer(srv *Server) analyticsv1.Link1Server {
+func NewGRPCServer(srv *Server) analyticsv1.AgentGatewayServer {
 	return &grpcServer{srv: srv}
 }
 
@@ -42,14 +42,15 @@ func (s *grpcServer) Upload(ctx context.Context, batch *analyticsv1.UploadBatch)
 	}, nil
 }
 
-func (s *grpcServer) Stream(stream analyticsv1.Link1_StreamServer) error {
+func (s *grpcServer) Stream(stream analyticsv1.AgentGateway_StreamServer) error {
 	if !s.authorized(stream.Context()) {
 		return status.Error(codes.Unauthenticated, "unauthorized")
 	}
 	var sessionTenantID, sessionAgentID string
 	defer func() {
 		if sessionAgentID != "" {
-			s.srv.store.CloseLink1Session(sessionTenantID, sessionAgentID, time.Now().UTC())
+			session := s.srv.store.CloseAgentGatewaySession(sessionTenantID, sessionAgentID, time.Now().UTC())
+			s.srv.touchHotSession(session)
 		}
 	}()
 	for {
@@ -74,9 +75,11 @@ func (s *grpcServer) Stream(stream analyticsv1.Link1_StreamServer) error {
 			}
 		} else if sessionAgentID != "" {
 			if frame.GetType() == "hello" {
-				s.srv.store.RecordLink1StreamOpen(sessionTenantID, sessionAgentID, "stream", time.Now().UTC())
+				session := s.srv.store.RecordAgentGatewayStreamOpen(sessionTenantID, sessionAgentID, "stream", time.Now().UTC())
+				s.srv.touchHotSession(session)
 			} else {
-				s.srv.store.RecordLink1SessionSeen(sessionTenantID, sessionAgentID, time.Now().UTC())
+				session := s.srv.store.RecordAgentGatewaySessionSeen(sessionTenantID, sessionAgentID, time.Now().UTC())
+				s.srv.touchHotSession(session)
 			}
 		}
 		if err := stream.Send(out); err != nil {

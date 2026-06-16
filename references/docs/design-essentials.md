@@ -185,7 +185,7 @@ Incident 是唯一面向人的告警单元。它不是一堆 signal 的列表,�
 
 文件存储适合原型和轻量测试；平台化需要数据库、迁移、索引、分页、TTL、幂等写入和审计。
 
-### 3.8 Link1 Transport
+### 3.8 AgentGateway Transport
 
 Agent 与云端之间需要一条可靠的安全控制/数据通道：
 
@@ -320,7 +320,7 @@ type RuntimeScope struct {
 │ Cloud Analytics                                         │
 │ 建图、云端规则、罕见度、结构收敛、Incident、Evidence     │
 ├─────────────────────────────────────────────────────────┤
-│ Gateway / Link1                                         │
+│ Gateway / AgentGateway                                         │
 │ Agent 连接终结、上行摄入、ack/resume、下行策略/响应      │
 ├─────────────────────────────────────────────────────────┤
 │ Endpoint Core                                           │
@@ -340,7 +340,7 @@ type RuntimeScope struct {
 - manager/cloud 不直接消费 raw sensor JSON。
 - agent pipeline 不直接绑定某个 sensor backend。
 - control plane 不绕过 policy 直接发 response。
-- external export 不替代内部 Link1 协议。
+- external export 不替代内部 AgentGateway 协议。
 
 ---
 
@@ -389,9 +389,9 @@ Endpoint Core 的输出必须是 sensor-neutral：
 - raw refs -> evidence seed。
 - durable queue -> upload batch。
 
-### 6.3 Link1 Agent-Gateway Protocol
+### 6.3 AgentGateway Agent-Gateway Protocol
 
-Link1 是 Agent ↔ Gateway 的原生安全通道。
+AgentGateway 是 Agent ↔ Gateway 的原生安全通道。
 
 上行：
 
@@ -703,6 +703,6 @@ contract
 - Sensor 不只是能读事件,还要能表达 scope、capability、health、policy apply、restart、enforce ack。
 - Policy 不只是一个 proto,还要能 version、assign、fetch、apply、audit、rollback。
 - Incident 不只是一个 JSON,还要有 evidence graph、timeline、lifecycle、query。
-- Link1 不只是 HTTP 200,还要有 ack cursor、resume、idempotency、downlink。
+- AgentGateway 不只是 HTTP 200,还要有 ack cursor、resume、idempotency、downlink。
 
 这条标准是后续设计和评审的共同尺子。

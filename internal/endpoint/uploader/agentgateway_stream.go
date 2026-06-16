@@ -57,7 +57,7 @@ func (u *StreamUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.Up
 		return nil, err
 	}
 	defer conn.Close()
-	stream, err := analyticsv1.NewLink1Client(conn).Stream(ctx)
+	stream, err := analyticsv1.NewAgentGatewayClient(conn).Stream(ctx)
 	if err != nil {
 		return nil, err
 	}

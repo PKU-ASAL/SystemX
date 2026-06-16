@@ -1,6 +1,7 @@
-package link1
+package agentgateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,22 +17,27 @@ import (
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
-	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
+	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
+	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
+	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
 type Server struct {
-	store         ManagerStore
-	engine        *ingest.Engine
-	authToken     string
-	operatorToken string
+	store          ManagerStore
+	producer       platformkafka.Producer
+	hotState       platformredis.HotState
+	localProcessor *ingestworker.Processor
+	authToken      string
+	operatorToken  string
 }
 
 type ManagerStore interface {
@@ -42,14 +48,14 @@ type ManagerStore interface {
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
-	CompleteEvidencePullback(link1model.EvidencePullbackResult) (link1model.EvidencePullbackRequest, bool)
-	CreateEvidencePullback(link1model.EvidencePullbackRequest) link1model.EvidencePullbackRequest
+	CompleteEvidencePullback(gatewaymodel.EvidencePullbackResult) (gatewaymodel.EvidencePullbackRequest, bool)
+	CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest) gatewaymodel.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
 	DeleteScenario(string)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	EnsureDefaultPolicy(string)
 	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
-	GetEvidencePullback(string, string, string) (link1model.EvidencePullbackRequest, bool)
+	GetEvidencePullback(string, string, string) (gatewaymodel.EvidencePullbackRequest, bool)
 	GetIncident(string, string) (*incidentv1.Incident, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
 	GetSignal(string) (*signalv1.Signal, bool)
@@ -58,9 +64,9 @@ type ManagerStore interface {
 	ListAgents() []*analyticsv1.AgentHello
 	ListAssignments(string, string) []policymodel.Assignment
 	ListEvents(string, string) []*eventv1.CanonicalEvent
-	ListEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
+	ListEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
 	ListIncidents(string) []*incidentv1.Incident
-	ListLink1Sessions(string, string) []store.Link1Session
+	ListAgentGatewaySessions(string, string) []store.AgentGatewaySession
 	ListPolicies(string) []policymodel.Policy
 	ListPolicyAudits(string, string) []policymodel.AuditRecord
 	ListOperatorRoleBindings(string) []store.OperatorRoleBinding
@@ -69,17 +75,14 @@ type ManagerStore interface {
 	ListSignals(string, string, bool) []*signalv1.Signal
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
-	ObserveRaritySignals([]*signalv1.Signal) rarity.Baseline
-	PendingEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
+	PendingEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
-	CloseLink1Session(string, string, time.Time) store.Link1Session
-	RecordLink1Upload(*analyticsv1.AgentHello, string, string, time.Time) store.Link1Session
-	RecordLink1SessionSeen(string, string, time.Time) store.Link1Session
-	RecordLink1StreamOpen(string, string, string, time.Time) store.Link1Session
+	CloseAgentGatewaySession(string, string, time.Time) store.AgentGatewaySession
+	RecordAgentGatewayUpload(*analyticsv1.AgentHello, string, string, time.Time) store.AgentGatewaySession
+	RecordAgentGatewaySessionSeen(string, string, time.Time) store.AgentGatewaySession
+	RecordAgentGatewayStreamOpen(string, string, string, time.Time) store.AgentGatewaySession
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
-	RecordUpload(int, int, int, int, time.Duration)
-	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
 	OperatorRolesForActor(string) ([]string, bool)
 	RarityBaselineSnapshot() rarity.Baseline
 	Save() error
@@ -182,7 +185,7 @@ var ErrInvalidUpload = errors.New("invalid upload")
 
 func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, engine: ingest.NewEngine()}
+	return &Server{store: st, producer: platformkafka.NoopProducer{}, hotState: platformredis.NoopHotState{}}
 }
 
 func NewServerWithAuth(st ManagerStore, token string) *Server {
@@ -191,7 +194,28 @@ func NewServerWithAuth(st ManagerStore, token string) *Server {
 
 func NewServerWithTokens(st ManagerStore, agentToken, operatorToken string) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, engine: ingest.NewEngine(), authToken: agentToken, operatorToken: operatorToken}
+	return &Server{store: st, producer: platformkafka.NoopProducer{}, hotState: platformredis.NoopHotState{}, authToken: agentToken, operatorToken: operatorToken}
+}
+
+func (s *Server) WithProducer(producer platformkafka.Producer) *Server {
+	if producer == nil {
+		producer = platformkafka.NoopProducer{}
+	}
+	s.producer = producer
+	return s
+}
+
+func (s *Server) WithHotState(hotState platformredis.HotState) *Server {
+	if hotState == nil {
+		hotState = platformredis.NoopHotState{}
+	}
+	s.hotState = hotState
+	return s
+}
+
+func (s *Server) WithLocalProcessor(processor *ingestworker.Processor) *Server {
+	s.localProcessor = processor
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
@@ -211,13 +235,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
 	mux.HandleFunc("/api/v1/response-approvals", s.responseApprovals)
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
-	mux.HandleFunc("/api/v1/link1-frames", s.link1Frames)
-	mux.HandleFunc("/api/v1/link1-downlink", s.link1Downlink)
-	mux.HandleFunc("/api/v1/link1-resume", s.link1Resume)
+	mux.HandleFunc("/api/v1/agent-gateway-frames", s.agentgatewayFrames)
+	mux.HandleFunc("/api/v1/agent-gateway-downlink", s.agentgatewayDownlink)
+	mux.HandleFunc("/api/v1/agent-gateway-resume", s.agentgatewayResume)
 	mux.HandleFunc("/api/v1/evidence-pullbacks", s.evidencePullbacks)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
-	mux.HandleFunc("/api/v1/link1-sessions", s.link1Sessions)
+	mux.HandleFunc("/api/v1/agent-gateway-sessions", s.agentgatewaySessions)
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
@@ -296,46 +320,40 @@ func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, trans
 	if err := validateUploadIdentity(batch); err != nil {
 		return UploadResult{}, err
 	}
-	s.store.AddAgent(batch.GetAgent())
-	touchedScenarios := map[string]*analyticsv1.AgentHello{}
-	acceptedEvents := 0
-	acceptedSignals := 0
-	acceptedSignalList := []*signalv1.Signal{}
-	for _, ev := range batch.GetEvents() {
-		inserted := s.store.AddEvent(ev)
-		if inserted {
-			acceptedEvents++
-		}
-		if inserted && ev.GetScenario() != "" {
-			touchedScenarios[ev.GetScenario()] = batch.GetAgent()
-		}
+	raw, err := protojson.Marshal(batch)
+	if err != nil {
+		return UploadResult{}, fmt.Errorf("encode raw upload: %w", err)
 	}
-	for _, sig := range batch.GetSignals() {
-		inserted := s.store.AddSignal(sig)
-		if inserted {
-			acceptedSignals++
-			acceptedSignalList = append(acceptedSignalList, sig)
-		}
-		if inserted && sig.GetScenario() != "" {
-			touchedScenarios[sig.GetScenario()] = batch.GetAgent()
-		}
+	key := strings.Join([]string{batch.GetAgent().GetTenantId(), batch.GetAgent().GetAgentId(), batch.GetBatchId()}, ":")
+	if err := s.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.upload.raw", Key: key, Value: raw}); err != nil {
+		return UploadResult{}, fmt.Errorf("append raw telemetry: %w", err)
 	}
-	start := time.Now()
-	s.engine.SetRarityBaseline(s.store.RarityBaselineSnapshot())
-	cloudSignals, incidents := s.recomputeTouchedScenarios(touchedScenarios)
-	convergenceLatency := time.Since(start)
-	s.store.RecordUpload(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
-	s.store.RecordLink1Upload(batch.GetAgent(), batch.GetBatchId(), transport, time.Now().UTC())
-	s.store.ObserveRaritySignals(acceptedSignalList)
+	session := s.store.RecordAgentGatewayUpload(batch.GetAgent(), batch.GetBatchId(), transport, time.Now().UTC())
+	s.touchHotSession(session)
 	if err := s.store.Save(); err != nil {
 		return UploadResult{}, err
 	}
-	return UploadResult{
-		AcceptedEvents:  acceptedEvents,
-		AcceptedSignals: acceptedSignals,
-		CloudSignals:    cloudSignals,
-		Incidents:       incidents,
-	}, nil
+	if s.localProcessor == nil {
+		return UploadResult{}, nil
+	}
+	result, err := s.localProcessor.Process(context.Background(), batch)
+	if err != nil {
+		return UploadResult{}, err
+	}
+	return UploadResult{AcceptedEvents: result.AcceptedEvents, AcceptedSignals: result.AcceptedSignals, CloudSignals: result.CloudSignals, Incidents: result.Incidents}, nil
+}
+
+func (s *Server) touchHotSession(session store.AgentGatewaySession) {
+	if session.AgentID == "" {
+		return
+	}
+	_ = s.hotState.TouchAgentSession(context.Background(), platformredis.AgentSession{
+		TenantID:      session.TenantID,
+		AgentID:       session.AgentID,
+		Owner:         "sysarmor-manager",
+		LastSeenAt:    session.LastSeenAt,
+		LastAckCursor: session.LastAckCursor,
+	})
 }
 
 func validateUploadIdentity(batch *analyticsv1.UploadBatch) error {
@@ -357,37 +375,6 @@ func validateUploadIdentity(batch *analyticsv1.UploadBatch) error {
 		return fmt.Errorf("%w: agent identity missing %s", ErrInvalidUpload, strings.Join(missing, ", "))
 	}
 	return nil
-}
-
-func (s *Server) recomputeTouchedScenarios(touchedScenarios map[string]*analyticsv1.AgentHello) (int, int) {
-	totalCloud := 0
-	totalIncidents := 0
-	if len(touchedScenarios) == 0 {
-		return 0, 0
-	}
-	for scenario, agent := range touchedScenarios {
-		events := s.store.ListEvents(scenario, "")
-		endpointSignals := s.store.ListSignals(scenario, "endpoint", false)
-		policy := s.effectiveDetectionPolicyForAgent(agent)
-		analysis := s.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
-		s.store.ReplaceDerivedForScenario(scenario, analysis.CloudSignals, analysis.Incidents)
-		totalCloud += len(analysis.CloudSignals)
-		totalIncidents += len(analysis.Incidents)
-	}
-	return totalCloud, totalIncidents
-}
-
-func (s *Server) effectiveDetectionPolicyForAgent(agent *analyticsv1.AgentHello) *policyv1.DetectionPolicy {
-	if agent == nil {
-		policy, _ := s.store.EffectivePolicy("default", "", "", "")
-		return policy.DetectionPolicy()
-	}
-	var scope agenthealth.RuntimeScope
-	if health, ok := s.store.GetAgentHealth(agent.GetTenantId(), agent.GetAgentId()); ok {
-		scope = health.Scope
-	}
-	policy, _ := s.store.EffectivePolicy(agent.GetTenantId(), agent.GetAgentId(), scope.Type, scope.Selector)
-	return policy.DetectionPolicy()
 }
 
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
@@ -565,16 +552,16 @@ func rolesAllowed(granted []string, required ...string) bool {
 	return false
 }
 
-func (s *Server) link1Sessions(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentgatewaySessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	q := r.URL.Query()
-	writeJSON(w, map[string]any{"sessions": s.store.ListLink1Sessions(q.Get("tenant_id"), q.Get("agent_id"))})
+	writeJSON(w, map[string]any{"sessions": s.store.ListAgentGatewaySessions(q.Get("tenant_id"), q.Get("agent_id"))})
 }
 
-func (s *Server) link1Downlink(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentgatewayDownlink(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -600,7 +587,7 @@ func (s *Server) link1Downlink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"frames": frames})
 }
 
-func (s *Server) link1Resume(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentgatewayResume(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -620,7 +607,7 @@ func (s *Server) link1Resume(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) resumeCursor(tenantID, agentID string) ResumeCursor {
 	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
-	sessions := s.store.ListLink1Sessions(tenantID, agentID)
+	sessions := s.store.ListAgentGatewaySessions(tenantID, agentID)
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
 		resume.ResumeCursor = sessions[0].LastAckCursor
@@ -646,7 +633,7 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "agent_id is required", http.StatusBadRequest)
 			return
 		}
-		out := s.store.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+		out := s.store.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
 			RequestID:  req.RequestID,
 			TenantID:   req.TenantID,
 			AgentID:    req.AgentID,
@@ -1247,7 +1234,7 @@ func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-func (s *Server) link1Frames(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentgatewayFrames(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1258,7 +1245,7 @@ func (s *Server) link1Frames(w http.ResponseWriter, r *http.Request) {
 	}
 	var frames []UplinkFrame
 	if err := json.NewDecoder(r.Body).Decode(&frames); err != nil {
-		http.Error(w, fmt.Sprintf("decode link1 frames: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("decode agentgateway frames: %v", err), http.StatusBadRequest)
 		return
 	}
 	results := make([]UplinkFrameResult, 0, len(frames))
@@ -1321,7 +1308,7 @@ func (s *Server) acceptUplinkFrameWithTransport(frame UplinkFrame, transport str
 		}
 		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
 	case UplinkEvidencePullbackResult:
-		var result link1model.EvidencePullbackResult
+		var result gatewaymodel.EvidencePullbackResult
 		if err := json.Unmarshal(frame.Payload, &result); err != nil {
 			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode evidence pullback result frame: %w", err)
 		}
@@ -1381,7 +1368,9 @@ func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("unknown converge mode %q", q.Get("mode")), http.StatusBadRequest)
 		return
 	}
-	result := s.engine.AnalyzeWithPolicy(nil, s.store.ListSignals(q.Get("scenario"), "endpoint", false), policy)
+	engine := ingest.NewEngine()
+	engine.SetRarityBaseline(s.store.RarityBaselineSnapshot())
+	result := engine.AnalyzeWithPolicy(nil, s.store.ListSignals(q.Get("scenario"), "endpoint", false), policy)
 	writeAnalysisResult(w, result)
 }
 

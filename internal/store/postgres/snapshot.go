@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -13,8 +12,8 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
-	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -24,22 +23,13 @@ import (
 
 const snapshotStateKey = "default"
 
-func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResult) (*store.Store, error) {
+func OpenTableStore(ctx context.Context, db *sql.DB, migration MigrationResult) (*store.Store, error) {
 	if db == nil {
-		return nil, fmt.Errorf("postgres snapshot db is nil")
+		return nil, fmt.Errorf("postgres db is nil")
 	}
 	st, err := store.Open("")
 	if err != nil {
 		return nil, err
-	}
-	state, ok, err := loadSnapshot(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		if err := st.ImportState(state); err != nil {
-			return nil, fmt.Errorf("import postgres snapshot state: %w", err)
-		}
 	}
 	info := store.Info{
 		Backend:          "postgres",
@@ -48,7 +38,7 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		PostgresSchema:   migrations.PostgresVersion,
 	}
 	st.ConfigureBackend(info, func(state store.State) error {
-		return saveSnapshot(context.Background(), db, state)
+		return saveTables(context.Background(), db, state)
 	})
 	st.ConfigureQueryHooks(
 		func(scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
@@ -68,6 +58,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		},
 		func(tenantID, agentID string) ([]policymodel.Assignment, error) {
 			return queryPolicyAssignments(context.Background(), db, tenantID, agentID)
+		},
+		func(tenantID, policyID string) ([]policymodel.AuditRecord, error) {
+			return queryPolicyAudits(context.Background(), db, tenantID, policyID)
 		},
 		func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
 			return queryPolicy(context.Background(), db, tenantID, policyID, version)
@@ -93,38 +86,7 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 	return st, nil
 }
 
-func loadSnapshot(ctx context.Context, db *sql.DB) (store.State, bool, error) {
-	var raw []byte
-	err := db.QueryRowContext(ctx, "SELECT data FROM sysarmor_state WHERE state_key = $1", snapshotStateKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return store.State{}, false, nil
-	}
-	if err != nil {
-		return store.State{}, false, fmt.Errorf("load postgres snapshot: %w", err)
-	}
-	var state store.State
-	if err := json.Unmarshal(raw, &state); err != nil {
-		return store.State{}, false, fmt.Errorf("decode postgres snapshot: %w", err)
-	}
-	return state, true, nil
-}
-
-func saveSnapshot(ctx context.Context, db *sql.DB, state store.State) error {
-	data, err := json.Marshal(state)
-	if err != nil {
-		return err
-	}
-	_, err = db.ExecContext(ctx, `
-INSERT INTO sysarmor_state (state_key, state_version, data, updated_at)
-VALUES ($1, $2, $3, now())
-ON CONFLICT (state_key) DO UPDATE SET
-  state_version = EXCLUDED.state_version,
-  data = EXCLUDED.data,
-  updated_at = now()
-`, snapshotStateKey, store.FileStoreStateVersion, data)
-	if err != nil {
-		return fmt.Errorf("save postgres snapshot: %w", err)
-	}
+func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	if err := projectAgents(ctx, db, state.Agents); err != nil {
 		return err
 	}
@@ -161,7 +123,7 @@ ON CONFLICT (state_key) DO UPDATE SET
 	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
 		return err
 	}
-	if err := projectLink1Sessions(ctx, db, state.Link1Sessions); err != nil {
+	if err := projectAgentGatewaySessions(ctx, db, state.AgentGatewaySessions); err != nil {
 		return err
 	}
 	if err := projectRarityBaseline(ctx, db, state.RarityBaseline); err != nil {
@@ -630,6 +592,37 @@ func projectResponseAudit(ctx context.Context, db *sql.DB, commands []responsemo
 	return nil
 }
 
+func queryPolicyAudits(ctx context.Context, db *sql.DB, tenantID, policyID string) ([]policymodel.AuditRecord, error) {
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM policy_audit
+WHERE tenant_id = $1 AND ($2 = '' OR policy_id = $2)
+ORDER BY created_at ASC, audit_id ASC
+`, tenantID, policyID)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres policy audits: %w", err)
+	}
+	defer rows.Close()
+	out := []policymodel.AuditRecord{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres policy audit: %w", err)
+		}
+		var audit policymodel.AuditRecord
+		if err := json.Unmarshal(raw, &audit); err != nil {
+			return nil, fmt.Errorf("decode postgres policy audit: %w", err)
+		}
+		out = append(out, audit)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres policy audits: %w", err)
+	}
+	return out, nil
+}
+
 func upsertResponseAudit(ctx context.Context, db *sql.DB, cmd responsemodel.Command, ack *responsemodel.Ack) error {
 	if cmd.ResponseID == "" {
 		return nil
@@ -667,7 +660,7 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
 	return nil
 }
 
-func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []link1model.EvidencePullbackRequest) error {
+func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []gatewaymodel.EvidencePullbackRequest) error {
 	for _, req := range pullbacks {
 		if req.RequestID == "" {
 			continue
@@ -678,7 +671,7 @@ func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []link1
 		}
 		status := req.Status
 		if status == "" {
-			status = link1model.EvidencePullbackStatusPending
+			status = gatewaymodel.EvidencePullbackStatusPending
 		}
 		data, err := json.Marshal(req)
 		if err != nil {
@@ -1158,7 +1151,7 @@ ON CONFLICT (tenant_id, workload_key, signal_name) DO UPDATE SET
 	return nil
 }
 
-func projectLink1Sessions(ctx context.Context, db *sql.DB, sessions []store.Link1Session) error {
+func projectAgentGatewaySessions(ctx context.Context, db *sql.DB, sessions []store.AgentGatewaySession) error {
 	for _, session := range sessions {
 		if session.SessionID == "" || session.AgentID == "" {
 			continue
@@ -1169,13 +1162,13 @@ func projectLink1Sessions(ctx context.Context, db *sql.DB, sessions []store.Link
 		}
 		data, err := json.Marshal(session)
 		if err != nil {
-			return fmt.Errorf("encode link1 session projection: %w", err)
+			return fmt.Errorf("encode agentgateway session projection: %w", err)
 		}
 		startedAt := session.StartedAt
 		lastSeenAt := session.LastSeenAt
 		if startedAt.IsZero() || lastSeenAt.IsZero() {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO link1_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, data)
+INSERT INTO agent_gateway_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id, session_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
@@ -1187,7 +1180,7 @@ ON CONFLICT (tenant_id, session_id) DO UPDATE SET
 `, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, data)
 		} else if session.ClosedAt.IsZero() {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO link1_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, data)
+INSERT INTO agent_gateway_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (tenant_id, session_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
@@ -1200,7 +1193,7 @@ ON CONFLICT (tenant_id, session_id) DO UPDATE SET
 `, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, startedAt, lastSeenAt, data)
 		} else {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO link1_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, closed_at, data)
+INSERT INTO agent_gateway_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, closed_at, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (tenant_id, session_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
@@ -1213,7 +1206,7 @@ ON CONFLICT (tenant_id, session_id) DO UPDATE SET
 `, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, startedAt, lastSeenAt, session.ClosedAt, data)
 		}
 		if err != nil {
-			return fmt.Errorf("project link1 session: %w", err)
+			return fmt.Errorf("project agentgateway session: %w", err)
 		}
 	}
 	return nil

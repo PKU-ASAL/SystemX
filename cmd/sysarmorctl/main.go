@@ -96,7 +96,7 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/agent-health?" + q.Encode())
-	case "link1-sessions":
+	case "agent-gateway-sessions":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
@@ -112,8 +112,8 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			}
 		}
-		return httpGet(base + "/api/v1/link1-sessions?" + q.Encode())
-	case "link1-downlink":
+		return httpGet(base + "/api/v1/agent-gateway-sessions?" + q.Encode())
+	case "agent-gateway-downlink":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
@@ -139,8 +139,8 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			}
 		}
-		return httpGet(base + "/api/v1/link1-downlink?" + q.Encode())
-	case "link1-resume":
+		return httpGet(base + "/api/v1/agent-gateway-downlink?" + q.Encode())
+	case "agent-gateway-resume":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
@@ -156,7 +156,7 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			}
 		}
-		return httpGet(base + "/api/v1/link1-resume?" + q.Encode())
+		return httpGet(base + "/api/v1/agent-gateway-resume?" + q.Encode())
 	case "evidence-pullbacks":
 		q := url.Values{}
 		req := map[string]any{}
@@ -213,7 +213,7 @@ func query(mgr string, args []string) ([]byte, error) {
 			return httpPostJSON(base+"/api/v1/evidence-pullbacks", req)
 		}
 		return httpGet(base + "/api/v1/evidence-pullbacks?" + q.Encode())
-	case "link1-frames":
+	case "agent-gateway-frames":
 		var file string
 		for i := 1; i < len(args); i++ {
 			if args[i] == "--file" {
@@ -230,7 +230,7 @@ func query(mgr string, args []string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return httpPostRaw(base+"/api/v1/link1-frames", data)
+		return httpPostRaw(base+"/api/v1/agent-gateway-frames", data)
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
 	case "store-status":

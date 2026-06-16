@@ -34,7 +34,7 @@ message StreamFrame {
   bytes payload_json = 2;
 }
 
-service Link1 {
+service AgentGateway {
   rpc Upload(UploadBatch) returns (UploadAck);
   rpc Stream(stream StreamFrame) returns (stream StreamFrame);
 }

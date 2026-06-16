@@ -8,7 +8,6 @@ import (
 func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 	for _, table := range []string{
 		"schema_migrations",
-		"sysarmor_state",
 		"agents",
 		"agent_health",
 		"rules",
@@ -23,7 +22,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"evidence",
 		"response_audit",
 		"evidence_pullbacks",
-		"link1_sessions",
+		"agent_gateway_sessions",
 		"rarity_baseline",
 		"metrics",
 	} {
@@ -43,7 +42,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"idx_evidence_incident",
 		"idx_response_audit_agent",
 		"idx_evidence_pullbacks_agent",
-		"idx_link1_sessions_agent",
+		"idx_agent_gateway_sessions_agent",
 		"idx_rarity_baseline_workload",
 	} {
 		if !strings.Contains(PostgresSchema, "CREATE INDEX IF NOT EXISTS "+index) {

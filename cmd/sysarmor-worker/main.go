@@ -1,0 +1,108 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	_ "github.com/lib/pq"
+	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
+	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+)
+
+var version = "dev"
+
+func main() {
+	storeBackend := flag.String("store-backend", backend.KindPostgres, "store backend: postgres")
+	postgresDriver := flag.String("postgres-driver", envDefault("SYSARMOR_POSTGRES_DRIVER", "postgres"), "database/sql driver name for postgres backend")
+	postgresDSN := flag.String("postgres-dsn", envDefault("SYSARMOR_POSTGRES_DSN", ""), "Postgres DSN for postgres backend")
+	kafkaBrokers := flag.String("kafka-brokers", envDefault("SYSARMOR_KAFKA_BROKERS", ""), "comma-separated Kafka brokers for raw telemetry ingest")
+	kafkaTopic := flag.String("kafka-topic", envDefault("SYSARMOR_KAFKA_TOPIC", "sysarmor.agent.upload.raw"), "Kafka raw upload topic")
+	kafkaGroupID := flag.String("kafka-group-id", envDefault("SYSARMOR_KAFKA_GROUP_ID", "sysarmor-ingest-worker"), "Kafka consumer group id")
+	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable security data")
+	flag.Parse()
+
+	if flag.NArg() > 0 && flag.Arg(0) == "version" {
+		fmt.Println(version)
+		return
+	}
+	if *storeBackend == backend.KindFile {
+		fmt.Fprintln(os.Stderr, "open store: file backend has been removed from the sysarmor-worker product path; use postgres")
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	openCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	storeResult, err := backend.Open(openCtx, backend.Options{
+		Kind:           *storeBackend,
+		PostgresDriver: *postgresDriver,
+		PostgresDSN:    *postgresDSN,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open store: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := storeResult.Close(); err != nil {
+			log.Printf("close store backend: %v", err)
+		}
+	}()
+
+	consumer, err := platformkafka.NewReaderConsumer(splitCSV(*kafkaBrokers), *kafkaTopic, *kafkaGroupID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open kafka consumer: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := consumer.Close(); err != nil {
+			log.Printf("close kafka consumer: %v", err)
+		}
+	}()
+
+	var indexer platformopensearch.Indexer = platformopensearch.NoopIndexer{}
+	if *opensearchURL != "" {
+		indexer, err = platformopensearch.NewHTTPIndexer(*opensearchURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "open opensearch indexer: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	log.Printf("sysarmor-worker consuming topic=%s group=%s store_backend=%s", *kafkaTopic, *kafkaGroupID, *storeBackend)
+	err = ingestworker.NewWorker(consumer, ingestworker.NewProcessor(storeResult.Store, indexer)).Run(ctx)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(os.Stderr, "run ingest worker: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func envDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}

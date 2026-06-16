@@ -8,13 +8,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS sysarmor_state (
-  state_key TEXT PRIMARY KEY,
-  state_version INTEGER NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  data JSONB NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS agents (
   tenant_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
@@ -181,7 +174,7 @@ CREATE TABLE IF NOT EXISTS evidence_pullbacks (
   PRIMARY KEY (tenant_id, request_id)
 );
 
-CREATE TABLE IF NOT EXISTS link1_sessions (
+CREATE TABLE IF NOT EXISTS agent_gateway_sessions (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   session_id TEXT NOT NULL,
   agent_id TEXT NOT NULL DEFAULT '',
@@ -231,8 +224,8 @@ CREATE INDEX IF NOT EXISTS idx_response_audit_agent ON response_audit (tenant_id
 CREATE INDEX IF NOT EXISTS idx_response_audit_status ON response_audit (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_agent ON evidence_pullbacks (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_status ON evidence_pullbacks (tenant_id, status);
-CREATE INDEX IF NOT EXISTS idx_link1_sessions_agent ON link1_sessions (tenant_id, agent_id);
-CREATE INDEX IF NOT EXISTS idx_link1_sessions_status ON link1_sessions (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_gateway_sessions_agent ON agent_gateway_sessions (tenant_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_gateway_sessions_status ON agent_gateway_sessions (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_workload ON rarity_baseline (tenant_id, workload_key);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_signal ON rarity_baseline (tenant_id, signal_name);
 

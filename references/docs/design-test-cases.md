@@ -105,7 +105,7 @@ go test ./...
 - Tetragon backend。
 - durable spool、upload worker、retry/recovery。
 - manager ingest/store/idempotency。
-- Link1 HTTP/gRPC upload。
+- AgentGateway HTTP/gRPC upload。
 - sysarmorctl 查询。
 
 ### 4.2 Runtime 总门禁
@@ -260,7 +260,7 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` 控制面表、`response_audit` 响应审计表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表、`link1_sessions` 链路状态表、`rarity_baseline` 基线表和 `metrics` 观测表投影开始;`events` / `signals` / `incidents` / `response_audit` / `policies` / `policy_assignments` 已有第一组表读路径,`GetPolicy` / `EffectivePolicy` 已可走 policy 控制面表,`response_audit` 和 policy 控制面已有第一组 mutation 写路径,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
+这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` 控制面表、`response_audit` 响应审计表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表、`agent_gateway_sessions` 链路状态表、`rarity_baseline` 基线表和 `metrics` 观测表投影开始;`events` / `signals` / `incidents` / `response_audit` / `policies` / `policy_assignments` 已有第一组表读路径,`GetPolicy` / `EffectivePolicy` 已可走 policy 控制面表,`response_audit` 和 policy 控制面已有第一组 mutation 写路径,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -287,7 +287,7 @@ make -C test e2e-graph-all
 | `e2e-postgres-effective-policy-query` | Go backend adapter test | Postgres backend 的 `EffectivePolicy` 会优先用 `policy_assignments` / `policies` 表计算生效 policy |
 | `e2e-postgres-incident-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `incidents` / `evidence` 表投影 |
 | `e2e-postgres-observability-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `incident_events` / `metrics` 表投影 |
-| `e2e-postgres-link1-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `link1_sessions` 表投影 |
+| `e2e-postgres-agent-gateway-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `agent_gateway_sessions` 表投影 |
 | `e2e-postgres-rarity-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `rarity_baseline` 表投影 |
 | `e2e-postgres-all` | Make 聚合 | 当前聚合 store/Postgres foundation gate |
 
@@ -297,30 +297,30 @@ make -C test e2e-graph-all
 make -C test e2e-postgres-all
 ```
 
-### 5.7 Link1 Stream Foundation
+### 5.7 AgentGateway Stream Foundation
 
-这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state、open/seen/closed lifecycle 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 resume、policy、response 和 evidence pullback 请求,uplink 也能回传 health heartbeat 和 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。agent 配置默认 transport 已切到 `stream`;历史 runtime 脚本显式使用 `transport: http` 是为了保留 HTTP 兼容回归面。
+这些脚本验证 v3 AgentGateway stream 的早期地基:manager 已经能维护 session state、open/seen/closed lifecycle 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 resume、policy、response 和 evidence pullback 请求,uplink 也能回传 health heartbeat 和 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。agent 配置默认 transport 已切到 `stream`;历史 runtime 脚本显式使用 `transport: http` 是为了保留 HTTP 兼容回归面。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
-| `e2e-link1-session` | `harness/e2e-link1-session.sh` | 同一 agent 连续 upload 会更新 Link1 session,`last_ack_cursor` 前进到最新 batch,并可通过 resume API 查询 |
-| `e2e-link1-downlink` | `harness/e2e-link1-downlink.sh` | Link1 downlink frame 可返回 effective policy update、pending response command 和 evidence pullback request |
-| `e2e-link1-frames` | `harness/e2e-link1-frames.sh` | Link1 uplink frame 可提交 upload、health、ack、evidence pullback result、error,并落到 session、health、response audit、pullback 状态 |
-| `e2e-link1-grpc-stream` | Go stream contract test | gRPC bidi stream 可先发 hello 获取 downlink frames,再通过同一 stream 提交 upload frame 并推进 session cursor |
-| `e2e-link1-stream-lifecycle` | Go stream/store contract test | gRPC stream hello 会记录 session open,后续 frame 刷新 last_seen,stream close/EOF 记录 closed,且不丢失 cursor |
-| `e2e-link1-stream-health` | Go stream contract test | gRPC stream 可接收 agent health heartbeat frame,并更新 manager agent health |
-| `e2e-link1-stream-upload` | Go stream uploader test | agent uploader 可通过 Link1 gRPC stream 上传 batch,manager session cursor 记录为 stream transport;服务端 error frame 会被客户端识别为失败 |
-| `e2e-link1-stream-reconnect` | Go stream uploader test | agent uploader 重新连接后重复上传同一 batch 不会放大 event/signal |
-| `e2e-link1-stream-resume` | Go stream resume test | agent 可通过 Link1 stream downlink 获取 resume cursor,启动时删除 cursor 及之前的本地 spool batch |
-| `e2e-link1-policy-downlink` | Go stream policy test | agent 可通过 Link1 stream downlink 拉取 effective policy,并获得 endpoint rule references |
-| `e2e-link1-response-command` | Go stream response test | agent 可通过 Link1 stream downlink 拉取 response command,执行 observe-only ack 并回写 response audit |
-| `e2e-link1-evidence-pullback` | Go stream evidence test | agent 可通过 Link1 stream downlink 拉取 evidence pullback request,回写 target evidence subgraph,result 完成后 incident evidence 可查询 |
-| `e2e-link1-stream-all` | Make 聚合 | 当前聚合 Link1 session/cursor foundation gate |
+| `e2e-agent-gateway-session` | `harness/e2e-agent-gateway-session.sh` | 同一 agent 连续 upload 会更新 AgentGateway session,`last_ack_cursor` 前进到最新 batch,并可通过 resume API 查询 |
+| `e2e-agent-gateway-downlink` | `harness/e2e-agent-gateway-downlink.sh` | AgentGateway downlink frame 可返回 effective policy update、pending response command 和 evidence pullback request |
+| `e2e-agent-gateway-frames` | `harness/e2e-agent-gateway-frames.sh` | AgentGateway uplink frame 可提交 upload、health、ack、evidence pullback result、error,并落到 session、health、response audit、pullback 状态 |
+| `e2e-agent-gateway-grpc-stream` | Go stream contract test | gRPC bidi stream 可先发 hello 获取 downlink frames,再通过同一 stream 提交 upload frame 并推进 session cursor |
+| `e2e-agent-gateway-stream-lifecycle` | Go stream/store contract test | gRPC stream hello 会记录 session open,后续 frame 刷新 last_seen,stream close/EOF 记录 closed,且不丢失 cursor |
+| `e2e-agent-gateway-stream-health` | Go stream contract test | gRPC stream 可接收 agent health heartbeat frame,并更新 manager agent health |
+| `e2e-agent-gateway-stream-upload` | Go stream uploader test | agent uploader 可通过 AgentGateway gRPC stream 上传 batch,manager session cursor 记录为 stream transport;服务端 error frame 会被客户端识别为失败 |
+| `e2e-agent-gateway-stream-reconnect` | Go stream uploader test | agent uploader 重新连接后重复上传同一 batch 不会放大 event/signal |
+| `e2e-agent-gateway-stream-resume` | Go stream resume test | agent 可通过 AgentGateway stream downlink 获取 resume cursor,启动时删除 cursor 及之前的本地 spool batch |
+| `e2e-agent-gateway-policy-downlink` | Go stream policy test | agent 可通过 AgentGateway stream downlink 拉取 effective policy,并获得 endpoint rule references |
+| `e2e-agent-gateway-response-command` | Go stream response test | agent 可通过 AgentGateway stream downlink 拉取 response command,执行 observe-only ack 并回写 response audit |
+| `e2e-agent-gateway-evidence-pullback` | Go stream evidence test | agent 可通过 AgentGateway stream downlink 拉取 evidence pullback request,回写 target evidence subgraph,result 完成后 incident evidence 可查询 |
+| `e2e-agent-gateway-stream-all` | Make 聚合 | 当前聚合 AgentGateway session/cursor foundation gate |
 
 聚合入口:
 
 ```bash
-make -C test e2e-link1-stream-all
+make -C test e2e-agent-gateway-stream-all
 ```
 
 ### 5.8 Container / VM Runtime Ownership
@@ -503,7 +503,7 @@ make -C test e2e-agent-benign-container
 | control-plane operator token/role binding gate | `e2e-operator-role-bindings` + HTTP 单测 | 部分覆盖 |
 | endpoint policy 启动拉取与应用 | daemon effective-policy 单测 + `e2e-policy-endpoint-disable` | 已覆盖 |
 | endpoint policy 周期刷新 | daemon refresh 单测 + `e2e-policy-agent-refresh` | 已覆盖 |
-| Link1 policy downlink signal | `e2e-link1-policy-downlink` + stream policy client 单测 | 部分覆盖 |
+| AgentGateway policy downlink signal | `e2e-agent-gateway-policy-downlink` + stream policy client 单测 | 部分覆盖 |
 | signal response intent 字段 | endpoint fastpath 单测 + `e2e-response-audit` | 部分覆盖 |
 | response intent -> decision | `e2e-response-audit` | 部分覆盖 |
 | response/enforce observe-only audit | `e2e-response-observe-only` | 部分覆盖 |
@@ -543,19 +543,19 @@ make -C test e2e-agent-benign-container
 | Postgres EffectivePolicy table query path | `e2e-postgres-effective-policy-query` | 部分覆盖 |
 | Postgres incidents/evidence table projection | `e2e-postgres-incident-projection` | 部分覆盖 |
 | Postgres incident_events/metrics table projection | `e2e-postgres-observability-projection` | 部分覆盖 |
-| Postgres link1_sessions table projection | `e2e-postgres-link1-projection` | 部分覆盖 |
+| Postgres agent_gateway_sessions table projection | `e2e-postgres-agent-gateway-projection` | 部分覆盖 |
 | Postgres rarity_baseline table projection | `e2e-postgres-rarity-projection` | 部分覆盖 |
-| Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
-| Link1 stream session lifecycle | `e2e-link1-stream-lifecycle` + store/gRPC 单测 | 部分覆盖 |
-| Link1 resume cursor / local spool cleanup | `e2e-link1-session` / `e2e-link1-stream-resume` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
-| Link1 downlink frame contract | `e2e-link1-downlink` + HTTP/gRPC 单测 | 部分覆盖 |
-| Link1 stream health heartbeat frame | `e2e-link1-stream-health` + stream health reporter 单测 | 部分覆盖 |
-| Link1 stream reconnect duplicate protection | `e2e-link1-stream-reconnect` | 部分覆盖 |
-| Link1 stream upload error-frame handling | `e2e-link1-stream-upload` | 部分覆盖 |
-| agent 默认 stream transport | config 示例/默认值单测 + Link1 stream gates | 部分覆盖 |
-| Link1 evidence pullback request/result | `e2e-link1-downlink` / `e2e-link1-frames` / `e2e-link1-evidence-pullback` + HTTP/CLI/store 单测 | 部分覆盖 |
-| Link1 uplink frame contract | `e2e-link1-frames` + HTTP 单测 | 部分覆盖 |
-| Link1 bidirectional stream/downlink | `e2e-link1-grpc-stream` / `e2e-link1-stream-resume` + gRPC 单测 | 部分覆盖 |
+| AgentGateway session state / ack cursor | `e2e-agent-gateway-session` + store/HTTP 单测 | 部分覆盖 |
+| AgentGateway stream session lifecycle | `e2e-agent-gateway-stream-lifecycle` + store/gRPC 单测 | 部分覆盖 |
+| AgentGateway resume cursor / local spool cleanup | `e2e-agent-gateway-session` / `e2e-agent-gateway-stream-resume` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
+| AgentGateway downlink frame contract | `e2e-agent-gateway-downlink` + HTTP/gRPC 单测 | 部分覆盖 |
+| AgentGateway stream health heartbeat frame | `e2e-agent-gateway-stream-health` + stream health reporter 单测 | 部分覆盖 |
+| AgentGateway stream reconnect duplicate protection | `e2e-agent-gateway-stream-reconnect` | 部分覆盖 |
+| AgentGateway stream upload error-frame handling | `e2e-agent-gateway-stream-upload` | 部分覆盖 |
+| agent 默认 stream transport | config 示例/默认值单测 + AgentGateway stream gates | 部分覆盖 |
+| AgentGateway evidence pullback request/result | `e2e-agent-gateway-downlink` / `e2e-agent-gateway-frames` / `e2e-agent-gateway-evidence-pullback` + HTTP/CLI/store 单测 | 部分覆盖 |
+| AgentGateway uplink frame contract | `e2e-agent-gateway-frames` + HTTP 单测 | 部分覆盖 |
+| AgentGateway bidirectional stream/downlink | `e2e-agent-gateway-grpc-stream` / `e2e-agent-gateway-stream-resume` + gRPC 单测 | 部分覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |
 
 ---
@@ -567,7 +567,7 @@ make -C test e2e-agent-benign-container
 - **已对齐**: runtime、reliability、container detection、owned container/VM、health、短窗口性能和资源采样都有真实脚本入口。
 - **部分对齐**: 通用 `capture/assert/report` 还保留历史 replay/Phase1 表述,当前最可靠断言在专门 e2e 脚本里。
 - **已修正**: `test/policies/README.md` 和 `test/SCENARIOS.md` 已更新为当前口径:agent-managed 主路径已存在,完整 policy/rule content 控制面仍未闭环。
-- **未覆盖**: 业务无干扰评估、完整 Postgres adapter、Link1 生产级长连接可靠性语义、XDR adapters。
+- **未覆盖**: 业务无干扰评估、完整 Postgres adapter、AgentGateway 生产级长连接可靠性语义、XDR adapters。
 
 所以当前可以客观说:
 
@@ -618,6 +618,6 @@ make -C test e2e-policy-all
 make -C test e2e-response-all
 make -C test e2e-graph-all
 make -C test e2e-postgres-all
-make -C test e2e-link1-stream-all
+make -C test e2e-agent-gateway-stream-all
 make -C test perf-resource-all
 ```

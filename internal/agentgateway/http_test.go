@@ -1,7 +1,9 @@
-package link1
+package agentgateway
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,15 +15,48 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+type failingProducer struct {
+	err error
+}
+
+func (p failingProducer) Append(context.Context, platformkafka.Message) error {
+	return p.err
+}
+
+type recordingProducer struct {
+	messages []platformkafka.Message
+}
+
+func (p *recordingProducer) Append(_ context.Context, msg platformkafka.Message) error {
+	p.messages = append(p.messages, msg)
+	return nil
+}
+
+type recordingIndexer struct {
+	docs []platformopensearch.Document
+}
+
+func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Document) error {
+	i.docs = append(i.docs, doc)
+	return nil
+}
+
+func newTestServer(st *store.Store) *Server {
+	return NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+}
+
 func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newTestServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
 		Signals: []*signalv1.Signal{
@@ -172,7 +207,7 @@ func TestIncidentMergeAPI(t *testing.T) {
 
 func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newTestServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
 		BatchId: "00000000000000000042",
 		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
@@ -198,13 +233,13 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	if !ack.GetOk() || ack.GetBatchId() != batch.GetBatchId() || ack.GetAcceptedEvents() != 1 {
 		t.Fatalf("ack = %#v", ack)
 	}
-	rec = get(t, handler, "/api/v1/link1-sessions?tenant_id=default&agent_id=agent-a")
+	rec = get(t, handler, "/api/v1/agent-gateway-sessions?tenant_id=default&agent_id=agent-a")
 	for _, want := range []string{`"tenant_id":"default"`, `"agent_id":"agent-a"`, `"last_ack_cursor":"00000000000000000042"`, `"transport":"http"`} {
 		if !strings.Contains(rec.Body.String(), want) {
-			t.Fatalf("link1 session missing %s: %s", want, rec.Body.String())
+			t.Fatalf("agentgateway session missing %s: %s", want, rec.Body.String())
 		}
 	}
-	rec = get(t, handler, "/api/v1/link1-resume?tenant_id=default&agent_id=agent-a")
+	rec = get(t, handler, "/api/v1/agent-gateway-resume?tenant_id=default&agent_id=agent-a")
 	if !strings.Contains(rec.Body.String(), `"resume_cursor":"00000000000000000042"`) {
 		t.Fatalf("resume cursor mismatch: %s", rec.Body.String())
 	}
@@ -237,7 +272,7 @@ func TestQueryPagination(t *testing.T) {
 
 func TestHTTPUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newTestServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
 		BatchId: "00000000000000000007",
 		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
@@ -294,7 +329,7 @@ func TestHTTPUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 
 func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newTestServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
 		BatchId: "rarity-batch-1",
 		Agent:   &analyticsv1.AgentHello{AgentId: "agent-rarity", HostId: "host-rarity", TenantId: "default"},
@@ -348,9 +383,84 @@ func TestHTTPUploadRequiresAgentIdentity(t *testing.T) {
 	}
 }
 
+func TestUploadRequiresDurableTelemetryAppend(t *testing.T) {
+	st, _ := store.Open("")
+	srv := NewServer(st).WithProducer(failingProducer{err: errors.New("kafka unavailable")})
+	_, err := srv.AcceptUploadWithTransport(&analyticsv1.UploadBatch{
+		Agent:   &analyticsv1.AgentHello{TenantId: "default", AgentId: "agent-kafka", HostId: "host-kafka"},
+		BatchId: "batch-kafka",
+		Events:  []*eventv1.CanonicalEvent{{Id: "ev-kafka", Scenario: "kafka-gate"}},
+	}, "stream")
+	if err == nil || !strings.Contains(err.Error(), "append raw telemetry") {
+		t.Fatalf("AcceptUploadWithTransport error = %v, want append failure", err)
+	}
+	if got := st.ListEvents("kafka-gate", ""); len(got) != 0 {
+		t.Fatalf("events were stored before durable append: %+v", got)
+	}
+}
+
+func TestGatewayUploadOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testing.T) {
+	st, _ := store.Open("")
+	producer := &recordingProducer{}
+	srv := NewServer(st).WithProducer(producer)
+	result, err := srv.AcceptUploadWithTransport(&analyticsv1.UploadBatch{
+		Agent:   &analyticsv1.AgentHello{TenantId: "default", AgentId: "agent-gateway-only", HostId: "host-gateway-only"},
+		BatchId: "batch-gateway-only",
+		Events:  []*eventv1.CanonicalEvent{{Id: "ev-gateway-only", Scenario: "gateway-only"}},
+		Signals: []*signalv1.Signal{endpointSignalForScenario("gateway-only", "payload_dropped", "lin-gateway-only", false)},
+	}, "stream")
+	if err != nil {
+		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+	}
+	if result.AcceptedEvents != 0 || result.AcceptedSignals != 0 || result.CloudSignals != 0 || result.Incidents != 0 {
+		t.Fatalf("gateway result = %+v, want ack-only counts before worker processing", result)
+	}
+	if len(producer.messages) != 1 || producer.messages[0].Topic != "sysarmor.agent.upload.raw" {
+		t.Fatalf("producer messages = %+v, want one raw upload append", producer.messages)
+	}
+	if got := st.ListEvents("gateway-only", ""); len(got) != 0 {
+		t.Fatalf("gateway stored events before worker processing: %+v", got)
+	}
+	if got := st.ListSignals("gateway-only", "endpoint", false); len(got) != 0 {
+		t.Fatalf("gateway stored signals before worker processing: %+v", got)
+	}
+	sessions := st.ListAgentGatewaySessions("default", "agent-gateway-only")
+	if len(sessions) != 1 || sessions[0].LastAckCursor != "batch-gateway-only" || sessions[0].Transport != "stream" {
+		t.Fatalf("sessions = %+v, want cursor/session recorded", sessions)
+	}
+}
+
+func TestUploadIndexesSecurityDocuments(t *testing.T) {
+	st, _ := store.Open("")
+	indexer := &recordingIndexer{}
+	srv := NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, indexer))
+	_, err := srv.AcceptUploadWithTransport(&analyticsv1.UploadBatch{
+		Agent:   &analyticsv1.AgentHello{TenantId: "default", AgentId: "agent-index", HostId: "host-index"},
+		BatchId: "batch-index",
+		Events:  []*eventv1.CanonicalEvent{{Id: "ev-index", Scenario: "apt-fileless-c2", Kind: eventv1.EventKind_EVENT_KIND_EXEC}},
+		Signals: []*signalv1.Signal{
+			endpointSignal("web_runtime_spawns_shell", "lin-index", false, processEntity("p-web")),
+			endpointSignal("payload_dropped", "lin-index", false, fileEntity("/dev/shm/x.sh")),
+			endpointSignal("reverse_shell_pattern", "lin-index", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
+		},
+	}, "stream")
+	if err != nil {
+		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+	}
+	indexes := map[string]bool{}
+	for _, doc := range indexer.docs {
+		indexes[doc.Index] = true
+	}
+	for _, want := range []string{"sysarmor-events", "sysarmor-signals", "sysarmor-incidents", "sysarmor-incident-timeline", "sysarmor-evidence"} {
+		if !indexes[want] {
+			t.Fatalf("indexed docs missing %s: %+v", want, indexer.docs)
+		}
+	}
+}
+
 func TestAgentsEventsResetAndRecompute(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newTestServer(st).Handler()
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
@@ -513,7 +623,7 @@ func TestHTTPAuthRequiresDevTokenForUploadAndHealth(t *testing.T) {
 
 func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newTestServer(st).Handler()
 	scenario := "apt-staged-drop-stream"
 	payload := fileEntity("/var/lib/app/plugins/helper")
 
@@ -924,7 +1034,7 @@ func TestResponsePolicyCanRequireMultiApprovalRoles(t *testing.T) {
 	}
 }
 
-func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
+func TestAgentGatewayDownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
 	cmd := `{"tenant_id":"default","agent_id":"agent-downlink","action":"collect","target":"process:p1","reason":"test"}`
@@ -934,7 +1044,7 @@ func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("response post status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/link1-downlink?tenant_id=default&agent_id=agent-downlink")
+	rec = get(t, handler, "/api/v1/agent-gateway-downlink?tenant_id=default&agent_id=agent-downlink")
 	for _, want := range []string{
 		`"type":"resume"`,
 		`"type":"policy_update"`,
@@ -949,7 +1059,7 @@ func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	}
 }
 
-func TestLink1DownlinkFramesIncludeEvidencePullback(t *testing.T) {
+func TestAgentGatewayDownlinkFramesIncludeEvidencePullback(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/evidence-pullbacks", strings.NewReader(`{
@@ -972,7 +1082,7 @@ func TestLink1DownlinkFramesIncludeEvidencePullback(t *testing.T) {
 			t.Fatalf("pullback list missing %s: %s", want, rec.Body.String())
 		}
 	}
-	rec = get(t, handler, "/api/v1/link1-downlink?tenant_id=default&agent_id=agent-downlink")
+	rec = get(t, handler, "/api/v1/agent-gateway-downlink?tenant_id=default&agent_id=agent-downlink")
 	for _, want := range []string{
 		`"type":"resume"`,
 		`"type":"policy_update"`,
@@ -987,7 +1097,7 @@ func TestLink1DownlinkFramesIncludeEvidencePullback(t *testing.T) {
 	}
 }
 
-func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
+func TestAgentGatewayUplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	st := &store.Store{}
 	st.AddIncident(&incidentv1.Incident{Id: "inc-frame", Scenario: "pullback-frame", Summary: "frame incident"})
 	handler := NewServer(st).Handler()
@@ -1037,7 +1147,7 @@ func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	    "payload":{"message":"synthetic"}
 	  }
 	]`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/link1-frames", strings.NewReader(frames))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/agent-gateway-frames", strings.NewReader(frames))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1048,7 +1158,7 @@ func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 			t.Fatalf("frame response missing %s: %s", want, rec.Body.String())
 		}
 	}
-	if got := st.ListLink1Sessions("default", "agent-frame"); len(got) != 1 || got[0].LastAckCursor != "frame-batch-1" || got[0].Transport != "frame" {
+	if got := st.ListAgentGatewaySessions("default", "agent-frame"); len(got) != 1 || got[0].LastAckCursor != "frame-batch-1" || got[0].Transport != "frame" {
 		t.Fatalf("session after frame upload = %+v", got)
 	}
 	if health, ok := st.GetAgentHealth("default", "agent-frame"); !ok || health.Status != "ok" {
@@ -1090,7 +1200,7 @@ func TestEvidencePullbackResultKeepsPendingWhenIncidentMissing(t *testing.T) {
 	    }
 	  }
 	]`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/link1-frames", strings.NewReader(frames))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/agent-gateway-frames", strings.NewReader(frames))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

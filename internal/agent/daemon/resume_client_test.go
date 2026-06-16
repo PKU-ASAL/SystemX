@@ -10,7 +10,7 @@ import (
 
 func TestResumeClientFetchesCursor(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/link1-resume" {
+		if r.URL.Path != "/api/v1/agent-gateway-resume" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {

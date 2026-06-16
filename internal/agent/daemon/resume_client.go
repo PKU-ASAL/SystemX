@@ -45,7 +45,7 @@ func (c *ResumeClient) ResumeCursor(ctx context.Context) (string, error) {
 	q := url.Values{}
 	q.Set("tenant_id", c.TenantID)
 	q.Set("agent_id", c.AgentID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Manager+"/api/v1/link1-resume?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Manager+"/api/v1/agent-gateway-resume?"+q.Encode(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -59,14 +59,14 @@ func (c *ResumeClient) ResumeCursor(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("link1 resume failed: %s: %s", resp.Status, string(body))
+		return "", fmt.Errorf("agentgateway resume failed: %s: %s", resp.Status, string(body))
 	}
 	var out resumeCursorResponse
 	if err := json.Unmarshal(body, &out); err != nil {
 		return "", err
 	}
 	if out.AgentID != "" && out.AgentID != c.AgentID {
-		return "", fmt.Errorf("link1 resume agent mismatch: got %q want %q", out.AgentID, c.AgentID)
+		return "", fmt.Errorf("agentgateway resume agent mismatch: got %q want %q", out.AgentID, c.AgentID)
 	}
 	return out.ResumeCursor, nil
 }
