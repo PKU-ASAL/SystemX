@@ -508,6 +508,8 @@ Status: foundation implementation started.
 - store 已定义 `Link1Session`,包含 session id、agent id、tenant id、start time、last seen、last ack cursor 和 transport。
 - HTTP/gRPC unary upload 成功后会更新 Link1 session,`last_ack_cursor` 使用当前 accepted `batch_id`。
 - manager `GET /api/v1/link1-sessions` 与 `sysarmorctl link1-sessions` 可查询 Link1 session state。
+- manager `GET /api/v1/link1-resume` 与 `sysarmorctl link1-resume` 可按 agent 查询 resume cursor。
+- agent spool 已支持 `AckThrough(cursor)`,可在拿到 manager resume cursor 后删除 cursor 及之前的已确认本地 batch。
 - `internal/transport/link1` 已定义最小 downlink frame contract:`policy_update` 和 `response_command`。
 - manager `GET /api/v1/link1-downlink` 与 `sysarmorctl link1-downlink` 可按 agent 查询 policy update frame 和 pending response command frames。
 - `internal/transport/link1` 已定义最小 uplink frame contract:`upload` / `health` / `ack` / `error`。
@@ -520,7 +522,7 @@ Status: foundation implementation started.
 仍未完成:
 
 - 真正 bidirectional stream RPC。
-- agent resume from cursor。
+- agent 自动连接 manager 获取 resume cursor 并调用 spool `AckThrough`。
 - 真正 stream transport 上的 policy downlink notification。
 - 真正 stream transport 上的 response command downlink。
 - evidence pullback request。

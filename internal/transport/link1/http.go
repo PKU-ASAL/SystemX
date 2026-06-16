@@ -144,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
 	mux.HandleFunc("/api/v1/link1-frames", s.link1Frames)
 	mux.HandleFunc("/api/v1/link1-downlink", s.link1Downlink)
+	mux.HandleFunc("/api/v1/link1-resume", s.link1Resume)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/link1-sessions", s.link1Sessions)
@@ -432,6 +433,30 @@ func (s *Server) link1Downlink(w http.ResponseWriter, r *http.Request) {
 		frames = append(frames, responseCommandFrame(cmd))
 	}
 	writeJSON(w, map[string]any{"frames": frames})
+}
+
+func (s *Server) link1Resume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	agentID := q.Get("agent_id")
+	if agentID == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	tenantID := q.Get("tenant_id")
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
+	sessions := s.store.ListLink1Sessions(tenantID, agentID)
+	if len(sessions) > 0 {
+		resume.SessionID = sessions[0].SessionID
+		resume.ResumeCursor = sessions[0].LastAckCursor
+	}
+	writeJSON(w, resume)
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

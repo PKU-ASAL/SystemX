@@ -88,5 +88,14 @@ if grep -Fq '"last_ack_cursor":"link1-session-batch-1"' "$RESULTS/e2e-link1-sess
   exit 1
 fi
 
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json link1-resume \
+  --tenant-id default \
+  --agent-id link1-session-agent > "$RESULTS/e2e-link1-session.resume.json"
+if ! grep -Fq '"resume_cursor":"link1-session-batch-2"' "$RESULTS/e2e-link1-session.resume.json"; then
+  echo "[e2e-link1-session][ERROR] resume cursor did not match latest batch" >&2
+  cat "$RESULTS/e2e-link1-session.resume.json" >&2
+  exit 1
+fi
+
 cp "$TMP/manager.log" "$RESULTS/e2e-link1-session.manager.log"
 echo "[e2e-link1-session] ok"

@@ -203,6 +203,10 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 			t.Fatalf("link1 session missing %s: %s", want, rec.Body.String())
 		}
 	}
+	rec = get(t, handler, "/api/v1/link1-resume?tenant_id=default&agent_id=agent-a")
+	if !strings.Contains(rec.Body.String(), `"resume_cursor":"00000000000000000042"`) {
+		t.Fatalf("resume cursor mismatch: %s", rec.Body.String())
+	}
 }
 
 func TestQueryPagination(t *testing.T) {

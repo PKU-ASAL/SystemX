@@ -36,6 +36,13 @@ type UplinkFrameResult struct {
 	AcceptedSignals int    `json:"accepted_signals,omitempty"`
 }
 
+type ResumeCursor struct {
+	TenantID     string `json:"tenant_id"`
+	AgentID      string `json:"agent_id"`
+	SessionID    string `json:"session_id,omitempty"`
+	ResumeCursor string `json:"resume_cursor,omitempty"`
+}
+
 func policyUpdateFrame(policy policymodel.Policy) DownlinkFrame {
 	return DownlinkFrame{
 		Type:    DownlinkPolicyUpdate,

@@ -113,6 +113,31 @@ func (q *Queue) Ack(id string) error {
 	if err := os.Remove(q.batchPath(id)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	return q.writeCursorLocked(id)
+}
+
+func (q *Queue) AckThrough(cursor string) error {
+	if strings.TrimSpace(cursor) == "" {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	entries, err := q.listLocked()
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.ID > cursor {
+			continue
+		}
+		if err := os.Remove(q.batchPath(entry.ID)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return q.writeCursorLocked(cursor)
+}
+
+func (q *Queue) writeCursorLocked(id string) error {
 	cursor := cursorFile{LastAcked: id}
 	data, err := json.MarshalIndent(cursor, "", "  ")
 	if err != nil {

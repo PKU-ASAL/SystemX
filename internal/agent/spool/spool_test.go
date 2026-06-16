@@ -85,6 +85,31 @@ func TestQueueReloadsExistingBatchesInOrder(t *testing.T) {
 	}
 }
 
+func TestQueueAckThroughRemovesAckedPrefix(t *testing.T) {
+	q, err := Open(filepath.Join(t.TempDir(), "spool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"event-1", "event-2", "event-3"} {
+		if _, err := q.Append(batch(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := q.AckThrough("00000000000000000002"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := q.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != "00000000000000000003" {
+		t.Fatalf("entries after AckThrough = %+v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(entriesPath(t, q)), "cursor.json")); err != nil {
+		t.Fatalf("cursor not written: %v", err)
+	}
+}
+
 func TestQueueBackpressureDropsWhenOverLimit(t *testing.T) {
 	q, err := OpenWithLimit(filepath.Join(t.TempDir(), "spool"), 1)
 	if err != nil {
