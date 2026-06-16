@@ -159,6 +159,7 @@ make e2e-incident-merge
 
 # v3 store/Postgres foundation smoke
 make e2e-store-status
+make e2e-query-pagination
 make e2e-postgres-all
 
 # 性能基线 smoke

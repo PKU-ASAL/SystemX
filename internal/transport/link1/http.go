@@ -394,18 +394,19 @@ func (s *Server) authorized(r *http.Request) bool {
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	writeEventList(w, s.store.ListEvents(q.Get("scenario"), q.Get("kind")))
+	writeEventList(w, pageSlice(s.store.ListEvents(q.Get("scenario"), q.Get("kind")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	signals := s.store.ListSignals(q.Get("scenario"), q.Get("layer"), q.Get("terminal") == "true")
-	writeSignalList(w, signals)
+	writeSignalList(w, pageSlice(signals, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
-	incidents := s.store.ListIncidents(r.URL.Query().Get("scenario"))
-	writeIncidentList(w, incidents)
+	q := r.URL.Query()
+	incidents := s.store.ListIncidents(q.Get("scenario"))
+	writeIncidentList(w, pageSlice(incidents, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
@@ -847,6 +848,17 @@ func removeString(in []string, value string) []string {
 		if item != value {
 			out = append(out, item)
 		}
+	}
+	return out
+}
+
+func pageSlice[T any](in []T, limit, offset uint64) []T {
+	if offset >= uint64(len(in)) {
+		return []T{}
+	}
+	out := in[offset:]
+	if limit > 0 && limit < uint64(len(out)) {
+		out = out[:limit]
 	}
 	return out
 }

@@ -431,7 +431,9 @@ Status: foundation implementation started.
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
+- manager `events` / `signals` / `incidents` 查询 API 与 `sysarmorctl` 已支持 `limit` / `offset` 分页参数。
 - `make -C test e2e-store-status` 验证 manager file backend 和 Postgres schema version 可观测。
+- `make -C test e2e-query-pagination` 验证 query pagination contract。
 - `make -C test e2e-postgres-all` 当前聚合 Postgres foundation gate。
 
 仍未完成:
@@ -439,7 +441,6 @@ Status: foundation implementation started.
 - 真实 Postgres store adapter。
 - live Postgres migration e2e。
 - ingest/query/policy/incident e2e 在 Postgres 后端运行。
-- pagination。
 
 ### Deliverables
 

@@ -199,6 +199,31 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	}
 }
 
+func TestQueryPagination(t *testing.T) {
+	st := &store.Store{}
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-1", Scenario: "page", Kind: eventv1.EventKind_EVENT_KIND_EXEC})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-2", Scenario: "page", Kind: eventv1.EventKind_EVENT_KIND_OPEN})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-3", Scenario: "page", Kind: eventv1.EventKind_EVENT_KIND_CONNECT})
+	st.AddSignal(endpointSignalForScenario("page", "sig-1", "lin-1", false, processEntity("p1")))
+	st.AddSignal(endpointSignalForScenario("page", "sig-2", "lin-2", false, processEntity("p2")))
+	st.AddIncident(&incidentv1.Incident{Id: "inc-1", Scenario: "page", Summary: "one"})
+	st.AddIncident(&incidentv1.Incident{Id: "inc-2", Scenario: "page", Summary: "two"})
+	handler := NewServer(st).Handler()
+
+	rec := get(t, handler, "/api/v1/events?scenario=page&limit=1&offset=1")
+	if strings.Contains(rec.Body.String(), `"id":"ev-1"`) || !strings.Contains(rec.Body.String(), `"id":"ev-2"`) || strings.Contains(rec.Body.String(), `"id":"ev-3"`) {
+		t.Fatalf("events page mismatch: %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/signals?scenario=page&limit=1&offset=1")
+	if strings.Contains(rec.Body.String(), `"name":"sig-1"`) || !strings.Contains(rec.Body.String(), `"name":"sig-2"`) {
+		t.Fatalf("signals page mismatch: %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/incidents?scenario=page&limit=1&offset=1")
+	if strings.Contains(rec.Body.String(), `"id":"inc-1"`) || !strings.Contains(rec.Body.String(), `"id":"inc-2"`) {
+		t.Fatalf("incidents page mismatch: %s", rec.Body.String())
+	}
+}
+
 func TestHTTPUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

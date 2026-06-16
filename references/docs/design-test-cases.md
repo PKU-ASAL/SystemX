@@ -244,12 +244,13 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,并且 migration runner 有单测覆盖。注意这还不是完整 Postgres adapter 门禁。
+这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。注意这还不是完整 Postgres adapter 门禁。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
 | `e2e-store-status` | `harness/e2e-store-status.sh` | manager file backend、state version、migration version、Postgres schema version 可通过 CLI 查询 |
-| `e2e-postgres-all` | Make 聚合 | 当前聚合 Postgres foundation gate |
+| `e2e-query-pagination` | `harness/e2e-query-pagination.sh` | events/signals 查询可通过 `limit` / `offset` 返回稳定分页 |
+| `e2e-postgres-all` | Make 聚合 | 当前聚合 store/Postgres foundation gate |
 
 聚合入口:
 
@@ -447,6 +448,7 @@ make -C test e2e-agent-benign-container
 | incident lifecycle attach evidence | `e2e-incident-attach-evidence` + store 单测 | 部分覆盖 |
 | incident lifecycle merge | `e2e-incident-merge` + store 单测 | 部分覆盖 |
 | Postgres schema + migration runner + store backend 可观测 | `e2e-store-status` + migration/runner 单测 | 部分覆盖 |
+| query pagination | `e2e-query-pagination` + HTTP 单测 | 部分覆盖 |
 | Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
 | Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |

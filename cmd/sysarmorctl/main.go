@@ -241,6 +241,16 @@ func query(mgr string, args []string) ([]byte, error) {
 				if i < len(args) {
 					q.Set("kind", args[i])
 				}
+			case "--limit":
+				i++
+				if i < len(args) {
+					q.Set("limit", args[i])
+				}
+			case "--offset":
+				i++
+				if i < len(args) {
+					q.Set("offset", args[i])
+				}
 			}
 		}
 		return httpGet(base + "/api/v1/events?" + q.Encode())
@@ -260,16 +270,37 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			case "--terminal":
 				q.Set("terminal", "true")
+			case "--limit":
+				i++
+				if i < len(args) {
+					q.Set("limit", args[i])
+				}
+			case "--offset":
+				i++
+				if i < len(args) {
+					q.Set("offset", args[i])
+				}
 			}
 		}
 		return httpGet(base + "/api/v1/signals?" + q.Encode())
 	case "incidents":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
-			if args[i] == "--scenario" {
+			switch args[i] {
+			case "--scenario":
 				i++
 				if i < len(args) {
 					q.Set("scenario", args[i])
+				}
+			case "--limit":
+				i++
+				if i < len(args) {
+					q.Set("limit", args[i])
+				}
+			case "--offset":
+				i++
+				if i < len(args) {
+					q.Set("offset", args[i])
 				}
 			}
 		}
