@@ -64,7 +64,7 @@ type Metrics struct {
 	AverageConvergenceLatency float64 `json:"average_convergence_latency_ms"`
 }
 
-type diskState struct {
+type State struct {
 	Agents       []json.RawMessage         `json:"agents"`
 	Events       []json.RawMessage         `json:"events"`
 	Signals      []json.RawMessage         `json:"signals"`
@@ -90,42 +90,56 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	var state diskState
+	var state State
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
+	if err := s.ImportState(state); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) ImportState(state State) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Agents = nil
+	s.Events = nil
+	s.Signals = nil
+	s.Incidents = nil
+	s.Health = map[string]agenthealth.AgentHealth{}
 	for _, raw := range state.Agents {
 		msg := &analyticsv1.AgentHello{}
 		if err := protojson.Unmarshal(raw, msg); err != nil {
-			return nil, err
+			return err
 		}
 		s.Agents = append(s.Agents, msg)
 	}
 	for _, raw := range state.Events {
 		msg := &eventv1.CanonicalEvent{}
 		if err := protojson.Unmarshal(raw, msg); err != nil {
-			return nil, err
+			return err
 		}
 		s.Events = append(s.Events, msg)
 	}
 	for _, raw := range state.Signals {
 		msg := &signalv1.Signal{}
 		if err := protojson.Unmarshal(raw, msg); err != nil {
-			return nil, err
+			return err
 		}
 		s.Signals = append(s.Signals, msg)
 	}
 	for _, raw := range state.Incidents {
 		msg := &incidentv1.Incident{}
 		if err := protojson.Unmarshal(raw, msg); err != nil {
-			return nil, err
+			return err
 		}
 		s.Incidents = append(s.Incidents, msg)
 	}
 	for _, raw := range state.Health {
 		var msg agenthealth.AgentHealth
 		if err := json.Unmarshal(raw, &msg); err != nil {
-			return nil, err
+			return err
 		}
 		s.Health[agentHealthKey(msg.TenantID, msg.AgentID)] = msg
 	}
@@ -135,7 +149,7 @@ func Open(path string) (*Store, error) {
 	s.Responses = state.Responses
 	s.ResponseAcks = state.ResponseAcks
 	s.Metrics = state.Metrics
-	return s, nil
+	return nil
 }
 
 func (s *Store) Info() Info {
@@ -860,34 +874,55 @@ func (s *Store) Save() error {
 	if s.path == "" {
 		return nil
 	}
-	var state diskState
+	state, err := s.exportStateLocked()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(s.path, data, 0o644)
+}
+
+func (s *Store) ExportState() (State, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.exportStateLocked()
+}
+
+func (s *Store) exportStateLocked() (State, error) {
+	var state State
 	state.Metrics = s.Metrics
 	mo := protojson.MarshalOptions{UseProtoNames: true}
 	for _, agent := range s.Agents {
 		raw, err := mo.Marshal(agent)
 		if err != nil {
-			return err
+			return State{}, err
 		}
 		state.Agents = append(state.Agents, raw)
 	}
 	for _, ev := range s.Events {
 		raw, err := mo.Marshal(ev)
 		if err != nil {
-			return err
+			return State{}, err
 		}
 		state.Events = append(state.Events, raw)
 	}
 	for _, sig := range s.Signals {
 		raw, err := mo.Marshal(sig)
 		if err != nil {
-			return err
+			return State{}, err
 		}
 		state.Signals = append(state.Signals, raw)
 	}
 	for _, inc := range s.Incidents {
 		raw, err := mo.Marshal(inc)
 		if err != nil {
-			return err
+			return State{}, err
 		}
 		state.Incidents = append(state.Incidents, raw)
 	}
@@ -904,7 +939,7 @@ func (s *Store) Save() error {
 	for _, item := range health {
 		raw, err := json.Marshal(item)
 		if err != nil {
-			return err
+			return State{}, err
 		}
 		state.Health = append(state.Health, raw)
 	}
@@ -913,14 +948,7 @@ func (s *Store) Save() error {
 	state.Assignments = append([]policymodel.Assignment(nil), s.Assignments...)
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, data, 0o644)
+	return state, nil
 }
 
 func agentHealthKey(tenantID, agentID string) string {

@@ -427,6 +427,7 @@ Status: foundation implementation started.
 - `internal/store/postgres` 提供基于标准库 `database/sql` 的 migration runner,可对 live Postgres 执行 schema v1。
 - manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,随后因真实数据 adapter 未实现而显式失败。
 - `internal/transport/link1` 已提取 `ManagerStore` 接口,manager/Link1 transport 不再直接绑定具体 file store 类型,为 Postgres adapter 接入预留稳定 contract。
+- file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres adapter 可复用同一套 proto/json state contract 逐步落表或先做 JSONB 快照过渡。
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。

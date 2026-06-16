@@ -340,6 +340,43 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 	}
 }
 
+func TestExportImportStateRoundTrip(t *testing.T) {
+	st := &Store{}
+	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"})
+	st.AddEvent(testEvent("ev-a", "scenario-a"))
+	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
+	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
+	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
+	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
+
+	state, err := st.ExportState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded := &Store{}
+	if err := reloaded.ImportState(state); err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.ListAgents(); len(got) != 1 || got[0].GetAgentId() != "agent-a" {
+		t.Fatalf("agents after import = %+v", got)
+	}
+	if got := reloaded.ListEvents("scenario-a", ""); len(got) != 1 || got[0].GetId() != "ev-a" {
+		t.Fatalf("events after import = %+v", got)
+	}
+	if got := reloaded.ListSignals("scenario-a", "endpoint", false); len(got) != 1 || got[0].GetId() != "sig-a" {
+		t.Fatalf("signals after import = %+v", got)
+	}
+	if got := reloaded.ListIncidents("scenario-a"); len(got) != 1 || got[0].GetId() != "inc-a" {
+		t.Fatalf("incidents after import = %+v", got)
+	}
+	if _, ok := reloaded.GetAgentHealth("default", "agent-a"); !ok {
+		t.Fatal("agent health missing after import")
+	}
+	if got := reloaded.MetricsSnapshot(); got.UploadBatches != 1 || got.SignalsEmitted != 2 {
+		t.Fatalf("metrics after import = %+v", got)
+	}
+}
+
 func TestDeleteScenario(t *testing.T) {
 	st := &Store{}
 	st.AddSignal(&signalv1.Signal{Id: "s1", Scenario: "a"})
