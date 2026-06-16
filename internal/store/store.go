@@ -41,6 +41,7 @@ type Store struct {
 	listAssignments func(tenantID, agentID string) ([]policymodel.Assignment, error)
 	getPolicy       func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
 	effectivePolicy func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
+	writeResponse   func(responsemodel.Command, *responsemodel.Ack) error
 	Agents          []*analyticsv1.AgentHello
 	Events          []*eventv1.CanonicalEvent
 	Signals         []*signalv1.Signal
@@ -226,6 +227,12 @@ func (s *Store) ConfigureQueryHooks(
 	s.listAssignments = listAssignments
 	s.getPolicy = getPolicy
 	s.effectivePolicy = effectivePolicy
+}
+
+func (s *Store) ConfigureWriteHooks(writeResponse func(responsemodel.Command, *responsemodel.Ack) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writeResponse = writeResponse
 }
 
 func (s *Store) Info() Info {
@@ -672,15 +679,24 @@ func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector stri
 func (s *Store) CreateResponse(cmd responsemodel.Command) responsemodel.Command {
 	cmd = responsemodel.NormalizeCommand(cmd)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, existing := range s.Responses {
 		if existing.ResponseID == cmd.ResponseID {
 			cmd.CreatedAt = existing.CreatedAt
 			s.Responses[i] = cmd
+			writeResponse := s.writeResponse
+			s.mu.Unlock()
+			if writeResponse != nil {
+				_ = writeResponse(cmd, nil)
+			}
 			return cmd
 		}
 	}
 	s.Responses = append(s.Responses, cmd)
+	writeResponse := s.writeResponse
+	s.mu.Unlock()
+	if writeResponse != nil {
+		_ = writeResponse(cmd, nil)
+	}
 	return cmd
 }
 
@@ -755,7 +771,6 @@ func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved b
 	}
 	now := time.Now().UTC()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, cmd := range s.Responses {
 		if cmd.ResponseID != responseID {
 			continue
@@ -767,9 +782,11 @@ func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved b
 			continue
 		}
 		if !cmd.ApprovalRequired || cmd.Status != "pending_approval" || (cmd.ApprovalStatus != "required" && cmd.ApprovalStatus != "partial") {
+			s.mu.Unlock()
 			return responsemodel.Command{}, false
 		}
 		if !responsemodel.ApprovalRoleAllowed(cmd, role) {
+			s.mu.Unlock()
 			return responsemodel.Command{}, false
 		}
 		approval := responsemodel.Approval{
@@ -802,8 +819,14 @@ func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved b
 			}
 		}
 		s.Responses[i] = cmd
+		writeResponse := s.writeResponse
+		s.mu.Unlock()
+		if writeResponse != nil {
+			_ = writeResponse(cmd, nil)
+		}
 		return cmd, true
 	}
+	s.mu.Unlock()
 	return responsemodel.Command{}, false
 }
 
@@ -815,7 +838,6 @@ func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool)
 		ack.ObservedAt = time.Now().UTC()
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	var command responsemodel.Command
 	var ok bool
 	for i, cmd := range s.Responses {
@@ -829,15 +851,26 @@ func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool)
 		}
 	}
 	if !ok {
+		s.mu.Unlock()
 		return responsemodel.Command{}, false
 	}
 	for i, existing := range s.ResponseAcks {
 		if existing.ResponseID == ack.ResponseID {
 			s.ResponseAcks[i] = ack
+			writeResponse := s.writeResponse
+			s.mu.Unlock()
+			if writeResponse != nil {
+				_ = writeResponse(command, &ack)
+			}
 			return command, true
 		}
 	}
 	s.ResponseAcks = append(s.ResponseAcks, ack)
+	writeResponse := s.writeResponse
+	s.mu.Unlock()
+	if writeResponse != nil {
+		_ = writeResponse(command, &ack)
+	}
 	return command, true
 }
 

@@ -215,6 +215,45 @@ func TestOpenPostgresProjectsResponseAuditTable(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresWritesResponseAuditTablePath(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-write-table-pg",
+		TenantID:   "default",
+		AgentID:    "agent-response-write-pg",
+		Status:     "pending",
+		Action:     "collect",
+		Mode:       "observe",
+		CreatedAt:  time.Unix(120, 0).UTC(),
+		UpdatedAt:  time.Unix(121, 0).UTC(),
+	})
+	result.Store.AckResponse(responsemodel.Ack{
+		ResponseID:  "resp-write-table-pg",
+		TenantID:    "default",
+		AgentID:     "agent-response-write-pg",
+		Accepted:    true,
+		ObserveOnly: true,
+		ObservedAt:  time.Unix(122, 0).UTC(),
+	})
+	execLog := fakeExecLog()
+	if !strings.Contains(execLog, "INSERT INTO response_audit") || strings.Contains(execLog, "INSERT INTO sysarmor_state") {
+		t.Fatalf("response write hook did not use table path without snapshot save:\n%s", execLog)
+	}
+	records := result.Store.ListResponses("default", "agent-response-write-pg")
+	if len(records) != 1 || records[0].Command.ResponseID != "resp-write-table-pg" || records[0].Command.Status != "acked" || records[0].Ack == nil || !records[0].Ack.Accepted {
+		t.Fatalf("response audit table write/read = %+v", records)
+	}
+}
+
 func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -1324,7 +1363,7 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 	if strings.Contains(s.query, "INSERT INTO response_audit") && len(args) >= 9 {
 		command := cloneDriverBytes(args[7].Value)
 		ack := cloneDriverBytes(args[8].Value)
-		fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+		upsertFakeResponseRow(command, ack)
 	}
 	if strings.Contains(s.query, "INSERT INTO policies") && len(args) >= 7 {
 		dataArg := args[len(args)-1].Value
@@ -1358,6 +1397,36 @@ func fakeArgs(args []driver.NamedValue) string {
 		}
 	}
 	return strings.Join(values, " ")
+}
+
+func upsertFakeResponseRow(command, ack driver.Value) {
+	responseID := fakeResponseID(command)
+	if responseID != "" {
+		for i, row := range fakeState.responseRows {
+			if fakeResponseID(row[0]) == responseID {
+				fakeState.responseRows[i] = []driver.Value{command, ack}
+				return
+			}
+		}
+	}
+	fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+}
+
+func fakeResponseID(value driver.Value) string {
+	var raw []byte
+	switch data := value.(type) {
+	case []byte:
+		raw = data
+	case string:
+		raw = []byte(data)
+	default:
+		return ""
+	}
+	var cmd responsemodel.Command
+	if err := json.Unmarshal(raw, &cmd); err != nil {
+		return ""
+	}
+	return cmd.ResponseID
 }
 
 func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {

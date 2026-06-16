@@ -76,6 +76,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 			return queryEffectivePolicy(context.Background(), db, tenantID, agentID, scopeType, scopeSelector)
 		},
 	)
+	st.ConfigureWriteHooks(func(cmd responsemodel.Command, ack *responsemodel.Ack) error {
+		return upsertResponseAudit(context.Background(), db, cmd, ack)
+	})
 	return st, nil
 }
 
@@ -605,26 +608,38 @@ func projectResponseAudit(ctx context.Context, db *sql.DB, commands []responsemo
 		}
 	}
 	for _, cmd := range commands {
-		if cmd.ResponseID == "" {
-			continue
-		}
-		tenantID := cmd.TenantID
-		if tenantID == "" {
-			tenantID = "default"
-		}
-		commandData, err := json.Marshal(cmd)
-		if err != nil {
-			return fmt.Errorf("encode response command projection: %w", err)
-		}
-		var ackData any
+		var ackPtr *responsemodel.Ack
 		if ack, ok := ackByResponseID[cmd.ResponseID]; ok {
-			data, err := json.Marshal(ack)
-			if err != nil {
-				return fmt.Errorf("encode response ack projection: %w", err)
-			}
-			ackData = data
+			ackPtr = &ack
 		}
-		_, err = db.ExecContext(ctx, `
+		if err := upsertResponseAudit(ctx, db, cmd, ackPtr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertResponseAudit(ctx context.Context, db *sql.DB, cmd responsemodel.Command, ack *responsemodel.Ack) error {
+	if cmd.ResponseID == "" {
+		return nil
+	}
+	tenantID := cmd.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	commandData, err := json.Marshal(cmd)
+	if err != nil {
+		return fmt.Errorf("encode response command projection: %w", err)
+	}
+	var ackData any
+	if ack != nil {
+		data, err := json.Marshal(*ack)
+		if err != nil {
+			return fmt.Errorf("encode response ack projection: %w", err)
+		}
+		ackData = data
+	}
+	_, err = db.ExecContext(ctx, `
 INSERT INTO response_audit (tenant_id, response_id, agent_id, status, action, created_at, updated_at, command, ack)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (tenant_id, response_id) DO UPDATE SET
@@ -635,9 +650,8 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
   command = EXCLUDED.command,
   ack = EXCLUDED.ack
 `, tenantID, cmd.ResponseID, cmd.AgentID, cmd.Status, cmd.Action, cmd.CreatedAt, cmd.UpdatedAt, commandData, ackData)
-		if err != nil {
-			return fmt.Errorf("project response audit: %w", err)
-		}
+	if err != nil {
+		return fmt.Errorf("project response audit: %w", err)
 	}
 	return nil
 }
