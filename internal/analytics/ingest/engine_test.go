@@ -5,6 +5,7 @@ import (
 
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 )
 
 func TestAnalyzeFilelessC2ProducesCloudSignalsAndIncident(t *testing.T) {
@@ -75,6 +76,22 @@ func TestAnalyzeBenignNoiseAdditiveControlProducesIncident(t *testing.T) {
 	}
 }
 
+func TestAnalyzeUsesInjectedRarityBaseline(t *testing.T) {
+	engine := NewEngine()
+	engine.SetRarityBaseline(rarity.Baseline{WorkloadCounts: map[string]map[string]uint64{
+		"container:checkout-api": {"reverse_shell_pattern": 3},
+	}})
+	result := engine.Analyze(nil, []*signalv1.Signal{
+		endpoint("reverse_shell_pattern", "lin-a", true, container("checkout-api"), process("p-bash"), socket("10.66.0.99:443")),
+	})
+	if len(result.Incidents) != 1 {
+		t.Fatalf("incident count = %d, want 1", len(result.Incidents))
+	}
+	if got := result.Incidents[0].GetConverge().GetScore(); got != 12.5 {
+		t.Fatalf("score = %f, want 12.5", got)
+	}
+}
+
 func endpoint(name, lineage string, terminal bool, entities ...*signalv1.EntityRef) *signalv1.Signal {
 	return &signalv1.Signal{
 		Name:         name,
@@ -98,6 +115,10 @@ func file(key string) *signalv1.EntityRef {
 
 func socket(key string) *signalv1.EntityRef {
 	return &signalv1.EntityRef{Kind: "socket", Key: "socket:" + key, Role: "object"}
+}
+
+func container(key string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "container", Key: key, Role: "scope"}
 }
 
 func hasCloud(signals []*signalv1.Signal, name string) bool {

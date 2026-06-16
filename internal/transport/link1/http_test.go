@@ -292,6 +292,35 @@ func TestHTTPUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	}
 }
 
+func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	batch := &analyticsv1.UploadBatch{
+		BatchId: "rarity-batch-1",
+		Agent:   &analyticsv1.AgentHello{AgentId: "agent-rarity", HostId: "host-rarity", TenantId: "default"},
+		Signals: []*signalv1.Signal{{
+			Id:           "sig-rarity-download",
+			Name:         "download_by_lolbin",
+			Where:        signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+			BaseRisk:     50,
+			GlobalRarity: 1,
+			Scenario:     "rarity-upload",
+			Entities: []*signalv1.EntityRef{{
+				Kind: "container",
+				Key:  "checkout-api",
+			}},
+		}},
+	}
+	upload(t, handler, batch)
+	if got := st.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {
+		t.Fatalf("workload baseline count = %d, want 1", got)
+	}
+	upload(t, handler, batch)
+	if got := st.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {
+		t.Fatalf("workload baseline count after duplicate = %d, want 1", got)
+	}
+}
+
 func TestHTTPUploadRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

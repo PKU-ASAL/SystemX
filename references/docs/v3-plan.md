@@ -344,13 +344,14 @@ Status: partial implementation started.
 - `internal/analytics/rarity` 提供最小 scorer interface 和当前兼容的 risk * global rarity scorer。
 - `internal/analytics/rarity` 已提供 count-based MVP scorer,同一 incident 内重复 signal name 会按出现次数降权。
 - `internal/analytics/rarity` 已提供 workload-aware baseline scorer,可按 workload/signal historical count 对常见信号降权,并可被 incident builder 注入使用。
-- `internal/analytics/rarity` 已提供 baseline maintenance primitive,可从 signal 流自动累计 workload/global signal counts,并支持 snapshot / merge,为后续在线更新和持久化接入预留边界。
+- `internal/analytics/rarity` 已提供 baseline maintenance primitive,可从 signal 流自动累计 workload/global signal counts,并支持 snapshot / merge。
+- manager ingest 主路径会从 store 读取 rarity baseline 注入 analytics scorer,并在成功接收新 endpoint signals 后更新 baseline;baseline 已进入 store state,可随 file/Postgres snapshot backend 持久化。
 - `internal/analytics/graph` 已支持最小 `KHop` 和 `ShortestPath` 查询。
 - manager `GET /api/v1/incident-evidence` 与 `sysarmorctl incident-evidence` 支持 `seed/hops` 和 `path_from/path_to` 查询。
 
 仍未完成:
 
-- 生产级 rarity baseline 自动维护:当前已有内存 baseline observe/snapshot/merge primitive,仍缺 CMS / IDF / workload baseline 在线更新策略、store 持久化和 manager/analytics 主路径接入。
+- 生产级 rarity baseline 自动维护:当前已有 store-backed baseline observe/snapshot/merge 和 manager ingest 主路径接入,仍缺 CMS / IDF、窗口/TTL、baseline 训练策略和逐表 Postgres adapter。
 
 Package split:
 

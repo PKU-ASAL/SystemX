@@ -487,6 +487,13 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
 	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
+	st.ObserveRaritySignals([]*signalv1.Signal{{
+		Name: "download_by_lolbin",
+		Entities: []*signalv1.EntityRef{{
+			Kind: "container",
+			Key:  "checkout-api",
+		}},
+	}})
 
 	state, err := st.ExportState()
 	if err != nil {
@@ -516,6 +523,9 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	}
 	if got := reloaded.MetricsSnapshot(); got.UploadBatches != 1 || got.SignalsEmitted != 2 {
 		t.Fatalf("metrics after import = %+v", got)
+	}
+	if got := reloaded.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {
+		t.Fatalf("rarity baseline after import = %d, want 1", got)
 	}
 }
 

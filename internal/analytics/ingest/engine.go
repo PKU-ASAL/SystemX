@@ -11,6 +11,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/correlate"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/entity"
 	incidentbuilder "github.com/sysarmor/sysarmor-next-project/internal/analytics/incident"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 )
 
 type Engine struct {
@@ -25,6 +26,10 @@ type Result struct {
 
 func NewEngine() *Engine {
 	return &Engine{incidents: incidentbuilder.NewBuilder()}
+}
+
+func (e *Engine) SetRarityBaseline(baseline rarity.Baseline) {
+	e.incidents.Scorer = rarity.WorkloadBaselineScorer{Baseline: baseline.Snapshot()}
 }
 
 func (e *Engine) Analyze(events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) Result {

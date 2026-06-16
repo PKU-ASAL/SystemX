@@ -18,6 +18,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -28,24 +29,25 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu            sync.RWMutex
-	path          string
-	backendInfo   *Info
-	saveState     func(State) error
-	Agents        []*analyticsv1.AgentHello
-	Events        []*eventv1.CanonicalEvent
-	Signals       []*signalv1.Signal
-	Incidents     []*incidentv1.Incident
-	Health        map[string]agenthealth.AgentHealth
-	Rules         []policymodel.RuleContent
-	Policies      []policymodel.Policy
-	Assignments   []policymodel.Assignment
-	PolicyAudits  []policymodel.AuditRecord
-	Responses     []responsemodel.Command
-	ResponseAcks  []responsemodel.Ack
-	Pullbacks     []link1model.EvidencePullbackRequest
-	Link1Sessions []Link1Session
-	Metrics       Metrics
+	mu             sync.RWMutex
+	path           string
+	backendInfo    *Info
+	saveState      func(State) error
+	Agents         []*analyticsv1.AgentHello
+	Events         []*eventv1.CanonicalEvent
+	Signals        []*signalv1.Signal
+	Incidents      []*incidentv1.Incident
+	Health         map[string]agenthealth.AgentHealth
+	Rules          []policymodel.RuleContent
+	Policies       []policymodel.Policy
+	Assignments    []policymodel.Assignment
+	PolicyAudits   []policymodel.AuditRecord
+	Responses      []responsemodel.Command
+	ResponseAcks   []responsemodel.Ack
+	Pullbacks      []link1model.EvidencePullbackRequest
+	Link1Sessions  []Link1Session
+	Metrics        Metrics
+	RarityBaseline rarity.Baseline
 }
 
 type Info struct {
@@ -82,20 +84,21 @@ type Link1Session struct {
 }
 
 type State struct {
-	Agents        []json.RawMessage                    `json:"agents"`
-	Events        []json.RawMessage                    `json:"events"`
-	Signals       []json.RawMessage                    `json:"signals"`
-	Incidents     []json.RawMessage                    `json:"incidents"`
-	Health        []json.RawMessage                    `json:"health"`
-	Rules         []policymodel.RuleContent            `json:"rules"`
-	Policies      []policymodel.Policy                 `json:"policies"`
-	Assignments   []policymodel.Assignment             `json:"assignments"`
-	PolicyAudits  []policymodel.AuditRecord            `json:"policy_audits"`
-	Responses     []responsemodel.Command              `json:"responses"`
-	ResponseAcks  []responsemodel.Ack                  `json:"response_acks"`
-	Pullbacks     []link1model.EvidencePullbackRequest `json:"evidence_pullbacks"`
-	Link1Sessions []Link1Session                       `json:"link1_sessions"`
-	Metrics       Metrics                              `json:"metrics"`
+	Agents         []json.RawMessage                    `json:"agents"`
+	Events         []json.RawMessage                    `json:"events"`
+	Signals        []json.RawMessage                    `json:"signals"`
+	Incidents      []json.RawMessage                    `json:"incidents"`
+	Health         []json.RawMessage                    `json:"health"`
+	Rules          []policymodel.RuleContent            `json:"rules"`
+	Policies       []policymodel.Policy                 `json:"policies"`
+	Assignments    []policymodel.Assignment             `json:"assignments"`
+	PolicyAudits   []policymodel.AuditRecord            `json:"policy_audits"`
+	Responses      []responsemodel.Command              `json:"responses"`
+	ResponseAcks   []responsemodel.Ack                  `json:"response_acks"`
+	Pullbacks      []link1model.EvidencePullbackRequest `json:"evidence_pullbacks"`
+	Link1Sessions  []Link1Session                       `json:"link1_sessions"`
+	Metrics        Metrics                              `json:"metrics"`
+	RarityBaseline rarity.Baseline                      `json:"rarity_baseline,omitempty"`
 }
 
 func Open(path string) (*Store, error) {
@@ -172,6 +175,7 @@ func (s *Store) ImportState(state State) error {
 	s.Pullbacks = state.Pullbacks
 	s.Link1Sessions = state.Link1Sessions
 	s.Metrics = state.Metrics
+	s.RarityBaseline = state.RarityBaseline.Snapshot()
 	return nil
 }
 
@@ -1240,9 +1244,23 @@ func (s *Store) ExportState() (State, error) {
 	return s.exportStateLocked()
 }
 
+func (s *Store) RarityBaselineSnapshot() rarity.Baseline {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.RarityBaseline.Snapshot()
+}
+
+func (s *Store) ObserveRaritySignals(signals []*signalv1.Signal) rarity.Baseline {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.RarityBaseline.Observe(signals)
+	return s.RarityBaseline.Snapshot()
+}
+
 func (s *Store) exportStateLocked() (State, error) {
 	var state State
 	state.Metrics = s.Metrics
+	state.RarityBaseline = s.RarityBaseline.Snapshot()
 	mo := protojson.MarshalOptions{UseProtoNames: true}
 	for _, agent := range s.Agents {
 		raw, err := mo.Marshal(agent)

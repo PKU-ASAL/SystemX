@@ -18,6 +18,7 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -67,6 +68,7 @@ type ManagerStore interface {
 	ListSignals(string, string, bool) []*signalv1.Signal
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
+	ObserveRaritySignals([]*signalv1.Signal) rarity.Baseline
 	PendingEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
@@ -74,6 +76,7 @@ type ManagerStore interface {
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
 	RecordUpload(int, int, int, int, time.Duration)
 	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
+	RarityBaselineSnapshot() rarity.Baseline
 	Save() error
 	UpdateIncidentStatus(string, string, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
@@ -284,6 +287,7 @@ func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, trans
 	touchedScenarios := map[string]*analyticsv1.AgentHello{}
 	acceptedEvents := 0
 	acceptedSignals := 0
+	acceptedSignalList := []*signalv1.Signal{}
 	for _, ev := range batch.GetEvents() {
 		inserted := s.store.AddEvent(ev)
 		if inserted {
@@ -297,16 +301,19 @@ func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, trans
 		inserted := s.store.AddSignal(sig)
 		if inserted {
 			acceptedSignals++
+			acceptedSignalList = append(acceptedSignalList, sig)
 		}
 		if inserted && sig.GetScenario() != "" {
 			touchedScenarios[sig.GetScenario()] = batch.GetAgent()
 		}
 	}
 	start := time.Now()
+	s.engine.SetRarityBaseline(s.store.RarityBaselineSnapshot())
 	cloudSignals, incidents := s.recomputeTouchedScenarios(touchedScenarios)
 	convergenceLatency := time.Since(start)
 	s.store.RecordUpload(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	s.store.RecordLink1Upload(batch.GetAgent(), batch.GetBatchId(), transport, time.Now().UTC())
+	s.store.ObserveRaritySignals(acceptedSignalList)
 	if err := s.store.Save(); err != nil {
 		return UploadResult{}, err
 	}
