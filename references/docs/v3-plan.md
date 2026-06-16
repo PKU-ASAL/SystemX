@@ -339,12 +339,13 @@ Status: partial implementation started.
 - `internal/analytics/incident` 提供 incident builder,从 ingest 中拆出 Incident 构造、evidence 绑定、lineage/terminal 提取和默认 lifecycle status。
 - `internal/analytics/rarity` 提供最小 scorer interface 和当前兼容的 risk * global rarity scorer。
 - `internal/analytics/rarity` 已提供 count-based MVP scorer,同一 incident 内重复 signal name 会按出现次数降权。
+- `internal/analytics/rarity` 已提供 workload-aware baseline scorer,可按 workload/signal historical count 对常见信号降权,并可被 incident builder 注入使用。
 - `internal/analytics/graph` 已支持最小 `KHop` 和 `ShortestPath` 查询。
 - manager `GET /api/v1/incident-evidence` 与 `sysarmorctl incident-evidence` 支持 `seed/hops` 和 `path_from/path_to` 查询。
 
 仍未完成:
 
-- 生产级 rarity baseline: CMS / IDF / workload baseline。
+- 生产级 rarity baseline 自动维护: CMS / IDF / workload baseline 在线更新与持久化。
 
 Package split:
 

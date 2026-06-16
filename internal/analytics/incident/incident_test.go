@@ -5,6 +5,7 @@ import (
 
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/converge"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 )
 
 func TestBuilderCreatesIncidentWithEvidenceAndStatus(t *testing.T) {
@@ -34,5 +35,27 @@ func TestBuilderCreatesIncidentWithEvidenceAndStatus(t *testing.T) {
 	}
 	if len(inc.GetTerminals()) != 1 || inc.GetTerminals()[0] != "process:p-bash" {
 		t.Fatalf("terminals = %v", inc.GetTerminals())
+	}
+}
+
+func TestBuilderCanUseWorkloadBaselineScorer(t *testing.T) {
+	builder := &Builder{Scorer: rarity.WorkloadBaselineScorer{Baseline: rarity.Baseline{WorkloadCounts: map[string]map[string]uint64{
+		"container:checkout-api": {"reverse_shell_pattern": 3},
+	}}}}
+	inc := builder.Build("scenario-a", []*signalv1.Signal{
+		{
+			Name:         "reverse_shell_pattern",
+			BaseRisk:     80,
+			GlobalRarity: 1,
+			Terminal:     true,
+			Scenario:     "scenario-a",
+			Entities: []*signalv1.EntityRef{
+				{Kind: "container", Key: "checkout-api"},
+				{Kind: "process", Key: "process:p-bash", Role: "subject"},
+			},
+		},
+	}, converge.Decision{Incident: true, Method: "rarity+causal-topk", Controls: []string{"terminal_reverse_shell"}})
+	if inc.GetConverge().GetScore() != 20 {
+		t.Fatalf("score = %f, want 20", inc.GetConverge().GetScore())
 	}
 }
