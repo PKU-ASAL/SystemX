@@ -450,7 +450,7 @@ Status: foundation implementation started.
 
 - `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、events、signals、incidents、incident_events、evidence、response_audit、metrics 和基础查询索引。
 - `internal/store/postgres` 提供基于标准库 `database/sql` 的 migration runner,可对 live Postgres 执行 schema v1。
-- manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,再打开 JSON snapshot-backed store 作为逐表 adapter 前的过渡路径。
+- manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,再打开 JSON snapshot-backed store 作为逐表 adapter 前的过渡路径。当前 manager 二进制不默认内置第三方 Postgres driver,`--postgres-driver` 需要传入已注册的 `database/sql` driver name;live Postgres e2e 会在引入驱动/拓扑时补齐。
 - store backend `Result` 已提供 `Close()` 生命周期边界;manager 退出时会关闭 Postgres 底层 database handle,file/memory backend 保持 no-op。
 - `internal/transport/link1` 已提取 `ManagerStore` 接口,manager/Link1 transport 不再直接绑定具体 file store 类型,为 Postgres adapter 接入预留稳定 contract。
 - file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres snapshot adapter 复用同一套 proto/json state contract 持久化完整 manager state,后续可逐步落表。
@@ -478,6 +478,7 @@ Status: foundation implementation started.
 仍未完成:
 
 - live Postgres migration e2e。
+- manager release 二进制内置/注册真实 Postgres driver 的发布策略;当前为了避免误导,`--postgres-driver` 默认为空,测试使用 fake driver 覆盖 backend contract。
 - 逐表 Postgres adapter:当前只开始投影 `agents` / `agent_health` / `events` / `signals` / `rules` / `response_audit` / `policies` / `policy_assignments` / `incidents` / `incident_events` / `evidence` / `evidence_pullbacks` / `metrics`,尚未把 ingest/query/policy/incident 主路径迁到逐表读写。
 - ingest/query/policy/incident e2e 已有 snapshot-backed Postgres manager API 门禁;仍缺完整逐表 Postgres adapter 路径上的同类 e2e。
 

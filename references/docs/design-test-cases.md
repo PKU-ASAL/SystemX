@@ -260,7 +260,7 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`response_audit` 审计表、`policies` / `policy_assignments` 控制面表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表和 `metrics` 观测表投影开始,完整逐表读写和 live Postgres e2e 仍是后续项。
+这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`response_audit` 审计表、`policies` / `policy_assignments` 控制面表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表和 `metrics` 观测表投影开始,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|

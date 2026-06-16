@@ -23,7 +23,7 @@ func main() {
 	grpcListen := flag.String("grpc-listen", ":9444", "manager Link1 gRPC listen address")
 	storeBackend := flag.String("store-backend", backend.KindFile, "store backend: file, memory, postgres")
 	storePath := flag.String("store", "/tmp/sysarmor-manager.json", "store path")
-	postgresDriver := flag.String("postgres-driver", "pgx", "database/sql driver name for postgres backend")
+	postgresDriver := flag.String("postgres-driver", "", "database/sql driver name for postgres backend; must be registered by the binary")
 	postgresDSN := flag.String("postgres-dsn", "", "Postgres DSN for postgres backend")
 	devToken := flag.String("dev-token", "", "static development agent token; empty disables token checks")
 	operatorToken := flag.String("operator-token", "", "static development operator token for control-plane writes; empty disables operator checks")
