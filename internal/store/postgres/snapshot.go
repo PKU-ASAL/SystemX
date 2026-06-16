@@ -114,6 +114,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
 		return err
 	}
+	if err := projectLink1Sessions(ctx, db, state.Link1Sessions); err != nil {
+		return err
+	}
 	if err := projectMetrics(ctx, db, state.Metrics); err != nil {
 		return err
 	}
@@ -668,6 +671,67 @@ ON CONFLICT (tenant_id, metric_key) DO UPDATE SET
 `, "default", "manager", data)
 	if err != nil {
 		return fmt.Errorf("project metrics: %w", err)
+	}
+	return nil
+}
+
+func projectLink1Sessions(ctx context.Context, db *sql.DB, sessions []store.Link1Session) error {
+	for _, session := range sessions {
+		if session.SessionID == "" || session.AgentID == "" {
+			continue
+		}
+		tenantID := session.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		data, err := json.Marshal(session)
+		if err != nil {
+			return fmt.Errorf("encode link1 session projection: %w", err)
+		}
+		startedAt := session.StartedAt
+		lastSeenAt := session.LastSeenAt
+		if startedAt.IsZero() || lastSeenAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO link1_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  status = EXCLUDED.status,
+  transport = EXCLUDED.transport,
+  last_ack_cursor = EXCLUDED.last_ack_cursor,
+  last_seen_at = now(),
+  data = EXCLUDED.data
+`, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, data)
+		} else if session.ClosedAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO link1_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  status = EXCLUDED.status,
+  transport = EXCLUDED.transport,
+  last_ack_cursor = EXCLUDED.last_ack_cursor,
+  last_seen_at = EXCLUDED.last_seen_at,
+  closed_at = NULL,
+  data = EXCLUDED.data
+`, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, startedAt, lastSeenAt, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO link1_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, closed_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  status = EXCLUDED.status,
+  transport = EXCLUDED.transport,
+  last_ack_cursor = EXCLUDED.last_ack_cursor,
+  last_seen_at = EXCLUDED.last_seen_at,
+  closed_at = EXCLUDED.closed_at,
+  data = EXCLUDED.data
+`, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, startedAt, lastSeenAt, session.ClosedAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project link1 session: %w", err)
+		}
 	}
 	return nil
 }

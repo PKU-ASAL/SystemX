@@ -473,6 +473,40 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsLink1SessionTable(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.RecordLink1StreamOpen("default", "agent-link1-pg", "stream", time.Unix(300, 0).UTC())
+	result.Store.RecordLink1Upload(&analyticsv1.AgentHello{
+		TenantId: "default",
+		AgentId:  "agent-link1-pg",
+	}, "batch-link1-pg", "stream", time.Unix(301, 0).UTC())
+	result.Store.CloseLink1Session("default", "agent-link1-pg", time.Unix(302, 0).UTC())
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO link1_sessions",
+		"agent-link1-pg",
+		"closed",
+		"stream",
+		"batch-link1-pg",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)

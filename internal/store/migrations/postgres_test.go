@@ -21,6 +21,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"evidence",
 		"response_audit",
 		"evidence_pullbacks",
+		"link1_sessions",
 		"metrics",
 	} {
 		if !strings.Contains(PostgresSchema, "CREATE TABLE IF NOT EXISTS "+table) {
@@ -37,6 +38,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"idx_evidence_incident",
 		"idx_response_audit_agent",
 		"idx_evidence_pullbacks_agent",
+		"idx_link1_sessions_agent",
 	} {
 		if !strings.Contains(PostgresSchema, "CREATE INDEX IF NOT EXISTS "+index) {
 			t.Fatalf("postgres schema missing index %s", index)
