@@ -7,13 +7,14 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/analytics/converge"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/entity"
-	"github.com/sysarmor/sysarmor-next-project/internal/analytics/evidence"
+	incidentbuilder "github.com/sysarmor/sysarmor-next-project/internal/analytics/incident"
 )
 
 type Engine struct {
-	nextSignalID   uint64
-	nextIncidentID uint64
+	nextSignalID uint64
+	incidents    *incidentbuilder.Builder
 }
 
 type Result struct {
@@ -22,7 +23,7 @@ type Result struct {
 }
 
 func NewEngine() *Engine {
-	return &Engine{}
+	return &Engine{incidents: incidentbuilder.NewBuilder()}
 }
 
 func (e *Engine) Analyze(events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) Result {
@@ -59,8 +60,9 @@ func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*
 
 	allSignals := append([]*signalv1.Signal{}, signals...)
 	allSignals = append(allSignals, result.CloudSignals...)
-	if shouldIncident(byName, result.CloudSignals, policy) {
-		result.Incidents = append(result.Incidents, e.incident(scenario, allSignals))
+	decision := converge.Decide(byName, result.CloudSignals, policy)
+	if decision.Incident {
+		result.Incidents = append(result.Incidents, e.incidents.Build(scenario, allSignals, decision))
 	}
 	return result
 }
@@ -89,35 +91,6 @@ func cloudRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
 	return false
 }
 
-func shouldIncident(byName map[string][]*signalv1.Signal, cloud []*signalv1.Signal, policy *policyv1.DetectionPolicy) bool {
-	if policy != nil && policy.GetConverge().GetMode() == "additive_threshold" {
-		threshold := policy.GetConverge().GetAdditiveRiskThreshold()
-		if threshold == 0 {
-			threshold = 100
-		}
-		return additiveRisk(byName) >= threshold
-	}
-	if hasTerminal(byName["reverse_shell_pattern"]) {
-		return true
-	}
-	for _, sig := range cloud {
-		if sig.GetName() == "dropped_payload_executed_and_connects" && sig.GetCrossLineage() {
-			return true
-		}
-	}
-	return false
-}
-
-func additiveRisk(byName map[string][]*signalv1.Signal) uint32 {
-	var total uint32
-	for _, signals := range byName {
-		for _, sig := range signals {
-			total += sig.GetBaseRisk()
-		}
-	}
-	return total
-}
-
 func (e *Engine) cloudSignal(name, scenario string, risk uint32, entities ...*signalv1.EntityRef) *signalv1.Signal {
 	e.nextSignalID++
 	return &signalv1.Signal{
@@ -129,44 +102,6 @@ func (e *Engine) cloudSignal(name, scenario string, risk uint32, entities ...*si
 		GlobalRarity: 1,
 		Entities:     uniqueEntities(entities),
 		Scenario:     scenario,
-	}
-}
-
-func (e *Engine) incident(scenario string, signals []*signalv1.Signal) *incidentv1.Incident {
-	e.nextIncidentID++
-	lineages := map[string]bool{}
-	var lineageList []string
-	var terminals []string
-	var contributing []*signalv1.Signal
-	score := float32(0)
-	for _, sig := range signals {
-		if sig.GetScenario() != "" && scenario != "" && sig.GetScenario() != scenario {
-			continue
-		}
-		contributing = append(contributing, sig)
-		score += float32(sig.GetBaseRisk()) * max(sig.GetGlobalRarity(), 1)
-		if sig.GetLineageId() != "" && !lineages[sig.GetLineageId()] {
-			lineages[sig.GetLineageId()] = true
-			lineageList = append(lineageList, sig.GetLineageId())
-		}
-		if sig.GetTerminal() {
-			for _, ent := range sig.GetEntities() {
-				if ent.GetKind() == "process" {
-					terminals = append(terminals, ent.GetKey())
-				}
-			}
-		}
-	}
-	return &incidentv1.Incident{
-		Id:                  fmt.Sprintf("inc-%020d", e.nextIncidentID),
-		Scenario:            scenario,
-		Summary:             "SysArmor detected a causal attack chain",
-		Severity:            80,
-		LineageIds:          lineageList,
-		Terminals:           terminals,
-		Evidence:            evidence.FromSignals(contributing),
-		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk", Score: score},
-		ContributingSignals: contributing,
 	}
 }
 
@@ -213,11 +148,4 @@ func firstEventScenario(events []*eventv1.CanonicalEvent) string {
 		}
 	}
 	return ""
-}
-
-func max(v, fallback float32) float32 {
-	if v == 0 {
-		return fallback
-	}
-	return v
 }
