@@ -658,6 +658,16 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies?reason=header-actor", strings.NewReader(string(policyData)))
 	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "responder")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("policy write with wrong operator role status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies?reason=header-actor", strings.NewReader(string(policyData)))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "policy_admin")
 	req.Header.Set("X-SysArmor-Actor", "header-analyst")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -676,6 +686,40 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("response write without operator token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","action":"collect"}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "policy_admin")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("response write with wrong operator role status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","action":"collect"}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "responder")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response write with responder role status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	adminPolicy := policymodel.DefaultPolicy("default")
+	adminPolicy.PolicyID = "admin-policy"
+	adminPolicy.Version = 1
+	adminData, err := json.Marshal(adminPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(adminData)))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy write with admin role status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

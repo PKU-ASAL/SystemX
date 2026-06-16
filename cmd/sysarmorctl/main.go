@@ -792,4 +792,7 @@ func addAuthHeaders(req *http.Request) {
 	if actor := os.Getenv("SYSARMOR_ACTOR"); actor != "" {
 		req.Header.Set("X-SysArmor-Actor", actor)
 	}
+	if role := os.Getenv("SYSARMOR_ROLE"); role != "" {
+		req.Header.Set("X-SysArmor-Role", role)
+	}
 }

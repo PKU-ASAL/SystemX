@@ -137,7 +137,8 @@ Status: partial implementation started.
 - `internal/policy` 定义 rule content、policy、assignment 的最小模型。
 - `configs/rules/{endpoint,cloud}/` 和 `configs/policies/default-edr-policy.json` 提供默认 content pack。
 - manager store 可持久化 rules、policies、assignments。
-- manager 可配置静态 `operator-token`,对 policy / response / incident / evidence pullback 等控制面写操作做最小门禁;`sysarmorctl` 可通过 `SYSARMOR_OPERATOR_TOKEN` 和 `SYSARMOR_ACTOR` 传递操作者 token 与审计主体。
+- manager 可配置静态 `operator-token`,对 policy / response / incident / evidence pullback 等控制面写操作做最小门禁;在配置 token 后,写操作还需要 `X-SysArmor-Role` 的最小角色授权: `admin` 全通,`policy_admin` 管 policy,`responder` 管 response,`incident_admin` 管 incident/evidence。
+- `sysarmorctl` 可通过 `SYSARMOR_OPERATOR_TOKEN`、`SYSARMOR_ROLE` 和 `SYSARMOR_ACTOR` 传递操作者 token、角色与审计主体。
 - manager HTTP API 支持:
   - `GET /api/v1/rules`
   - `GET|POST /api/v1/policies`
@@ -154,12 +155,12 @@ Status: partial implementation started.
 - `make -C test e2e-policy-agent-refresh` 验证无需重启 agent 即可刷新 endpoint policy。
 - `make -C test e2e-policy-cloud-disable` 验证 manager policy assignment 禁用 cloud rule 后不再收敛 incident。
 - `make -C test e2e-policy-publish` 验证 draft policy 不能分配和生效,发布后才可进入 effective policy,且 upsert/publish/assign 会进入 policy audit。
-- HTTP 单测验证配置 operator token 后控制面写操作必须带 operator token,且 actor 可从 `X-SysArmor-Actor` 进入 policy audit。
+- HTTP 单测验证配置 operator token 后控制面写操作必须带 operator token 和匹配 role,错误 role 返回 forbidden,且 actor 可从 `X-SysArmor-Actor` 进入 policy audit。
 - daemon 单测验证禁用 endpoint rule 后对应 endpoint signal 不再生成。
 
 仍未完成:
 
-- 生产级 manager API 认证/RBAC 与更完整审计语义。
+- 生产级 manager API 认证/RBAC 与更完整审计语义;当前只是静态 token + header role 的最小门禁,还没有真实身份、租户级权限模型、角色绑定、session/JWT、审计签名或集中权限管理。
 
 ### Deliverables
 
