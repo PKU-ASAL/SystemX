@@ -29,6 +29,8 @@ const FileStoreStateVersion = 1
 type Store struct {
 	mu            sync.RWMutex
 	path          string
+	backendInfo   *Info
+	saveState     func(State) error
 	Agents        []*analyticsv1.AgentHello
 	Events        []*eventv1.CanonicalEvent
 	Signals       []*signalv1.Signal
@@ -169,7 +171,19 @@ func (s *Store) ImportState(state State) error {
 	return nil
 }
 
+func (s *Store) ConfigureBackend(info Info, saveState func(State) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.backendInfo = &info
+	s.saveState = saveState
+}
+
 func (s *Store) Info() Info {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.backendInfo != nil {
+		return *s.backendInfo
+	}
 	backend := "file"
 	if s.path == "" {
 		backend = "memory"
@@ -1089,22 +1103,27 @@ func (s *Store) DeleteScenario(scenario string) {
 
 func (s *Store) Save() error {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.path == "" {
-		return nil
-	}
 	state, err := s.exportStateLocked()
+	path := s.path
+	saveState := s.saveState
+	s.mu.RUnlock()
 	if err != nil {
 		return err
+	}
+	if saveState != nil {
+		return saveState(state)
+	}
+	if path == "" {
+		return nil
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	return os.WriteFile(path, data, 0o644)
 }
 
 func (s *Store) ExportState() (State, error) {

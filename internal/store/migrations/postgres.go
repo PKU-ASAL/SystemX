@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS sysarmor_state (
+  state_key TEXT PRIMARY KEY,
+  state_version INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agents (
   tenant_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,

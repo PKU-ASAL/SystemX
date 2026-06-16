@@ -15,8 +15,6 @@ const (
 	KindPostgres = "postgres"
 )
 
-var ErrPostgresAdapterNotImplemented = fmt.Errorf("postgres store adapter not implemented")
-
 type Options struct {
 	Kind           string
 	Path           string
@@ -54,12 +52,17 @@ func Open(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("open postgres: %w", err)
 		}
-		defer db.Close()
 		migration, err := postgres.ApplyMigrations(ctx, db)
 		if err != nil {
+			_ = db.Close()
 			return Result{}, err
 		}
-		return Result{Migration: migration}, ErrPostgresAdapterNotImplemented
+		st, err := postgres.OpenSnapshotStore(ctx, db, migration)
+		if err != nil {
+			_ = db.Close()
+			return Result{}, err
+		}
+		return Result{Store: st, Migration: migration}, nil
 	default:
 		return Result{}, fmt.Errorf("unknown store backend %q", opts.Kind)
 	}

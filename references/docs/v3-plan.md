@@ -427,21 +427,23 @@ Status: foundation implementation started.
 
 - `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、events、signals、incidents、incident_events、evidence、response_audit、metrics 和基础查询索引。
 - `internal/store/postgres` 提供基于标准库 `database/sql` 的 migration runner,可对 live Postgres 执行 schema v1。
-- manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,随后因真实数据 adapter 未实现而显式失败。
+- manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,再打开 JSON snapshot-backed store 作为逐表 adapter 前的过渡路径。
 - `internal/transport/link1` 已提取 `ManagerStore` 接口,manager/Link1 transport 不再直接绑定具体 file store 类型,为 Postgres adapter 接入预留稳定 contract。
-- file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres adapter 可复用同一套 proto/json state contract 逐步落表或先做 JSONB 快照过渡。
+- file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres snapshot adapter 复用同一套 proto/json state contract 持久化完整 manager state,后续可逐步落表。
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
+- store 已提供 backend metadata/save hook,Postgres snapshot adapter 会将 `Info().Backend` 暴露为 `postgres` 并把 `Save()` 写入 `sysarmor_state`。
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
 - manager `events` / `signals` / `incidents` 查询 API 与 `sysarmorctl` 已支持 `limit` / `offset` 分页参数。
 - `make -C test e2e-store-status` 验证 manager file backend 和 Postgres schema version 可观测。
 - `make -C test e2e-query-pagination` 验证 query pagination contract。
+- `make -C test e2e-postgres-store` 验证 Postgres backend 可运行 migration、打开 snapshot store,并跨 reopen 保留 response audit。
 - `make -C test e2e-postgres-all` 当前聚合 Postgres foundation gate。
 
 仍未完成:
 
-- 真实 Postgres store adapter。
 - live Postgres migration e2e。
+- 逐表 Postgres adapter。
 - ingest/query/policy/incident e2e 在 Postgres 后端运行。
 
 ### Deliverables

@@ -8,6 +8,7 @@ import (
 func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 	for _, table := range []string{
 		"schema_migrations",
+		"sysarmor_state",
 		"agents",
 		"agent_health",
 		"rules",

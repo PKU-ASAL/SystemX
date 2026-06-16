@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
 
 func TestOpenFileAndMemoryBackends(t *testing.T) {
@@ -31,21 +33,47 @@ func TestOpenFileAndMemoryBackends(t *testing.T) {
 	}
 }
 
-func TestOpenPostgresRunsMigrationBeforeAdapterError(t *testing.T) {
+func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
 		Kind:           KindPostgres,
 		PostgresDriver: fakeDriverName,
 		PostgresDSN:    "test-dsn",
 	})
-	if !errors.Is(err, ErrPostgresAdapterNotImplemented) {
-		t.Fatalf("Open(postgres) error = %v, want adapter sentinel", err)
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
 	}
 	if result.Migration.Version != 1 {
 		t.Fatalf("migration version = %d, want 1", result.Migration.Version)
 	}
+	if result.Store == nil || result.Store.Info().Backend != KindPostgres {
+		t.Fatalf("store info = %+v", result.Store.Info())
+	}
 	if !strings.Contains(fakeLastQuery(), "CREATE TABLE IF NOT EXISTS incidents") {
 		t.Fatalf("postgres migration did not run: %s", fakeLastQuery())
+	}
+	result.Store.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-pg",
+		TenantID:   "default",
+		AgentID:    "agent-pg",
+		Action:     "collect",
+		Mode:       "observe",
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	reopened, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("reopen postgres error = %v", err)
+	}
+	audits := reopened.Store.ListResponses("default", "agent-pg")
+	if len(audits) != 1 || audits[0].Command.ResponseID != "resp-pg" {
+		t.Fatalf("reopened audits = %+v", audits)
 	}
 }
 
@@ -78,6 +106,7 @@ var fakeState struct {
 	sync.Mutex
 	lastQuery string
 	execErr   error
+	snapshot  []byte
 }
 
 func fakeSetExecError(err error) {
@@ -85,6 +114,12 @@ func fakeSetExecError(err error) {
 	defer fakeState.Unlock()
 	fakeState.lastQuery = ""
 	fakeState.execErr = err
+}
+
+func fakeSetSnapshot(data []byte) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.snapshot = data
 }
 
 func fakeLastQuery() string {
@@ -126,17 +161,38 @@ func (s fakeStmt) NumInput() int {
 }
 
 func (s fakeStmt) Exec([]driver.Value) (driver.Result, error) {
+	return s.ExecContext(context.Background(), nil)
+}
+
+func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driver.Result, error) {
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	fakeState.lastQuery = s.query
 	if fakeState.execErr != nil {
 		return nil, fakeState.execErr
 	}
+	if strings.Contains(s.query, "INSERT INTO sysarmor_state") && len(args) >= 3 {
+		switch data := args[2].Value.(type) {
+		case []byte:
+			fakeState.snapshot = append([]byte(nil), data...)
+		case string:
+			fakeState.snapshot = []byte(data)
+		}
+	}
 	return driver.RowsAffected(1), nil
 }
 
 func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {
-	return fakeRows{}, nil
+	return s.QueryContext(context.Background(), nil)
+}
+
+func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Rows, error) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	if strings.Contains(s.query, "SELECT data FROM sysarmor_state") && len(fakeState.snapshot) > 0 {
+		return &fakeRows{cols: []string{"data"}, values: []driver.Value{append([]byte(nil), fakeState.snapshot...)}}, nil
+	}
+	return &fakeRows{}, nil
 }
 
 type fakeTx struct{}
@@ -149,16 +205,25 @@ func (fakeTx) Rollback() error {
 	return nil
 }
 
-type fakeRows struct{}
+type fakeRows struct {
+	cols   []string
+	values []driver.Value
+	done   bool
+}
 
-func (fakeRows) Columns() []string {
+func (r *fakeRows) Columns() []string {
+	return r.cols
+}
+
+func (*fakeRows) Close() error {
 	return nil
 }
 
-func (fakeRows) Close() error {
+func (r *fakeRows) Next(dest []driver.Value) error {
+	if r.done || len(r.values) == 0 {
+		return io.EOF
+	}
+	r.done = true
+	copy(dest, r.values)
 	return nil
-}
-
-func (fakeRows) Next([]driver.Value) error {
-	return io.EOF
 }

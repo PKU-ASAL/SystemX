@@ -245,12 +245,13 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。注意这还不是完整 Postgres adapter 门禁。
+这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过 `database/sql` driver 持久化完整 manager state;逐表 Postgres adapter 和 live Postgres e2e 仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
 | `e2e-store-status` | `harness/e2e-store-status.sh` | manager file backend、state version、migration version、Postgres schema version 可通过 CLI 查询 |
 | `e2e-query-pagination` | `harness/e2e-query-pagination.sh` | events/signals 查询可通过 `limit` / `offset` 返回稳定分页 |
+| `e2e-postgres-store` | Go backend adapter test | Postgres backend 会运行 migration,打开 snapshot-backed store,并能跨 reopen 保留 response audit |
 | `e2e-postgres-all` | Make 聚合 | 当前聚合 store/Postgres foundation gate |
 
 聚合入口:
@@ -472,7 +473,7 @@ make -C test e2e-agent-benign-container
 | incident lifecycle merge | `e2e-incident-merge` + store 单测 | 部分覆盖 |
 | Postgres schema + migration runner + store backend 可观测 | `e2e-store-status` + migration/runner 单测 | 部分覆盖 |
 | query pagination | `e2e-query-pagination` + HTTP 单测 | 部分覆盖 |
-| Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
+| Postgres durable store adapter | `e2e-postgres-store` + backend/postgres 单测 | 部分覆盖 |
 | Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
 | Link1 resume cursor / local spool cleanup | `e2e-link1-session` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP 单测 | 部分覆盖 |
