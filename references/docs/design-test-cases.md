@@ -260,7 +260,7 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` 控制面表、`response_audit` 响应审计表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表、`link1_sessions` 链路状态表、`rarity_baseline` 基线表和 `metrics` 观测表投影开始;`events` / `signals` / `incidents` / `response_audit` / `policies` / `policy_assignments` 已有第一组表读路径,`GetPolicy` / `EffectivePolicy` 已可走 policy 控制面表,`response_audit` 已有第一组 mutation 写路径,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
+这些脚本验证 v3 durable store/query 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,migration runner 有单测覆盖,查询 API 也有最小分页 contract。Postgres 已有 JSON snapshot adapter 过渡路径,可通过已注册的 `database/sql` driver 持久化完整 manager state;manager ingest/query/policy/incident API 已有 snapshot-backed Postgres 门禁。逐表 adapter 已从 `agents` / `agent_health` inventory 表、`events` / `signals` ingest 表、`rules` 规则内容表、`policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` 控制面表、`response_audit` 响应审计表、`incidents` / `incident_events` / `evidence` 分析表、`evidence_pullbacks` 控制链路表、`link1_sessions` 链路状态表、`rarity_baseline` 基线表和 `metrics` 观测表投影开始;`events` / `signals` / `incidents` / `response_audit` / `policies` / `policy_assignments` 已有第一组表读路径,`GetPolicy` / `EffectivePolicy` 已可走 policy 控制面表,`response_audit` 和 policy 控制面已有第一组 mutation 写路径,完整逐表读写、manager release 二进制内置真实 Postgres driver 和 live Postgres e2e 仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -281,6 +281,7 @@ make -C test e2e-graph-all
 | `e2e-postgres-response-write` | Go backend adapter test | Postgres backend 创建/确认 response 时不依赖 snapshot save,会直接 upsert `response_audit` 表 |
 | `e2e-postgres-response-query` | Go backend adapter test | Postgres backend 的 `ListResponses` 会优先从 `response_audit` 表读出 command/ack 审计记录 |
 | `e2e-postgres-policy-projection` | Go backend adapter test | snapshot-backed Postgres 保存时会同步 upsert `policies` / `policy_assignments` 表投影 |
+| `e2e-postgres-policy-write` | Go backend adapter test | Postgres backend 创建/发布/分配 policy 和记录 audit 时不依赖 snapshot save,会直接 upsert policy 控制面表 |
 | `e2e-postgres-policy-query` | Go backend adapter test | Postgres backend 的 `ListPolicies` / `ListAssignments` 会优先从控制面表读出 policy/assignment JSON |
 | `e2e-postgres-policy-get` | Go backend adapter test | Postgres backend 的 `GetPolicy` 会优先按 id/version 从 `policies` 表读出 policy JSON |
 | `e2e-postgres-effective-policy-query` | Go backend adapter test | Postgres backend 的 `EffectivePolicy` 会优先用 `policy_assignments` / `policies` 表计算生效 policy |
@@ -536,6 +537,7 @@ make -C test e2e-agent-benign-container
 | Postgres response_audit table write path | `e2e-postgres-response-write` | 部分覆盖 |
 | Postgres response_audit table query path | `e2e-postgres-response-query` | 部分覆盖 |
 | Postgres policies/policy_assignments table projection | `e2e-postgres-policy-projection` | 部分覆盖 |
+| Postgres policy control table write path | `e2e-postgres-policy-write` | 部分覆盖 |
 | Postgres policies/policy_assignments table query path | `e2e-postgres-policy-query` | 部分覆盖 |
 | Postgres GetPolicy table query path | `e2e-postgres-policy-get` | 部分覆盖 |
 | Postgres EffectivePolicy table query path | `e2e-postgres-effective-policy-query` | 部分覆盖 |

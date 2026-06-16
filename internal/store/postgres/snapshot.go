@@ -76,9 +76,20 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 			return queryEffectivePolicy(context.Background(), db, tenantID, agentID, scopeType, scopeSelector)
 		},
 	)
-	st.ConfigureWriteHooks(func(cmd responsemodel.Command, ack *responsemodel.Ack) error {
-		return upsertResponseAudit(context.Background(), db, cmd, ack)
-	})
+	st.ConfigureWriteHooks(
+		func(cmd responsemodel.Command, ack *responsemodel.Ack) error {
+			return upsertResponseAudit(context.Background(), db, cmd, ack)
+		},
+		func(policy policymodel.Policy) error {
+			return upsertPolicy(context.Background(), db, policy)
+		},
+		func(assignment policymodel.Assignment) error {
+			return upsertPolicyAssignment(context.Background(), db, assignment)
+		},
+		func(audit policymodel.AuditRecord) error {
+			return upsertPolicyAudit(context.Background(), db, audit)
+		},
+	)
 	return st, nil
 }
 
@@ -736,20 +747,28 @@ func joinTextArray(values []string) string {
 
 func projectPolicies(ctx context.Context, db *sql.DB, policies []policymodel.Policy) error {
 	for _, policy := range policies {
-		if policy.PolicyID == "" || policy.Version == 0 {
-			continue
+		if err := upsertPolicy(ctx, db, policy); err != nil {
+			return err
 		}
-		tenantID := policy.TenantID
-		if tenantID == "" {
-			tenantID = "default"
-		}
-		data, err := json.Marshal(policy)
-		if err != nil {
-			return fmt.Errorf("encode policy projection: %w", err)
-		}
-		createdAt := policy.CreatedAt
-		if createdAt.IsZero() {
-			_, err = db.ExecContext(ctx, `
+	}
+	return nil
+}
+
+func upsertPolicy(ctx context.Context, db *sql.DB, policy policymodel.Policy) error {
+	if policy.PolicyID == "" || policy.Version == 0 {
+		return nil
+	}
+	tenantID := policy.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return fmt.Errorf("encode policy projection: %w", err)
+	}
+	createdAt := policy.CreatedAt
+	if createdAt.IsZero() {
+		_, err = db.ExecContext(ctx, `
 INSERT INTO policies (tenant_id, policy_id, version, scope_type, scope_selector, mode, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
@@ -758,8 +777,8 @@ ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
   mode = EXCLUDED.mode,
   data = EXCLUDED.data
 `, tenantID, policy.PolicyID, policy.Version, policy.Scope.Type, policy.Scope.Selector, policy.Mode, data)
-		} else {
-			_, err = db.ExecContext(ctx, `
+	} else {
+		_, err = db.ExecContext(ctx, `
 INSERT INTO policies (tenant_id, policy_id, version, scope_type, scope_selector, mode, created_at, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
@@ -768,31 +787,38 @@ ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
   mode = EXCLUDED.mode,
   data = EXCLUDED.data
 `, tenantID, policy.PolicyID, policy.Version, policy.Scope.Type, policy.Scope.Selector, policy.Mode, createdAt, data)
-		}
-		if err != nil {
-			return fmt.Errorf("project policy: %w", err)
-		}
+	}
+	if err != nil {
+		return fmt.Errorf("project policy: %w", err)
 	}
 	return nil
 }
 
 func projectPolicyAssignments(ctx context.Context, db *sql.DB, assignments []policymodel.Assignment) error {
 	for _, assignment := range assignments {
-		if assignment.AssignmentID == "" || assignment.PolicyID == "" {
-			continue
+		if err := upsertPolicyAssignment(ctx, db, assignment); err != nil {
+			return err
 		}
-		tenantID := assignment.TenantID
-		if tenantID == "" {
-			tenantID = "default"
-		}
-		data, err := json.Marshal(assignment)
-		if err != nil {
-			return fmt.Errorf("encode policy assignment projection: %w", err)
-		}
-		createdAt := assignment.CreatedAt
-		updatedAt := assignment.UpdatedAt
-		if createdAt.IsZero() || updatedAt.IsZero() {
-			_, err = db.ExecContext(ctx, `
+	}
+	return nil
+}
+
+func upsertPolicyAssignment(ctx context.Context, db *sql.DB, assignment policymodel.Assignment) error {
+	if assignment.AssignmentID == "" || assignment.PolicyID == "" {
+		return nil
+	}
+	tenantID := assignment.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	data, err := json.Marshal(assignment)
+	if err != nil {
+		return fmt.Errorf("encode policy assignment projection: %w", err)
+	}
+	createdAt := assignment.CreatedAt
+	updatedAt := assignment.UpdatedAt
+	if createdAt.IsZero() || updatedAt.IsZero() {
+		_, err = db.ExecContext(ctx, `
 INSERT INTO policy_assignments (tenant_id, assignment_id, agent_id, scope_type, scope_selector, policy_id, policy_version, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
@@ -804,8 +830,8 @@ ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
   updated_at = now(),
   data = EXCLUDED.data
 `, tenantID, assignment.AssignmentID, assignment.AgentID, assignment.Scope.Type, assignment.Scope.Selector, assignment.PolicyID, assignment.PolicyVersion, data)
-		} else {
-			_, err = db.ExecContext(ctx, `
+	} else {
+		_, err = db.ExecContext(ctx, `
 INSERT INTO policy_assignments (tenant_id, assignment_id, agent_id, scope_type, scope_selector, policy_id, policy_version, created_at, updated_at, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
@@ -817,30 +843,37 @@ ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
   updated_at = EXCLUDED.updated_at,
   data = EXCLUDED.data
 `, tenantID, assignment.AssignmentID, assignment.AgentID, assignment.Scope.Type, assignment.Scope.Selector, assignment.PolicyID, assignment.PolicyVersion, createdAt, updatedAt, data)
-		}
-		if err != nil {
-			return fmt.Errorf("project policy assignment: %w", err)
-		}
+	}
+	if err != nil {
+		return fmt.Errorf("project policy assignment: %w", err)
 	}
 	return nil
 }
 
 func projectPolicyAudits(ctx context.Context, db *sql.DB, audits []policymodel.AuditRecord) error {
 	for _, audit := range audits {
-		if audit.AuditID == "" {
-			continue
+		if err := upsertPolicyAudit(ctx, db, audit); err != nil {
+			return err
 		}
-		tenantID := audit.TenantID
-		if tenantID == "" {
-			tenantID = "default"
-		}
-		data, err := json.Marshal(audit)
-		if err != nil {
-			return fmt.Errorf("encode policy audit projection: %w", err)
-		}
-		createdAt := audit.CreatedAt
-		if createdAt.IsZero() {
-			_, err = db.ExecContext(ctx, `
+	}
+	return nil
+}
+
+func upsertPolicyAudit(ctx context.Context, db *sql.DB, audit policymodel.AuditRecord) error {
+	if audit.AuditID == "" {
+		return nil
+	}
+	tenantID := audit.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	data, err := json.Marshal(audit)
+	if err != nil {
+		return fmt.Errorf("encode policy audit projection: %w", err)
+	}
+	createdAt := audit.CreatedAt
+	if createdAt.IsZero() {
+		_, err = db.ExecContext(ctx, `
 INSERT INTO policy_audit (tenant_id, audit_id, action, policy_id, policy_version, assignment_id, actor, status, reason, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
@@ -853,8 +886,8 @@ ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
   reason = EXCLUDED.reason,
   data = EXCLUDED.data
 `, tenantID, audit.AuditID, audit.Action, audit.PolicyID, audit.PolicyVersion, audit.AssignmentID, audit.Actor, audit.Status, audit.Reason, data)
-		} else {
-			_, err = db.ExecContext(ctx, `
+	} else {
+		_, err = db.ExecContext(ctx, `
 INSERT INTO policy_audit (tenant_id, audit_id, action, policy_id, policy_version, assignment_id, actor, status, reason, created_at, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
@@ -867,10 +900,9 @@ ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
   reason = EXCLUDED.reason,
   data = EXCLUDED.data
 `, tenantID, audit.AuditID, audit.Action, audit.PolicyID, audit.PolicyVersion, audit.AssignmentID, audit.Actor, audit.Status, audit.Reason, createdAt, data)
-		}
-		if err != nil {
-			return fmt.Errorf("project policy audit: %w", err)
-		}
+	}
+	if err != nil {
+		return fmt.Errorf("project policy audit: %w", err)
 	}
 	return nil
 }

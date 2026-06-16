@@ -29,35 +29,38 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu              sync.RWMutex
-	path            string
-	backendInfo     *Info
-	saveState       func(State) error
-	listEvents      func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
-	listSignals     func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
-	listIncidents   func(scenario string) ([]*incidentv1.Incident, error)
-	listResponses   func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
-	listPolicies    func(tenantID string) ([]policymodel.Policy, error)
-	listAssignments func(tenantID, agentID string) ([]policymodel.Assignment, error)
-	getPolicy       func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
-	effectivePolicy func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
-	writeResponse   func(responsemodel.Command, *responsemodel.Ack) error
-	Agents          []*analyticsv1.AgentHello
-	Events          []*eventv1.CanonicalEvent
-	Signals         []*signalv1.Signal
-	Incidents       []*incidentv1.Incident
-	Health          map[string]agenthealth.AgentHealth
-	Rules           []policymodel.RuleContent
-	Policies        []policymodel.Policy
-	Assignments     []policymodel.Assignment
-	PolicyAudits    []policymodel.AuditRecord
-	Responses       []responsemodel.Command
-	ResponseAcks    []responsemodel.Ack
-	Pullbacks       []link1model.EvidencePullbackRequest
-	Link1Sessions   []Link1Session
-	OperatorRoles   []OperatorRoleBinding
-	Metrics         Metrics
-	RarityBaseline  rarity.Baseline
+	mu               sync.RWMutex
+	path             string
+	backendInfo      *Info
+	saveState        func(State) error
+	listEvents       func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
+	listSignals      func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
+	listIncidents    func(scenario string) ([]*incidentv1.Incident, error)
+	listResponses    func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
+	listPolicies     func(tenantID string) ([]policymodel.Policy, error)
+	listAssignments  func(tenantID, agentID string) ([]policymodel.Assignment, error)
+	getPolicy        func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
+	effectivePolicy  func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
+	writeResponse    func(responsemodel.Command, *responsemodel.Ack) error
+	writePolicy      func(policymodel.Policy) error
+	writeAssignment  func(policymodel.Assignment) error
+	writePolicyAudit func(policymodel.AuditRecord) error
+	Agents           []*analyticsv1.AgentHello
+	Events           []*eventv1.CanonicalEvent
+	Signals          []*signalv1.Signal
+	Incidents        []*incidentv1.Incident
+	Health           map[string]agenthealth.AgentHealth
+	Rules            []policymodel.RuleContent
+	Policies         []policymodel.Policy
+	Assignments      []policymodel.Assignment
+	PolicyAudits     []policymodel.AuditRecord
+	Responses        []responsemodel.Command
+	ResponseAcks     []responsemodel.Ack
+	Pullbacks        []link1model.EvidencePullbackRequest
+	Link1Sessions    []Link1Session
+	OperatorRoles    []OperatorRoleBinding
+	Metrics          Metrics
+	RarityBaseline   rarity.Baseline
 }
 
 type Info struct {
@@ -229,10 +232,18 @@ func (s *Store) ConfigureQueryHooks(
 	s.effectivePolicy = effectivePolicy
 }
 
-func (s *Store) ConfigureWriteHooks(writeResponse func(responsemodel.Command, *responsemodel.Ack) error) {
+func (s *Store) ConfigureWriteHooks(
+	writeResponse func(responsemodel.Command, *responsemodel.Ack) error,
+	writePolicy func(policymodel.Policy) error,
+	writeAssignment func(policymodel.Assignment) error,
+	writePolicyAudit func(policymodel.AuditRecord) error,
+) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.writeResponse = writeResponse
+	s.writePolicy = writePolicy
+	s.writeAssignment = writeAssignment
+	s.writePolicyAudit = writePolicyAudit
 }
 
 func (s *Store) Info() Info {
@@ -400,7 +411,6 @@ func (s *Store) UpsertPolicy(policy policymodel.Policy) policymodel.Policy {
 	}
 	policy = policymodel.Normalize(policy)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, existing := range s.Policies {
 		if existing.TenantID == policy.TenantID && existing.PolicyID == policy.PolicyID && existing.Version == policy.Version {
 			if existing.CreatedAt.IsZero() {
@@ -408,10 +418,20 @@ func (s *Store) UpsertPolicy(policy policymodel.Policy) policymodel.Policy {
 			}
 			policy.CreatedAt = existing.CreatedAt
 			s.Policies[i] = policy
+			writePolicy := s.writePolicy
+			s.mu.Unlock()
+			if writePolicy != nil {
+				_ = writePolicy(policy)
+			}
 			return policy
 		}
 	}
 	s.Policies = append(s.Policies, policy)
+	writePolicy := s.writePolicy
+	s.mu.Unlock()
+	if writePolicy != nil {
+		_ = writePolicy(policy)
+	}
 	return policy
 }
 
@@ -430,8 +450,12 @@ func (s *Store) RecordPolicyAudit(record policymodel.AuditRecord) policymodel.Au
 		record.AuditID = fmt.Sprintf("policy-audit-%d", now.UnixNano())
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.PolicyAudits = append(s.PolicyAudits, record)
+	writePolicyAudit := s.writePolicyAudit
+	s.mu.Unlock()
+	if writePolicyAudit != nil {
+		_ = writePolicyAudit(record)
+	}
 	return record
 }
 
@@ -528,7 +552,6 @@ func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, publish
 		return policymodel.Policy{}, false
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, policy := range s.Policies {
 		if policy.TenantID != tenantID || policy.PolicyID != policyID {
 			continue
@@ -539,8 +562,14 @@ func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, publish
 		policy.Published = published
 		policy.UpdatedAt = time.Now().UTC()
 		s.Policies[i] = policy
+		writePolicy := s.writePolicy
+		s.mu.Unlock()
+		if writePolicy != nil {
+			_ = writePolicy(policy)
+		}
 		return policy, true
 	}
+	s.mu.Unlock()
 	return policymodel.Policy{}, false
 }
 
@@ -591,20 +620,34 @@ func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Ass
 	}
 	assignment.UpdatedAt = now
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, existing := range s.Assignments {
 		if existing.AssignmentID == assignment.AssignmentID {
 			assignment.CreatedAt = existing.CreatedAt
 			s.Assignments[i] = assignment
+			writeAssignment := s.writeAssignment
+			s.mu.Unlock()
+			if writeAssignment != nil {
+				_ = writeAssignment(assignment)
+			}
 			return assignment, true
 		}
 		if sameAssignmentTarget(existing, assignment) {
 			assignment.CreatedAt = existing.CreatedAt
 			s.Assignments[i] = assignment
+			writeAssignment := s.writeAssignment
+			s.mu.Unlock()
+			if writeAssignment != nil {
+				_ = writeAssignment(assignment)
+			}
 			return assignment, true
 		}
 	}
 	s.Assignments = append(s.Assignments, assignment)
+	writeAssignment := s.writeAssignment
+	s.mu.Unlock()
+	if writeAssignment != nil {
+		_ = writeAssignment(assignment)
+	}
 	return assignment, true
 }
 

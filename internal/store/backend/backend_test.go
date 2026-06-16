@@ -300,6 +300,70 @@ func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresWritesPolicyControlTablePaths(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "policy-write-table-pg"
+	policy.Version = 4
+	policy.Published = false
+	result.Store.UpsertPolicy(policy)
+	published, ok := result.Store.PublishPolicy("default", "policy-write-table-pg", 4, true)
+	if !ok || !published.Published {
+		t.Fatalf("PublishPolicy() = %+v, %v", published, ok)
+	}
+	assignment, ok := result.Store.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		AgentID:       "agent-policy-write-pg",
+		PolicyID:      "policy-write-table-pg",
+		PolicyVersion: 4,
+	})
+	if !ok {
+		t.Fatal("AssignPolicy() ok = false")
+	}
+	result.Store.RecordPolicyAudit(policymodel.AuditRecord{
+		AuditID:       "audit-policy-write-pg",
+		TenantID:      "default",
+		Action:        "policy.assign",
+		PolicyID:      "policy-write-table-pg",
+		PolicyVersion: 4,
+		AssignmentID:  assignment.AssignmentID,
+		Actor:         "alice",
+		Status:        "ok",
+		Reason:        "table write",
+		CreatedAt:     time.Unix(130, 0).UTC(),
+	})
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO policies",
+		"INSERT INTO policy_assignments",
+		"INSERT INTO policy_audit",
+		"policy-write-table-pg",
+		"agent-policy-write-pg",
+		"audit-policy-write-pg",
+		"table write",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+	if strings.Contains(execLog, "INSERT INTO sysarmor_state") {
+		t.Fatalf("policy write hook unexpectedly used snapshot save:\n%s", execLog)
+	}
+	got, ok := result.Store.EffectivePolicy("default", "agent-policy-write-pg", "", "")
+	if !ok || got.PolicyID != "policy-write-table-pg" || got.Version != 4 || !got.Published {
+		t.Fatalf("effective policy from table write path = %+v, %v", got, ok)
+	}
+}
+
 func TestOpenPostgresProjectsControlAuditTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -1369,18 +1433,18 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 		dataArg := args[len(args)-1].Value
 		switch data := dataArg.(type) {
 		case []byte:
-			fakeState.policyRows = append(fakeState.policyRows, append([]byte(nil), data...))
+			upsertFakePolicyRow(append([]byte(nil), data...))
 		case string:
-			fakeState.policyRows = append(fakeState.policyRows, []byte(data))
+			upsertFakePolicyRow([]byte(data))
 		}
 	}
 	if strings.Contains(s.query, "INSERT INTO policy_assignments") && len(args) >= 8 {
 		dataArg := args[len(args)-1].Value
 		switch data := dataArg.(type) {
 		case []byte:
-			fakeState.assignmentRows = append(fakeState.assignmentRows, append([]byte(nil), data...))
+			upsertFakeAssignmentRow(append([]byte(nil), data...))
 		case string:
-			fakeState.assignmentRows = append(fakeState.assignmentRows, []byte(data))
+			upsertFakeAssignmentRow([]byte(data))
 		}
 	}
 	return driver.RowsAffected(1), nil
@@ -1427,6 +1491,40 @@ func fakeResponseID(value driver.Value) string {
 		return ""
 	}
 	return cmd.ResponseID
+}
+
+func upsertFakePolicyRow(row []byte) {
+	var policy policymodel.Policy
+	if err := json.Unmarshal(row, &policy); err == nil && policy.PolicyID != "" {
+		for i, existing := range fakeState.policyRows {
+			var existingPolicy policymodel.Policy
+			if err := json.Unmarshal(existing, &existingPolicy); err != nil {
+				continue
+			}
+			if existingPolicy.TenantID == policy.TenantID && existingPolicy.PolicyID == policy.PolicyID && existingPolicy.Version == policy.Version {
+				fakeState.policyRows[i] = row
+				return
+			}
+		}
+	}
+	fakeState.policyRows = append(fakeState.policyRows, row)
+}
+
+func upsertFakeAssignmentRow(row []byte) {
+	var assignment policymodel.Assignment
+	if err := json.Unmarshal(row, &assignment); err == nil && assignment.AssignmentID != "" {
+		for i, existing := range fakeState.assignmentRows {
+			var existingAssignment policymodel.Assignment
+			if err := json.Unmarshal(existing, &existingAssignment); err != nil {
+				continue
+			}
+			if existingAssignment.TenantID == assignment.TenantID && existingAssignment.AssignmentID == assignment.AssignmentID {
+				fakeState.assignmentRows[i] = row
+				return
+			}
+		}
+	}
+	fakeState.assignmentRows = append(fakeState.assignmentRows, row)
 }
 
 func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {
