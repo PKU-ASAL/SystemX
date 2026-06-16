@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -92,6 +93,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	if err := projectPolicyAssignments(ctx, db, state.Assignments); err != nil {
+		return err
+	}
+	if err := projectIncidents(ctx, db, state.Incidents); err != nil {
 		return err
 	}
 	return nil
@@ -307,4 +311,124 @@ ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
 		}
 	}
 	return nil
+}
+
+func projectIncidents(ctx context.Context, db *sql.DB, incidentRows []json.RawMessage) error {
+	for _, raw := range incidentRows {
+		var inc incidentv1.Incident
+		if err := protojson.Unmarshal(raw, &inc); err != nil {
+			return fmt.Errorf("decode incident projection: %w", err)
+		}
+		if inc.GetId() == "" {
+			continue
+		}
+		incidentKey := store.IncidentProjectionKey(&inc)
+		if incidentKey == "" {
+			incidentKey = inc.GetId()
+		}
+		status := inc.GetStatus()
+		if status == "" {
+			status = "open"
+		}
+		_, err := db.ExecContext(ctx, `
+INSERT INTO incidents (tenant_id, incident_key, incident_id, scenario, status, severity, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, incident_key) DO UPDATE SET
+  incident_id = EXCLUDED.incident_id,
+  scenario = EXCLUDED.scenario,
+  status = EXCLUDED.status,
+  severity = EXCLUDED.severity,
+  updated_at = now(),
+  data = EXCLUDED.data
+`, "default", incidentKey, inc.GetId(), inc.GetScenario(), status, inc.GetSeverity(), []byte(raw))
+		if err != nil {
+			return fmt.Errorf("project incident: %w", err)
+		}
+		if err := projectIncidentEvidence(ctx, db, inc.GetId(), inc.GetEvidence()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func projectIncidentEvidence(ctx context.Context, db *sql.DB, incidentID string, evidence *incidentv1.EvidenceSubgraph) error {
+	if incidentID == "" || evidence == nil {
+		return nil
+	}
+	mo := protojson.MarshalOptions{UseProtoNames: true}
+	for _, node := range evidence.GetNodes() {
+		evidenceID := nodeEvidenceID(node)
+		if evidenceID == "" {
+			continue
+		}
+		kind := node.GetKind()
+		if kind == "" {
+			kind = "node"
+		}
+		data, err := mo.Marshal(node)
+		if err != nil {
+			return fmt.Errorf("encode evidence node projection: %w", err)
+		}
+		if err := upsertEvidence(ctx, db, incidentID, evidenceID, kind, data); err != nil {
+			return err
+		}
+	}
+	for _, edge := range evidence.GetEdges() {
+		evidenceID := edgeEvidenceID(edge)
+		if evidenceID == "" {
+			continue
+		}
+		kind := edge.GetKind()
+		if kind == "" {
+			kind = "edge"
+		}
+		data, err := mo.Marshal(edge)
+		if err != nil {
+			return fmt.Errorf("encode evidence edge projection: %w", err)
+		}
+		if err := upsertEvidence(ctx, db, incidentID, evidenceID, kind, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertEvidence(ctx context.Context, db *sql.DB, incidentID, evidenceID, kind string, data []byte) error {
+	_, err := db.ExecContext(ctx, `
+INSERT INTO evidence (tenant_id, incident_id, evidence_id, evidence_kind, data)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, incident_id, evidence_id) DO UPDATE SET
+  evidence_kind = EXCLUDED.evidence_kind,
+  data = EXCLUDED.data
+`, "default", incidentID, evidenceID, kind, data)
+	if err != nil {
+		return fmt.Errorf("project evidence: %w", err)
+	}
+	return nil
+}
+
+func nodeEvidenceID(node *incidentv1.GraphNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.GetId() != "" {
+		return "node:" + node.GetId()
+	}
+	if node.GetKind() == "" && node.GetLabel() == "" {
+		return ""
+	}
+	return "node:" + node.GetKind() + ":" + node.GetLabel()
+}
+
+func edgeEvidenceID(edge *incidentv1.GraphEdge) string {
+	if edge == nil {
+		return ""
+	}
+	if edge.GetId() != "" {
+		return "edge:" + edge.GetId()
+	}
+	if edge.GetFrom() == "" || edge.GetTo() == "" || edge.GetKind() == "" {
+		return ""
+	}
+	return "edge:" + edge.GetFrom() + ":" + edge.GetKind() + ":" + edge.GetTo()
 }

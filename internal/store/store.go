@@ -1533,6 +1533,10 @@ func incidentKey(inc *incidentv1.Incident) string {
 	return stableKey(parts...)
 }
 
+func IncidentProjectionKey(inc *incidentv1.Incident) string {
+	return incidentKey(inc)
+}
+
 func defaultIncidentStatus(inc *incidentv1.Incident) {
 	if inc != nil && inc.GetStatus() == "" {
 		inc.Status = "open"

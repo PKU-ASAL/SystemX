@@ -230,6 +230,59 @@ func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.AddIncident(&incidentv1.Incident{
+		Id:       "inc-table-pg",
+		Scenario: "pg-incident",
+		Summary:  "projected incident",
+		Status:   "open",
+		Severity: 70,
+		Evidence: &incidentv1.EvidenceSubgraph{
+			Nodes: []*incidentv1.GraphNode{{
+				Id:    "process:p-incident",
+				Kind:  "process",
+				Label: "bash",
+			}},
+			Edges: []*incidentv1.GraphEdge{{
+				Id:   "edge-process-socket",
+				From: "process:p-incident",
+				To:   "socket:10.77.0.5:443",
+				Kind: "connects_to",
+			}},
+		},
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO incidents",
+		"inc-table-pg",
+		"pg-incident",
+		"open",
+		"70",
+		"INSERT INTO evidence",
+		"node:process:p-incident",
+		"process",
+		"edge:edge-process-socket",
+		"connects_to",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
