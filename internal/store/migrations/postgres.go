@@ -75,6 +75,31 @@ CREATE TABLE IF NOT EXISTS policy_assignments (
   PRIMARY KEY (tenant_id, assignment_id)
 );
 
+CREATE TABLE IF NOT EXISTS policy_audit (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  audit_id TEXT NOT NULL,
+  action TEXT NOT NULL DEFAULT '',
+  policy_id TEXT NOT NULL DEFAULT '',
+  policy_version BIGINT NOT NULL DEFAULT 0,
+  assignment_id TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, audit_id)
+);
+
+CREATE TABLE IF NOT EXISTS operator_role_bindings (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  actor TEXT NOT NULL,
+  roles TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, actor)
+);
+
 CREATE TABLE IF NOT EXISTS events (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   event_id TEXT NOT NULL,
@@ -182,6 +207,9 @@ CREATE INDEX IF NOT EXISTS idx_agents_host_id ON agents (host_id);
 CREATE INDEX IF NOT EXISTS idx_agent_health_scope ON agent_health (scope_type, scope_selector);
 CREATE INDEX IF NOT EXISTS idx_policy_assignments_agent ON policy_assignments (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_policy_assignments_scope ON policy_assignments (tenant_id, scope_type, scope_selector);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_policy ON policy_audit (tenant_id, policy_id);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_actor ON policy_audit (tenant_id, actor);
+CREATE INDEX IF NOT EXISTS idx_operator_role_bindings_actor ON operator_role_bindings (tenant_id, actor);
 CREATE INDEX IF NOT EXISTS idx_events_scenario ON events (tenant_id, scenario);
 CREATE INDEX IF NOT EXISTS idx_events_observed_at ON events (observed_at);
 CREATE INDEX IF NOT EXISTS idx_signals_scenario_layer ON signals (tenant_id, scenario, layer);

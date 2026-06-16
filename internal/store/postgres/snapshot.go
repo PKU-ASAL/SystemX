@@ -108,6 +108,12 @@ ON CONFLICT (state_key) DO UPDATE SET
 	if err := projectPolicyAssignments(ctx, db, state.Assignments); err != nil {
 		return err
 	}
+	if err := projectPolicyAudits(ctx, db, state.PolicyAudits); err != nil {
+		return err
+	}
+	if err := projectOperatorRoleBindings(ctx, db, state.OperatorRoles); err != nil {
+		return err
+	}
 	if err := projectIncidents(ctx, db, state.Incidents); err != nil {
 		return err
 	}
@@ -492,6 +498,93 @@ ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
 		}
 		if err != nil {
 			return fmt.Errorf("project policy assignment: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectPolicyAudits(ctx context.Context, db *sql.DB, audits []policymodel.AuditRecord) error {
+	for _, audit := range audits {
+		if audit.AuditID == "" {
+			continue
+		}
+		tenantID := audit.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		data, err := json.Marshal(audit)
+		if err != nil {
+			return fmt.Errorf("encode policy audit projection: %w", err)
+		}
+		createdAt := audit.CreatedAt
+		if createdAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO policy_audit (tenant_id, audit_id, action, policy_id, policy_version, assignment_id, actor, status, reason, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
+  action = EXCLUDED.action,
+  policy_id = EXCLUDED.policy_id,
+  policy_version = EXCLUDED.policy_version,
+  assignment_id = EXCLUDED.assignment_id,
+  actor = EXCLUDED.actor,
+  status = EXCLUDED.status,
+  reason = EXCLUDED.reason,
+  data = EXCLUDED.data
+`, tenantID, audit.AuditID, audit.Action, audit.PolicyID, audit.PolicyVersion, audit.AssignmentID, audit.Actor, audit.Status, audit.Reason, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO policy_audit (tenant_id, audit_id, action, policy_id, policy_version, assignment_id, actor, status, reason, created_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
+  action = EXCLUDED.action,
+  policy_id = EXCLUDED.policy_id,
+  policy_version = EXCLUDED.policy_version,
+  assignment_id = EXCLUDED.assignment_id,
+  actor = EXCLUDED.actor,
+  status = EXCLUDED.status,
+  reason = EXCLUDED.reason,
+  data = EXCLUDED.data
+`, tenantID, audit.AuditID, audit.Action, audit.PolicyID, audit.PolicyVersion, audit.AssignmentID, audit.Actor, audit.Status, audit.Reason, createdAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project policy audit: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectOperatorRoleBindings(ctx context.Context, db *sql.DB, bindings []store.OperatorRoleBinding) error {
+	for _, binding := range bindings {
+		if binding.Actor == "" {
+			continue
+		}
+		data, err := json.Marshal(binding)
+		if err != nil {
+			return fmt.Errorf("encode operator role binding projection: %w", err)
+		}
+		createdAt := binding.CreatedAt
+		updatedAt := binding.UpdatedAt
+		if createdAt.IsZero() || updatedAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO operator_role_bindings (tenant_id, actor, roles, data)
+VALUES ($1, $2, string_to_array($3, E'\x1f'), $4)
+ON CONFLICT (tenant_id, actor) DO UPDATE SET
+  roles = EXCLUDED.roles,
+  updated_at = now(),
+  data = EXCLUDED.data
+`, "default", binding.Actor, joinTextArray(binding.Roles), data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO operator_role_bindings (tenant_id, actor, roles, created_at, updated_at, data)
+VALUES ($1, $2, string_to_array($3, E'\x1f'), $4, $5, $6)
+ON CONFLICT (tenant_id, actor) DO UPDATE SET
+  roles = EXCLUDED.roles,
+  updated_at = EXCLUDED.updated_at,
+  data = EXCLUDED.data
+`, "default", binding.Actor, joinTextArray(binding.Roles), createdAt, updatedAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project operator role binding: %w", err)
 		}
 	}
 	return nil

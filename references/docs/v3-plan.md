@@ -448,7 +448,7 @@ Status: foundation implementation started.
 
 已落地的第一刀:
 
-- `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、events、signals、incidents、incident_events、evidence、response_audit、evidence_pullbacks、link1_sessions、metrics 和基础查询索引。
+- `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、policy_audit、operator_role_bindings、events、signals、incidents、incident_events、evidence、response_audit、evidence_pullbacks、link1_sessions、metrics 和基础查询索引。
 - `internal/store/postgres` 提供基于标准库 `database/sql` 的 migration runner,可对 live Postgres 执行 schema v1。
 - manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,再打开 JSON snapshot-backed store 作为逐表 adapter 前的过渡路径。当前 manager 二进制不默认内置第三方 Postgres driver,`--postgres-driver` 需要传入已注册的 `database/sql` driver name;live Postgres e2e 会在引入驱动/拓扑时补齐。
 - store backend `Result` 已提供 `Close()` 生命周期边界;manager 退出时会关闭 Postgres 底层 database handle,file/memory backend 保持 no-op。
@@ -456,7 +456,7 @@ Status: foundation implementation started.
 - file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres snapshot adapter 复用同一套 proto/json state contract 持久化完整 manager state,后续可逐步落表。
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
 - store 已提供 backend metadata/save hook,Postgres snapshot adapter 会将 `Info().Backend` 暴露为 `postgres` 并把 `Save()` 写入 `sysarmor_state`。
-- Postgres snapshot adapter 保存 snapshot 时会同步投影 agents 到 `agents` 表、agent health 到 `agent_health` 表,events 到 `events` 表,signals 到 `signals` 表,rules 到 `rules` 表,response command/ack 到 `response_audit` 表,policy versions 到 `policies` 表,policy assignments 到 `policy_assignments` 表,incidents 到 `incidents` 表,incident/event references 到 `incident_events` 表,incident evidence nodes/edges 到 `evidence` 表,evidence pullback requests 到 `evidence_pullbacks` 表,Link1 sessions/cursors 到 `link1_sessions` 表,manager metrics 到 `metrics` 表,作为逐表 adapter 的第一组运营表路径。
+- Postgres snapshot adapter 保存 snapshot 时会同步投影 agents 到 `agents` 表、agent health 到 `agent_health` 表,events 到 `events` 表,signals 到 `signals` 表,rules 到 `rules` 表,response command/ack 到 `response_audit` 表,policy versions 到 `policies` 表,policy assignments 到 `policy_assignments` 表,policy audit 到 `policy_audit` 表,operator role bindings 到 `operator_role_bindings` 表,incidents 到 `incidents` 表,incident/event references 到 `incident_events` 表,incident evidence nodes/edges 到 `evidence` 表,evidence pullback requests 到 `evidence_pullbacks` 表,Link1 sessions/cursors 到 `link1_sessions` 表,manager metrics 到 `metrics` 表,作为逐表 adapter 的第一组运营表路径。
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
 - manager `events` / `signals` / `incidents` 查询 API 与 `sysarmorctl` 已支持 `limit` / `offset` 分页参数。
@@ -469,6 +469,7 @@ Status: foundation implementation started.
 - `make -C test e2e-postgres-agent-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `agents` 和 `agent_health` 表投影。
 - `make -C test e2e-postgres-ingest-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `events` 和 `signals` 表投影。
 - `make -C test e2e-postgres-control-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `rules` 和 `evidence_pullbacks` 表投影。
+- `make -C test e2e-postgres-control-audit-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `policy_audit` 和 `operator_role_bindings` 表投影。
 - `make -C test e2e-postgres-response-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `response_audit` 表投影,包含 command 与 ack。
 - `make -C test e2e-postgres-policy-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `policies` 和 `policy_assignments` 表投影。
 - `make -C test e2e-postgres-incident-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `incidents` 和 `evidence` 表投影。
@@ -480,7 +481,7 @@ Status: foundation implementation started.
 
 - live Postgres migration e2e。
 - manager release 二进制内置/注册真实 Postgres driver 的发布策略;当前为了避免误导,`--postgres-driver` 默认为空,测试使用 fake driver 覆盖 backend contract。
-- 逐表 Postgres adapter:当前只开始投影 `agents` / `agent_health` / `events` / `signals` / `rules` / `response_audit` / `policies` / `policy_assignments` / `incidents` / `incident_events` / `evidence` / `evidence_pullbacks` / `link1_sessions` / `metrics`,尚未把 ingest/query/policy/incident 主路径迁到逐表读写。
+- 逐表 Postgres adapter:当前只开始投影 `agents` / `agent_health` / `events` / `signals` / `rules` / `response_audit` / `policies` / `policy_assignments` / `policy_audit` / `operator_role_bindings` / `incidents` / `incident_events` / `evidence` / `evidence_pullbacks` / `link1_sessions` / `metrics`,尚未把 ingest/query/policy/incident 主路径迁到逐表读写。
 - ingest/query/policy/incident e2e 已有 snapshot-backed Postgres manager API 门禁;仍缺完整逐表 Postgres adapter 路径上的同类 e2e。
 
 ### Deliverables
@@ -491,6 +492,8 @@ Status: foundation implementation started.
   - policies
   - policy_versions
   - policy_assignments
+  - policy_audit
+  - operator_role_bindings
   - rules
   - rule_versions
   - events
@@ -536,6 +539,7 @@ make -C test e2e-store-status
 make -C test e2e-postgres-agent-projection
 make -C test e2e-postgres-ingest-projection
 make -C test e2e-postgres-control-projection
+make -C test e2e-postgres-control-audit-projection
 make -C test e2e-postgres-response-projection
 make -C test e2e-postgres-policy-projection
 make -C test e2e-postgres-incident-projection

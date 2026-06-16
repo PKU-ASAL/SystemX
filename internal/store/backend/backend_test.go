@@ -24,6 +24,7 @@ import (
 	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -252,6 +253,57 @@ func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 		"INSERT INTO policy_assignments",
 		assignment.AssignmentID,
 		"agent-policy-pg",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
+func TestOpenPostgresProjectsControlAuditTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.RecordPolicyAudit(policymodel.AuditRecord{
+		AuditID:       "audit-control-pg",
+		TenantID:      "default",
+		Action:        "policy.assign",
+		PolicyID:      "policy-control-pg",
+		PolicyVersion: 3,
+		AssignmentID:  "assignment-control-pg",
+		Actor:         "alice",
+		Status:        "ok",
+		Reason:        "test projection",
+		CreatedAt:     time.Unix(110, 0).UTC(),
+	})
+	result.Store.UpsertOperatorRoleBinding(store.OperatorRoleBinding{
+		Actor:     "alice",
+		Roles:     []string{"policy_admin", "responder"},
+		CreatedAt: time.Unix(111, 0).UTC(),
+		UpdatedAt: time.Unix(112, 0).UTC(),
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO policy_audit",
+		"audit-control-pg",
+		"policy.assign",
+		"policy-control-pg",
+		"assignment-control-pg",
+		"test projection",
+		"INSERT INTO operator_role_bindings",
+		"alice",
+		"policy_admin",
+		"responder",
 	} {
 		if !strings.Contains(execLog, want) {
 			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
