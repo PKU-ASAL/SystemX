@@ -54,6 +54,19 @@ type Assignment struct {
 	UpdatedAt     time.Time     `json:"updated_at,omitempty"`
 }
 
+type AuditRecord struct {
+	AuditID       string    `json:"audit_id"`
+	TenantID      string    `json:"tenant_id"`
+	Action        string    `json:"action"`
+	PolicyID      string    `json:"policy_id,omitempty"`
+	PolicyVersion uint64    `json:"policy_version,omitempty"`
+	AssignmentID  string    `json:"assignment_id,omitempty"`
+	Actor         string    `json:"actor,omitempty"`
+	Status        string    `json:"status"`
+	Reason        string    `json:"reason,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitempty"`
+}
+
 func DefaultRules() []RuleContent {
 	return []RuleContent{
 		{RuleID: "web_runtime_spawns_shell", Version: 1, Enabled: true, Where: "endpoint", Severity: "high", Tags: []string{"process", "web"}, MITRE: []string{"T1059"}},

@@ -591,6 +591,29 @@ func TestPolicyDraftMustBePublishedBeforeAssignment(t *testing.T) {
 	}
 }
 
+func TestPolicyAuditPersistsAcrossStateExport(t *testing.T) {
+	st := &Store{}
+	st.RecordPolicyAudit(policymodel.AuditRecord{
+		TenantID:      "default",
+		Action:        "policy.publish",
+		PolicyID:      "policy-a",
+		PolicyVersion: 2,
+		Actor:         "analyst",
+	})
+	state, err := st.ExportState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := &Store{}
+	if err := restored.ImportState(state); err != nil {
+		t.Fatal(err)
+	}
+	got := restored.ListPolicyAudits("default", "policy-a")
+	if len(got) != 1 || got[0].Action != "policy.publish" || got[0].Actor != "analyst" || got[0].AuditID == "" {
+		t.Fatalf("policy audit = %+v", got)
+	}
+}
+
 func testEvent(id, scenario string) *eventv1.CanonicalEvent {
 	return &eventv1.CanonicalEvent{Id: id, Scenario: scenario}
 }

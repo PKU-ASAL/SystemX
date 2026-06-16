@@ -122,7 +122,7 @@ e2e-policy-agent-refresh: ## v3: agent refreshes effective policy without restar
 e2e-policy-cloud-disable: ## v3: manager policy assignment disables a cloud rule
 	bash harness/e2e-policy-cloud-disable.sh
 
-e2e-policy-publish: ## v3: draft policy must be published before assignment/effective use
+e2e-policy-publish: ## v3: draft policy must be published before assignment/effective use and is audited
 	bash harness/e2e-policy-publish.sh
 
 e2e-policy-all: e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish ## v3: policy/control-plane gates

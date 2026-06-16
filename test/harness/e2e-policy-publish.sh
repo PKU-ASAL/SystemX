@@ -62,7 +62,7 @@ cat > "$TMP/policy.json" <<'JSON'
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/policies" \
+curl -sf -X POST "$MGR_URL/api/v1/policies?actor=e2e&reason=draft" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/policy.json" > "$RESULTS/e2e-policy-publish.draft.json"
 
@@ -79,7 +79,9 @@ cat > "$TMP/assignment.json" <<JSON
   "tenant_id": "default",
   "agent_id": "$AGENT_ID",
   "policy_id": "draft-policy",
-  "policy_version": 2
+  "policy_version": 2,
+  "actor": "operator",
+  "reason": "deploy"
 }
 JSON
 
@@ -99,7 +101,9 @@ fi
 "$BIN/sysarmorctl" --mgr "$MGR_URL" --json policy-publish \
   --tenant-id default \
   --policy-id draft-policy \
-  --version 2 > "$RESULTS/e2e-policy-publish.publish.json"
+  --version 2 \
+  --actor reviewer \
+  --reason "ready for assignment" > "$RESULTS/e2e-policy-publish.publish.json"
 
 for want in '"policy_id":"draft-policy"' '"published":true'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-policy-publish.publish.json"; then
@@ -120,6 +124,18 @@ if ! grep -Fq '"published":true' "$RESULTS/e2e-policy-publish.effective.json"; t
   cat "$RESULTS/e2e-policy-publish.effective.json" >&2
   exit 1
 fi
+
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json policy-audit \
+  --tenant-id default \
+  --policy-id draft-policy > "$RESULTS/e2e-policy-publish.audit.json"
+
+for want in '"action":"policy.upsert"' '"actor":"e2e"' '"action":"policy.publish"' '"actor":"reviewer"' '"action":"policy.assign"' '"actor":"operator"'; do
+  if ! grep -Fq "$want" "$RESULTS/e2e-policy-publish.audit.json"; then
+    echo "[e2e-policy-publish][ERROR] audit missing $want" >&2
+    cat "$RESULTS/e2e-policy-publish.audit.json" >&2
+    exit 1
+  fi
+done
 
 cp "$TMP/manager.log" "$RESULTS/e2e-policy-publish.manager.log"
 echo "[e2e-policy-publish] ok"

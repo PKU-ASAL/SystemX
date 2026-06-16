@@ -293,9 +293,36 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			case "--unpublish":
 				req["published"] = false
+			case "--actor":
+				i++
+				if i < len(args) {
+					req["actor"] = args[i]
+				}
+			case "--reason":
+				i++
+				if i < len(args) {
+					req["reason"] = args[i]
+				}
 			}
 		}
 		return httpPostJSON(base+"/api/v1/policy-publish", req)
+	case "policy-audit":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--policy-id":
+				i++
+				if i < len(args) {
+					q.Set("policy_id", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/policy-audit?" + q.Encode())
 	case "policy-assignments":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

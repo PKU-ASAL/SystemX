@@ -60,6 +60,7 @@ type ManagerStore interface {
 	ListIncidents(string) []*incidentv1.Incident
 	ListLink1Sessions(string, string) []store.Link1Session
 	ListPolicies(string) []policymodel.Policy
+	ListPolicyAudits(string, string) []policymodel.AuditRecord
 	ListResponses(string, string) []responsemodel.AuditRecord
 	ListRules(string) []policymodel.RuleContent
 	ListSignals(string, string, bool) []*signalv1.Signal
@@ -69,6 +70,7 @@ type ManagerStore interface {
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
 	RecordLink1Upload(*analyticsv1.AgentHello, string, string, time.Time) store.Link1Session
+	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
 	RecordUpload(int, int, int, int, time.Duration)
 	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
 	Save() error
@@ -100,6 +102,14 @@ type policyPublishRequest struct {
 	PolicyID  string `json:"policy_id"`
 	Version   uint64 `json:"version"`
 	Published bool   `json:"published"`
+	Actor     string `json:"actor,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+type policyAssignmentRequest struct {
+	policymodel.Assignment
+	Actor  string `json:"actor,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type responseApprovalRequest struct {
@@ -173,6 +183,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/rules", s.rules)
 	mux.HandleFunc("/api/v1/policies", s.policies)
 	mux.HandleFunc("/api/v1/policy-publish", s.policyPublish)
+	mux.HandleFunc("/api/v1/policy-audit", s.policyAudit)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
@@ -719,6 +730,14 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		policy = s.store.UpsertPolicy(policy)
+		s.recordPolicyAudit(policymodel.AuditRecord{
+			TenantID:      policy.TenantID,
+			Action:        "policy.upsert",
+			PolicyID:      policy.PolicyID,
+			PolicyVersion: policy.Version,
+			Actor:         r.URL.Query().Get("actor"),
+			Reason:        r.URL.Query().Get("reason"),
+		})
 		if err := s.store.Save(); err != nil {
 			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 			return
@@ -748,11 +767,32 @@ func (s *Server) policyPublish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "policy not found", http.StatusNotFound)
 		return
 	}
+	action := "policy.unpublish"
+	if req.Published {
+		action = "policy.publish"
+	}
+	s.recordPolicyAudit(policymodel.AuditRecord{
+		TenantID:      policy.TenantID,
+		Action:        action,
+		PolicyID:      policy.PolicyID,
+		PolicyVersion: policy.Version,
+		Actor:         req.Actor,
+		Reason:        req.Reason,
+	})
 	if err := s.store.Save(); err != nil {
 		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, policy)
+}
+
+func (s *Server) policyAudit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	writeJSON(w, s.store.ListPolicyAudits(q.Get("tenant_id"), q.Get("policy_id")))
 }
 
 func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
@@ -761,16 +801,26 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		writeJSON(w, s.store.ListAssignments(q.Get("tenant_id"), q.Get("agent_id")))
 	case http.MethodPost:
-		var assignment policymodel.Assignment
-		if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
+		var req policyAssignmentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode assignment: %v", err), http.StatusBadRequest)
 			return
 		}
+		assignment := req.Assignment
 		saved, ok := s.store.AssignPolicy(assignment)
 		if !ok {
 			http.Error(w, "policy not found or assignment invalid", http.StatusBadRequest)
 			return
 		}
+		s.recordPolicyAudit(policymodel.AuditRecord{
+			TenantID:      saved.TenantID,
+			Action:        "policy.assign",
+			PolicyID:      saved.PolicyID,
+			PolicyVersion: saved.PolicyVersion,
+			AssignmentID:  saved.AssignmentID,
+			Actor:         req.Actor,
+			Reason:        req.Reason,
+		})
 		if err := s.store.Save(); err != nil {
 			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 			return
@@ -779,6 +829,10 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) recordPolicyAudit(record policymodel.AuditRecord) {
+	s.store.RecordPolicyAudit(record)
 }
 
 func (s *Server) effectivePolicy(w http.ResponseWriter, r *http.Request) {

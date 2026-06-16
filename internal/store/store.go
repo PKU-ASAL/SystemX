@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -39,6 +40,7 @@ type Store struct {
 	Rules         []policymodel.RuleContent
 	Policies      []policymodel.Policy
 	Assignments   []policymodel.Assignment
+	PolicyAudits  []policymodel.AuditRecord
 	Responses     []responsemodel.Command
 	ResponseAcks  []responsemodel.Ack
 	Pullbacks     []link1model.EvidencePullbackRequest
@@ -88,6 +90,7 @@ type State struct {
 	Rules         []policymodel.RuleContent            `json:"rules"`
 	Policies      []policymodel.Policy                 `json:"policies"`
 	Assignments   []policymodel.Assignment             `json:"assignments"`
+	PolicyAudits  []policymodel.AuditRecord            `json:"policy_audits"`
 	Responses     []responsemodel.Command              `json:"responses"`
 	ResponseAcks  []responsemodel.Ack                  `json:"response_acks"`
 	Pullbacks     []link1model.EvidencePullbackRequest `json:"evidence_pullbacks"`
@@ -163,6 +166,7 @@ func (s *Store) ImportState(state State) error {
 	s.Rules = state.Rules
 	s.Policies = state.Policies
 	s.Assignments = state.Assignments
+	s.PolicyAudits = state.PolicyAudits
 	s.Responses = state.Responses
 	s.ResponseAcks = state.ResponseAcks
 	s.Pullbacks = state.Pullbacks
@@ -356,6 +360,45 @@ func (s *Store) UpsertPolicy(policy policymodel.Policy) policymodel.Policy {
 	}
 	s.Policies = append(s.Policies, policy)
 	return policy
+}
+
+func (s *Store) RecordPolicyAudit(record policymodel.AuditRecord) policymodel.AuditRecord {
+	if record.TenantID == "" {
+		record.TenantID = "default"
+	}
+	if record.Status == "" {
+		record.Status = "ok"
+	}
+	now := time.Now().UTC()
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	if record.AuditID == "" {
+		record.AuditID = fmt.Sprintf("policy-audit-%d", now.UnixNano())
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.PolicyAudits = append(s.PolicyAudits, record)
+	return record
+}
+
+func (s *Store) ListPolicyAudits(tenantID, policyID string) []policymodel.AuditRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]policymodel.AuditRecord, 0, len(s.PolicyAudits))
+	for _, record := range s.PolicyAudits {
+		if tenantID != "" && record.TenantID != tenantID {
+			continue
+		}
+		if policyID != "" && record.PolicyID != policyID {
+			continue
+		}
+		out = append(out, record)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
 }
 
 func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
@@ -1234,6 +1277,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Rules = append([]policymodel.RuleContent(nil), s.Rules...)
 	state.Policies = append([]policymodel.Policy(nil), s.Policies...)
 	state.Assignments = append([]policymodel.Assignment(nil), s.Assignments...)
+	state.PolicyAudits = append([]policymodel.AuditRecord(nil), s.PolicyAudits...)
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
 	state.Pullbacks = append([]link1model.EvidencePullbackRequest(nil), s.Pullbacks...)
