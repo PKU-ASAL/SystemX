@@ -353,6 +353,7 @@ make assert
 |---|---|---|---|
 | `perf` | `harness/perf-getevents.sh` | `tetra getevents` 短窗口 events/EPS/RSS baseline | 不能证明业务无干扰 |
 | `perf-resource` | `harness/perf-resource.sh` | container/VM 中 agent、Tetragon、tetra、workload 的 CPU/RSS 时间序列 | 还没有业务延迟/吞吐 baseline 对照 |
+| `perf-resource-all` | Make 聚合 | container 和 VM 的 `edr-idle` 资源采样入口对齐 | 仍不包含业务负载和阈值判定 |
 
 使用:
 
@@ -362,12 +363,12 @@ make -C test perf TOPO=vm DUR=10
 
 make -C test perf-resource TOPO=container SCENARIO=edr-idle DUR=60
 make -C test perf-resource TOPO=vm SCENARIO=edr-idle DUR=60
+make -C test perf-resource-all DUR=60
 ```
 
 资源测试下一步应该补:
 
 - `baseline`: 不启 EDR,只跑业务。
-- `edr-idle`: EDR 常驻空闲。
 - `edr-business`: EDR + 正常业务负载。
 - `edr-detection`: EDR + 攻击/高事件场景。
 - `edr-soak`: 长窗口看内存增长、spool、dropped events。

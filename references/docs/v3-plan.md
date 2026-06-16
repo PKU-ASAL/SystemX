@@ -694,6 +694,7 @@ make -C test e2e-postgres-all
 make -C test e2e-link1-stream-all
 make -C test perf-resource TOPO=container SCENARIO=edr-idle DUR=60
 make -C test perf-resource TOPO=vm SCENARIO=edr-idle DUR=60
+make -C test perf-resource-all DUR=60
 ```
 
 ## 13. Success Criteria
