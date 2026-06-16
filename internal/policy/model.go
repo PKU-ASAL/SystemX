@@ -5,6 +5,7 @@ import (
 	"time"
 
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
 
 const (
@@ -33,6 +34,7 @@ type Policy struct {
 	Mode          string                   `json:"mode,omitempty"`
 	Converge      *policyv1.ConvergeParams `json:"converge,omitempty"`
 	Rarity        *policyv1.RarityParams   `json:"rarity,omitempty"`
+	Response      responsemodel.Policy     `json:"response_policy,omitempty"`
 	Published     bool                     `json:"published"`
 	CreatedAt     time.Time                `json:"created_at,omitempty"`
 	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
@@ -91,6 +93,7 @@ func DefaultPolicy(tenantID string) Policy {
 		CloudRules:    []string{"dropped_payload_executed_and_connects", "web_shell_chain"},
 		Mode:          "observe",
 		Converge:      &policyv1.ConvergeParams{Mode: "rarity_structural", CrossLineage: true, TopK: 8, MaxPathHops: 6},
+		Response:      responsemodel.DefaultPolicy(),
 		Published:     true,
 	}
 }
@@ -116,6 +119,9 @@ func Normalize(policy Policy) Policy {
 	}
 	if policy.Converge == nil {
 		policy.Converge = &policyv1.ConvergeParams{Mode: "rarity_structural", CrossLineage: true, TopK: 8, MaxPathHops: 6}
+	}
+	if len(policy.Response.AllowedActions) == 0 && len(policy.Response.AllowedModes) == 0 {
+		policy.Response = responsemodel.DefaultPolicy()
 	}
 	now := time.Now().UTC()
 	if policy.CreatedAt.IsZero() {

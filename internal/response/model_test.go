@@ -2,6 +2,39 @@ package response
 
 import "testing"
 
+func TestValidateCommandDefaultPolicy(t *testing.T) {
+	if decision := ValidateCommand(Command{Action: "collect", Mode: "observe"}); !decision.Allowed {
+		t.Fatalf("collect observe decision = %+v", decision)
+	}
+	if decision := ValidateCommand(Command{Action: "noop", Mode: "enforce"}); decision.Allowed || decision.Reason != "response mode is not allowed by policy" {
+		t.Fatalf("enforce decision = %+v", decision)
+	}
+	if decision := ValidateCommand(Command{Action: "kill", Mode: "observe"}); decision.Allowed || decision.Reason != "destructive response action requires explicit policy approval" {
+		t.Fatalf("kill decision = %+v", decision)
+	}
+}
+
+func TestValidateCommandWithPolicy(t *testing.T) {
+	policy := Policy{
+		AllowedActions:   []string{"collect", "quarantine"},
+		AllowedModes:     []string{"observe", "enforce"},
+		AllowDestructive: true,
+	}
+	if decision := ValidateCommandWithPolicy(Command{Action: "quarantine", Mode: "enforce"}, policy); !decision.Allowed {
+		t.Fatalf("quarantine enforce decision = %+v", decision)
+	}
+	if decision := ValidateCommandWithPolicy(Command{Action: "block", Mode: "observe"}, policy); decision.Allowed || decision.Reason != "response action is not allowed by policy" {
+		t.Fatalf("unlisted action decision = %+v", decision)
+	}
+}
+
+func TestApplyPolicyRequirementsMarksApprovalRequired(t *testing.T) {
+	cmd := ApplyPolicyRequirements(Command{Action: "collect"}, Policy{ApprovalRequired: true})
+	if !cmd.ApprovalRequired {
+		t.Fatalf("approval_required = false")
+	}
+}
+
 func TestScopeDecision(t *testing.T) {
 	tests := []struct {
 		name         string

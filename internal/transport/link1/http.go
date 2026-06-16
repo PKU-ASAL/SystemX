@@ -1042,12 +1042,24 @@ func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command
 		s.denyResponse(w, cmd, responsemodel.Decision{Allowed: false, Reason: "agent runtime scope is required for scoped response command"})
 		return
 	}
+	responsePolicy := responsemodel.DefaultPolicy()
+	if policy, ok := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector); ok {
+		responsePolicy = policy.Response
+		if len(responsePolicy.AllowedActions) == 0 && len(responsePolicy.AllowedModes) == 0 {
+			responsePolicy = responsemodel.DefaultPolicy()
+		}
+		if cmd.PolicyID == "" {
+			cmd.PolicyID = policy.PolicyID
+			cmd.PolicyVersion = policy.Version
+		}
+	}
 	if cmd.PolicyID == "" {
 		policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
 		cmd.PolicyID = policy.PolicyID
 		cmd.PolicyVersion = policy.Version
 	}
-	if decision := responsemodel.ValidateCommand(cmd); !decision.Allowed {
+	cmd = responsemodel.ApplyPolicyRequirements(cmd, responsePolicy)
+	if decision := responsemodel.ValidateCommandWithPolicy(cmd, responsePolicy); !decision.Allowed {
 		s.denyResponse(w, cmd, decision)
 		return
 	}

@@ -20,5 +20,14 @@
     "max_path_hops": 6,
     "cross_lineage": true
   },
+  "response_policy": {
+    "allowed_actions": [
+      "collect",
+      "noop"
+    ],
+    "allowed_modes": [
+      "observe"
+    ]
+  },
   "published": true
 }

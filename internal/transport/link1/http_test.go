@@ -14,6 +14,7 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -675,6 +676,52 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("response write without operator token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestResponsePolicyCanRequireApproval(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "approval-policy"
+	policy.Version = 4
+	policy.Response = responsemodel.Policy{
+		AllowedActions:   []string{"collect"},
+		AllowedModes:     []string{"observe"},
+		ApprovalRequired: true,
+	}
+	policyData, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	assignmentData := `{"tenant_id":"default","agent_id":"agent-response-policy","policy_id":"approval-policy","policy_version":4}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(assignmentData))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("assignment post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	cmd := `{"tenant_id":"default","agent_id":"agent-response-policy","action":"collect","target":"process:p1"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(cmd))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"policy_id":"approval-policy"`, `"policy_version":4`, `"status":"pending_approval"`, `"approval_required":true`, `"approval_status":"required"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("response policy output missing %s: %s", want, rec.Body.String())
+		}
+	}
+	rec = get(t, handler, "/api/v1/responses?tenant_id=default&agent_id=agent-response-policy&pending=true")
+	if strings.Contains(rec.Body.String(), `"approval-policy"`) {
+		t.Fatalf("pending_approval response should not be pending before approval: %s", rec.Body.String())
 	}
 }
 

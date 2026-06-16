@@ -240,7 +240,10 @@ Status: partial implementation started.
 - `sysarmorctl responses` 可查询 response audit。
 - agent 在 health loop 中轮询 pending response command,调用 sensor `Enforce`,并强制以 observe-only / executed=false 上报 ack。
 - `make -C test e2e-response-observe-only` 验证 command -> agent observe-only ack -> manager audit 查询闭环。
-- manager 默认 response policy 只允许 observe + collect/noop,拒绝 destructive action 并持久化 denied audit。
+- `internal/response` 提供最小 response policy contract: allowed actions、allowed modes、approval requirement、destructive action 显式开关;默认 policy 只允许 observe + collect/noop。
+- `configs/policies/default-edr-policy.json` 已包含默认 observe-only response policy。
+- manager 创建 response command 时会读取 effective policy 的 `response_policy`,可由 policy 自动要求 `pending_approval`;HTTP 单测覆盖 policy-driven approval requirement。
+- manager 默认 response policy 拒绝 destructive action 并持久化 denied audit。
 - `make -C test e2e-response-policy-deny` 验证 destructive action 默认拒绝且不会进入 pending。
 - manager 会用 agent health runtime scope 校验显式 response command scope,错 scope 会 denied 并留下 audit。
 - `make -C test e2e-response-scope-deny` 验证 response command 不能越过 agent runtime scope 边界。

@@ -12,6 +12,13 @@ const (
 	DefaultMode = "observe"
 )
 
+type Policy struct {
+	AllowedActions   []string `json:"allowed_actions,omitempty"`
+	AllowedModes     []string `json:"allowed_modes,omitempty"`
+	ApprovalRequired bool     `json:"approval_required,omitempty"`
+	AllowDestructive bool     `json:"allow_destructive,omitempty"`
+}
+
 type Decision struct {
 	Allowed bool   `json:"allowed"`
 	Reason  string `json:"reason,omitempty"`
@@ -94,21 +101,48 @@ func NormalizeCommand(cmd Command) Command {
 }
 
 func ValidateCommand(cmd Command) Decision {
+	return ValidateCommandWithPolicy(cmd, DefaultPolicy())
+}
+
+func DefaultPolicy() Policy {
+	return Policy{
+		AllowedActions: []string{"collect", "noop"},
+		AllowedModes:   []string{DefaultMode},
+	}
+}
+
+func ValidateCommandWithPolicy(cmd Command, policy Policy) Decision {
 	mode := strings.TrimSpace(cmd.Mode)
 	if mode == "" {
 		mode = DefaultMode
 	}
-	if mode != "observe" {
-		return Decision{Allowed: false, Reason: "only observe mode is allowed by default"}
+	if len(policy.AllowedModes) == 0 {
+		policy.AllowedModes = []string{DefaultMode}
 	}
-	switch strings.TrimSpace(cmd.Action) {
-	case "", "collect", "noop":
-		return Decision{Allowed: true}
-	case "kill", "block", "quarantine":
+	if !containsTrimmed(policy.AllowedModes, mode) {
+		return Decision{Allowed: false, Reason: "response mode is not allowed by policy"}
+	}
+	action := strings.TrimSpace(cmd.Action)
+	if action == "" {
+		action = "collect"
+	}
+	if isDestructiveAction(action) && !policy.AllowDestructive {
 		return Decision{Allowed: false, Reason: "destructive response action requires explicit policy approval"}
-	default:
-		return Decision{Allowed: false, Reason: "response action is not allowed by default"}
 	}
+	if len(policy.AllowedActions) == 0 {
+		policy.AllowedActions = []string{"collect", "noop"}
+	}
+	if !containsTrimmed(policy.AllowedActions, action) {
+		return Decision{Allowed: false, Reason: "response action is not allowed by policy"}
+	}
+	return Decision{Allowed: true}
+}
+
+func ApplyPolicyRequirements(cmd Command, policy Policy) Command {
+	if policy.ApprovalRequired {
+		cmd.ApprovalRequired = true
+	}
+	return cmd
 }
 
 func ScopeDecision(command, runtime Scope, runtimeKnown bool) Decision {
@@ -126,6 +160,25 @@ func ScopeDecision(command, runtime Scope, runtimeKnown bool) Decision {
 		return Decision{Allowed: false, Reason: "response command scope does not match agent runtime scope"}
 	}
 	return Decision{Allowed: true}
+}
+
+func containsTrimmed(values []string, want string) bool {
+	want = strings.TrimSpace(want)
+	for _, value := range values {
+		if strings.TrimSpace(value) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func isDestructiveAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case "kill", "block", "quarantine":
+		return true
+	default:
+		return false
+	}
 }
 
 func ToEnforcement(cmd Command) contract.EnforcementCmd {
