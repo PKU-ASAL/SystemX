@@ -22,6 +22,7 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
@@ -268,6 +269,42 @@ func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
 	nodes := inc.GetEvidence().GetNodes()
 	if len(nodes) != 1 || nodes[0].GetId() != "process:p1" || nodes[0].GetKind() != "process" {
 		t.Fatalf("evidence nodes = %+v", nodes)
+	}
+}
+
+func TestStreamHealthReporterSendsHeartbeatFrame(t *testing.T) {
+	st := &store.Store{}
+	linkSrv := link1.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	reporter := NewStreamHealthReporter(lis.Addr().String(), "", time.Second)
+	err = reporter.Report(context.Background(), agenthealth.AgentHealth{
+		AgentID:    "agent-stream-health",
+		HostID:     "host-stream-health",
+		TenantID:   "default",
+		Status:     "ok",
+		ObservedAt: time.Now().UTC(),
+		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "api"},
+		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 9},
+	})
+	if err != nil {
+		t.Fatalf("Report() error = %v", err)
+	}
+	got, ok := st.GetAgentHealth("default", "agent-stream-health")
+	if !ok {
+		t.Fatal("agent health not stored")
+	}
+	if got.Status != "ok" || got.Sensor.EventsSeen != 9 || got.Scope.Type != "container" || got.Scope.Selector != "api" {
+		t.Fatalf("stored health = %+v", got)
 	}
 }
 

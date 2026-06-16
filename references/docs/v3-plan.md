@@ -534,6 +534,7 @@ Status: foundation implementation started.
 - manager `POST /api/v1/link1-frames` 与 `sysarmorctl link1-frames --file` 可通过 HTTP 兼容路径提交 uplink frames;upload frame 会复用 ingest,health frame 会更新 agent health,ack frame 会持久化 response ack,evidence pullback result frame 会完成/失败 pullback request 并可附加 incident evidence,error frame 会返回可确认结果。
 - Link1 gRPC 已提供最小 bidirectional `Stream` RPC:agent/client 发送 `hello` 后 manager 返回当前 downlink frames,随后同一 stream 可提交 upload/health/ack/evidence_pullback_result/error uplink frames 并收到逐帧结果。
 - agent upload worker 已支持 `manager.transport: stream`,可通过 Link1 gRPC `Stream` RPC 上传 spool batch 并推进 manager session cursor。
+- agent 在 `manager.transport: stream` 下会通过 Link1 stream `health` frame 上报 health heartbeat;HTTP health 上报保留给显式 `transport: http` 兼容路径。
 - Link1 stream `hello` downlink 已包含 resume cursor frame,agent stream transport 启动时可据此删除 cursor 及之前的本地 spool batch。
 - agent 已支持通过 Link1 stream `hello` downlink 拉取 effective policy update,并将 endpoint rule references 应用到 runtime fastpath。
 - agent 已支持通过 Link1 stream downlink 拉取 pending response command,执行 observe-only `Enforce`,并通过 stream `ack` frame 回写 response audit。
@@ -555,7 +556,7 @@ Status: foundation implementation started.
 
 仍未完成:
 
-- stream 长连接/reconnect/heartbeat 的生产级可靠性语义。
+- stream 长连接/reconnect 的生产级可靠性语义;当前 heartbeat 已走 stream frame,但仍是按 health tick 建立短 stream,不是生产级常驻长连接 keepalive。
 
 ### Deliverables
 

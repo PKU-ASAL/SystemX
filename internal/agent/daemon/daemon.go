@@ -50,6 +50,10 @@ type Runner struct {
 	fastpath   *fastpath.Engine
 }
 
+type healthReporter interface {
+	Report(context.Context, agenthealth.AgentHealth) error
+}
+
 func New(cfg config.Config) (*Runner, error) {
 	sensor, err := sensorFromConfig(cfg)
 	if err != nil {
@@ -63,7 +67,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		r.Out = opts.Out
 	}
 	startedAt := time.Now()
-	reporter := agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	reporter := r.healthReporter()
 	failStartup := func(stage string, err error) error {
 		r.reportStartupFailure(reporter, startedAt, stage, err)
 		return err
@@ -244,7 +248,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	}
 }
 
-func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter *agenthealth.Reporter, startedAt time.Time, drainOnce bool, cancelUploads func(), stopRuntime func()) error {
+func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, drainOnce bool, cancelUploads func(), stopRuntime func()) error {
 	cancelUploads()
 	stopRuntime()
 	var drainErr error
@@ -270,7 +274,7 @@ func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime
 	return drainErr
 }
 
-func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt time.Time, stage string, startupErr error) {
+func (r *Runner) reportStartupFailure(reporter healthReporter, startedAt time.Time, stage string, startupErr error) {
 	if reporter == nil || startupErr == nil {
 		return
 	}
@@ -302,6 +306,13 @@ func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt 
 	if r.Out != nil {
 		fmt.Fprintf(r.Out, "agent startup failure: stage=%s error=%q\n", stage, startupErr)
 	}
+}
+
+func (r *Runner) healthReporter() healthReporter {
+	if r.Config.Manager.Transport == "stream" {
+		return NewStreamHealthReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	}
+	return agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 }
 
 func (r *Runner) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {

@@ -189,6 +189,7 @@ e2e-link1-grpc-stream: ## v3: Link1 gRPC bidi stream exchanges downlink and upli
 
 e2e-link1-stream-health: ## v3: Link1 gRPC stream accepts agent health heartbeat frames
 	cd .. && go test ./internal/transport/link1 -run TestGRPCStreamAcceptsHealthHeartbeatFrame
+	cd .. && go test ./internal/agent/daemon -run TestStreamHealthReporterSendsHeartbeatFrame
 
 e2e-link1-stream-upload: ## v3: agent uploader can upload through Link1 gRPC stream
 	cd .. && go test ./internal/endpoint/uploader -run TestStreamUploaderUploadsThroughLink1Stream
