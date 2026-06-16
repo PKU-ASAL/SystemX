@@ -244,7 +244,7 @@ make -C test e2e-graph-all
 
 ### 5.6 Store / Postgres Foundation
 
-这些脚本验证 v3 durable store 的早期地基:manager 能报告当前 store backend、state/migration version,并且 Postgres schema version 已进入代码和门禁。注意这还不是完整 Postgres adapter 门禁。
+这些脚本验证 v3 durable store 的早期地基:manager 能报告当前 store backend、state/migration version,Postgres schema version 已进入代码和门禁,并且 migration runner 有单测覆盖。注意这还不是完整 Postgres adapter 门禁。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -446,7 +446,7 @@ make -C test e2e-agent-benign-container
 | incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
 | incident lifecycle attach evidence | `e2e-incident-attach-evidence` + store 单测 | 部分覆盖 |
 | incident lifecycle merge | `e2e-incident-merge` + store 单测 | 部分覆盖 |
-| Postgres schema + store backend 可观测 | `e2e-store-status` + migration 单测 | 部分覆盖 |
+| Postgres schema + migration runner + store backend 可观测 | `e2e-store-status` + migration/runner 单测 | 部分覆盖 |
 | Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
 | Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |
