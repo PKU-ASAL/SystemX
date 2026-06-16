@@ -12,6 +12,7 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
 
 func TestListSignalsFiltersScenarioLayerAndTerminal(t *testing.T) {
@@ -98,6 +99,52 @@ func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	}
 	if got[0].RequestID != "evpb-a" || got[0].Status != link1model.EvidencePullbackStatusPending {
 		t.Fatalf("pullback = %+v", got[0])
+	}
+}
+
+func TestApproveResponseMovesPendingApprovalToPending(t *testing.T) {
+	st := &Store{}
+	st.CreateResponse(responsemodel.Command{
+		ResponseID:       "resp-approve",
+		TenantID:         "default",
+		AgentID:          "agent-a",
+		Action:           "collect",
+		Mode:             "observe",
+		Status:           "pending_approval",
+		ApprovalRequired: true,
+		ApprovalStatus:   "required",
+	})
+	if got := st.PendingResponses("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending before approval = %+v", got)
+	}
+	cmd, ok := st.ApproveResponse("default", "agent-a", "resp-approve", true, "analyst", "approved for collection")
+	if !ok {
+		t.Fatal("ApproveResponse ok = false")
+	}
+	if cmd.Status != "pending" || cmd.ApprovalStatus != "approved" || cmd.ApprovedBy != "analyst" || cmd.ApprovedAt.IsZero() {
+		t.Fatalf("approved command = %+v", cmd)
+	}
+	if got := st.PendingResponses("default", "agent-a"); len(got) != 1 || got[0].ResponseID != "resp-approve" {
+		t.Fatalf("pending after approval = %+v", got)
+	}
+}
+
+func TestApproveResponseRejectsNonApprovalCommand(t *testing.T) {
+	st := &Store{}
+	st.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-denied",
+		TenantID:   "default",
+		AgentID:    "agent-a",
+		Action:     "kill",
+		Mode:       "observe",
+		Status:     "denied",
+	})
+	if _, ok := st.ApproveResponse("default", "agent-a", "resp-denied", true, "analyst", "no bypass"); ok {
+		t.Fatal("ApproveResponse ok = true for non-approval command")
+	}
+	audits := st.ListResponses("default", "agent-a")
+	if len(audits) != 1 || audits[0].Command.Status != "denied" {
+		t.Fatalf("audits = %+v", audits)
 	}
 }
 

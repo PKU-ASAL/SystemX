@@ -362,6 +362,40 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpPostJSON(base+"/api/v1/response-decisions", req)
+	case "response-approval":
+		req := map[string]any{"approved": true}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--response-id":
+				i++
+				if i < len(args) {
+					req["response_id"] = args[i]
+				}
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					req["tenant_id"] = args[i]
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					req["agent_id"] = args[i]
+				}
+			case "--actor":
+				i++
+				if i < len(args) {
+					req["actor"] = args[i]
+				}
+			case "--reason":
+				i++
+				if i < len(args) {
+					req["reason"] = args[i]
+				}
+			case "--reject":
+				req["approved"] = false
+			}
+		}
+		return httpPostJSON(base+"/api/v1/response-approvals", req)
 	case "events":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

@@ -243,11 +243,12 @@ Status: partial implementation started.
 - manager `POST /api/v1/response-decisions` 可将 signal response intent 转为 observe-only response command。
 - `sysarmorctl response-decision` 可从 terminal signal 创建 response decision。
 - `make -C test e2e-response-audit` 验证 signal intent -> response decision -> audit 查询闭环。
+- manager `POST /api/v1/response-approvals` 与 `sysarmorctl response-approval` 可把 `approval_required` command 从 `pending_approval` 转为 `pending` 或 `denied`。
+- `make -C test e2e-response-approval` 验证待审批 response 不会进入 agent pending,审批通过后才会进入 pending。
 
 仍未完成:
 
-- response policy approval requirement。
-- Link1 stream response command downlink。
+- 多级审批/RBAC/生产身份认证。
 
 ### Deliverables
 
@@ -296,6 +297,7 @@ make -C test e2e-response-observe-only
 make -C test e2e-response-policy-deny
 make -C test e2e-response-scope-deny
 make -C test e2e-response-audit
+make -C test e2e-response-approval
 ```
 
 ## 8. Phase 3: Incident / Evidence / Graph Foundation

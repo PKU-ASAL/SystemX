@@ -37,6 +37,7 @@ type ManagerStore interface {
 	AddAgent(*analyticsv1.AgentHello)
 	AddEvent(*eventv1.CanonicalEvent) bool
 	AddSignal(*signalv1.Signal) bool
+	ApproveResponse(string, string, string, bool, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(link1model.EvidencePullbackResult) (link1model.EvidencePullbackRequest, bool)
@@ -91,6 +92,15 @@ type responseDecisionRequest struct {
 	Scope    responsemodel.Scope `json:"scope,omitempty"`
 	Target   string              `json:"target,omitempty"`
 	Actor    string              `json:"actor,omitempty"`
+}
+
+type responseApprovalRequest struct {
+	ResponseID string `json:"response_id"`
+	TenantID   string `json:"tenant_id"`
+	AgentID    string `json:"agent_id"`
+	Approved   bool   `json:"approved"`
+	Actor      string `json:"actor,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 type incidentLifecycleRequest struct {
@@ -158,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
 	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
+	mux.HandleFunc("/api/v1/response-approvals", s.responseApprovals)
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
 	mux.HandleFunc("/api/v1/link1-frames", s.link1Frames)
 	mux.HandleFunc("/api/v1/link1-downlink", s.link1Downlink)
@@ -822,6 +833,32 @@ func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
 	s.createResponse(w, cmd)
 }
 
+func (s *Server) responseApprovals(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req responseApprovalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode response approval: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.ResponseID == "" {
+		http.Error(w, "response_id is required", http.StatusBadRequest)
+		return
+	}
+	cmd, ok := s.store.ApproveResponse(req.TenantID, req.AgentID, req.ResponseID, req.Approved, req.Actor, req.Reason)
+	if !ok {
+		http.Error(w, "response command not found", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, responsemodel.AuditRecord{Command: cmd})
+}
+
 func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command) {
 	if cmd.AgentID == "" {
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
@@ -850,6 +887,11 @@ func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command
 	if decision := responsemodel.ValidateCommand(cmd); !decision.Allowed {
 		s.denyResponse(w, cmd, decision)
 		return
+	}
+	if cmd.ApprovalRequired {
+		cmd = responsemodel.NormalizeCommand(cmd)
+		cmd.Status = "pending_approval"
+		cmd.ApprovalStatus = "required"
 	}
 	cmd = s.store.CreateResponse(cmd)
 	if err := s.store.Save(); err != nil {

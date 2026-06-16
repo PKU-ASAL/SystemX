@@ -150,6 +150,7 @@ make e2e-response-observe-only
 make e2e-response-policy-deny
 make e2e-response-scope-deny
 make e2e-response-audit
+make e2e-response-approval
 
 # v3 graph/evidence smoke
 make e2e-graph-evidence

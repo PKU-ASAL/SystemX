@@ -548,6 +548,52 @@ func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Comma
 	return out
 }
 
+func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved bool, actor, reason string) (responsemodel.Command, bool) {
+	if responseID == "" {
+		return responsemodel.Command{}, false
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, cmd := range s.Responses {
+		if cmd.ResponseID != responseID {
+			continue
+		}
+		if tenantID != "" && cmd.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && cmd.AgentID != agentID {
+			continue
+		}
+		if !cmd.ApprovalRequired || cmd.Status != "pending_approval" || cmd.ApprovalStatus != "required" {
+			return responsemodel.Command{}, false
+		}
+		if approved {
+			cmd.Status = "pending"
+			cmd.ApprovalStatus = "approved"
+		} else {
+			cmd.Status = "denied"
+			cmd.ApprovalStatus = "rejected"
+		}
+		cmd.ApprovedBy = actor
+		cmd.ApprovedAt = now
+		cmd.UpdatedAt = now
+		if reason != "" {
+			if cmd.Reason == "" {
+				cmd.Reason = reason
+			} else {
+				cmd.Reason = cmd.Reason + "; approval: " + reason
+			}
+		}
+		s.Responses[i] = cmd
+		return cmd, true
+	}
+	return responsemodel.Command{}, false
+}
+
 func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool) {
 	if ack.ResponseID == "" {
 		return responsemodel.Command{}, false
