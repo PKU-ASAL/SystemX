@@ -25,6 +25,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
@@ -174,6 +175,48 @@ func TestStreamPolicyClientFetchesDownlinkPolicy(t *testing.T) {
 	}
 	if len(got.EndpointRules) != 1 || got.EndpointRules[0] != "download_by_lolbin" {
 		t.Fatalf("endpoint rules = %v", got.EndpointRules)
+	}
+}
+
+func TestStreamResponseClientFetchesCommandAndAcks(t *testing.T) {
+	st := &store.Store{}
+	st.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-stream-agent",
+		TenantID:   "default",
+		AgentID:    "agent-stream",
+		Action:     "collect",
+		Target:     "process:p1",
+	})
+	linkSrv := link1.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-stream", HostID: "host-stream", TenantID: "default"},
+			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "stream"},
+		},
+		Sensor: &healthOnlySensor{health: contract.Health{Running: true, PolicyLoaded: true}},
+	}
+	client := NewStreamResponseClient(lis.Addr().String(), "", time.Second)
+	if err := runner.pollStreamResponses(context.Background(), client); err != nil {
+		t.Fatalf("pollStreamResponses() error = %v", err)
+	}
+	audits := st.ListResponses("default", "agent-stream")
+	if len(audits) != 1 || audits[0].Ack == nil {
+		t.Fatalf("audits = %+v", audits)
+	}
+	ack := audits[0].Ack
+	if ack.ResponseID != "resp-stream-agent" || !ack.ObserveOnly || ack.Executed || !ack.Unsupported {
+		t.Fatalf("ack = %+v", ack)
 	}
 }
 

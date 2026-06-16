@@ -109,6 +109,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if r.Config.Manager.Transport == "http" {
 		responseClient = NewResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 	}
+	var streamResponseClient *StreamResponseClient
+	if r.Config.Manager.Transport == "stream" {
+		streamResponseClient = NewStreamResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	}
 	uploadCtx := ctx
 	cancelUploads := func() {}
 	if !opts.Once && !opts.DrainOnce {
@@ -214,6 +218,11 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			if responseClient != nil {
 				if err := r.pollResponses(ctx, responseClient); err != nil && r.Out != nil {
 					fmt.Fprintf(r.Out, "agent response poll error: %v\n", err)
+				}
+			}
+			if streamResponseClient != nil {
+				if err := r.pollStreamResponses(ctx, streamResponseClient); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent stream response poll error: %v\n", err)
 				}
 			}
 			if opts.Once {
@@ -639,6 +648,23 @@ func (r *Runner) pollResponses(ctx context.Context, client *ResponseClient) erro
 		}
 		if r.Out != nil {
 			fmt.Fprintf(r.Out, "agent response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) pollStreamResponses(ctx context.Context, client *StreamResponseClient) error {
+	commands, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
+	if err != nil {
+		return err
+	}
+	for _, cmd := range commands {
+		ack := r.executeResponse(ctx, cmd)
+		if err := client.Ack(ctx, ack); err != nil {
+			return err
+		}
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent stream response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
 		}
 	}
 	return nil

@@ -260,7 +260,7 @@ make -C test e2e-postgres-all
 
 ### 5.7 Link1 Stream Foundation
 
-这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 policy、response 和 evidence pullback 请求,uplink 也能回传 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy。response/evidence pullback 的 agent 自动处理仍是后续项。
+这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 policy、response 和 evidence pullback 请求,uplink 也能回传 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。evidence pullback 的 agent 自动处理仍是后续项。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -270,6 +270,7 @@ make -C test e2e-postgres-all
 | `e2e-link1-grpc-stream` | Go stream contract test | gRPC bidi stream 可先发 hello 获取 downlink frames,再通过同一 stream 提交 upload frame 并推进 session cursor |
 | `e2e-link1-stream-upload` | Go stream uploader test | agent uploader 可通过 Link1 gRPC stream 上传 batch,manager session cursor 记录为 stream transport |
 | `e2e-link1-policy-downlink` | Go stream policy test | agent 可通过 Link1 stream downlink 拉取 effective policy,并获得 endpoint rule references |
+| `e2e-link1-response-command` | Go stream response test | agent 可通过 Link1 stream downlink 拉取 response command,执行 observe-only ack 并回写 response audit |
 | `e2e-link1-stream-all` | Make 聚合 | 当前聚合 Link1 session/cursor foundation gate |
 
 聚合入口:
