@@ -67,6 +67,48 @@ func TestQueryRarityBaseline(t *testing.T) {
 	}
 }
 
+func TestOperatorRoleBindingsCommand(t *testing.T) {
+	var gotMethod string
+	var gotPath string
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.String()
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if err := json.Unmarshal(body, &gotBody); err != nil {
+				t.Fatalf("decode body: %v body=%s", err, string(body))
+			}
+		}
+		_, _ = fmt.Fprintln(w, "{}")
+	}))
+	defer server.Close()
+
+	if _, err := query(server.URL, []string{"operator-role-bindings", "--upsert", "--actor", "alice", "--roles", "policy_admin,responder"}); err != nil {
+		t.Fatalf("operator-role-bindings upsert error = %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/operator-role-bindings" {
+		t.Fatalf("upsert method/path = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["actor"] != "alice" {
+		t.Fatalf("actor = %v", gotBody["actor"])
+	}
+	roles, ok := gotBody["roles"].([]any)
+	if !ok || len(roles) != 2 || roles[0] != "policy_admin" || roles[1] != "responder" {
+		t.Fatalf("roles = %#v", gotBody["roles"])
+	}
+
+	if _, err := query(server.URL, []string{"operator-role-bindings", "--actor", "alice"}); err != nil {
+		t.Fatalf("operator-role-bindings list error = %v", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/api/v1/operator-role-bindings?actor=alice" {
+		t.Fatalf("list method/path = %s %s", gotMethod, gotPath)
+	}
+}
+
 func TestEvidencePullbackCommand(t *testing.T) {
 	var gotMethod string
 	var gotPath string

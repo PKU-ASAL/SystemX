@@ -762,6 +762,52 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 	}
 }
 
+func TestOperatorRoleBindingsAuthorizeControlPlaneWrites(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/operator-role-bindings", strings.NewReader(`{"actor":"alice","roles":["policy_admin","responder","policy_admin"]}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"actor":"alice"`) || !strings.Contains(rec.Body.String(), `"roles":["policy_admin","responder"]`) {
+		t.Fatalf("role binding upsert status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "bound-policy"
+	policy.Version = 1
+	policyData, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Actor", "alice")
+	req.Header.Set("X-SysArmor-Role", "responder")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy write with bound actor status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Actor", "bob")
+	req.Header.Set("X-SysArmor-Role", "responder")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("policy write with unbound wrong role status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = get(t, handler, "/api/v1/operator-role-bindings?actor=alice")
+	if !strings.Contains(rec.Body.String(), `"actor":"alice"`) || !strings.Contains(rec.Body.String(), `"policy_admin"`) {
+		t.Fatalf("role binding list response = %s", rec.Body.String())
+	}
+}
+
 func TestResponsePolicyCanRequireApproval(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

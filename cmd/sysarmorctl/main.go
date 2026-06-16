@@ -340,6 +340,31 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/policy-audit?" + q.Encode())
+	case "operator-role-bindings":
+		q := url.Values{}
+		req := map[string]any{}
+		upsert := false
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--upsert":
+				upsert = true
+			case "--actor":
+				i++
+				if i < len(args) {
+					q.Set("actor", args[i])
+					req["actor"] = args[i]
+				}
+			case "--roles":
+				i++
+				if i < len(args) {
+					req["roles"] = splitCSV(args[i])
+				}
+			}
+		}
+		if upsert {
+			return httpPostJSON(base+"/api/v1/operator-role-bindings", req)
+		}
+		return httpGet(base + "/api/v1/operator-role-bindings?" + q.Encode())
 	case "policy-assignments":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
@@ -749,6 +774,18 @@ func normalizeManagerURL(mgr string) string {
 		return strings.TrimRight(mgr, "/")
 	}
 	return "http://" + strings.TrimRight(mgr, "/")
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func httpGet(url string) ([]byte, error) {

@@ -62,7 +62,7 @@ perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 cont
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-all e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-all e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-health e2e-link1-stream-upload e2e-link1-stream-reconnect e2e-link1-stream-resume e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -133,7 +133,12 @@ e2e-policy-cloud-disable: ## v3: manager policy assignment disables a cloud rule
 e2e-policy-publish: ## v3: draft policy must be published before assignment/effective use and is audited
 	bash harness/e2e-policy-publish.sh
 
-e2e-policy-all: e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish ## v3: policy/control-plane gates
+e2e-operator-role-bindings: ## v3: operator actor role bindings authorize control-plane writes
+	cd .. && go test ./internal/transport/link1 -run TestOperatorRoleBindingsAuthorizeControlPlaneWrites
+	cd .. && go test ./cmd/sysarmorctl -run TestOperatorRoleBindingsCommand
+	cd .. && go test ./internal/store -run TestExportImportStateRoundTrip
+
+e2e-policy-all: e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings ## v3: policy/control-plane gates
 
 e2e-response-observe-only: ## v3: observe-only response command and audit
 	bash harness/e2e-response-observe-only.sh
@@ -315,6 +320,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-policy-endpoint-disable  v3 agent effective policy disables an endpoint rule"
 	@echo "  e2e-policy-agent-refresh  v3 agent refreshes effective policy without restart"
 	@echo "  e2e-policy-cloud-disable  v3 manager policy assignment disables a cloud rule"
+	@echo "  e2e-operator-role-bindings  v3 operator actor role bindings authorize control-plane writes"
 	@echo "  e2e-policy-all  run all v3 policy/control-plane gates"
 	@echo "  e2e-response-observe-only  v3 observe-only response command and audit"
 	@echo "  e2e-response-policy-deny  v3 response policy denies destructive actions by default"

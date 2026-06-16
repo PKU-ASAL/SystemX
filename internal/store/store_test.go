@@ -486,6 +486,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
 	st.RecordLink1Upload(&analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
+	st.UpsertOperatorRoleBinding(OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin", "policy_admin", "responder"}})
 	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
 	st.ObserveRaritySignals([]*signalv1.Signal{{
 		Name: "download_by_lolbin",
@@ -520,6 +521,9 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	}
 	if got := reloaded.ListLink1Sessions("default", "agent-a"); len(got) != 1 || got[0].LastAckCursor != "batch-a" {
 		t.Fatalf("link1 sessions after import = %+v", got)
+	}
+	if got, ok := reloaded.OperatorRolesForActor("alice"); !ok || len(got) != 2 || got[0] != "policy_admin" || got[1] != "responder" {
+		t.Fatalf("operator roles after import = %+v ok=%v", got, ok)
 	}
 	if got := reloaded.MetricsSnapshot(); got.UploadBatches != 1 || got.SignalsEmitted != 2 {
 		t.Fatalf("metrics after import = %+v", got)

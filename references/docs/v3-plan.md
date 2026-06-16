@@ -137,13 +137,15 @@ Status: partial implementation started.
 - `internal/policy` 定义 rule content、policy、assignment 的最小模型。
 - `configs/rules/{endpoint,cloud}/` 和 `configs/policies/default-edr-policy.json` 提供默认 content pack。
 - manager store 可持久化 rules、policies、assignments。
-- manager 可配置静态 `operator-token`,对 policy / response / incident / evidence pullback 等控制面写操作做最小门禁;在配置 token 后,写操作还需要 `X-SysArmor-Role` 的最小角色授权: `admin` 全通,`policy_admin` 管 policy,`responder` 管 response,`incident_admin` 管 incident/evidence。
+- manager 可配置静态 `operator-token`,对 policy / response / incident / evidence pullback 等控制面写操作做最小门禁;在配置 token 后,写操作需要最小角色授权:已支持 actor -> roles 绑定,`admin` 全通,`policy_admin` 管 policy,`responder` 管 response,`incident_admin` 管 incident/evidence;未配置绑定的 actor 仍保留 `X-SysArmor-Role` 兼容路径。
 - `sysarmorctl` 可通过 `SYSARMOR_OPERATOR_TOKEN`、`SYSARMOR_ROLE` 和 `SYSARMOR_ACTOR` 传递操作者 token、角色与审计主体。
+- manager `GET|POST /api/v1/operator-role-bindings` 与 `sysarmorctl operator-role-bindings` 可创建/查询 actor role binding,并随 store state 持久化。
 - manager HTTP API 支持:
   - `GET /api/v1/rules`
   - `GET|POST /api/v1/policies`
   - `POST /api/v1/policy-publish`
   - `GET /api/v1/policy-audit`
+  - `GET|POST /api/v1/operator-role-bindings`
   - `GET|POST /api/v1/policy-assignments`
   - `GET /api/v1/effective-policy`
 - `sysarmorctl` 支持查询 rules、policies、policy-assignments、effective-policy、policy-audit,并可通过 `policy-publish` 发布/取消发布 policy version。
@@ -155,12 +157,13 @@ Status: partial implementation started.
 - `make -C test e2e-policy-agent-refresh` 验证无需重启 agent 即可刷新 endpoint policy。
 - `make -C test e2e-policy-cloud-disable` 验证 manager policy assignment 禁用 cloud rule 后不再收敛 incident。
 - `make -C test e2e-policy-publish` 验证 draft policy 不能分配和生效,发布后才可进入 effective policy,且 upsert/publish/assign 会进入 policy audit。
-- HTTP 单测验证配置 operator token 后控制面写操作必须带 operator token 和匹配 role,错误 role 返回 forbidden,且 actor 可从 `X-SysArmor-Actor` 进入 policy audit。
+- HTTP 单测验证配置 operator token 后控制面写操作必须带 operator token 和匹配 role,错误 role 返回 forbidden,actor 可从 `X-SysArmor-Actor` 进入 policy audit,且 actor role binding 会优先于 header role 参与授权。
+- `make -C test e2e-operator-role-bindings` 验证 actor role binding 可授权控制面写操作,CLI 可创建/查询 binding,并随 store state 持久化。
 - daemon 单测验证禁用 endpoint rule 后对应 endpoint signal 不再生成。
 
 仍未完成:
 
-- 生产级 manager API 认证/RBAC 与更完整审计语义;当前只是静态 token + header role 的最小门禁,还没有真实身份、租户级权限模型、角色绑定、session/JWT、审计签名或集中权限管理。
+- 生产级 manager API 认证/RBAC 与更完整审计语义;当前已有静态 token + actor role binding 的最小门禁,还没有真实身份、租户级权限模型、session/JWT、审计签名或集中权限管理。
 
 ### Deliverables
 
@@ -219,6 +222,7 @@ make -C test e2e-policy-endpoint-disable
 make -C test e2e-policy-cloud-disable
 make -C test e2e-policy-agent-refresh
 make -C test e2e-policy-publish
+make -C test e2e-operator-role-bindings
 ```
 
 ## 7. Phase 2: Response / Enforce Observe-only Skeleton
@@ -259,7 +263,7 @@ Status: partial implementation started.
 
 仍未完成:
 
-- 生产身份认证和完整 RBAC;当前已有静态 operator role gate 与 response 多级审批合约,但还没有真实身份、角色绑定、审批组、审批策略继承或审计签名。
+- 生产身份认证和完整 RBAC;当前已有静态 operator token、actor role binding 与 response 多级审批合约,但还没有真实身份、租户级角色绑定、审批组、审批策略继承或审计签名。
 
 ### Deliverables
 

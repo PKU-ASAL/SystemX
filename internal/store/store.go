@@ -46,6 +46,7 @@ type Store struct {
 	ResponseAcks   []responsemodel.Ack
 	Pullbacks      []link1model.EvidencePullbackRequest
 	Link1Sessions  []Link1Session
+	OperatorRoles  []OperatorRoleBinding
 	Metrics        Metrics
 	RarityBaseline rarity.Baseline
 }
@@ -83,6 +84,13 @@ type Link1Session struct {
 	Transport     string    `json:"transport,omitempty"`
 }
 
+type OperatorRoleBinding struct {
+	Actor     string    `json:"actor"`
+	Roles     []string  `json:"roles"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
 type State struct {
 	Agents         []json.RawMessage                    `json:"agents"`
 	Events         []json.RawMessage                    `json:"events"`
@@ -97,6 +105,7 @@ type State struct {
 	ResponseAcks   []responsemodel.Ack                  `json:"response_acks"`
 	Pullbacks      []link1model.EvidencePullbackRequest `json:"evidence_pullbacks"`
 	Link1Sessions  []Link1Session                       `json:"link1_sessions"`
+	OperatorRoles  []OperatorRoleBinding                `json:"operator_role_bindings,omitempty"`
 	Metrics        Metrics                              `json:"metrics"`
 	RarityBaseline rarity.Baseline                      `json:"rarity_baseline,omitempty"`
 }
@@ -174,6 +183,7 @@ func (s *Store) ImportState(state State) error {
 	s.ResponseAcks = state.ResponseAcks
 	s.Pullbacks = state.Pullbacks
 	s.Link1Sessions = state.Link1Sessions
+	s.OperatorRoles = state.OperatorRoles
 	s.Metrics = state.Metrics
 	s.RarityBaseline = state.RarityBaseline.Snapshot()
 	return nil
@@ -974,6 +984,62 @@ func (s *Store) ListLink1Sessions(tenantID, agentID string) []Link1Session {
 	return out
 }
 
+func (s *Store) UpsertOperatorRoleBinding(binding OperatorRoleBinding) OperatorRoleBinding {
+	binding.Actor = strings.TrimSpace(binding.Actor)
+	if binding.Actor == "" {
+		return OperatorRoleBinding{}
+	}
+	roles := normalizeRoles(binding.Roles)
+	now := time.Now().UTC()
+	binding.Roles = roles
+	binding.UpdatedAt = now
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.OperatorRoles {
+		if existing.Actor == binding.Actor {
+			binding.CreatedAt = existing.CreatedAt
+			if binding.CreatedAt.IsZero() {
+				binding.CreatedAt = now
+			}
+			s.OperatorRoles[i] = binding
+			return binding
+		}
+	}
+	binding.CreatedAt = now
+	s.OperatorRoles = append(s.OperatorRoles, binding)
+	return binding
+}
+
+func (s *Store) ListOperatorRoleBindings(actor string) []OperatorRoleBinding {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]OperatorRoleBinding, 0, len(s.OperatorRoles))
+	for _, binding := range s.OperatorRoles {
+		if actor != "" && binding.Actor != actor {
+			continue
+		}
+		binding.Roles = append([]string(nil), binding.Roles...)
+		out = append(out, binding)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Actor < out[j].Actor })
+	return out
+}
+
+func (s *Store) OperatorRolesForActor(actor string) ([]string, bool) {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, binding := range s.OperatorRoles {
+		if binding.Actor == actor {
+			return append([]string(nil), binding.Roles...), true
+		}
+	}
+	return nil, false
+}
+
 func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1261,6 +1327,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	var state State
 	state.Metrics = s.Metrics
 	state.RarityBaseline = s.RarityBaseline.Snapshot()
+	state.OperatorRoles = append([]OperatorRoleBinding(nil), s.OperatorRoles...)
 	mo := protojson.MarshalOptions{UseProtoNames: true}
 	for _, agent := range s.Agents {
 		raw, err := mo.Marshal(agent)
@@ -1496,6 +1563,21 @@ func mergeSignals(base, extra []*signalv1.Signal) []*signalv1.Signal {
 
 func sortedStrings(in []string) []string {
 	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
+func normalizeRoles(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, role := range in {
+		role = strings.TrimSpace(role)
+		if role == "" || seen[role] {
+			continue
+		}
+		seen[role] = true
+		out = append(out, role)
+	}
 	sort.Strings(out)
 	return out
 }

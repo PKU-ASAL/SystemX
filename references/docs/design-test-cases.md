@@ -192,14 +192,15 @@ make -C test e2e-agent-detection-container-all
 | `e2e-policy-agent-refresh` | `harness/e2e-policy-agent-refresh.sh` | agent 运行中刷新 effective policy,无需重启即可禁用 endpoint rule |
 | `e2e-policy-cloud-disable` | `harness/e2e-policy-cloud-disable.sh` | 创建 policy、分配给 agent、查询 effective policy、禁用 cloud rule 后不产生 cloud signal/incident |
 | `e2e-policy-publish` | `harness/e2e-policy-publish.sh` | draft policy 不能分配和生效,`policy-publish` 后才可以分配并成为 effective policy,upsert/publish/assign 可通过 policy audit 查询 |
-| `e2e-policy-all` | Make 聚合 | 当前聚合 endpoint/cloud policy gate |
+| `e2e-operator-role-bindings` | Go HTTP/CLI/store contract test | actor role binding 可授权控制面写操作,CLI 可创建/查询 binding,并随 store state 持久化 |
+| `e2e-policy-all` | Make 聚合 | 当前聚合 endpoint/cloud policy/control-plane gate |
 
 Go 单测同时覆盖:
 
 - manager policy API / effective policy resolution。
 - policy publish state gate: draft 不能 assignment/effective,发布后才能生效。
 - policy control-plane audit: upsert/publish/assign 可查询。
-- control-plane operator gate: 配置静态 operator token 后,policy/response 等写操作无 token 会被拒绝;token 正确但 role 不匹配会被 forbidden;actor header 可进入审计。
+- control-plane operator gate: 配置静态 operator token 后,policy/response 等写操作无 token 会被拒绝;token 正确但 role 不匹配会被 forbidden;actor header 可进入审计;actor role binding 会优先于 header role 参与授权。
 - agent 启动拉取 effective policy,并将 endpoint rule references 应用到 endpoint rule engine。
 - agent 周期性刷新 effective policy,并在规则引用变化后切换 endpoint rule engine。
 - agent health 中的 policy id/version/mode 字段。
@@ -479,7 +480,7 @@ make -C test e2e-agent-benign-container
 | policy/rule content 管理与分配 | manager policy API + `e2e-policy-cloud-disable` | 部分覆盖 |
 | policy publish state | `e2e-policy-publish` + store/HTTP 单测 | 部分覆盖 |
 | policy control-plane audit | `e2e-policy-publish` + store/HTTP 单测 | 部分覆盖 |
-| control-plane operator token/role gate | HTTP 单测 | 部分覆盖 |
+| control-plane operator token/role binding gate | `e2e-operator-role-bindings` + HTTP 单测 | 部分覆盖 |
 | endpoint policy 启动拉取与应用 | daemon effective-policy 单测 + `e2e-policy-endpoint-disable` | 已覆盖 |
 | endpoint policy 周期刷新 | daemon refresh 单测 + `e2e-policy-agent-refresh` | 已覆盖 |
 | Link1 policy downlink signal | `e2e-link1-policy-downlink` + stream policy client 单测 | 部分覆盖 |

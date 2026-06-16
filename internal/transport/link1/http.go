@@ -63,6 +63,7 @@ type ManagerStore interface {
 	ListLink1Sessions(string, string) []store.Link1Session
 	ListPolicies(string) []policymodel.Policy
 	ListPolicyAudits(string, string) []policymodel.AuditRecord
+	ListOperatorRoleBindings(string) []store.OperatorRoleBinding
 	ListResponses(string, string) []responsemodel.AuditRecord
 	ListRules(string) []policymodel.RuleContent
 	ListSignals(string, string, bool) []*signalv1.Signal
@@ -76,10 +77,12 @@ type ManagerStore interface {
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
 	RecordUpload(int, int, int, int, time.Duration)
 	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
+	OperatorRolesForActor(string) ([]string, bool)
 	RarityBaselineSnapshot() rarity.Baseline
 	Save() error
 	UpdateIncidentStatus(string, string, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
+	UpsertOperatorRoleBinding(store.OperatorRoleBinding) store.OperatorRoleBinding
 	UpsertPolicy(policymodel.Policy) policymodel.Policy
 }
 
@@ -114,6 +117,11 @@ type policyAssignmentRequest struct {
 	policymodel.Assignment
 	Actor  string `json:"actor,omitempty"`
 	Reason string `json:"reason,omitempty"`
+}
+
+type operatorRoleBindingRequest struct {
+	Actor string   `json:"actor"`
+	Roles []string `json:"roles"`
 }
 
 type responseApprovalRequest struct {
@@ -193,6 +201,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/policies", s.policies)
 	mux.HandleFunc("/api/v1/policy-publish", s.policyPublish)
 	mux.HandleFunc("/api/v1/policy-audit", s.policyAudit)
+	mux.HandleFunc("/api/v1/operator-role-bindings", s.operatorRoleBindings)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
@@ -489,15 +498,12 @@ func (s *Server) operatorAuthorizedFor(r *http.Request, roles ...string) bool {
 	if s.operatorToken == "" || len(roles) == 0 {
 		return true
 	}
+	if boundRoles, ok := s.store.OperatorRolesForActor(s.actorFromRequest(r, "")); ok {
+		return rolesAllowed(boundRoles, roles...)
+	}
 	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
-		role = strings.TrimSpace(role)
-		if role == "admin" {
+		if rolesAllowed([]string{role}, roles...) {
 			return true
-		}
-		for _, allowed := range roles {
-			if role == allowed {
-				return true
-			}
 		}
 	}
 	return false
@@ -529,6 +535,9 @@ func (s *Server) roleFromRequest(r *http.Request, explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
+	if roles, ok := s.store.OperatorRolesForActor(s.actorFromRequest(r, "")); ok && len(roles) > 0 {
+		return roles[0]
+	}
 	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
 		role = strings.TrimSpace(role)
 		if role != "" {
@@ -536,6 +545,21 @@ func (s *Server) roleFromRequest(r *http.Request, explicit string) string {
 		}
 	}
 	return ""
+}
+
+func rolesAllowed(granted []string, required ...string) bool {
+	for _, role := range granted {
+		role = strings.TrimSpace(role)
+		if role == "admin" {
+			return true
+		}
+		for _, allowed := range required {
+			if role == allowed {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) link1Sessions(w http.ResponseWriter, r *http.Request) {
@@ -910,6 +934,30 @@ func (s *Server) policyAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	writeJSON(w, s.store.ListPolicyAudits(q.Get("tenant_id"), q.Get("policy_id")))
+}
+
+func (s *Server) operatorRoleBindings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]any{"bindings": s.store.ListOperatorRoleBindings(r.URL.Query().Get("actor"))})
+	case http.MethodPost:
+		if !s.requireOperator(w, r, "admin") {
+			return
+		}
+		var req operatorRoleBindingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("decode operator role binding: %v", err), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Actor) == "" {
+			http.Error(w, "actor is required", http.StatusBadRequest)
+			return
+		}
+		binding := s.store.UpsertOperatorRoleBinding(store.OperatorRoleBinding{Actor: req.Actor, Roles: req.Roles})
+		writeJSON(w, binding)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
