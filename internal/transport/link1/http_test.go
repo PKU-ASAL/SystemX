@@ -583,6 +583,30 @@ func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 	}
 }
 
+func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	cmd := `{"tenant_id":"default","agent_id":"agent-downlink","action":"collect","target":"process:p1","reason":"test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(cmd))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/link1-downlink?tenant_id=default&agent_id=agent-downlink")
+	for _, want := range []string{
+		`"type":"policy_update"`,
+		`"policy_id":"default-edr-policy"`,
+		`"type":"response_command"`,
+		`"action":"collect"`,
+		`"agent_id":"agent-downlink"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("downlink missing %s: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func upload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
 	t.Helper()
 	_ = uploadAndAck(t, handler, batch)

@@ -112,6 +112,33 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/link1-sessions?" + q.Encode())
+	case "link1-downlink":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+				}
+			case "--scope-type":
+				i++
+				if i < len(args) {
+					q.Set("scope_type", args[i])
+				}
+			case "--scope-selector":
+				i++
+				if i < len(args) {
+					q.Set("scope_selector", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/link1-downlink?" + q.Encode())
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
 	case "store-status":

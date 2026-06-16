@@ -142,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/responses", s.responses)
 	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
+	mux.HandleFunc("/api/v1/link1-downlink", s.link1Downlink)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/link1-sessions", s.link1Sessions)
@@ -407,6 +408,29 @@ func (s *Server) link1Sessions(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	writeJSON(w, map[string]any{"sessions": s.store.ListLink1Sessions(q.Get("tenant_id"), q.Get("agent_id"))})
+}
+
+func (s *Server) link1Downlink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	agentID := q.Get("agent_id")
+	if agentID == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	tenantID := q.Get("tenant_id")
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	policy, _ := s.store.EffectivePolicy(tenantID, agentID, q.Get("scope_type"), q.Get("scope_selector"))
+	frames := []DownlinkFrame{policyUpdateFrame(policy)}
+	for _, cmd := range s.store.PendingResponses(tenantID, agentID) {
+		frames = append(frames, responseCommandFrame(cmd))
+	}
+	writeJSON(w, map[string]any{"frames": frames})
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
