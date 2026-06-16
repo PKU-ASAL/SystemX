@@ -237,11 +237,13 @@ Status: partial implementation started.
 - `make -C test e2e-response-observe-only` 验证 command -> agent observe-only ack -> manager audit 查询闭环。
 - manager 默认 response policy 只允许 observe + collect/noop,拒绝 destructive action 并持久化 denied audit。
 - `make -C test e2e-response-policy-deny` 验证 destructive action 默认拒绝且不会进入 pending。
+- manager 会用 agent health runtime scope 校验显式 response command scope,错 scope 会 denied 并留下 audit。
+- `make -C test e2e-response-scope-deny` 验证 response command 不能越过 agent runtime scope 边界。
 
 仍未完成:
 
 - Signal proto 原生 `response_intent` 字段。
-- response policy allowed scopes / approval requirement。
+- response policy approval requirement。
 - Link1 stream response command downlink。
 
 ### Deliverables
@@ -289,6 +291,7 @@ Status: partial implementation started.
 go test ./...
 make -C test e2e-response-observe-only
 make -C test e2e-response-policy-deny
+make -C test e2e-response-scope-deny
 make -C test e2e-response-audit
 ```
 

@@ -443,26 +443,28 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "agent_id is required", http.StatusBadRequest)
 			return
 		}
+		if cmd.TenantID == "" {
+			cmd.TenantID = "default"
+		}
+		if health, ok := s.store.GetAgentHealth(cmd.TenantID, cmd.AgentID); ok {
+			if cmd.Scope.Type == "" && cmd.Scope.Selector == "" {
+				cmd.Scope = responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}
+			}
+			if decision := responsemodel.ScopeDecision(cmd.Scope, responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}, true); !decision.Allowed {
+				s.denyResponse(w, cmd, decision)
+				return
+			}
+		} else if cmd.Scope.Type != "" || cmd.Scope.Selector != "" {
+			s.denyResponse(w, cmd, responsemodel.Decision{Allowed: false, Reason: "agent runtime scope is required for scoped response command"})
+			return
+		}
 		if cmd.PolicyID == "" {
 			policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
 			cmd.PolicyID = policy.PolicyID
 			cmd.PolicyVersion = policy.Version
 		}
 		if decision := responsemodel.ValidateCommand(cmd); !decision.Allowed {
-			cmd = responsemodel.NormalizeCommand(cmd)
-			cmd.Status = "denied"
-			if cmd.Reason == "" {
-				cmd.Reason = decision.Reason
-			} else {
-				cmd.Reason = cmd.Reason + "; denied: " + decision.Reason
-			}
-			cmd = s.store.CreateResponse(cmd)
-			if err := s.store.Save(); err != nil {
-				http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusForbidden)
-			writeJSON(w, responsemodel.AuditRecord{Command: cmd})
+			s.denyResponse(w, cmd, decision)
 			return
 		}
 		cmd = s.store.CreateResponse(cmd)
@@ -474,6 +476,23 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) denyResponse(w http.ResponseWriter, cmd responsemodel.Command, decision responsemodel.Decision) {
+	cmd = responsemodel.NormalizeCommand(cmd)
+	cmd.Status = "denied"
+	if cmd.Reason == "" {
+		cmd.Reason = decision.Reason
+	} else {
+		cmd.Reason = cmd.Reason + "; denied: " + decision.Reason
+	}
+	cmd = s.store.CreateResponse(cmd)
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusForbidden)
+	writeJSON(w, responsemodel.AuditRecord{Command: cmd})
 }
 
 func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {

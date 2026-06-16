@@ -148,6 +148,7 @@ make e2e-policy-cloud-disable
 # v3 response/enforce observe-only smoke
 make e2e-response-observe-only
 make e2e-response-policy-deny
+make e2e-response-scope-deny
 
 # 性能基线 smoke
 make perf TOPO=container DUR=10

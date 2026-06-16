@@ -107,6 +107,23 @@ func ValidateCommand(cmd Command) Decision {
 	}
 }
 
+func ScopeDecision(command, runtime Scope, runtimeKnown bool) Decision {
+	command.Type = strings.TrimSpace(command.Type)
+	command.Selector = strings.TrimSpace(command.Selector)
+	runtime.Type = strings.TrimSpace(runtime.Type)
+	runtime.Selector = strings.TrimSpace(runtime.Selector)
+	if command.Type == "" && command.Selector == "" {
+		return Decision{Allowed: true}
+	}
+	if !runtimeKnown || runtime.Type == "" {
+		return Decision{Allowed: false, Reason: "agent runtime scope is required for scoped response command"}
+	}
+	if command.Type != runtime.Type || command.Selector != runtime.Selector {
+		return Decision{Allowed: false, Reason: "response command scope does not match agent runtime scope"}
+	}
+	return Decision{Allowed: true}
+}
+
 func ToEnforcement(cmd Command) contract.EnforcementCmd {
 	return contract.EnforcementCmd{
 		ID:          cmd.ResponseID,
