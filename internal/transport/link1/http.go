@@ -61,6 +61,11 @@ type incidentEvidenceAttachRequest struct {
 	Evidence   json.RawMessage `json:"evidence"`
 }
 
+type incidentMergeRequest struct {
+	TargetIncidentID string `json:"target_incident_id"`
+	SourceIncidentID string `json:"source_incident_id"`
+}
+
 type AgentListItem struct {
 	AgentID        string                       `json:"agent_id"`
 	HostID         string                       `json:"host_id"`
@@ -104,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
 	mux.HandleFunc("/api/v1/incident-evidence", s.incidentEvidence)
 	mux.HandleFunc("/api/v1/incident-lifecycle", s.incidentLifecycle)
+	mux.HandleFunc("/api/v1/incident-merge", s.incidentMerge)
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	return mux
 }
@@ -445,6 +451,32 @@ func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
 	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, req.Scenario, req.Status, req.Reason, req.Actor)
 	if !ok {
 		http.Error(w, "incident not found or status invalid", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeProtoJSON(w, inc)
+}
+
+func (s *Server) incidentMerge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req incidentMergeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode incident merge: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.TargetIncidentID == "" || req.SourceIncidentID == "" {
+		http.Error(w, "target_incident_id and source_incident_id are required", http.StatusBadRequest)
+		return
+	}
+	inc, ok := s.store.MergeIncidents(req.TargetIncidentID, req.SourceIncidentID)
+	if !ok {
+		http.Error(w, "incident not found or merge invalid", http.StatusNotFound)
 		return
 	}
 	if err := s.store.Save(); err != nil {

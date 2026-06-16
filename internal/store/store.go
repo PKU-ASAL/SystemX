@@ -755,6 +755,39 @@ func (s *Store) AttachIncidentEvidence(id, scenario string, evidence *incidentv1
 	return nil, false
 }
 
+func (s *Store) MergeIncidents(targetID, sourceID string) (*incidentv1.Incident, bool) {
+	if targetID == "" || sourceID == "" || targetID == sourceID {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var target *incidentv1.Incident
+	var source *incidentv1.Incident
+	sourceIndex := -1
+	for i, inc := range s.Incidents {
+		switch inc.GetId() {
+		case targetID:
+			target = inc
+		case sourceID:
+			source = inc
+			sourceIndex = i
+		}
+	}
+	if target == nil || source == nil {
+		return nil, false
+	}
+	if source.GetSeverity() > target.GetSeverity() {
+		target.Severity = source.GetSeverity()
+	}
+	target.Mitre = mergeStrings(target.GetMitre(), source.GetMitre())
+	target.LineageIds = mergeStrings(target.GetLineageIds(), source.GetLineageIds())
+	target.Terminals = mergeStrings(target.GetTerminals(), source.GetTerminals())
+	target.Evidence = mergeEvidence(target.GetEvidence(), source.GetEvidence())
+	target.ContributingSignals = mergeSignals(target.GetContributingSignals(), source.GetContributingSignals())
+	s.Incidents = append(s.Incidents[:sourceIndex], s.Incidents[sourceIndex+1:]...)
+	return target, true
+}
+
 func (s *Store) MetricsSnapshot() Metrics {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -999,6 +1032,42 @@ func graphEdgeKey(edge *incidentv1.GraphEdge) string {
 		return edge.GetId()
 	}
 	return strings.Join([]string{edge.GetFrom(), edge.GetTo(), edge.GetKind()}, "\x00")
+}
+
+func mergeStrings(base, extra []string) []string {
+	out := append([]string(nil), base...)
+	seen := map[string]bool{}
+	for _, item := range out {
+		seen[item] = true
+	}
+	for _, item := range extra {
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		out = append(out, item)
+	}
+	return out
+}
+
+func mergeSignals(base, extra []*signalv1.Signal) []*signalv1.Signal {
+	out := append([]*signalv1.Signal(nil), base...)
+	seen := map[string]bool{}
+	for _, sig := range out {
+		key := signalKey(sig)
+		if key != "" {
+			seen[key] = true
+		}
+	}
+	for _, sig := range extra {
+		key := signalKey(sig)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, sig)
+	}
+	return out
 }
 
 func sortedStrings(in []string) []string {

@@ -156,6 +156,62 @@ func TestIncidentEvidenceAttachPersistsAcrossUpsert(t *testing.T) {
 	}
 }
 
+func TestMergeIncidentsCombinesEvidenceAndRemovesSource(t *testing.T) {
+	st := &Store{}
+	st.AddIncident(&incidentv1.Incident{
+		Id:         "inc-a",
+		Scenario:   "a",
+		Summary:    "target",
+		Severity:   40,
+		Mitre:      []string{"T1059"},
+		LineageIds: []string{"lin-a"},
+		Terminals:  []string{"process:p-a"},
+		Evidence:   &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-a", Kind: "process"}}},
+		ContributingSignals: []*signalv1.Signal{
+			testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/a"),
+		},
+		Status: "suppressed",
+	})
+	st.AddIncident(&incidentv1.Incident{
+		Id:         "inc-b",
+		Scenario:   "b",
+		Summary:    "source",
+		Severity:   80,
+		Mitre:      []string{"T1105"},
+		LineageIds: []string{"lin-b"},
+		Terminals:  []string{"process:p-b"},
+		Evidence: &incidentv1.EvidenceSubgraph{
+			Nodes: []*incidentv1.GraphNode{{Id: "process:p-b", Kind: "process"}},
+			Edges: []*incidentv1.GraphEdge{{From: "process:p-a", To: "process:p-b", Kind: "related"}},
+		},
+		ContributingSignals: []*signalv1.Signal{
+			testSignal("sig-b", "b", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-b", "process:p-b"),
+		},
+	})
+	merged, ok := st.MergeIncidents("inc-a", "inc-b")
+	if !ok {
+		t.Fatal("MergeIncidents ok = false")
+	}
+	if merged.GetStatus() != "suppressed" {
+		t.Fatalf("target status = %q, want suppressed", merged.GetStatus())
+	}
+	if merged.GetSeverity() != 80 {
+		t.Fatalf("severity = %d, want 80", merged.GetSeverity())
+	}
+	if len(merged.GetLineageIds()) != 2 || len(merged.GetTerminals()) != 2 || len(merged.GetMitre()) != 2 {
+		t.Fatalf("merged fields incomplete: lineage=%v terminals=%v mitre=%v", merged.GetLineageIds(), merged.GetTerminals(), merged.GetMitre())
+	}
+	if len(merged.GetEvidence().GetNodes()) != 2 || len(merged.GetEvidence().GetEdges()) != 1 {
+		t.Fatalf("merged evidence = %+v", merged.GetEvidence())
+	}
+	if len(merged.GetContributingSignals()) != 2 {
+		t.Fatalf("contributing signals = %d, want 2", len(merged.GetContributingSignals()))
+	}
+	if got := st.ListIncidents(""); len(got) != 1 || got[0].GetId() != "inc-a" {
+		t.Fatalf("incidents after merge = %+v", got)
+	}
+}
+
 func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	st := &Store{}
 	if inserted := st.AddEvent(testEvent("ev-1", "a")); !inserted {

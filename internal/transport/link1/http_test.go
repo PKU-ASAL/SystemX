@@ -117,6 +117,41 @@ func TestIncidentLifecycleAPIUpdatesStatus(t *testing.T) {
 	}
 }
 
+func TestIncidentMergeAPI(t *testing.T) {
+	st := &store.Store{}
+	st.AddIncident(&incidentv1.Incident{
+		Id:         "inc-a",
+		Scenario:   "scenario-a",
+		Summary:    "target",
+		LineageIds: []string{"lin-a"},
+		Evidence:   &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-a", Kind: "process"}}},
+		Status:     "closed",
+	})
+	st.AddIncident(&incidentv1.Incident{
+		Id:         "inc-b",
+		Scenario:   "scenario-b",
+		Summary:    "source",
+		LineageIds: []string{"lin-b"},
+		Evidence:   &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-b", Kind: "process"}}},
+	})
+	handler := NewServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incident-merge", strings.NewReader(`{"target_incident_id":"inc-a","source_incident_id":"inc-b"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("merge status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"id":"inc-a"`, `"status":"closed"`, `"lin-b"`, `"id":"process:p-b"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("merge response missing %s: %s", want, rec.Body.String())
+		}
+	}
+	rec = get(t, handler, "/api/v1/incidents")
+	if strings.Contains(rec.Body.String(), `"id":"inc-b"`) {
+		t.Fatalf("source incident still queryable: %s", rec.Body.String())
+	}
+}
+
 func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

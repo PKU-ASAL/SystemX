@@ -155,6 +155,7 @@ make e2e-response-audit
 make e2e-graph-evidence
 make e2e-incident-lifecycle
 make e2e-incident-attach-evidence
+make e2e-incident-merge
 
 # 性能基线 smoke
 make perf TOPO=container DUR=10

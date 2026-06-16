@@ -403,6 +403,23 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpPostJSON(base+"/api/v1/incident-lifecycle", req)
+	case "incident-merge":
+		req := map[string]string{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--target-incident-id":
+				i++
+				if i < len(args) {
+					req["target_incident_id"] = args[i]
+				}
+			case "--source-incident-id":
+				i++
+				if i < len(args) {
+					req["source_incident_id"] = args[i]
+				}
+			}
+		}
+		return httpPostJSON(base+"/api/v1/incident-merge", req)
 	case "recompute":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

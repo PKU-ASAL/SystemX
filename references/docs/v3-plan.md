@@ -322,6 +322,8 @@ Status: partial implementation started.
 - `make -C test e2e-incident-lifecycle` 验证 incident 可 suppress / close / reopen 并可查询。
 - manager `POST /api/v1/incident-evidence` 与 `sysarmorctl incident-evidence-attach` 可向既有 incident 追加 evidence subgraph,并在 incident 重新派生/upsert 时保留已追加证据。
 - `make -C test e2e-incident-attach-evidence` 验证 incident 可追加 evidence node/edge 并通过 evidence graph 查询。
+- manager `POST /api/v1/incident-merge` 与 `sysarmorctl incident-merge` 可按显式 incident id 合并两个 incident,合并 evidence、lineage、terminal、MITRE 和 contributing signals,并删除 source incident。
+- `make -C test e2e-incident-merge` 验证 incident merge 后 target 保留、source 移除、source evidence 进入 target。
 - `internal/analytics/converge` 提供最小 converge decision 边界,从 ingest 中拆出 terminal / cross-lineage / additive threshold 成案判断。
 - `internal/analytics/correlate` 提供最小 signal correlation view,从 ingest 中拆出 signal 分组、scenario 选择、terminal 判断和 entity 聚合。
 - `internal/analytics/incident` 提供 incident builder,从 ingest 中拆出 Incident 构造、evidence 绑定、lineage/terminal 提取和默认 lifecycle status。
@@ -332,7 +334,6 @@ Status: partial implementation started.
 
 仍未完成:
 
-- incident lifecycle API: merge。
 - 生产级 rarity baseline: CMS / IDF / workload baseline。
 
 Package split:
@@ -396,6 +397,7 @@ Rarity interface:
 - Evidence subgraph is produced by graph/evidence APIs, not ad hoc assembly only.
 - CLI can query incident evidence path as JSON.
 - Incident evidence can be attached and survives incident upsert/recompute.
+- Incidents can be merged by explicit id without losing target lifecycle state.
 - Existing `apt-fileless-c2`, `apt-staged-drop`, and `benign-ci-noise` semantics remain stable.
 
 ### Suggested Tests
@@ -405,6 +407,7 @@ go test ./...
 make -C test e2e-graph-evidence
 make -C test e2e-incident-lifecycle
 make -C test e2e-incident-attach-evidence
+make -C test e2e-incident-merge
 make -C test e2e TOPO=container SCENARIO=apt-staged-drop DUR=12
 ```
 
