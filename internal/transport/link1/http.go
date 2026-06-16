@@ -18,6 +18,7 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -38,6 +39,7 @@ type ManagerStore interface {
 	AddSignal(*signalv1.Signal) bool
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
+	CreateEvidencePullback(link1model.EvidencePullbackRequest) link1model.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
 	DeleteScenario(string)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
@@ -51,6 +53,7 @@ type ManagerStore interface {
 	ListAgents() []*analyticsv1.AgentHello
 	ListAssignments(string, string) []policymodel.Assignment
 	ListEvents(string, string) []*eventv1.CanonicalEvent
+	ListEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
 	ListIncidents(string) []*incidentv1.Incident
 	ListLink1Sessions(string, string) []store.Link1Session
 	ListPolicies(string) []policymodel.Policy
@@ -59,6 +62,7 @@ type ManagerStore interface {
 	ListSignals(string, string, bool) []*signalv1.Signal
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
+	PendingEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	RecordLink1Upload(*analyticsv1.AgentHello, string, string, time.Time) store.Link1Session
 	RecordUpload(int, int, int, int, time.Duration)
@@ -99,6 +103,17 @@ type incidentEvidenceAttachRequest struct {
 	IncidentID string          `json:"incident_id"`
 	Scenario   string          `json:"scenario"`
 	Evidence   json.RawMessage `json:"evidence"`
+}
+
+type evidencePullbackRequest struct {
+	RequestID  string `json:"request_id"`
+	TenantID   string `json:"tenant_id"`
+	AgentID    string `json:"agent_id"`
+	IncidentID string `json:"incident_id,omitempty"`
+	Scenario   string `json:"scenario,omitempty"`
+	Target     string `json:"target,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Actor      string `json:"actor,omitempty"`
 }
 
 type incidentMergeRequest struct {
@@ -145,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/link1-frames", s.link1Frames)
 	mux.HandleFunc("/api/v1/link1-downlink", s.link1Downlink)
 	mux.HandleFunc("/api/v1/link1-resume", s.link1Resume)
+	mux.HandleFunc("/api/v1/evidence-pullbacks", s.evidencePullbacks)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/link1-sessions", s.link1Sessions)
@@ -432,6 +448,9 @@ func (s *Server) link1Downlink(w http.ResponseWriter, r *http.Request) {
 	for _, cmd := range s.store.PendingResponses(tenantID, agentID) {
 		frames = append(frames, responseCommandFrame(cmd))
 	}
+	for _, req := range s.store.PendingEvidencePullbacks(tenantID, agentID) {
+		frames = append(frames, evidencePullbackFrame(req))
+	}
 	writeJSON(w, map[string]any{"frames": frames})
 }
 
@@ -457,6 +476,41 @@ func (s *Server) link1Resume(w http.ResponseWriter, r *http.Request) {
 		resume.ResumeCursor = sessions[0].LastAckCursor
 	}
 	writeJSON(w, resume)
+}
+
+func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query()
+		writeJSON(w, s.store.ListEvidencePullbacks(q.Get("tenant_id"), q.Get("agent_id")))
+	case http.MethodPost:
+		var req evidencePullbackRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("decode evidence pullback: %v", err), http.StatusBadRequest)
+			return
+		}
+		if req.AgentID == "" {
+			http.Error(w, "agent_id is required", http.StatusBadRequest)
+			return
+		}
+		out := s.store.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+			RequestID:  req.RequestID,
+			TenantID:   req.TenantID,
+			AgentID:    req.AgentID,
+			IncidentID: req.IncidentID,
+			Scenario:   req.Scenario,
+			Target:     req.Target,
+			Reason:     req.Reason,
+			Actor:      req.Actor,
+		})
+		if err := s.store.Save(); err != nil {
+			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

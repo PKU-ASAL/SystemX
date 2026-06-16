@@ -156,6 +156,62 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/link1-resume?" + q.Encode())
+	case "evidence-pullbacks":
+		q := url.Values{}
+		req := map[string]any{}
+		create := false
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--create":
+				create = true
+			case "--request-id":
+				i++
+				if i < len(args) {
+					req["request_id"] = args[i]
+				}
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+					req["tenant_id"] = args[i]
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+					req["agent_id"] = args[i]
+				}
+			case "--incident-id":
+				i++
+				if i < len(args) {
+					req["incident_id"] = args[i]
+				}
+			case "--scenario":
+				i++
+				if i < len(args) {
+					req["scenario"] = args[i]
+				}
+			case "--target":
+				i++
+				if i < len(args) {
+					req["target"] = args[i]
+				}
+			case "--reason":
+				i++
+				if i < len(args) {
+					req["reason"] = args[i]
+				}
+			case "--actor":
+				i++
+				if i < len(args) {
+					req["actor"] = args[i]
+				}
+			}
+		}
+		if create {
+			return httpPostJSON(base+"/api/v1/evidence-pullbacks", req)
+		}
+		return httpGet(base + "/api/v1/evidence-pullbacks?" + q.Encode())
 	case "link1-frames":
 		var file string
 		for i := 1; i < len(args); i++ {

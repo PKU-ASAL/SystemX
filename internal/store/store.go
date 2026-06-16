@@ -17,6 +17,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
@@ -38,6 +39,7 @@ type Store struct {
 	Assignments   []policymodel.Assignment
 	Responses     []responsemodel.Command
 	ResponseAcks  []responsemodel.Ack
+	Pullbacks     []link1model.EvidencePullbackRequest
 	Link1Sessions []Link1Session
 	Metrics       Metrics
 }
@@ -76,18 +78,19 @@ type Link1Session struct {
 }
 
 type State struct {
-	Agents        []json.RawMessage         `json:"agents"`
-	Events        []json.RawMessage         `json:"events"`
-	Signals       []json.RawMessage         `json:"signals"`
-	Incidents     []json.RawMessage         `json:"incidents"`
-	Health        []json.RawMessage         `json:"health"`
-	Rules         []policymodel.RuleContent `json:"rules"`
-	Policies      []policymodel.Policy      `json:"policies"`
-	Assignments   []policymodel.Assignment  `json:"assignments"`
-	Responses     []responsemodel.Command   `json:"responses"`
-	ResponseAcks  []responsemodel.Ack       `json:"response_acks"`
-	Link1Sessions []Link1Session            `json:"link1_sessions"`
-	Metrics       Metrics                   `json:"metrics"`
+	Agents        []json.RawMessage                    `json:"agents"`
+	Events        []json.RawMessage                    `json:"events"`
+	Signals       []json.RawMessage                    `json:"signals"`
+	Incidents     []json.RawMessage                    `json:"incidents"`
+	Health        []json.RawMessage                    `json:"health"`
+	Rules         []policymodel.RuleContent            `json:"rules"`
+	Policies      []policymodel.Policy                 `json:"policies"`
+	Assignments   []policymodel.Assignment             `json:"assignments"`
+	Responses     []responsemodel.Command              `json:"responses"`
+	ResponseAcks  []responsemodel.Ack                  `json:"response_acks"`
+	Pullbacks     []link1model.EvidencePullbackRequest `json:"evidence_pullbacks"`
+	Link1Sessions []Link1Session                       `json:"link1_sessions"`
+	Metrics       Metrics                              `json:"metrics"`
 }
 
 func Open(path string) (*Store, error) {
@@ -160,6 +163,7 @@ func (s *Store) ImportState(state State) error {
 	s.Assignments = state.Assignments
 	s.Responses = state.Responses
 	s.ResponseAcks = state.ResponseAcks
+	s.Pullbacks = state.Pullbacks
 	s.Link1Sessions = state.Link1Sessions
 	s.Metrics = state.Metrics
 	return nil
@@ -576,6 +580,51 @@ func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool)
 	}
 	s.ResponseAcks = append(s.ResponseAcks, ack)
 	return command, true
+}
+
+func (s *Store) CreateEvidencePullback(req link1model.EvidencePullbackRequest) link1model.EvidencePullbackRequest {
+	req = link1model.NormalizeEvidencePullback(req)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Pullbacks {
+		if existing.RequestID == req.RequestID {
+			req.CreatedAt = existing.CreatedAt
+			s.Pullbacks[i] = req
+			return req
+		}
+	}
+	s.Pullbacks = append(s.Pullbacks, req)
+	return req
+}
+
+func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []link1model.EvidencePullbackRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]link1model.EvidencePullbackRequest, 0, len(s.Pullbacks))
+	for _, req := range s.Pullbacks {
+		if tenantID != "" && req.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && req.AgentID != agentID {
+			continue
+		}
+		out = append(out, req)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []link1model.EvidencePullbackRequest {
+	all := s.ListEvidencePullbacks(tenantID, agentID)
+	out := make([]link1model.EvidencePullbackRequest, 0, len(all))
+	for _, req := range all {
+		if req.Status == link1model.EvidencePullbackStatusPending {
+			out = append(out, req)
+		}
+	}
+	return out
 }
 
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
@@ -1017,6 +1066,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Assignments = append([]policymodel.Assignment(nil), s.Assignments...)
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
+	state.Pullbacks = append([]link1model.EvidencePullbackRequest(nil), s.Pullbacks...)
 	state.Link1Sessions = append([]Link1Session(nil), s.Link1Sessions...)
 	return state, nil
 }

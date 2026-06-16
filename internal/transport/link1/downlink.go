@@ -3,17 +3,19 @@ package link1
 import (
 	"encoding/json"
 
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
 
 const (
-	DownlinkPolicyUpdate    = "policy_update"
-	DownlinkResponseCommand = "response_command"
-	UplinkUpload            = "upload"
-	UplinkHealth            = "health"
-	UplinkAck               = "ack"
-	UplinkError             = "error"
+	DownlinkPolicyUpdate     = "policy_update"
+	DownlinkResponseCommand  = "response_command"
+	DownlinkEvidencePullback = "evidence_pullback"
+	UplinkUpload             = "upload"
+	UplinkHealth             = "health"
+	UplinkAck                = "ack"
+	UplinkError              = "error"
 )
 
 type DownlinkFrame struct {
@@ -69,6 +71,22 @@ func responseCommandFrame(cmd responsemodel.Command) DownlinkFrame {
 			"target":      cmd.Target,
 			"scope":       cmd.Scope,
 			"policy_id":   cmd.PolicyID,
+		},
+	}
+}
+
+func evidencePullbackFrame(req link1model.EvidencePullbackRequest) DownlinkFrame {
+	return DownlinkFrame{
+		Type:    DownlinkEvidencePullback,
+		Version: 1,
+		Payload: map[string]interface{}{
+			"request_id":  req.RequestID,
+			"tenant_id":   req.TenantID,
+			"agent_id":    req.AgentID,
+			"incident_id": req.IncidentID,
+			"scenario":    req.Scenario,
+			"target":      req.Target,
+			"reason":      req.Reason,
 		},
 	}
 }

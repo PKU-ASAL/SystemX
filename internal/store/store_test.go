@@ -10,6 +10,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 )
 
@@ -71,6 +72,32 @@ func TestMetricsSnapshotAndReset(t *testing.T) {
 	st.DeleteScenario("")
 	if got := st.MetricsSnapshot(); got.UploadBatches != 0 {
 		t.Fatalf("metrics after full reset = %#v, want zero", got)
+	}
+}
+
+func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
+	st := &Store{}
+	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+		RequestID:  "evpb-a",
+		TenantID:   "default",
+		AgentID:    "agent-a",
+		IncidentID: "inc-a",
+		Target:     "process:p1",
+	})
+	state, err := st.ExportState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := &Store{}
+	if err := restored.ImportState(state); err != nil {
+		t.Fatal(err)
+	}
+	got := restored.PendingEvidencePullbacks("default", "agent-a")
+	if len(got) != 1 {
+		t.Fatalf("pullbacks = %+v", got)
+	}
+	if got[0].RequestID != "evpb-a" || got[0].Status != link1model.EvidencePullbackStatusPending {
+		t.Fatalf("pullback = %+v", got[0])
 	}
 }
 

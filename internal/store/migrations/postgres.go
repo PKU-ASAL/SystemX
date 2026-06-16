@@ -136,6 +136,19 @@ CREATE TABLE IF NOT EXISTS response_audit (
   PRIMARY KEY (tenant_id, response_id)
 );
 
+CREATE TABLE IF NOT EXISTS evidence_pullbacks (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  request_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL DEFAULT '',
+  incident_id TEXT NOT NULL DEFAULT '',
+  scenario TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, request_id)
+);
+
 CREATE TABLE IF NOT EXISTS metrics (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   metric_key TEXT NOT NULL,
@@ -157,6 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (tenant_id, status)
 CREATE INDEX IF NOT EXISTS idx_evidence_incident ON evidence (tenant_id, incident_id);
 CREATE INDEX IF NOT EXISTS idx_response_audit_agent ON response_audit (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_response_audit_status ON response_audit (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_agent ON evidence_pullbacks (tenant_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_status ON evidence_pullbacks (tenant_id, status);
 
 INSERT INTO schema_migrations (version) VALUES (1)
 ON CONFLICT (version) DO NOTHING;

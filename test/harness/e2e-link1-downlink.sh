@@ -64,11 +64,20 @@ curl -sf -X POST "$MGR_URL/api/v1/responses" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/response.json" > "$RESULTS/e2e-link1-downlink.response.json"
 
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json evidence-pullbacks \
+  --create \
+  --request-id link1-downlink-pullback \
+  --tenant-id default \
+  --agent-id link1-downlink-agent \
+  --incident-id inc-link1-downlink \
+  --target process:p1 \
+  --reason "collect process tree" > "$RESULTS/e2e-link1-downlink.pullback.json"
+
 "$BIN/sysarmorctl" --mgr "$MGR_URL" --json link1-downlink \
   --tenant-id default \
   --agent-id link1-downlink-agent > "$RESULTS/e2e-link1-downlink.frames.json"
 
-for want in '"type":"policy_update"' '"policy_id":"default-edr-policy"' '"type":"response_command"' '"agent_id":"link1-downlink-agent"' '"action":"collect"'; do
+for want in '"type":"policy_update"' '"policy_id":"default-edr-policy"' '"type":"response_command"' '"agent_id":"link1-downlink-agent"' '"action":"collect"' '"type":"evidence_pullback"' '"request_id":"link1-downlink-pullback"' '"target":"process:p1"'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-link1-downlink.frames.json"; then
     echo "[e2e-link1-downlink][ERROR] downlink missing $want" >&2
     cat "$RESULTS/e2e-link1-downlink.frames.json" >&2

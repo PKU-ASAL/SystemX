@@ -611,6 +611,43 @@ func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	}
 }
 
+func TestLink1DownlinkFramesIncludeEvidencePullback(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/evidence-pullbacks", strings.NewReader(`{
+		"request_id":"evpb-test",
+		"tenant_id":"default",
+		"agent_id":"agent-downlink",
+		"incident_id":"inc-1",
+		"scenario":"apt-fileless-c2",
+		"target":"process:p1",
+		"reason":"collect process tree"
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pullback post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/evidence-pullbacks?tenant_id=default&agent_id=agent-downlink")
+	for _, want := range []string{`"request_id":"evpb-test"`, `"status":"pending"`, `"incident_id":"inc-1"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("pullback list missing %s: %s", want, rec.Body.String())
+		}
+	}
+	rec = get(t, handler, "/api/v1/link1-downlink?tenant_id=default&agent_id=agent-downlink")
+	for _, want := range []string{
+		`"type":"policy_update"`,
+		`"type":"evidence_pullback"`,
+		`"request_id":"evpb-test"`,
+		`"target":"process:p1"`,
+		`"reason":"collect process tree"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("downlink missing %s: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
