@@ -443,6 +443,8 @@ Status: foundation implementation started.
 - `make -C test e2e-store-status` 验证 manager file backend 和 Postgres schema version 可观测。
 - `make -C test e2e-query-pagination` 验证 query pagination contract。
 - `make -C test e2e-postgres-store` 验证 Postgres backend 可运行 migration、打开 snapshot store,并跨 reopen 保留 response audit。
+- `make -C test e2e-postgres-idempotency` 验证 snapshot-backed Postgres backend 保持重复 ingest 的幂等性。
+- `make -C test e2e-postgres-policy-persistence` 验证 snapshot-backed Postgres backend 跨 reopen 保留 policy publish/assignment/audit 和 incident lifecycle 状态。
 - `make -C test e2e-postgres-all` 当前聚合 Postgres foundation gate。
 
 仍未完成:

@@ -256,6 +256,8 @@ make -C test e2e-graph-all
 | `e2e-store-status` | `harness/e2e-store-status.sh` | manager file backend、state version、migration version、Postgres schema version 可通过 CLI 查询 |
 | `e2e-query-pagination` | `harness/e2e-query-pagination.sh` | events/signals 查询可通过 `limit` / `offset` 返回稳定分页 |
 | `e2e-postgres-store` | Go backend adapter test | Postgres backend 会运行 migration,打开 snapshot-backed store,并能跨 reopen 保留 response audit |
+| `e2e-postgres-idempotency` | Go backend adapter test | snapshot-backed Postgres backend 跨 reopen 后重复 event/signal 不会放大 |
+| `e2e-postgres-policy-persistence` | Go backend adapter test | snapshot-backed Postgres backend 跨 reopen 保留 policy publish/assignment/audit 和 incident lifecycle 状态 |
 | `e2e-postgres-all` | Make 聚合 | 当前聚合 store/Postgres foundation gate |
 
 聚合入口:
@@ -482,6 +484,8 @@ make -C test e2e-agent-benign-container
 | Postgres schema + migration runner + store backend 可观测 | `e2e-store-status` + migration/runner 单测 | 部分覆盖 |
 | query pagination | `e2e-query-pagination` + HTTP 单测 | 部分覆盖 |
 | Postgres durable store adapter | `e2e-postgres-store` + backend/postgres 单测 | 部分覆盖 |
+| Postgres backend idempotency | `e2e-postgres-idempotency` | 部分覆盖 |
+| Postgres backend policy/incident persistence | `e2e-postgres-policy-persistence` | 部分覆盖 |
 | Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
 | Link1 resume cursor / local spool cleanup | `e2e-link1-session` / `e2e-link1-stream-resume` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP/gRPC 单测 | 部分覆盖 |

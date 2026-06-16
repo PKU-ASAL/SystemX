@@ -11,6 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
 
@@ -74,6 +78,118 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	audits := reopened.Store.ListResponses("default", "agent-pg")
 	if len(audits) != 1 || audits[0].Command.ResponseID != "resp-pg" {
 		t.Fatalf("reopened audits = %+v", audits)
+	}
+}
+
+func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	event := &eventv1.CanonicalEvent{Id: "ev-pg-idempotent", Scenario: "pg-idempotent", Kind: eventv1.EventKind_EVENT_KIND_EXEC}
+	signal := &signalv1.Signal{Id: "sig-pg-idempotent", Scenario: "pg-idempotent", Name: "reverse_shell_pattern", Where: signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT}
+	if !result.Store.AddEvent(event) || result.Store.AddEvent(event) {
+		t.Fatal("event idempotency failed before save")
+	}
+	if !result.Store.AddSignal(signal) || result.Store.AddSignal(signal) {
+		t.Fatal("signal idempotency failed before save")
+	}
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	reopened, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("reopen postgres error = %v", err)
+	}
+	if reopened.Store.AddEvent(event) {
+		t.Fatal("duplicate event inserted after postgres reopen")
+	}
+	if reopened.Store.AddSignal(signal) {
+		t.Fatal("duplicate signal inserted after postgres reopen")
+	}
+	if got := reopened.Store.ListEvents("pg-idempotent", ""); len(got) != 1 || got[0].GetId() != event.GetId() {
+		t.Fatalf("events after duplicate replay = %+v", got)
+	}
+	if got := reopened.Store.ListSignals("pg-idempotent", "endpoint", false); len(got) != 1 || got[0].GetId() != signal.GetId() {
+		t.Fatalf("signals after duplicate replay = %+v", got)
+	}
+}
+
+func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "postgres-policy"
+	policy.Version = 7
+	policy.Published = false
+	result.Store.UpsertPolicy(policy)
+	published, ok := result.Store.PublishPolicy("default", "postgres-policy", 7, true)
+	if !ok || !published.Published {
+		t.Fatalf("PublishPolicy() = %+v, %v", published, ok)
+	}
+	assignment, ok := result.Store.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		AgentID:       "agent-pg-policy",
+		PolicyID:      "postgres-policy",
+		PolicyVersion: 7,
+	})
+	if !ok {
+		t.Fatal("AssignPolicy() ok = false")
+	}
+	result.Store.RecordPolicyAudit(policymodel.AuditRecord{
+		TenantID:      "default",
+		Action:        "policy.assign",
+		PolicyID:      "postgres-policy",
+		PolicyVersion: 7,
+		AssignmentID:  assignment.AssignmentID,
+		Actor:         "tester",
+	})
+	result.Store.AddIncident(&incidentv1.Incident{Id: "inc-pg", Scenario: "pg-policy", Summary: "persisted incident"})
+	if _, ok := result.Store.UpdateIncidentStatus("inc-pg", "", "suppressed", "known test", "tester"); !ok {
+		t.Fatal("UpdateIncidentStatus() ok = false")
+	}
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	reopened, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("reopen postgres error = %v", err)
+	}
+	effective, ok := reopened.Store.EffectivePolicy("default", "agent-pg-policy", "", "")
+	if !ok || effective.PolicyID != "postgres-policy" || effective.Version != 7 || !effective.Published {
+		t.Fatalf("effective policy after reopen = %+v, %v", effective, ok)
+	}
+	audits := reopened.Store.ListPolicyAudits("default", "postgres-policy")
+	if len(audits) != 1 || audits[0].Actor != "tester" || audits[0].AssignmentID != assignment.AssignmentID {
+		t.Fatalf("policy audits after reopen = %+v", audits)
+	}
+	incidents := reopened.Store.ListIncidents("pg-policy")
+	if len(incidents) != 1 || incidents[0].GetStatus() != "suppressed" || incidents[0].GetStatusActor() != "tester" {
+		t.Fatalf("incidents after reopen = %+v", incidents)
 	}
 }
 
