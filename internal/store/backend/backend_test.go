@@ -45,6 +45,34 @@ func TestOpenFileAndMemoryBackends(t *testing.T) {
 	if memory.Store == nil || memory.Store.Info().Backend != "memory" {
 		t.Fatalf("memory result = %+v", memory.Store.Info())
 	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("file Close() error = %v", err)
+	}
+	if err := memory.Close(); err != nil {
+		t.Fatalf("memory Close() error = %v", err)
+	}
+}
+
+func TestOpenPostgresResultClosesDatabase(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	if got := fakeCloseCount(); got != 0 {
+		t.Fatalf("close count before Close = %d, want 0", got)
+	}
+	if err := result.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if got := fakeCloseCount(); got == 0 {
+		t.Fatal("postgres result did not close database connection")
+	}
 }
 
 func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
@@ -719,6 +747,7 @@ var fakeState struct {
 	execLog   []string
 	execErr   error
 	snapshot  []byte
+	closeN    int
 }
 
 func fakeSetExecError(err error) {
@@ -727,6 +756,7 @@ func fakeSetExecError(err error) {
 	fakeState.lastQuery = ""
 	fakeState.execLog = nil
 	fakeState.execErr = err
+	fakeState.closeN = 0
 }
 
 func fakeSetSnapshot(data []byte) {
@@ -747,6 +777,12 @@ func fakeExecLog() string {
 	return strings.Join(fakeState.execLog, "\n")
 }
 
+func fakeCloseCount() int {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	return fakeState.closeN
+}
+
 type fakeDriver struct{}
 
 func (fakeDriver) Open(string) (driver.Conn, error) {
@@ -760,6 +796,9 @@ func (fakeConn) Prepare(query string) (driver.Stmt, error) {
 }
 
 func (fakeConn) Close() error {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.closeN++
 	return nil
 }
 

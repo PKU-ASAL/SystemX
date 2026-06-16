@@ -46,6 +46,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "open store: %v\n", err)
 		os.Exit(1)
 	}
+	defer func() {
+		if err := storeResult.Close(); err != nil {
+			log.Printf("close store backend: %v", err)
+		}
+	}()
 	st := storeResult.Store
 	linkSrv := link1.NewServerWithTokens(st, *devToken, *operatorToken)
 	grpcServer := grpc.NewServer()

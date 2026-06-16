@@ -451,6 +451,7 @@ Status: foundation implementation started.
 - `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、events、signals、incidents、incident_events、evidence、response_audit、metrics 和基础查询索引。
 - `internal/store/postgres` 提供基于标准库 `database/sql` 的 migration runner,可对 live Postgres 执行 schema v1。
 - manager 已提供 `--store-backend file|memory|postgres`、`--postgres-driver`、`--postgres-dsn` 配置入口;postgres 分支会先执行 migration runner,再打开 JSON snapshot-backed store 作为逐表 adapter 前的过渡路径。
+- store backend `Result` 已提供 `Close()` 生命周期边界;manager 退出时会关闭 Postgres 底层 database handle,file/memory backend 保持 no-op。
 - `internal/transport/link1` 已提取 `ManagerStore` 接口,manager/Link1 transport 不再直接绑定具体 file store 类型,为 Postgres adapter 接入预留稳定 contract。
 - file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres snapshot adapter 复用同一套 proto/json state contract 持久化完整 manager state,后续可逐步落表。
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
@@ -461,7 +462,7 @@ Status: foundation implementation started.
 - manager `events` / `signals` / `incidents` 查询 API 与 `sysarmorctl` 已支持 `limit` / `offset` 分页参数。
 - `make -C test e2e-store-status` 验证 manager file backend 和 Postgres schema version 可观测。
 - `make -C test e2e-query-pagination` 验证 query pagination contract。
-- `make -C test e2e-postgres-store` 验证 Postgres backend 可运行 migration、打开 snapshot store,并跨 reopen 保留 response audit。
+- `make -C test e2e-postgres-store` 验证 Postgres backend 可运行 migration、打开 snapshot store、关闭 database handle,并跨 reopen 保留 response audit。
 - `make -C test e2e-postgres-idempotency` 验证 snapshot-backed Postgres backend 保持重复 ingest 的幂等性。
 - `make -C test e2e-postgres-policy-persistence` 验证 snapshot-backed Postgres backend 跨 reopen 保留 policy publish/assignment/audit 和 incident lifecycle 状态。
 - `make -C test e2e-postgres-manager-api` 验证 snapshot-backed Postgres backend 可支撑 manager ingest/query/policy/incident lifecycle API,并跨 reopen 保留 API 写入状态。

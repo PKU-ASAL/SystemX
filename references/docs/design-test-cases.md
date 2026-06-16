@@ -266,7 +266,7 @@ make -C test e2e-graph-all
 |---|---|---|
 | `e2e-store-status` | `harness/e2e-store-status.sh` | manager file backend、state version、migration version、Postgres schema version 可通过 CLI 查询 |
 | `e2e-query-pagination` | `harness/e2e-query-pagination.sh` | events/signals 查询可通过 `limit` / `offset` 返回稳定分页 |
-| `e2e-postgres-store` | Go backend adapter test | Postgres backend 会运行 migration,打开 snapshot-backed store,并能跨 reopen 保留 response audit |
+| `e2e-postgres-store` | Go backend adapter test | Postgres backend 会运行 migration,打开 snapshot-backed store,关闭 database handle,并能跨 reopen 保留 response audit |
 | `e2e-postgres-idempotency` | Go backend adapter test | snapshot-backed Postgres backend 跨 reopen 后重复 event/signal 不会放大 |
 | `e2e-postgres-policy-persistence` | Go backend adapter test | snapshot-backed Postgres backend 跨 reopen 保留 policy publish/assignment/audit 和 incident lifecycle 状态 |
 | `e2e-postgres-manager-api` | Go backend + manager API test | snapshot-backed Postgres backend 可支撑 manager ingest/query/policy/incident lifecycle API,并跨 reopen 保留 API 写入状态 |

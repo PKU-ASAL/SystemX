@@ -183,8 +183,9 @@ e2e-store-status: ## v3: store backend and migration status are queryable
 e2e-query-pagination: ## v3: query APIs support limit/offset pagination
 	bash harness/e2e-query-pagination.sh
 
-e2e-postgres-store: ## v3: Postgres snapshot adapter can persist manager state through database/sql
+e2e-postgres-store: ## v3: Postgres snapshot adapter can persist state and close database resources
 	cd .. && go test ./internal/store/backend -run TestOpenPostgresRunsMigrationAndPersistsSnapshot
+	cd .. && go test ./internal/store/backend -run TestOpenPostgresResultClosesDatabase
 
 e2e-postgres-idempotency: ## v3: Postgres backend preserves duplicate ingest idempotency across reopen
 	cd .. && go test ./internal/store/backend -run TestOpenPostgresPreservesIdempotentIngestAcrossReopen
