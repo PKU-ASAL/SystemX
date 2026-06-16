@@ -17,10 +17,13 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
@@ -95,6 +98,42 @@ func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
 	}
 }
 
+func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "refresh-scenario"},
+	}
+	runner := &Runner{Config: cfg}
+	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
+	if _, err := runner.spoolEvent(queue, norm, runner.currentFastpath(), sensorEventEnvelope(eventv1.EventKind_EVENT_KIND_WRITE, 100, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
+		t.Fatal(err)
+	}
+	updated := policymodel.DefaultPolicy("default")
+	updated.PolicyID = "no-payload-after-refresh"
+	updated.Version = 2
+	updated.EndpointRules = []string{"download_by_lolbin"}
+	runner.applyRuntimePolicy(updated)
+	if _, err := runner.spoolEvent(queue, norm, runner.currentFastpath(), sensorEventEnvelope(eventv1.EventKind_EVENT_KIND_WRITE, 101, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
+		t.Fatal(err)
+	}
+	batches := loadSpoolBatches(t, filepath.Join(dir, "spool"))
+	if len(batches) != 2 {
+		t.Fatalf("batch count = %d", len(batches))
+	}
+	signalCounts := []int{len(batches[0].GetSignals()), len(batches[1].GetSignals())}
+	if !containsInt(signalCounts, 1) || !containsInt(signalCounts, 0) {
+		t.Fatalf("signal counts = %v, want one pre-refresh signal and one post-refresh suppressed signal", signalCounts)
+	}
+	if runner.activePolicy().PolicyID != "no-payload-after-refresh" || runner.activePolicy().Version != 2 {
+		t.Fatalf("active policy = %+v", runner.activePolicy())
+	}
+}
+
 func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
@@ -163,6 +202,12 @@ func TestRunnerDrainOnceUploadsAndAcksSpool(t *testing.T) {
 	}
 	var uploads int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		if r.URL.Path != "/api/v1/upload" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -213,6 +258,12 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/api/v1/upload":
 			w.Header().Set("content-type", "application/json")
@@ -283,6 +334,12 @@ func TestRunnerBackgroundUploadLoopBacksOffAndRecovers(t *testing.T) {
 	uploaded := make(chan struct{})
 	var closeUploaded sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/api/v1/upload":
 			mu.Lock()
@@ -419,6 +476,12 @@ func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
 	}
 	uploaded := make(chan analyticsv1.UploadBatch, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/api/v1/upload":
 			body, err := io.ReadAll(r.Body)
@@ -537,6 +600,12 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	oldID := oldBatch.GetEvents()[0].GetId()
 	uploadCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		if r.URL.Path != "/api/v1/upload" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -604,6 +673,12 @@ func TestRunnerReportsHealthToManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
 			t.Errorf("token header = %q", got)
 		}
@@ -681,6 +756,12 @@ func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
 		healths []map[string]any
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveDefaultPolicy(t, w, r) {
+			return
+		}
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
 			t.Errorf("token header = %q", got)
 		}
@@ -763,6 +844,9 @@ func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
 func TestRunnerReportsStartupFailureHealthToManager(t *testing.T) {
 	reported := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveNoPendingResponses(t, w, r) {
+			return
+		}
 		if got := r.Header.Get("X-SysArmor-Agent-Token"); got != "dev-token" {
 			t.Errorf("token header = %q", got)
 		}
@@ -1114,8 +1198,54 @@ type healthOnlySensor struct {
 	health contract.Health
 }
 
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+type eventSensor struct {
+	events []contract.EventEnvelope
+	ch     chan contract.EventEnvelope
+	health contract.Health
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 type capabilityErrorSensor struct {
 	err error
+}
+
+func newStreamingEventSensor() *eventSensor {
+	s := newEventSensor(nil)
+	s.ch = make(chan contract.EventEnvelope, 16)
+	return s
+}
+
+func (s *eventSensor) emit(ev contract.EventEnvelope) {
+	s.ch <- ev
+}
+
+func newEventSensor(events []contract.EventEnvelope) *eventSensor {
+	return &eventSensor{
+		events: events,
+		health: contract.Health{
+			Backend:      "test",
+			Installed:    true,
+			Running:      true,
+			Version:      "test",
+			PolicyLoaded: true,
+		},
+	}
 }
 
 func (s *capabilityErrorSensor) Capability(context.Context) (contract.Capability, error) {
@@ -1163,6 +1293,78 @@ func (s *healthOnlySensor) Health(context.Context) (contract.Health, error) {
 	return s.health, nil
 }
 
+func (s *eventSensor) Capability(context.Context) (contract.Capability, error) {
+	return contract.Capability{Backend: "test", Version: "test", SupportsExec: true, SupportsFile: true, SupportsHealth: true}, nil
+}
+
+func (s *eventSensor) Apply(context.Context, contract.CollectionIntent) error {
+	s.health.PolicyLoaded = true
+	return nil
+}
+
+func (s *eventSensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	out := make(chan contract.EventEnvelope)
+	events := append([]contract.EventEnvelope(nil), s.events...)
+	go func() {
+		defer close(out)
+		for _, ev := range events {
+			select {
+			case <-ctx.Done():
+				return
+			case out <- ev:
+				s.health.EventsSeen++
+				s.health.LastEventAt = time.Now().UTC()
+			}
+		}
+		if s.ch == nil {
+			<-ctx.Done()
+			return
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev := <-s.ch:
+				select {
+				case <-ctx.Done():
+					return
+				case out <- ev:
+					s.health.EventsSeen++
+					s.health.LastEventAt = time.Now().UTC()
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (s *eventSensor) Enforce(_ context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {
+	return contract.UnsupportedAck(cmd, "test sensor"), nil
+}
+
+func (s *eventSensor) Health(context.Context) (contract.Health, error) {
+	return s.health, nil
+}
+
+func sensorEventEnvelope(kind eventv1.EventKind, pid uint32, binary, filePath, dst string) contract.EventEnvelope {
+	return contract.EventEnvelope{
+		SensorEvent: &sensorv1.SensorEvent{
+			Kind: kind,
+			Proc: &sensorv1.RawProcess{
+				Pid:         pid,
+				Binary:      binary,
+				StartTimeNs: uint64(time.Now().UnixNano()),
+			},
+			Object: &sensorv1.RawObject{
+				Path: filePath,
+				Dst:  dst,
+			},
+			RawRef: "test-policy-event",
+		},
+		RawRef: "test-policy-event",
+	}
+}
+
 func waitForManagerSignal(t *testing.T, managerURL, name string) {
 	t.Helper()
 	deadline := time.After(2 * time.Second)
@@ -1186,6 +1388,32 @@ func waitForManagerSignal(t *testing.T, managerURL, name string) {
 	}
 }
 
+func serveDefaultPolicy(t *testing.T, w http.ResponseWriter, r *http.Request) bool {
+	t.Helper()
+	if r.URL.Path != "/api/v1/effective-policy" {
+		return false
+	}
+	writeTestJSON(t, w, policymodel.DefaultPolicy(r.URL.Query().Get("tenant_id")))
+	return true
+}
+
+func serveNoPendingResponses(t *testing.T, w http.ResponseWriter, r *http.Request) bool {
+	t.Helper()
+	if r.URL.Path != "/api/v1/responses" {
+		return false
+	}
+	writeTestJSON(t, w, []any{})
+	return true
+}
+
+func writeTestJSON(t *testing.T, w http.ResponseWriter, v any) {
+	t.Helper()
+	w.Header().Set("content-type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
+}
+
 func assertSpoolBatch(t *testing.T, dir string) {
 	t.Helper()
 	batch := loadOnlySpoolBatch(t, dir)
@@ -1194,22 +1422,75 @@ func assertSpoolBatch(t *testing.T, dir string) {
 	}
 }
 
+func waitForOutput(t *testing.T, out interface{ String() string }, want string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		if strings.Contains(out.String(), want) {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for output %q; got %q", want, out.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func waitForSpoolBatches(t *testing.T, dir string, want int) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		matches, err := filepath.Glob(filepath.Join(dir, "*.batch.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) >= want {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d spool batches; got %v", want, matches)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func loadOnlySpoolBatch(t *testing.T, dir string) *analyticsv1.UploadBatch {
+	t.Helper()
+	batches := loadSpoolBatches(t, dir)
+	if len(batches) != 1 {
+		t.Fatalf("spool batches = %d", len(batches))
+	}
+	return batches[0]
+}
+
+func loadSpoolBatches(t *testing.T, dir string) []*analyticsv1.UploadBatch {
 	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "*.batch.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(matches) != 1 {
-		t.Fatalf("spool batches = %v", matches)
+	var batches []*analyticsv1.UploadBatch
+	for _, match := range matches {
+		data, err := os.ReadFile(match)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var batch analyticsv1.UploadBatch
+		if err := protojson.Unmarshal(data, &batch); err != nil {
+			t.Fatalf("decode spool batch: %v\n%s", err, string(data))
+		}
+		batches = append(batches, &batch)
 	}
-	data, err := os.ReadFile(matches[0])
-	if err != nil {
-		t.Fatal(err)
+	return batches
+}
+
+func containsInt(items []int, want int) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
 	}
-	var batch analyticsv1.UploadBatch
-	if err := protojson.Unmarshal(data, &batch); err != nil {
-		t.Fatalf("decode spool batch: %v\n%s", err, string(data))
-	}
-	return &batch
+	return false
 }

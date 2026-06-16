@@ -141,7 +141,13 @@ make e2e-agent-parse-health
 make e2e-agent-backpressure
 
 # v3 policy/control-plane smoke
+make e2e-policy-endpoint-disable
+make e2e-policy-agent-refresh
 make e2e-policy-cloud-disable
+
+# v3 response/enforce observe-only smoke
+make e2e-response-observe-only
+make e2e-response-policy-deny
 
 # 性能基线 smoke
 make perf TOPO=container DUR=10

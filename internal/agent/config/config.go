@@ -18,6 +18,7 @@ type Config struct {
 	Spool   SpoolConfig
 	Upload  UploadConfig
 	Health  HealthConfig
+	Policy  PolicyConfig
 }
 
 type AgentConfig struct {
@@ -80,6 +81,10 @@ type UploadConfig struct {
 
 type HealthConfig struct {
 	Interval time.Duration
+}
+
+type PolicyConfig struct {
+	RefreshInterval time.Duration
 }
 
 func LoadFile(path string) (Config, error) {
@@ -156,6 +161,9 @@ func (c Config) Validate() error {
 	}
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("health.interval must be positive")
+	}
+	if c.Policy.RefreshInterval < 0 {
+		return fmt.Errorf("policy.refresh_interval must be non-negative")
 	}
 	return nil
 }
@@ -245,6 +253,7 @@ func defaults() Config {
 		Spool:   SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
 		Upload:  UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second},
 		Health:  HealthConfig{Interval: 10 * time.Second},
+		Policy:  PolicyConfig{RefreshInterval: 30 * time.Second},
 	}
 }
 
@@ -422,6 +431,17 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("health.interval: %w", err)
 			}
 			cfg.Health.Interval = d
+		default:
+			return unknown(section, key)
+		}
+	case "policy":
+		switch key {
+		case "refresh_interval":
+			d, err := time.ParseDuration(value)
+			if err != nil {
+				return fmt.Errorf("policy.refresh_interval: %w", err)
+			}
+			cfg.Policy.RefreshInterval = d
 		default:
 			return unknown(section, key)
 		}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRepositoryExampleConfigLoads(t *testing.T) {
@@ -81,6 +82,9 @@ upload:
 
 health:
   interval: 10s
+
+policy:
+  refresh_interval: 15s
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -116,6 +120,9 @@ health:
 	}
 	if cfg.Spool.BatchSize != 256 {
 		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)
+	}
+	if cfg.Policy.RefreshInterval != 15*time.Second {
+		t.Fatalf("policy refresh interval = %s", cfg.Policy.RefreshInterval)
 	}
 }
 

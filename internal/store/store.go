@@ -18,21 +18,24 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type Store struct {
-	mu          sync.RWMutex
-	path        string
-	Agents      []*analyticsv1.AgentHello
-	Events      []*eventv1.CanonicalEvent
-	Signals     []*signalv1.Signal
-	Incidents   []*incidentv1.Incident
-	Health      map[string]agenthealth.AgentHealth
-	Rules       []policymodel.RuleContent
-	Policies    []policymodel.Policy
-	Assignments []policymodel.Assignment
-	Metrics     Metrics
+	mu           sync.RWMutex
+	path         string
+	Agents       []*analyticsv1.AgentHello
+	Events       []*eventv1.CanonicalEvent
+	Signals      []*signalv1.Signal
+	Incidents    []*incidentv1.Incident
+	Health       map[string]agenthealth.AgentHealth
+	Rules        []policymodel.RuleContent
+	Policies     []policymodel.Policy
+	Assignments  []policymodel.Assignment
+	Responses    []responsemodel.Command
+	ResponseAcks []responsemodel.Ack
+	Metrics      Metrics
 }
 
 type Metrics struct {
@@ -51,15 +54,17 @@ type Metrics struct {
 }
 
 type diskState struct {
-	Agents      []json.RawMessage         `json:"agents"`
-	Events      []json.RawMessage         `json:"events"`
-	Signals     []json.RawMessage         `json:"signals"`
-	Incidents   []json.RawMessage         `json:"incidents"`
-	Health      []json.RawMessage         `json:"health"`
-	Rules       []policymodel.RuleContent `json:"rules"`
-	Policies    []policymodel.Policy      `json:"policies"`
-	Assignments []policymodel.Assignment  `json:"assignments"`
-	Metrics     Metrics                   `json:"metrics"`
+	Agents       []json.RawMessage         `json:"agents"`
+	Events       []json.RawMessage         `json:"events"`
+	Signals      []json.RawMessage         `json:"signals"`
+	Incidents    []json.RawMessage         `json:"incidents"`
+	Health       []json.RawMessage         `json:"health"`
+	Rules        []policymodel.RuleContent `json:"rules"`
+	Policies     []policymodel.Policy      `json:"policies"`
+	Assignments  []policymodel.Assignment  `json:"assignments"`
+	Responses    []responsemodel.Command   `json:"responses"`
+	ResponseAcks []responsemodel.Ack       `json:"response_acks"`
+	Metrics      Metrics                   `json:"metrics"`
 }
 
 func Open(path string) (*Store, error) {
@@ -116,6 +121,8 @@ func Open(path string) (*Store, error) {
 	s.Rules = state.Rules
 	s.Policies = state.Policies
 	s.Assignments = state.Assignments
+	s.Responses = state.Responses
+	s.ResponseAcks = state.ResponseAcks
 	s.Metrics = state.Metrics
 	return s, nil
 }
@@ -410,6 +417,108 @@ func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector stri
 	return policymodel.DefaultPolicy(tenantID), true
 }
 
+func (s *Store) CreateResponse(cmd responsemodel.Command) responsemodel.Command {
+	cmd = responsemodel.NormalizeCommand(cmd)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Responses {
+		if existing.ResponseID == cmd.ResponseID {
+			cmd.CreatedAt = existing.CreatedAt
+			s.Responses[i] = cmd
+			return cmd
+		}
+	}
+	s.Responses = append(s.Responses, cmd)
+	return cmd
+}
+
+func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	acks := map[string]responsemodel.Ack{}
+	for _, ack := range s.ResponseAcks {
+		acks[ack.ResponseID] = ack
+	}
+	out := make([]responsemodel.AuditRecord, 0, len(s.Responses))
+	for _, cmd := range s.Responses {
+		if tenantID != "" && cmd.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && cmd.AgentID != agentID {
+			continue
+		}
+		record := responsemodel.AuditRecord{Command: cmd}
+		if ack, ok := acks[cmd.ResponseID]; ok {
+			record.Ack = &ack
+		}
+		out = append(out, record)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Command.CreatedAt.Before(out[j].Command.CreatedAt)
+	})
+	return out
+}
+
+func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Command {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]responsemodel.Command, 0, len(s.Responses))
+	acked := map[string]bool{}
+	for _, ack := range s.ResponseAcks {
+		acked[ack.ResponseID] = true
+	}
+	for _, cmd := range s.Responses {
+		if tenantID != "" && cmd.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && cmd.AgentID != agentID {
+			continue
+		}
+		if cmd.Status != "pending" || acked[cmd.ResponseID] {
+			continue
+		}
+		out = append(out, cmd)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool) {
+	if ack.ResponseID == "" {
+		return responsemodel.Command{}, false
+	}
+	if ack.ObservedAt.IsZero() {
+		ack.ObservedAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var command responsemodel.Command
+	var ok bool
+	for i, cmd := range s.Responses {
+		if cmd.ResponseID == ack.ResponseID {
+			cmd.Status = "acked"
+			cmd.UpdatedAt = ack.ObservedAt
+			s.Responses[i] = cmd
+			command = cmd
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return responsemodel.Command{}, false
+	}
+	for i, existing := range s.ResponseAcks {
+		if existing.ResponseID == ack.ResponseID {
+			s.ResponseAcks[i] = ack
+			return command, true
+		}
+	}
+	s.ResponseAcks = append(s.ResponseAcks, ack)
+	return command, true
+}
+
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
 	if scenario == "" {
 		return
@@ -648,6 +757,8 @@ func (s *Store) Save() error {
 	state.Rules = append([]policymodel.RuleContent(nil), s.Rules...)
 	state.Policies = append([]policymodel.Policy(nil), s.Policies...)
 	state.Assignments = append([]policymodel.Assignment(nil), s.Assignments...)
+	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
+	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err

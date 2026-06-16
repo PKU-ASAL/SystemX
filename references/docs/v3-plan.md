@@ -144,15 +144,18 @@ Status: partial implementation started.
   - `GET /api/v1/effective-policy`
 - `sysarmorctl` 支持查询 rules、policies、policy-assignments、effective-policy。
 - analytics 会按 effective policy 的 cloud rule references 启停 cloud convergence rule。
+- agent 启动时会通过 HTTP 拉取 effective policy,并用 endpoint rule references 初始化 endpoint rule engine。
+- agent 会按 `policy.refresh_interval` 周期性刷新 effective policy,并在 policy/rule references 变化时切换 endpoint rule engine。
+- agent health 会报告实际生效 policy id/version/mode。
+- `make -C test e2e-policy-endpoint-disable` 验证 agent 拉取 assigned policy 后禁用 endpoint rule,对应 endpoint signal 不再生成。
+- `make -C test e2e-policy-agent-refresh` 验证无需重启 agent 即可刷新 endpoint policy。
 - `make -C test e2e-policy-cloud-disable` 验证 manager policy assignment 禁用 cloud rule 后不再收敛 incident。
+- daemon 单测验证禁用 endpoint rule 后对应 endpoint signal 不再生成。
 
 仍未完成:
 
-- agent 启动时从 manager 拉取 effective policy。
-- policy refresh/downlink。
-- endpoint rule enable/disable 真正下发到 agent endpoint rule engine。
+- Link1 downlink signal / stream 语义。
 - manager API 的认证/审计/发布状态完整语义。
-- `e2e-policy-endpoint-disable` 和 `e2e-policy-agent-refresh`。
 
 ### Deliverables
 
@@ -214,9 +217,32 @@ make -C test e2e-policy-agent-refresh
 
 ## 7. Phase 2: Response / Enforce Observe-only Skeleton
 
+Status: partial implementation started.
+
 ### Goal
 
 建立可审计的 response/enforce 控制链路,但默认不做生产级真实阻断。
+
+### Current Implementation Slice
+
+已落地的第一刀:
+
+- `internal/response` 定义 observe-only response command / ack / audit record。
+- manager store 可持久化 response commands 和 agent acks。
+- manager HTTP API 支持:
+  - `GET|POST /api/v1/responses`
+  - `POST /api/v1/response-acks`
+- `sysarmorctl responses` 可查询 response audit。
+- agent 在 health loop 中轮询 pending response command,调用 sensor `Enforce`,并强制以 observe-only / executed=false 上报 ack。
+- `make -C test e2e-response-observe-only` 验证 command -> agent observe-only ack -> manager audit 查询闭环。
+- manager 默认 response policy 只允许 observe + collect/noop,拒绝 destructive action 并持久化 denied audit。
+- `make -C test e2e-response-policy-deny` 验证 destructive action 默认拒绝且不会进入 pending。
+
+仍未完成:
+
+- Signal proto 原生 `response_intent` 字段。
+- response policy allowed scopes / approval requirement。
+- Link1 stream response command downlink。
 
 ### Deliverables
 

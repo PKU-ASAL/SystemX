@@ -165,10 +165,19 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, name string, risk uint32, te
 			EventRefs: []string{ev.GetId()},
 			RawRefs:   []string{ev.GetRawRef()},
 			Entities:  entities,
-			Summary:   name,
+			Summary:   responseSummary(name),
 		}
 	}
 	return sig
+}
+
+func responseSummary(name string) string {
+	switch name {
+	case "reverse_shell_pattern":
+		return name + " response_intent=collect recommended_action=collect confidence=80"
+	default:
+		return name
+	}
 }
 
 func (e *Engine) ruleEnabled(name string) bool {

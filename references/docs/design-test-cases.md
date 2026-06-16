@@ -188,8 +188,17 @@ make -C test e2e-agent-detection-container-all
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
+| `e2e-policy-endpoint-disable` | `harness/e2e-policy-endpoint-disable.sh` | 创建 policy、分配给 agent、agent 启动拉取 effective policy、禁用 endpoint rule 后不产生对应 endpoint signal |
+| `e2e-policy-agent-refresh` | `harness/e2e-policy-agent-refresh.sh` | agent 运行中刷新 effective policy,无需重启即可禁用 endpoint rule |
 | `e2e-policy-cloud-disable` | `harness/e2e-policy-cloud-disable.sh` | 创建 policy、分配给 agent、查询 effective policy、禁用 cloud rule 后不产生 cloud signal/incident |
-| `e2e-policy-all` | Make 聚合 | 当前聚合所有 policy/control-plane gate |
+| `e2e-policy-all` | Make 聚合 | 当前聚合 endpoint/cloud policy gate |
+
+Go 单测同时覆盖:
+
+- manager policy API / effective policy resolution。
+- agent 启动拉取 effective policy,并将 endpoint rule references 应用到 endpoint rule engine。
+- agent 周期性刷新 effective policy,并在规则引用变化后切换 endpoint rule engine。
+- agent health 中的 policy id/version/mode 字段。
 
 聚合入口:
 
@@ -197,7 +206,23 @@ make -C test e2e-agent-detection-container-all
 make -C test e2e-policy-all
 ```
 
-### 5.4 Container / VM Runtime Ownership
+### 5.4 Response / Enforce
+
+这些脚本验证 v3 response/enforce 的 observe-only 骨架:manager 能创建 response command,agent 能接收并以非破坏方式返回 ack,manager 能持久化审计记录。
+
+| Make target | 脚本 | 证明什么 |
+|---|---|---|
+| `e2e-response-observe-only` | `harness/e2e-response-observe-only.sh` | 创建 observe response command、agent 返回 observe-only ack、audit 可查询 |
+| `e2e-response-policy-deny` | `harness/e2e-response-policy-deny.sh` | destructive action 默认被 manager 拒绝、audit 标记 denied、不会进入 pending |
+| `e2e-response-all` | Make 聚合 | 当前聚合 response/enforce observe-only gate |
+
+聚合入口:
+
+```bash
+make -C test e2e-response-all
+```
+
+### 5.5 Container / VM Runtime Ownership
 
 这些脚本证明 agent 不只是读取现成事件,而是拥有 sensor process、Tetra subscription 和 runtime policy。
 
@@ -215,7 +240,7 @@ make -C test e2e-policy-all
 
 当前 runtime 总门禁只聚合最关键的 owned container / owned VM,不是把所有 managed smoke 都塞进去。
 
-### 5.5 通用 Capture / Replay
+### 5.6 通用 Capture / Replay
 
 通用入口:
 
@@ -243,7 +268,7 @@ make assert
 - `CAPTURE_MODE=replay` 保留 v1 调试兼容:直接 `tetra getevents` + stream/replay。
 - `expected.yaml` 是场景契约,但当前最硬的断言主要在专门的 `e2e-agent-*.sh` 里。
 
-### 5.6 性能 / 资源
+### 5.7 性能 / 资源
 
 | Make target | 脚本 | 当前能证明什么 | 不能证明什么 |
 |---|---|---|---|
@@ -371,8 +396,12 @@ make -C test e2e-agent-benign-container
 | resource CPU/RSS sampling | `perf-resource` | 部分覆盖 |
 | business impact baseline | 无稳定业务压测器/阈值 | 未覆盖 |
 | policy/rule content 管理与分配 | manager policy API + `e2e-policy-cloud-disable` | 部分覆盖 |
-| endpoint policy 下发/刷新 | agent 尚未 fetch effective policy | 未覆盖 |
-| response/enforce audit | response policy 只有契约样例 | 未覆盖 |
+| endpoint policy 启动拉取与应用 | daemon effective-policy 单测 + `e2e-policy-endpoint-disable` | 已覆盖 |
+| endpoint policy 周期刷新 | daemon refresh 单测 + `e2e-policy-agent-refresh` | 已覆盖 |
+| Link1 policy downlink signal | 尚未实现 stream/downlink | 未覆盖 |
+| response/enforce observe-only audit | `e2e-response-observe-only` | 部分覆盖 |
+| response destructive action deny | `e2e-response-policy-deny` | 部分覆盖 |
+| response allowed scopes / approval | 尚未实现 allowed scopes/approval | 未覆盖 |
 | graph/evidence/incident lifecycle API | 当前 incident/evidence 仍偏 MVP | 部分覆盖 |
 | Postgres durable store | 无 e2e | 未覆盖 |
 | Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |

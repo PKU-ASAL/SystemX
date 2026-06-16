@@ -42,3 +42,6 @@ upload:
 
 health:
   interval: 10s
+
+policy:
+  refresh_interval: 30s

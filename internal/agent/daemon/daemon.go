@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"sync"
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
@@ -20,6 +22,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
@@ -37,6 +40,9 @@ type Runner struct {
 	Sensor     contract.Sensor
 	Out        io.Writer
 	capability contract.Capability
+	mu         sync.RWMutex
+	policy     policymodel.Policy
+	fastpath   *fastpath.Engine
 }
 
 func New(cfg config.Config) (*Runner, error) {
@@ -77,6 +83,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
+	effectivePolicy := r.fetchStartupPolicy(ctx, scopeType, scopeSelector)
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
 		return failStartup("subscribe", err)
@@ -89,6 +96,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("upload", err)
 	}
+	var responseClient *ResponseClient
+	if r.Config.Manager.Transport == "http" {
+		responseClient = NewResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	}
 	uploadCtx := ctx
 	cancelUploads := func() {}
 	if !opts.Once && !opts.DrainOnce {
@@ -97,10 +108,17 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		go runUploadLoop(uploadCtx, worker, r.Config.Spool.FlushInterval)
 	}
 	norm := normalize.New(r.Config.Agent.ID, r.Config.Agent.HostID, nil)
-	fp := fastpath.New()
+	r.setFastpath(fastpath.NewWithRules(effectivePolicy.EndpointRules))
+	refreshCtx := ctx
+	cancelRefresh := func() {}
+	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && r.Config.Manager.Transport == "http" {
+		refreshCtx, cancelRefresh = context.WithCancel(ctx)
+		defer cancelRefresh()
+		go r.runPolicyRefreshLoop(refreshCtx, scopeType, scopeSelector)
+	}
 	if r.Out != nil {
-		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s kinds=%d\n",
-			r.Config.Agent.ID, r.Config.Agent.HostID, r.Config.Agent.TenantID, capability.Backend, capability.Version, len(intent.EventKinds))
+		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s kinds=%d policy=%s version=%d mode=%s\n",
+			r.Config.Agent.ID, r.Config.Agent.HostID, r.Config.Agent.TenantID, capability.Backend, capability.Version, len(intent.EventKinds), effectivePolicy.PolicyID, effectivePolicy.Version, effectivePolicy.Mode)
 	}
 
 	ticker := time.NewTicker(r.Config.Health.Interval)
@@ -132,7 +150,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				}
 				return nil
 			}
-			batchID, err := r.spoolEvent(queue, norm, fp, ev)
+			batchID, err := r.spoolEvent(queue, norm, r.currentFastpath(), ev)
 			if err != nil && !spool.IsBackpressure(err) {
 				return err
 			}
@@ -184,6 +202,11 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_upload_error=%q\n",
 					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.Upload.LastError)
 			}
+			if responseClient != nil {
+				if err := r.pollResponses(ctx, responseClient); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent response poll error: %v\n", err)
+				}
+			}
 			if opts.Once {
 				return nil
 			}
@@ -227,8 +250,8 @@ func (r *Runner) reportStartupFailure(reporter *agenthealth.Reporter, startedAt 
 		TenantID:      r.Config.Agent.TenantID,
 		Scope:         r.runtimeScope(),
 		Status:        "degraded",
-		PolicyID:      policymodel.DefaultPolicyID,
-		PolicyVersion: policymodel.DefaultPolicyVersion,
+		PolicyID:      r.activePolicy().PolicyID,
+		PolicyVersion: r.activePolicy().Version,
 		PolicyMode:    r.policyMode(),
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    time.Now().UTC(),
@@ -308,8 +331,8 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 		TenantID:      r.Config.Agent.TenantID,
 		Scope:         r.runtimeScope(),
 		Status:        status,
-		PolicyID:      policymodel.DefaultPolicyID,
-		PolicyVersion: policymodel.DefaultPolicyVersion,
+		PolicyID:      r.activePolicy().PolicyID,
+		PolicyVersion: r.activePolicy().Version,
 		PolicyMode:    r.policyMode(),
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    now,
@@ -370,10 +393,125 @@ func (r *Runner) runtimeScope() agenthealth.RuntimeScope {
 }
 
 func (r *Runner) policyMode() string {
+	if mode := r.activePolicy().Mode; mode != "" {
+		return mode
+	}
 	if r.Config.Sensor.ObserveOnly {
 		return "observe"
 	}
 	return "enforce"
+}
+
+func (r *Runner) fetchStartupPolicy(ctx context.Context, scopeType, scopeSelector string) policymodel.Policy {
+	defaultPolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
+	r.setPolicy(defaultPolicy)
+	if r.Config.Manager.Transport != "http" {
+		return defaultPolicy
+	}
+	client := NewPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	policy, err := client.EffectivePolicy(ctx, EffectivePolicyRequest{
+		TenantID:      r.Config.Agent.TenantID,
+		AgentID:       r.Config.Agent.ID,
+		ScopeType:     scopeType,
+		ScopeSelector: scopeSelector,
+	})
+	if err != nil {
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent policy fetch error: %v; using default policy\n", err)
+		}
+		return defaultPolicy
+	}
+	policy = policymodel.Normalize(policy)
+	r.setPolicy(policy)
+	return policy
+}
+
+func (r *Runner) activePolicy() policymodel.Policy {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.policy.PolicyID != "" {
+		return r.policy
+	}
+	return policymodel.DefaultPolicy(r.Config.Agent.TenantID)
+}
+
+func (r *Runner) setPolicy(policy policymodel.Policy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.policy = policy
+}
+
+func (r *Runner) currentFastpath() *fastpath.Engine {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.fastpath != nil {
+		return r.fastpath
+	}
+	return fastpath.New()
+}
+
+func (r *Runner) setFastpath(engine *fastpath.Engine) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.fastpath = engine
+}
+
+func (r *Runner) runPolicyRefreshLoop(ctx context.Context, scopeType, scopeSelector string) {
+	interval := r.Config.Policy.RefreshInterval
+	if interval <= 0 {
+		return
+	}
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			changed, err := r.refreshPolicy(ctx, scopeType, scopeSelector)
+			if err != nil && r.Out != nil {
+				fmt.Fprintf(r.Out, "agent policy refresh error: %v\n", err)
+			}
+			if changed && r.Out != nil {
+				policy := r.activePolicy()
+				fmt.Fprintf(r.Out, "agent policy refreshed: policy=%s version=%d mode=%s\n", policy.PolicyID, policy.Version, policy.Mode)
+			}
+			timer.Reset(interval)
+		}
+	}
+}
+
+func (r *Runner) refreshPolicy(ctx context.Context, scopeType, scopeSelector string) (bool, error) {
+	client := NewPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	policy, err := client.EffectivePolicy(ctx, EffectivePolicyRequest{
+		TenantID:      r.Config.Agent.TenantID,
+		AgentID:       r.Config.Agent.ID,
+		ScopeType:     scopeType,
+		ScopeSelector: scopeSelector,
+	})
+	if err != nil {
+		return false, err
+	}
+	policy = policymodel.Normalize(policy)
+	current := r.activePolicy()
+	if samePolicyRuntime(current, policy) {
+		return false, nil
+	}
+	r.applyRuntimePolicy(policy)
+	return true, nil
+}
+
+func (r *Runner) applyRuntimePolicy(policy policymodel.Policy) {
+	policy = policymodel.Normalize(policy)
+	r.setPolicy(policy)
+	r.setFastpath(fastpath.NewWithRules(policy.EndpointRules))
+}
+
+func samePolicyRuntime(a, b policymodel.Policy) bool {
+	return a.PolicyID == b.PolicyID &&
+		a.Version == b.Version &&
+		a.Mode == b.Mode &&
+		reflect.DeepEqual(a.EndpointRules, b.EndpointRules)
 }
 
 func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
@@ -457,6 +595,37 @@ func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (s
 		Signals: signals,
 	}
 	return queue.Append(batch)
+}
+
+func (r *Runner) pollResponses(ctx context.Context, client *ResponseClient) error {
+	commands, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
+	if err != nil {
+		return err
+	}
+	for _, cmd := range commands {
+		ack := r.executeResponse(ctx, cmd)
+		if err := client.Ack(ctx, ack); err != nil {
+			return err
+		}
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command) responsemodel.Ack {
+	cmd.Mode = responsemodel.DefaultMode
+	ack, err := r.Sensor.Enforce(ctx, responsemodel.ToEnforcement(cmd))
+	if err != nil {
+		ack = contract.UnsupportedAck(responsemodel.ToEnforcement(cmd), err.Error())
+	}
+	out := responsemodel.FromEnforcementAck(cmd, ack)
+	out.TenantID = r.Config.Agent.TenantID
+	out.AgentID = r.Config.Agent.ID
+	out.ObserveOnly = true
+	out.Executed = false
+	return out
 }
 
 func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {

@@ -18,6 +18,7 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -69,6 +70,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/policies", s.policies)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
+	mux.HandleFunc("/api/v1/responses", s.responses)
+	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/events", s.events)
@@ -419,6 +422,87 @@ func (s *Server) effectivePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, policy)
+}
+
+func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query()
+		if q.Get("pending") == "true" {
+			writeJSON(w, s.store.PendingResponses(q.Get("tenant_id"), q.Get("agent_id")))
+			return
+		}
+		writeJSON(w, s.store.ListResponses(q.Get("tenant_id"), q.Get("agent_id")))
+	case http.MethodPost:
+		var cmd responsemodel.Command
+		if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
+			http.Error(w, fmt.Sprintf("decode response command: %v", err), http.StatusBadRequest)
+			return
+		}
+		if cmd.AgentID == "" {
+			http.Error(w, "agent_id is required", http.StatusBadRequest)
+			return
+		}
+		if cmd.PolicyID == "" {
+			policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
+			cmd.PolicyID = policy.PolicyID
+			cmd.PolicyVersion = policy.Version
+		}
+		if decision := responsemodel.ValidateCommand(cmd); !decision.Allowed {
+			cmd = responsemodel.NormalizeCommand(cmd)
+			cmd.Status = "denied"
+			if cmd.Reason == "" {
+				cmd.Reason = decision.Reason
+			} else {
+				cmd.Reason = cmd.Reason + "; denied: " + decision.Reason
+			}
+			cmd = s.store.CreateResponse(cmd)
+			if err := s.store.Save(); err != nil {
+				http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusForbidden)
+			writeJSON(w, responsemodel.AuditRecord{Command: cmd})
+			return
+		}
+		cmd = s.store.CreateResponse(cmd)
+		if err := s.store.Save(); err != nil {
+			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, cmd)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var ack responsemodel.Ack
+	if err := json.NewDecoder(r.Body).Decode(&ack); err != nil {
+		http.Error(w, fmt.Sprintf("decode response ack: %v", err), http.StatusBadRequest)
+		return
+	}
+	if ack.AgentID == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	if _, ok := s.store.AckResponse(ack); !ok {
+		http.Error(w, "response command not found", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
 }
 
 func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
