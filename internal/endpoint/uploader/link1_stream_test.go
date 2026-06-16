@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,5 +98,29 @@ func TestStreamUploaderReconnectDuplicateBatchDoesNotAmplifyIngest(t *testing.T)
 	sessions := st.ListLink1Sessions("default", "stream-reconnect-agent")
 	if len(sessions) != 1 || sessions[0].LastAckCursor != batch.GetBatchId() || sessions[0].Transport != "stream" {
 		t.Fatalf("sessions = %+v", sessions)
+	}
+}
+
+func TestStreamUploaderReportsServerErrorFrame(t *testing.T) {
+	st := &store.Store{}
+	linkSrv := transportlink1.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, transportlink1.NewGRPCServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	up := NewStreamUploaderWithTimeout(lis.Addr().String(), time.Second)
+	ack, err := up.Upload(&analyticsv1.UploadBatch{BatchId: "stream-error-batch"})
+	if err == nil || !strings.Contains(err.Error(), "agent identity is required") {
+		t.Fatalf("Upload() error = %v, ack=%#v", err, ack)
+	}
+	if ack == nil || ack.GetOk() || !strings.Contains(ack.GetMessage(), "agent identity is required") {
+		t.Fatalf("ack = %#v", ack)
 	}
 }

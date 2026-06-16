@@ -207,6 +207,7 @@ e2e-link1-stream-health: ## v3: Link1 gRPC stream accepts agent health heartbeat
 
 e2e-link1-stream-upload: ## v3: agent uploader can upload through Link1 gRPC stream
 	cd .. && go test ./internal/endpoint/uploader -run TestStreamUploaderUploadsThroughLink1Stream
+	cd .. && go test ./internal/endpoint/uploader -run TestStreamUploaderReportsServerErrorFrame
 
 e2e-link1-stream-reconnect: ## v3: agent stream uploader reconnect duplicate batch does not amplify ingest
 	cd .. && go test ./internal/endpoint/uploader -run TestStreamUploaderReconnectDuplicateBatchDoesNotAmplifyIngest

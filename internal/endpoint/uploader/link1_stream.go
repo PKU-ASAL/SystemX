@@ -68,6 +68,13 @@ func (u *StreamUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.Up
 	if err != nil {
 		return nil, err
 	}
+	if frame.GetType() == "error" {
+		var result streamUploadResult
+		if err := json.Unmarshal(frame.GetPayloadJson(), &result); err != nil {
+			return nil, fmt.Errorf("decode stream error result: %w", err)
+		}
+		return &analyticsv1.UploadAck{Ok: false, Message: result.Message}, fmt.Errorf("stream upload rejected: %s", result.Message)
+	}
 	if frame.GetType() != "upload" {
 		return nil, fmt.Errorf("unexpected stream response type %q", frame.GetType())
 	}

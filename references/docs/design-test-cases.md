@@ -287,7 +287,7 @@ make -C test e2e-postgres-all
 | `e2e-link1-frames` | `harness/e2e-link1-frames.sh` | Link1 uplink frame 可提交 upload、health、ack、evidence pullback result、error,并落到 session、health、response audit、pullback 状态 |
 | `e2e-link1-grpc-stream` | Go stream contract test | gRPC bidi stream 可先发 hello 获取 downlink frames,再通过同一 stream 提交 upload frame 并推进 session cursor |
 | `e2e-link1-stream-health` | Go stream contract test | gRPC stream 可接收 agent health heartbeat frame,并更新 manager agent health |
-| `e2e-link1-stream-upload` | Go stream uploader test | agent uploader 可通过 Link1 gRPC stream 上传 batch,manager session cursor 记录为 stream transport |
+| `e2e-link1-stream-upload` | Go stream uploader test | agent uploader 可通过 Link1 gRPC stream 上传 batch,manager session cursor 记录为 stream transport;服务端 error frame 会被客户端识别为失败 |
 | `e2e-link1-stream-reconnect` | Go stream uploader test | agent uploader 重新连接后重复上传同一 batch 不会放大 event/signal |
 | `e2e-link1-stream-resume` | Go stream resume test | agent 可通过 Link1 stream downlink 获取 resume cursor,启动时删除 cursor 及之前的本地 spool batch |
 | `e2e-link1-policy-downlink` | Go stream policy test | agent 可通过 Link1 stream downlink 拉取 effective policy,并获得 endpoint rule references |
@@ -509,6 +509,7 @@ make -C test e2e-agent-benign-container
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP/gRPC 单测 | 部分覆盖 |
 | Link1 stream health heartbeat frame | `e2e-link1-stream-health` + stream health reporter 单测 | 部分覆盖 |
 | Link1 stream reconnect duplicate protection | `e2e-link1-stream-reconnect` | 部分覆盖 |
+| Link1 stream upload error-frame handling | `e2e-link1-stream-upload` | 部分覆盖 |
 | agent 默认 stream transport | config 示例/默认值单测 + Link1 stream gates | 部分覆盖 |
 | Link1 evidence pullback request/result | `e2e-link1-downlink` / `e2e-link1-frames` / `e2e-link1-evidence-pullback` + HTTP/CLI/store 单测 | 部分覆盖 |
 | Link1 uplink frame contract | `e2e-link1-frames` + HTTP 单测 | 部分覆盖 |
