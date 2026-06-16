@@ -85,6 +85,22 @@ func TestListIncidentsFiltersScenario(t *testing.T) {
 	}
 }
 
+func TestStoreInfoReportsBackendAndVersions(t *testing.T) {
+	memory := (&Store{}).Info()
+	if memory.Backend != "memory" || memory.Path != "" || memory.StateVersion == 0 || memory.PostgresSchema == 0 {
+		t.Fatalf("memory store info = %+v", memory)
+	}
+	path := filepath.Join(t.TempDir(), "store.json")
+	fileStore, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := fileStore.Info()
+	if file.Backend != "file" || file.Path != path || file.MigrationVersion != FileStoreStateVersion {
+		t.Fatalf("file store info = %+v", file)
+	}
+}
+
 func TestIncidentLifecycleStatusPersistsAcrossUpsert(t *testing.T) {
 	st := &Store{}
 	inc := &incidentv1.Incident{

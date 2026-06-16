@@ -242,7 +242,22 @@ make -C test e2e-response-all
 make -C test e2e-graph-all
 ```
 
-### 5.6 Container / VM Runtime Ownership
+### 5.6 Store / Postgres Foundation
+
+这些脚本验证 v3 durable store 的早期地基:manager 能报告当前 store backend、state/migration version,并且 Postgres schema version 已进入代码和门禁。注意这还不是完整 Postgres adapter 门禁。
+
+| Make target | 脚本 | 证明什么 |
+|---|---|---|
+| `e2e-store-status` | `harness/e2e-store-status.sh` | manager file backend、state version、migration version、Postgres schema version 可通过 CLI 查询 |
+| `e2e-postgres-all` | Make 聚合 | 当前聚合 Postgres foundation gate |
+
+聚合入口:
+
+```bash
+make -C test e2e-postgres-all
+```
+
+### 5.7 Container / VM Runtime Ownership
 
 这些脚本证明 agent 不只是读取现成事件,而是拥有 sensor process、Tetra subscription 和 runtime policy。
 
@@ -260,7 +275,7 @@ make -C test e2e-graph-all
 
 当前 runtime 总门禁只聚合最关键的 owned container / owned VM,不是把所有 managed smoke 都塞进去。
 
-### 5.7 通用 Capture / Replay
+### 5.8 通用 Capture / Replay
 
 通用入口:
 
@@ -431,7 +446,8 @@ make -C test e2e-agent-benign-container
 | incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
 | incident lifecycle attach evidence | `e2e-incident-attach-evidence` + store 单测 | 部分覆盖 |
 | incident lifecycle merge | `e2e-incident-merge` + store 单测 | 部分覆盖 |
-| Postgres durable store | 无 e2e | 未覆盖 |
+| Postgres schema + store backend 可观测 | `e2e-store-status` + migration 单测 | 部分覆盖 |
+| Postgres durable store adapter | 尚未实现真实 Postgres adapter | 未覆盖 |
 | Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |
 
@@ -444,7 +460,7 @@ make -C test e2e-agent-benign-container
 - **已对齐**: runtime、reliability、container detection、owned container/VM、health、短窗口性能和资源采样都有真实脚本入口。
 - **部分对齐**: 通用 `capture/assert/report` 还保留历史 replay/Phase1 表述,当前最可靠断言在专门 e2e 脚本里。
 - **已修正**: `test/policies/README.md` 和 `test/SCENARIOS.md` 已更新为当前口径:agent-managed 主路径已存在,完整 policy/rule content 控制面仍未闭环。
-- **未覆盖**: 业务无干扰评估、policy/rule 下发版本化、response audit、graph/evidence lifecycle、Postgres、Link1 双向 stream、XDR adapters。
+- **未覆盖**: 业务无干扰评估、完整 Postgres adapter、Link1 双向 stream、XDR adapters。
 
 所以当前可以客观说:
 

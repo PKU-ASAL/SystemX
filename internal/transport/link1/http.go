@@ -111,11 +111,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/incident-lifecycle", s.incidentLifecycle)
 	mux.HandleFunc("/api/v1/incident-merge", s.incidentMerge)
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
+	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	return mux
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]any{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "store": s.store.Info()})
 }
 
 func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
@@ -488,6 +489,14 @@ func (s *Server) incidentMerge(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.store.MetricsSnapshot())
+}
+
+func (s *Server) storeStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, s.store.Info())
 }
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) {

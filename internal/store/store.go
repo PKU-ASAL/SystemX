@@ -19,8 +19,11 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+const FileStoreStateVersion = 1
 
 type Store struct {
 	mu           sync.RWMutex
@@ -36,6 +39,14 @@ type Store struct {
 	Responses    []responsemodel.Command
 	ResponseAcks []responsemodel.Ack
 	Metrics      Metrics
+}
+
+type Info struct {
+	Backend          string `json:"backend"`
+	Path             string `json:"path,omitempty"`
+	StateVersion     int    `json:"state_version"`
+	MigrationVersion int    `json:"migration_version"`
+	PostgresSchema   int    `json:"postgres_schema_version"`
 }
 
 type Metrics struct {
@@ -125,6 +136,20 @@ func Open(path string) (*Store, error) {
 	s.ResponseAcks = state.ResponseAcks
 	s.Metrics = state.Metrics
 	return s, nil
+}
+
+func (s *Store) Info() Info {
+	backend := "file"
+	if s.path == "" {
+		backend = "memory"
+	}
+	return Info{
+		Backend:          backend,
+		Path:             s.path,
+		StateVersion:     FileStoreStateVersion,
+		MigrationVersion: FileStoreStateVersion,
+		PostgresSchema:   migrations.PostgresVersion,
+	}
 }
 
 func (s *Store) AddAgent(agent *analyticsv1.AgentHello) {

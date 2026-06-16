@@ -157,6 +157,10 @@ make e2e-incident-lifecycle
 make e2e-incident-attach-evidence
 make e2e-incident-merge
 
+# v3 store/Postgres foundation smoke
+make e2e-store-status
+make e2e-postgres-all
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10

@@ -97,6 +97,8 @@ func query(mgr string, args []string) ([]byte, error) {
 		return httpGet(base + "/api/v1/agent-health?" + q.Encode())
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
+	case "store-status":
+		return httpGet(base + "/api/v1/store-status")
 	case "rules":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

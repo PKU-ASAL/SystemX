@@ -413,9 +413,30 @@ make -C test e2e TOPO=container SCENARIO=apt-staged-drop DUR=12
 
 ## 9. Phase 4: Postgres Store
 
+Status: foundation implementation started.
+
 ### Goal
 
 把 file-backed MVP store 推进到 durable platform store。
+
+### Current Implementation Slice
+
+已落地的第一刀:
+
+- `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、events、signals、incidents、incident_events、evidence、response_audit、metrics 和基础查询索引。
+- file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
+- manager `/healthz` 会返回 store backend 信息。
+- manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
+- `make -C test e2e-store-status` 验证 manager file backend 和 Postgres schema version 可观测。
+- `make -C test e2e-postgres-all` 当前聚合 Postgres foundation gate。
+
+仍未完成:
+
+- 真实 Postgres store adapter。
+- manager `--store-backend postgres` / DSN 配置。
+- migration runner against live Postgres。
+- ingest/query/policy/incident e2e 在 Postgres 后端运行。
+- pagination。
 
 ### Deliverables
 
@@ -465,6 +486,7 @@ go test ./...
 make -C test e2e-postgres-store
 make -C test e2e-postgres-idempotency
 make -C test e2e-postgres-policy-persistence
+make -C test e2e-store-status
 ```
 
 ## 10. Phase 5: Link1 Bidirectional Stream
