@@ -50,9 +50,14 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 	st.ConfigureBackend(info, func(state store.State) error {
 		return saveSnapshot(context.Background(), db, state)
 	})
-	st.ConfigureQueryHooks(func(scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
-		return queryEvents(context.Background(), db, scenario, kind)
-	})
+	st.ConfigureQueryHooks(
+		func(scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
+			return queryEvents(context.Background(), db, scenario, kind)
+		},
+		func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
+			return querySignals(context.Background(), db, scenario, layer, terminalOnly)
+		},
+	)
 	return st, nil
 }
 
@@ -161,6 +166,36 @@ ORDER BY observed_at ASC, event_id ASC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate postgres events: %w", err)
+	}
+	return out, nil
+}
+
+func querySignals(ctx context.Context, db *sql.DB, scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM signals
+WHERE ($1 = '' OR scenario = $1)
+  AND ($2 = '' OR layer = $2)
+  AND ($3 = false OR terminal = true)
+ORDER BY observed_at ASC, signal_key ASC
+`, scenario, layer, terminalOnly)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres signals: %w", err)
+	}
+	defer rows.Close()
+	out := []*signalv1.Signal{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres signal: %w", err)
+		}
+		signal := &signalv1.Signal{}
+		if err := protojson.Unmarshal(raw, signal); err != nil {
+			return nil, fmt.Errorf("decode postgres signal: %w", err)
+		}
+		out = append(out, signal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres signals: %w", err)
 	}
 	return out, nil
 }
