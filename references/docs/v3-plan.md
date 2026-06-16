@@ -538,6 +538,7 @@ Status: foundation implementation started.
 - agent 已支持通过 Link1 stream `hello` downlink 拉取 effective policy update,并将 endpoint rule references 应用到 runtime fastpath。
 - agent 已支持通过 Link1 stream downlink 拉取 pending response command,执行 observe-only `Enforce`,并通过 stream `ack` frame 回写 response audit。
 - agent 已支持通过 Link1 stream downlink 拉取 pending evidence pullback request,回传最小 target evidence subgraph,result 被 manager 完成并附加到 incident evidence。
+- agent 配置默认 `manager.transport` 已切换为 `stream`;示例配置默认使用 Link1 stream,显式 `transport: http` / `grpc` 仍作为兼容路径保留。
 - agent/upload worker 单测覆盖 resume cursor 清理本地 spool、空 cursor no-op、resume source 失败不删除 batch。
 - `make -C test e2e-link1-session` 验证同一 agent 连续上传会推进 session cursor。
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy、pending response command 和 pending evidence pullback request。
@@ -554,7 +555,6 @@ Status: foundation implementation started.
 
 仍未完成:
 
-- agent daemon/upload worker 默认切换到真正 stream transport。
 - stream 长连接/reconnect/heartbeat 的生产级可靠性语义。
 
 ### Deliverables

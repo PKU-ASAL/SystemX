@@ -13,11 +13,54 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFile(agent.example.yaml) error = %v", err)
 	}
+	if cfg.Manager.Transport != "stream" {
+		t.Fatalf("example manager transport = %q, want stream", cfg.Manager.Transport)
+	}
 	if cfg.Sensor.EventSource != "" {
 		t.Fatalf("example event_source = %q, want managed mode empty source", cfg.Sensor.EventSource)
 	}
 	if cfg.Sensor.TetraPath == "" || cfg.Sensor.TetragonPath == "" {
 		t.Fatalf("example managed tetragon paths missing: %+v", cfg.Sensor)
+	}
+}
+
+func TestDefaultManagerTransportIsStream(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: 127.0.0.1:9443
+
+sensor:
+  backend: fake
+  mode: managed
+  policy_path: test/policies/collection.yaml
+
+spool:
+  path: /tmp/sysarmor-agent-spool
+  max_bytes: 268435456
+  batch_size: 256
+  flush_interval: 1s
+
+upload:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if cfg.Manager.Transport != "stream" {
+		t.Fatalf("default manager transport = %q, want stream", cfg.Manager.Transport)
 	}
 }
 

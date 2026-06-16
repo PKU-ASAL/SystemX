@@ -33,7 +33,7 @@ func main() {
 	}
 
 	manager := flag.String("manager", "127.0.0.1:9443", "sysarmor-manager address")
-	transport := flag.String("transport", "http", "upload transport: http, grpc or stream")
+	transport := flag.String("transport", "stream", "upload transport: stream, http or grpc")
 	agentID := flag.String("agent-id", "agent-dev", "agent identifier")
 	hostID := flag.String("host-id", "host-dev", "host identifier")
 	tenantID := flag.String("tenant-id", "default", "tenant identifier")

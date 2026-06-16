@@ -275,7 +275,7 @@ make -C test e2e-postgres-all
 
 ### 5.7 Link1 Stream Foundation
 
-这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 resume、policy、response 和 evidence pullback 请求,uplink 也能回传 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。
+这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 resume、policy、response 和 evidence pullback 请求,uplink 也能回传 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。agent 配置默认 transport 已切到 `stream`;历史 runtime 脚本显式使用 `transport: http` 是为了保留 HTTP 兼容回归面。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -502,6 +502,7 @@ make -C test e2e-agent-benign-container
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP/gRPC 单测 | 部分覆盖 |
 | Link1 stream health heartbeat frame | `e2e-link1-stream-health` | 部分覆盖 |
 | Link1 stream reconnect duplicate protection | `e2e-link1-stream-reconnect` | 部分覆盖 |
+| agent 默认 stream transport | config 示例/默认值单测 + Link1 stream gates | 部分覆盖 |
 | Link1 evidence pullback request/result | `e2e-link1-downlink` / `e2e-link1-frames` / `e2e-link1-evidence-pullback` + HTTP/CLI/store 单测 | 部分覆盖 |
 | Link1 uplink frame contract | `e2e-link1-frames` + HTTP 单测 | 部分覆盖 |
 | Link1 bidirectional stream/downlink | `e2e-link1-grpc-stream` / `e2e-link1-stream-resume` + gRPC 单测 | 部分覆盖 |
@@ -516,7 +517,7 @@ make -C test e2e-agent-benign-container
 - **已对齐**: runtime、reliability、container detection、owned container/VM、health、短窗口性能和资源采样都有真实脚本入口。
 - **部分对齐**: 通用 `capture/assert/report` 还保留历史 replay/Phase1 表述,当前最可靠断言在专门 e2e 脚本里。
 - **已修正**: `test/policies/README.md` 和 `test/SCENARIOS.md` 已更新为当前口径:agent-managed 主路径已存在,完整 policy/rule content 控制面仍未闭环。
-- **未覆盖**: 业务无干扰评估、完整 Postgres adapter、Link1 双向 stream、XDR adapters。
+- **未覆盖**: 业务无干扰评估、完整 Postgres adapter、Link1 生产级长连接可靠性语义、XDR adapters。
 
 所以当前可以客观说:
 

@@ -248,7 +248,7 @@ func parse(r *os.File) (Config, error) {
 
 func defaults() Config {
 	return Config{
-		Manager: ManagerConfig{Transport: "http"},
+		Manager: ManagerConfig{Transport: "stream"},
 		Sensor:  SensorConfig{Backend: "tetragon", Mode: "managed", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
 		Spool:   SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
 		Upload:  UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second},
