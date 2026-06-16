@@ -160,6 +160,7 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, name string, risk uint32, te
 		Scenario:     ev.GetScenario(),
 	}
 	if terminal {
+		sig.ResponseIntent = responseIntent(name)
 		sig.Evidence = &signalv1.EvidenceBundle{
 			Id:        "evb-" + sig.GetId(),
 			EventRefs: []string{ev.GetId()},
@@ -169,6 +170,20 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, name string, risk uint32, te
 		}
 	}
 	return sig
+}
+
+func responseIntent(name string) *signalv1.ResponseIntent {
+	switch name {
+	case "reverse_shell_pattern":
+		return &signalv1.ResponseIntent{
+			ResponseIntent:    "collect",
+			RecommendedAction: "collect",
+			Confidence:        80,
+			Reason:            "terminal reverse shell pattern",
+		}
+	default:
+		return nil
+	}
 }
 
 func responseSummary(name string) string {

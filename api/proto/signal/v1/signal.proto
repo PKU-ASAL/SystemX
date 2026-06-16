@@ -24,6 +24,13 @@ message EvidenceBundle {
   string summary = 5;
 }
 
+message ResponseIntent {
+  string response_intent = 1;
+  string recommended_action = 2;
+  uint32 confidence = 3;
+  string reason = 4;
+}
+
 message Signal {
   string id = 1;
   string name = 2;
@@ -39,5 +46,5 @@ message Signal {
   EvidenceBundle evidence = 12;
   string scenario = 13;
   bool cross_lineage = 14;
+  ResponseIntent response_intent = 15;
 }
-

@@ -193,6 +193,38 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/responses?" + q.Encode())
+	case "response-decision":
+		req := map[string]string{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--signal-id":
+				i++
+				if i < len(args) {
+					req["signal_id"] = args[i]
+				}
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					req["tenant_id"] = args[i]
+				}
+			case "--agent-id":
+				i++
+				if i < len(args) {
+					req["agent_id"] = args[i]
+				}
+			case "--actor":
+				i++
+				if i < len(args) {
+					req["actor"] = args[i]
+				}
+			case "--target":
+				i++
+				if i < len(args) {
+					req["target"] = args[i]
+				}
+			}
+		}
+		return httpPostJSON(base+"/api/v1/response-decisions", req)
 	case "events":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
@@ -310,4 +342,21 @@ func httpGet(url string) ([]byte, error) {
 		return nil, fmt.Errorf("GET %s: %s: %s", url, resp.Status, string(body))
 	}
 	return body, nil
+}
+
+func httpPostJSON(url string, body any) ([]byte, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("POST %s: %s: %s", url, resp.Status, string(out))
+	}
+	return out, nil
 }

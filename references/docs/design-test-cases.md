@@ -215,6 +215,7 @@ make -C test e2e-policy-all
 | `e2e-response-observe-only` | `harness/e2e-response-observe-only.sh` | 创建 observe response command、agent 返回 observe-only ack、audit 可查询 |
 | `e2e-response-policy-deny` | `harness/e2e-response-policy-deny.sh` | destructive action 默认被 manager 拒绝、audit 标记 denied、不会进入 pending |
 | `e2e-response-scope-deny` | `harness/e2e-response-scope-deny.sh` | response command 的显式 scope 必须匹配 agent health runtime scope,否则 denied 且不进入 pending |
+| `e2e-response-audit` | `harness/e2e-response-audit.sh` | terminal signal 的结构化 response intent 可转换为 observe-only response decision,并进入 audit |
 | `e2e-response-all` | Make 聚合 | 当前聚合 response/enforce observe-only gate |
 
 聚合入口:
@@ -400,6 +401,8 @@ make -C test e2e-agent-benign-container
 | endpoint policy 启动拉取与应用 | daemon effective-policy 单测 + `e2e-policy-endpoint-disable` | 已覆盖 |
 | endpoint policy 周期刷新 | daemon refresh 单测 + `e2e-policy-agent-refresh` | 已覆盖 |
 | Link1 policy downlink signal | 尚未实现 stream/downlink | 未覆盖 |
+| signal response intent 字段 | endpoint fastpath 单测 + `e2e-response-audit` | 部分覆盖 |
+| response intent -> decision | `e2e-response-audit` | 部分覆盖 |
 | response/enforce observe-only audit | `e2e-response-observe-only` | 部分覆盖 |
 | response destructive action deny | `e2e-response-policy-deny` | 部分覆盖 |
 | response allowed scopes | `e2e-response-scope-deny` | 部分覆盖 |

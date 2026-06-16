@@ -37,6 +37,15 @@ type UploadResult struct {
 	Incidents       int
 }
 
+type responseDecisionRequest struct {
+	SignalID string              `json:"signal_id"`
+	TenantID string              `json:"tenant_id"`
+	AgentID  string              `json:"agent_id"`
+	Scope    responsemodel.Scope `json:"scope,omitempty"`
+	Target   string              `json:"target,omitempty"`
+	Actor    string              `json:"actor,omitempty"`
+}
+
 type AgentListItem struct {
 	AgentID        string                       `json:"agent_id"`
 	HostID         string                       `json:"host_id"`
@@ -71,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
+	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
@@ -439,43 +449,103 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("decode response command: %v", err), http.StatusBadRequest)
 			return
 		}
-		if cmd.AgentID == "" {
-			http.Error(w, "agent_id is required", http.StatusBadRequest)
-			return
-		}
-		if cmd.TenantID == "" {
-			cmd.TenantID = "default"
-		}
-		if health, ok := s.store.GetAgentHealth(cmd.TenantID, cmd.AgentID); ok {
-			if cmd.Scope.Type == "" && cmd.Scope.Selector == "" {
-				cmd.Scope = responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}
-			}
-			if decision := responsemodel.ScopeDecision(cmd.Scope, responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}, true); !decision.Allowed {
-				s.denyResponse(w, cmd, decision)
-				return
-			}
-		} else if cmd.Scope.Type != "" || cmd.Scope.Selector != "" {
-			s.denyResponse(w, cmd, responsemodel.Decision{Allowed: false, Reason: "agent runtime scope is required for scoped response command"})
-			return
-		}
-		if cmd.PolicyID == "" {
-			policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
-			cmd.PolicyID = policy.PolicyID
-			cmd.PolicyVersion = policy.Version
-		}
-		if decision := responsemodel.ValidateCommand(cmd); !decision.Allowed {
-			s.denyResponse(w, cmd, decision)
-			return
-		}
-		cmd = s.store.CreateResponse(cmd)
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, cmd)
+		s.createResponse(w, cmd)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req responseDecisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode response decision: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.SignalID == "" {
+		http.Error(w, "signal_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.AgentID == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	sig, ok := s.store.GetSignal(req.SignalID)
+	if !ok {
+		http.Error(w, "signal not found", http.StatusNotFound)
+		return
+	}
+	intent := sig.GetResponseIntent()
+	if intent == nil || intent.GetResponseIntent() == "" {
+		http.Error(w, "signal response intent not found", http.StatusBadRequest)
+		return
+	}
+	action := intent.GetRecommendedAction()
+	if action == "" {
+		action = intent.GetResponseIntent()
+	}
+	target := req.Target
+	if target == "" {
+		target = signalResponseTarget(sig)
+	}
+	reason := fmt.Sprintf("signal=%s name=%s response_intent=%s confidence=%d", sig.GetId(), sig.GetName(), intent.GetResponseIntent(), intent.GetConfidence())
+	if intent.GetReason() != "" {
+		reason += " reason=" + intent.GetReason()
+	}
+	cmd := responsemodel.Command{
+		ResponseID: "resp-" + sig.GetId(),
+		TenantID:   req.TenantID,
+		AgentID:    req.AgentID,
+		SignalID:   sig.GetId(),
+		Scenario:   sig.GetScenario(),
+		Scope:      req.Scope,
+		Action:     action,
+		Mode:       responsemodel.DefaultMode,
+		Target:     target,
+		Reason:     reason,
+		Actor:      req.Actor,
+	}
+	s.createResponse(w, cmd)
+}
+
+func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command) {
+	if cmd.AgentID == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	if cmd.TenantID == "" {
+		cmd.TenantID = "default"
+	}
+	if health, ok := s.store.GetAgentHealth(cmd.TenantID, cmd.AgentID); ok {
+		if cmd.Scope.Type == "" && cmd.Scope.Selector == "" {
+			cmd.Scope = responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}
+		}
+		if decision := responsemodel.ScopeDecision(cmd.Scope, responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}, true); !decision.Allowed {
+			s.denyResponse(w, cmd, decision)
+			return
+		}
+	} else if cmd.Scope.Type != "" || cmd.Scope.Selector != "" {
+		s.denyResponse(w, cmd, responsemodel.Decision{Allowed: false, Reason: "agent runtime scope is required for scoped response command"})
+		return
+	}
+	if cmd.PolicyID == "" {
+		policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
+		cmd.PolicyID = policy.PolicyID
+		cmd.PolicyVersion = policy.Version
+	}
+	if decision := responsemodel.ValidateCommand(cmd); !decision.Allowed {
+		s.denyResponse(w, cmd, decision)
+		return
+	}
+	cmd = s.store.CreateResponse(cmd)
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cmd)
 }
 
 func (s *Server) denyResponse(w http.ResponseWriter, cmd responsemodel.Command, decision responsemodel.Decision) {
@@ -493,6 +563,20 @@ func (s *Server) denyResponse(w http.ResponseWriter, cmd responsemodel.Command, 
 	}
 	w.WriteHeader(http.StatusForbidden)
 	writeJSON(w, responsemodel.AuditRecord{Command: cmd})
+}
+
+func signalResponseTarget(sig *signalv1.Signal) string {
+	for _, entity := range sig.GetEntities() {
+		if entity.GetKind() == "process" && entity.GetKey() != "" {
+			return entity.GetKey()
+		}
+	}
+	for _, entity := range sig.GetEntities() {
+		if entity.GetKey() != "" {
+			return entity.GetKey()
+		}
+	}
+	return ""
 }
 
 func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {

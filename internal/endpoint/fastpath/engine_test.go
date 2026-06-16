@@ -16,11 +16,14 @@ func TestEndpointSignalsForFilelessC2(t *testing.T) {
 	}
 	var names []string
 	var terminal bool
+	var responseIntent bool
 	for _, ev := range events {
 		for _, sig := range e.Process(ev) {
 			names = append(names, sig.GetName())
 			if sig.GetName() == "reverse_shell_pattern" && sig.GetTerminal() && sig.GetEvidence() != nil {
 				terminal = true
+				intent := sig.GetResponseIntent()
+				responseIntent = intent.GetResponseIntent() == "collect" && intent.GetRecommendedAction() == "collect" && intent.GetConfidence() == 80
 			}
 			if len(sig.GetEntities()) == 0 {
 				t.Fatalf("signal %s has no entities", sig.GetName())
@@ -34,6 +37,9 @@ func TestEndpointSignalsForFilelessC2(t *testing.T) {
 	}
 	if !terminal {
 		t.Fatal("reverse_shell_pattern terminal evidence missing")
+	}
+	if !responseIntent {
+		t.Fatal("reverse_shell_pattern response intent missing")
 	}
 }
 

@@ -239,10 +239,13 @@ Status: partial implementation started.
 - `make -C test e2e-response-policy-deny` 验证 destructive action 默认拒绝且不会进入 pending。
 - manager 会用 agent health runtime scope 校验显式 response command scope,错 scope 会 denied 并留下 audit。
 - `make -C test e2e-response-scope-deny` 验证 response command 不能越过 agent runtime scope 边界。
+- Signal proto 已有原生 `response_intent` 字段,endpoint terminal signal 可写入结构化响应意图。
+- manager `POST /api/v1/response-decisions` 可将 signal response intent 转为 observe-only response command。
+- `sysarmorctl response-decision` 可从 terminal signal 创建 response decision。
+- `make -C test e2e-response-audit` 验证 signal intent -> response decision -> audit 查询闭环。
 
 仍未完成:
 
-- Signal proto 原生 `response_intent` 字段。
 - response policy approval requirement。
 - Link1 stream response command downlink。
 

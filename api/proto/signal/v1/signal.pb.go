@@ -206,29 +206,98 @@ func (x *EvidenceBundle) GetSummary() string {
 	return ""
 }
 
+type ResponseIntent struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ResponseIntent    string                 `protobuf:"bytes,1,opt,name=response_intent,json=responseIntent,proto3" json:"response_intent,omitempty"`
+	RecommendedAction string                 `protobuf:"bytes,2,opt,name=recommended_action,json=recommendedAction,proto3" json:"recommended_action,omitempty"`
+	Confidence        uint32                 `protobuf:"varint,3,opt,name=confidence,proto3" json:"confidence,omitempty"`
+	Reason            string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ResponseIntent) Reset() {
+	*x = ResponseIntent{}
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResponseIntent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResponseIntent) ProtoMessage() {}
+
+func (x *ResponseIntent) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResponseIntent.ProtoReflect.Descriptor instead.
+func (*ResponseIntent) Descriptor() ([]byte, []int) {
+	return file_api_proto_signal_v1_signal_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ResponseIntent) GetResponseIntent() string {
+	if x != nil {
+		return x.ResponseIntent
+	}
+	return ""
+}
+
+func (x *ResponseIntent) GetRecommendedAction() string {
+	if x != nil {
+		return x.RecommendedAction
+	}
+	return ""
+}
+
+func (x *ResponseIntent) GetConfidence() uint32 {
+	if x != nil {
+		return x.Confidence
+	}
+	return 0
+}
+
+func (x *ResponseIntent) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type Signal struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Where         SignalWhere            `protobuf:"varint,3,opt,name=where,proto3,enum=sysarmor.signal.v1.SignalWhere" json:"where,omitempty"`
-	BaseRisk      uint32                 `protobuf:"varint,4,opt,name=base_risk,json=baseRisk,proto3" json:"base_risk,omitempty"`
-	LocalRarity   float32                `protobuf:"fixed32,5,opt,name=local_rarity,json=localRarity,proto3" json:"local_rarity,omitempty"`
-	GlobalRarity  float32                `protobuf:"fixed32,6,opt,name=global_rarity,json=globalRarity,proto3" json:"global_rarity,omitempty"`
-	LineageId     string                 `protobuf:"bytes,7,opt,name=lineage_id,json=lineageId,proto3" json:"lineage_id,omitempty"`
-	Entities      []*EntityRef           `protobuf:"bytes,8,rep,name=entities,proto3" json:"entities,omitempty"`
-	EventRefs     []string               `protobuf:"bytes,9,rep,name=event_refs,json=eventRefs,proto3" json:"event_refs,omitempty"`
-	SignalRefs    []string               `protobuf:"bytes,10,rep,name=signal_refs,json=signalRefs,proto3" json:"signal_refs,omitempty"`
-	Terminal      bool                   `protobuf:"varint,11,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	Evidence      *EvidenceBundle        `protobuf:"bytes,12,opt,name=evidence,proto3" json:"evidence,omitempty"`
-	Scenario      string                 `protobuf:"bytes,13,opt,name=scenario,proto3" json:"scenario,omitempty"`
-	CrossLineage  bool                   `protobuf:"varint,14,opt,name=cross_lineage,json=crossLineage,proto3" json:"cross_lineage,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Where          SignalWhere            `protobuf:"varint,3,opt,name=where,proto3,enum=sysarmor.signal.v1.SignalWhere" json:"where,omitempty"`
+	BaseRisk       uint32                 `protobuf:"varint,4,opt,name=base_risk,json=baseRisk,proto3" json:"base_risk,omitempty"`
+	LocalRarity    float32                `protobuf:"fixed32,5,opt,name=local_rarity,json=localRarity,proto3" json:"local_rarity,omitempty"`
+	GlobalRarity   float32                `protobuf:"fixed32,6,opt,name=global_rarity,json=globalRarity,proto3" json:"global_rarity,omitempty"`
+	LineageId      string                 `protobuf:"bytes,7,opt,name=lineage_id,json=lineageId,proto3" json:"lineage_id,omitempty"`
+	Entities       []*EntityRef           `protobuf:"bytes,8,rep,name=entities,proto3" json:"entities,omitempty"`
+	EventRefs      []string               `protobuf:"bytes,9,rep,name=event_refs,json=eventRefs,proto3" json:"event_refs,omitempty"`
+	SignalRefs     []string               `protobuf:"bytes,10,rep,name=signal_refs,json=signalRefs,proto3" json:"signal_refs,omitempty"`
+	Terminal       bool                   `protobuf:"varint,11,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	Evidence       *EvidenceBundle        `protobuf:"bytes,12,opt,name=evidence,proto3" json:"evidence,omitempty"`
+	Scenario       string                 `protobuf:"bytes,13,opt,name=scenario,proto3" json:"scenario,omitempty"`
+	CrossLineage   bool                   `protobuf:"varint,14,opt,name=cross_lineage,json=crossLineage,proto3" json:"cross_lineage,omitempty"`
+	ResponseIntent *ResponseIntent        `protobuf:"bytes,15,opt,name=response_intent,json=responseIntent,proto3" json:"response_intent,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Signal) Reset() {
 	*x = Signal{}
-	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[2]
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -240,7 +309,7 @@ func (x *Signal) String() string {
 func (*Signal) ProtoMessage() {}
 
 func (x *Signal) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[2]
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -253,7 +322,7 @@ func (x *Signal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Signal.ProtoReflect.Descriptor instead.
 func (*Signal) Descriptor() ([]byte, []int) {
-	return file_api_proto_signal_v1_signal_proto_rawDescGZIP(), []int{2}
+	return file_api_proto_signal_v1_signal_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Signal) GetId() string {
@@ -354,6 +423,13 @@ func (x *Signal) GetCrossLineage() bool {
 	return false
 }
 
+func (x *Signal) GetResponseIntent() *ResponseIntent {
+	if x != nil {
+		return x.ResponseIntent
+	}
+	return nil
+}
+
 var File_api_proto_signal_v1_signal_proto protoreflect.FileDescriptor
 
 const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
@@ -369,7 +445,14 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"event_refs\x18\x02 \x03(\tR\teventRefs\x12\x19\n" +
 	"\braw_refs\x18\x03 \x03(\tR\arawRefs\x129\n" +
 	"\bentities\x18\x04 \x03(\v2\x1d.sysarmor.signal.v1.EntityRefR\bentities\x12\x18\n" +
-	"\asummary\x18\x05 \x01(\tR\asummary\"\xff\x03\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\"\xa0\x01\n" +
+	"\x0eResponseIntent\x12'\n" +
+	"\x0fresponse_intent\x18\x01 \x01(\tR\x0eresponseIntent\x12-\n" +
+	"\x12recommended_action\x18\x02 \x01(\tR\x11recommendedAction\x12\x1e\n" +
+	"\n" +
+	"confidence\x18\x03 \x01(\rR\n" +
+	"confidence\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xcc\x04\n" +
 	"\x06Signal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x125\n" +
@@ -388,7 +471,8 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"\bterminal\x18\v \x01(\bR\bterminal\x12>\n" +
 	"\bevidence\x18\f \x01(\v2\".sysarmor.signal.v1.EvidenceBundleR\bevidence\x12\x1a\n" +
 	"\bscenario\x18\r \x01(\tR\bscenario\x12#\n" +
-	"\rcross_lineage\x18\x0e \x01(\bR\fcrossLineage*^\n" +
+	"\rcross_lineage\x18\x0e \x01(\bR\fcrossLineage\x12K\n" +
+	"\x0fresponse_intent\x18\x0f \x01(\v2\".sysarmor.signal.v1.ResponseIntentR\x0eresponseIntent*^\n" +
 	"\vSignalWhere\x12\x1c\n" +
 	"\x18SIGNAL_WHERE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SIGNAL_WHERE_ENDPOINT\x10\x01\x12\x16\n" +
@@ -407,23 +491,25 @@ func file_api_proto_signal_v1_signal_proto_rawDescGZIP() []byte {
 }
 
 var file_api_proto_signal_v1_signal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_api_proto_signal_v1_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_api_proto_signal_v1_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_api_proto_signal_v1_signal_proto_goTypes = []any{
 	(SignalWhere)(0),       // 0: sysarmor.signal.v1.SignalWhere
 	(*EntityRef)(nil),      // 1: sysarmor.signal.v1.EntityRef
 	(*EvidenceBundle)(nil), // 2: sysarmor.signal.v1.EvidenceBundle
-	(*Signal)(nil),         // 3: sysarmor.signal.v1.Signal
+	(*ResponseIntent)(nil), // 3: sysarmor.signal.v1.ResponseIntent
+	(*Signal)(nil),         // 4: sysarmor.signal.v1.Signal
 }
 var file_api_proto_signal_v1_signal_proto_depIdxs = []int32{
 	1, // 0: sysarmor.signal.v1.EvidenceBundle.entities:type_name -> sysarmor.signal.v1.EntityRef
 	0, // 1: sysarmor.signal.v1.Signal.where:type_name -> sysarmor.signal.v1.SignalWhere
 	1, // 2: sysarmor.signal.v1.Signal.entities:type_name -> sysarmor.signal.v1.EntityRef
 	2, // 3: sysarmor.signal.v1.Signal.evidence:type_name -> sysarmor.signal.v1.EvidenceBundle
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	3, // 4: sysarmor.signal.v1.Signal.response_intent:type_name -> sysarmor.signal.v1.ResponseIntent
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_signal_v1_signal_proto_init() }
@@ -437,7 +523,7 @@ func file_api_proto_signal_v1_signal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_signal_v1_signal_proto_rawDesc), len(file_api_proto_signal_v1_signal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

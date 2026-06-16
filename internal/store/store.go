@@ -646,6 +646,20 @@ func (s *Store) ListSignals(scenario, layer string, terminalOnly bool) []*signal
 	return out
 }
 
+func (s *Store) GetSignal(id string) (*signalv1.Signal, bool) {
+	if id == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sig := range s.Signals {
+		if sig.GetId() == id {
+			return sig, true
+		}
+	}
+	return nil, false
+}
+
 func (s *Store) ListIncidents(scenario string) []*incidentv1.Incident {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

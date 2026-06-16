@@ -54,7 +54,7 @@ perf-resource:                ## 采集 EDR 资源占用时间序列
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -133,7 +133,10 @@ e2e-response-policy-deny: ## v3: response policy denies destructive actions by d
 e2e-response-scope-deny: ## v3: response command must match agent runtime scope
 	bash harness/e2e-response-scope-deny.sh
 
-e2e-response-all: e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny ## v3: response/enforce observe-only gates
+e2e-response-audit: ## v3: response intent converts into auditable observe decision
+	bash harness/e2e-response-audit.sh
+
+e2e-response-all: e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit ## v3: response/enforce observe-only gates
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
 	bash harness/e2e-agent-daemon-container.sh
@@ -224,6 +227,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-response-observe-only  v3 observe-only response command and audit"
 	@echo "  e2e-response-policy-deny  v3 response policy denies destructive actions by default"
 	@echo "  e2e-response-scope-deny  v3 response command must match agent runtime scope"
+	@echo "  e2e-response-audit  v3 response intent converts into auditable observe decision"
 	@echo "  e2e-response-all  run all v3 response/enforce gates"
 	@echo "  e2e-agent-daemon-container  v2 container topology daemon smoke"
 	@echo "  e2e-agent-managed-container  v2 container managed fake Tetragon bundle smoke"
