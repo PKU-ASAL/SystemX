@@ -26,10 +26,48 @@ import (
 )
 
 type Server struct {
-	store     *store.Store
+	store     ManagerStore
 	engine    *ingest.Engine
 	authToken string
 }
+
+type ManagerStore interface {
+	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
+	AddAgent(*analyticsv1.AgentHello)
+	AddEvent(*eventv1.CanonicalEvent) bool
+	AddSignal(*signalv1.Signal) bool
+	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
+	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
+	CreateResponse(responsemodel.Command) responsemodel.Command
+	DeleteScenario(string)
+	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
+	EnsureDefaultPolicy(string)
+	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
+	GetIncident(string, string) (*incidentv1.Incident, bool)
+	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
+	GetSignal(string) (*signalv1.Signal, bool)
+	Info() store.Info
+	ListAgentHealth() []agenthealth.AgentHealth
+	ListAgents() []*analyticsv1.AgentHello
+	ListAssignments(string, string) []policymodel.Assignment
+	ListEvents(string, string) []*eventv1.CanonicalEvent
+	ListIncidents(string) []*incidentv1.Incident
+	ListPolicies(string) []policymodel.Policy
+	ListResponses(string, string) []responsemodel.AuditRecord
+	ListRules(string) []policymodel.RuleContent
+	ListSignals(string, string, bool) []*signalv1.Signal
+	MergeIncidents(string, string) (*incidentv1.Incident, bool)
+	MetricsSnapshot() store.Metrics
+	PendingResponses(string, string) []responsemodel.Command
+	RecordUpload(int, int, int, int, time.Duration)
+	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
+	Save() error
+	UpdateIncidentStatus(string, string, string, string, string) (*incidentv1.Incident, bool)
+	UpsertAgentHealth(agenthealth.AgentHealth)
+	UpsertPolicy(policymodel.Policy) policymodel.Policy
+}
+
+var _ ManagerStore = (*store.Store)(nil)
 
 type UploadResult struct {
 	AcceptedEvents  int
@@ -79,12 +117,12 @@ type AgentListItem struct {
 
 var ErrInvalidUpload = errors.New("invalid upload")
 
-func NewServer(st *store.Store) *Server {
+func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
 	return &Server{store: st, engine: ingest.NewEngine()}
 }
 
-func NewServerWithAuth(st *store.Store, token string) *Server {
+func NewServerWithAuth(st ManagerStore, token string) *Server {
 	st.EnsureDefaultPolicy("default")
 	return &Server{store: st, engine: ingest.NewEngine(), authToken: token}
 }

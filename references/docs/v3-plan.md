@@ -425,6 +425,7 @@ Status: foundation implementation started.
 
 - `internal/store/migrations` 定义 Postgres schema v1,覆盖 agents、agent_health、rules、policies、policy_assignments、events、signals、incidents、incident_events、evidence、response_audit、metrics 和基础查询索引。
 - `internal/store/postgres` 提供基于标准库 `database/sql` 的 migration runner,可对 live Postgres 执行 schema v1。
+- `internal/transport/link1` 已提取 `ManagerStore` 接口,manager/Link1 transport 不再直接绑定具体 file store 类型,为 Postgres adapter 接入预留稳定 contract。
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
