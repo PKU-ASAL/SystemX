@@ -181,7 +181,10 @@ e2e-link1-policy-downlink: ## v3: agent can fetch effective policy through Link1
 e2e-link1-response-command: ## v3: agent can ack observe-only response command through Link1 stream
 	cd .. && go test ./internal/agent/daemon -run TestStreamResponseClientFetchesCommandAndAcks
 
-e2e-link1-stream-all: e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-upload e2e-link1-policy-downlink e2e-link1-response-command ## v3: current Link1 stream foundation gates
+e2e-link1-evidence-pullback: ## v3: agent can handle evidence pullback through Link1 stream
+	cd .. && go test ./internal/agent/daemon -run TestStreamEvidenceClientHandlesPullbackResult
+
+e2e-link1-stream-all: e2e-link1-session e2e-link1-downlink e2e-link1-frames e2e-link1-grpc-stream e2e-link1-stream-upload e2e-link1-policy-downlink e2e-link1-response-command e2e-link1-evidence-pullback ## v3: current Link1 stream foundation gates
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
 	bash harness/e2e-agent-daemon-container.sh

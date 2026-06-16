@@ -2,15 +2,18 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
@@ -21,12 +24,14 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type Options struct {
@@ -110,8 +115,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		responseClient = NewResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 	}
 	var streamResponseClient *StreamResponseClient
+	var streamEvidenceClient *StreamEvidenceClient
 	if r.Config.Manager.Transport == "stream" {
 		streamResponseClient = NewStreamResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+		streamEvidenceClient = NewStreamEvidenceClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 	}
 	uploadCtx := ctx
 	cancelUploads := func() {}
@@ -223,6 +230,11 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			if streamResponseClient != nil {
 				if err := r.pollStreamResponses(ctx, streamResponseClient); err != nil && r.Out != nil {
 					fmt.Fprintf(r.Out, "agent stream response poll error: %v\n", err)
+				}
+			}
+			if streamEvidenceClient != nil {
+				if err := r.pollStreamEvidencePullbacks(ctx, streamEvidenceClient); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent stream evidence pullback poll error: %v\n", err)
 				}
 			}
 			if opts.Once {
@@ -682,6 +694,60 @@ func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command)
 	out.ObserveOnly = true
 	out.Executed = false
 	return out
+}
+
+func (r *Runner) pollStreamEvidencePullbacks(ctx context.Context, client *StreamEvidenceClient) error {
+	requests, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
+	if err != nil {
+		return err
+	}
+	for _, req := range requests {
+		result := r.collectEvidencePullback(req)
+		if err := client.Result(ctx, result); err != nil {
+			return err
+		}
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent stream evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) collectEvidencePullback(req link1model.EvidencePullbackRequest) link1model.EvidencePullbackResult {
+	result := link1model.EvidencePullbackResult{
+		RequestID:  req.RequestID,
+		TenantID:   r.Config.Agent.TenantID,
+		AgentID:    r.Config.Agent.ID,
+		OK:         true,
+		Message:    "collected target evidence",
+		ObservedAt: time.Now().UTC(),
+	}
+	if req.Target == "" {
+		result.Message = "collected no target evidence"
+		return result
+	}
+	evidence := &incidentv1.EvidenceSubgraph{
+		Nodes: []*incidentv1.GraphNode{{
+			Id:    req.Target,
+			Kind:  evidenceKindFromTarget(req.Target),
+			Label: req.Target,
+		}},
+	}
+	data, err := protojson.Marshal(evidence)
+	if err != nil {
+		result.OK = false
+		result.Message = fmt.Sprintf("encode evidence: %v", err)
+		return result
+	}
+	result.Evidence = json.RawMessage(data)
+	return result
+}
+
+func evidenceKindFromTarget(target string) string {
+	if idx := strings.Index(target, ":"); idx > 0 {
+		return target[:idx]
+	}
+	return "entity"
 }
 
 func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {

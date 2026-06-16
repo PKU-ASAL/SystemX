@@ -18,12 +18,14 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
+	link1model "github.com/sysarmor/sysarmor-next-project/internal/link1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -217,6 +219,55 @@ func TestStreamResponseClientFetchesCommandAndAcks(t *testing.T) {
 	ack := audits[0].Ack
 	if ack.ResponseID != "resp-stream-agent" || !ack.ObserveOnly || ack.Executed || !ack.Unsupported {
 		t.Fatalf("ack = %+v", ack)
+	}
+}
+
+func TestStreamEvidenceClientHandlesPullbackResult(t *testing.T) {
+	st := &store.Store{}
+	st.AddIncident(&incidentv1.Incident{Id: "inc-stream", Scenario: "pullback-stream", Summary: "stream incident"})
+	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+		RequestID:  "evpb-stream-agent",
+		TenantID:   "default",
+		AgentID:    "agent-stream",
+		IncidentID: "inc-stream",
+		Scenario:   "pullback-stream",
+		Target:     "process:p1",
+		Reason:     "collect graph evidence",
+	})
+	linkSrv := link1.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterLink1Server(grpcServer, link1.NewGRPCServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-stream", HostID: "host-stream", TenantID: "default"},
+			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "stream"},
+		},
+		Sensor: &healthOnlySensor{health: contract.Health{Running: true, PolicyLoaded: true}},
+	}
+	client := NewStreamEvidenceClient(lis.Addr().String(), "", time.Second)
+	if err := runner.pollStreamEvidencePullbacks(context.Background(), client); err != nil {
+		t.Fatalf("pollStreamEvidencePullbacks() error = %v", err)
+	}
+	pullbacks := st.ListEvidencePullbacks("default", "agent-stream")
+	if len(pullbacks) != 1 || pullbacks[0].Status != link1model.EvidencePullbackStatusCompleted || !pullbacks[0].ResultOK {
+		t.Fatalf("pullbacks = %+v", pullbacks)
+	}
+	inc, ok := st.GetIncident("inc-stream", "pullback-stream")
+	if !ok {
+		t.Fatal("incident not found")
+	}
+	nodes := inc.GetEvidence().GetNodes()
+	if len(nodes) != 1 || nodes[0].GetId() != "process:p1" || nodes[0].GetKind() != "process" {
+		t.Fatalf("evidence nodes = %+v", nodes)
 	}
 }
 

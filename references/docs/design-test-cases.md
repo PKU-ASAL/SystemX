@@ -260,7 +260,7 @@ make -C test e2e-postgres-all
 
 ### 5.7 Link1 Stream Foundation
 
-这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 policy、response 和 evidence pullback 请求,uplink 也能回传 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。evidence pullback 的 agent 自动处理仍是后续项。
+这些脚本验证 v3 Link1 stream 的早期地基:manager 已经能维护 session state 和 last ack cursor,agent 也能在启动上传 worker 时按 resume cursor 清理本地 spool,downlink 能表达 policy、response 和 evidence pullback 请求,uplink 也能回传 evidence pullback result,已有最小 gRPC bidirectional stream RPC 承载这些 frame 语义,agent uploader 也能通过 stream 上传 batch,agent 可通过 stream downlink 拉取并应用 effective policy,也可拉取 response command 并回写 observe-only ack。agent 对 evidence pullback 已有最小自动处理:拉取 request、回传 target evidence subgraph、manager 完成 pullback 并把 evidence 附加到 incident。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
@@ -271,6 +271,7 @@ make -C test e2e-postgres-all
 | `e2e-link1-stream-upload` | Go stream uploader test | agent uploader 可通过 Link1 gRPC stream 上传 batch,manager session cursor 记录为 stream transport |
 | `e2e-link1-policy-downlink` | Go stream policy test | agent 可通过 Link1 stream downlink 拉取 effective policy,并获得 endpoint rule references |
 | `e2e-link1-response-command` | Go stream response test | agent 可通过 Link1 stream downlink 拉取 response command,执行 observe-only ack 并回写 response audit |
+| `e2e-link1-evidence-pullback` | Go stream evidence test | agent 可通过 Link1 stream downlink 拉取 evidence pullback request,回写 target evidence subgraph,result 完成后 incident evidence 可查询 |
 | `e2e-link1-stream-all` | Make 聚合 | 当前聚合 Link1 session/cursor foundation gate |
 
 聚合入口:
@@ -455,7 +456,7 @@ make -C test e2e-agent-benign-container
 | policy/rule content 管理与分配 | manager policy API + `e2e-policy-cloud-disable` | 部分覆盖 |
 | endpoint policy 启动拉取与应用 | daemon effective-policy 单测 + `e2e-policy-endpoint-disable` | 已覆盖 |
 | endpoint policy 周期刷新 | daemon refresh 单测 + `e2e-policy-agent-refresh` | 已覆盖 |
-| Link1 policy downlink signal | 尚未实现 stream/downlink | 未覆盖 |
+| Link1 policy downlink signal | `e2e-link1-policy-downlink` + stream policy client 单测 | 部分覆盖 |
 | signal response intent 字段 | endpoint fastpath 单测 + `e2e-response-audit` | 部分覆盖 |
 | response intent -> decision | `e2e-response-audit` | 部分覆盖 |
 | response/enforce observe-only audit | `e2e-response-observe-only` | 部分覆盖 |
@@ -474,7 +475,7 @@ make -C test e2e-agent-benign-container
 | Link1 session state / ack cursor | `e2e-link1-session` + store/HTTP 单测 | 部分覆盖 |
 | Link1 resume cursor / local spool cleanup | `e2e-link1-session` + agent resume client / uploadworker / spool 单测 | 部分覆盖 |
 | Link1 downlink frame contract | `e2e-link1-downlink` + HTTP 单测 | 部分覆盖 |
-| Link1 evidence pullback request/result | `e2e-link1-downlink` / `e2e-link1-frames` + HTTP/CLI/store 单测 | 部分覆盖 |
+| Link1 evidence pullback request/result | `e2e-link1-downlink` / `e2e-link1-frames` / `e2e-link1-evidence-pullback` + HTTP/CLI/store 单测 | 部分覆盖 |
 | Link1 uplink frame contract | `e2e-link1-frames` + HTTP 单测 | 部分覆盖 |
 | Link1 bidirectional stream/downlink | `e2e-link1-grpc-stream` + gRPC 单测 | 部分覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |

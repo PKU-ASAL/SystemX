@@ -520,6 +520,7 @@ Status: foundation implementation started.
 - agent upload worker 已支持 `manager.transport: stream`,可通过 Link1 gRPC `Stream` RPC 上传 spool batch 并推进 manager session cursor。
 - agent 已支持通过 Link1 stream `hello` downlink 拉取 effective policy update,并将 endpoint rule references 应用到 runtime fastpath。
 - agent 已支持通过 Link1 stream downlink 拉取 pending response command,执行 observe-only `Enforce`,并通过 stream `ack` frame 回写 response audit。
+- agent 已支持通过 Link1 stream downlink 拉取 pending evidence pullback request,回传最小 target evidence subgraph,result 被 manager 完成并附加到 incident evidence。
 - agent/upload worker 单测覆盖 resume cursor 清理本地 spool、空 cursor no-op、resume source 失败不删除 batch。
 - `make -C test e2e-link1-session` 验证同一 agent 连续上传会推进 session cursor。
 - `make -C test e2e-link1-downlink` 验证 downlink frame 包含 effective policy、pending response command 和 pending evidence pullback request。
@@ -528,12 +529,13 @@ Status: foundation implementation started.
 - `make -C test e2e-link1-stream-upload` 验证 agent uploader 能通过 Link1 gRPC stream 上传 batch 并推进 session cursor。
 - `make -C test e2e-link1-policy-downlink` 验证 agent 能通过 Link1 stream downlink 拉取 effective policy 并获得 endpoint rule references。
 - `make -C test e2e-link1-response-command` 验证 agent 能通过 Link1 stream 下发 response command 并回写 observe-only ack。
+- `make -C test e2e-link1-evidence-pullback` 验证 agent 能通过 Link1 stream 下发 evidence pullback request 并回写可附加到 incident 的 evidence subgraph。
 - `make -C test e2e-link1-stream-all` 当前聚合 Link1 session/cursor foundation gate。
 
 仍未完成:
 
 - agent daemon/upload worker 默认切换到真正 stream transport。
-- stream transport 上的 evidence pullback request/result 被 agent 自动处理。
+- stream 长连接/reconnect/heartbeat 的生产级可靠性语义。
 
 ### Deliverables
 
@@ -577,6 +579,7 @@ make -C test e2e-link1-grpc-stream
 make -C test e2e-link1-stream-resume
 make -C test e2e-link1-policy-downlink
 make -C test e2e-link1-response-command
+make -C test e2e-link1-evidence-pullback
 ```
 
 ## 11. Phase 6: Redis / MQ Evaluation
