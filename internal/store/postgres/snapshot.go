@@ -72,6 +72,9 @@ func OpenSnapshotStore(ctx context.Context, db *sql.DB, migration MigrationResul
 		func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
 			return queryPolicy(context.Background(), db, tenantID, policyID, version)
 		},
+		func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
+			return queryEffectivePolicy(context.Background(), db, tenantID, agentID, scopeType, scopeSelector)
+		},
 	)
 	return st, nil
 }
@@ -340,6 +343,69 @@ LIMIT 1
 		return policymodel.Policy{}, false, fmt.Errorf("decode postgres policy: %w", err)
 	}
 	return policy, true, nil
+}
+
+func queryPublishedPolicy(ctx context.Context, db *sql.DB, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+	if policyID == "" {
+		return policymodel.Policy{}, false, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM policies
+WHERE ($1 = '' OR tenant_id = $1)
+  AND policy_id = $2
+  AND ($3 = 0 OR version = $3)
+ORDER BY version DESC
+`, tenantID, policyID, version)
+	if err != nil {
+		return policymodel.Policy{}, false, fmt.Errorf("query postgres published policy: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return policymodel.Policy{}, false, fmt.Errorf("scan postgres published policy: %w", err)
+		}
+		var policy policymodel.Policy
+		if err := json.Unmarshal(raw, &policy); err != nil {
+			return policymodel.Policy{}, false, fmt.Errorf("decode postgres published policy: %w", err)
+		}
+		if policy.Published {
+			return policy, true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return policymodel.Policy{}, false, fmt.Errorf("iterate postgres published policy: %w", err)
+	}
+	return policymodel.Policy{}, false, nil
+}
+
+func queryEffectivePolicy(ctx context.Context, db *sql.DB, tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
+	assignments, err := queryPolicyAssignments(ctx, db, tenantID, "")
+	if err != nil {
+		return policymodel.Policy{}, false, err
+	}
+	var best policymodel.Assignment
+	bestRank := -1
+	for _, assignment := range assignments {
+		if tenantID != "" && assignment.TenantID != tenantID {
+			continue
+		}
+		rank := store.AssignmentRank(assignment, agentID, scopeType, scopeSelector)
+		if rank > bestRank {
+			best = assignment
+			bestRank = rank
+		}
+	}
+	if bestRank >= 0 {
+		return queryPublishedPolicy(ctx, db, best.TenantID, best.PolicyID, best.PolicyVersion)
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if policy, ok, err := queryPublishedPolicy(ctx, db, tenantID, policymodel.DefaultPolicyID, 0); err != nil || ok {
+		return policy, ok, err
+	}
+	return policymodel.DefaultPolicy(tenantID), true, nil
 }
 
 func queryPolicyAssignments(ctx context.Context, db *sql.DB, tenantID, agentID string) ([]policymodel.Assignment, error) {

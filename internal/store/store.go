@@ -40,6 +40,7 @@ type Store struct {
 	listPolicies    func(tenantID string) ([]policymodel.Policy, error)
 	listAssignments func(tenantID, agentID string) ([]policymodel.Assignment, error)
 	getPolicy       func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
+	effectivePolicy func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
 	Agents          []*analyticsv1.AgentHello
 	Events          []*eventv1.CanonicalEvent
 	Signals         []*signalv1.Signal
@@ -213,6 +214,7 @@ func (s *Store) ConfigureQueryHooks(
 	listPolicies func(string) ([]policymodel.Policy, error),
 	listAssignments func(string, string) ([]policymodel.Assignment, error),
 	getPolicy func(string, string, uint64) (policymodel.Policy, bool, error),
+	effectivePolicy func(string, string, string, string) (policymodel.Policy, bool, error),
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -223,6 +225,7 @@ func (s *Store) ConfigureQueryHooks(
 	s.listPolicies = listPolicies
 	s.listAssignments = listAssignments
 	s.getPolicy = getPolicy
+	s.effectivePolicy = effectivePolicy
 }
 
 func (s *Store) Info() Info {
@@ -631,6 +634,15 @@ func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignme
 
 func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool) {
 	s.mu.RLock()
+	effectivePolicy := s.effectivePolicy
+	s.mu.RUnlock()
+	if effectivePolicy != nil {
+		policy, ok, err := effectivePolicy(tenantID, agentID, scopeType, scopeSelector)
+		if err == nil && ok {
+			return policy, true
+		}
+	}
+	s.mu.RLock()
 	assignments := append([]policymodel.Assignment(nil), s.Assignments...)
 	s.mu.RUnlock()
 	var best policymodel.Assignment
@@ -639,7 +651,7 @@ func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector stri
 		if tenantID != "" && assignment.TenantID != tenantID {
 			continue
 		}
-		rank := assignmentRank(assignment, agentID, scopeType, scopeSelector)
+		rank := AssignmentRank(assignment, agentID, scopeType, scopeSelector)
 		if rank > bestRank {
 			best = assignment
 			bestRank = rank
@@ -1799,7 +1811,7 @@ func sameAssignmentTarget(a, b policymodel.Assignment) bool {
 		a.Scope.Selector == b.Scope.Selector
 }
 
-func assignmentRank(assignment policymodel.Assignment, agentID, scopeType, scopeSelector string) int {
+func AssignmentRank(assignment policymodel.Assignment, agentID, scopeType, scopeSelector string) int {
 	if assignment.AgentID != "" {
 		if agentID == "" || assignment.AgentID != agentID {
 			return -1

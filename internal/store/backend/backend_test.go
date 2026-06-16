@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -630,6 +631,48 @@ func TestOpenPostgresGetsPolicyFromTablePath(t *testing.T) {
 	}
 	if !strings.Contains(fakeLastQuery(), "SELECT data FROM policies") {
 		t.Fatalf("GetPolicy did not query policies table: %s", fakeLastQuery())
+	}
+}
+
+func TestOpenPostgresQueriesEffectivePolicyFromTablePath(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "policy-effective-table-pg"
+	policy.Version = 7
+	policy.Published = true
+	policy.CloudRules = []string{"web_shell_chain"}
+	policyRaw, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatalf("marshal policy: %v", err)
+	}
+	assignment := policymodel.Assignment{
+		AssignmentID:  "assignment-effective-table-pg",
+		TenantID:      "default",
+		AgentID:       "agent-effective-query-pg",
+		PolicyID:      "policy-effective-table-pg",
+		PolicyVersion: 7,
+	}
+	assignmentRaw, err := json.Marshal(assignment)
+	if err != nil {
+		t.Fatalf("marshal assignment: %v", err)
+	}
+	fakeSetPolicyRows(policyRaw)
+	fakeSetAssignmentRows(assignmentRaw)
+	got, ok := result.Store.EffectivePolicy("default", "agent-effective-query-pg", "", "")
+	if !ok || got.PolicyID != "policy-effective-table-pg" || got.Version != 7 || len(got.CloudRules) != 1 {
+		t.Fatalf("EffectivePolicy from postgres table = %+v, %v", got, ok)
+	}
+	if !strings.Contains(fakeLastQuery(), "SELECT data FROM policies") {
+		t.Fatalf("EffectivePolicy did not query policies table: %s", fakeLastQuery())
 	}
 }
 
@@ -1321,7 +1364,7 @@ func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {
 	return s.QueryContext(context.Background(), nil)
 }
 
-func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Rows, error) {
+func (s fakeStmt) QueryContext(_ context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	if strings.Contains(s.query, "SELECT data FROM sysarmor_state") && len(fakeState.snapshot) > 0 {
@@ -1371,8 +1414,9 @@ func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Row
 		fakeState.lastQuery = s.query
 	}
 	if strings.Contains(s.query, "SELECT data FROM policies") && len(fakeState.policyRows) > 0 {
-		rows := make([][]driver.Value, 0, len(fakeState.policyRows))
-		for _, row := range fakeState.policyRows {
+		policyRows := filterPolicyRows(s.query, args, fakeState.policyRows)
+		rows := make([][]driver.Value, 0, len(policyRows))
+		for _, row := range policyRows {
 			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
 		}
 		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
@@ -1388,6 +1432,46 @@ func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Row
 		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
 	}
 	return &fakeRows{}, nil
+}
+
+func filterPolicyRows(query string, args []driver.NamedValue, rows [][]byte) [][]byte {
+	if !strings.Contains(query, "policy_id = $2") {
+		return rows
+	}
+	var policyID string
+	var version uint64
+	if len(args) >= 2 {
+		policyID = fmt.Sprint(args[1].Value)
+	}
+	if len(args) >= 3 {
+		switch value := args[2].Value.(type) {
+		case int64:
+			version = uint64(value)
+		case uint64:
+			version = value
+		case int:
+			version = uint64(value)
+		default:
+			if parsed, err := strconv.ParseUint(fmt.Sprint(value), 10, 64); err == nil {
+				version = parsed
+			}
+		}
+	}
+	out := make([][]byte, 0, len(rows))
+	for _, row := range rows {
+		var policy policymodel.Policy
+		if err := json.Unmarshal(row, &policy); err != nil {
+			continue
+		}
+		if policy.PolicyID != policyID {
+			continue
+		}
+		if version != 0 && policy.Version != version {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 type fakeTx struct{}
