@@ -10,6 +10,7 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -82,6 +83,27 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("metrics missing %s: %s", want, rec.Body.String())
 		}
+	}
+}
+
+func TestIncidentLifecycleAPIUpdatesStatus(t *testing.T) {
+	st := &store.Store{}
+	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "test incident"})
+	handler := NewServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incident-lifecycle", strings.NewReader(`{"scenario":"scenario-a","status":"closed","reason":"triaged","actor":"analyst"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lifecycle status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"status":"closed"`, `"status_reason":"triaged"`, `"status_actor":"analyst"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("lifecycle response missing %s: %s", want, rec.Body.String())
+		}
+	}
+	rec = get(t, handler, "/api/v1/incidents?scenario=scenario-a")
+	if !strings.Contains(rec.Body.String(), `"status":"closed"`) {
+		t.Fatalf("incident status not queryable: %s", rec.Body.String())
 	}
 }
 

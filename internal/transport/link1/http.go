@@ -46,6 +46,14 @@ type responseDecisionRequest struct {
 	Actor    string              `json:"actor,omitempty"`
 }
 
+type incidentLifecycleRequest struct {
+	IncidentID string `json:"incident_id"`
+	Scenario   string `json:"scenario"`
+	Status     string `json:"status"`
+	Reason     string `json:"reason,omitempty"`
+	Actor      string `json:"actor,omitempty"`
+}
+
 type AgentListItem struct {
 	AgentID        string                       `json:"agent_id"`
 	HostID         string                       `json:"host_id"`
@@ -88,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
 	mux.HandleFunc("/api/v1/incident-evidence", s.incidentEvidence)
+	mux.HandleFunc("/api/v1/incident-lifecycle", s.incidentLifecycle)
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	return mux
 }
@@ -359,6 +368,32 @@ func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProtoJSON(w, inc.GetEvidence())
+}
+
+func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req incidentLifecycleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode incident lifecycle: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.IncidentID == "" && req.Scenario == "" {
+		http.Error(w, "incident_id or scenario is required", http.StatusBadRequest)
+		return
+	}
+	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, req.Scenario, req.Status, req.Reason, req.Actor)
+	if !ok {
+		http.Error(w, "incident not found or status invalid", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeProtoJSON(w, inc)
 }
 
 func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {

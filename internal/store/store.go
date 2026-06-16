@@ -181,11 +181,17 @@ func (s *Store) AddIncident(inc *incidentv1.Incident) bool {
 	if inc == nil {
 		return false
 	}
+	defaultIncidentStatus(inc)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := incidentKey(inc)
 	for i, existing := range s.Incidents {
 		if key != "" && incidentKey(existing) == key {
+			if existing.GetStatus() != "" {
+				inc.Status = existing.GetStatus()
+				inc.StatusReason = existing.GetStatusReason()
+				inc.StatusActor = existing.GetStatusActor()
+			}
 			s.Incidents[i] = inc
 			return false
 		}
@@ -534,13 +540,25 @@ func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signa
 	}
 	s.Signals = signals
 	keptIncidents := s.Incidents[:0]
+	statusByKey := map[string]*incidentv1.Incident{}
 	for _, inc := range s.Incidents {
 		if inc.GetScenario() == scenario {
+			if key := incidentKey(inc); key != "" && inc.GetStatus() != "" {
+				statusByKey[key] = inc
+			}
 			continue
 		}
 		keptIncidents = append(keptIncidents, inc)
 	}
 	s.Incidents = keptIncidents
+	for _, inc := range incidents {
+		defaultIncidentStatus(inc)
+		if existing := statusByKey[incidentKey(inc)]; existing != nil {
+			inc.Status = existing.GetStatus()
+			inc.StatusReason = existing.GetStatusReason()
+			inc.StatusActor = existing.GetStatusActor()
+		}
+	}
 	s.Signals = append(s.Signals, cloudSignals...)
 	s.Incidents = append(s.Incidents, incidents...)
 }
@@ -683,6 +701,34 @@ func (s *Store) GetIncident(id, scenario string) (*incidentv1.Incident, bool) {
 		if scenario != "" && inc.GetScenario() != scenario {
 			continue
 		}
+		return inc, true
+	}
+	return nil, false
+}
+
+func (s *Store) UpdateIncidentStatus(id, scenario, status, reason, actor string) (*incidentv1.Incident, bool) {
+	if id == "" && scenario == "" {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, inc := range s.Incidents {
+		if id != "" && inc.GetId() != id {
+			continue
+		}
+		if scenario != "" && inc.GetScenario() != scenario {
+			continue
+		}
+		switch status {
+		case "", "open":
+			inc.Status = "open"
+		case "closed", "suppressed":
+			inc.Status = status
+		default:
+			return nil, false
+		}
+		inc.StatusReason = reason
+		inc.StatusActor = actor
 		return inc, true
 	}
 	return nil, false
@@ -868,6 +914,12 @@ func incidentKey(inc *incidentv1.Incident) string {
 		parts = append(parts, signalKey(sig))
 	}
 	return stableKey(parts...)
+}
+
+func defaultIncidentStatus(inc *incidentv1.Incident) {
+	if inc != nil && inc.GetStatus() == "" {
+		inc.Status = "open"
+	}
 }
 
 func sortedStrings(in []string) []string {

@@ -317,12 +317,15 @@ Status: partial implementation started.
 - manager `GET /api/v1/incident-evidence` 可按 incident id 或 scenario 查询 incident evidence subgraph。
 - `sysarmorctl incident-evidence` 可直接输出 evidence graph JSON。
 - `make -C test e2e-graph-evidence` 验证 staged-drop 共享 file 节点能形成 evidence graph,并能查询 file -> socket connect edge。
+- Incident proto 已有最小 lifecycle status 字段: `open` / `closed` / `suppressed`。
+- manager `POST /api/v1/incident-lifecycle` 与 `sysarmorctl incident-lifecycle` 可更新 incident 状态、原因和操作者。
+- `make -C test e2e-incident-lifecycle` 验证 incident 可 suppress / close / reopen 并可查询。
 
 仍未完成:
 
 - 独立 `correlate` / `converge` / `incident` / `rarity` 包边界。
 - k-hop / shortest path 查询。
-- incident lifecycle API: close / suppress / merge / attach evidence。
+- incident lifecycle API: merge / attach evidence。
 - rarity interface 和 count-based MVP。
 
 Package split:

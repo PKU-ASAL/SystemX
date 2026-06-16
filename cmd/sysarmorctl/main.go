@@ -289,6 +289,38 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/incident-evidence?" + q.Encode())
+	case "incident-lifecycle":
+		req := map[string]string{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--scenario":
+				i++
+				if i < len(args) {
+					req["scenario"] = args[i]
+				}
+			case "--incident-id":
+				i++
+				if i < len(args) {
+					req["incident_id"] = args[i]
+				}
+			case "--status":
+				i++
+				if i < len(args) {
+					req["status"] = args[i]
+				}
+			case "--reason":
+				i++
+				if i < len(args) {
+					req["reason"] = args[i]
+				}
+			case "--actor":
+				i++
+				if i < len(args) {
+					req["actor"] = args[i]
+				}
+			}
+		}
+		return httpPostJSON(base+"/api/v1/incident-lifecycle", req)
 	case "recompute":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

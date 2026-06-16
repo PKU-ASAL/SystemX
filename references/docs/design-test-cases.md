@@ -224,14 +224,15 @@ make -C test e2e-policy-all
 make -C test e2e-response-all
 ```
 
-### 5.5 Graph / Evidence
+### 5.5 Graph / Evidence / Incident
 
-这些脚本验证 v3 graph/evidence 地基:incident evidence 不是只返回散装节点,而是能通过 graph/evidence 包生成可查询的 evidence subgraph。
+这些脚本验证 v3 graph/evidence/incident 地基:incident evidence 不是只返回散装节点,而是能通过 graph/evidence 包生成可查询的 evidence subgraph;incident 也开始具备最小 lifecycle 状态。
 
 | Make target | 脚本 | 证明什么 |
 |---|---|---|
 | `e2e-graph-evidence` | `harness/e2e-graph-evidence.sh` | staged-drop 的共享 file 节点和 file -> socket connect edge 可通过 incident evidence graph JSON 查询 |
-| `e2e-graph-all` | Make 聚合 | 当前聚合 graph/evidence gate |
+| `e2e-incident-lifecycle` | `harness/e2e-incident-lifecycle.sh` | incident 可 suppress / close / reopen,状态、原因和 actor 可查询 |
+| `e2e-graph-all` | Make 聚合 | 当前聚合 graph/evidence/incident gate |
 
 聚合入口:
 
@@ -423,7 +424,8 @@ make -C test e2e-agent-benign-container
 | response allowed scopes | `e2e-response-scope-deny` | 部分覆盖 |
 | response approval requirement | 尚未实现 approval | 未覆盖 |
 | graph/evidence subgraph query | `e2e-graph-evidence` | 部分覆盖 |
-| incident lifecycle API | 当前未实现 close/suppress/merge | 未覆盖 |
+| incident lifecycle close/suppress/reopen | `e2e-incident-lifecycle` | 部分覆盖 |
+| incident lifecycle merge/attach evidence | 当前未实现 merge/attach evidence | 未覆盖 |
 | Postgres durable store | 无 e2e | 未覆盖 |
 | Link1 bidirectional stream/downlink | unary upload + stream debug,无双向控制门禁 | 未覆盖 |
 | XDR 多源 ingestion | endpoint only | 未覆盖 |

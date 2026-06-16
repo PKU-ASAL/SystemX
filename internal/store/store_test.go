@@ -85,6 +85,37 @@ func TestListIncidentsFiltersScenario(t *testing.T) {
 	}
 }
 
+func TestIncidentLifecycleStatusPersistsAcrossUpsert(t *testing.T) {
+	st := &Store{}
+	inc := &incidentv1.Incident{
+		Id:                  "inc-a",
+		Scenario:            "a",
+		Summary:             "same story",
+		LineageIds:          []string{"lin-a"},
+		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
+		ContributingSignals: []*signalv1.Signal{testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash")},
+	}
+	st.AddIncident(inc)
+	if got := st.ListIncidents("a")[0].GetStatus(); got != "open" {
+		t.Fatalf("default status = %q, want open", got)
+	}
+	if _, ok := st.UpdateIncidentStatus("", "a", "suppressed", "known test", "tester"); !ok {
+		t.Fatal("UpdateIncidentStatus ok = false")
+	}
+	st.AddIncident(&incidentv1.Incident{
+		Id:                  "inc-b",
+		Scenario:            "a",
+		Summary:             "same story",
+		LineageIds:          []string{"lin-a"},
+		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
+		ContributingSignals: inc.GetContributingSignals(),
+	})
+	got := st.ListIncidents("a")[0]
+	if got.GetStatus() != "suppressed" || got.GetStatusReason() != "known test" || got.GetStatusActor() != "tester" {
+		t.Fatalf("status after upsert = %q/%q/%q", got.GetStatus(), got.GetStatusReason(), got.GetStatusActor())
+	}
+}
+
 func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	st := &Store{}
 	if inserted := st.AddEvent(testEvent("ev-1", "a")); !inserted {

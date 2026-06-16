@@ -298,6 +298,9 @@ type Incident struct {
 	Evidence            *EvidenceSubgraph      `protobuf:"bytes,8,opt,name=evidence,proto3" json:"evidence,omitempty"`
 	Converge            *ConvergeTrace         `protobuf:"bytes,9,opt,name=converge,proto3" json:"converge,omitempty"`
 	ContributingSignals []*v1.Signal           `protobuf:"bytes,10,rep,name=contributing_signals,json=contributingSignals,proto3" json:"contributing_signals,omitempty"`
+	Status              string                 `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
+	StatusReason        string                 `protobuf:"bytes,12,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	StatusActor         string                 `protobuf:"bytes,13,opt,name=status_actor,json=statusActor,proto3" json:"status_actor,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -402,6 +405,27 @@ func (x *Incident) GetContributingSignals() []*v1.Signal {
 	return nil
 }
 
+func (x *Incident) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Incident) GetStatusReason() string {
+	if x != nil {
+		return x.StatusReason
+	}
+	return ""
+}
+
+func (x *Incident) GetStatusActor() string {
+	if x != nil {
+		return x.StatusActor
+	}
+	return ""
+}
+
 var File_api_proto_incident_v1_incident_proto protoreflect.FileDescriptor
 
 const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
@@ -425,7 +449,7 @@ const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
 	"\bseed_ids\x18\x02 \x03(\tR\aseedIds\x12\x19\n" +
 	"\bpath_ids\x18\x03 \x03(\tR\apathIds\x12\x14\n" +
 	"\x05score\x18\x04 \x01(\x02R\x05score\x12\x1a\n" +
-	"\bcontrols\x18\x05 \x03(\tR\bcontrols\"\x95\x03\n" +
+	"\bcontrols\x18\x05 \x03(\tR\bcontrols\"\xf5\x03\n" +
 	"\bIncident\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bscenario\x18\x02 \x01(\tR\bscenario\x12\x18\n" +
@@ -438,7 +462,10 @@ const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
 	"\bevidence\x18\b \x01(\v2&.sysarmor.incident.v1.EvidenceSubgraphR\bevidence\x12?\n" +
 	"\bconverge\x18\t \x01(\v2#.sysarmor.incident.v1.ConvergeTraceR\bconverge\x12M\n" +
 	"\x14contributing_signals\x18\n" +
-	" \x03(\v2\x1a.sysarmor.signal.v1.SignalR\x13contributingSignalsBLZJgithub.com/sysarmor/sysarmor-next-project/api/proto/incident/v1;incidentv1b\x06proto3"
+	" \x03(\v2\x1a.sysarmor.signal.v1.SignalR\x13contributingSignals\x12\x16\n" +
+	"\x06status\x18\v \x01(\tR\x06status\x12#\n" +
+	"\rstatus_reason\x18\f \x01(\tR\fstatusReason\x12!\n" +
+	"\fstatus_actor\x18\r \x01(\tR\vstatusActorBLZJgithub.com/sysarmor/sysarmor-next-project/api/proto/incident/v1;incidentv1b\x06proto3"
 
 var (
 	file_api_proto_incident_v1_incident_proto_rawDescOnce sync.Once

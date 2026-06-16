@@ -153,6 +153,7 @@ make e2e-response-audit
 
 # v3 graph/evidence smoke
 make e2e-graph-evidence
+make e2e-incident-lifecycle
 
 # 性能基线 smoke
 make perf TOPO=container DUR=10

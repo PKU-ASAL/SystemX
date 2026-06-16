@@ -44,5 +44,7 @@ message Incident {
   EvidenceSubgraph evidence = 8;
   ConvergeTrace converge = 9;
   repeated sysarmor.signal.v1.Signal contributing_signals = 10;
+  string status = 11;
+  string status_reason = 12;
+  string status_actor = 13;
 }
-
