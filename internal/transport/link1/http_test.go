@@ -59,6 +59,18 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 		t.Fatalf("incident missing converge method: %s", rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/incident-evidence?scenario=apt-fileless-c2", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("incident evidence status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"nodes"`, `"edges"`, `"kind":"connect"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("incident evidence missing %s: %s", want, rec.Body.String())
+		}
+	}
+
 	rec = get(t, handler, "/api/v1/metrics")
 	for _, want := range []string{
 		`"upload_batches":1`,

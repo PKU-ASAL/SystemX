@@ -272,6 +272,23 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/incidents?" + q.Encode())
+	case "incident-evidence":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--scenario":
+				i++
+				if i < len(args) {
+					q.Set("scenario", args[i])
+				}
+			case "--incident-id":
+				i++
+				if i < len(args) {
+					q.Set("incident_id", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/incident-evidence?" + q.Encode())
 	case "recompute":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

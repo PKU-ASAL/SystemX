@@ -673,6 +673,21 @@ func (s *Store) ListIncidents(scenario string) []*incidentv1.Incident {
 	return out
 }
 
+func (s *Store) GetIncident(id, scenario string) (*incidentv1.Incident, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, inc := range s.Incidents {
+		if id != "" && inc.GetId() != id {
+			continue
+		}
+		if scenario != "" && inc.GetScenario() != scenario {
+			continue
+		}
+		return inc, true
+	}
+	return nil, false
+}
+
 func (s *Store) MetricsSnapshot() Metrics {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

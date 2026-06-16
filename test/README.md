@@ -151,6 +151,9 @@ make e2e-response-policy-deny
 make e2e-response-scope-deny
 make e2e-response-audit
 
+# v3 graph/evidence smoke
+make e2e-graph-evidence
+
 # 性能基线 smoke
 make perf TOPO=container DUR=10
 make perf TOPO=vm DUR=10

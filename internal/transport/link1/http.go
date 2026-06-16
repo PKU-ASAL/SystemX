@@ -87,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
+	mux.HandleFunc("/api/v1/incident-evidence", s.incidentEvidence)
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	return mux
 }
@@ -344,6 +345,20 @@ func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
 func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 	incidents := s.store.ListIncidents(r.URL.Query().Get("scenario"))
 	writeIncidentList(w, incidents)
+}
+
+func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	inc, ok := s.store.GetIncident(q.Get("incident_id"), q.Get("scenario"))
+	if !ok {
+		http.Error(w, "incident not found", http.StatusNotFound)
+		return
+	}
+	if inc.GetEvidence() == nil {
+		writeProtoJSON(w, &incidentv1.EvidenceSubgraph{})
+		return
+	}
+	writeProtoJSON(w, inc.GetEvidence())
 }
 
 func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {

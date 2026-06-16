@@ -300,11 +300,30 @@ make -C test e2e-response-audit
 
 ## 8. Phase 3: Incident / Evidence / Graph Foundation
 
+Status: partial implementation started.
+
 ### Goal
 
 把 MVP analytics 拆成真正的 graph/evidence/incident 包结构,为后续 rarity/STP/XDR 做地基。
 
 ### Deliverables
+
+### Current Implementation Slice
+
+已落地的第一刀:
+
+- `internal/analytics/graph` 提供最小 graph builder,可从 signals 构建 evidence nodes/edges。
+- `internal/analytics/evidence` 已通过 graph API 生成 `EvidenceSubgraph`,不再直接 ad hoc 拼 nodes。
+- manager `GET /api/v1/incident-evidence` 可按 incident id 或 scenario 查询 incident evidence subgraph。
+- `sysarmorctl incident-evidence` 可直接输出 evidence graph JSON。
+- `make -C test e2e-graph-evidence` 验证 staged-drop 共享 file 节点能形成 evidence graph,并能查询 file -> socket connect edge。
+
+仍未完成:
+
+- 独立 `correlate` / `converge` / `incident` / `rarity` 包边界。
+- k-hop / shortest path 查询。
+- incident lifecycle API: close / suppress / merge / attach evidence。
+- rarity interface 和 count-based MVP。
 
 Package split:
 
