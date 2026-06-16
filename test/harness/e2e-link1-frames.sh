@@ -64,6 +64,14 @@ curl -sf -X POST "$MGR_URL/api/v1/responses" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/response.json" > "$RESULTS/e2e-link1-frames.response.json"
 
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json evidence-pullbacks \
+  --create \
+  --request-id evpb-link1-frame \
+  --tenant-id default \
+  --agent-id link1-frame-agent \
+  --target process:p1 \
+  --reason "e2e frame pullback" > "$RESULTS/e2e-link1-frames.pullback.json"
+
 cat > "$TMP/frames.json" <<JSON
 [
   {
@@ -101,6 +109,16 @@ cat > "$TMP/frames.json" <<JSON
     }
   },
   {
+    "type": "evidence_pullback_result",
+    "payload": {
+      "request_id": "evpb-link1-frame",
+      "tenant_id": "default",
+      "agent_id": "link1-frame-agent",
+      "ok": true,
+      "message": "collected"
+    }
+  },
+  {
     "type": "error",
     "payload": {"message": "synthetic"}
   }
@@ -110,7 +128,7 @@ JSON
 SYSARMOR_DEV_TOKEN="$TOKEN" "$BIN/sysarmorctl" --mgr "$MGR_URL" --json link1-frames \
   --file "$TMP/frames.json" > "$RESULTS/e2e-link1-frames.frames.json"
 
-for want in '"type":"upload"' '"batch_id":"link1-frame-batch"' '"type":"health"' '"type":"ack"' '"type":"error"' '"ok":true'; do
+for want in '"type":"upload"' '"batch_id":"link1-frame-batch"' '"type":"health"' '"type":"ack"' '"type":"evidence_pullback_result"' '"request_id":"evpb-link1-frame"' '"type":"error"' '"ok":true'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-link1-frames.frames.json"; then
     echo "[e2e-link1-frames][ERROR] frame response missing $want" >&2
     cat "$RESULTS/e2e-link1-frames.frames.json" >&2
@@ -146,6 +164,17 @@ if ! grep -Fq '"ack":{"response_id":"resp-link1-frame"' "$RESULTS/e2e-link1-fram
   cat "$RESULTS/e2e-link1-frames.responses.json" >&2
   exit 1
 fi
+
+"$BIN/sysarmorctl" --mgr "$MGR_URL" --json evidence-pullbacks \
+  --tenant-id default \
+  --agent-id link1-frame-agent > "$RESULTS/e2e-link1-frames.pullbacks.json"
+for want in '"request_id":"evpb-link1-frame"' '"status":"completed"' '"result_ok":true' '"result":"collected"'; do
+  if ! grep -Fq "$want" "$RESULTS/e2e-link1-frames.pullbacks.json"; then
+    echo "[e2e-link1-frames][ERROR] pullback result missing $want" >&2
+    cat "$RESULTS/e2e-link1-frames.pullbacks.json" >&2
+    exit 1
+  fi
+done
 
 cp "$TMP/manager.log" "$RESULTS/e2e-link1-frames.manager.log"
 echo "[e2e-link1-frames] ok"

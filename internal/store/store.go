@@ -616,6 +616,27 @@ func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []link1model.Evi
 	return out
 }
 
+func (s *Store) GetEvidencePullback(requestID, tenantID, agentID string) (link1model.EvidencePullbackRequest, bool) {
+	if requestID == "" {
+		return link1model.EvidencePullbackRequest{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, req := range s.Pullbacks {
+		if req.RequestID != requestID {
+			continue
+		}
+		if tenantID != "" && req.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && req.AgentID != agentID {
+			continue
+		}
+		return req, true
+	}
+	return link1model.EvidencePullbackRequest{}, false
+}
+
 func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []link1model.EvidencePullbackRequest {
 	all := s.ListEvidencePullbacks(tenantID, agentID)
 	out := make([]link1model.EvidencePullbackRequest, 0, len(all))
@@ -625,6 +646,40 @@ func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []link1model.
 		}
 	}
 	return out
+}
+
+func (s *Store) CompleteEvidencePullback(result link1model.EvidencePullbackResult) (link1model.EvidencePullbackRequest, bool) {
+	if result.RequestID == "" {
+		return link1model.EvidencePullbackRequest{}, false
+	}
+	if result.ObservedAt.IsZero() {
+		result.ObservedAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, req := range s.Pullbacks {
+		if req.RequestID != result.RequestID {
+			continue
+		}
+		if result.TenantID != "" && req.TenantID != result.TenantID {
+			continue
+		}
+		if result.AgentID != "" && req.AgentID != result.AgentID {
+			continue
+		}
+		req.ResultOK = result.OK
+		req.Result = result.Message
+		req.UpdatedAt = result.ObservedAt
+		req.CompletedAt = result.ObservedAt
+		if result.OK {
+			req.Status = link1model.EvidencePullbackStatusCompleted
+		} else {
+			req.Status = link1model.EvidencePullbackStatusFailed
+		}
+		s.Pullbacks[i] = req
+		return req, true
+	}
+	return link1model.EvidencePullbackRequest{}, false
 }
 
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {

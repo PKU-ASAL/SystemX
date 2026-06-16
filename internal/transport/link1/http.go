@@ -39,12 +39,14 @@ type ManagerStore interface {
 	AddSignal(*signalv1.Signal) bool
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
+	CompleteEvidencePullback(link1model.EvidencePullbackResult) (link1model.EvidencePullbackRequest, bool)
 	CreateEvidencePullback(link1model.EvidencePullbackRequest) link1model.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
 	DeleteScenario(string)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	EnsureDefaultPolicy(string)
 	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
+	GetEvidencePullback(string, string, string) (link1model.EvidencePullbackRequest, bool)
 	GetIncident(string, string) (*incidentv1.Incident, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
 	GetSignal(string) (*signalv1.Signal, bool)
@@ -986,6 +988,31 @@ func (s *Server) acceptUplinkFrame(frame UplinkFrame) (UplinkFrameResult, error)
 			return UplinkFrameResult{Type: frame.Type}, err
 		}
 		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
+	case UplinkEvidencePullbackResult:
+		var result link1model.EvidencePullbackResult
+		if err := json.Unmarshal(frame.Payload, &result); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode evidence pullback result frame: %w", err)
+		}
+		req, ok := s.store.GetEvidencePullback(result.RequestID, result.TenantID, result.AgentID)
+		if !ok {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("evidence pullback request not found")
+		}
+		if len(result.Evidence) > 0 {
+			evidence := &incidentv1.EvidenceSubgraph{}
+			if err := protojson.Unmarshal(result.Evidence, evidence); err != nil {
+				return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode evidence pullback evidence: %w", err)
+			}
+			if _, ok := s.store.AttachIncidentEvidence(req.IncidentID, req.Scenario, evidence); !ok {
+				return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("incident for evidence pullback not found")
+			}
+		}
+		if _, ok := s.store.CompleteEvidencePullback(result); !ok {
+			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("evidence pullback request not found")
+		}
+		if err := s.store.Save(); err != nil {
+			return UplinkFrameResult{Type: frame.Type}, err
+		}
+		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted", RequestID: result.RequestID}, nil
 	case UplinkError:
 		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
 	default:

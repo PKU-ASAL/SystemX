@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	DownlinkPolicyUpdate     = "policy_update"
-	DownlinkResponseCommand  = "response_command"
-	DownlinkEvidencePullback = "evidence_pullback"
-	UplinkUpload             = "upload"
-	UplinkHealth             = "health"
-	UplinkAck                = "ack"
-	UplinkError              = "error"
+	DownlinkPolicyUpdate         = "policy_update"
+	DownlinkResponseCommand      = "response_command"
+	DownlinkEvidencePullback     = "evidence_pullback"
+	UplinkUpload                 = "upload"
+	UplinkHealth                 = "health"
+	UplinkAck                    = "ack"
+	UplinkEvidencePullbackResult = "evidence_pullback_result"
+	UplinkError                  = "error"
 )
 
 type DownlinkFrame struct {
@@ -34,6 +35,7 @@ type UplinkFrameResult struct {
 	OK              bool   `json:"ok"`
 	Message         string `json:"message,omitempty"`
 	BatchID         string `json:"batch_id,omitempty"`
+	RequestID       string `json:"request_id,omitempty"`
 	AcceptedEvents  int    `json:"accepted_events,omitempty"`
 	AcceptedSignals int    `json:"accepted_signals,omitempty"`
 }

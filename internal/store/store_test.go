@@ -101,6 +101,31 @@ func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	}
 }
 
+func TestCompleteEvidencePullbackUpdatesStatus(t *testing.T) {
+	st := &Store{}
+	st.CreateEvidencePullback(link1model.EvidencePullbackRequest{
+		RequestID: "evpb-a",
+		TenantID:  "default",
+		AgentID:   "agent-a",
+	})
+	req, ok := st.CompleteEvidencePullback(link1model.EvidencePullbackResult{
+		RequestID: "evpb-a",
+		TenantID:  "default",
+		AgentID:   "agent-a",
+		OK:        true,
+		Message:   "collected",
+	})
+	if !ok {
+		t.Fatal("CompleteEvidencePullback ok = false")
+	}
+	if req.Status != link1model.EvidencePullbackStatusCompleted || !req.ResultOK || req.Result != "collected" || req.CompletedAt.IsZero() {
+		t.Fatalf("completed request = %+v", req)
+	}
+	if got := st.PendingEvidencePullbacks("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending after completion = %+v", got)
+	}
+}
+
 func TestListIncidentsFiltersScenario(t *testing.T) {
 	st := &Store{}
 	st.AddIncident(&incidentv1.Incident{Id: "i1", Scenario: "apt-fileless-c2"})

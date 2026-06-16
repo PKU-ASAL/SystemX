@@ -650,6 +650,7 @@ func TestLink1DownlinkFramesIncludeEvidencePullback(t *testing.T) {
 
 func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	st := &store.Store{}
+	st.AddIncident(&incidentv1.Incident{Id: "inc-frame", Scenario: "pullback-frame", Summary: "frame incident"})
 	handler := NewServer(st).Handler()
 	cmd := `{"response_id":"resp-frame","tenant_id":"default","agent_id":"agent-frame","action":"collect","target":"process:p1"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(cmd))
@@ -657,6 +658,12 @@ func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("response post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/evidence-pullbacks", strings.NewReader(`{"request_id":"evpb-frame","tenant_id":"default","agent_id":"agent-frame","incident_id":"inc-frame","scenario":"pullback-frame","target":"process:p1"}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pullback post status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	frames := `[
 	  {
@@ -676,6 +683,17 @@ func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	    "payload":{"response_id":"resp-frame","tenant_id":"default","agent_id":"agent-frame","accepted":true,"observe_only":true}
 	  },
 	  {
+	    "type":"evidence_pullback_result",
+	    "payload":{
+	      "request_id":"evpb-frame",
+	      "tenant_id":"default",
+	      "agent_id":"agent-frame",
+	      "ok":true,
+	      "message":"collected",
+	      "evidence":{"nodes":[{"id":"process:p1","kind":"process"}]}
+	    }
+	  },
+	  {
 	    "type":"error",
 	    "payload":{"message":"synthetic"}
 	  }
@@ -686,7 +704,7 @@ func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("frames status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{`"type":"upload"`, `"batch_id":"frame-batch-1"`, `"type":"health"`, `"type":"ack"`, `"type":"error"`, `"ok":true`} {
+	for _, want := range []string{`"type":"upload"`, `"batch_id":"frame-batch-1"`, `"type":"health"`, `"type":"ack"`, `"type":"evidence_pullback_result"`, `"request_id":"evpb-frame"`, `"type":"error"`, `"ok":true`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("frame response missing %s: %s", want, rec.Body.String())
 		}
@@ -700,6 +718,51 @@ func TestLink1UplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	audits := st.ListResponses("default", "agent-frame")
 	if len(audits) != 1 || audits[0].Ack == nil || !audits[0].Ack.Accepted {
 		t.Fatalf("response audit after ack frame = %+v", audits)
+	}
+	pullbacks := st.ListEvidencePullbacks("default", "agent-frame")
+	if len(pullbacks) != 1 || pullbacks[0].Status != "completed" || !pullbacks[0].ResultOK {
+		t.Fatalf("pullback after result frame = %+v", pullbacks)
+	}
+	inc, ok := st.GetIncident("inc-frame", "pullback-frame")
+	if !ok || len(inc.GetEvidence().GetNodes()) != 1 || inc.GetEvidence().GetNodes()[0].GetId() != "process:p1" {
+		t.Fatalf("incident evidence after result frame = %+v ok=%t", inc, ok)
+	}
+}
+
+func TestEvidencePullbackResultKeepsPendingWhenIncidentMissing(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/evidence-pullbacks", strings.NewReader(`{"request_id":"evpb-missing","tenant_id":"default","agent_id":"agent-frame","incident_id":"missing","scenario":"missing"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pullback post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	frames := `[
+	  {
+	    "type":"evidence_pullback_result",
+	    "payload":{
+	      "request_id":"evpb-missing",
+	      "tenant_id":"default",
+	      "agent_id":"agent-frame",
+	      "ok":true,
+	      "message":"collected",
+	      "evidence":{"nodes":[{"id":"process:p1","kind":"process"}]}
+	    }
+	  }
+	]`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/link1-frames", strings.NewReader(frames))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("frames status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"ok":false`) || !strings.Contains(rec.Body.String(), "incident for evidence pullback not found") {
+		t.Fatalf("frame response = %s", rec.Body.String())
+	}
+	pullbacks := st.ListEvidencePullbacks("default", "agent-frame")
+	if len(pullbacks) != 1 || pullbacks[0].Status != "pending" {
+		t.Fatalf("pullback after failed result frame = %+v", pullbacks)
 	}
 }
 
