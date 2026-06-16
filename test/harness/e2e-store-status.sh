@@ -25,6 +25,7 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
+  --store-backend file \
   --store "$TMP/store.json" \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &

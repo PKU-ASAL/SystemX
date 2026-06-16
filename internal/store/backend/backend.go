@@ -1,0 +1,73 @@
+package backend
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	"github.com/sysarmor/sysarmor-next-project/internal/store/postgres"
+)
+
+const (
+	KindFile     = "file"
+	KindMemory   = "memory"
+	KindPostgres = "postgres"
+)
+
+var ErrPostgresAdapterNotImplemented = fmt.Errorf("postgres store adapter not implemented")
+
+type Options struct {
+	Kind           string
+	Path           string
+	PostgresDriver string
+	PostgresDSN    string
+}
+
+type Result struct {
+	Store     *store.Store
+	Migration postgres.MigrationResult
+}
+
+func Open(ctx context.Context, opts Options) (Result, error) {
+	switch kind := normalizeKind(opts.Kind); kind {
+	case KindFile:
+		st, err := store.Open(opts.Path)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Store: st}, nil
+	case KindMemory:
+		st, err := store.Open("")
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Store: st}, nil
+	case KindPostgres:
+		if opts.PostgresDriver == "" {
+			return Result{}, fmt.Errorf("postgres driver is required")
+		}
+		if opts.PostgresDSN == "" {
+			return Result{}, fmt.Errorf("postgres dsn is required")
+		}
+		db, err := sql.Open(opts.PostgresDriver, opts.PostgresDSN)
+		if err != nil {
+			return Result{}, fmt.Errorf("open postgres: %w", err)
+		}
+		defer db.Close()
+		migration, err := postgres.ApplyMigrations(ctx, db)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Migration: migration}, ErrPostgresAdapterNotImplemented
+	default:
+		return Result{}, fmt.Errorf("unknown store backend %q", opts.Kind)
+	}
+}
+
+func normalizeKind(kind string) string {
+	if kind == "" {
+		return KindFile
+	}
+	return kind
+}
