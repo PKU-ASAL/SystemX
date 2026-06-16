@@ -450,13 +450,14 @@ Status: foundation implementation started.
 - `make -C test e2e-postgres-store` 验证 Postgres backend 可运行 migration、打开 snapshot store,并跨 reopen 保留 response audit。
 - `make -C test e2e-postgres-idempotency` 验证 snapshot-backed Postgres backend 保持重复 ingest 的幂等性。
 - `make -C test e2e-postgres-policy-persistence` 验证 snapshot-backed Postgres backend 跨 reopen 保留 policy publish/assignment/audit 和 incident lifecycle 状态。
+- `make -C test e2e-postgres-manager-api` 验证 snapshot-backed Postgres backend 可支撑 manager ingest/query/policy/incident lifecycle API,并跨 reopen 保留 API 写入状态。
 - `make -C test e2e-postgres-all` 当前聚合 Postgres foundation gate。
 
 仍未完成:
 
 - live Postgres migration e2e。
 - 逐表 Postgres adapter。
-- ingest/query/policy/incident e2e 在 Postgres 后端运行。
+- ingest/query/policy/incident e2e 已有 snapshot-backed Postgres manager API 门禁;仍缺逐表 Postgres adapter 路径上的同类 e2e。
 
 ### Deliverables
 

@@ -4,18 +4,24 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestOpenFileAndMemoryBackends(t *testing.T) {
@@ -193,6 +199,70 @@ func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	handler := link1.NewServer(result.Store).Handler()
+	batch := &analyticsv1.UploadBatch{
+		BatchId: "pg-api-batch-1",
+		Agent:   &analyticsv1.AgentHello{AgentId: "agent-pg-api", HostId: "host-pg-api", TenantId: "default"},
+		Events: []*eventv1.CanonicalEvent{{
+			Id:       "ev-pg-api",
+			Scenario: "pg-api",
+			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+			AgentId:  "agent-pg-api",
+			HostId:   "host-pg-api",
+		}},
+		Signals: []*signalv1.Signal{
+			postgresEndpointSignal("sig-pg-web", "pg-api", "web_runtime_spawns_shell", "lin-pg", false, postgresProcess("process:p-web")),
+			postgresEndpointSignal("sig-pg-drop", "pg-api", "payload_dropped", "lin-pg", false, postgresFile("/dev/shm/x.sh")),
+			postgresEndpointSignal("sig-pg-c2", "pg-api", "reverse_shell_pattern", "lin-pg", true, postgresProcess("process:p-bash"), postgresSocket("10.66.0.99:443")),
+		},
+	}
+	postProtoUpload(t, handler, batch)
+	assertGetContains(t, handler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
+	assertGetContains(t, handler, "/api/v1/signals?scenario=pg-api&layer=endpoint", `"id":"sig-pg-c2"`)
+	assertGetContains(t, handler, "/api/v1/incidents?scenario=pg-api", `"scenario":"pg-api"`)
+
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "pg-api-policy"
+	policy.Version = 11
+	policy.Published = false
+	postJSON(t, handler, "/api/v1/policies?actor=pg-api-test", policy, http.StatusOK)
+	postJSON(t, handler, "/api/v1/policy-publish", map[string]any{
+		"tenant_id": "default", "policy_id": "pg-api-policy", "version": 11, "published": true, "actor": "publisher",
+	}, http.StatusOK)
+	postJSON(t, handler, "/api/v1/policy-assignments", map[string]any{
+		"tenant_id": "default", "agent_id": "agent-pg-api", "policy_id": "pg-api-policy", "policy_version": 11, "actor": "operator",
+	}, http.StatusOK)
+	assertGetContains(t, handler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
+	postJSON(t, handler, "/api/v1/incident-lifecycle", map[string]any{
+		"scenario": "pg-api", "status": "suppressed", "reason": "postgres api persistence", "actor": "analyst",
+	}, http.StatusOK)
+
+	reopened, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("reopen postgres error = %v", err)
+	}
+	reopenedHandler := link1.NewServer(reopened.Store).Handler()
+	assertGetContains(t, reopenedHandler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
+	assertGetContains(t, reopenedHandler, "/api/v1/incidents?scenario=pg-api", `"status":"suppressed"`)
+	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
+	assertGetContains(t, reopenedHandler, "/api/v1/policy-audit?tenant_id=default&policy_id=pg-api-policy", `"actor":"operator"`)
+}
+
 func TestOpenPostgresValidatesConfigAndWrapsMigrationError(t *testing.T) {
 	if _, err := Open(context.Background(), Options{Kind: KindPostgres}); err == nil || !strings.Contains(err.Error(), "postgres driver is required") {
 		t.Fatalf("missing driver error = %v", err)
@@ -204,6 +274,73 @@ func TestOpenPostgresValidatesConfigAndWrapsMigrationError(t *testing.T) {
 	if _, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"}); err == nil || !strings.Contains(err.Error(), "apply postgres schema v1") {
 		t.Fatalf("migration error = %v", err)
 	}
+}
+
+func postProtoUpload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
+	t.Helper()
+	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func postJSON(t *testing.T, handler http.Handler, path string, body any, wantStatus int) {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(data)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != wantStatus {
+		t.Fatalf("POST %s status = %d body=%s", path, rec.Code, rec.Body.String())
+	}
+}
+
+func assertGetContains(t *testing.T, handler http.Handler, path string, want string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s status = %d body=%s", path, rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), want) {
+		t.Fatalf("GET %s missing %s: %s", path, want, rec.Body.String())
+	}
+}
+
+func postgresEndpointSignal(id, scenario, name, lineage string, terminal bool, entities ...*signalv1.EntityRef) *signalv1.Signal {
+	return &signalv1.Signal{
+		Id:           id,
+		Name:         name,
+		Where:        signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+		BaseRisk:     50,
+		GlobalRarity: 1,
+		LineageId:    lineage,
+		Terminal:     terminal,
+		Entities:     entities,
+		Scenario:     scenario,
+	}
+}
+
+func postgresProcess(key string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "process", Key: key, Role: "subject"}
+}
+
+func postgresFile(path string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "file", Key: "file:" + path, Role: "object"}
+}
+
+func postgresSocket(dst string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "socket", Key: "socket:" + dst, Role: "object"}
 }
 
 func TestOpenRejectsUnknownBackend(t *testing.T) {
