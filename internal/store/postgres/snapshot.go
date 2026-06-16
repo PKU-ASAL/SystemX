@@ -9,6 +9,7 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -81,6 +82,9 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	if err := projectAgentHealth(ctx, db, state.Health); err != nil {
+		return err
+	}
+	if err := projectResponseAudit(ctx, db, state.Responses, state.ResponseAcks); err != nil {
 		return err
 	}
 	return nil
@@ -157,6 +161,51 @@ ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
 `, tenantID, health.AgentID, health.HostID, health.Scope.Type, health.Scope.Selector, observedAt, []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project agent health: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectResponseAudit(ctx context.Context, db *sql.DB, commands []responsemodel.Command, acks []responsemodel.Ack) error {
+	ackByResponseID := map[string]responsemodel.Ack{}
+	for _, ack := range acks {
+		if ack.ResponseID != "" {
+			ackByResponseID[ack.ResponseID] = ack
+		}
+	}
+	for _, cmd := range commands {
+		if cmd.ResponseID == "" {
+			continue
+		}
+		tenantID := cmd.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		commandData, err := json.Marshal(cmd)
+		if err != nil {
+			return fmt.Errorf("encode response command projection: %w", err)
+		}
+		var ackData any
+		if ack, ok := ackByResponseID[cmd.ResponseID]; ok {
+			data, err := json.Marshal(ack)
+			if err != nil {
+				return fmt.Errorf("encode response ack projection: %w", err)
+			}
+			ackData = data
+		}
+		_, err = db.ExecContext(ctx, `
+INSERT INTO response_audit (tenant_id, response_id, agent_id, status, action, created_at, updated_at, command, ack)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (tenant_id, response_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  status = EXCLUDED.status,
+  action = EXCLUDED.action,
+  updated_at = EXCLUDED.updated_at,
+  command = EXCLUDED.command,
+  ack = EXCLUDED.ack
+`, tenantID, cmd.ResponseID, cmd.AgentID, cmd.Status, cmd.Action, cmd.CreatedAt, cmd.UpdatedAt, commandData, ackData)
+		if err != nil {
+			return fmt.Errorf("project response audit: %w", err)
 		}
 	}
 	return nil

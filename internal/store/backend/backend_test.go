@@ -137,6 +137,53 @@ func TestOpenPostgresProjectsAgentInventoryTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsResponseAuditTable(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-audit-pg",
+		TenantID:   "default",
+		AgentID:    "agent-audit-pg",
+		Status:     "pending",
+		Action:     "collect",
+		Mode:       "observe",
+		CreatedAt:  time.Unix(100, 0).UTC(),
+		UpdatedAt:  time.Unix(101, 0).UTC(),
+	})
+	result.Store.AckResponse(responsemodel.Ack{
+		ResponseID:  "resp-audit-pg",
+		TenantID:    "default",
+		AgentID:     "agent-audit-pg",
+		Accepted:    true,
+		ObserveOnly: true,
+		ObservedAt:  time.Unix(102, 0).UTC(),
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO response_audit",
+		"resp-audit-pg",
+		"agent-audit-pg",
+		"acked",
+		"collect",
+		"observe_only",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -497,7 +544,12 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 func fakeArgs(args []driver.NamedValue) string {
 	values := make([]string, 0, len(args))
 	for _, arg := range args {
-		values = append(values, fmt.Sprint(arg.Value))
+		switch value := arg.Value.(type) {
+		case []byte:
+			values = append(values, string(value))
+		default:
+			values = append(values, fmt.Sprint(value))
+		}
 	}
 	return strings.Join(values, " ")
 }
