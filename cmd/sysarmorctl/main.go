@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -267,6 +268,34 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/policies?" + q.Encode())
+	case "policy-publish":
+		req := map[string]any{"published": true}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					req["tenant_id"] = args[i]
+				}
+			case "--policy-id":
+				i++
+				if i < len(args) {
+					req["policy_id"] = args[i]
+				}
+			case "--version":
+				i++
+				if i < len(args) {
+					version, err := strconv.ParseUint(args[i], 10, 64)
+					if err != nil {
+						return nil, fmt.Errorf("invalid --version: %w", err)
+					}
+					req["version"] = version
+				}
+			case "--unpublish":
+				req["published"] = false
+			}
+		}
+		return httpPostJSON(base+"/api/v1/policy-publish", req)
 	case "policy-assignments":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {

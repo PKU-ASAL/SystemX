@@ -406,6 +406,56 @@ func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymode
 	return latest, ok
 }
 
+func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, published bool) (policymodel.Policy, bool) {
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if policyID == "" {
+		return policymodel.Policy{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, policy := range s.Policies {
+		if policy.TenantID != tenantID || policy.PolicyID != policyID {
+			continue
+		}
+		if version != 0 && policy.Version != version {
+			continue
+		}
+		policy.Published = published
+		policy.UpdatedAt = time.Now().UTC()
+		s.Policies[i] = policy
+		return policy, true
+	}
+	return policymodel.Policy{}, false
+}
+
+func (s *Store) publishedPolicy(tenantID, policyID string, version uint64) (policymodel.Policy, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var latest policymodel.Policy
+	var ok bool
+	for _, policy := range s.Policies {
+		if tenantID != "" && policy.TenantID != tenantID {
+			continue
+		}
+		if policy.PolicyID != policyID || !policy.Published {
+			continue
+		}
+		if version != 0 && policy.Version != version {
+			continue
+		}
+		if version != 0 {
+			return policy, true
+		}
+		if !ok || policy.Version > latest.Version {
+			latest = policy
+			ok = true
+		}
+	}
+	return latest, ok
+}
+
 func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Assignment, bool) {
 	if assignment.PolicyID == "" {
 		return policymodel.Assignment{}, false
@@ -413,7 +463,7 @@ func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Ass
 	if assignment.TenantID == "" {
 		assignment.TenantID = "default"
 	}
-	policy, ok := s.GetPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
+	policy, ok := s.publishedPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
 	if !ok {
 		return policymodel.Assignment{}, false
 	}
@@ -483,12 +533,12 @@ func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector stri
 		}
 	}
 	if bestRank >= 0 {
-		return s.GetPolicy(best.TenantID, best.PolicyID, best.PolicyVersion)
+		return s.publishedPolicy(best.TenantID, best.PolicyID, best.PolicyVersion)
 	}
 	if tenantID == "" {
 		tenantID = "default"
 	}
-	if policy, ok := s.GetPolicy(tenantID, policymodel.DefaultPolicyID, 0); ok {
+	if policy, ok := s.publishedPolicy(tenantID, policymodel.DefaultPolicyID, 0); ok {
 		return policy, true
 	}
 	return policymodel.DefaultPolicy(tenantID), true

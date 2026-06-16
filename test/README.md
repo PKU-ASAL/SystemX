@@ -144,6 +144,7 @@ make e2e-agent-backpressure
 make e2e-policy-endpoint-disable
 make e2e-policy-agent-refresh
 make e2e-policy-cloud-disable
+make e2e-policy-publish
 
 # v3 response/enforce observe-only smoke
 make e2e-response-observe-only

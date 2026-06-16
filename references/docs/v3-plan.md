@@ -140,9 +140,10 @@ Status: partial implementation started.
 - manager HTTP API 支持:
   - `GET /api/v1/rules`
   - `GET|POST /api/v1/policies`
+  - `POST /api/v1/policy-publish`
   - `GET|POST /api/v1/policy-assignments`
   - `GET /api/v1/effective-policy`
-- `sysarmorctl` 支持查询 rules、policies、policy-assignments、effective-policy。
+- `sysarmorctl` 支持查询 rules、policies、policy-assignments、effective-policy,并可通过 `policy-publish` 发布/取消发布 policy version。
 - analytics 会按 effective policy 的 cloud rule references 启停 cloud convergence rule。
 - agent 启动时会通过 HTTP 拉取 effective policy,并用 endpoint rule references 初始化 endpoint rule engine。
 - agent 会按 `policy.refresh_interval` 周期性刷新 effective policy,并在 policy/rule references 变化时切换 endpoint rule engine。
@@ -150,12 +151,12 @@ Status: partial implementation started.
 - `make -C test e2e-policy-endpoint-disable` 验证 agent 拉取 assigned policy 后禁用 endpoint rule,对应 endpoint signal 不再生成。
 - `make -C test e2e-policy-agent-refresh` 验证无需重启 agent 即可刷新 endpoint policy。
 - `make -C test e2e-policy-cloud-disable` 验证 manager policy assignment 禁用 cloud rule 后不再收敛 incident。
+- `make -C test e2e-policy-publish` 验证 draft policy 不能分配和生效,发布后才可进入 effective policy。
 - daemon 单测验证禁用 endpoint rule 后对应 endpoint signal 不再生成。
 
 仍未完成:
 
-- Link1 downlink signal / stream 语义。
-- manager API 的认证/审计/发布状态完整语义。
+- manager API 的认证/审计完整语义。
 
 ### Deliverables
 
@@ -213,6 +214,7 @@ go test ./...
 make -C test e2e-policy-endpoint-disable
 make -C test e2e-policy-cloud-disable
 make -C test e2e-policy-agent-refresh
+make -C test e2e-policy-publish
 ```
 
 ## 7. Phase 2: Response / Enforce Observe-only Skeleton

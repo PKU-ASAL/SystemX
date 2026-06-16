@@ -587,6 +587,49 @@ func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 	}
 }
 
+func TestPolicyAPIDraftRequiresPublishBeforeAssignment(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "draft-policy"
+	policy.Version = 2
+	policy.Published = false
+	policyData, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy post status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	assignmentData := `{"tenant_id":"default","agent_id":"agent-draft","policy_id":"draft-policy","policy_version":2}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(assignmentData))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("draft assignment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	publish := `{"tenant_id":"default","policy_id":"draft-policy","version":2,"published":true}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-publish", strings.NewReader(publish))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"published":true`) {
+		t.Fatalf("publish status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(assignmentData))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("published assignment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-draft")
+	if !strings.Contains(rec.Body.String(), `"policy_id":"draft-policy"`) || !strings.Contains(rec.Body.String(), `"published":true`) {
+		t.Fatalf("effective policy response = %s", rec.Body.String())
+	}
+}
+
 func TestLink1DownlinkFramesIncludePolicyAndPendingResponses(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()

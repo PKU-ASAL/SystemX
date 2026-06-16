@@ -67,6 +67,7 @@ type ManagerStore interface {
 	MetricsSnapshot() store.Metrics
 	PendingEvidencePullbacks(string, string) []link1model.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
+	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
 	RecordLink1Upload(*analyticsv1.AgentHello, string, string, time.Time) store.Link1Session
 	RecordUpload(int, int, int, int, time.Duration)
 	ReplaceDerivedForScenario(string, []*signalv1.Signal, []*incidentv1.Incident)
@@ -92,6 +93,13 @@ type responseDecisionRequest struct {
 	Scope    responsemodel.Scope `json:"scope,omitempty"`
 	Target   string              `json:"target,omitempty"`
 	Actor    string              `json:"actor,omitempty"`
+}
+
+type policyPublishRequest struct {
+	TenantID  string `json:"tenant_id"`
+	PolicyID  string `json:"policy_id"`
+	Version   uint64 `json:"version"`
+	Published bool   `json:"published"`
 }
 
 type responseApprovalRequest struct {
@@ -164,6 +172,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/recompute", s.recompute)
 	mux.HandleFunc("/api/v1/rules", s.rules)
 	mux.HandleFunc("/api/v1/policies", s.policies)
+	mux.HandleFunc("/api/v1/policy-publish", s.policyPublish)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
@@ -718,6 +727,32 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) policyPublish(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req policyPublishRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode policy publish: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.PolicyID == "" {
+		http.Error(w, "policy_id is required", http.StatusBadRequest)
+		return
+	}
+	policy, ok := s.store.PublishPolicy(req.TenantID, req.PolicyID, req.Version, req.Published)
+	if !ok {
+		http.Error(w, "policy not found", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, policy)
 }
 
 func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {

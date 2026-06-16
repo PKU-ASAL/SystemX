@@ -555,6 +555,42 @@ func TestPolicyAssignmentAndEffectivePolicy(t *testing.T) {
 	}
 }
 
+func TestPolicyDraftMustBePublishedBeforeAssignment(t *testing.T) {
+	st := &Store{}
+	st.EnsureDefaultPolicy("default")
+	draft := policymodel.DefaultPolicy("default")
+	draft.PolicyID = "draft-policy"
+	draft.Version = 2
+	draft.Published = false
+	st.UpsertPolicy(draft)
+	if _, ok := st.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		AgentID:       "agent-a",
+		PolicyID:      "draft-policy",
+		PolicyVersion: 2,
+	}); ok {
+		t.Fatal("AssignPolicy ok = true for draft policy")
+	}
+	if effective, ok := st.EffectivePolicy("default", "agent-a", "", ""); !ok || effective.PolicyID != policymodel.DefaultPolicyID {
+		t.Fatalf("effective policy = %+v ok=%t", effective, ok)
+	}
+	published, ok := st.PublishPolicy("default", "draft-policy", 2, true)
+	if !ok || !published.Published {
+		t.Fatalf("PublishPolicy = %+v ok=%t", published, ok)
+	}
+	if _, ok := st.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		AgentID:       "agent-a",
+		PolicyID:      "draft-policy",
+		PolicyVersion: 2,
+	}); !ok {
+		t.Fatal("AssignPolicy ok = false after publish")
+	}
+	if effective, ok := st.EffectivePolicy("default", "agent-a", "", ""); !ok || effective.PolicyID != "draft-policy" || !effective.Published {
+		t.Fatalf("effective policy = %+v ok=%t", effective, ok)
+	}
+}
+
 func testEvent(id, scenario string) *eventv1.CanonicalEvent {
 	return &eventv1.CanonicalEvent{Id: id, Scenario: scenario}
 }
