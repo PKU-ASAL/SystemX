@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
 )
@@ -73,6 +74,56 @@ ON CONFLICT (state_key) DO UPDATE SET
 `, snapshotStateKey, store.FileStoreStateVersion, data)
 	if err != nil {
 		return fmt.Errorf("save postgres snapshot: %w", err)
+	}
+	if err := projectAgentHealth(ctx, db, state.Health); err != nil {
+		return err
+	}
+	return nil
+}
+
+func projectAgentHealth(ctx context.Context, db *sql.DB, healthRows []json.RawMessage) error {
+	for _, raw := range healthRows {
+		var health agenthealth.AgentHealth
+		if err := json.Unmarshal(raw, &health); err != nil {
+			return fmt.Errorf("decode agent health projection: %w", err)
+		}
+		if health.AgentID == "" {
+			continue
+		}
+		tenantID := health.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		observedAt := health.ObservedAt
+		if observedAt.IsZero() {
+			_, err := db.ExecContext(ctx, `
+INSERT INTO agent_health (tenant_id, agent_id, host_id, scope_type, scope_selector, data)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
+  host_id = EXCLUDED.host_id,
+  scope_type = EXCLUDED.scope_type,
+  scope_selector = EXCLUDED.scope_selector,
+  observed_at = now(),
+  data = EXCLUDED.data
+`, tenantID, health.AgentID, health.HostID, health.Scope.Type, health.Scope.Selector, []byte(raw))
+			if err != nil {
+				return fmt.Errorf("project agent health: %w", err)
+			}
+			continue
+		}
+		_, err := db.ExecContext(ctx, `
+INSERT INTO agent_health (tenant_id, agent_id, host_id, scope_type, scope_selector, observed_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
+  host_id = EXCLUDED.host_id,
+  scope_type = EXCLUDED.scope_type,
+  scope_selector = EXCLUDED.scope_selector,
+  observed_at = EXCLUDED.observed_at,
+  data = EXCLUDED.data
+`, tenantID, health.AgentID, health.HostID, health.Scope.Type, health.Scope.Selector, observedAt, []byte(raw))
+		if err != nil {
+			return fmt.Errorf("project agent health: %w", err)
+		}
 	}
 	return nil
 }

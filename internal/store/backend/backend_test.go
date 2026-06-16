@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,11 +14,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/transport/link1"
@@ -84,6 +87,43 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	audits := reopened.Store.ListResponses("default", "agent-pg")
 	if len(audits) != 1 || audits[0].Command.ResponseID != "resp-pg" {
 		t.Fatalf("reopened audits = %+v", audits)
+	}
+}
+
+func TestOpenPostgresProjectsAgentHealthTable(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.UpsertAgentHealth(agenthealth.AgentHealth{
+		TenantID:   "default",
+		AgentID:    "agent-health-pg",
+		HostID:     "host-health-pg",
+		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "checkout-api"},
+		Status:     "ok",
+		ObservedAt: time.Unix(123, 0).UTC(),
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO sysarmor_state",
+		"INSERT INTO agent_health",
+		"agent-health-pg",
+		"host-health-pg",
+		"container",
+		"checkout-api",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
 	}
 }
 
@@ -358,6 +398,7 @@ func init() {
 var fakeState struct {
 	sync.Mutex
 	lastQuery string
+	execLog   []string
 	execErr   error
 	snapshot  []byte
 }
@@ -366,6 +407,7 @@ func fakeSetExecError(err error) {
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	fakeState.lastQuery = ""
+	fakeState.execLog = nil
 	fakeState.execErr = err
 }
 
@@ -379,6 +421,12 @@ func fakeLastQuery() string {
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	return fakeState.lastQuery
+}
+
+func fakeExecLog() string {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	return strings.Join(fakeState.execLog, "\n")
 }
 
 type fakeDriver struct{}
@@ -421,6 +469,7 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 	fakeState.Lock()
 	defer fakeState.Unlock()
 	fakeState.lastQuery = s.query
+	fakeState.execLog = append(fakeState.execLog, s.query, fakeArgs(args))
 	if fakeState.execErr != nil {
 		return nil, fakeState.execErr
 	}
@@ -433,6 +482,14 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 		}
 	}
 	return driver.RowsAffected(1), nil
+}
+
+func fakeArgs(args []driver.NamedValue) string {
+	values := make([]string, 0, len(args))
+	for _, arg := range args {
+		values = append(values, fmt.Sprint(arg.Value))
+	}
+	return strings.Join(values, " ")
 }
 
 func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {

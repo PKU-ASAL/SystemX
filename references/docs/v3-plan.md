@@ -455,6 +455,7 @@ Status: foundation implementation started.
 - file store 已抽出 `ExportState` / `ImportState` 状态序列化边界,Postgres snapshot adapter 复用同一套 proto/json state contract 持久化完整 manager state,后续可逐步落表。
 - file/memory store 已暴露 backend metadata: backend type、state version、migration version、Postgres schema version。
 - store 已提供 backend metadata/save hook,Postgres snapshot adapter 会将 `Info().Backend` 暴露为 `postgres` 并把 `Save()` 写入 `sysarmor_state`。
+- Postgres snapshot adapter 保存 snapshot 时会同步投影 agent health 到 `agent_health` 表,作为逐表 adapter 的第一条表路径。
 - manager `/healthz` 会返回 store backend 信息。
 - manager `GET /api/v1/store-status` 与 `sysarmorctl store-status` 可查询 store backend 和 migration/schema version。
 - manager `events` / `signals` / `incidents` 查询 API 与 `sysarmorctl` 已支持 `limit` / `offset` 分页参数。
@@ -464,13 +465,14 @@ Status: foundation implementation started.
 - `make -C test e2e-postgres-idempotency` 验证 snapshot-backed Postgres backend 保持重复 ingest 的幂等性。
 - `make -C test e2e-postgres-policy-persistence` 验证 snapshot-backed Postgres backend 跨 reopen 保留 policy publish/assignment/audit 和 incident lifecycle 状态。
 - `make -C test e2e-postgres-manager-api` 验证 snapshot-backed Postgres backend 可支撑 manager ingest/query/policy/incident lifecycle API,并跨 reopen 保留 API 写入状态。
+- `make -C test e2e-postgres-agent-health-projection` 验证 Postgres backend 保存 snapshot 时会 upsert `agent_health` 表投影。
 - `make -C test e2e-postgres-all` 当前聚合 Postgres foundation gate。
 
 仍未完成:
 
 - live Postgres migration e2e。
-- 逐表 Postgres adapter。
-- ingest/query/policy/incident e2e 已有 snapshot-backed Postgres manager API 门禁;仍缺逐表 Postgres adapter 路径上的同类 e2e。
+- 逐表 Postgres adapter:当前只开始投影 `agent_health`,尚未把 agents/policy/incident/query 主路径迁到逐表读写。
+- ingest/query/policy/incident e2e 已有 snapshot-backed Postgres manager API 门禁;仍缺完整逐表 Postgres adapter 路径上的同类 e2e。
 
 ### Deliverables
 
@@ -521,6 +523,7 @@ make -C test e2e-postgres-store
 make -C test e2e-postgres-idempotency
 make -C test e2e-postgres-policy-persistence
 make -C test e2e-store-status
+make -C test e2e-postgres-agent-health-projection
 ```
 
 ## 10. Phase 5: Link1 Bidirectional Stream
