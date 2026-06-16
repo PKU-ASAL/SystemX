@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const snapshotStateKey = "default"
@@ -75,8 +77,40 @@ ON CONFLICT (state_key) DO UPDATE SET
 	if err != nil {
 		return fmt.Errorf("save postgres snapshot: %w", err)
 	}
+	if err := projectAgents(ctx, db, state.Agents); err != nil {
+		return err
+	}
 	if err := projectAgentHealth(ctx, db, state.Health); err != nil {
 		return err
+	}
+	return nil
+}
+
+func projectAgents(ctx context.Context, db *sql.DB, agentRows []json.RawMessage) error {
+	for _, raw := range agentRows {
+		var agent analyticsv1.AgentHello
+		if err := protojson.Unmarshal(raw, &agent); err != nil {
+			return fmt.Errorf("decode agent projection: %w", err)
+		}
+		if agent.GetAgentId() == "" {
+			continue
+		}
+		tenantID := agent.GetTenantId()
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		_, err := db.ExecContext(ctx, `
+INSERT INTO agents (tenant_id, agent_id, host_id, version, data)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
+  host_id = EXCLUDED.host_id,
+  version = EXCLUDED.version,
+  observed_at = now(),
+  data = EXCLUDED.data
+`, tenantID, agent.GetAgentId(), agent.GetHostId(), agent.GetVersion(), []byte(raw))
+		if err != nil {
+			return fmt.Errorf("project agent: %w", err)
+		}
 	}
 	return nil
 }

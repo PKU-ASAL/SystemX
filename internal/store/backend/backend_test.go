@@ -90,7 +90,7 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	}
 }
 
-func TestOpenPostgresProjectsAgentHealthTable(t *testing.T) {
+func TestOpenPostgresProjectsAgentInventoryTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -101,6 +101,12 @@ func TestOpenPostgresProjectsAgentHealthTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
+	result.Store.AddAgent(&analyticsv1.AgentHello{
+		TenantId: "default",
+		AgentId:  "agent-inventory-pg",
+		HostId:   "host-inventory-pg",
+		Version:  "v-test",
+	})
 	result.Store.UpsertAgentHealth(agenthealth.AgentHealth{
 		TenantID:   "default",
 		AgentID:    "agent-health-pg",
@@ -115,6 +121,10 @@ func TestOpenPostgresProjectsAgentHealthTable(t *testing.T) {
 	execLog := fakeExecLog()
 	for _, want := range []string{
 		"INSERT INTO sysarmor_state",
+		"INSERT INTO agents",
+		"agent-inventory-pg",
+		"host-inventory-pg",
+		"v-test",
 		"INSERT INTO agent_health",
 		"agent-health-pg",
 		"host-health-pg",
