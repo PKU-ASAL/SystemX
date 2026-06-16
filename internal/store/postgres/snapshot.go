@@ -9,6 +9,7 @@ import (
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
@@ -85,6 +86,12 @@ ON CONFLICT (state_key) DO UPDATE SET
 		return err
 	}
 	if err := projectResponseAudit(ctx, db, state.Responses, state.ResponseAcks); err != nil {
+		return err
+	}
+	if err := projectPolicies(ctx, db, state.Policies); err != nil {
+		return err
+	}
+	if err := projectPolicyAssignments(ctx, db, state.Assignments); err != nil {
 		return err
 	}
 	return nil
@@ -206,6 +213,97 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
 `, tenantID, cmd.ResponseID, cmd.AgentID, cmd.Status, cmd.Action, cmd.CreatedAt, cmd.UpdatedAt, commandData, ackData)
 		if err != nil {
 			return fmt.Errorf("project response audit: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectPolicies(ctx context.Context, db *sql.DB, policies []policymodel.Policy) error {
+	for _, policy := range policies {
+		if policy.PolicyID == "" || policy.Version == 0 {
+			continue
+		}
+		tenantID := policy.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		data, err := json.Marshal(policy)
+		if err != nil {
+			return fmt.Errorf("encode policy projection: %w", err)
+		}
+		createdAt := policy.CreatedAt
+		if createdAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO policies (tenant_id, policy_id, version, scope_type, scope_selector, mode, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
+  scope_type = EXCLUDED.scope_type,
+  scope_selector = EXCLUDED.scope_selector,
+  mode = EXCLUDED.mode,
+  data = EXCLUDED.data
+`, tenantID, policy.PolicyID, policy.Version, policy.Scope.Type, policy.Scope.Selector, policy.Mode, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO policies (tenant_id, policy_id, version, scope_type, scope_selector, mode, created_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
+  scope_type = EXCLUDED.scope_type,
+  scope_selector = EXCLUDED.scope_selector,
+  mode = EXCLUDED.mode,
+  data = EXCLUDED.data
+`, tenantID, policy.PolicyID, policy.Version, policy.Scope.Type, policy.Scope.Selector, policy.Mode, createdAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project policy: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectPolicyAssignments(ctx context.Context, db *sql.DB, assignments []policymodel.Assignment) error {
+	for _, assignment := range assignments {
+		if assignment.AssignmentID == "" || assignment.PolicyID == "" {
+			continue
+		}
+		tenantID := assignment.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		data, err := json.Marshal(assignment)
+		if err != nil {
+			return fmt.Errorf("encode policy assignment projection: %w", err)
+		}
+		createdAt := assignment.CreatedAt
+		updatedAt := assignment.UpdatedAt
+		if createdAt.IsZero() || updatedAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO policy_assignments (tenant_id, assignment_id, agent_id, scope_type, scope_selector, policy_id, policy_version, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  scope_type = EXCLUDED.scope_type,
+  scope_selector = EXCLUDED.scope_selector,
+  policy_id = EXCLUDED.policy_id,
+  policy_version = EXCLUDED.policy_version,
+  updated_at = now(),
+  data = EXCLUDED.data
+`, tenantID, assignment.AssignmentID, assignment.AgentID, assignment.Scope.Type, assignment.Scope.Selector, assignment.PolicyID, assignment.PolicyVersion, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO policy_assignments (tenant_id, assignment_id, agent_id, scope_type, scope_selector, policy_id, policy_version, created_at, updated_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  scope_type = EXCLUDED.scope_type,
+  scope_selector = EXCLUDED.scope_selector,
+  policy_id = EXCLUDED.policy_id,
+  policy_version = EXCLUDED.policy_version,
+  updated_at = EXCLUDED.updated_at,
+  data = EXCLUDED.data
+`, tenantID, assignment.AssignmentID, assignment.AgentID, assignment.Scope.Type, assignment.Scope.Selector, assignment.PolicyID, assignment.PolicyVersion, createdAt, updatedAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project policy assignment: %w", err)
 		}
 	}
 	return nil

@@ -184,6 +184,52 @@ func TestOpenPostgresProjectsResponseAuditTable(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "policy-table-pg"
+	policy.Version = 9
+	policy.Scope = policymodel.ScopeSelector{Type: "container", Selector: "checkout-api"}
+	policy.Mode = "observe"
+	result.Store.UpsertPolicy(policy)
+	assignment, ok := result.Store.AssignPolicy(policymodel.Assignment{
+		TenantID:      "default",
+		AgentID:       "agent-policy-pg",
+		PolicyID:      "policy-table-pg",
+		PolicyVersion: 9,
+	})
+	if !ok {
+		t.Fatal("AssignPolicy() ok = false")
+	}
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO policies",
+		"policy-table-pg",
+		"container",
+		"checkout-api",
+		"observe",
+		"INSERT INTO policy_assignments",
+		assignment.AssignmentID,
+		"agent-policy-pg",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+}
+
 func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
