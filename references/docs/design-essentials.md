@@ -106,6 +106,10 @@ Sensor Runtime
 
 规则内容是产品能力,不应长期硬编码在执行引擎里。
 
+Collection policy 只描述端侧 sensor 要采集的客观事实和可下推过滤条件,不承载检测语义。具体设计见 [collection-policy-design.md](collection-policy-design.md)。
+
+Detection policy 通过 RuleSet / RulePack 应用版本化检测内容,并引用 ContextSet / IOCPack 解释事件、产出 Signal。具体设计见 [detection-policy-design.md](detection-policy-design.md)。
+
 ### 3.4 Response / Enforce
 
 响应能力分两层：
@@ -212,6 +216,19 @@ XDR 的关键不是多接几个日志源,而是把更多安全域归一成同一
 - SaaS audit
 
 原生 agent 是一等公民,因为它能在源头打 lineage。agentless adapter 是二等公民,因为它只能在云端尽力补齐上下文。两者都必须输出 CanonicalEvent / Signal / Entity,进入同一张图。
+
+### 3.10 Online Provenance Detection
+
+NOD LINK 这类在线溯源图检测,说明端侧不仅要“采到事件”,还要能把事件维持成可回查、可收敛的局部因果图。对 SysArmor Next 来说,这意味着端侧至少要具备：
+
+- 稳定的进程 / 文件 / socket / IP / 容器实体标识。
+- 能按短时间窗口维护局部 provenance cache。
+- 能把高置信异常点标成 terminal anchor。
+- 能保留与 terminal 相关的上下文子图,而不是只留一条扁平日志。
+- 能在资源受限时淘汰低价值上下文,但不丢掉攻击相关链路。
+- 能把本地图上的关键节点和边回传为 evidence seed,供云端继续收敛。
+
+这类能力不要求端侧做全局图裁决,但要求端侧把“图可建、点可锚、边可追、证据可回查”做实。换句话说,端侧必须提供图分析的原料质量,而不是只提供原始事件流。
 
 ---
 
@@ -364,7 +381,7 @@ type Sensor interface {
 关键对象：
 
 - `Capability`: backend、version、event support、enforce support、kernel/BTF/bpffs 等。
-- `CollectionIntent`: runtime scope、event kinds、file/socket filter、observe-only。
+- `CollectionIntent`: runtime scope、behaviors、file/socket filter、observe-only。
 - `EventEnvelope`: sensor-neutral event、raw ref、received_at。
 - `Health`: running、installed、policy_loaded、events_seen、events_dropped、parse_errors、restart_count。
 - `EnforcementCmd/Ack`: 阻断命令和结果,默认可以是 unsupported 或 observe-only。

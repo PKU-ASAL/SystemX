@@ -2,7 +2,7 @@
 
 > 配套 [design-essentials.md](design-essentials.md)。本文只描述当前 `test/` 目录里的真实测试逻辑、脚本入口、覆盖状态和下一步缺口。
 
-一句话原则：**测试不是证明脚本能跑完,而是证明一条产品契约成立:给定拓扑、策略、运行时状态和攻击/故障输入,系统必须产出或不产出指定事实,并能通过 manager / sysarmorctl 查询验证。**
+一句话原则：**测试不是证明脚本能跑完,而是证明一条产品契约成立:给定拓扑、策略、运行时状态和攻击/故障输入,系统必须产出或不产出指定事实,并能通过 sysarmorctl 查询验证。当前端侧阶段优先验证 sysarmorctl over Unix Domain Socket 直连 agent; 平台阶段再验证 manager / gateway / store。**
 
 ---
 
@@ -13,14 +13,14 @@
 | 层级 | 目的 | 主要入口 | 成本 |
 |---|---|---|---|
 | 单元/包测试 | 验证代码内部状态机和接口 | `go test ./...` | 低 |
-| local agent runtime | 用 fake sensor 验证 agent、spool、retry、health、manager 查询 | `make -C test e2e-agent-all` | 中 |
+| local agent runtime | 用 fake sensor 验证 agent、spool、retry、health、本地控制接口; 旧 manager 上传可靠性测试作为平台兼容回归保留 | `make -C test e2e-agent-all` | 中 |
 | container detection/runtime | 用 Docker + real Tetragon 验证容器 scope 检测链路 | `make -C test e2e-agent-detection-container-all`、`make -C test e2e-agent-real-tetragon-owned-container` | 高 |
 | VM owned runtime | 用 Vagrant VM + real Tetragon 验证 VM/systemd/host scope | `make -C test e2e-agent-real-tetragon-owned-vm` | 最高 |
 
 日常判断:
 
 - 改普通 Go 逻辑:先跑 `go test ./...`。
-- 改 agent runtime、spool、health、upload:跑 `make -C test e2e-agent-all`。
+- 改 agent runtime、spool、health、本地控制接口:跑 `make -C test e2e-agent-all`; 改真实 Tetragon/VM/systemd 时再跑 owned runtime。
 - 改检测规则、normalize、analytics:跑 `make -C test e2e-agent-detection-container-all`。
 - 改 Tetragon backend、runtime policy、scope、VM/systemd:跑 `make -C test e2e-agent-runtime-all`。
 
@@ -36,7 +36,7 @@ test/
 
   env/
     container/          Docker Compose 拓扑
-    vm/                 Vagrant + libvirt 拓扑
+    vm/                 Vagrant + libvirt 拓扑; 当前端侧阶段不要求 manager VM
     resources/          replay/debug/perf 兼容资源
 
   scenarios/
@@ -51,7 +51,8 @@ test/
     capture-*.sh        通用场景采集入口
     e2e-*.sh            端到端门禁脚本
     perf-*.sh           性能/资源采样脚本
-    assert.py           旧通用断言入口
+    assert.py           旧 container/manager 通用断言入口
+    assert-vm-local.sh  VM 本地 agent 断言入口
     report.py           汇总已有结果
 
   .results/             生成物,不是测试源文件
@@ -60,34 +61,34 @@ test/
 注意:
 
 - `.results/` 和 `harness/__pycache__/` 是生成物,不应作为测试设计来源。
-- `capture-container.sh` / `capture-vm.sh` 默认已经是 agent-managed 主路径。
-- `CAPTURE_MODE=replay` 是兼容调试路径,不是当前主门禁。
+- `capture-vm.sh` 当前是 local agent 主路径:agent 自带并托管 Tetragon,`sysarmorctl --agent-sock` 查询本地 event/signal。
+- `capture-container.sh` 仍保留平台/manager 路径,后续会按端侧优先原则继续收敛。
 - `test/policies/*.yaml` 是策略契约样例;当前大多数 e2e 脚本仍会在临时目录里写最小 `policy.yaml`。
 
 ---
 
 ## 三、核心测试逻辑
 
-当前测试证明的是一条 EDR endpoint runtime 主链路:
+当前端侧阶段证明的是一条本地 EDR endpoint runtime 主链路:
 
 ```text
 attack / fault input
   -> sensor runtime
   -> sysarmor-agent
-  -> spool / upload
-  -> sysarmor-manager
-  -> analytics / store
-  -> sysarmorctl query
+  -> local normalize + endpoint rule engine
+  -> local event/signal stream buffer
+  -> sysarmorctl --agent-sock query
   -> harness assertion
 ```
 
-测试脚本不应该只看进程退出码,还要看 manager 查询结果:
+测试脚本不应该只看进程退出码,还要看本地控制接口查询结果:
 
-- `events`: 原始/规范化事件是否进入 manager。
-- `signals`: endpoint/cloud signal 是否出现或不出现。
-- `incidents`: 是否形成 incident。
-- `agent-health`: sensor、queue、upload、capability、scope 是否可见。
-- `metrics`: ingest、retry、backpressure 等计数是否符合预期。
+- `agent health`: sensor、queue、capability、scope、policy_loaded 是否可见。
+- `agent capability`: Tetragon backend、kernel/BTF/bpffs、支持的 collection behavior 和 selector 能力矩阵是否可见。
+- `policy current/apply`: 当前策略和 collection policy 能否通过本地接口查询/热更新。
+- `event watch`: 规范化事件是否能从 agent 本地流读出。
+- `signal watch`: endpoint rule engine 产生的 signal 是否能从 agent 本地流读出。
+- 平台阶段再看 `events/signals/incidents/metrics` 是否进入 manager/gateway/store。
 
 ---
 
@@ -132,7 +133,7 @@ e2e-agent-real-tetragon-owned-vm
   -> VM systemd + real Tetragon owned process/runtime policy
 ```
 
-这是当前最接近“端到端已闭环”的门禁。
+这是当前最接近“端侧端到端已闭环”的门禁; manager/Kafka/Postgres/OpenSearch 不作为本阶段 VM 验证前置条件。
 
 ---
 
@@ -335,7 +336,6 @@ make -C test e2e-agent-gateway-stream-all
 | `e2e-agent-systemd-vm` | `harness/e2e-agent-systemd-vm.sh` | VM systemd agent 能安装、启动、restart、查询 health |
 | `e2e-agent-managed-vm` | `harness/e2e-agent-managed-vm.sh` | VM fake Tetragon bundle 能被 systemd agent 托管 |
 | `e2e-agent-managed-recover-vm` | `harness/e2e-agent-managed-recover-vm.sh` | VM fake sensor 能从 degraded 恢复 |
-| `e2e-agent-real-tetragon-vm` | `harness/e2e-agent-real-tetragon-vm.sh` | VM 上 agent 订阅真实 Tetragon 事件 |
 | `e2e-agent-real-tetragon-owned-container` | `harness/e2e-agent-real-tetragon-owned-container.sh` | container 中 agent-owned real Tetragon process + policy + cleanup |
 | `e2e-agent-real-tetragon-owned-vm` | `harness/e2e-agent-real-tetragon-owned-vm.sh` | VM 中 agent-owned real Tetragon process + policy + systemd recovery |
 

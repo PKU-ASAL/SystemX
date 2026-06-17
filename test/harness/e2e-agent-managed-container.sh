@@ -49,7 +49,7 @@ docker exec mgr sh -c "tetragon_sum=\$(sha256sum '$WORK/bundle/bin/tetragon' | a
 EOF"
 
 docker exec mgr sh -c "cat > '$WORK/policy.yaml' <<'EOF'
-kinds: [EXEC]
+{"behaviors":["process.exec"],"observe_only":true}
 EOF
 cat > '$WORK/agent.yaml' <<EOF
 agent:

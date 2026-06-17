@@ -7,4 +7,4 @@ spec:
     flush_interval_ns: 1000000000     # 1s
     retry_max: 8
     backoff_base_ns: 200000000        # 200ms
-    priority_kinds: [CONNECT, EXEC]   # 拥塞时优先上行
+    priority_behaviors: [network.connect, process.exec]   # 拥塞时优先上行

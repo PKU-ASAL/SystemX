@@ -7,13 +7,13 @@
 
 ```
 容器拓扑 (docker compose)               VM 拓扑 (Vagrant + libvirt)
-┌──────────────────────────────┐        ┌──────────┐ ┌──────────┐ ┌──────────┐
-│ 宿主机内核                    │        │ attacker │ │  node-a  │ │   mgr    │
-│  └─ Docker: sysarmor-net     │        │  VM(C2)  │ │ +tetragon│ │   VM     │
-│      ├─ attacker  .99        │        │  独立内核  │ │  独立内核 │ │  独立内核 │
-│      ├─ node-a    .11        │        └──────────┘ └──────────┘ └──────────┘
+┌──────────────────────────────┐        ┌──────────┐ ┌──────────┐
+│ 宿主机内核                    │        │ attacker │ │  node-a  │
+│  └─ Docker: sysarmor-net     │        │  VM(C2)  │ │ +agent   │
+│      ├─ attacker  .99        │        │  独立内核  │ │  独立内核 │
+│      ├─ node-a    .11        │        └──────────┘ └──────────┘
 │      ├─ mgr       .10        │
-│      └─ tetragon (eBPF 传感器)│        tetragon 在 VM 内核上直装
+│      └─ tetragon (eBPF 传感器)│        agent 自带/托管 Tetragon sensor
 │                               │
 │ tetragon 共享宿主内核          │        不需要 Docker
 └──────────────────────────────┘
@@ -77,7 +77,7 @@ test/
 │   │   └── images/           Dockerfile (attacker / node-a / mgr)
 │   ├── vm/
 │   │   ├── Vagrantfile       VM 拓扑声明
-│   │   └── provision/        install-tetragon / setup-c2 / setup-credentials
+│   │   └── provision/        setup-c2 / setup-credentials
 │   └── resources/            共享资源
 │       ├── syscall-capture.yaml   replay/debug/perf 兼容 TracingPolicy
 │       └── registry-token         假凭据
@@ -107,13 +107,10 @@ make e2e TOPO=container SCENARIO=apt-fileless-c2
 make e2e TOPO=container SCENARIO=apt-staged-drop
 make e2e TOPO=container SCENARIO=benign-ci-noise
 
-# VM 拓扑: VM 内执行场景和抓 Tetragon,复用同一 manager/CLI 契约
+# VM 拓扑: VM 内执行场景，由 agent-owned Tetragon sensor 采集，sysarmorctl 直连 agent.sock 验证
 make e2e TOPO=vm SCENARIO=apt-fileless-c2
 make e2e TOPO=vm SCENARIO=apt-staged-drop
 make e2e TOPO=vm SCENARIO=benign-ci-noise
-
-# VM systemd + real Tetragon subscription smoke
-make e2e-agent-real-tetragon-vm
 
 # VM systemd + agent-owned real Tetragon process smoke
 make e2e-agent-real-tetragon-owned-vm
@@ -194,11 +191,21 @@ make clean                           # down + 删 .results/
 
 ## 当前产品链路
 
-MVP / v2 container 和 VM 主运行路径是:
+当前 endpoint refinement 阶段的 VM 主运行路径是:
+
+```
+sysarmor-agent run --config ...（agent-owned Tetragon + tetra getevents）
+  → normalize + endpoint detection engine
+  → local event/signal stream buffer
+  → sysarmorctl --agent-sock /var/run/sysarmor/agent.sock
+  → harness/assert-vm-local.sh
+```
+
+container 和平台兼容测试仍保留旧 manager 路径:
 
 ```
 sysarmor-agent run --config ...（agent-managed tetra getevents）
-  → normalize + fastpath
+  → normalize + detection engine
   → durable spool + upload worker
   → sysarmor-manager AgentGateway upload/analytics/store
   → sysarmorctl JSON query
@@ -213,9 +220,8 @@ docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
   --scenario grpc-smoke --input-jsonl /tmp/lifecycle.sensor.jsonl
 ```
 
-`capture-container` 和 `capture-vm` 默认启动 v2 daemon,由 agent 托管 `tetra getevents` 订阅并 apply runtime policy。container 拓扑会按 `node-a` 的 Docker container id 过滤 Tetragon 事件,避免宿主机或其他容器噪音淹没场景事件。
-如需回归 v1 调试路径,可使用 `CAPTURE_MODE=replay make capture TOPO=container SCENARIO=...` 或 `CAPTURE_MODE=replay make capture TOPO=vm SCENARIO=...`;该模式仍会保留实际喂给 agent 的 Tetragon 样本到 `.results/*.tetragon.jsonl`,并用 `replay_scenario.py` 上传契约级 SensorEvent。
-agent 也仍支持直接读取 Tetragon raw JSONL,用于 raw adapter smoke。
+`capture-vm` 当前只走本地 agent 主路径,不启动 manager/Kafka/Postgres。`capture-container` 仍保留平台/manager 路径,后续会继续向本地 agent-first 测试收敛。
+agent 仍支持直接读取 Tetragon raw JSONL,用于 raw adapter smoke。
 
 ## 常用调试
 
@@ -225,7 +231,7 @@ docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 status --json
 
 # 查询信号和事件
 docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario apt-fileless-c2 --layer endpoint --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario lifecycle-smoke --kind EXEC --json
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario lifecycle-smoke --behavior process.exec --json
 
 # control assertion: 反事实重算,不污染 store
 docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario apt-staged-drop --disable cloud.cross_lineage --json

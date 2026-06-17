@@ -41,7 +41,7 @@ cat > "$TMP/bundle/manifest.json" <<EOF
 EOF
 
 cat > "$TMP/policy.yaml" <<'EOF'
-kinds: [EXEC]
+{"behaviors":["process.exec"],"observe_only":true}
 EOF
 
 cat > "$TMP/agent.yaml" <<EOF

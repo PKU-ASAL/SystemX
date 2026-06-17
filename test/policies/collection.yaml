@@ -1,12 +1,15 @@
-# PolicyEnvelope: CollectionPolicy（编译成 sensor 的 CollectionIntent/TracingPolicy）
-meta: { id: col-mvp, type: COLLECTION, version: 1 }
-target: { scope: host, selectors: { host: node-a }, source_capability: full }
-spec:
-  collection:
-    kinds: [EXEC, EXIT, FORK, OPEN, WRITE, CHMOD, CONNECT, SETUID]
-    include:
-      - { type: container, value: "web" }
-      - { type: container, value: "ci-runner" }
-    exclude: []
-    rate_limit: { per_kind_eps: 20000 }
-    # sample_rate: 1.0   # [later]
+{
+  "policy_id": "col-mvp",
+  "version": 1,
+  "behaviors": [
+    "process.exec",
+    "process.exit",
+    "process.fork",
+    "file.open",
+    "file.write",
+    "file.chmod",
+    "network.connect"
+  ],
+  "scope_type": "host",
+  "observe_only": true
+}

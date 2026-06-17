@@ -61,9 +61,9 @@ cat > "$TMP/batch.json" <<JSON
     "version": "e2e"
   },
   "events": [
-    {"id": "ev-page-1", "scenario": "$SCENARIO", "kind": "EVENT_KIND_EXEC"},
-    {"id": "ev-page-2", "scenario": "$SCENARIO", "kind": "EVENT_KIND_OPEN"},
-    {"id": "ev-page-3", "scenario": "$SCENARIO", "kind": "EVENT_KIND_CONNECT"}
+    {"id": "ev-page-1", "scenario": "$SCENARIO", "behavior": "process.exec"},
+    {"id": "ev-page-2", "scenario": "$SCENARIO", "behavior": "file.open"},
+    {"id": "ev-page-3", "scenario": "$SCENARIO", "behavior": "network.connect"}
   ],
   "signals": [
     {

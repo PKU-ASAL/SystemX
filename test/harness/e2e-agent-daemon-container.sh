@@ -19,7 +19,7 @@ bash "$HERE/start-container.sh" >/dev/null
 echo "[e2e-agent-daemon-container] preparing daemon config in mgr container"
 docker exec mgr sh -c 'mkdir -p /tmp/sysarmor-agent-container/spool'
 docker exec mgr sh -c 'cat > /tmp/sysarmor-agent-container/policy.yaml <<EOF
-kinds: [EXEC]
+{"behaviors":["process.exec"],"observe_only":true}
 EOF
 cat > /tmp/sysarmor-agent-container/agent.yaml <<EOF
 agent:

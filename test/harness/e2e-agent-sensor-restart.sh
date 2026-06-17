@@ -23,7 +23,7 @@ echo "[e2e-agent-sensor-restart] building binaries"
 make -C "$ROOT" build >/dev/null
 
 cat > "$TMP/policy.yaml" <<'POLICY'
-kinds: [EXEC]
+{"behaviors":["process.exec"],"observe_only":true}
 POLICY
 
 mkdir -p "$TMP/bundle/bin" "$TMP/install"

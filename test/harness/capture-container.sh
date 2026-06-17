@@ -36,7 +36,7 @@ if [[ "$CAPTURE_MODE" == "managed" ]]; then
   docker exec tetragon sh -c "tetra tracingpolicy delete sysarmor-syscall-capture 2>/dev/null || true; tetra tracingpolicy delete sysarmor-runtime-collection 2>/dev/null || true"
   docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
   docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
-kinds: [EXEC, CONNECT, OPEN, WRITE, CHMOD]
+{"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
 EOF
 cat > '$WORK/agent.yaml' <<EOF
 agent:

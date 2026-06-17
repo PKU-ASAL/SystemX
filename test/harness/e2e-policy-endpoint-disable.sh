@@ -102,7 +102,7 @@ wait_contains "effective policy" '"policy_id":"no-payload-drop"' "$RESULTS/e2e-p
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json effective-policy --tenant-id default --agent-id "$AGENT_ID"
 
 cat > "$TMP/collection.yaml" <<'POLICY'
-kinds: [WRITE]
+{"behaviors":["file.write"],"observe_only":true}
 POLICY
 
 mkfifo "$TMP/events.pipe"

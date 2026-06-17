@@ -56,7 +56,7 @@ if [[ -z "$TETRA_PATH" || -z "$TETRAGON_PATH" ]]; then
   exit 1
 fi
 docker exec "$OWNED_CONTAINER" sh -c "cat > '$WORK/policy.yaml' <<'EOF'
-kinds: [EXEC, CONNECT, OPEN, WRITE, CHMOD]
+{"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
 EOF
 cat > '$WORK/agent.yaml' <<EOF
 agent:

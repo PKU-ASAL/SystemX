@@ -28,7 +28,7 @@ echo "[e2e-agent-staged-container] preparing agent daemon config in tetragon con
 docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
 TETRA_PATH="$(docker exec tetragon sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
 docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
-kinds: [EXEC, CONNECT, OPEN, WRITE, CHMOD]
+{"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
 EOF
 cat > '$WORK/agent.yaml' <<EOF
 agent:

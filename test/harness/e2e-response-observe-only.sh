@@ -54,7 +54,7 @@ wait_contains() {
 wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/healthz"
 
 cat > "$TMP/collection.yaml" <<'POLICY'
-kinds: [EXEC]
+{"behaviors":["process.exec"],"observe_only":true}
 POLICY
 
 cat > "$TMP/agent.yaml" <<EOF

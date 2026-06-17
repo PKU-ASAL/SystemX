@@ -61,7 +61,7 @@ for batch in agent-gateway-session-batch-1 agent-gateway-session-batch-2; do
     "version": "e2e"
   },
   "events": [
-    {"id": "ev-$batch", "scenario": "agent-gateway-session", "kind": "EVENT_KIND_EXEC"}
+    {"id": "ev-$batch", "scenario": "agent-gateway-session", "behavior": "process.exec"}
   ]
 }
 JSON

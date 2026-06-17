@@ -107,7 +107,7 @@ curl -sf -X POST "$MGR_URL/api/v1/policies" \
   --data-binary @"$TMP/no-payload-policy.json" > "$RESULTS/e2e-policy-agent-refresh.policy.json"
 
 cat > "$TMP/collection.yaml" <<'POLICY'
-kinds: [WRITE]
+{"behaviors":["file.write"],"observe_only":true}
 POLICY
 
 mkfifo "$TMP/events.pipe"

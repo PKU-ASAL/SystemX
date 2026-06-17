@@ -39,9 +39,13 @@ capture:                      ## 跑场景 + tetragon 抓事件
 	bash harness/capture-$(TOPO).sh $(SCENARIO) $(DUR)
 
 assert:                       ## 通过 sysarmorctl 执行契约断言
+ifeq ($(TOPO),vm)
+	bash harness/assert-vm-local.sh $(SCENARIO)
+else
 	python3 harness/assert.py --scenario $(SCENARIO) \
 		--topology $(TOPO) \
 		--expected scenarios/$(TOPO)/$(SCENARIO)/expected.yaml
+endif
 
 report:                       ## 汇总报告矩阵
 	python3 harness/report.py
@@ -62,7 +66,7 @@ perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 cont
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-gateway-projection e2e-postgres-rarity-projection e2e-postgres-all e2e-agent-gateway-session e2e-agent-gateway-downlink e2e-agent-gateway-frames e2e-agent-gateway-grpc-stream e2e-agent-gateway-stream-lifecycle e2e-agent-gateway-stream-health e2e-agent-gateway-stream-upload e2e-agent-gateway-stream-reconnect e2e-agent-gateway-stream-resume e2e-agent-gateway-policy-downlink e2e-agent-gateway-response-command e2e-agent-gateway-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-manager-idempotency e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-restart-unacked e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-retry-backoff e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-gateway-projection e2e-postgres-rarity-projection e2e-postgres-all e2e-agent-gateway-session e2e-agent-gateway-downlink e2e-agent-gateway-frames e2e-agent-gateway-grpc-stream e2e-agent-gateway-stream-lifecycle e2e-agent-gateway-stream-health e2e-agent-gateway-stream-upload e2e-agent-gateway-stream-reconnect e2e-agent-gateway-stream-resume e2e-agent-gateway-policy-downlink e2e-agent-gateway-response-command e2e-agent-gateway-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
@@ -317,10 +321,7 @@ e2e-agent-managed-vm:         ## v2: VM systemd managed fake Tetragon bundle →
 e2e-agent-managed-recover-vm: ## v2: VM systemd managed fake Tetragon degraded to recovered smoke
 	bash harness/e2e-agent-managed-recover-vm.sh
 
-e2e-agent-real-tetragon-vm:   ## v2: VM systemd real Tetragon subscription → detection smoke
-	bash harness/e2e-agent-real-tetragon-vm.sh
-
-e2e-agent-real-tetragon-owned-vm:   ## v2: VM systemd agent-owned real Tetragon process → detection smoke
+e2e-agent-real-tetragon-owned-vm:   ## v3 endpoint: VM systemd agent-owned real Tetragon -> local ctl events/signals
 	bash harness/e2e-agent-real-tetragon-owned-vm.sh
 
 e2e-agent-real-tetragon-owned-container: ## v2: container agent-owned real Tetragon process → detection smoke
@@ -433,7 +434,6 @@ help:                         ## 显示帮助
 	@echo "  e2e-agent-systemd-vm  v2 VM systemd daemon health/restart smoke"
 	@echo "  e2e-agent-managed-vm  v2 VM systemd managed fake Tetragon bundle smoke"
 	@echo "  e2e-agent-managed-recover-vm  v2 VM systemd managed degraded to recovered smoke"
-	@echo "  e2e-agent-real-tetragon-vm  v2 VM systemd real Tetragon detection smoke"
 	@echo "  e2e-agent-real-tetragon-owned-vm  v2 VM systemd agent-owned real Tetragon process smoke"
 	@echo "  e2e-agent-real-tetragon-owned-container  v2 container agent-owned real Tetragon process smoke"
 	@echo "  e2e-agent-apt-container  v2 container apt-fileless-c2 via agent-managed Tetra"

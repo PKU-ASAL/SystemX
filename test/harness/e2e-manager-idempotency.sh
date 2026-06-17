@@ -66,7 +66,7 @@ cat > "$TMP/batch.json" <<'JSON'
       "agent_id": "e2e-manager-idempotency",
       "host_id": "e2e-host",
       "scenario": "apt-fileless-c2",
-      "kind": "EVENT_KIND_EXEC",
+      "behavior": "process.exec",
       "lineage_id": "lin-idem"
     }
   ],

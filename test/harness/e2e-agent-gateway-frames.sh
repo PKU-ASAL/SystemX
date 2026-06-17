@@ -85,7 +85,7 @@ cat > "$TMP/frames.json" <<JSON
         "version": "e2e"
       },
       "events": [
-        {"id": "ev-agent-gateway-frame", "scenario": "agent-gateway-frame", "kind": "EVENT_KIND_EXEC"}
+        {"id": "ev-agent-gateway-frame", "scenario": "agent-gateway-frame", "behavior": "process.exec"}
       ]
     }
   },

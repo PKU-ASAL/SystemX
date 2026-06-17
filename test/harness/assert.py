@@ -135,7 +135,7 @@ def assert_lifecycle(exp, mgr, topology, scenario, r):
                 None if agents is None else any(a.get("agent_id") for a in agents))
     visible = spec.get("events_visible")
     if visible:
-        events = _query(mgr, topology, "events", "--scenario", scenario, "--kind", visible.get("kind", ""))
+        events = _query(mgr, topology, "events", "--scenario", scenario, "--behavior", visible.get("behavior", ""))
         r.check("lifecycle.events_visible", None if events is None else len(events) >= 1)
         if visible.get("require_stable_id"):
             r.check("lifecycle.events_visible.stable_id",

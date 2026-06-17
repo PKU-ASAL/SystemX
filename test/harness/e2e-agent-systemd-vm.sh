@@ -30,7 +30,7 @@ vagrant upload "$REPO/deployments/systemd/sysarmor-agent.service" /tmp/sysarmor-
 vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /var/lib/sysarmor/agent/spool /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service" >/dev/null
 
 vagrant ssh node-a -c "sudo tee /etc/sysarmor/policies/sysarmor-fake.yaml >/dev/null <<'EOF'
-kinds: [EXEC]
+{"behaviors":["process.exec"],"observe_only":true}
 EOF
 sudo tee /etc/sysarmor/agent.yaml >/dev/null <<EOF
 agent:

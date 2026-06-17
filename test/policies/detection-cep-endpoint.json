@@ -1,0 +1,18 @@
+{
+  "policy_id": "local-cep-endpoint",
+  "version": 1,
+  "mode": "observe",
+  "rulesets": [
+    {
+      "ref": "ruleset:cep-endpoint",
+      "version": "v1",
+      "enabled": true
+    }
+  ],
+  "context_refs": [
+    {
+      "ref": "ctx:credential-path-prefixes",
+      "version": "builtin"
+    }
+  ]
+}
