@@ -949,6 +949,7 @@ sysarmorctl --agent-sock /var/run/sysarmor/agent.sock policy current --agent-id 
 
 - CollectionPolicy validate/compile/apply/verify/ack。
 - Tetragon compiler 支持 behaviors + behavior-scoped selectors + tetragon target。
+- ControlAck 返回 compiler report: hook mapping、pushed-down selectors、agent-side selectors、unsupported selectors、generated policy hash。
 - collection policy hot reload。
 
 验收:

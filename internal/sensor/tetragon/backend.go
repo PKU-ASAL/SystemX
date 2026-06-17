@@ -131,47 +131,160 @@ func CollectionCapabilities() []contract.CollectionBehaviorCapability {
 	}
 	return []contract.CollectionBehaviorCapability{
 		{
-			Behavior:          eventmodel.BehaviorProcessExec.String(),
-			SensorMapping:     "tetragon:process_exec/security_bprm_creds_from_file",
-			Fields:            commonProcess,
-			PushdownSelectors: []string{"binary.prefix", "parent.binary.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorProcessExec.String(),
+			SensorMapping:      "tetragon:process_exec/security_bprm_creds_from_file",
+			Fields:             commonProcess,
+			PushdownSelectors:  []string{"binary.prefix"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
-			Behavior:          eventmodel.BehaviorProcessFork.String(),
-			SensorMapping:     "tetragon:process_exec.clone",
-			Fields:            commonProcess,
-			PushdownSelectors: []string{"binary.prefix", "parent.binary.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorProcessFork.String(),
+			SensorMapping:      "tetragon:process_exec.clone",
+			Fields:             commonProcess,
+			PushdownSelectors:  []string{"binary.prefix"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
-			Behavior:          eventmodel.BehaviorProcessExit.String(),
-			SensorMapping:     "tetragon:process_exit/do_exit",
-			Fields:            commonProcess,
-			PushdownSelectors: []string{"binary.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorProcessExit.String(),
+			SensorMapping:      "tetragon:process_exit/do_exit",
+			Fields:             commonProcess,
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
-			Behavior:          eventmodel.BehaviorNetworkConnect.String(),
-			SensorMapping:     "tetragon:kprobe/security_socket_connect",
-			Fields:            with(commonProcess, "socket", "socket.addr", "socket.port", "object.socket_addr"),
-			PushdownSelectors: []string{"socket.family", "socket.addr", "socket.port", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorNetworkConnect.String(),
+			SensorMapping:      "tetragon:kprobe/security_socket_connect",
+			Fields:             with(commonProcess, "socket", "socket.addr", "socket.port", "object.socket_addr"),
+			PushdownSelectors:  []string{"socket.family", "socket.addr", "socket.port"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
-			Behavior:          eventmodel.BehaviorFileOpen.String(),
-			SensorMapping:     "tetragon:kprobe/security_file_permission",
-			Fields:            with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors: []string{"file.path.prefix", "access.read", "access.write", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorFileOpen.String(),
+			SensorMapping:      "tetragon:kprobe/security_file_permission",
+			Fields:             with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors:  []string{"file.path.prefix"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
-			Behavior:          eventmodel.BehaviorFileWrite.String(),
-			SensorMapping:     "tetragon:process_exec.inferred_write/security_file_permission",
-			Fields:            with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors: []string{"file.path.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorFileWrite.String(),
+			SensorMapping:      "tetragon:process_exec.inferred_write/security_file_permission",
+			Fields:             with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors:  []string{"file.path.prefix"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
-			Behavior:          eventmodel.BehaviorFileChmod.String(),
-			SensorMapping:     "tetragon:process_exec.inferred_chmod",
-			Fields:            with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors: []string{"file.path.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			Behavior:           eventmodel.BehaviorFileChmod.String(),
+			SensorMapping:      "tetragon:process_exec.inferred_chmod",
+			Fields:             with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors:  []string{"file.path.prefix"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
+	}
+}
+
+func CompileReport(intent contract.CollectionIntent) contract.CollectionCompileReport {
+	report := contract.CollectionCompileReport{
+		Status:  "ok",
+		Backend: "tetragon",
+	}
+	if needsTracingPolicy(intent) {
+		sum := sha256.Sum256(buildTracingPolicy(intent))
+		report.GeneratedPolicyHash = hex.EncodeToString(sum[:])
+	}
+	for _, behavior := range intent.Behaviors {
+		behavior = eventmodel.NormalizeBehavior(behavior).String()
+		if behavior == "" {
+			continue
+		}
+		report.BehaviorMappings = append(report.BehaviorMappings, contract.CollectionBehaviorMap{
+			Behavior: behavior,
+			Backend:  "tetragon",
+			Hook:     hookForBehavior(behavior),
+		})
+		filter := behaviorFilter(intent, behavior)
+		report.PushedDownSelectors = append(report.PushedDownSelectors, pushedDownSelectorsForFilter(filter)...)
+		report.AgentSideSelectors = append(report.AgentSideSelectors, scopeSelectorReports(intent, behavior)...)
+		report.UnsupportedSelectors = append(report.UnsupportedSelectors, unsupportedSelectorsForFilter(filter)...)
+	}
+	if len(report.UnsupportedSelectors) > 0 {
+		report.Status = "unsupported"
+		report.Warnings = append(report.Warnings, "collection policy contains selectors that are not compiled to Tetragon or enforced agent-side")
+	}
+	return report
+}
+
+func hookForBehavior(behavior string) string {
+	switch behavior {
+	case eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String():
+		return "security_bprm_creds_from_file"
+	case eventmodel.BehaviorProcessExit.String():
+		return "do_exit"
+	case eventmodel.BehaviorNetworkConnect.String():
+		return "security_socket_connect"
+	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
+		return "security_file_permission"
+	default:
+		return ""
+	}
+}
+
+func pushedDownSelectorsForFilter(filter contract.CollectionBehaviorFilter) []contract.CollectionSelectorReport {
+	var out []contract.CollectionSelectorReport
+	behavior := eventmodel.NormalizeBehavior(filter.Behavior).String()
+	add := func(selector, mapping string) {
+		out = append(out, contract.CollectionSelectorReport{Behavior: behavior, Selector: selector, Status: "pushed_down", Location: "tetragon", Mapping: mapping})
+	}
+	switch behavior {
+	case eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String():
+		if len(filter.BinaryPrefixes) > 0 {
+			add("binary.prefix", "selectors.matchArgs[index=1,operator=Prefix]")
+		}
+	case eventmodel.BehaviorNetworkConnect.String():
+		if len(filter.SocketFamilies) > 0 {
+			add("socket.family", "selectors.matchArgs[index=1,operator=Family]")
+		}
+		if len(filter.SocketAddrs) > 0 {
+			add("socket.addr", "selectors.matchArgs[index=1,operator=SAddr]")
+		}
+		if len(filter.SocketPorts) > 0 {
+			add("socket.port", "selectors.matchArgs[index=1,operator=SPort]")
+		}
+	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
+		if len(filter.FilePrefixes) > 0 {
+			add("file.path.prefix", "selectors.matchArgs[index=0,operator=Prefix]")
+		}
+	}
+	return out
+}
+
+func scopeSelectorReports(intent contract.CollectionIntent, behavior string) []contract.CollectionSelectorReport {
+	if intent.ScopeType == "" || intent.ScopeType == "host" {
+		return nil
+	}
+	return []contract.CollectionSelectorReport{{
+		Behavior: behavior,
+		Selector: "scope." + intent.ScopeType,
+		Status:   "agent_side",
+		Location: "agent",
+		Reason:   "runtime scope is enforced by agent-side event filtering",
+	}}
+}
+
+func unsupportedSelectorsForFilter(filter contract.CollectionBehaviorFilter) []contract.CollectionSelectorReport {
+	behavior := eventmodel.NormalizeBehavior(filter.Behavior).String()
+	if behavior == "" || len(filter.BinaryPrefixes) == 0 {
+		return nil
+	}
+	switch behavior {
+	case eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String():
+		return nil
+	default:
+		return []contract.CollectionSelectorReport{{
+			Behavior: behavior,
+			Selector: "process.binary_prefix",
+			Status:   "unsupported",
+			Location: "none",
+			Reason:   "process binary selector for this behavior is not compiled yet",
+		}}
 	}
 }
 

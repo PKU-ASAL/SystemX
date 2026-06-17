@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,12 +191,10 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 		PolicyJson: `{
 			"policy_id":"collection-a",
 			"version":3,
-			"behaviors":["network.connect","file.write"],
-			"binary_prefixes":["/var/lib/app/plugins"],
-			"file_prefixes":["/dev/shm"],
-			"socket_families":["AF_INET"],
-			"socket_addrs":["10.66.0.99"],
-			"socket_ports":["443"],
+			"behaviors":[
+				{"id":"network.connect","selectors":{"socket":{"families":["AF_INET"],"addrs":["10.66.0.99"],"ports":["443"]}}},
+				{"id":"file.write","selectors":{"file":{"prefixes":["/dev/shm"]}}}
+			],
 			"observe_only":true
 		}`,
 	})
@@ -205,24 +204,78 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	if ack.Status != "degraded" || ack.PolicyId != "collection-a" || ack.PolicyVersion != 3 {
 		t.Fatalf("ack = %+v", ack)
 	}
+	if ack.ReportJson == "" || !strings.Contains(ack.ReportJson, `"pushed_down_selectors"`) || !strings.Contains(ack.ReportJson, `"generated_policy_hash"`) {
+		t.Fatalf("ack report_json = %q", ack.ReportJson)
+	}
+	if !containsString(ack.Details, "unsupported_selectors=0") {
+		t.Fatalf("ack details = %v", ack.Details)
+	}
 	got := sensor.lastIntent
 	if len(got.Behaviors) != 2 || got.Behaviors[0] != "network.connect" {
 		t.Fatalf("intent behaviors = %v", got.Behaviors)
 	}
-	if len(got.FilePrefixes) != 1 || got.FilePrefixes[0] != "/dev/shm" {
-		t.Fatalf("intent file prefixes = %v", got.FilePrefixes)
+	if len(got.BehaviorFilters) != 2 {
+		t.Fatalf("intent behavior filters = %+v", got.BehaviorFilters)
 	}
-	if len(got.BinaryPrefixes) != 1 || got.BinaryPrefixes[0] != "/var/lib/app/plugins" {
-		t.Fatalf("intent binary prefixes = %v", got.BinaryPrefixes)
+	if got.BehaviorFilters[0].Behavior != "network.connect" || got.BehaviorFilters[0].SocketFamilies[0] != "AF_INET" {
+		t.Fatalf("network filter = %+v", got.BehaviorFilters[0])
 	}
-	if len(got.SocketFamilies) != 1 || got.SocketFamilies[0] != "AF_INET" {
-		t.Fatalf("intent socket families = %v", got.SocketFamilies)
+	if got.BehaviorFilters[1].Behavior != "file.write" || got.BehaviorFilters[1].FilePrefixes[0] != "/dev/shm" {
+		t.Fatalf("file filter = %+v", got.BehaviorFilters[1])
 	}
-	if len(got.SocketAddrs) != 1 || got.SocketAddrs[0] != "10.66.0.99" {
-		t.Fatalf("intent socket addrs = %v", got.SocketAddrs)
+}
+
+func TestLocalControlRejectsUnsupportedCollectionSelector(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "agent.sock")
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(got.SocketPorts) != 1 || got.SocketPorts[0] != "443" {
-		t.Fatalf("intent socket ports = %v", got.SocketPorts)
+	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control: config.ControlConfig{SocketPath: socketPath},
+			Sensor:  config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}, ObserveOnly: true},
+		},
+		Sensor:     sensor,
+		capability: contract.Capability{Backend: "fake", SupportsExec: true},
+	}
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatalf("startLocalControlServer() error = %v", err)
+	}
+	defer stop()
+
+	client := newUnixControlClient(t, socketPath)
+	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
+		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-unsupported"},
+		PolicyType: "collection",
+		PolicyJson: `{
+			"policy_id":"collection-unsupported",
+			"version":1,
+			"behaviors":[
+				{"id":"network.connect","selectors":{"process":{"binary_prefixes":["/tmp"]},"socket":{"families":["AF_INET"]}}}
+			],
+			"observe_only":true
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy(collection) error = %v", err)
+	}
+	if ack.Status != "rejected" {
+		t.Fatalf("ack status = %q, want rejected: %+v", ack.Status, ack)
+	}
+	if !strings.Contains(ack.ReportJson, `"unsupported_selectors"`) || !strings.Contains(ack.ReportJson, `"process.binary_prefix"`) {
+		t.Fatalf("ack report_json = %q", ack.ReportJson)
+	}
+	if sensor.lastIntent.Behaviors != nil {
+		t.Fatalf("sensor should not apply rejected intent: %+v", sensor.lastIntent)
 	}
 }
 
@@ -359,6 +412,15 @@ type recordingCollectionSensor struct {
 func (s *recordingCollectionSensor) Apply(ctx context.Context, intent contract.CollectionIntent) error {
 	s.lastIntent = intent
 	return s.healthOnlySensor.Apply(ctx, intent)
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {

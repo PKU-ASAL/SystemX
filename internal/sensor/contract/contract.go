@@ -54,6 +54,32 @@ type CollectionBehaviorFilter struct {
 	SocketPorts    []string
 }
 
+type CollectionCompileReport struct {
+	Status               string                     `json:"status"`
+	Backend              string                     `json:"backend"`
+	GeneratedPolicyHash  string                     `json:"generated_policy_hash,omitempty"`
+	BehaviorMappings     []CollectionBehaviorMap    `json:"behavior_mappings,omitempty"`
+	PushedDownSelectors  []CollectionSelectorReport `json:"pushed_down_selectors,omitempty"`
+	AgentSideSelectors   []CollectionSelectorReport `json:"agent_side_selectors,omitempty"`
+	UnsupportedSelectors []CollectionSelectorReport `json:"unsupported_selectors,omitempty"`
+	Warnings             []string                   `json:"warnings,omitempty"`
+}
+
+type CollectionBehaviorMap struct {
+	Behavior string `json:"behavior"`
+	Backend  string `json:"backend"`
+	Hook     string `json:"hook"`
+}
+
+type CollectionSelectorReport struct {
+	Behavior string `json:"behavior"`
+	Selector string `json:"selector"`
+	Status   string `json:"status"`
+	Location string `json:"location"`
+	Mapping  string `json:"mapping,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 type CollectionBehaviorCapability struct {
 	Behavior             string
 	SensorMapping        string

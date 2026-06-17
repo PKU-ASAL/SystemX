@@ -22,7 +22,9 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 	"google.golang.org/grpc"
 )
 
@@ -259,8 +261,12 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "compile collection policy: "+err.Error())
 	}
+	compileReport := tetragon.CompileReport(intent)
+	if len(compileReport.UnsupportedSelectors) > 0 {
+		return collectionAck(s.runner.Config, req.GetContext(), policy, "rejected", "collection policy contains unsupported selectors", false, compileReport)
+	}
 	if req.GetDryRun() {
-		return collectionAck(s.runner.Config, req.GetContext(), policy, "validated", "collection policy accepted in dry-run", false)
+		return collectionAck(s.runner.Config, req.GetContext(), policy, "validated", "collection policy accepted in dry-run", false, compileReport)
 	}
 	if err := s.runtime.Apply(ctx, intent); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "apply collection policy: "+err.Error())
@@ -270,9 +276,9 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	engine, report := detection.NewWithRuntimeLimits(active.Detection, intent, s.runner.detectionContentSnapshot(), s.runner.detectionLimits())
 	s.runner.setDetection(engine)
 	if report.Status == "degraded" {
-		return collectionAck(s.runner.Config, req.GetContext(), policy, "degraded", "collection policy applied; detection dependencies degraded: "+strings.Join(report.Warnings, "; "), false)
+		return collectionAck(s.runner.Config, req.GetContext(), policy, "degraded", "collection policy applied; detection dependencies degraded: "+strings.Join(report.Warnings, "; "), false, compileReport)
 	}
-	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false)
+	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false, compileReport)
 }
 
 func (s *localControlServer) applyDetectionPolicy(req *controlv1.ApplyPolicyRequest) *controlv1.ControlAck {
@@ -454,7 +460,9 @@ func requestScope(req *controlv1.RequestContext) config.RuntimeScope {
 	return config.RuntimeScope{Type: req.GetScope().GetType(), Selector: req.GetScope().GetSelector()}
 }
 
-func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool) *controlv1.ControlAck {
+func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool, report contract.CollectionCompileReport) *controlv1.ControlAck {
+	details := collectionReportDetails(report)
+	reportJSON := collectionReportJSON(report)
 	return &controlv1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
@@ -463,13 +471,49 @@ func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agen
 		Message:       message,
 		PolicyId:      policy.PolicyID,
 		PolicyVersion: policy.Version,
+		Details:       details,
+		ReportJson:    reportJSON,
 		Sections: []*controlv1.AppliedSection{{
 			Name:            "collection",
 			Status:          status,
 			Message:         message,
 			RequiresRestart: requiresRestart,
+			Details:         details,
+			ReportJson:      reportJSON,
 		}},
 	}
+}
+
+func collectionReportDetails(report contract.CollectionCompileReport) []string {
+	if report.Backend == "" {
+		return nil
+	}
+	details := []string{
+		fmt.Sprintf("backend=%s", report.Backend),
+		fmt.Sprintf("pushed_down_selectors=%d", len(report.PushedDownSelectors)),
+		fmt.Sprintf("agent_side_selectors=%d", len(report.AgentSideSelectors)),
+		fmt.Sprintf("unsupported_selectors=%d", len(report.UnsupportedSelectors)),
+	}
+	if report.GeneratedPolicyHash != "" {
+		details = append(details, "generated_policy_hash="+report.GeneratedPolicyHash)
+	}
+	for _, warning := range report.Warnings {
+		if warning != "" {
+			details = append(details, "warning="+warning)
+		}
+	}
+	return details
+}
+
+func collectionReportJSON(report contract.CollectionCompileReport) string {
+	if report.Backend == "" {
+		return ""
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func detectionAck(cfg config.Config, req *controlv1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool, report detection.ApplyReport) *controlv1.ControlAck {

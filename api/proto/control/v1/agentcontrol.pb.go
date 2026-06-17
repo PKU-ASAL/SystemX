@@ -1649,6 +1649,8 @@ type AppliedSection struct {
 	Status          string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	Message         string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	RequiresRestart bool                   `protobuf:"varint,4,opt,name=requires_restart,json=requiresRestart,proto3" json:"requires_restart,omitempty"`
+	Details         []string               `protobuf:"bytes,5,rep,name=details,proto3" json:"details,omitempty"`
+	ReportJson      string                 `protobuf:"bytes,6,opt,name=report_json,json=reportJson,proto3" json:"report_json,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1711,6 +1713,20 @@ func (x *AppliedSection) GetRequiresRestart() bool {
 	return false
 }
 
+func (x *AppliedSection) GetDetails() []string {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+func (x *AppliedSection) GetReportJson() string {
+	if x != nil {
+		return x.ReportJson
+	}
+	return ""
+}
+
 type ControlAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1721,6 +1737,8 @@ type ControlAck struct {
 	PolicyId      string                 `protobuf:"bytes,6,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
 	PolicyVersion uint64                 `protobuf:"varint,7,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
 	Sections      []*AppliedSection      `protobuf:"bytes,8,rep,name=sections,proto3" json:"sections,omitempty"`
+	Details       []string               `protobuf:"bytes,9,rep,name=details,proto3" json:"details,omitempty"`
+	ReportJson    string                 `protobuf:"bytes,10,opt,name=report_json,json=reportJson,proto3" json:"report_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1809,6 +1827,20 @@ func (x *ControlAck) GetSections() []*AppliedSection {
 		return x.Sections
 	}
 	return nil
+}
+
+func (x *ControlAck) GetDetails() []string {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+func (x *ControlAck) GetReportJson() string {
+	if x != nil {
+		return x.ReportJson
+	}
+	return ""
 }
 
 type WatchEventsRequest struct {
@@ -2368,12 +2400,15 @@ const file_api_proto_control_v1_agentcontrol_proto_rawDesc = "" +
 	"\acontext\x18\x01 \x01(\v2#.sysarmor.control.v1.RequestContextR\acontext\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\"P\n" +
 	"\x12ContentGetResponse\x12:\n" +
-	"\x06record\x18\x01 \x01(\v2\".sysarmor.control.v1.ContentRecordR\x06record\"\x81\x01\n" +
+	"\x06record\x18\x01 \x01(\v2\".sysarmor.control.v1.ContentRecordR\x06record\"\xbc\x01\n" +
 	"\x0eAppliedSection\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12)\n" +
-	"\x10requires_restart\x18\x04 \x01(\bR\x0frequiresRestart\"\x9a\x02\n" +
+	"\x10requires_restart\x18\x04 \x01(\bR\x0frequiresRestart\x12\x18\n" +
+	"\adetails\x18\x05 \x03(\tR\adetails\x12\x1f\n" +
+	"\vreport_json\x18\x06 \x01(\tR\n" +
+	"reportJson\"\xd5\x02\n" +
 	"\n" +
 	"ControlAck\x12\x1d\n" +
 	"\n" +
@@ -2384,7 +2419,11 @@ const file_api_proto_control_v1_agentcontrol_proto_rawDesc = "" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x12\x1b\n" +
 	"\tpolicy_id\x18\x06 \x01(\tR\bpolicyId\x12%\n" +
 	"\x0epolicy_version\x18\a \x01(\x04R\rpolicyVersion\x12?\n" +
-	"\bsections\x18\b \x03(\v2#.sysarmor.control.v1.AppliedSectionR\bsections\"\xd1\x01\n" +
+	"\bsections\x18\b \x03(\v2#.sysarmor.control.v1.AppliedSectionR\bsections\x12\x18\n" +
+	"\adetails\x18\t \x03(\tR\adetails\x12\x1f\n" +
+	"\vreport_json\x18\n" +
+	" \x01(\tR\n" +
+	"reportJson\"\xd1\x01\n" +
 	"\x12WatchEventsRequest\x12=\n" +
 	"\acontext\x18\x01 \x01(\v2#.sysarmor.control.v1.RequestContextR\acontext\x12\x1a\n" +
 	"\bbehavior\x18\x02 \x01(\tR\bbehavior\x12\x14\n" +

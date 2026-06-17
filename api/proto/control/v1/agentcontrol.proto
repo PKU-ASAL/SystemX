@@ -197,6 +197,8 @@ message AppliedSection {
   string status = 2;
   string message = 3;
   bool requires_restart = 4;
+  repeated string details = 5;
+  string report_json = 6;
 }
 
 message ControlAck {
@@ -208,6 +210,8 @@ message ControlAck {
   string policy_id = 6;
   uint64 policy_version = 7;
   repeated AppliedSection sections = 8;
+  repeated string details = 9;
+  string report_json = 10;
 }
 
 message WatchEventsRequest {
