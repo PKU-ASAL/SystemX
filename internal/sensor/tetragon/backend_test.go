@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
@@ -30,15 +29,15 @@ func TestBackendSubscribesJSONLFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
 		if ev.RawRef == "" || ev.SensorEvent.GetRawRef() == "" {
 			t.Fatalf("raw ref was not populated: %+v", ev)
 		}
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 	}
-	if len(got) != 2 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC || got[1] != eventv1.EventKind_EVENT_KIND_WRITE {
-		t.Fatalf("got kinds %v, want EXEC, WRITE", got)
+	if len(got) != 2 || got[0] != "process.exec" || got[1] != "file.write" {
+		t.Fatalf("got behaviors %v, want process.exec, file.write", got)
 	}
 	health, err := backend.Health(context.Background())
 	if err != nil {
@@ -46,6 +45,34 @@ func TestBackendSubscribesJSONLFile(t *testing.T) {
 	}
 	if !health.PolicyLoaded || health.EventsSeen != 2 {
 		t.Fatalf("health = %+v", health)
+	}
+}
+
+func TestBackendFiltersProcessLifecycleByCollectionIntent(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventPath := filepath.Join(dir, "events.jsonl")
+	rawExec := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","flags":"execve clone","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	rawExit := `{"process_exit":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:01Z"}`
+	if err := os.WriteFile(eventPath, []byte(rawExec+"\n"+rawExit+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackend(policyPath, eventPath, "test")
+	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{
+		Behaviors: []string{"process.fork"},
+	})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	var got []string
+	for ev := range events {
+		got = append(got, ev.SensorEvent.GetBehavior())
+	}
+	if len(got) != 1 || got[0] != "process.fork" {
+		t.Fatalf("got behaviors %v, want only process.fork", got)
 	}
 }
 
@@ -79,6 +106,23 @@ func TestCapabilityReportsHostProbeFields(t *testing.T) {
 	if capability.KernelRelease == "" || !capability.BTFAvailable || !capability.BPFFSAvailable {
 		t.Fatalf("capability = %+v", capability)
 	}
+	if !capabilityHasField(capability.Collection, "network.connect", "socket.port") {
+		t.Fatalf("collection capability missing network.connect socket.port: %+v", capability.Collection)
+	}
+}
+
+func capabilityHasField(items []contract.CollectionBehaviorCapability, behavior, field string) bool {
+	for _, item := range items {
+		if item.Behavior != behavior {
+			continue
+		}
+		for _, got := range item.Fields {
+			if got == field {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestCapabilityFailsWhenRequiredBTFMissing(t *testing.T) {
@@ -130,15 +174,15 @@ func TestBackendFiltersByContainerIDPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 		if ev.SensorEvent.GetContainerId() != "abcdef0123456789" {
 			t.Fatalf("container id = %q", ev.SensorEvent.GetContainerId())
 		}
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want one EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want one process.exec", got)
 	}
 	health, err := backend.Health(context.Background())
 	if err != nil {
@@ -170,15 +214,15 @@ func TestBackendFiltersByContainerScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 		if ev.SensorEvent.GetContainerId() != "abcdef0123456789" {
 			t.Fatalf("container id = %q", ev.SensorEvent.GetContainerId())
 		}
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want one EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want one process.exec", got)
 	}
 }
 
@@ -203,15 +247,15 @@ func TestBackendFiltersByCgroupScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 		if ev.SensorEvent.GetProc().GetCgroup() != "kubepods.slice/workload-a.scope" {
 			t.Fatalf("cgroup = %q", ev.SensorEvent.GetProc().GetCgroup())
 		}
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want one EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want one process.exec", got)
 	}
 }
 
@@ -236,15 +280,15 @@ func TestBackendFiltersByNamespaceScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 		if ev.SensorEvent.GetProc().GetCgroup() != "kubepods.slice/pod-a.scope" {
 			t.Fatalf("cgroup = %q", ev.SensorEvent.GetProc().GetCgroup())
 		}
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want one EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want one process.exec", got)
 	}
 }
 
@@ -269,15 +313,15 @@ func TestBackendFiltersByPodScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 		if ev.SensorEvent.GetContainerId() != "pod-a-abcdef" {
 			t.Fatalf("container id = %q", ev.SensorEvent.GetContainerId())
 		}
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want one EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want one process.exec", got)
 	}
 }
 
@@ -334,12 +378,12 @@ func TestBackendManagedEventCommandSubscribesStdout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want process.exec", got)
 	}
 	health, err := backend.Health(context.Background())
 	if err != nil {
@@ -373,12 +417,12 @@ func TestBackendManagedEventCommandRecordsDroppedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	var got []eventv1.EventKind
+	var got []string
 	for ev := range events {
-		got = append(got, ev.SensorEvent.GetKind())
+		got = append(got, ev.SensorEvent.GetBehavior())
 	}
-	if len(got) != 1 || got[0] != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("got kinds %v, want EXEC", got)
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("got behaviors %v, want process.exec", got)
 	}
 	health, err := backend.Health(context.Background())
 	if err != nil {
@@ -414,7 +458,8 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	}
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC, CONNECT, OPEN]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(`{"behaviors":["process.exec","network.connect","file.open"],"observe_only":true}
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
@@ -426,11 +471,7 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
 	intent := contract.CollectionIntent{
-		EventKinds: []eventv1.EventKind{
-			eventv1.EventKind_EVENT_KIND_EXEC,
-			eventv1.EventKind_EVENT_KIND_CONNECT,
-			eventv1.EventKind_EVENT_KIND_OPEN,
-		},
+		Behaviors:   []string{"process.exec", "network.connect", "file.open"},
 		ObserveOnly: true,
 	}
 	if err := backend.Apply(context.Background(), intent); err != nil {
@@ -460,6 +501,81 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	}
 }
 
+func TestBuildTracingPolicyUsesCollectionFilters(t *testing.T) {
+	data := string(buildTracingPolicy(contract.CollectionIntent{
+		Behaviors:      []string{"process.exec", "network.connect", "file.write"},
+		BinaryPrefixes: []string{"/var/lib/app/plugins"},
+		FilePrefixes:   []string{"/dev/shm", "/var/lib/app/plugins"},
+		SocketFamilies: []string{"AF_INET"},
+		SocketAddrs:    []string{"10.66.0.99"},
+		SocketPorts:    []string{"443", "8080"},
+	}))
+	for _, want := range []string{"security_bprm_creds_from_file", `"Prefix"`, `"security_socket_connect"`, `"AF_INET"`, `"SAddr"`, `"10.66.0.99"`, `"SPort"`, `"443"`, `"8080"`, `"security_file_permission"`, `"/dev/shm"`, `"/var/lib/app/plugins"`} {
+		if !strings.Contains(data, want) {
+			t.Fatalf("generated policy missing %q:\n%s", want, data)
+		}
+	}
+	if strings.Contains(data, "AF_INET6") {
+		t.Fatalf("generated policy should honor explicit socket families:\n%s", data)
+	}
+}
+
+func TestBackendLiveApplyReplacesGeneratedTracingPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed policy live apply test requires /bin/sh")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appliedPath := filepath.Join(dir, "applied")
+	opsPath := filepath.Join(dir, "ops")
+	tetraPath := filepath.Join(dir, "tetra")
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then echo add >> '" + opsPath + "'; cp \"$3\" '" + appliedPath + "'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy delete\" ]; then echo delete >> '" + opsPath + "'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nexit 0\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	oldIntent := contract.CollectionIntent{
+		Behaviors:    []string{"file.write"},
+		FilePrefixes: []string{"/old"},
+		ObserveOnly:  true,
+	}
+	if err := backend.Apply(context.Background(), oldIntent); err != nil {
+		t.Fatalf("initial Apply() error = %v", err)
+	}
+	backend.mu.Lock()
+	backend.policyLoaded = true
+	backend.runtimePolicyApplied = true
+	backend.mu.Unlock()
+	newIntent := contract.CollectionIntent{
+		Behaviors:      []string{"network.connect"},
+		SocketFamilies: []string{"AF_INET"},
+		ObserveOnly:    true,
+	}
+	if err := backend.Apply(context.Background(), newIntent); err != nil {
+		t.Fatalf("live Apply() error = %v", err)
+	}
+	ops, err := os.ReadFile(opsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(ops)) != "delete\nadd" {
+		t.Fatalf("ops = %q", string(ops))
+	}
+	applied, err := os.ReadFile(appliedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(applied), "security_socket_connect") || strings.Contains(string(applied), "/old") {
+		t.Fatalf("applied policy =\n%s", string(applied))
+	}
+}
+
 func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed policy cleanup test requires /bin/sh")
@@ -469,7 +585,8 @@ func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
 	}
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [CONNECT]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(`{"behaviors":["process.exec"],"observe_only":true}
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	addedPath := filepath.Join(dir, "added")
@@ -482,7 +599,7 @@ func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
 	intent := contract.CollectionIntent{
-		EventKinds:  []eventv1.EventKind{eventv1.EventKind_EVENT_KIND_CONNECT},
+		Behaviors:   []string{"process.exec"},
 		ObserveOnly: true,
 	}
 	if err := backend.Apply(context.Background(), intent); err != nil {
@@ -528,7 +645,8 @@ func TestBackendRejectsUnverifiedGeneratedTracingPolicy(t *testing.T) {
 	}
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [CONNECT]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(`{"behaviors":["network.connect"],"observe_only":true}
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tetraPath := filepath.Join(dir, "tetra")
@@ -538,7 +656,7 @@ func TestBackendRejectsUnverifiedGeneratedTracingPolicy(t *testing.T) {
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
 	intent := contract.CollectionIntent{
-		EventKinds:  []eventv1.EventKind{eventv1.EventKind_EVENT_KIND_CONNECT},
+		Behaviors:   []string{"network.connect"},
 		ObserveOnly: true,
 	}
 	if err := backend.Apply(context.Background(), intent); err != nil {

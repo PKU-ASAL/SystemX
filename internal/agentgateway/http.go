@@ -655,7 +655,7 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	writeEventList(w, pageSlice(s.store.ListEvents(q.Get("scenario"), q.Get("kind")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+	writeEventList(w, pageSlice(s.store.ListEvents(q.Get("scenario"), q.Get("behavior")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) signals(w http.ResponseWriter, r *http.Request) {

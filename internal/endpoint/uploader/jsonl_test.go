@@ -8,7 +8,7 @@ import (
 )
 
 func TestReadProtoJSONLStoresSensorRawRefs(t *testing.T) {
-	raw := `{"mono_ns":"1","kind":"EVENT_KIND_EXEC","proc":{"pid":7,"binary":"/bin/bash","start_time_ns":"77"},"raw_ref":"sensor-raw-1"}`
+	raw := `{"mono_ns":"1","behavior":"process.exec","proc":{"pid":7,"binary":"/bin/bash","start_time_ns":"77"},"raw_ref":"sensor-raw-1"}`
 	ring := ringbuffer.New(8)
 
 	batch, err := ReadProtoJSONLWithRing(strings.NewReader(raw+"\n"), "agent-a", "host-a", "scenario-a", ring)
@@ -25,13 +25,13 @@ func TestReadProtoJSONLStoresSensorRawRefs(t *testing.T) {
 	if !ok {
 		t.Fatal("sensor raw line was not stored")
 	}
-	if !strings.Contains(string(entry.Data), `"EVENT_KIND_EXEC"`) {
+	if !strings.Contains(string(entry.Data), `"process.exec"`) {
 		t.Fatalf("stored raw = %s", string(entry.Data))
 	}
 }
 
 func TestReadProtoJSONLAllocatesMissingSensorRawRef(t *testing.T) {
-	raw := `{"mono_ns":"1","kind":"EVENT_KIND_EXEC","proc":{"pid":7,"binary":"/bin/bash","start_time_ns":"77"}}`
+	raw := `{"mono_ns":"1","behavior":"process.exec","proc":{"pid":7,"binary":"/bin/bash","start_time_ns":"77"}}`
 	ring := ringbuffer.New(8)
 
 	batch, err := ReadProtoJSONLWithRing(strings.NewReader(raw+"\n"), "agent-a", "host-a", "scenario-a", ring)

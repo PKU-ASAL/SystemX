@@ -9,6 +9,9 @@ manager:
   address: http://10.66.0.10:9443
   transport: stream
 
+control:
+  socket_path: /var/run/sysarmor/agent.sock
+
 sensor:
   backend: tetragon
   mode: managed
@@ -45,3 +48,11 @@ health:
 
 policy:
   refresh_interval: 30s
+
+content:
+  path: /var/lib/sysarmor/agent/content
+  trust_keys: "" # comma-separated key_id=base64_ed25519_public_key
+
+resource:
+  max_active_cep_groups: 4096
+  max_event_refs_per_signal: 128

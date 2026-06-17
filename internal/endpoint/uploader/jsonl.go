@@ -9,9 +9,10 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -25,7 +26,7 @@ func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRi
 	}
 	batch := &analyticsv1.UploadBatch{}
 	norm := normalize.New(agentID, hostID, nil)
-	fp := fastpath.New()
+	detector, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	scanner := bufio.NewScanner(r)
 	line := 0
 	for scanner.Scan() {
@@ -35,7 +36,7 @@ func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRi
 			continue
 		}
 		rawData := append([]byte(nil), data...)
-		events, signals, err := decodeLine(rawData, norm, fp, scenario, rawRing)
+		events, signals, err := decodeLine(rawData, norm, detector, scenario, rawRing)
 		if err != nil {
 			return nil, fmt.Errorf("line %d is neither Signal, CanonicalEvent, SensorEvent nor Tetragon event", line)
 		}
@@ -61,7 +62,7 @@ func decodeEvent(data []byte) (*eventv1.CanonicalEvent, bool) {
 	if err := protojson.Unmarshal(data, msg); err != nil {
 		return nil, false
 	}
-	return msg, msg.GetId() != "" || msg.GetKind() != eventv1.EventKind_EVENT_KIND_UNSPECIFIED
+	return msg, msg.GetId() != "" || msg.GetBehavior() != ""
 }
 
 func decodeSensorEvent(data []byte) (*sensorv1.SensorEvent, bool) {
@@ -69,5 +70,5 @@ func decodeSensorEvent(data []byte) (*sensorv1.SensorEvent, bool) {
 	if err := protojson.Unmarshal(data, msg); err != nil {
 		return nil, false
 	}
-	return msg, msg.GetProc() != nil && msg.GetKind() != eventv1.EventKind_EVENT_KIND_UNSPECIFIED
+	return msg, msg.GetProc() != nil && msg.GetBehavior() != ""
 }

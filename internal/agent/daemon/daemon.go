@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,15 +18,17 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
+	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -33,6 +37,26 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+type localHealthReporter struct{}
+
+func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) error {
+	return nil
+}
+
+type localBatchUploader struct{}
+
+func (localBatchUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
+	if batch == nil {
+		return &analyticsv1.UploadAck{Ok: true}, nil
+	}
+	return &analyticsv1.UploadAck{
+		Ok:              true,
+		BatchId:         batch.GetBatchId(),
+		AcceptedEvents:  uint64(len(batch.GetEvents())),
+		AcceptedSignals: uint64(len(batch.GetSignals())),
+	}, nil
+}
 
 type Options struct {
 	Once      bool
@@ -47,7 +71,10 @@ type Runner struct {
 	capability contract.Capability
 	mu         sync.RWMutex
 	policy     policymodel.Policy
-	fastpath   *fastpath.Engine
+	detection  *detection.Engine
+	collection contract.CollectionIntent
+	streams    *localStreamBuffer
+	content    *agentcontent.Store
 }
 
 type healthReporter interface {
@@ -59,7 +86,11 @@ func New(cfg config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{Config: cfg, Sensor: sensor}, nil
+	contentStore, err := agentcontent.NewStoreWithOptions(agentcontent.Options{Dir: cfg.Content.Path, TrustedKeys: parseTrustKeys(cfg.Content.TrustKeys)})
+	if err != nil {
+		return nil, err
+	}
+	return &Runner{Config: cfg, Sensor: sensor, streams: newLocalStreamBuffer(defaultLocalStreamCapacity), content: contentStore}, nil
 }
 
 func (r *Runner) Run(ctx context.Context, opts Options) error {
@@ -89,6 +120,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	scopeType := scope.Type
 	scopeSelector := scope.Selector
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
+	r.setCollectionIntent(r.withCollectionCapabilities(intent))
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
@@ -104,6 +136,14 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	worker, err := r.uploadWorker(queue)
 	if err != nil {
 		return failStartup("upload", err)
+	}
+	stopLocalControl := func() {}
+	if !opts.Once && !opts.DrainOnce {
+		stopLocalControl, err = r.startLocalControlServer(ctx, rt, queue, worker, startedAt)
+		if err != nil {
+			return failStartup("local_control", err)
+		}
+		defer stopLocalControl()
 	}
 	if r.Config.Manager.Transport == "http" || r.Config.Manager.Transport == "stream" {
 		stats, err := worker.ResumeOnce(ctx)
@@ -131,8 +171,12 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		defer cancelUploads()
 		go runUploadLoop(uploadCtx, worker, r.Config.Spool.FlushInterval)
 	}
-	norm := normalize.New(r.Config.Agent.ID, r.Config.Agent.HostID, nil)
-	r.setFastpath(fastpath.NewWithRules(effectivePolicy.EndpointRules))
+	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
+		TenantID:      r.Config.Agent.TenantID,
+		ScopeType:     scopeType,
+		ScopeSelector: scopeSelector,
+	})
+	r.applyRuntimePolicy(effectivePolicy)
 	refreshCtx := ctx
 	cancelRefresh := func() {}
 	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && (r.Config.Manager.Transport == "http" || r.Config.Manager.Transport == "stream") {
@@ -141,8 +185,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		go r.runPolicyRefreshLoop(refreshCtx, scopeType, scopeSelector)
 	}
 	if r.Out != nil {
-		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s kinds=%d policy=%s version=%d mode=%s\n",
-			r.Config.Agent.ID, r.Config.Agent.HostID, r.Config.Agent.TenantID, capability.Backend, capability.Version, len(intent.EventKinds), effectivePolicy.PolicyID, effectivePolicy.Version, effectivePolicy.Mode)
+		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s behaviors=%d policy=%s version=%d mode=%s\n",
+			r.Config.Agent.ID, r.Config.Agent.HostID, r.Config.Agent.TenantID, capability.Backend, capability.Version, len(intent.Behaviors), effectivePolicy.PolicyID, effectivePolicy.Version, effectivePolicy.Mode)
 	}
 
 	ticker := time.NewTicker(r.Config.Health.Interval)
@@ -174,7 +218,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				}
 				return nil
 			}
-			batchID, err := r.spoolEvent(queue, norm, r.currentFastpath(), ev)
+			batchID, err := r.spoolEvent(queue, norm, r.currentDetection(), ev)
 			if err != nil && !spool.IsBackpressure(err) {
 				return err
 			}
@@ -196,7 +240,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			}
 			if opts.Once {
 				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent daemon event: kind=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetKind().String(), ev.RawRef, batchID)
+					fmt.Fprintf(r.Out, "agent daemon event: behavior=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetBehavior(), ev.RawRef, batchID)
 				}
 				return nil
 			}
@@ -309,6 +353,9 @@ func (r *Runner) reportStartupFailure(reporter healthReporter, startedAt time.Ti
 }
 
 func (r *Runner) healthReporter() healthReporter {
+	if r.Config.Manager.Transport == "local" {
+		return localHealthReporter{}
+	}
 	if r.Config.Manager.Transport == "stream" {
 		return NewStreamHealthReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
 	}
@@ -365,6 +412,11 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 	if r.Config.Sensor.MaxDroppedEvents > 0 && sensor.EventsDropped > r.Config.Sensor.MaxDroppedEvents {
 		status = "degraded"
 	}
+	cepMetrics := r.currentDetection().Metrics()
+	cepDegraded := cepMetrics.EvictedCEPGroups > 0 || cepMetrics.DroppedEventRefs > 0 || cepMetrics.CEPEvalErrors > 0
+	if cepDegraded {
+		status = "degraded"
+	}
 	now := time.Now().UTC()
 	return agenthealth.AgentHealth{
 		AgentID:       r.Config.Agent.ID,
@@ -407,10 +459,30 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 			RemainingBytes:   uploadStats.RemainingBytes,
 			LastError:        uploadStats.LastError,
 		},
+		CEP: agenthealth.CEPHealth{
+			ActiveGroups:     cepMetrics.ActiveCEPGroups,
+			EvictedGroups:    cepMetrics.EvictedCEPGroups,
+			ExpiredGroups:    cepMetrics.ExpiredCEPGroups,
+			DroppedEventRefs: cepMetrics.DroppedEventRefs,
+			EvalErrors:       cepMetrics.CEPEvalErrors,
+			EmittedSignals:   cepMetrics.EmittedSignals,
+			Degraded:         cepDegraded,
+		},
 	}, nil
 }
 
 func (r *Runner) runtimeCapability() agenthealth.SensorCapability {
+	collection := make([]agenthealth.CollectionBehaviorCapability, 0, len(r.capability.Collection))
+	for _, behavior := range r.capability.Collection {
+		collection = append(collection, agenthealth.CollectionBehaviorCapability{
+			Behavior:             behavior.Behavior,
+			SensorMapping:        behavior.SensorMapping,
+			Fields:               append([]string(nil), behavior.Fields...),
+			PushdownSelectors:    append([]string(nil), behavior.PushdownSelectors...),
+			AgentSideSelectors:   append([]string(nil), behavior.AgentSideSelectors...),
+			UnsupportedSelectors: append([]string(nil), behavior.UnsupportedSelectors...),
+		})
+	}
 	return agenthealth.SensorCapability{
 		Backend:         r.capability.Backend,
 		Version:         r.capability.Version,
@@ -422,6 +494,7 @@ func (r *Runner) runtimeCapability() agenthealth.SensorCapability {
 		KernelRelease:   r.capability.KernelRelease,
 		BTFAvailable:    r.capability.BTFAvailable,
 		BPFFSAvailable:  r.capability.BPFFSAvailable,
+		Collection:      collection,
 	}
 }
 
@@ -481,19 +554,39 @@ func (r *Runner) setPolicy(policy policymodel.Policy) {
 	r.policy = policy
 }
 
-func (r *Runner) currentFastpath() *fastpath.Engine {
+func (r *Runner) currentDetection() *detection.Engine {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if r.fastpath != nil {
-		return r.fastpath
+	if r.detection != nil {
+		return r.detection
 	}
-	return fastpath.New()
+	engine, _ := detection.NewWithRuntimeLimits(policymodel.DefaultDetectionPolicy(), r.collection, detection.ContentSnapshot{}, r.detectionLimits())
+	return engine
 }
 
-func (r *Runner) setFastpath(engine *fastpath.Engine) {
+func (r *Runner) setDetection(engine *detection.Engine) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.fastpath = engine
+	r.detection = engine
+}
+
+func (r *Runner) setCollectionIntent(intent contract.CollectionIntent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.collection = r.withCollectionCapabilities(intent)
+}
+
+func (r *Runner) currentCollectionIntent() contract.CollectionIntent {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.collection
+}
+
+func (r *Runner) withCollectionCapabilities(intent contract.CollectionIntent) contract.CollectionIntent {
+	if len(intent.Capabilities) == 0 && len(r.capability.Collection) > 0 {
+		intent.Capabilities = append([]contract.CollectionBehaviorCapability(nil), r.capability.Collection...)
+	}
+	return intent
 }
 
 func (r *Runner) runPolicyRefreshLoop(ctx context.Context, scopeType, scopeSelector string) {
@@ -553,15 +646,30 @@ func (r *Runner) effectivePolicy(ctx context.Context, req EffectivePolicyRequest
 
 func (r *Runner) applyRuntimePolicy(policy policymodel.Policy) {
 	policy = policymodel.Normalize(policy)
+	engine, _ := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
 	r.setPolicy(policy)
-	r.setFastpath(fastpath.NewWithRules(policy.EndpointRules))
+	r.setDetection(engine)
+}
+
+func (r *Runner) rebuildDetection() detection.ApplyReport {
+	policy := policymodel.Normalize(r.activePolicy())
+	engine, report := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
+	r.setDetection(engine)
+	return report
+}
+
+func (r *Runner) detectionLimits() detection.EngineLimits {
+	return detection.EngineLimits{
+		MaxCEPGroups: r.Config.Resource.MaxActiveCEPGroups,
+		MaxCEPRefs:   r.Config.Resource.MaxEventRefsPerSignal,
+	}
 }
 
 func samePolicyRuntime(a, b policymodel.Policy) bool {
 	return a.PolicyID == b.PolicyID &&
 		a.Version == b.Version &&
 		a.Mode == b.Mode &&
-		reflect.DeepEqual(a.EndpointRules, b.EndpointRules)
+		reflect.DeepEqual(a.Detection, b.Detection)
 }
 
 func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
@@ -620,12 +728,37 @@ func newBatchUploader(manager, transport string, timeout time.Duration, token st
 		return uploader.NewGRPCUploaderWithOptions(manager, timeout, token), nil
 	case "stream":
 		return uploader.NewStreamUploaderWithOptions(manager, timeout, token), nil
+	case "local":
+		return localBatchUploader{}, nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}
 }
 
-func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *fastpath.Engine, ev contract.EventEnvelope) (string, error) {
+func parseTrustKeys(raw string) map[string]ed25519.PublicKey {
+	out := map[string]ed25519.PublicKey{}
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		keyID, encoded, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		keyID = strings.TrimSpace(keyID)
+		encoded = strings.TrimSpace(encoded)
+		if keyID == "" || encoded == "" {
+			continue
+		}
+		if data, err := base64.StdEncoding.DecodeString(encoded); err == nil && len(data) == ed25519.PublicKeySize {
+			out[keyID] = ed25519.PublicKey(data)
+		}
+	}
+	return out
+}
+
+func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, detector *detection.Engine, ev contract.EventEnvelope) (string, error) {
 	if ev.SensorEvent == nil {
 		return "", fmt.Errorf("sensor event is nil")
 	}
@@ -636,12 +769,14 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *
 	if canonical.Scenario == "" {
 		canonical.Scenario = r.Config.Agent.Scenario
 	}
-	signals := fp.Process(canonical)
+	signals := detector.Process(canonical)
 	for _, sig := range signals {
 		if sig.Scenario == "" {
 			sig.Scenario = r.Config.Agent.Scenario
 		}
 	}
+	r.localStreams().publishEvent(r.Config.Agent.TenantID, r.Config.Agent.ID, canonical)
+	r.localStreams().publishSignals(r.Config.Agent.TenantID, r.Config.Agent.ID, signals)
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{
 			AgentId:  r.Config.Agent.ID,
@@ -656,6 +791,7 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, fp *
 }
 
 func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (string, error) {
+	r.localStreams().publishSignals(r.Config.Agent.TenantID, r.Config.Agent.ID, signals)
 	batch := &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{
 			AgentId:  r.Config.Agent.ID,
@@ -666,6 +802,140 @@ func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (s
 		Signals: signals,
 	}
 	return queue.Append(batch)
+}
+
+func (r *Runner) localStreams() *localStreamBuffer {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.streams == nil {
+		r.streams = newLocalStreamBuffer(defaultLocalStreamCapacity)
+	}
+	return r.streams
+}
+
+func (r *Runner) contentStore() *agentcontent.Store {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.content == nil {
+		r.content = agentcontent.NewStore()
+	}
+	return r.content
+}
+
+func (r *Runner) detectionContentSnapshot() detection.ContentSnapshot {
+	snapshot := r.contentStore().Snapshot()
+	out := detection.ContentSnapshot{
+		ContextRefs: make(map[string]detection.ContentRef),
+		IOCRefs:     make(map[string]detection.ContentRef),
+	}
+	for ref, set := range snapshot.ContextSets {
+		out.ContextRefs[ref] = detection.ContentRef{
+			Ref:     set.Ref,
+			Version: set.Version,
+			Digest:  set.Digest,
+			Values:  append([]string(nil), set.Values...),
+		}
+	}
+	for ref, set := range snapshot.IOCPacks {
+		out.IOCRefs[ref] = detection.ContentRef{
+			Ref:     set.Ref,
+			Version: set.Version,
+			Digest:  set.Digest,
+			Values:  append([]string(nil), set.Values...),
+		}
+	}
+	for _, rule := range snapshot.Rules {
+		out.Rules = append(out.Rules, detection.RuleSpec{
+			RuleID:            rule.RuleID,
+			Version:           rule.Version,
+			RuleSetRef:        rule.RuleSetRef,
+			Severity:          rule.Severity,
+			Runtime:           rule.RuntimeEntry,
+			RuntimeType:       rule.RuntimeType,
+			Expr:              detectionExpr(rule.Expr),
+			Sequence:          detectionSequence(rule.Sequence),
+			RequiredEvents:    detectionRequiredEvents(rule.RequiredEvents),
+			RequiredBehaviors: requiredBehaviors(rule.RequiredEvents),
+			ContextRefs:       append([]string(nil), rule.ContextRefs...),
+			IOCRefs:           append([]string(nil), rule.IOCRefs...),
+			ResponseIntent: &policymodel.ResponseIntentRef{
+				Action:     rule.ResponseIntent.Action,
+				Confidence: rule.ResponseIntent.Confidence,
+				Reason:     rule.ResponseIntent.Reason,
+			},
+		})
+	}
+	return out
+}
+
+func detectionRequiredEvents(events []agentcontent.RequiredEvent) []detection.RequiredEventSpec {
+	out := make([]detection.RequiredEventSpec, 0, len(events))
+	for _, event := range events {
+		out = append(out, detection.RequiredEventSpec{
+			Behavior: event.Behavior,
+			Fields:   append([]string(nil), event.Fields...),
+		})
+	}
+	return out
+}
+
+func detectionExpr(expr agentcontent.RuntimeExpr) detection.ExprSpec {
+	out := detection.ExprSpec{Conditions: make([]detection.ConditionSpec, 0, len(expr.Conditions))}
+	for _, cond := range expr.Conditions {
+		out.Conditions = append(out.Conditions, detectionCondition(cond))
+	}
+	return out
+}
+
+func detectionSequence(seq agentcontent.RuntimeSequence) detection.SequenceSpec {
+	within, _ := time.ParseDuration(seq.Within)
+	out := detection.SequenceSpec{
+		Within: within,
+		By:     append([]string(nil), seq.By...),
+		Steps:  make([]detection.StepSpec, 0, len(seq.Steps)),
+	}
+	for _, step := range seq.Steps {
+		behavior := step.Behavior
+		if behavior == "" {
+			behavior = step.Event
+		}
+		next := detection.StepSpec{
+			ID:         step.ID,
+			Behavior:   eventmodel.NormalizeBehavior(behavior).String(),
+			Conditions: make([]detection.ConditionSpec, 0, len(step.Conditions)),
+		}
+		for _, cond := range step.Conditions {
+			next.Conditions = append(next.Conditions, detectionCondition(cond))
+		}
+		out.Steps = append(out.Steps, next)
+	}
+	return out
+}
+
+func detectionCondition(cond agentcontent.RuntimeCondition) detection.ConditionSpec {
+	return detection.ConditionSpec{
+		Field:     cond.Field,
+		Op:        cond.Op,
+		Value:     cond.Value,
+		Values:    append([]string(nil), cond.Values...),
+		Ref:       cond.Ref,
+		Step:      cond.Step,
+		StepField: cond.StepField,
+	}
+}
+
+func requiredBehaviors(events []agentcontent.RequiredEvent) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, event := range events {
+		behavior := eventmodel.NormalizeBehavior(event.Behavior).String()
+		if behavior == "" || seen[behavior] {
+			continue
+		}
+		seen[behavior] = true
+		out = append(out, behavior)
+	}
+	return out
 }
 
 func (r *Runner) pollResponses(ctx context.Context, client *ResponseClient) error {

@@ -16,6 +16,7 @@ type AgentHealth struct {
 	Sensor        SensorHealth     `json:"sensor_health"`
 	Queue         QueueHealth      `json:"queue_health"`
 	Upload        UploadHealth     `json:"upload_health"`
+	CEP           CEPHealth        `json:"cep_health"`
 	ObservedAt    time.Time        `json:"observed_at"`
 }
 
@@ -40,16 +41,26 @@ type SensorHealth struct {
 }
 
 type SensorCapability struct {
-	Backend         string `json:"backend,omitempty"`
-	Version         string `json:"version,omitempty"`
-	SupportsExec    bool   `json:"supports_exec,omitempty"`
-	SupportsConnect bool   `json:"supports_connect,omitempty"`
-	SupportsFile    bool   `json:"supports_file,omitempty"`
-	SupportsEnforce bool   `json:"supports_enforce,omitempty"`
-	SupportsHealth  bool   `json:"supports_health,omitempty"`
-	KernelRelease   string `json:"kernel_release,omitempty"`
-	BTFAvailable    bool   `json:"btf_available,omitempty"`
-	BPFFSAvailable  bool   `json:"bpffs_available,omitempty"`
+	Backend         string                         `json:"backend,omitempty"`
+	Version         string                         `json:"version,omitempty"`
+	SupportsExec    bool                           `json:"supports_exec,omitempty"`
+	SupportsConnect bool                           `json:"supports_connect,omitempty"`
+	SupportsFile    bool                           `json:"supports_file,omitempty"`
+	SupportsEnforce bool                           `json:"supports_enforce,omitempty"`
+	SupportsHealth  bool                           `json:"supports_health,omitempty"`
+	KernelRelease   string                         `json:"kernel_release,omitempty"`
+	BTFAvailable    bool                           `json:"btf_available,omitempty"`
+	BPFFSAvailable  bool                           `json:"bpffs_available,omitempty"`
+	Collection      []CollectionBehaviorCapability `json:"collection,omitempty"`
+}
+
+type CollectionBehaviorCapability struct {
+	Behavior             string   `json:"behavior"`
+	SensorMapping        string   `json:"sensor_mapping,omitempty"`
+	Fields               []string `json:"fields"`
+	PushdownSelectors    []string `json:"pushdown_selectors,omitempty"`
+	AgentSideSelectors   []string `json:"agent_side_selectors,omitempty"`
+	UnsupportedSelectors []string `json:"unsupported_selectors,omitempty"`
 }
 
 type QueueHealth struct {
@@ -67,4 +78,14 @@ type UploadHealth struct {
 	RemainingBatches int    `json:"remaining_batches"`
 	RemainingBytes   int64  `json:"remaining_bytes"`
 	LastError        string `json:"last_error,omitempty"`
+}
+
+type CEPHealth struct {
+	ActiveGroups     uint64 `json:"active_groups"`
+	EvictedGroups    uint64 `json:"evicted_groups"`
+	ExpiredGroups    uint64 `json:"expired_groups"`
+	DroppedEventRefs uint64 `json:"dropped_event_refs"`
+	EvalErrors       uint64 `json:"eval_errors"`
+	EmittedSignals   uint64 `json:"emitted_signals"`
+	Degraded         bool   `json:"degraded"`
 }

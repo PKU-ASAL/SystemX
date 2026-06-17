@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
@@ -118,7 +118,61 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 		KernelRelease:   kernelRelease,
 		BTFAvailable:    btfAvailable,
 		BPFFSAvailable:  bpffsAvailable,
+		Collection:      CollectionCapabilities(),
 	}, nil
+}
+
+func CollectionCapabilities() []contract.CollectionBehaviorCapability {
+	commonProcess := []string{"event.id", "event.behavior", "lineage_id", "process.stable_id", "process.binary", "process.argv", "process.uid", "parent.stable_id", "scope.type", "scope.selector", "container.id", "cgroup"}
+	with := func(base []string, fields ...string) []string {
+		out := append([]string(nil), base...)
+		out = append(out, fields...)
+		return out
+	}
+	return []contract.CollectionBehaviorCapability{
+		{
+			Behavior:          eventmodel.BehaviorProcessExec.String(),
+			SensorMapping:     "tetragon:process_exec/security_bprm_creds_from_file",
+			Fields:            commonProcess,
+			PushdownSelectors: []string{"binary.prefix", "parent.binary.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:          eventmodel.BehaviorProcessFork.String(),
+			SensorMapping:     "tetragon:process_exec.clone",
+			Fields:            commonProcess,
+			PushdownSelectors: []string{"binary.prefix", "parent.binary.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:          eventmodel.BehaviorProcessExit.String(),
+			SensorMapping:     "tetragon:process_exit/do_exit",
+			Fields:            commonProcess,
+			PushdownSelectors: []string{"binary.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:          eventmodel.BehaviorNetworkConnect.String(),
+			SensorMapping:     "tetragon:kprobe/security_socket_connect",
+			Fields:            with(commonProcess, "socket", "socket.addr", "socket.port", "object.socket_addr"),
+			PushdownSelectors: []string{"socket.family", "socket.addr", "socket.port", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:          eventmodel.BehaviorFileOpen.String(),
+			SensorMapping:     "tetragon:kprobe/security_file_permission",
+			Fields:            with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors: []string{"file.path.prefix", "access.read", "access.write", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:          eventmodel.BehaviorFileWrite.String(),
+			SensorMapping:     "tetragon:process_exec.inferred_write/security_file_permission",
+			Fields:            with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors: []string{"file.path.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:          eventmodel.BehaviorFileChmod.String(),
+			SensorMapping:     "tetragon:process_exec.inferred_chmod",
+			Fields:            with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors: []string{"file.path.prefix", "scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+	}
 }
 
 func (b *Backend) probeHostCapabilities() (string, bool, bool, error) {
@@ -181,6 +235,24 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 		return fmt.Errorf("verify tetragon policy: %w", err)
 	}
 	b.mu.Lock()
+	loaded := b.policyLoaded
+	oldIntent := b.intent
+	oldRuntimePolicyApplied := b.runtimePolicyApplied
+	b.mu.Unlock()
+	if loaded && b.Bundle.TetraPath != "" && b.EventSource == "" {
+		if err := b.liveApplyTracingPolicy(ctx, oldIntent, normalized, oldRuntimePolicyApplied); err != nil {
+			b.setError(err)
+			return err
+		}
+		b.mu.Lock()
+		b.intent = normalized
+		b.policyLoaded = true
+		b.runtimePolicyApplied = needsTracingPolicy(normalized)
+		b.lastError = ""
+		b.mu.Unlock()
+		return nil
+	}
+	b.mu.Lock()
 	b.intent = normalized
 	b.policyLoaded = false
 	b.runtimePolicyApplied = false
@@ -214,6 +286,13 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 	if err != nil {
 		b.setError(err)
 		return nil, err
+	}
+	if b.requiresManagedSensorReady() {
+		if err := b.waitManagedSensorReady(ctx); err != nil {
+			stopSensor()
+			b.setError(err)
+			return nil, err
+		}
 	}
 	if err := b.applyPreparedPolicy(ctx); err != nil {
 		stopSensor()
@@ -256,6 +335,9 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 			}
 			rawRef := rawRefForLine(line)
 			for _, event := range events {
+				if !b.matchesIntentBehavior(event.GetBehavior()) {
+					continue
+				}
 				if !b.matchesScope(event) {
 					continue
 				}
@@ -280,6 +362,16 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 		}
 	}()
 	return out, nil
+}
+
+func (b *Backend) matchesIntentBehavior(behavior string) bool {
+	b.mu.Lock()
+	intent := b.intent
+	b.mu.Unlock()
+	if len(intent.Behaviors) == 0 {
+		return true
+	}
+	return intentHasBehavior(intent, behavior)
 }
 
 func isBenignEventSourceReadError(err error) bool {
@@ -308,7 +400,7 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	}
 	b.mu.Lock()
 	loaded := b.policyLoaded
-	hasIntent := len(b.intent.EventKinds) > 0 || b.intent.ObserveOnly || len(b.intent.FilePrefixes) > 0 || len(b.intent.SocketFamilies) > 0
+	hasIntent := len(b.intent.Behaviors) > 0 || b.intent.ObserveOnly || len(b.intent.FilePrefixes) > 0 || len(b.intent.SocketFamilies) > 0
 	b.mu.Unlock()
 	if loaded || hasIntent {
 		return nil
@@ -381,9 +473,9 @@ func (b *Backend) cleanupRuntimePolicy() {
 }
 
 func needsTracingPolicy(intent contract.CollectionIntent) bool {
-	for _, kind := range intent.EventKinds {
-		switch kind {
-		case eventv1.EventKind_EVENT_KIND_CONNECT, eventv1.EventKind_EVENT_KIND_OPEN, eventv1.EventKind_EVENT_KIND_WRITE, eventv1.EventKind_EVENT_KIND_CHMOD:
+	for _, behavior := range intent.Behaviors {
+		switch eventmodel.NormalizeBehavior(behavior) {
+		case eventmodel.BehaviorProcessExec, eventmodel.BehaviorProcessExit, eventmodel.BehaviorProcessFork, eventmodel.BehaviorNetworkConnect, eventmodel.BehaviorFileOpen, eventmodel.BehaviorFileRead, eventmodel.BehaviorFileWrite, eventmodel.BehaviorFileChmod:
 			return true
 		}
 	}
@@ -391,16 +483,70 @@ func needsTracingPolicy(intent contract.CollectionIntent) bool {
 }
 
 func (b *Backend) renderTracingPolicy(intent contract.CollectionIntent) (string, error) {
+	return b.writeTracingPolicy(intent, "sysarmor-runtime-tracingpolicy.yaml")
+}
+
+func (b *Backend) writeTracingPolicy(intent contract.CollectionIntent, name string) (string, error) {
 	dir := filepath.Dir(b.PolicyPath)
 	if dir == "." || dir == "" {
 		dir = os.TempDir()
 	}
-	path := filepath.Join(dir, "sysarmor-runtime-tracingpolicy.yaml")
+	path := filepath.Join(dir, name)
 	data := buildTracingPolicy(intent)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", fmt.Errorf("write tetragon tracing policy: %w", err)
 	}
 	return path, nil
+}
+
+func (b *Backend) liveApplyTracingPolicy(ctx context.Context, oldIntent, newIntent contract.CollectionIntent, oldRuntimePolicyApplied bool) error {
+	oldNeeds := oldRuntimePolicyApplied && needsTracingPolicy(oldIntent)
+	newNeeds := needsTracingPolicy(newIntent)
+	if !oldNeeds && !newNeeds {
+		return nil
+	}
+	var oldPath string
+	var err error
+	if oldNeeds {
+		oldPath, err = b.writeTracingPolicy(oldIntent, "sysarmor-runtime-tracingpolicy-rollback.yaml")
+		if err != nil {
+			return err
+		}
+		if err := b.deleteTracingPolicy(ctx); err != nil {
+			return err
+		}
+	}
+	if !newNeeds {
+		return nil
+	}
+	newPath, err := b.renderTracingPolicy(newIntent)
+	if err != nil {
+		return err
+	}
+	if err := b.applyTracingPolicy(ctx, newPath); err != nil {
+		if oldNeeds && oldPath != "" {
+			_ = b.applyTracingPolicy(context.Background(), oldPath)
+		}
+		return err
+	}
+	return nil
+}
+
+func (b *Backend) deleteTracingPolicy(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "delete", runtimeTracingPolicyName)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(string(output))
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "not found") || strings.Contains(lower, "notfound") || strings.Contains(lower, "not exist") {
+		return nil
+	}
+	if trimmed == "" {
+		return fmt.Errorf("delete tetragon tracing policy %s: %w", runtimeTracingPolicyName, err)
+	}
+	return fmt.Errorf("delete tetragon tracing policy %s: %w: %s", runtimeTracingPolicyName, err, trimmed)
 }
 
 func (b *Backend) applyTracingPolicy(ctx context.Context, path string) error {
@@ -460,7 +606,43 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 	out.WriteString("\n")
 	out.WriteString("spec:\n")
 	out.WriteString("  kprobes:\n")
-	if intentHasKind(intent, eventv1.EventKind_EVENT_KIND_CONNECT) {
+	if intentHasAnyBehavior(intent, eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String()) {
+		prefixes := intent.BinaryPrefixes
+		out.WriteString(`  - call: "security_bprm_creds_from_file"
+    syscall: false
+    args:
+    - index: 0
+      type: "nop"
+    - index: 1
+      type: "file"
+`)
+		if len(prefixes) > 0 {
+			out.WriteString(`    selectors:
+    - matchArgs:
+      - index: 1
+        operator: "Prefix"
+        values:
+`)
+			for _, prefix := range prefixes {
+				out.WriteString("        - ")
+				out.WriteString(fmt.Sprintf("%q", prefix))
+				out.WriteString("\n")
+			}
+		}
+	}
+	if intentHasBehavior(intent, eventmodel.BehaviorProcessExit.String()) {
+		out.WriteString(`  - call: "do_exit"
+    syscall: false
+    args:
+    - index: 0
+      type: "int"
+`)
+	}
+	if intentHasBehavior(intent, eventmodel.BehaviorNetworkConnect.String()) {
+		families := intent.SocketFamilies
+		if len(families) == 0 {
+			families = []string{"AF_INET", "AF_INET6"}
+		}
 		out.WriteString(`  - call: "security_socket_connect"
     syscall: false
     args:
@@ -473,11 +655,36 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
       - index: 1
         operator: "Family"
         values:
-        - "AF_INET"
-        - "AF_INET6"
 `)
+		for _, family := range families {
+			out.WriteString("        - ")
+			out.WriteString(fmt.Sprintf("%q", family))
+			out.WriteString("\n")
+		}
+		if len(intent.SocketAddrs) > 0 {
+			out.WriteString(`      - index: 1
+        operator: "SAddr"
+        values:
+`)
+			for _, addr := range intent.SocketAddrs {
+				out.WriteString("        - ")
+				out.WriteString(fmt.Sprintf("%q", addr))
+				out.WriteString("\n")
+			}
+		}
+		if len(intent.SocketPorts) > 0 {
+			out.WriteString(`      - index: 1
+        operator: "SPort"
+        values:
+`)
+			for _, port := range intent.SocketPorts {
+				out.WriteString("        - ")
+				out.WriteString(fmt.Sprintf("%q", port))
+				out.WriteString("\n")
+			}
+		}
 	}
-	if intentHasAnyKind(intent, eventv1.EventKind_EVENT_KIND_OPEN, eventv1.EventKind_EVENT_KIND_WRITE, eventv1.EventKind_EVENT_KIND_CHMOD) {
+	if intentHasAnyBehavior(intent, eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()) {
 		prefixes := intent.FilePrefixes
 		if len(prefixes) == 0 {
 			prefixes = []string{"/root/.ssh", "/var/run/secrets", "/etc/passwd"}
@@ -508,18 +715,19 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 	return out.Bytes()
 }
 
-func intentHasAnyKind(intent contract.CollectionIntent, kinds ...eventv1.EventKind) bool {
-	for _, kind := range kinds {
-		if intentHasKind(intent, kind) {
+func intentHasAnyBehavior(intent contract.CollectionIntent, behaviors ...string) bool {
+	for _, behavior := range behaviors {
+		if intentHasBehavior(intent, behavior) {
 			return true
 		}
 	}
 	return false
 }
 
-func intentHasKind(intent contract.CollectionIntent, kind eventv1.EventKind) bool {
-	for _, got := range intent.EventKinds {
-		if got == kind {
+func intentHasBehavior(intent contract.CollectionIntent, behavior string) bool {
+	behavior = eventmodel.NormalizeBehavior(behavior).String()
+	for _, got := range intent.Behaviors {
+		if eventmodel.NormalizeBehavior(got).String() == behavior {
 			return true
 		}
 	}
@@ -584,9 +792,11 @@ func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
 	_ = os.MkdirAll("/var/run/tetragon", 0o755)
 	_ = os.Remove("/var/run/tetragon/tetragon.pid")
 	spec := ProcessSpec{
-		Name: "tetragon",
-		Path: b.Bundle.TetragonPath,
-		Args: defaultTetragonArgs(),
+		Name:    "tetragon",
+		Path:    b.Bundle.TetragonPath,
+		Args:    tetragonArgs(b.Bundle.TetragonPath),
+		Dir:     bundleRuntimeDir(b.Bundle.TetragonPath),
+		LogPath: "/var/log/sysarmor/tetragon.log",
 	}
 	if b.Restart.Enabled {
 		if err := b.sensorSupervisor.StartRestarting(ctx, spec, RestartPolicy{
@@ -605,11 +815,71 @@ func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
 	}, nil
 }
 
+func (b *Backend) waitManagedSensorReady(ctx context.Context) error {
+	if b.Bundle.TetragonPath == "" || b.Bundle.TetraPath == "" {
+		return nil
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	var lastErr error
+	for {
+		cmd := exec.CommandContext(ctx, b.Bundle.TetraPath, "tracingpolicy", "list")
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed == "" {
+			lastErr = fmt.Errorf("wait tetragon ready: %w", err)
+		} else {
+			lastErr = fmt.Errorf("wait tetragon ready: %w: %s", err, trimmed)
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (b *Backend) requiresManagedSensorReady() bool {
+	return b.Bundle.BundleDir != "" && b.Bundle.InstallDir != "" && b.Bundle.TetragonPath != ""
+}
+
+func tetragonArgs(tetragonPath string) []string {
+	args := defaultTetragonArgs()
+	if libPath := bundleTetragonLibDir(tetragonPath); libPath != "" {
+		args = append(args, "--bpf-lib", libPath)
+	}
+	return args
+}
+
 func defaultTetragonArgs() []string {
 	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err == nil {
 		return []string{"--btf", "/sys/kernel/btf/vmlinux"}
 	}
 	return nil
+}
+
+func bundleTetragonLibDir(tetragonPath string) string {
+	if strings.TrimSpace(tetragonPath) == "" {
+		return ""
+	}
+	root := filepath.Dir(filepath.Dir(tetragonPath))
+	candidates := []string{
+		filepath.Join(root, "lib", "tetragon", "bpf"),
+		filepath.Join(root, "usr", "local", "lib", "tetragon", "bpf"),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func (b *Backend) openEventSource(ctx context.Context) (io.Reader, func(), error) {
@@ -635,6 +905,7 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 		Name: "tetra-getevents",
 		Path: b.Bundle.TetraPath,
 		Args: []string{"getevents", "-o", "json"},
+		Dir:  bundleRuntimeDir(b.Bundle.TetraPath),
 	})
 	if err != nil {
 		return nil, func() {}, err
@@ -645,6 +916,17 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 		_ = b.eventSupervisor.Stop(ctx)
 		_ = stdout.Close()
 	}, nil
+}
+
+func bundleRuntimeDir(binaryPath string) string {
+	if strings.TrimSpace(binaryPath) == "" {
+		return ""
+	}
+	dir := filepath.Dir(binaryPath)
+	if filepath.Base(dir) == "bin" {
+		return filepath.Dir(dir)
+	}
+	return dir
 }
 
 func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {

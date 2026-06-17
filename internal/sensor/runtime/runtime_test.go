@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
@@ -25,7 +24,7 @@ func TestManagerLifecycle(t *testing.T) {
 	}
 
 	intent := contract.CollectionIntent{
-		EventKinds:  []eventv1.EventKind{eventv1.EventKind_EVENT_KIND_EXEC},
+		Behaviors:   []string{"process.exec"},
 		ObserveOnly: true,
 	}
 	if err := rt.Apply(ctx, intent); err != nil {
@@ -38,12 +37,12 @@ func TestManagerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	fake.emit(contract.EventEnvelope{SensorEvent: &sensorv1.SensorEvent{Kind: eventv1.EventKind_EVENT_KIND_EXEC}})
+	fake.emit(contract.EventEnvelope{SensorEvent: &sensorv1.SensorEvent{Behavior: "process.exec"}})
 
 	select {
 	case ev := <-events:
-		if ev.SensorEvent.GetKind() != eventv1.EventKind_EVENT_KIND_EXEC {
-			t.Fatalf("event kind = %v", ev.SensorEvent.GetKind())
+		if ev.SensorEvent.GetBehavior() != "process.exec" {
+			t.Fatalf("event behavior = %v", ev.SensorEvent.GetBehavior())
 		}
 		if ev.ReceivedAt.IsZero() {
 			t.Fatal("ReceivedAt was not set")

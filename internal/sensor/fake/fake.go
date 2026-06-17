@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
 
@@ -32,8 +32,8 @@ func NewWithStartupEvents(count int) *Sensor {
 	for i := 0; i < count; i++ {
 		events = append(events, contract.EventEnvelope{
 			SensorEvent: &sensorv1.SensorEvent{
-				Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-				Proc: &sensorv1.RawProcess{Pid: uint32(i + 1), Binary: "/usr/bin/fake", StartTimeNs: uint64(now + int64(i))},
+				Behavior: eventmodel.BehaviorProcessExec.String(),
+				Proc:     &sensorv1.RawProcess{Pid: uint32(i + 1), Binary: "/usr/bin/fake", StartTimeNs: uint64(now + int64(i))},
 			},
 			RawRef: "fake-startup",
 		})

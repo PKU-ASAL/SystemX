@@ -21,70 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type EventKind int32
-
-const (
-	EventKind_EVENT_KIND_UNSPECIFIED EventKind = 0
-	EventKind_EVENT_KIND_EXEC        EventKind = 1
-	EventKind_EVENT_KIND_EXIT        EventKind = 2
-	EventKind_EVENT_KIND_FORK        EventKind = 3
-	EventKind_EVENT_KIND_OPEN        EventKind = 4
-	EventKind_EVENT_KIND_WRITE       EventKind = 5
-	EventKind_EVENT_KIND_CHMOD       EventKind = 6
-	EventKind_EVENT_KIND_CONNECT     EventKind = 7
-)
-
-// Enum value maps for EventKind.
-var (
-	EventKind_name = map[int32]string{
-		0: "EVENT_KIND_UNSPECIFIED",
-		1: "EVENT_KIND_EXEC",
-		2: "EVENT_KIND_EXIT",
-		3: "EVENT_KIND_FORK",
-		4: "EVENT_KIND_OPEN",
-		5: "EVENT_KIND_WRITE",
-		6: "EVENT_KIND_CHMOD",
-		7: "EVENT_KIND_CONNECT",
-	}
-	EventKind_value = map[string]int32{
-		"EVENT_KIND_UNSPECIFIED": 0,
-		"EVENT_KIND_EXEC":        1,
-		"EVENT_KIND_EXIT":        2,
-		"EVENT_KIND_FORK":        3,
-		"EVENT_KIND_OPEN":        4,
-		"EVENT_KIND_WRITE":       5,
-		"EVENT_KIND_CHMOD":       6,
-		"EVENT_KIND_CONNECT":     7,
-	}
-)
-
-func (x EventKind) Enum() *EventKind {
-	p := new(EventKind)
-	*p = x
-	return p
-}
-
-func (x EventKind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (EventKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_proto_event_v1_event_proto_enumTypes[0].Descriptor()
-}
-
-func (EventKind) Type() protoreflect.EnumType {
-	return &file_api_proto_event_v1_event_proto_enumTypes[0]
-}
-
-func (x EventKind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use EventKind.Descriptor instead.
-func (EventKind) EnumDescriptor() ([]byte, []int) {
-	return file_api_proto_event_v1_event_proto_rawDescGZIP(), []int{0}
-}
-
 type ProcessRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StableId      string                 `protobuf:"bytes,1,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
@@ -237,6 +173,58 @@ func (x *ObjectRef) GetTargetProcStableId() string {
 	return ""
 }
 
+type RuntimeScope struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Selector      string                 `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuntimeScope) Reset() {
+	*x = RuntimeScope{}
+	mi := &file_api_proto_event_v1_event_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeScope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeScope) ProtoMessage() {}
+
+func (x *RuntimeScope) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_event_v1_event_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeScope.ProtoReflect.Descriptor instead.
+func (*RuntimeScope) Descriptor() ([]byte, []int) {
+	return file_api_proto_event_v1_event_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RuntimeScope) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *RuntimeScope) GetSelector() string {
+	if x != nil {
+		return x.Selector
+	}
+	return ""
+}
+
 type CanonicalEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -245,19 +233,26 @@ type CanonicalEvent struct {
 	HostId         string                 `protobuf:"bytes,4,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
 	Scenario       string                 `protobuf:"bytes,5,opt,name=scenario,proto3" json:"scenario,omitempty"`
 	MonoNs         uint64                 `protobuf:"varint,6,opt,name=mono_ns,json=monoNs,proto3" json:"mono_ns,omitempty"`
-	Kind           EventKind              `protobuf:"varint,7,opt,name=kind,proto3,enum=sysarmor.event.v1.EventKind" json:"kind,omitempty"`
 	SubjectProc    *ProcessRef            `protobuf:"bytes,8,opt,name=subject_proc,json=subjectProc,proto3" json:"subject_proc,omitempty"`
 	Object         *ObjectRef             `protobuf:"bytes,9,opt,name=object,proto3" json:"object,omitempty"`
 	ParentStableId string                 `protobuf:"bytes,10,opt,name=parent_stable_id,json=parentStableId,proto3" json:"parent_stable_id,omitempty"`
 	LineageId      string                 `protobuf:"bytes,11,opt,name=lineage_id,json=lineageId,proto3" json:"lineage_id,omitempty"`
 	RawRef         string                 `protobuf:"bytes,12,opt,name=raw_ref,json=rawRef,proto3" json:"raw_ref,omitempty"`
+	TenantId       string                 `protobuf:"bytes,13,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Scope          *RuntimeScope          `protobuf:"bytes,14,opt,name=scope,proto3" json:"scope,omitempty"`
+	ContainerId    string                 `protobuf:"bytes,15,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Cgroup         string                 `protobuf:"bytes,16,opt,name=cgroup,proto3" json:"cgroup,omitempty"`
+	Namespace      string                 `protobuf:"bytes,17,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Pod            string                 `protobuf:"bytes,18,opt,name=pod,proto3" json:"pod,omitempty"`
+	OccurredAtNs   uint64                 `protobuf:"varint,19,opt,name=occurred_at_ns,json=occurredAtNs,proto3" json:"occurred_at_ns,omitempty"`
+	Behavior       string                 `protobuf:"bytes,20,opt,name=behavior,proto3" json:"behavior,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CanonicalEvent) Reset() {
 	*x = CanonicalEvent{}
-	mi := &file_api_proto_event_v1_event_proto_msgTypes[2]
+	mi := &file_api_proto_event_v1_event_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -269,7 +264,7 @@ func (x *CanonicalEvent) String() string {
 func (*CanonicalEvent) ProtoMessage() {}
 
 func (x *CanonicalEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_event_v1_event_proto_msgTypes[2]
+	mi := &file_api_proto_event_v1_event_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -282,7 +277,7 @@ func (x *CanonicalEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CanonicalEvent.ProtoReflect.Descriptor instead.
 func (*CanonicalEvent) Descriptor() ([]byte, []int) {
-	return file_api_proto_event_v1_event_proto_rawDescGZIP(), []int{2}
+	return file_api_proto_event_v1_event_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CanonicalEvent) GetId() string {
@@ -327,13 +322,6 @@ func (x *CanonicalEvent) GetMonoNs() uint64 {
 	return 0
 }
 
-func (x *CanonicalEvent) GetKind() EventKind {
-	if x != nil {
-		return x.Kind
-	}
-	return EventKind_EVENT_KIND_UNSPECIFIED
-}
-
 func (x *CanonicalEvent) GetSubjectProc() *ProcessRef {
 	if x != nil {
 		return x.SubjectProc
@@ -369,6 +357,62 @@ func (x *CanonicalEvent) GetRawRef() string {
 	return ""
 }
 
+func (x *CanonicalEvent) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *CanonicalEvent) GetScope() *RuntimeScope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *CanonicalEvent) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *CanonicalEvent) GetCgroup() string {
+	if x != nil {
+		return x.Cgroup
+	}
+	return ""
+}
+
+func (x *CanonicalEvent) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *CanonicalEvent) GetPod() string {
+	if x != nil {
+		return x.Pod
+	}
+	return ""
+}
+
+func (x *CanonicalEvent) GetOccurredAtNs() uint64 {
+	if x != nil {
+		return x.OccurredAtNs
+	}
+	return 0
+}
+
+func (x *CanonicalEvent) GetBehavior() string {
+	if x != nil {
+		return x.Behavior
+	}
+	return ""
+}
+
 var File_api_proto_event_v1_event_proto protoreflect.FileDescriptor
 
 const file_api_proto_event_v1_event_proto_rawDesc = "" +
@@ -387,31 +431,32 @@ const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\tfile_path\x18\x02 \x01(\tR\bfilePath\x12\x1f\n" +
 	"\vsocket_addr\x18\x03 \x01(\tR\n" +
 	"socketAddr\x121\n" +
-	"\x15target_proc_stable_id\x18\x04 \x01(\tR\x12targetProcStableId\"\xa7\x03\n" +
+	"\x15target_proc_stable_id\x18\x04 \x01(\tR\x12targetProcStableId\">\n" +
+	"\fRuntimeScope\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
+	"\bselector\x18\x02 \x01(\tR\bselector\"\xfc\x04\n" +
 	"\x0eCanonicalEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x19\n" +
 	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x17\n" +
 	"\ahost_id\x18\x04 \x01(\tR\x06hostId\x12\x1a\n" +
 	"\bscenario\x18\x05 \x01(\tR\bscenario\x12\x17\n" +
-	"\amono_ns\x18\x06 \x01(\x04R\x06monoNs\x120\n" +
-	"\x04kind\x18\a \x01(\x0e2\x1c.sysarmor.event.v1.EventKindR\x04kind\x12@\n" +
+	"\amono_ns\x18\x06 \x01(\x04R\x06monoNs\x12@\n" +
 	"\fsubject_proc\x18\b \x01(\v2\x1d.sysarmor.event.v1.ProcessRefR\vsubjectProc\x124\n" +
 	"\x06object\x18\t \x01(\v2\x1c.sysarmor.event.v1.ObjectRefR\x06object\x12(\n" +
 	"\x10parent_stable_id\x18\n" +
 	" \x01(\tR\x0eparentStableId\x12\x1d\n" +
 	"\n" +
 	"lineage_id\x18\v \x01(\tR\tlineageId\x12\x17\n" +
-	"\araw_ref\x18\f \x01(\tR\x06rawRef*\xbf\x01\n" +
-	"\tEventKind\x12\x1a\n" +
-	"\x16EVENT_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
-	"\x0fEVENT_KIND_EXEC\x10\x01\x12\x13\n" +
-	"\x0fEVENT_KIND_EXIT\x10\x02\x12\x13\n" +
-	"\x0fEVENT_KIND_FORK\x10\x03\x12\x13\n" +
-	"\x0fEVENT_KIND_OPEN\x10\x04\x12\x14\n" +
-	"\x10EVENT_KIND_WRITE\x10\x05\x12\x14\n" +
-	"\x10EVENT_KIND_CHMOD\x10\x06\x12\x16\n" +
-	"\x12EVENT_KIND_CONNECT\x10\aBFZDgithub.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1b\x06proto3"
+	"\araw_ref\x18\f \x01(\tR\x06rawRef\x12\x1b\n" +
+	"\ttenant_id\x18\r \x01(\tR\btenantId\x125\n" +
+	"\x05scope\x18\x0e \x01(\v2\x1f.sysarmor.event.v1.RuntimeScopeR\x05scope\x12!\n" +
+	"\fcontainer_id\x18\x0f \x01(\tR\vcontainerId\x12\x16\n" +
+	"\x06cgroup\x18\x10 \x01(\tR\x06cgroup\x12\x1c\n" +
+	"\tnamespace\x18\x11 \x01(\tR\tnamespace\x12\x10\n" +
+	"\x03pod\x18\x12 \x01(\tR\x03pod\x12$\n" +
+	"\x0eoccurred_at_ns\x18\x13 \x01(\x04R\foccurredAtNs\x12\x1a\n" +
+	"\bbehavior\x18\x14 \x01(\tR\bbehaviorJ\x04\b\a\x10\bBFZDgithub.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1b\x06proto3"
 
 var (
 	file_api_proto_event_v1_event_proto_rawDescOnce sync.Once
@@ -425,18 +470,17 @@ func file_api_proto_event_v1_event_proto_rawDescGZIP() []byte {
 	return file_api_proto_event_v1_event_proto_rawDescData
 }
 
-var file_api_proto_event_v1_event_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_api_proto_event_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_api_proto_event_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_api_proto_event_v1_event_proto_goTypes = []any{
-	(EventKind)(0),         // 0: sysarmor.event.v1.EventKind
-	(*ProcessRef)(nil),     // 1: sysarmor.event.v1.ProcessRef
-	(*ObjectRef)(nil),      // 2: sysarmor.event.v1.ObjectRef
+	(*ProcessRef)(nil),     // 0: sysarmor.event.v1.ProcessRef
+	(*ObjectRef)(nil),      // 1: sysarmor.event.v1.ObjectRef
+	(*RuntimeScope)(nil),   // 2: sysarmor.event.v1.RuntimeScope
 	(*CanonicalEvent)(nil), // 3: sysarmor.event.v1.CanonicalEvent
 }
 var file_api_proto_event_v1_event_proto_depIdxs = []int32{
-	0, // 0: sysarmor.event.v1.CanonicalEvent.kind:type_name -> sysarmor.event.v1.EventKind
-	1, // 1: sysarmor.event.v1.CanonicalEvent.subject_proc:type_name -> sysarmor.event.v1.ProcessRef
-	2, // 2: sysarmor.event.v1.CanonicalEvent.object:type_name -> sysarmor.event.v1.ObjectRef
+	0, // 0: sysarmor.event.v1.CanonicalEvent.subject_proc:type_name -> sysarmor.event.v1.ProcessRef
+	1, // 1: sysarmor.event.v1.CanonicalEvent.object:type_name -> sysarmor.event.v1.ObjectRef
+	2, // 2: sysarmor.event.v1.CanonicalEvent.scope:type_name -> sysarmor.event.v1.RuntimeScope
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -454,14 +498,13 @@ func file_api_proto_event_v1_event_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_event_v1_event_proto_rawDesc), len(file_api_proto_event_v1_event_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   3,
+			NumEnums:      0,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_api_proto_event_v1_event_proto_goTypes,
 		DependencyIndexes: file_api_proto_event_v1_event_proto_depIdxs,
-		EnumInfos:         file_api_proto_event_v1_event_proto_enumTypes,
 		MessageInfos:      file_api_proto_event_v1_event_proto_msgTypes,
 	}.Build()
 	File_api_proto_event_v1_event_proto = out.File

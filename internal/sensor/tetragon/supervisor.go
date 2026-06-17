@@ -6,16 +6,19 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
 type ProcessSpec struct {
-	Name string
-	Path string
-	Args []string
-	Env  []string
+	Name    string
+	Path    string
+	Args    []string
+	Dir     string
+	Env     []string
+	LogPath string
 }
 
 type ProcessStatus struct {
@@ -59,9 +62,20 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 	}
 	procCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(procCtx, spec.Path, spec.Args...)
+	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
+	logFile, err := openProcessLog(spec.LogPath)
+	if err != nil {
+		logFile = nil
+	}
+	if logFile != nil {
+		cmd.Stderr = logFile
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		cancel()
 		s.mu.Unlock()
 		return nil, err
@@ -77,6 +91,9 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 	s.mu.Unlock()
 
 	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		s.mu.Lock()
 		s.cmd = nil
 		s.cancel = nil
@@ -89,7 +106,7 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 		return nil, err
 	}
 
-	go s.wait(procCtx, cmd, done)
+	go s.wait(procCtx, cmd, done, logFile)
 	return stdout, nil
 }
 
@@ -178,7 +195,17 @@ func (s *ProcessSupervisor) runProcess(ctx context.Context, spec ProcessSpec) er
 	procCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(procCtx, spec.Path, spec.Args...)
+	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
+	logFile, err := openProcessLog(spec.LogPath)
+	if err != nil {
+		logFile = nil
+	}
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		defer logFile.Close()
+	}
 	done := make(chan struct{})
 	s.mu.Lock()
 	s.cmd = cmd
@@ -200,7 +227,7 @@ func (s *ProcessSupervisor) runProcess(ctx context.Context, spec ProcessSpec) er
 		close(done)
 		return err
 	}
-	err := cmd.Wait()
+	err = cmd.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	close(done)
@@ -221,6 +248,16 @@ func (s *ProcessSupervisor) runProcess(ctx context.Context, spec ProcessSpec) er
 	return nil
 }
 
+func openProcessLog(path string) (*os.File, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+}
+
 func (s *ProcessSupervisor) Status() ProcessStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -232,7 +269,10 @@ func (s *ProcessSupervisor) Status() ProcessStatus {
 	}
 }
 
-func (s *ProcessSupervisor) wait(ctx context.Context, cmd *exec.Cmd, done chan struct{}) {
+func (s *ProcessSupervisor) wait(ctx context.Context, cmd *exec.Cmd, done chan struct{}, logFile *os.File) {
+	if logFile != nil {
+		defer logFile.Close()
+	}
 	err := cmd.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()

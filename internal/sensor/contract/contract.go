@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 )
 
@@ -29,15 +28,29 @@ type Capability struct {
 	KernelRelease   string
 	BTFAvailable    bool
 	BPFFSAvailable  bool
+	Collection      []CollectionBehaviorCapability
 }
 
 type CollectionIntent struct {
-	EventKinds     []eventv1.EventKind
+	Behaviors      []string
+	BinaryPrefixes []string
 	FilePrefixes   []string
 	SocketFamilies []string
+	SocketAddrs    []string
+	SocketPorts    []string
 	ScopeType      string
 	ScopeSelector  string
 	ObserveOnly    bool
+	Capabilities   []CollectionBehaviorCapability
+}
+
+type CollectionBehaviorCapability struct {
+	Behavior             string
+	SensorMapping        string
+	Fields               []string
+	PushdownSelectors    []string
+	AgentSideSelectors   []string
+	UnsupportedSelectors []string
 }
 
 func NormalizeScope(scopeType, scopeSelector string) (string, string, error) {

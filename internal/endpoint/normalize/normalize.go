@@ -11,20 +11,44 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	endpointctx "github.com/sysarmor/sysarmor-next-project/internal/endpoint/context"
+	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 )
 
 type Normalizer struct {
-	agentID string
-	hostID  string
-	table   *endpointctx.Table
-	seq     atomic.Uint64
+	agentID       string
+	hostID        string
+	tenantID      string
+	scopeType     string
+	scopeSelector string
+	table         *endpointctx.Table
+	seq           atomic.Uint64
+}
+
+type Options struct {
+	TenantID      string
+	ScopeType     string
+	ScopeSelector string
 }
 
 func New(agentID, hostID string, table *endpointctx.Table) *Normalizer {
+	return NewWithOptions(agentID, hostID, table, Options{})
+}
+
+func NewWithOptions(agentID, hostID string, table *endpointctx.Table, opts Options) *Normalizer {
 	if table == nil {
 		table = endpointctx.NewTable()
 	}
-	return &Normalizer{agentID: agentID, hostID: hostID, table: table}
+	if opts.ScopeType == "" {
+		opts.ScopeType = "host"
+	}
+	return &Normalizer{
+		agentID:       agentID,
+		hostID:        hostID,
+		tenantID:      opts.TenantID,
+		scopeType:     opts.ScopeType,
+		scopeSelector: opts.ScopeSelector,
+		table:         table,
+	}
 }
 
 func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent {
@@ -52,13 +76,15 @@ func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent
 	n.table.Upsert(proc)
 
 	return &eventv1.CanonicalEvent{
-		Id:       EventID(n.agentID, seq),
-		Seq:      seq,
-		AgentId:  n.agentID,
-		HostId:   n.hostID,
-		MonoNs:   ev.GetMonoNs(),
-		Kind:     ev.GetKind(),
-		Scenario: "",
+		Id:           EventID(n.agentID, seq),
+		Seq:          seq,
+		AgentId:      n.agentID,
+		HostId:       n.hostID,
+		TenantId:     n.tenantID,
+		MonoNs:       ev.GetMonoNs(),
+		OccurredAtNs: ev.GetMonoNs(),
+		Behavior:     eventBehavior(ev),
+		Scenario:     "",
 		SubjectProc: &eventv1.ProcessRef{
 			StableId:    stableID,
 			Pid:         ev.GetProc().GetPid(),
@@ -71,7 +97,17 @@ func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent
 		ParentStableId: parentStableID,
 		LineageId:      lineageID,
 		RawRef:         ev.GetRawRef(),
+		Scope:          &eventv1.RuntimeScope{Type: n.scopeType, Selector: n.scopeSelector},
+		ContainerId:    ev.GetContainerId(),
+		Cgroup:         ev.GetProc().GetCgroup(),
 	}
+}
+
+func eventBehavior(ev *sensorv1.SensorEvent) string {
+	if behavior := strings.TrimSpace(ev.GetBehavior()); behavior != "" {
+		return eventmodel.NormalizeBehavior(behavior).String()
+	}
+	return ""
 }
 
 func (n *Normalizer) parentProcess(ev *sensorv1.SensorEvent) (endpointctx.Process, bool) {
@@ -99,10 +135,10 @@ func EventID(agentID string, seq uint64) string {
 
 func objectRef(ev *sensorv1.SensorEvent) *eventv1.ObjectRef {
 	obj := ev.GetObject()
-	switch ev.GetKind() {
-	case eventv1.EventKind_EVENT_KIND_CONNECT:
+	switch eventBehavior(ev) {
+	case "network.connect":
 		return &eventv1.ObjectRef{Kind: "socket", SocketAddr: obj.GetDst()}
-	case eventv1.EventKind_EVENT_KIND_OPEN, eventv1.EventKind_EVENT_KIND_WRITE, eventv1.EventKind_EVENT_KIND_CHMOD:
+	case "file.open", "file.read", "file.write", "file.chmod":
 		return &eventv1.ObjectRef{Kind: "file", FilePath: obj.GetPath()}
 	default:
 		return &eventv1.ObjectRef{Kind: "process"}

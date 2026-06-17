@@ -21,9 +21,9 @@ func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1
 
 func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
 	input := strings.Join([]string{
-		`{"mono_ns":"1","kind":"EVENT_KIND_EXEC","proc":{"pid":1,"binary":"/usr/bin/java-web","start_time_ns":"11"}}`,
-		`{"mono_ns":"2","kind":"EVENT_KIND_EXEC","proc":{"pid":2,"ppid":1,"binary":"/bin/bash","argv":["/bin/bash"],"start_time_ns":"22"}}`,
-		`{"mono_ns":"3","kind":"EVENT_KIND_WRITE","proc":{"pid":2,"ppid":1,"binary":"/bin/bash","start_time_ns":"22"},"object":{"path":"/dev/shm/x.sh"}}`,
+		`{"mono_ns":"1","behavior":"process.exec","proc":{"pid":1,"binary":"/usr/bin/java-web","start_time_ns":"11"}}`,
+		`{"mono_ns":"2","behavior":"process.exec","proc":{"pid":2,"ppid":1,"binary":"/bin/bash","argv":["/bin/bash"],"start_time_ns":"22"}}`,
+		`{"mono_ns":"3","behavior":"file.write","proc":{"pid":2,"ppid":1,"binary":"/bin/bash","start_time_ns":"22"},"object":{"path":"/dev/shm/x.sh"}}`,
 	}, "\n") + "\n"
 	rec := &recordingUploader{}
 	ring := ringbuffer.New(8)

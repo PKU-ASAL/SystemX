@@ -39,10 +39,13 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
+`
+
 func TestRunnerOnceWithFakeSensor(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC, CONNECT]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -76,7 +79,7 @@ func TestRunnerOnceWithFakeSensor(t *testing.T) {
 func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -117,15 +120,16 @@ func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
 	runner := &Runner{Config: cfg}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
-	if _, err := runner.spoolEvent(queue, norm, runner.currentFastpath(), sensorEventEnvelope(eventv1.EventKind_EVENT_KIND_WRITE, 100, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
+	if _, err := runner.spoolEvent(queue, norm, runner.currentDetection(), sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
 		t.Fatal(err)
 	}
 	updated := policymodel.DefaultPolicy("default")
 	updated.PolicyID = "no-payload-after-refresh"
 	updated.Version = 2
-	updated.EndpointRules = []string{"download_by_lolbin"}
+	disabled := false
+	updated.Detection.RuleOverrides = append(updated.Detection.RuleOverrides, policymodel.RuleOverride{RuleID: "payload_dropped", Enabled: &disabled})
 	runner.applyRuntimePolicy(updated)
-	if _, err := runner.spoolEvent(queue, norm, runner.currentFastpath(), sensorEventEnvelope(eventv1.EventKind_EVENT_KIND_WRITE, 101, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
+	if _, err := runner.spoolEvent(queue, norm, runner.currentDetection(), sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
 		t.Fatal(err)
 	}
 	batches := loadSpoolBatches(t, filepath.Join(dir, "spool"))
@@ -146,7 +150,8 @@ func TestStreamPolicyClientFetchesDownlinkPolicy(t *testing.T) {
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "stream-policy"
 	policy.Version = 3
-	policy.EndpointRules = []string{"download_by_lolbin"}
+	disabled := false
+	policy.Detection.RuleOverrides = append(policy.Detection.RuleOverrides, policymodel.RuleOverride{RuleID: "payload_dropped", Enabled: &disabled})
 	st.UpsertPolicy(policy)
 	st.AssignPolicy(policymodel.Assignment{
 		TenantID:      "default",
@@ -177,8 +182,8 @@ func TestStreamPolicyClientFetchesDownlinkPolicy(t *testing.T) {
 	if got.PolicyID != "stream-policy" || got.Version != 3 || got.Mode != "observe" {
 		t.Fatalf("policy = %+v", got)
 	}
-	if len(got.EndpointRules) != 1 || got.EndpointRules[0] != "download_by_lolbin" {
-		t.Fatalf("endpoint rules = %v", got.EndpointRules)
+	if got.Detection == nil || len(got.Detection.RuleOverrides) == 0 {
+		t.Fatalf("detection policy = %+v", got.Detection)
 	}
 }
 
@@ -372,7 +377,7 @@ func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
 	eventPath := filepath.Join(dir, "events.jsonl")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC, CONNECT]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
@@ -407,7 +412,7 @@ func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 func TestRunnerTetragonRequiresEventSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -431,7 +436,7 @@ func TestRunnerTetragonRequiresEventSource(t *testing.T) {
 func TestRunnerDrainOnceUploadsAndAcksSpool(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var uploads int
@@ -484,7 +489,7 @@ func TestRunnerDrainOnceUploadsAndAcksSpool(t *testing.T) {
 func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	uploaded := make(chan struct{})
@@ -558,7 +563,7 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 func TestRunnerBackgroundUploadLoopBacksOffAndRecovers(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var (
@@ -653,7 +658,7 @@ func TestRunnerBackgroundUploadLoopBacksOffAndRecovers(t *testing.T) {
 func TestRunnerGracefulShutdownLeavesSpoolForLaterDrain(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -705,7 +710,7 @@ func TestRunnerGracefulShutdownLeavesSpoolForLaterDrain(t *testing.T) {
 func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	uploaded := make(chan analyticsv1.UploadBatch, 1)
@@ -803,7 +808,7 @@ func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
 func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	spoolPath := filepath.Join(dir, "spool")
@@ -900,7 +905,7 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 func TestRunnerReportsHealthToManager(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	reported := make(chan map[string]any, 1)
@@ -982,7 +987,7 @@ func TestRunnerReportsHealthToManager(t *testing.T) {
 func TestRunnerReportsFinalDegradedHealthOnShutdown(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var (
@@ -1137,7 +1142,7 @@ func TestRunnerReportsStartupFailureHealthToManager(t *testing.T) {
 func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -1171,7 +1176,7 @@ func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -1200,10 +1205,10 @@ func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 	if _, err := queue.Append(&analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
-			Id:      "event-a",
-			AgentId: "agent-a",
-			HostId:  "host-a",
-			Kind:    eventv1.EventKind_EVENT_KIND_EXEC,
+			Id:       "event-a",
+			AgentId:  "agent-a",
+			HostId:   "host-a",
+			Behavior: "process.exec",
 		}},
 	}); !spool.IsBackpressure(err) {
 		t.Fatalf("Append() error = %v, want backpressure", err)
@@ -1224,7 +1229,7 @@ func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1294,7 +1299,7 @@ func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
 func TestRunnerUploadsTamperSignalToManager(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	managerStore := &store.Store{}
@@ -1339,7 +1344,7 @@ func TestRunnerUploadsTamperSignalToManager(t *testing.T) {
 func TestRunnerMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte("kinds: [EXEC]\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
@@ -1581,10 +1586,10 @@ func (s *eventSensor) Health(context.Context) (contract.Health, error) {
 	return s.health, nil
 }
 
-func sensorEventEnvelope(kind eventv1.EventKind, pid uint32, binary, filePath, dst string) contract.EventEnvelope {
+func sensorEventEnvelope(behavior string, pid uint32, binary, filePath, dst string) contract.EventEnvelope {
 	return contract.EventEnvelope{
 		SensorEvent: &sensorv1.SensorEvent{
-			Kind: kind,
+			Behavior: behavior,
 			Proc: &sensorv1.RawProcess{
 				Pid:         pid,
 				Binary:      binary,

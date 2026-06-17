@@ -10,9 +10,10 @@ import (
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/fastpath"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 )
 
@@ -52,7 +53,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchUploader, opts Stream
 	}
 
 	norm := normalize.New(opts.AgentID, opts.HostID, nil)
-	fp := fastpath.New()
+	detector, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	lines := scanLines(r)
 	ticker := time.NewTicker(opts.FlushInterval)
 	defer ticker.Stop()
@@ -97,7 +98,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchUploader, opts Stream
 			if len(scanned.data) == 0 {
 				continue
 			}
-			events, signals, err := decodeLine(scanned.data, norm, fp, opts.Scenario, opts.RawRing)
+			events, signals, err := decodeLine(scanned.data, norm, detector, opts.Scenario, opts.RawRing)
 			if err != nil {
 				return stats, fmt.Errorf("line %d: %w", line, err)
 			}
@@ -148,7 +149,7 @@ func newBatch(opts StreamOptions) *analyticsv1.UploadBatch {
 	}}
 }
 
-func decodeLine(data []byte, norm *normalize.Normalizer, fp *fastpath.Engine, scenario string, rawRing *ringbuffer.Buffer) ([]*eventv1.CanonicalEvent, []*signalv1.Signal, error) {
+func decodeLine(data []byte, norm *normalize.Normalizer, detector *detection.Engine, scenario string, rawRing *ringbuffer.Buffer) ([]*eventv1.CanonicalEvent, []*signalv1.Signal, error) {
 	if sig, ok := decodeSignal(data); ok {
 		if sig.Scenario == "" {
 			sig.Scenario = scenario
@@ -159,13 +160,13 @@ func decodeLine(data []byte, norm *normalize.Normalizer, fp *fastpath.Engine, sc
 		if ev.Scenario == "" {
 			ev.Scenario = scenario
 		}
-		return []*eventv1.CanonicalEvent{ev}, fp.Process(ev), nil
+		return []*eventv1.CanonicalEvent{ev}, detector.Process(ev), nil
 	}
 	if sev, ok := decodeSensorEvent(data); ok {
 		sev.RawRef = rawRing.Remember(sev.GetRawRef(), data)
 		ev := norm.Normalize(sev)
 		ev.Scenario = scenario
-		return []*eventv1.CanonicalEvent{ev}, fp.Process(ev), nil
+		return []*eventv1.CanonicalEvent{ev}, detector.Process(ev), nil
 	}
 	if sevs, ok := tetragon.ParseLine(data); ok {
 		rawRef := rawRing.Put(data)
@@ -180,7 +181,7 @@ func decodeLine(data []byte, norm *normalize.Normalizer, fp *fastpath.Engine, sc
 			ev := norm.Normalize(sev)
 			ev.Scenario = scenario
 			events = append(events, ev)
-			signals = append(signals, fp.Process(ev)...)
+			signals = append(signals, detector.Process(ev)...)
 		}
 		return events, signals, nil
 	}

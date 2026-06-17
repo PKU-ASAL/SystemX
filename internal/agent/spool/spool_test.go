@@ -159,10 +159,10 @@ func batch(id string) *analyticsv1.UploadBatch {
 	return &analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
-			Id:      id,
-			AgentId: "agent-a",
-			HostId:  "host-a",
-			Kind:    eventv1.EventKind_EVENT_KIND_EXEC,
+			Id:       id,
+			AgentId:  "agent-a",
+			HostId:   "host-a",
+			Behavior: "process.exec",
 		}},
 	}
 }

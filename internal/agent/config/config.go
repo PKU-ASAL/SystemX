@@ -12,13 +12,16 @@ import (
 )
 
 type Config struct {
-	Agent   AgentConfig
-	Manager ManagerConfig
-	Sensor  SensorConfig
-	Spool   SpoolConfig
-	Upload  UploadConfig
-	Health  HealthConfig
-	Policy  PolicyConfig
+	Agent    AgentConfig
+	Manager  ManagerConfig
+	Control  ControlConfig
+	Sensor   SensorConfig
+	Spool    SpoolConfig
+	Upload   UploadConfig
+	Health   HealthConfig
+	Policy   PolicyConfig
+	Content  ContentConfig
+	Resource ResourceConfig
 }
 
 type AgentConfig struct {
@@ -32,6 +35,10 @@ type AgentConfig struct {
 type ManagerConfig struct {
 	Address   string
 	Transport string
+}
+
+type ControlConfig struct {
+	SocketPath string
 }
 
 type SensorConfig struct {
@@ -87,6 +94,16 @@ type PolicyConfig struct {
 	RefreshInterval time.Duration
 }
 
+type ContentConfig struct {
+	Path      string
+	TrustKeys string
+}
+
+type ResourceConfig struct {
+	MaxActiveCEPGroups    int
+	MaxEventRefsPerSignal int
+}
+
 func LoadFile(path string) (Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -111,7 +128,9 @@ func (c Config) Validate() error {
 	check("agent.host_id", c.Agent.HostID)
 	check("agent.tenant_id", c.Agent.TenantID)
 	check("agent.token", c.Agent.Token)
-	check("manager.address", c.Manager.Address)
+	if c.Manager.Transport != "local" {
+		check("manager.address", c.Manager.Address)
+	}
 	check("manager.transport", c.Manager.Transport)
 	check("sensor.backend", c.Sensor.Backend)
 	check("sensor.mode", c.Sensor.Mode)
@@ -120,8 +139,8 @@ func (c Config) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
-	if c.Manager.Transport != "http" && c.Manager.Transport != "grpc" && c.Manager.Transport != "stream" {
-		return fmt.Errorf("manager.transport must be http, grpc or stream")
+	if c.Manager.Transport != "http" && c.Manager.Transport != "grpc" && c.Manager.Transport != "stream" && c.Manager.Transport != "local" {
+		return fmt.Errorf("manager.transport must be http, grpc, stream or local")
 	}
 	if c.Sensor.Backend != "tetragon" && c.Sensor.Backend != "fake" {
 		return fmt.Errorf("sensor.backend must be tetragon or fake")
@@ -164,6 +183,12 @@ func (c Config) Validate() error {
 	}
 	if c.Policy.RefreshInterval < 0 {
 		return fmt.Errorf("policy.refresh_interval must be non-negative")
+	}
+	if c.Resource.MaxActiveCEPGroups < 0 {
+		return fmt.Errorf("resource.max_active_cep_groups must be non-negative")
+	}
+	if c.Resource.MaxEventRefsPerSignal < 0 {
+		return fmt.Errorf("resource.max_event_refs_per_signal must be non-negative")
 	}
 	return nil
 }
@@ -248,12 +273,15 @@ func parse(r *os.File) (Config, error) {
 
 func defaults() Config {
 	return Config{
-		Manager: ManagerConfig{Transport: "stream"},
-		Sensor:  SensorConfig{Backend: "tetragon", Mode: "managed", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
-		Spool:   SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
-		Upload:  UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second},
-		Health:  HealthConfig{Interval: 10 * time.Second},
-		Policy:  PolicyConfig{RefreshInterval: 30 * time.Second},
+		Manager:  ManagerConfig{Transport: "stream"},
+		Control:  ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
+		Sensor:   SensorConfig{Backend: "tetragon", Mode: "managed", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
+		Spool:    SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
+		Upload:   UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second},
+		Health:   HealthConfig{Interval: 10 * time.Second},
+		Policy:   PolicyConfig{RefreshInterval: 30 * time.Second},
+		Content:  ContentConfig{Path: "/var/lib/sysarmor/agent/content"},
+		Resource: ResourceConfig{MaxActiveCEPGroups: 4096, MaxEventRefsPerSignal: 128},
 	}
 }
 
@@ -280,6 +308,13 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Manager.Address = value
 		case "transport":
 			cfg.Manager.Transport = value
+		default:
+			return unknown(section, key)
+		}
+	case "control":
+		switch key {
+		case "socket_path":
+			cfg.Control.SocketPath = value
 		default:
 			return unknown(section, key)
 		}
@@ -442,6 +477,32 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("policy.refresh_interval: %w", err)
 			}
 			cfg.Policy.RefreshInterval = d
+		default:
+			return unknown(section, key)
+		}
+	case "content":
+		switch key {
+		case "path":
+			cfg.Content.Path = value
+		case "trust_keys":
+			cfg.Content.TrustKeys = value
+		default:
+			return unknown(section, key)
+		}
+	case "resource":
+		switch key {
+		case "max_active_cep_groups":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("resource.max_active_cep_groups: %w", err)
+			}
+			cfg.Resource.MaxActiveCEPGroups = v
+		case "max_event_refs_per_signal":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("resource.max_event_refs_per_signal: %w", err)
+			}
+			cfg.Resource.MaxEventRefsPerSignal = v
 		default:
 			return unknown(section, key)
 		}

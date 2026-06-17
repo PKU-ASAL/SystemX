@@ -8,6 +8,9 @@ manager:
   address: http://127.0.0.1:9443
   transport: stream
 
+control:
+  socket_path: /tmp/sysarmor-agent.sock
+
 sensor:
   backend: fake
   mode: managed
@@ -28,3 +31,11 @@ upload:
 
 health:
   interval: 10s
+
+content:
+  path: /tmp/sysarmor-agent-content
+  trust_keys: ""
+
+resource:
+  max_active_cep_groups: 4096
+  max_event_refs_per_signal: 128

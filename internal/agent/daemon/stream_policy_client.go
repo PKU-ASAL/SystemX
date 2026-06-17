@@ -31,12 +31,12 @@ type streamDownlinkFrame struct {
 }
 
 type streamPolicyPayload struct {
-	TenantID      string   `json:"tenant_id"`
-	PolicyID      string   `json:"policy_id"`
-	PolicyVersion uint64   `json:"policy_version"`
-	Mode          string   `json:"mode"`
-	EndpointRules []string `json:"endpoint_rules"`
-	CloudRules    []string `json:"cloud_rules"`
+	TenantID      string                       `json:"tenant_id"`
+	PolicyID      string                       `json:"policy_id"`
+	PolicyVersion uint64                       `json:"policy_version"`
+	Mode          string                       `json:"mode"`
+	Detection     *policymodel.DetectionPolicy `json:"detection"`
+	CloudRules    []string                     `json:"cloud_rules"`
 }
 
 func NewStreamPolicyClient(manager, token string, timeout time.Duration) *StreamPolicyClient {
@@ -96,13 +96,13 @@ func (c *StreamPolicyClient) EffectivePolicy(ctx context.Context, req EffectiveP
 			return policymodel.Policy{}, fmt.Errorf("decode stream policy update: %w", err)
 		}
 		policy := policymodel.Policy{
-			PolicyID:      payload.PolicyID,
-			Version:       payload.PolicyVersion,
-			TenantID:      payload.TenantID,
-			EndpointRules: append([]string(nil), payload.EndpointRules...),
-			CloudRules:    append([]string(nil), payload.CloudRules...),
-			Mode:          payload.Mode,
-			Published:     true,
+			PolicyID:   payload.PolicyID,
+			Version:    payload.PolicyVersion,
+			TenantID:   payload.TenantID,
+			Detection:  payload.Detection,
+			CloudRules: append([]string(nil), payload.CloudRules...),
+			Mode:       payload.Mode,
+			Published:  true,
 		}
 		if policy.PolicyID == "" {
 			return policymodel.Policy{}, fmt.Errorf("stream policy missing policy_id")

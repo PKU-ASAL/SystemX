@@ -128,6 +128,10 @@ health:
 
 policy:
   refresh_interval: 15s
+
+resource:
+  max_active_cep_groups: 32
+  max_event_refs_per_signal: 8
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -166,6 +170,9 @@ policy:
 	}
 	if cfg.Policy.RefreshInterval != 15*time.Second {
 		t.Fatalf("policy refresh interval = %s", cfg.Policy.RefreshInterval)
+	}
+	if cfg.Resource.MaxActiveCEPGroups != 32 || cfg.Resource.MaxEventRefsPerSignal != 8 {
+		t.Fatalf("resource config = %+v", cfg.Resource)
 	}
 }
 

@@ -1,0 +1,253 @@
+syntax = "proto3";
+
+package sysarmor.control.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1;controlv1";
+
+import "api/proto/event/v1/event.proto";
+import "api/proto/signal/v1/signal.proto";
+
+service AgentControlService {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Capability(CapabilityRequest) returns (CapabilityResponse);
+  rpc CurrentPolicy(CurrentPolicyRequest) returns (CurrentPolicyResponse);
+  rpc ApplyPolicy(ApplyPolicyRequest) returns (ControlAck);
+  rpc ApplyContent(ApplyContentRequest) returns (ControlAck);
+  rpc ListContent(ListContentRequest) returns (ListContentResponse);
+  rpc GetContent(GetContentRequest) returns (ContentGetResponse);
+  rpc GetEvent(GetEventRequest) returns (EventGetResponse);
+  rpc WatchEvents(WatchEventsRequest) returns (stream EventFrame);
+  rpc WatchSignals(WatchSignalsRequest) returns (stream SignalFrame);
+}
+
+message Scope {
+  string type = 1;
+  string selector = 2;
+}
+
+message RequestContext {
+  string request_id = 1;
+  string tenant_id = 2;
+  string agent_id = 3;
+  Scope scope = 4;
+}
+
+message SensorCapability {
+  string backend = 1;
+  string version = 2;
+  bool supports_exec = 3;
+  bool supports_connect = 4;
+  bool supports_file = 5;
+  bool supports_enforce = 6;
+  bool supports_health = 7;
+  string kernel_release = 8;
+  bool btf_available = 9;
+  bool bpffs_available = 10;
+}
+
+message CollectionBehaviorCapability {
+  string behavior = 1;
+  repeated string fields = 2;
+  repeated string pushdown_selectors = 3;
+  repeated string agent_side_selectors = 4;
+  repeated string unsupported_selectors = 5;
+  string sensor_mapping = 6;
+}
+
+message SensorHealth {
+  string backend = 1;
+  bool installed = 2;
+  bool running = 3;
+  string version = 4;
+  bool policy_loaded = 5;
+  uint64 events_seen = 6;
+  uint64 events_dropped = 7;
+  uint64 parse_errors = 8;
+  uint64 restart_count = 9;
+  string last_event_at = 10;
+  string last_exit_reason = 11;
+  string last_error = 12;
+}
+
+message QueueHealth {
+  uint32 queued_batches = 1;
+  int64 queued_bytes = 2;
+  int64 max_bytes = 3;
+  uint64 backpressure_count = 4;
+  uint64 dropped_batches = 5;
+  uint64 dropped_bytes = 6;
+  string last_error = 7;
+}
+
+message UploadHealth {
+  uint32 uploaded_batches = 1;
+  uint32 remaining_batches = 2;
+  int64 remaining_bytes = 3;
+  string last_error = 4;
+}
+
+message CEPHealth {
+  uint64 active_groups = 1;
+  uint64 evicted_groups = 2;
+  uint64 expired_groups = 3;
+  uint64 dropped_event_refs = 4;
+  uint64 eval_errors = 5;
+  uint64 emitted_signals = 6;
+  bool degraded = 7;
+}
+
+message HealthRequest {
+  RequestContext context = 1;
+}
+
+message HealthResponse {
+  string agent_id = 1;
+  string host_id = 2;
+  string tenant_id = 3;
+  Scope scope = 4;
+  string status = 5;
+  string policy_id = 6;
+  uint64 policy_version = 7;
+  string policy_mode = 8;
+  int64 uptime_seconds = 9;
+  SensorCapability capability = 10;
+  SensorHealth sensor = 11;
+  QueueHealth queue = 12;
+  UploadHealth upload = 13;
+  string observed_at = 14;
+  CEPHealth cep = 15;
+}
+
+message CapabilityRequest {
+  RequestContext context = 1;
+}
+
+message CapabilityResponse {
+  string agent_id = 1;
+  string host_id = 2;
+  string tenant_id = 3;
+  Scope scope = 4;
+  SensorCapability sensor = 5;
+  repeated string supported_policy_sections = 6;
+  reserved 7;
+  repeated string supported_response_actions = 8;
+  repeated CollectionBehaviorCapability collection_behaviors = 9;
+}
+
+message CurrentPolicyRequest {
+  RequestContext context = 1;
+}
+
+message CurrentPolicyResponse {
+  string policy_id = 1;
+  uint64 version = 2;
+  string tenant_id = 3;
+  Scope scope = 4;
+  string mode = 5;
+  repeated string endpoint_rules = 6;
+  repeated string cloud_rules = 7;
+  bool published = 8;
+  string raw_json = 9;
+}
+
+message ApplyPolicyRequest {
+  RequestContext context = 1;
+  string policy_type = 2;
+  string policy_json = 3;
+  bool dry_run = 4;
+}
+
+message ApplyContentRequest {
+  RequestContext context = 1;
+  string content_json = 2;
+  bool dry_run = 3;
+  bool allow_unsigned = 4;
+}
+
+message ContentRecord {
+  string ref = 1;
+  string kind = 2;
+  string version = 3;
+  string digest = 4;
+  bool signed = 5;
+  string status = 6;
+  string raw_json = 7;
+}
+
+message ListContentRequest {
+  RequestContext context = 1;
+  string kind = 2;
+}
+
+message ListContentResponse {
+  repeated ContentRecord records = 1;
+}
+
+message GetContentRequest {
+  RequestContext context = 1;
+  string ref = 2;
+}
+
+message ContentGetResponse {
+  ContentRecord record = 1;
+}
+
+message AppliedSection {
+  string name = 1;
+  string status = 2;
+  string message = 3;
+  bool requires_restart = 4;
+}
+
+message ControlAck {
+  string request_id = 1;
+  string tenant_id = 2;
+  string agent_id = 3;
+  string status = 4;
+  string message = 5;
+  string policy_id = 6;
+  uint64 policy_version = 7;
+  repeated AppliedSection sections = 8;
+}
+
+message WatchEventsRequest {
+  RequestContext context = 1;
+  string behavior = 2;
+  uint32 limit = 3;
+  bool include_recent = 4;
+  bool snapshot_only = 5;
+}
+
+message GetEventRequest {
+  RequestContext context = 1;
+  string event_id = 2;
+}
+
+message EventGetResponse {
+  EventFrame frame = 1;
+}
+
+message EventFrame {
+  string tenant_id = 1;
+  string agent_id = 2;
+  uint64 sequence = 3;
+  string observed_at = 4;
+  sysarmor.event.v1.CanonicalEvent event = 5;
+}
+
+message WatchSignalsRequest {
+  RequestContext context = 1;
+  string rule_id = 2;
+  string where = 3;
+  uint32 limit = 4;
+  bool include_recent = 5;
+  bool snapshot_only = 6;
+}
+
+message SignalFrame {
+  string tenant_id = 1;
+  string agent_id = 2;
+  uint64 sequence = 3;
+  string observed_at = 4;
+  sysarmor.signal.v1.Signal signal = 5;
+}

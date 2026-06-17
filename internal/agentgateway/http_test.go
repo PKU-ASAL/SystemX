@@ -212,8 +212,8 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 		BatchId: "00000000000000000042",
 		Agent:   &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
 		Events: []*eventv1.CanonicalEvent{{
-			Id:   "ev-ack",
-			Kind: eventv1.EventKind_EVENT_KIND_EXEC,
+			Id:       "ev-ack",
+			Behavior: "process.exec",
 		}},
 	}
 	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
@@ -247,9 +247,9 @@ func TestHTTPUploadAckIncludesBatchID(t *testing.T) {
 
 func TestQueryPagination(t *testing.T) {
 	st := &store.Store{}
-	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-1", Scenario: "page", Kind: eventv1.EventKind_EVENT_KIND_EXEC})
-	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-2", Scenario: "page", Kind: eventv1.EventKind_EVENT_KIND_OPEN})
-	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-3", Scenario: "page", Kind: eventv1.EventKind_EVENT_KIND_CONNECT})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-1", Scenario: "page", Behavior: "process.exec"})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-2", Scenario: "page", Behavior: "file.open"})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-3", Scenario: "page", Behavior: "network.connect"})
 	st.AddSignal(endpointSignalForScenario("page", "sig-1", "lin-1", false, processEntity("p1")))
 	st.AddSignal(endpointSignalForScenario("page", "sig-2", "lin-2", false, processEntity("p2")))
 	st.AddIncident(&incidentv1.Incident{Id: "inc-1", Scenario: "page", Summary: "one"})
@@ -279,7 +279,7 @@ func TestHTTPUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 		Events: []*eventv1.CanonicalEvent{{
 			Id:       "ev-retry",
 			Scenario: "apt-fileless-c2",
-			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+			Behavior: "process.exec",
 		}},
 		Signals: []*signalv1.Signal{
 			endpointSignal("web_runtime_spawns_shell", "lin-retry", false, processEntity("p-web")),
@@ -437,7 +437,7 @@ func TestUploadIndexesSecurityDocuments(t *testing.T) {
 	_, err := srv.AcceptUploadWithTransport(&analyticsv1.UploadBatch{
 		Agent:   &analyticsv1.AgentHello{TenantId: "default", AgentId: "agent-index", HostId: "host-index"},
 		BatchId: "batch-index",
-		Events:  []*eventv1.CanonicalEvent{{Id: "ev-index", Scenario: "apt-fileless-c2", Kind: eventv1.EventKind_EVENT_KIND_EXEC}},
+		Events:  []*eventv1.CanonicalEvent{{Id: "ev-index", Scenario: "apt-fileless-c2", Behavior: "process.exec"}},
 		Signals: []*signalv1.Signal{
 			endpointSignal("web_runtime_spawns_shell", "lin-index", false, processEntity("p-web")),
 			endpointSignal("payload_dropped", "lin-index", false, fileEntity("/dev/shm/x.sh")),
@@ -466,7 +466,7 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 		Events: []*eventv1.CanonicalEvent{{
 			Id:       "ev-1",
 			Scenario: "apt-staged-drop",
-			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+			Behavior: "process.exec",
 			SubjectProc: &eventv1.ProcessRef{
 				StableId: "p1",
 				Binary:   "/bin/bash",
@@ -485,7 +485,7 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 		t.Fatalf("agents response missing agent-a: %s", rec.Body.String())
 	}
 
-	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop&kind=EXEC")
+	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop&behavior=process.exec")
 	if !strings.Contains(rec.Body.String(), "ev-1") {
 		t.Fatalf("events response missing ev-1: %s", rec.Body.String())
 	}
@@ -660,7 +660,7 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	}
 
 	upload(t, handler, &analyticsv1.UploadBatch{
-		Events: []*eventv1.CanonicalEvent{{Id: "noise-1", Scenario: scenario, Kind: eventv1.EventKind_EVENT_KIND_EXEC}},
+		Events: []*eventv1.CanonicalEvent{{Id: "noise-1", Scenario: scenario, Behavior: "process.exec"}},
 	})
 	rec = get(t, handler, "/api/v1/signals?scenario="+scenario+"&layer=cloud")
 	if got := strings.Count(rec.Body.String(), "dropped_payload_executed_and_connects"); got != 1 {
@@ -1120,7 +1120,7 @@ func TestAgentGatewayUplinkFramesAcceptUploadHealthAckAndError(t *testing.T) {
 	    "payload":{
 	      "batch_id":"frame-batch-1",
 	      "agent":{"agent_id":"agent-frame","host_id":"host-frame","tenant_id":"default","version":"test"},
-	      "events":[{"id":"ev-frame","scenario":"frame","kind":"EVENT_KIND_EXEC"}]
+	      "events":[{"id":"ev-frame","scenario":"frame","behavior":"process.exec"}]
 	    }
 	  },
 	  {

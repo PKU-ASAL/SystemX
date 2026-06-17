@@ -1,21 +1,34 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 var version = "dev"
 
 func main() {
 	mgr := flag.String("mgr", "127.0.0.1:9443", "sysarmor-manager address")
+	agentSock := flag.String("agent-sock", defaultAgentSock(), "local sysarmor-agent control socket")
 	jsonOut := flag.Bool("json", false, "emit JSON")
 	flag.Parse()
 
@@ -27,10 +40,36 @@ func main() {
 
 	if len(args) == 0 {
 		if *jsonOut {
-			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"manager": *mgr})
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"manager": *mgr, "agent_sock": *agentSock})
 			return
 		}
-		fmt.Fprintf(os.Stdout, "sysarmorctl: manager=%s\n", *mgr)
+		fmt.Fprintf(os.Stdout, "sysarmorctl: manager=%s agent_sock=%s\n", *mgr, *agentSock)
+		return
+	}
+
+	if len(args) >= 2 && args[0] == "content" && args[1] == "diff" {
+		body, err := contentDiff(args)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
+			os.Exit(1)
+		}
+		_, _ = os.Stdout.Write(body)
+		if len(body) == 0 || body[len(body)-1] != '\n' {
+			fmt.Println()
+		}
+		return
+	}
+
+	if isLocalAgentCommand(args) {
+		body, err := queryLocalAgent(*agentSock, args)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
+			os.Exit(1)
+		}
+		_, _ = os.Stdout.Write(body)
+		if len(body) == 0 || body[len(body)-1] != '\n' {
+			fmt.Println()
+		}
 		return
 	}
 
@@ -47,6 +86,523 @@ func main() {
 		return
 	}
 	fmt.Println(string(body))
+}
+
+func defaultAgentSock() string {
+	if v := strings.TrimSpace(os.Getenv("SYSARMOR_AGENT_SOCK")); v != "" {
+		return v
+	}
+	return "/var/run/sysarmor/agent.sock"
+}
+
+func isLocalAgentCommand(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	switch args[0] {
+	case "agent":
+		return args[1] == "health" || args[1] == "capability"
+	case "policy":
+		return args[1] == "current" || args[1] == "apply"
+	case "content":
+		return args[1] == "apply" || args[1] == "list" || args[1] == "get"
+	case "event":
+		return args[1] == "watch" || args[1] == "get"
+	case "signal":
+		return args[1] == "watch"
+	default:
+		return false
+	}
+}
+
+func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
+	if strings.TrimSpace(socketPath) == "" {
+		return nil, fmt.Errorf("--agent-sock is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout(args, 5*time.Second))
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, "unix://"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	client := controlv1.NewAgentControlServiceClient(conn)
+	reqCtx := requestContext(args)
+	switch args[0] + " " + args[1] {
+	case "agent health":
+		resp, err := client.Health(ctx, &controlv1.HealthRequest{Context: reqCtx})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "agent capability":
+		resp, err := client.Capability(ctx, &controlv1.CapabilityRequest{Context: reqCtx})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "policy current":
+		resp, err := client.CurrentPolicy(ctx, &controlv1.CurrentPolicyRequest{Context: reqCtx})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "policy apply":
+		policyJSON, err := policyPayload(args)
+		if err != nil {
+			return nil, err
+		}
+		policyType := flagValue(args, "--type")
+		if policyType == "" && len(args) > 2 && args[2] == "collection" {
+			policyType = "collection"
+		}
+		resp, err := client.ApplyPolicy(ctx, &controlv1.ApplyPolicyRequest{
+			Context:    reqCtx,
+			PolicyType: policyType,
+			PolicyJson: policyJSON,
+			DryRun:     hasFlag(args, "--dry-run"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "content apply":
+		contentJSON, err := contentPayload(args)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.ApplyContent(ctx, &controlv1.ApplyContentRequest{
+			Context:       reqCtx,
+			ContentJson:   contentJSON,
+			DryRun:        hasFlag(args, "--dry-run"),
+			AllowUnsigned: hasFlag(args, "--allow-unsigned"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "content list":
+		resp, err := client.ListContent(ctx, &controlv1.ListContentRequest{
+			Context: reqCtx,
+			Kind:    flagValue(args, "--kind"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "content get":
+		resp, err := client.GetContent(ctx, &controlv1.GetContentRequest{
+			Context: reqCtx,
+			Ref:     flagValue(args, "--ref"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "event get":
+		resp, err := client.GetEvent(ctx, &controlv1.GetEventRequest{
+			Context: reqCtx,
+			EventId: firstNonEmpty(flagValue(args, "--event-id"), flagValue(args, "--id")),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "event watch":
+		stream, err := client.WatchEvents(ctx, &controlv1.WatchEventsRequest{
+			Context:       reqCtx,
+			Behavior:      flagValue(args, "--behavior"),
+			Limit:         uint32Flag(args, "--limit"),
+			IncludeRecent: hasFlag(args, "--include-recent"),
+			SnapshotOnly:  hasFlag(args, "--snapshot"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return collectEventFrames(stream)
+	case "signal watch":
+		stream, err := client.WatchSignals(ctx, &controlv1.WatchSignalsRequest{
+			Context:       reqCtx,
+			RuleId:        flagValue(args, "--rule-id"),
+			Where:         flagValue(args, "--where"),
+			Limit:         uint32Flag(args, "--limit"),
+			IncludeRecent: hasFlag(args, "--include-recent"),
+			SnapshotOnly:  hasFlag(args, "--snapshot"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if hasFlag(args, "--include-events") {
+			return collectSignalFramesWithEvents(ctx, client, reqCtx, stream)
+		}
+		return collectSignalFrames(stream)
+	default:
+		return nil, fmt.Errorf("unsupported local agent command %q", strings.Join(args, " "))
+	}
+}
+
+func collectEventFrames(stream controlv1.AgentControlService_WatchEventsClient) ([]byte, error) {
+	var out strings.Builder
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return []byte(out.String()), nil
+		}
+		if err != nil {
+			if out.Len() > 0 && status.Code(err) == codes.DeadlineExceeded {
+				return []byte(out.String()), nil
+			}
+			return []byte(out.String()), err
+		}
+		data, err := marshalProtoJSONLine(frame)
+		if err != nil {
+			return []byte(out.String()), err
+		}
+		out.Write(data)
+		out.WriteByte('\n')
+	}
+}
+
+func collectSignalFrames(stream controlv1.AgentControlService_WatchSignalsClient) ([]byte, error) {
+	var out strings.Builder
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return []byte(out.String()), nil
+		}
+		if err != nil {
+			if out.Len() > 0 && status.Code(err) == codes.DeadlineExceeded {
+				return []byte(out.String()), nil
+			}
+			return []byte(out.String()), err
+		}
+		data, err := marshalProtoJSONLine(frame)
+		if err != nil {
+			return []byte(out.String()), err
+		}
+		out.Write(data)
+		out.WriteByte('\n')
+	}
+}
+
+func collectSignalFramesWithEvents(ctx context.Context, client controlv1.AgentControlServiceClient, reqCtx *controlv1.RequestContext, stream controlv1.AgentControlService_WatchSignalsClient) ([]byte, error) {
+	var out strings.Builder
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return []byte(out.String()), nil
+		}
+		if err != nil {
+			if out.Len() > 0 && status.Code(err) == codes.DeadlineExceeded {
+				return []byte(out.String()), nil
+			}
+			return []byte(out.String()), err
+		}
+		data, err := marshalSignalEventEnvelope(ctx, client, reqCtx, frame)
+		if err != nil {
+			return []byte(out.String()), err
+		}
+		out.Write(data)
+		out.WriteByte('\n')
+	}
+}
+
+func marshalSignalEventEnvelope(ctx context.Context, client controlv1.AgentControlServiceClient, reqCtx *controlv1.RequestContext, frame *controlv1.SignalFrame) ([]byte, error) {
+	signalJSON, err := marshalProtoJSONLine(frame)
+	if err != nil {
+		return nil, err
+	}
+	var events []json.RawMessage
+	var missing []string
+	for _, eventID := range uniqueSignalEventRefs(frame) {
+		resp, err := client.GetEvent(ctx, &controlv1.GetEventRequest{Context: reqCtx, EventId: eventID})
+		if err != nil {
+			missing = append(missing, eventID)
+			continue
+		}
+		eventJSON, err := marshalProtoJSONLine(resp.GetFrame())
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, json.RawMessage(eventJSON))
+	}
+	return json.Marshal(map[string]any{
+		"signalFrame":      json.RawMessage(signalJSON),
+		"eventFrames":      events,
+		"missingEventRefs": missing,
+	})
+}
+
+func uniqueSignalEventRefs(frame *controlv1.SignalFrame) []string {
+	seen := map[string]bool{}
+	var out []string
+	if frame == nil || frame.GetSignal() == nil {
+		return nil
+	}
+	for _, ref := range frame.GetSignal().GetEventRefs() {
+		ref = strings.TrimSpace(ref)
+		if ref == "" || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		out = append(out, ref)
+	}
+	return out
+}
+
+func policyPayload(args []string) (string, error) {
+	file := flagValue(args, "--file")
+	if strings.TrimSpace(file) != "" {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+	if len(args) > 2 && args[2] == "collection" {
+		return collectionPolicyPayload(args)
+	}
+	return "", fmt.Errorf("--file is required")
+}
+
+func contentPayload(args []string) (string, error) {
+	file := flagValue(args, "--file")
+	if strings.TrimSpace(file) == "" {
+		return "", fmt.Errorf("--file is required")
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func contentDiff(args []string) ([]byte, error) {
+	files := flagValues(args, "--file")
+	if len(files) != 2 {
+		return nil, fmt.Errorf("content diff requires exactly two --file values")
+	}
+	oldEnv, oldValues, err := readContentValues(files[0])
+	if err != nil {
+		return nil, err
+	}
+	newEnv, newValues, err := readContentValues(files[1])
+	if err != nil {
+		return nil, err
+	}
+	if oldEnv.Kind != newEnv.Kind || oldEnv.Metadata.ID != newEnv.Metadata.ID {
+		return nil, fmt.Errorf("content diff requires same kind and metadata.id")
+	}
+	oldSet := map[string]bool{}
+	for _, value := range oldValues {
+		oldSet[value] = true
+	}
+	newSet := map[string]bool{}
+	for _, value := range newValues {
+		newSet[value] = true
+	}
+	var ops []map[string]string
+	for _, value := range newValues {
+		if !oldSet[value] {
+			ops = append(ops, map[string]string{"op": "add", "value": value})
+		}
+	}
+	for _, value := range oldValues {
+		if !newSet[value] {
+			ops = append(ops, map[string]string{"op": "remove", "value": value})
+		}
+	}
+	version := firstNonEmpty(flagValue(args, "--version"), newEnv.Metadata.Version)
+	patch := map[string]any{
+		"api_version": newEnv.APIVersion,
+		"kind":        newEnv.Kind,
+		"metadata": map[string]any{
+			"id":      newEnv.Metadata.ID,
+			"version": version,
+		},
+		"spec": map[string]any{
+			"base_version":   oldEnv.Metadata.Version,
+			"value_type":     contentValueType(newEnv),
+			"merge_strategy": "patch",
+			"ops":            ops,
+		},
+	}
+	return json.MarshalIndent(patch, "", "  ")
+}
+
+type contentEnvelopeForCLI struct {
+	APIVersion string `json:"api_version"`
+	Kind       string `json:"kind"`
+	Metadata   struct {
+		ID      string `json:"id"`
+		Version string `json:"version"`
+	} `json:"metadata"`
+	Spec json.RawMessage `json:"spec"`
+}
+
+func readContentValues(path string) (contentEnvelopeForCLI, []string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return contentEnvelopeForCLI{}, nil, err
+	}
+	var env contentEnvelopeForCLI
+	if err := json.Unmarshal(data, &env); err != nil {
+		return contentEnvelopeForCLI{}, nil, err
+	}
+	var spec struct {
+		Values []string `json:"values"`
+	}
+	if err := json.Unmarshal(env.Spec, &spec); err != nil {
+		return contentEnvelopeForCLI{}, nil, err
+	}
+	return env, uniqueSorted(spec.Values), nil
+}
+
+func contentValueType(env contentEnvelopeForCLI) string {
+	var spec struct {
+		ValueType string `json:"value_type"`
+	}
+	_ = json.Unmarshal(env.Spec, &spec)
+	return spec.ValueType
+}
+
+func uniqueSorted(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func collectionPolicyPayload(args []string) (string, error) {
+	policy := map[string]any{
+		"policy_id":       firstNonEmpty(flagValue(args, "--policy-id"), "local-collection-policy"),
+		"version":         uint64Flag(args, "--policy-version", 1),
+		"behaviors":       flagValues(args, "--behavior"),
+		"file_prefixes":   flagValues(args, "--file-prefix"),
+		"socket_families": flagValues(args, "--socket-family"),
+		"scope_type":      flagValue(args, "--scope-type"),
+		"scope_selector":  flagValue(args, "--scope-selector"),
+		"observe_only":    !hasFlag(args, "--enforce"),
+	}
+	if len(policy["behaviors"].([]string)) == 0 {
+		return "", fmt.Errorf("collection policy requires --behavior when --file is not used")
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func requestContext(args []string) *controlv1.RequestContext {
+	return &controlv1.RequestContext{
+		RequestId: flagValue(args, "--request-id"),
+		TenantId:  flagValue(args, "--tenant-id"),
+		AgentId:   flagValue(args, "--agent-id"),
+		Scope: &controlv1.Scope{
+			Type:     flagValue(args, "--scope-type"),
+			Selector: flagValue(args, "--scope-selector"),
+		},
+	}
+}
+
+func commandTimeout(args []string, fallback time.Duration) time.Duration {
+	raw := flagValue(args, "--timeout")
+	if raw == "" {
+		if len(args) >= 2 && args[1] == "watch" && flagValue(args, "--limit") == "" {
+			return 24 * time.Hour
+		}
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
+
+func uint32Flag(args []string, name string) uint32 {
+	raw := flagValue(args, name)
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil {
+		return 0
+	}
+	return uint32(n)
+}
+
+func uint64Flag(args []string, name string, fallback uint64) uint64 {
+	raw := flagValue(args, name)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func flagValue(args []string, name string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == name {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+func flagValues(args []string, name string) []string {
+	var out []string
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == name {
+			out = append(out, args[i+1])
+		}
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func hasFlag(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == name {
+			return true
+		}
+	}
+	return false
+}
+
+func marshalProtoJSON(msg proto.Message) ([]byte, error) {
+	return protojson.MarshalOptions{}.Marshal(msg)
+}
+
+func marshalProtoJSONLine(msg proto.Message) ([]byte, error) {
+	return protojson.MarshalOptions{}.Marshal(msg)
 }
 
 func query(mgr string, args []string) ([]byte, error) {
@@ -503,10 +1059,10 @@ func query(mgr string, args []string) ([]byte, error) {
 				if i < len(args) {
 					q.Set("scenario", args[i])
 				}
-			case "--kind":
+			case "--behavior":
 				i++
 				if i < len(args) {
-					q.Set("kind", args[i])
+					q.Set("behavior", args[i])
 				}
 			case "--limit":
 				i++

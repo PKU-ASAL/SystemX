@@ -24,11 +24,52 @@ type RuleContent struct {
 	ResponseIntent string   `json:"response_intent,omitempty"`
 }
 
+type DetectionPolicy struct {
+	PolicyID      string         `json:"policy_id,omitempty"`
+	Version       uint64         `json:"version,omitempty"`
+	Mode          string         `json:"mode,omitempty"`
+	Scope         ScopeSelector  `json:"scope,omitempty"`
+	RuleSets      []RuleSetRef   `json:"rulesets,omitempty"`
+	RuleOverrides []RuleOverride `json:"rule_overrides,omitempty"`
+	ContextRefs   []ContentRef   `json:"context_refs,omitempty"`
+	IOCRefs       []ContentRef   `json:"ioc_refs,omitempty"`
+}
+
+type RuleSetRef struct {
+	Ref     string   `json:"ref"`
+	Version string   `json:"version,omitempty"`
+	Enabled *bool    `json:"enabled,omitempty"`
+	IOCRefs []string `json:"ioc_refs,omitempty"`
+}
+
+type RuleOverride struct {
+	RuleID         string             `json:"rule_id"`
+	Enabled        *bool              `json:"enabled,omitempty"`
+	Mode           string             `json:"mode,omitempty"`
+	Severity       string             `json:"severity,omitempty"`
+	Scope          ScopeSelector      `json:"scope,omitempty"`
+	ResponseIntent *ResponseIntentRef `json:"response_intent,omitempty"`
+	Params         map[string]string  `json:"params,omitempty"`
+	Reason         string             `json:"reason,omitempty"`
+}
+
+type ResponseIntentRef struct {
+	Action     string `json:"action,omitempty"`
+	Confidence uint32 `json:"confidence,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type ContentRef struct {
+	Ref     string `json:"ref"`
+	Version string `json:"version,omitempty"`
+}
+
 type Policy struct {
 	PolicyID      string                   `json:"policy_id"`
 	Version       uint64                   `json:"version"`
 	TenantID      string                   `json:"tenant_id"`
 	Scope         ScopeSelector            `json:"scope,omitempty"`
+	Detection     *DetectionPolicy         `json:"detection,omitempty"`
 	EndpointRules []string                 `json:"endpoint_rules,omitempty"`
 	CloudRules    []string                 `json:"cloud_rules,omitempty"`
 	Mode          string                   `json:"mode,omitempty"`
@@ -76,6 +117,7 @@ func DefaultRules() []RuleContent {
 		{RuleID: "payload_dropped", Version: 1, Enabled: true, Where: "endpoint", Severity: "high", Tags: []string{"file", "drop"}, MITRE: []string{"T1105"}},
 		{RuleID: "reverse_shell_pattern", Version: 1, Enabled: true, Where: "endpoint", Severity: "critical", Tags: []string{"c2"}, MITRE: []string{"T1571"}, ResponseIntent: "collect"},
 		{RuleID: "suspicious_exec_connect", Version: 1, Enabled: true, Where: "endpoint", Severity: "high", Tags: []string{"exec", "network"}, MITRE: []string{"T1574"}},
+		{RuleID: "payload_lifecycle", Version: 1, Enabled: true, Where: "endpoint", Severity: "high", Tags: []string{"chain", "evidence"}, MITRE: []string{"T1105", "T1574"}},
 		{RuleID: "dropped_payload_executed_and_connects", Version: 1, Enabled: true, Where: "cloud", Severity: "critical", Tags: []string{"graph", "cross-lineage"}, MITRE: []string{"T1105", "T1574"}, ResponseIntent: "collect"},
 		{RuleID: "web_shell_chain", Version: 1, Enabled: true, Where: "cloud", Severity: "critical", Tags: []string{"web", "c2"}, MITRE: []string{"T1190", "T1059", "T1571"}, ResponseIntent: "collect"},
 	}
@@ -86,15 +128,37 @@ func DefaultPolicy(tenantID string) Policy {
 		tenantID = "default"
 	}
 	return Policy{
-		PolicyID:      DefaultPolicyID,
-		Version:       DefaultPolicyVersion,
-		TenantID:      tenantID,
-		EndpointRules: []string{"web_runtime_spawns_shell", "download_by_lolbin", "payload_dropped", "reverse_shell_pattern", "suspicious_exec_connect"},
-		CloudRules:    []string{"dropped_payload_executed_and_connects", "web_shell_chain"},
-		Mode:          "observe",
-		Converge:      &policyv1.ConvergeParams{Mode: "rarity_structural", CrossLineage: true, TopK: 8, MaxPathHops: 6},
-		Response:      responsemodel.DefaultPolicy(),
-		Published:     true,
+		PolicyID:   DefaultPolicyID,
+		Version:    DefaultPolicyVersion,
+		TenantID:   tenantID,
+		Detection:  DefaultDetectionPolicy(),
+		CloudRules: []string{"dropped_payload_executed_and_connects", "web_shell_chain"},
+		Mode:       "observe",
+		Converge:   &policyv1.ConvergeParams{Mode: "rarity_structural", CrossLineage: true, TopK: 8, MaxPathHops: 6},
+		Response:   responsemodel.DefaultPolicy(),
+		Published:  true,
+	}
+}
+
+func DefaultDetectionPolicy() *DetectionPolicy {
+	enabled := true
+	return &DetectionPolicy{
+		PolicyID: "default-endpoint-detection",
+		Version:  1,
+		Mode:     "observe",
+		RuleSets: []RuleSetRef{{
+			Ref:     "ruleset:endpoint-linux-builtin",
+			Version: "1",
+			Enabled: &enabled,
+		}},
+		ContextRefs: []ContentRef{
+			{Ref: "ctx:credential-path-prefixes", Version: "builtin"},
+			{Ref: "ctx:payload-path-prefixes", Version: "builtin"},
+			{Ref: "ctx:trusted-admin-binaries", Version: "builtin"},
+		},
+		IOCRefs: []ContentRef{
+			{Ref: "ioc:c2-port-feed", Version: "builtin"},
+		},
 	}
 }
 
@@ -117,6 +181,11 @@ func Normalize(policy Policy) Policy {
 	if policy.Mode == "" {
 		policy.Mode = "observe"
 	}
+	if policy.Detection == nil {
+		policy.Detection = DefaultDetectionPolicy()
+	}
+	normalizedDetection := NormalizeDetectionPolicy(*policy.Detection)
+	policy.Detection = &normalizedDetection
 	if policy.Converge == nil {
 		policy.Converge = &policyv1.ConvergeParams{Mode: "rarity_structural", CrossLineage: true, TopK: 8, MaxPathHops: 6}
 	}
@@ -128,6 +197,24 @@ func Normalize(policy Policy) Policy {
 		policy.CreatedAt = now
 	}
 	policy.UpdatedAt = now
+	return policy
+}
+
+func NormalizeDetectionPolicy(policy DetectionPolicy) DetectionPolicy {
+	if policy.PolicyID == "" {
+		policy.PolicyID = "default-endpoint-detection"
+	}
+	if policy.Version == 0 {
+		policy.Version = 1
+	}
+	if policy.Mode == "" {
+		policy.Mode = "observe"
+	}
+	for i := range policy.RuleSets {
+		if policy.RuleSets[i].Version == "" {
+			policy.RuleSets[i].Version = "latest"
+		}
+	}
 	return policy
 }
 

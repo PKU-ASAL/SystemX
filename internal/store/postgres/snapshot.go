@@ -135,13 +135,13 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	return nil
 }
 
-func queryEvents(ctx context.Context, db *sql.DB, scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
+func queryEvents(ctx context.Context, db *sql.DB, scenario, behavior string) ([]*eventv1.CanonicalEvent, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM events
 WHERE ($1 = '' OR scenario = $1)
-  AND ($2 = '' OR event_kind = $2)
+  AND ($2 = '' OR event_behavior = $2)
 ORDER BY observed_at ASC, event_id ASC
-`, scenario, kind)
+`, scenario, behavior)
 	if err != nil {
 		return nil, fmt.Errorf("query postgres events: %w", err)
 	}
@@ -499,16 +499,16 @@ func projectEvents(ctx context.Context, db *sql.DB, eventRows []json.RawMessage)
 			continue
 		}
 		_, err := db.ExecContext(ctx, `
-INSERT INTO events (tenant_id, event_id, scenario, event_kind, agent_id, host_id, data)
+INSERT INTO events (tenant_id, event_id, scenario, event_behavior, agent_id, host_id, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id, event_id) DO UPDATE SET
   scenario = EXCLUDED.scenario,
-  event_kind = EXCLUDED.event_kind,
+  event_behavior = EXCLUDED.event_behavior,
   agent_id = EXCLUDED.agent_id,
   host_id = EXCLUDED.host_id,
   observed_at = now(),
   data = EXCLUDED.data
-`, "default", event.GetId(), event.GetScenario(), store.EventKindName(event.GetKind()), event.GetAgentId(), event.GetHostId(), []byte(raw))
+`, "default", event.GetId(), event.GetScenario(), event.GetBehavior(), event.GetAgentId(), event.GetHostId(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project event: %w", err)
 		}

@@ -33,7 +33,7 @@ type Store struct {
 	path                 string
 	backendInfo          *Info
 	saveState            func(State) error
-	listEvents           func(scenario, kind string) ([]*eventv1.CanonicalEvent, error)
+	listEvents           func(scenario, behavior string) ([]*eventv1.CanonicalEvent, error)
 	listSignals          func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
 	listIncidents        func(scenario string) ([]*incidentv1.Incident, error)
 	listResponses        func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
@@ -1315,12 +1315,12 @@ func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealt
 	return found, ok
 }
 
-func (s *Store) ListEvents(scenario, kind string) []*eventv1.CanonicalEvent {
+func (s *Store) ListEvents(scenario, behavior string) []*eventv1.CanonicalEvent {
 	s.mu.RLock()
 	listEvents := s.listEvents
 	s.mu.RUnlock()
 	if listEvents != nil {
-		events, err := listEvents(scenario, kind)
+		events, err := listEvents(scenario, behavior)
 		if err == nil && len(events) > 0 {
 			return events
 		}
@@ -1332,7 +1332,7 @@ func (s *Store) ListEvents(scenario, kind string) []*eventv1.CanonicalEvent {
 		if scenario != "" && ev.GetScenario() != scenario {
 			continue
 		}
-		if kind != "" && kindName(ev.GetKind()) != kind {
+		if behavior != "" && ev.GetBehavior() != behavior {
 			continue
 		}
 		out = append(out, ev)
@@ -1653,31 +1653,6 @@ func agentHealthKey(tenantID, agentID string) string {
 
 func agentgatewaySessionID(tenantID, agentID string) string {
 	return stableKey(tenantID, agentID)
-}
-
-func kindName(kind eventv1.EventKind) string {
-	switch kind {
-	case eventv1.EventKind_EVENT_KIND_EXEC:
-		return "EXEC"
-	case eventv1.EventKind_EVENT_KIND_EXIT:
-		return "EXIT"
-	case eventv1.EventKind_EVENT_KIND_FORK:
-		return "FORK"
-	case eventv1.EventKind_EVENT_KIND_OPEN:
-		return "OPEN"
-	case eventv1.EventKind_EVENT_KIND_WRITE:
-		return "WRITE"
-	case eventv1.EventKind_EVENT_KIND_CHMOD:
-		return "CHMOD"
-	case eventv1.EventKind_EVENT_KIND_CONNECT:
-		return "CONNECT"
-	default:
-		return ""
-	}
-}
-
-func EventKindName(kind eventv1.EventKind) string {
-	return kindName(kind)
 }
 
 func layerName(where signalv1.SignalWhere) string {

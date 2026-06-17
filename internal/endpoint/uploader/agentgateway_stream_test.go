@@ -67,7 +67,7 @@ func TestStreamUploaderReconnectDuplicateBatchDoesNotAmplifyIngest(t *testing.T)
 		Events: []*eventv1.CanonicalEvent{{
 			Id:       "ev-stream-reconnect",
 			Scenario: "stream-reconnect",
-			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+			Behavior: "process.exec",
 		}},
 		Signals: []*signalv1.Signal{{
 			Id:       "sig-stream-reconnect",

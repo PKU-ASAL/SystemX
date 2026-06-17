@@ -31,6 +31,12 @@ message ResponseIntent {
   string reason = 4;
 }
 
+message ContentRef {
+  string ref = 1;
+  string version = 2;
+  string digest = 3;
+}
+
 message Signal {
   string id = 1;
   string name = 2;
@@ -47,4 +53,12 @@ message Signal {
   string scenario = 13;
   bool cross_lineage = 14;
   ResponseIntent response_intent = 15;
+  string rule_id = 16;
+  uint64 rule_version = 17;
+  string ruleset_ref = 18;
+  repeated ContentRef context_refs = 19;
+  repeated ContentRef ioc_refs = 20;
+  string severity = 21;
+  uint32 confidence = 22;
+  string mode = 23;
 }

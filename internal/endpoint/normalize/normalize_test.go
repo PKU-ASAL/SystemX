@@ -3,19 +3,18 @@ package normalize
 import (
 	"testing"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 )
 
 func TestNormalizeInheritsLineageFromParent(t *testing.T) {
 	n := New("agent-a", "host-a", nil)
 	parent := n.Normalize(&sensorv1.SensorEvent{
-		Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-		Proc: &sensorv1.RawProcess{Pid: 100, Binary: "/usr/bin/java", StartTimeNs: 10},
+		Behavior: "process.exec",
+		Proc:     &sensorv1.RawProcess{Pid: 100, Binary: "/usr/bin/java", StartTimeNs: 10},
 	})
 	child := n.Normalize(&sensorv1.SensorEvent{
-		Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-		Proc: &sensorv1.RawProcess{Pid: 101, Ppid: 100, Binary: "/bin/bash", StartTimeNs: 20},
+		Behavior: "process.exec",
+		Proc:     &sensorv1.RawProcess{Pid: 101, Ppid: 100, Binary: "/bin/bash", StartTimeNs: 20},
 	})
 
 	if parent.GetLineageId() == "" {
@@ -40,16 +39,16 @@ func TestStableIDChangesAcrossStartTime(t *testing.T) {
 func TestNormalizeUsesSensorExecIDForParentage(t *testing.T) {
 	n := New("agent-a", "host-a", nil)
 	root := n.Normalize(&sensorv1.SensorEvent{
-		Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-		Proc: &sensorv1.RawProcess{Pid: 200, Binary: "/bin/bash", SensorExecId: "exec-root"},
+		Behavior: "process.exec",
+		Proc:     &sensorv1.RawProcess{Pid: 200, Binary: "/bin/bash", SensorExecId: "exec-root"},
 	})
 	helper := n.Normalize(&sensorv1.SensorEvent{
-		Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-		Proc: &sensorv1.RawProcess{Pid: 300, Ppid: 200, Binary: "/var/lib/app/plugins/helper", SensorExecId: "exec-helper", SensorParentExecId: "exec-root"},
+		Behavior: "process.exec",
+		Proc:     &sensorv1.RawProcess{Pid: 300, Ppid: 200, Binary: "/var/lib/app/plugins/helper", SensorExecId: "exec-helper", SensorParentExecId: "exec-root"},
 	})
 	bashAfterExec := n.Normalize(&sensorv1.SensorEvent{
-		Kind: eventv1.EventKind_EVENT_KIND_EXEC,
-		Proc: &sensorv1.RawProcess{Pid: 300, Ppid: 300, Binary: "/bin/bash", SensorExecId: "exec-bash", SensorParentExecId: "exec-helper"},
+		Behavior: "process.exec",
+		Proc:     &sensorv1.RawProcess{Pid: 300, Ppid: 300, Binary: "/bin/bash", SensorExecId: "exec-bash", SensorParentExecId: "exec-helper"},
 	})
 
 	if helper.GetLineageId() != root.GetLineageId() {
@@ -60,5 +59,28 @@ func TestNormalizeUsesSensorExecIDForParentage(t *testing.T) {
 	}
 	if bashAfterExec.GetSubjectProc().GetStableId() == helper.GetSubjectProc().GetStableId() {
 		t.Fatal("same PID with different sensor exec id should get a different stable id")
+	}
+}
+
+func TestNormalizeAddsProvenanceTags(t *testing.T) {
+	n := NewWithOptions("agent-a", "host-a", nil, Options{
+		TenantID:      "tenant-a",
+		ScopeType:     "container",
+		ScopeSelector: "container-123",
+	})
+	ev := n.Normalize(&sensorv1.SensorEvent{
+		MonoNs:      12345,
+		Behavior:    "network.connect",
+		ContainerId: "container-123",
+		Proc:        &sensorv1.RawProcess{Pid: 100, Binary: "/bin/bash", StartTimeNs: 10, Cgroup: "cg-a"},
+		Object:      &sensorv1.RawObject{Dst: "10.0.0.1:443"},
+		RawRef:      "raw-a",
+	})
+
+	if ev.GetTenantId() != "tenant-a" || ev.GetScope().GetType() != "container" || ev.GetScope().GetSelector() != "container-123" {
+		t.Fatalf("provenance scope tags not set: %+v", ev)
+	}
+	if ev.GetContainerId() != "container-123" || ev.GetCgroup() != "cg-a" || ev.GetOccurredAtNs() != 12345 {
+		t.Fatalf("runtime tags not set: %+v", ev)
 	}
 }

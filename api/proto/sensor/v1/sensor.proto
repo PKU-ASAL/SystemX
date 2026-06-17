@@ -4,8 +4,6 @@ package sysarmor.sensor.v1;
 
 option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1;sensorv1";
 
-import "api/proto/event/v1/event.proto";
-
 message RawProcess {
   uint32 pid = 1;
   uint32 ppid = 2;
@@ -26,11 +24,12 @@ message RawObject {
 
 message SensorEvent {
   uint64 mono_ns = 1;
-  sysarmor.event.v1.EventKind kind = 2;
+  reserved 2;
   RawProcess proc = 3;
   RawObject object = 4;
   string container_id = 5;
   string raw_ref = 6;
+  string behavior = 7;
 }
 
 message SensorHealth {

@@ -486,7 +486,7 @@ func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 	result.Store.AddEvent(&eventv1.CanonicalEvent{
 		Id:       "ev-table-pg",
 		Scenario: "pg-ingest",
-		Kind:     eventv1.EventKind_EVENT_KIND_CONNECT,
+		Behavior: "network.connect",
 		AgentId:  "agent-ingest-pg",
 		HostId:   "host-ingest-pg",
 	})
@@ -511,7 +511,7 @@ func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 		"INSERT INTO events",
 		"ev-table-pg",
 		"pg-ingest",
-		"CONNECT",
+		"network.connect",
 		"agent-ingest-pg",
 		"host-ingest-pg",
 		"INSERT INTO signals",
@@ -541,14 +541,14 @@ func TestOpenPostgresQueriesEventsFromTablePath(t *testing.T) {
 	raw, err := protojson.Marshal(&eventv1.CanonicalEvent{
 		Id:       "ev-query-table-pg",
 		Scenario: "pg-query-table",
-		Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+		Behavior: "process.exec",
 		AgentId:  "agent-query-table-pg",
 	})
 	if err != nil {
 		t.Fatalf("marshal event: %v", err)
 	}
 	fakeSetEventRows(raw)
-	events := result.Store.ListEvents("pg-query-table", "EXEC")
+	events := result.Store.ListEvents("pg-query-table", "process.exec")
 	if len(events) != 1 || events[0].GetId() != "ev-query-table-pg" || events[0].GetScenario() != "pg-query-table" {
 		t.Fatalf("events from postgres table = %+v", events)
 	}
@@ -964,7 +964,7 @@ func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	event := &eventv1.CanonicalEvent{Id: "ev-pg-idempotent", Scenario: "pg-idempotent", Kind: eventv1.EventKind_EVENT_KIND_EXEC}
+	event := &eventv1.CanonicalEvent{Id: "ev-pg-idempotent", Scenario: "pg-idempotent", Behavior: "process.exec"}
 	signal := &signalv1.Signal{Id: "sig-pg-idempotent", Scenario: "pg-idempotent", Name: "reverse_shell_pattern", Where: signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT}
 	if !result.Store.AddEvent(event) || result.Store.AddEvent(event) {
 		t.Fatal("event idempotency failed before save")
@@ -1087,7 +1087,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 		Events: []*eventv1.CanonicalEvent{{
 			Id:       "ev-pg-api",
 			Scenario: "pg-api",
-			Kind:     eventv1.EventKind_EVENT_KIND_EXEC,
+			Behavior: "process.exec",
 			AgentId:  "agent-pg-api",
 			HostId:   "host-pg-api",
 		}},

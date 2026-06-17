@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 )
 
 type envelope struct {
@@ -48,6 +48,7 @@ type tetragonProcess struct {
 	ExecID       string `json:"exec_id"`
 	Binary       string `json:"binary"`
 	Arguments    string `json:"arguments"`
+	Flags        string `json:"flags"`
 	StartTime    string `json:"start_time"`
 	ParentExecID string `json:"parent_exec_id"`
 	Docker       string `json:"docker"`
@@ -85,7 +86,7 @@ func ParseLine(data []byte) ([]*sensorv1.SensorEvent, bool) {
 		}
 		return nil, true
 	case env.ProcessExit != nil:
-		return nil, true
+		return []*sensorv1.SensorEvent{sensorEvent(env, env.ProcessExit.Process, env.ProcessExit.Parent, eventmodel.BehaviorProcessExit.String(), nil, string(data))}, true
 	default:
 		return nil, false
 	}
@@ -106,12 +107,15 @@ func ParseDroppedEvents(data []byte) (uint64, bool) {
 }
 
 func execEvents(env envelope, pe processEvent, raw string) []*sensorv1.SensorEvent {
-	events := []*sensorv1.SensorEvent{sensorEvent(env, pe.Process, pe.Parent, eventv1.EventKind_EVENT_KIND_EXEC, nil, raw)}
+	events := []*sensorv1.SensorEvent{sensorEvent(env, pe.Process, pe.Parent, eventmodel.BehaviorProcessExec.String(), nil, raw)}
+	if strings.Contains(pe.Process.Flags, "clone") {
+		events = append(events, sensorEvent(env, pe.Process, pe.Parent, eventmodel.BehaviorProcessFork.String(), nil, raw))
+	}
 	if path := inferredWritePath(pe.Process); path != "" {
-		events = append(events, sensorEvent(env, pe.Process, pe.Parent, eventv1.EventKind_EVENT_KIND_WRITE, &sensorv1.RawObject{Path: path}, raw))
+		events = append(events, sensorEvent(env, pe.Process, pe.Parent, eventmodel.BehaviorFileWrite.String(), &sensorv1.RawObject{Path: path}, raw))
 	}
 	if path := inferredChmodPath(pe.Process); path != "" {
-		events = append(events, sensorEvent(env, pe.Process, pe.Parent, eventv1.EventKind_EVENT_KIND_CHMOD, &sensorv1.RawObject{Path: path}, raw))
+		events = append(events, sensorEvent(env, pe.Process, pe.Parent, eventmodel.BehaviorFileChmod.String(), &sensorv1.RawObject{Path: path}, raw))
 	}
 	return events
 }
@@ -121,7 +125,7 @@ func kprobeEventToSensor(env envelope, kp kprobeEvent, raw string) *sensorv1.Sen
 	case "security_socket_connect":
 		for _, arg := range kp.Args {
 			if arg.Sockaddr != nil && arg.Sockaddr.Addr != "" && arg.Sockaddr.Port != 0 {
-				return sensorEvent(env, kp.Process, kp.Parent, eventv1.EventKind_EVENT_KIND_CONNECT, &sensorv1.RawObject{
+				return sensorEvent(env, kp.Process, kp.Parent, eventmodel.BehaviorNetworkConnect.String(), &sensorv1.RawObject{
 					Dst: arg.Sockaddr.Addr + ":" + strconv.FormatUint(uint64(arg.Sockaddr.Port), 10),
 				}, raw)
 			}
@@ -129,14 +133,14 @@ func kprobeEventToSensor(env envelope, kp kprobeEvent, raw string) *sensorv1.Sen
 	case "security_file_permission":
 		for _, arg := range kp.Args {
 			if arg.File != nil && arg.File.Path != "" {
-				return sensorEvent(env, kp.Process, kp.Parent, eventv1.EventKind_EVENT_KIND_OPEN, &sensorv1.RawObject{Path: arg.File.Path}, raw)
+				return sensorEvent(env, kp.Process, kp.Parent, eventmodel.BehaviorFileOpen.String(), &sensorv1.RawObject{Path: arg.File.Path}, raw)
 			}
 		}
 	}
 	return nil
 }
 
-func sensorEvent(env envelope, proc, parent tetragonProcess, kind eventv1.EventKind, obj *sensorv1.RawObject, raw string) *sensorv1.SensorEvent {
+func sensorEvent(env envelope, proc, parent tetragonProcess, behavior string, obj *sensorv1.RawObject, raw string) *sensorv1.SensorEvent {
 	if obj == nil {
 		obj = &sensorv1.RawObject{}
 	}
@@ -147,8 +151,8 @@ func sensorEvent(env envelope, proc, parent tetragonProcess, kind eventv1.EventK
 		ppid = 0
 	}
 	return &sensorv1.SensorEvent{
-		MonoNs: monotonicishNS(env.Time, proc.StartTime),
-		Kind:   kind,
+		MonoNs:   monotonicishNS(env.Time, proc.StartTime),
+		Behavior: eventmodel.NormalizeBehavior(behavior).String(),
 		Proc: &sensorv1.RawProcess{
 			Pid:                proc.PID,
 			Ppid:               ppid,

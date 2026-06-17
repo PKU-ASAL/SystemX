@@ -249,10 +249,10 @@ func mustAppend(t *testing.T, q *spool.Queue, eventID string) string {
 	id, err := q.Append(&analyticsv1.UploadBatch{
 		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
 		Events: []*eventv1.CanonicalEvent{{
-			Id:      eventID,
-			AgentId: "agent-a",
-			HostId:  "host-a",
-			Kind:    eventv1.EventKind_EVENT_KIND_EXEC,
+			Id:       eventID,
+			AgentId:  "agent-a",
+			HostId:   "host-a",
+			Behavior: "process.exec",
 		}},
 	})
 	if err != nil {

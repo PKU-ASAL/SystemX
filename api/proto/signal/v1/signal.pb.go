@@ -274,6 +274,66 @@ func (x *ResponseIntent) GetReason() string {
 	return ""
 }
 
+type ContentRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ref           string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Digest        string                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContentRef) Reset() {
+	*x = ContentRef{}
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContentRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContentRef) ProtoMessage() {}
+
+func (x *ContentRef) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContentRef.ProtoReflect.Descriptor instead.
+func (*ContentRef) Descriptor() ([]byte, []int) {
+	return file_api_proto_signal_v1_signal_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ContentRef) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *ContentRef) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ContentRef) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
 type Signal struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -291,13 +351,21 @@ type Signal struct {
 	Scenario       string                 `protobuf:"bytes,13,opt,name=scenario,proto3" json:"scenario,omitempty"`
 	CrossLineage   bool                   `protobuf:"varint,14,opt,name=cross_lineage,json=crossLineage,proto3" json:"cross_lineage,omitempty"`
 	ResponseIntent *ResponseIntent        `protobuf:"bytes,15,opt,name=response_intent,json=responseIntent,proto3" json:"response_intent,omitempty"`
+	RuleId         string                 `protobuf:"bytes,16,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	RuleVersion    uint64                 `protobuf:"varint,17,opt,name=rule_version,json=ruleVersion,proto3" json:"rule_version,omitempty"`
+	RulesetRef     string                 `protobuf:"bytes,18,opt,name=ruleset_ref,json=rulesetRef,proto3" json:"ruleset_ref,omitempty"`
+	ContextRefs    []*ContentRef          `protobuf:"bytes,19,rep,name=context_refs,json=contextRefs,proto3" json:"context_refs,omitempty"`
+	IocRefs        []*ContentRef          `protobuf:"bytes,20,rep,name=ioc_refs,json=iocRefs,proto3" json:"ioc_refs,omitempty"`
+	Severity       string                 `protobuf:"bytes,21,opt,name=severity,proto3" json:"severity,omitempty"`
+	Confidence     uint32                 `protobuf:"varint,22,opt,name=confidence,proto3" json:"confidence,omitempty"`
+	Mode           string                 `protobuf:"bytes,23,opt,name=mode,proto3" json:"mode,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Signal) Reset() {
 	*x = Signal{}
-	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[3]
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -309,7 +377,7 @@ func (x *Signal) String() string {
 func (*Signal) ProtoMessage() {}
 
 func (x *Signal) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[3]
+	mi := &file_api_proto_signal_v1_signal_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -322,7 +390,7 @@ func (x *Signal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Signal.ProtoReflect.Descriptor instead.
 func (*Signal) Descriptor() ([]byte, []int) {
-	return file_api_proto_signal_v1_signal_proto_rawDescGZIP(), []int{3}
+	return file_api_proto_signal_v1_signal_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Signal) GetId() string {
@@ -430,6 +498,62 @@ func (x *Signal) GetResponseIntent() *ResponseIntent {
 	return nil
 }
 
+func (x *Signal) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *Signal) GetRuleVersion() uint64 {
+	if x != nil {
+		return x.RuleVersion
+	}
+	return 0
+}
+
+func (x *Signal) GetRulesetRef() string {
+	if x != nil {
+		return x.RulesetRef
+	}
+	return ""
+}
+
+func (x *Signal) GetContextRefs() []*ContentRef {
+	if x != nil {
+		return x.ContextRefs
+	}
+	return nil
+}
+
+func (x *Signal) GetIocRefs() []*ContentRef {
+	if x != nil {
+		return x.IocRefs
+	}
+	return nil
+}
+
+func (x *Signal) GetSeverity() string {
+	if x != nil {
+		return x.Severity
+	}
+	return ""
+}
+
+func (x *Signal) GetConfidence() uint32 {
+	if x != nil {
+		return x.Confidence
+	}
+	return 0
+}
+
+func (x *Signal) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
 var File_api_proto_signal_v1_signal_proto protoreflect.FileDescriptor
 
 const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
@@ -452,7 +576,12 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"\n" +
 	"confidence\x18\x03 \x01(\rR\n" +
 	"confidence\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xcc\x04\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"P\n" +
+	"\n" +
+	"ContentRef\x12\x10\n" +
+	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xf7\x06\n" +
 	"\x06Signal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x125\n" +
@@ -472,7 +601,18 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"\bevidence\x18\f \x01(\v2\".sysarmor.signal.v1.EvidenceBundleR\bevidence\x12\x1a\n" +
 	"\bscenario\x18\r \x01(\tR\bscenario\x12#\n" +
 	"\rcross_lineage\x18\x0e \x01(\bR\fcrossLineage\x12K\n" +
-	"\x0fresponse_intent\x18\x0f \x01(\v2\".sysarmor.signal.v1.ResponseIntentR\x0eresponseIntent*^\n" +
+	"\x0fresponse_intent\x18\x0f \x01(\v2\".sysarmor.signal.v1.ResponseIntentR\x0eresponseIntent\x12\x17\n" +
+	"\arule_id\x18\x10 \x01(\tR\x06ruleId\x12!\n" +
+	"\frule_version\x18\x11 \x01(\x04R\vruleVersion\x12\x1f\n" +
+	"\vruleset_ref\x18\x12 \x01(\tR\n" +
+	"rulesetRef\x12A\n" +
+	"\fcontext_refs\x18\x13 \x03(\v2\x1e.sysarmor.signal.v1.ContentRefR\vcontextRefs\x129\n" +
+	"\bioc_refs\x18\x14 \x03(\v2\x1e.sysarmor.signal.v1.ContentRefR\aiocRefs\x12\x1a\n" +
+	"\bseverity\x18\x15 \x01(\tR\bseverity\x12\x1e\n" +
+	"\n" +
+	"confidence\x18\x16 \x01(\rR\n" +
+	"confidence\x12\x12\n" +
+	"\x04mode\x18\x17 \x01(\tR\x04mode*^\n" +
 	"\vSignalWhere\x12\x1c\n" +
 	"\x18SIGNAL_WHERE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SIGNAL_WHERE_ENDPOINT\x10\x01\x12\x16\n" +
@@ -491,13 +631,14 @@ func file_api_proto_signal_v1_signal_proto_rawDescGZIP() []byte {
 }
 
 var file_api_proto_signal_v1_signal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_api_proto_signal_v1_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_api_proto_signal_v1_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_api_proto_signal_v1_signal_proto_goTypes = []any{
 	(SignalWhere)(0),       // 0: sysarmor.signal.v1.SignalWhere
 	(*EntityRef)(nil),      // 1: sysarmor.signal.v1.EntityRef
 	(*EvidenceBundle)(nil), // 2: sysarmor.signal.v1.EvidenceBundle
 	(*ResponseIntent)(nil), // 3: sysarmor.signal.v1.ResponseIntent
-	(*Signal)(nil),         // 4: sysarmor.signal.v1.Signal
+	(*ContentRef)(nil),     // 4: sysarmor.signal.v1.ContentRef
+	(*Signal)(nil),         // 5: sysarmor.signal.v1.Signal
 }
 var file_api_proto_signal_v1_signal_proto_depIdxs = []int32{
 	1, // 0: sysarmor.signal.v1.EvidenceBundle.entities:type_name -> sysarmor.signal.v1.EntityRef
@@ -505,11 +646,13 @@ var file_api_proto_signal_v1_signal_proto_depIdxs = []int32{
 	1, // 2: sysarmor.signal.v1.Signal.entities:type_name -> sysarmor.signal.v1.EntityRef
 	2, // 3: sysarmor.signal.v1.Signal.evidence:type_name -> sysarmor.signal.v1.EvidenceBundle
 	3, // 4: sysarmor.signal.v1.Signal.response_intent:type_name -> sysarmor.signal.v1.ResponseIntent
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	4, // 5: sysarmor.signal.v1.Signal.context_refs:type_name -> sysarmor.signal.v1.ContentRef
+	4, // 6: sysarmor.signal.v1.Signal.ioc_refs:type_name -> sysarmor.signal.v1.ContentRef
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_signal_v1_signal_proto_init() }
@@ -523,7 +666,7 @@ func file_api_proto_signal_v1_signal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_signal_v1_signal_proto_rawDesc), len(file_api_proto_signal_v1_signal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

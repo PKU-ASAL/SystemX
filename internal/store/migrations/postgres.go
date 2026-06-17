@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS events (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   event_id TEXT NOT NULL,
   scenario TEXT NOT NULL DEFAULT '',
-  event_kind TEXT NOT NULL DEFAULT '',
+  event_behavior TEXT NOT NULL DEFAULT '',
   agent_id TEXT NOT NULL DEFAULT '',
   host_id TEXT NOT NULL DEFAULT '',
   observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),

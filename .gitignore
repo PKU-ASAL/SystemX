@@ -7,6 +7,7 @@ test/.results/*.csv
 
 # build artifacts
 bin/
+.cache/
 
 # vagrant
 .vagrant/

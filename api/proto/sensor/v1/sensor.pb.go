@@ -7,7 +7,6 @@
 package sensorv1
 
 import (
-	v1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -193,11 +192,11 @@ func (x *RawObject) GetTargetPid() uint32 {
 type SensorEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MonoNs        uint64                 `protobuf:"varint,1,opt,name=mono_ns,json=monoNs,proto3" json:"mono_ns,omitempty"`
-	Kind          v1.EventKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=sysarmor.event.v1.EventKind" json:"kind,omitempty"`
 	Proc          *RawProcess            `protobuf:"bytes,3,opt,name=proc,proto3" json:"proc,omitempty"`
 	Object        *RawObject             `protobuf:"bytes,4,opt,name=object,proto3" json:"object,omitempty"`
 	ContainerId   string                 `protobuf:"bytes,5,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	RawRef        string                 `protobuf:"bytes,6,opt,name=raw_ref,json=rawRef,proto3" json:"raw_ref,omitempty"`
+	Behavior      string                 `protobuf:"bytes,7,opt,name=behavior,proto3" json:"behavior,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -239,13 +238,6 @@ func (x *SensorEvent) GetMonoNs() uint64 {
 	return 0
 }
 
-func (x *SensorEvent) GetKind() v1.EventKind {
-	if x != nil {
-		return x.Kind
-	}
-	return v1.EventKind(0)
-}
-
 func (x *SensorEvent) GetProc() *RawProcess {
 	if x != nil {
 		return x.Proc
@@ -270,6 +262,13 @@ func (x *SensorEvent) GetContainerId() string {
 func (x *SensorEvent) GetRawRef() string {
 	if x != nil {
 		return x.RawRef
+	}
+	return ""
+}
+
+func (x *SensorEvent) GetBehavior() string {
+	if x != nil {
+		return x.Behavior
 	}
 	return ""
 }
@@ -330,7 +329,7 @@ var File_api_proto_sensor_v1_sensor_proto protoreflect.FileDescriptor
 
 const file_api_proto_sensor_v1_sensor_proto_rawDesc = "" +
 	"\n" +
-	" api/proto/sensor/v1/sensor.proto\x12\x12sysarmor.sensor.v1\x1a\x1eapi/proto/event/v1/event.proto\"\x85\x02\n" +
+	" api/proto/sensor/v1/sensor.proto\x12\x12sysarmor.sensor.v1\"\x85\x02\n" +
 	"\n" +
 	"RawProcess\x12\x10\n" +
 	"\x03pid\x18\x01 \x01(\rR\x03pid\x12\x12\n" +
@@ -346,14 +345,14 @@ const file_api_proto_sensor_v1_sensor_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
 	"\x03dst\x18\x02 \x01(\tR\x03dst\x12\x1d\n" +
 	"\n" +
-	"target_pid\x18\x03 \x01(\rR\ttargetPid\"\xff\x01\n" +
+	"target_pid\x18\x03 \x01(\rR\ttargetPid\"\xef\x01\n" +
 	"\vSensorEvent\x12\x17\n" +
-	"\amono_ns\x18\x01 \x01(\x04R\x06monoNs\x120\n" +
-	"\x04kind\x18\x02 \x01(\x0e2\x1c.sysarmor.event.v1.EventKindR\x04kind\x122\n" +
+	"\amono_ns\x18\x01 \x01(\x04R\x06monoNs\x122\n" +
 	"\x04proc\x18\x03 \x01(\v2\x1e.sysarmor.sensor.v1.RawProcessR\x04proc\x125\n" +
 	"\x06object\x18\x04 \x01(\v2\x1d.sysarmor.sensor.v1.RawObjectR\x06object\x12!\n" +
 	"\fcontainer_id\x18\x05 \x01(\tR\vcontainerId\x12\x17\n" +
-	"\araw_ref\x18\x06 \x01(\tR\x06rawRef\"[\n" +
+	"\araw_ref\x18\x06 \x01(\tR\x06rawRef\x12\x1a\n" +
+	"\bbehavior\x18\a \x01(\tR\bbehaviorJ\x04\b\x02\x10\x03\"[\n" +
 	"\fSensorHealth\x12%\n" +
 	"\x0edropped_events\x18\x01 \x01(\x04R\rdroppedEvents\x12$\n" +
 	"\x0eevents_per_sec\x18\x02 \x01(\x01R\feventsPerSecBHZFgithub.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1;sensorv1b\x06proto3"
@@ -376,17 +375,15 @@ var file_api_proto_sensor_v1_sensor_proto_goTypes = []any{
 	(*RawObject)(nil),    // 1: sysarmor.sensor.v1.RawObject
 	(*SensorEvent)(nil),  // 2: sysarmor.sensor.v1.SensorEvent
 	(*SensorHealth)(nil), // 3: sysarmor.sensor.v1.SensorHealth
-	(v1.EventKind)(0),    // 4: sysarmor.event.v1.EventKind
 }
 var file_api_proto_sensor_v1_sensor_proto_depIdxs = []int32{
-	4, // 0: sysarmor.sensor.v1.SensorEvent.kind:type_name -> sysarmor.event.v1.EventKind
-	0, // 1: sysarmor.sensor.v1.SensorEvent.proc:type_name -> sysarmor.sensor.v1.RawProcess
-	1, // 2: sysarmor.sensor.v1.SensorEvent.object:type_name -> sysarmor.sensor.v1.RawObject
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 0: sysarmor.sensor.v1.SensorEvent.proc:type_name -> sysarmor.sensor.v1.RawProcess
+	1, // 1: sysarmor.sensor.v1.SensorEvent.object:type_name -> sysarmor.sensor.v1.RawObject
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_sensor_v1_sensor_proto_init() }

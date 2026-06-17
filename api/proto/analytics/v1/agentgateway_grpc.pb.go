@@ -31,15 +31,15 @@ type AgentGatewayClient interface {
 	Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamFrame, StreamFrame], error)
 }
 
-type agentgatewayClient struct {
+type agentGatewayClient struct {
 	cc grpc.ClientConnInterface
 }
 
 func NewAgentGatewayClient(cc grpc.ClientConnInterface) AgentGatewayClient {
-	return &agentgatewayClient{cc}
+	return &agentGatewayClient{cc}
 }
 
-func (c *agentgatewayClient) Upload(ctx context.Context, in *UploadBatch, opts ...grpc.CallOption) (*UploadAck, error) {
+func (c *agentGatewayClient) Upload(ctx context.Context, in *UploadBatch, opts ...grpc.CallOption) (*UploadAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UploadAck)
 	err := c.cc.Invoke(ctx, AgentGateway_Upload_FullMethodName, in, out, cOpts...)
@@ -49,7 +49,7 @@ func (c *agentgatewayClient) Upload(ctx context.Context, in *UploadBatch, opts .
 	return out, nil
 }
 
-func (c *agentgatewayClient) Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamFrame, StreamFrame], error) {
+func (c *agentGatewayClient) Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamFrame, StreamFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &AgentGateway_ServiceDesc.Streams[0], AgentGateway_Stream_FullMethodName, cOpts...)
 	if err != nil {
