@@ -957,7 +957,9 @@ sysarmorctl --agent-sock /var/run/sysarmor/agent.sock policy current --agent-id 
 sysarmorctl policy apply collection \
   --agent-id agent-a \
   --behavior network.connect \
-  --file-prefix /dev/shm \
+  --socket-family AF_INET \
+  --socket-addr 10.66.0.99 \
+  --socket-port 443 \
   --output json
 ```
 

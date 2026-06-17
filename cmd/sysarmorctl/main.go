@@ -489,24 +489,65 @@ func uniqueSorted(values []string) []string {
 }
 
 func collectionPolicyPayload(args []string) (string, error) {
-	policy := map[string]any{
-		"policy_id":       firstNonEmpty(flagValue(args, "--policy-id"), "local-collection-policy"),
-		"version":         uint64Flag(args, "--policy-version", 1),
-		"behaviors":       flagValues(args, "--behavior"),
-		"file_prefixes":   flagValues(args, "--file-prefix"),
-		"socket_families": flagValues(args, "--socket-family"),
-		"scope_type":      flagValue(args, "--scope-type"),
-		"scope_selector":  flagValue(args, "--scope-selector"),
-		"observe_only":    !hasFlag(args, "--enforce"),
-	}
-	if len(policy["behaviors"].([]string)) == 0 {
+	behaviors := flagValues(args, "--behavior")
+	if len(behaviors) == 0 {
 		return "", fmt.Errorf("collection policy requires --behavior when --file is not used")
+	}
+	binaryPrefixes := flagValues(args, "--binary-prefix")
+	filePrefixes := flagValues(args, "--file-prefix")
+	socketFamilies := flagValues(args, "--socket-family")
+	socketAddrs := flagValues(args, "--socket-addr")
+	socketPorts := flagValues(args, "--socket-port")
+	policy := map[string]any{
+		"policy_id":      firstNonEmpty(flagValue(args, "--policy-id"), "local-collection-policy"),
+		"version":        uint64Flag(args, "--policy-version", 1),
+		"behaviors":      collectionBehaviorPayloads(behaviors, binaryPrefixes, filePrefixes, socketFamilies, socketAddrs, socketPorts),
+		"scope_type":     flagValue(args, "--scope-type"),
+		"scope_selector": flagValue(args, "--scope-selector"),
+		"observe_only":   !hasFlag(args, "--enforce"),
 	}
 	data, err := json.Marshal(policy)
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func collectionBehaviorPayloads(behaviors, binaryPrefixes, filePrefixes, socketFamilies, socketAddrs, socketPorts []string) []map[string]any {
+	out := make([]map[string]any, 0, len(behaviors))
+	for _, behavior := range behaviors {
+		item := map[string]any{"id": behavior, "enabled": true}
+		selectors := map[string]any{}
+		switch behavior {
+		case "process.exec", "process.fork":
+			if len(binaryPrefixes) > 0 {
+				selectors["binary"] = map[string]any{"prefixes": binaryPrefixes}
+			}
+		case "file.open", "file.read", "file.write", "file.chmod":
+			if len(filePrefixes) > 0 {
+				selectors["file"] = map[string]any{"prefixes": filePrefixes}
+			}
+		case "network.connect":
+			socket := map[string]any{}
+			if len(socketFamilies) > 0 {
+				socket["families"] = socketFamilies
+			}
+			if len(socketAddrs) > 0 {
+				socket["addrs"] = socketAddrs
+			}
+			if len(socketPorts) > 0 {
+				socket["ports"] = socketPorts
+			}
+			if len(socket) > 0 {
+				selectors["socket"] = socket
+			}
+		}
+		if len(selectors) > 0 {
+			item["selectors"] = selectors
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func requestContext(args []string) *controlv1.RequestContext {

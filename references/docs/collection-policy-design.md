@@ -406,7 +406,8 @@ CollectionPolicyV2
 
 当前代码已经具备一个最小闭环:
 
-- `CollectionPolicy` 支持 `behaviors`、`binary_prefixes`、`file_prefixes`、`socket_families`、`socket_addrs`、`socket_ports`、`scope_type`、`scope_selector`,不再兼容 `profiles/kinds`。
+- `CollectionPolicy` 支持 behavior-scoped selectors: exec `binary`、`file`、`socket`,不再兼容 `profiles/kinds`。
+- CLI 仍提供 `--behavior/--file-prefix/--socket-family/...` 简写,但会归一化成 behavior-scoped policy payload。
 - agent local control 可以 dry-run/apply collection policy。
 - Tetragon backend 可以生成 runtime TracingPolicy 并通过 `tetra tracingpolicy add/delete` 热更新。
 - 已验证 `security_socket_connect` 使用 `Family/SAddr/SPort` selector。
@@ -415,9 +416,8 @@ CollectionPolicyV2
 
 当前差距:
 
-- 过滤条件仍是全局平铺,还不是 behavior-scoped selectors。
 - `ctx:` / `ioc:` 引用尚未接入 compiler。
-- parent binary、pid、namespace、capability、workload、return filters 尚未完整落地。
+- parent/process binary、pid、namespace、capability、workload、return filters 尚未完整落地。
 - 大规模 IOC 的内核侧下推策略和上限尚未定义。
 - Tetragon 默认事件流仍可能带来噪声;agent-owned Tetragon 启动参数和默认 telemetry 需要被 collection policy 更完整地控制。
 - policy apply ack 需要更细地区分 `applied / rejected / unsupported / degraded / failed`。

@@ -607,7 +607,10 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 	out.WriteString("spec:\n")
 	out.WriteString("  kprobes:\n")
 	if intentHasAnyBehavior(intent, eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String()) {
-		prefixes := intent.BinaryPrefixes
+		prefixes := mergeFilterStrings(
+			behaviorFilter(intent, eventmodel.BehaviorProcessExec.String()).BinaryPrefixes,
+			behaviorFilter(intent, eventmodel.BehaviorProcessFork.String()).BinaryPrefixes,
+		)
 		out.WriteString(`  - call: "security_bprm_creds_from_file"
     syscall: false
     args:
@@ -639,7 +642,8 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 `)
 	}
 	if intentHasBehavior(intent, eventmodel.BehaviorNetworkConnect.String()) {
-		families := intent.SocketFamilies
+		filter := behaviorFilter(intent, eventmodel.BehaviorNetworkConnect.String())
+		families := filter.SocketFamilies
 		if len(families) == 0 {
 			families = []string{"AF_INET", "AF_INET6"}
 		}
@@ -661,23 +665,23 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 			out.WriteString(fmt.Sprintf("%q", family))
 			out.WriteString("\n")
 		}
-		if len(intent.SocketAddrs) > 0 {
+		if len(filter.SocketAddrs) > 0 {
 			out.WriteString(`      - index: 1
         operator: "SAddr"
         values:
 `)
-			for _, addr := range intent.SocketAddrs {
+			for _, addr := range filter.SocketAddrs {
 				out.WriteString("        - ")
 				out.WriteString(fmt.Sprintf("%q", addr))
 				out.WriteString("\n")
 			}
 		}
-		if len(intent.SocketPorts) > 0 {
+		if len(filter.SocketPorts) > 0 {
 			out.WriteString(`      - index: 1
         operator: "SPort"
         values:
 `)
-			for _, port := range intent.SocketPorts {
+			for _, port := range filter.SocketPorts {
 				out.WriteString("        - ")
 				out.WriteString(fmt.Sprintf("%q", port))
 				out.WriteString("\n")
@@ -685,7 +689,12 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 		}
 	}
 	if intentHasAnyBehavior(intent, eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()) {
-		prefixes := intent.FilePrefixes
+		prefixes := mergeFilterStrings(
+			behaviorFilter(intent, eventmodel.BehaviorFileOpen.String()).FilePrefixes,
+			behaviorFilter(intent, eventmodel.BehaviorFileRead.String()).FilePrefixes,
+			behaviorFilter(intent, eventmodel.BehaviorFileWrite.String()).FilePrefixes,
+			behaviorFilter(intent, eventmodel.BehaviorFileChmod.String()).FilePrefixes,
+		)
 		if len(prefixes) == 0 {
 			prefixes = []string{"/root/.ssh", "/var/run/secrets", "/etc/passwd"}
 		}
@@ -732,6 +741,45 @@ func intentHasBehavior(intent contract.CollectionIntent, behavior string) bool {
 		}
 	}
 	return false
+}
+
+func behaviorFilter(intent contract.CollectionIntent, behavior string) contract.CollectionBehaviorFilter {
+	behavior = eventmodel.NormalizeBehavior(behavior).String()
+	for _, filter := range intent.BehaviorFilters {
+		if eventmodel.NormalizeBehavior(filter.Behavior).String() == behavior {
+			return filter
+		}
+	}
+	filter := contract.CollectionBehaviorFilter{Behavior: behavior}
+	switch behavior {
+	case eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String():
+		filter.BinaryPrefixes = intent.BinaryPrefixes
+	case eventmodel.BehaviorNetworkConnect.String():
+		filter.BinaryPrefixes = intent.BinaryPrefixes
+		filter.SocketFamilies = intent.SocketFamilies
+		filter.SocketAddrs = intent.SocketAddrs
+		filter.SocketPorts = intent.SocketPorts
+	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
+		filter.BinaryPrefixes = intent.BinaryPrefixes
+		filter.FilePrefixes = intent.FilePrefixes
+	}
+	return filter
+}
+
+func mergeFilterStrings(lists ...[]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range lists {
+		for _, value := range list {
+			value = strings.TrimSpace(value)
+			if value == "" || seen[value] {
+				continue
+			}
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (b *Backend) Enforce(_ context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {

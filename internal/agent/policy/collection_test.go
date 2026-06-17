@@ -43,12 +43,21 @@ func TestParseCollectionPolicyJSONBehaviorsAndFilters(t *testing.T) {
 	policy, err := ParseCollectionPolicyJSON([]byte(`{
 		"policy_id":"collection-a",
 		"version":2,
-		"behaviors":["network.connect","file.write"],
-		"binary_prefixes":["/var/lib/app/plugins"],
-		"file_prefixes":["/dev/shm","/var/lib/app/plugins"],
-		"socket_families":["AF_INET"],
-		"socket_addrs":["10.66.0.99"],
-		"socket_ports":["443","8080"],
+		"behaviors":[
+			{
+				"id":"network.connect",
+				"selectors":{
+					"process":{"binary_prefixes":["/var/lib/app/plugins"]},
+					"socket":{"families":["AF_INET"],"addrs":["10.66.0.99"],"ports":["443","8080"]}
+				}
+			},
+			{
+				"id":"file.write",
+				"selectors":{
+					"file":{"prefixes":["/dev/shm","/var/lib/app/plugins"]}
+				}
+			}
+		],
 		"scope_type":"container",
 		"scope_selector":"abc123",
 		"observe_only":true
@@ -66,23 +75,43 @@ func TestParseCollectionPolicyJSONBehaviorsAndFilters(t *testing.T) {
 	if intent.Behaviors[0] != "network.connect" {
 		t.Fatalf("first behavior = %v", intent.Behaviors[0])
 	}
-	if got := intent.FilePrefixes; len(got) != 2 || got[0] != "/dev/shm" {
-		t.Fatalf("FilePrefixes = %v", got)
+	if len(intent.BehaviorFilters) != 2 {
+		t.Fatalf("BehaviorFilters = %+v", intent.BehaviorFilters)
 	}
-	if got := intent.BinaryPrefixes; len(got) != 1 || got[0] != "/var/lib/app/plugins" {
-		t.Fatalf("BinaryPrefixes = %v", got)
+	network := intent.BehaviorFilters[0]
+	if network.Behavior != "network.connect" || len(network.SocketFamilies) != 1 || network.SocketFamilies[0] != "AF_INET" {
+		t.Fatalf("network filter = %+v", network)
 	}
-	if got := intent.SocketFamilies; len(got) != 1 || got[0] != "AF_INET" {
-		t.Fatalf("SocketFamilies = %v", got)
-	}
-	if got := intent.SocketAddrs; len(got) != 1 || got[0] != "10.66.0.99" {
-		t.Fatalf("SocketAddrs = %v", got)
-	}
-	if got := intent.SocketPorts; len(got) != 2 || got[0] != "443" {
-		t.Fatalf("SocketPorts = %v", got)
+	file := intent.BehaviorFilters[1]
+	if file.Behavior != "file.write" || len(file.FilePrefixes) != 2 || file.FilePrefixes[0] != "/dev/shm" {
+		t.Fatalf("file filter = %+v", file)
 	}
 	if intent.ScopeType != "container" || intent.ScopeSelector != "abc123" {
 		t.Fatalf("scope = %s/%s", intent.ScopeType, intent.ScopeSelector)
+	}
+}
+
+func TestCollectionPolicyFlatFieldsBecomeBehaviorFilters(t *testing.T) {
+	policy, err := ParseCollectionPolicyJSON([]byte(`{
+		"behaviors":["network.connect","file.write"],
+		"file_prefixes":["/dev/shm"],
+		"socket_families":["AF_INET"]
+	}`), true)
+	if err != nil {
+		t.Fatalf("ParseCollectionPolicyJSON() error = %v", err)
+	}
+	intent, err := CollectionPolicyIntent(policy)
+	if err != nil {
+		t.Fatalf("CollectionPolicyIntent() error = %v", err)
+	}
+	if len(intent.BehaviorFilters) != 2 {
+		t.Fatalf("BehaviorFilters = %+v", intent.BehaviorFilters)
+	}
+	if got := intent.BehaviorFilters[0].SocketFamilies; len(got) != 1 || got[0] != "AF_INET" {
+		t.Fatalf("network socket families = %v", got)
+	}
+	if got := intent.BehaviorFilters[1].FilePrefixes; len(got) != 1 || got[0] != "/dev/shm" {
+		t.Fatalf("file prefixes = %v", got)
 	}
 }
 

@@ -296,12 +296,28 @@ func TestQueryLocalAgentPolicyApplyCollectionFlags(t *testing.T) {
 		t.Fatalf("decode policy json: %v", err)
 	}
 	behaviors, ok := payload["behaviors"].([]any)
-	if !ok || len(behaviors) != 2 || behaviors[0] != "network.connect" || behaviors[1] != "file.write" {
+	if !ok || len(behaviors) != 2 {
 		t.Fatalf("behaviors = %#v", payload["behaviors"])
 	}
-	prefixes, ok := payload["file_prefixes"].([]any)
+	first, ok := behaviors[0].(map[string]any)
+	if !ok || first["id"] != "network.connect" {
+		t.Fatalf("first behavior = %#v", behaviors[0])
+	}
+	second, ok := behaviors[1].(map[string]any)
+	if !ok || second["id"] != "file.write" {
+		t.Fatalf("second behavior = %#v", behaviors[1])
+	}
+	selectors, ok := second["selectors"].(map[string]any)
+	if !ok {
+		t.Fatalf("second selectors = %#v", second["selectors"])
+	}
+	file, ok := selectors["file"].(map[string]any)
+	if !ok {
+		t.Fatalf("file selector = %#v", selectors["file"])
+	}
+	prefixes, ok := file["prefixes"].([]any)
 	if !ok || len(prefixes) != 1 || prefixes[0] != "/dev/shm" {
-		t.Fatalf("file_prefixes = %#v", payload["file_prefixes"])
+		t.Fatalf("file prefixes = %#v", file["prefixes"])
 	}
 }
 

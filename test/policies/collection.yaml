@@ -2,13 +2,29 @@
   "policy_id": "col-mvp",
   "version": 1,
   "behaviors": [
-    "process.exec",
-    "process.exit",
-    "process.fork",
-    "file.open",
-    "file.write",
-    "file.chmod",
-    "network.connect"
+    { "id": "process.exec", "enabled": true },
+    { "id": "process.exit", "enabled": true },
+    { "id": "process.fork", "enabled": true },
+    {
+      "id": "file.open",
+      "enabled": true,
+      "selectors": { "file": { "prefixes": ["/root/.ssh", "/var/run/secrets", "/etc/passwd"] } }
+    },
+    {
+      "id": "file.write",
+      "enabled": true,
+      "selectors": { "file": { "prefixes": ["/dev/shm", "/var/lib/app/plugins"] } }
+    },
+    {
+      "id": "file.chmod",
+      "enabled": true,
+      "selectors": { "file": { "prefixes": ["/dev/shm", "/var/lib/app/plugins"] } }
+    },
+    {
+      "id": "network.connect",
+      "enabled": true,
+      "selectors": { "socket": { "families": ["AF_INET", "AF_INET6"] } }
+    }
   ],
   "scope_type": "host",
   "observe_only": true

@@ -503,12 +503,12 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 
 func TestBuildTracingPolicyUsesCollectionFilters(t *testing.T) {
 	data := string(buildTracingPolicy(contract.CollectionIntent{
-		Behaviors:      []string{"process.exec", "network.connect", "file.write"},
-		BinaryPrefixes: []string{"/var/lib/app/plugins"},
-		FilePrefixes:   []string{"/dev/shm", "/var/lib/app/plugins"},
-		SocketFamilies: []string{"AF_INET"},
-		SocketAddrs:    []string{"10.66.0.99"},
-		SocketPorts:    []string{"443", "8080"},
+		Behaviors: []string{"process.exec", "network.connect", "file.write"},
+		BehaviorFilters: []contract.CollectionBehaviorFilter{
+			{Behavior: "process.exec", BinaryPrefixes: []string{"/var/lib/app/plugins"}},
+			{Behavior: "network.connect", SocketFamilies: []string{"AF_INET"}, SocketAddrs: []string{"10.66.0.99"}, SocketPorts: []string{"443", "8080"}},
+			{Behavior: "file.write", FilePrefixes: []string{"/dev/shm", "/var/lib/app/plugins"}},
+		},
 	}))
 	for _, want := range []string{"security_bprm_creds_from_file", `"Prefix"`, `"security_socket_connect"`, `"AF_INET"`, `"SAddr"`, `"10.66.0.99"`, `"SPort"`, `"443"`, `"8080"`, `"security_file_permission"`, `"/dev/shm"`, `"/var/lib/app/plugins"`} {
 		if !strings.Contains(data, want) {

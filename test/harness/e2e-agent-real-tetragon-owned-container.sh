@@ -56,7 +56,16 @@ if [[ -z "$TETRA_PATH" || -z "$TETRAGON_PATH" ]]; then
   exit 1
 fi
 docker exec "$OWNED_CONTAINER" sh -c "cat > '$WORK/policy.yaml' <<'EOF'
-{"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
+{
+  \"behaviors\": [
+    {\"id\":\"process.exec\",\"enabled\":true},
+    {\"id\":\"network.connect\",\"enabled\":true,\"selectors\":{\"socket\":{\"families\":[\"AF_INET\"]}}},
+    {\"id\":\"file.open\",\"enabled\":true,\"selectors\":{\"file\":{\"prefixes\":[\"/root/.ssh\",\"/var/run/secrets\",\"/etc/passwd\"]}}},
+    {\"id\":\"file.write\",\"enabled\":true,\"selectors\":{\"file\":{\"prefixes\":[\"/dev/shm\",\"/var/lib/app/plugins\"]}}},
+    {\"id\":\"file.chmod\",\"enabled\":true,\"selectors\":{\"file\":{\"prefixes\":[\"/dev/shm\",\"/var/lib/app/plugins\"]}}}
+  ],
+  \"observe_only\": true
+}
 EOF
 cat > '$WORK/agent.yaml' <<EOF
 agent:

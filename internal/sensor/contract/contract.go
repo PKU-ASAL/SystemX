@@ -32,16 +32,26 @@ type Capability struct {
 }
 
 type CollectionIntent struct {
-	Behaviors      []string
+	Behaviors       []string
+	BinaryPrefixes  []string
+	FilePrefixes    []string
+	SocketFamilies  []string
+	SocketAddrs     []string
+	SocketPorts     []string
+	BehaviorFilters []CollectionBehaviorFilter
+	ScopeType       string
+	ScopeSelector   string
+	ObserveOnly     bool
+	Capabilities    []CollectionBehaviorCapability
+}
+
+type CollectionBehaviorFilter struct {
+	Behavior       string
 	BinaryPrefixes []string
 	FilePrefixes   []string
 	SocketFamilies []string
 	SocketAddrs    []string
 	SocketPorts    []string
-	ScopeType      string
-	ScopeSelector  string
-	ObserveOnly    bool
-	Capabilities   []CollectionBehaviorCapability
 }
 
 type CollectionBehaviorCapability struct {

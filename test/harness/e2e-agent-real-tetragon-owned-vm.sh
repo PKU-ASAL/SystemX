@@ -51,12 +51,29 @@ vagrant ssh node-a -c "sudo tee /tmp/sysarmor-owned-tetragon.yaml >/dev/null <<'
 {
   \"policy_id\": \"vm-owned-tetragon-narrow\",
   \"version\": 2,
-  \"behaviors\": [\"process.exec\", \"network.connect\", \"file.write\"],
-  \"binary_prefixes\": [\"/var/lib/app/plugins\"],
-  \"file_prefixes\": [\"/var/lib/app/plugins\", \"/dev/shm\"],
-  \"socket_families\": [\"AF_INET\"],
-  \"socket_addrs\": [\"10.66.0.99\"],
-  \"socket_ports\": [\"443\", \"8080\"],
+  \"behaviors\": [
+    {
+      \"id\": \"process.exec\",
+      \"enabled\": true,
+      \"selectors\": {
+        \"binary\": { \"prefixes\": [\"/var/lib/app/plugins\", \"/bin/\", \"/usr/bin/\"] }
+      }
+    },
+    {
+      \"id\": \"network.connect\",
+      \"enabled\": true,
+      \"selectors\": {
+        \"socket\": { \"families\": [\"AF_INET\"], \"addrs\": [\"10.66.0.99\"], \"ports\": [\"443\", \"8080\"] }
+      }
+    },
+    {
+      \"id\": \"file.write\",
+      \"enabled\": true,
+      \"selectors\": {
+        \"file\": { \"prefixes\": [\"/var/lib/app/plugins\", \"/dev/shm\"] }
+      }
+    }
+  ],
   \"observe_only\": true
 }
 EOF
