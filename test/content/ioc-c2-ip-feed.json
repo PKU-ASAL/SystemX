@@ -1,0 +1,15 @@
+{
+  "api_version": "sysarmor.content/v1",
+  "kind": "iocpack",
+  "metadata": {
+    "id": "ioc:c2-ip-feed",
+    "version": "2026.06.18.1"
+  },
+  "spec": {
+    "value_type": "ip",
+    "values": [
+      "10.66.0.99",
+      "203.0.113.10"
+    ]
+  }
+}

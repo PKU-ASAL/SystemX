@@ -88,7 +88,14 @@ test/
 │
 ├── policies/                PolicyEnvelope 契约 (agent 配置,待接入)
 │
-├── harness/                 编排:start / stop / capture / assert / report
+├── harness/                 功能编排:start / stop / capture / assert / e2e report
+│
+├── tools/
+│   ├── recorder/             长跑低扰动性能时间线
+│   ├── diagnostics/          perf / pprof / strace 热点诊断
+│   └── benchmarks/           collection / lifecycle benchmark matrix
+│
+├── workloads/               目标目录:exec/file/net/mixed/business 性能 workload
 │
 └── .results/                抓包样本
 ```
@@ -97,7 +104,23 @@ test/
 - **env/** = 搭环境(搭完不动)
 - **scenarios/** = 跑什么(攻击输入+断言)
 - **policies/** = agent 契约(待接入)
-- **harness/** = 怎么跑(生命周期+采集+判对错)
+- **harness/** = 怎么跑功能 E2E(生命周期+采集+判对错)
+- **tools/recorder/** = 长期记录 CPU/RSS/EPS/drop/signal 时间线
+- **tools/benchmarks/** = 成本多少(policy/sensor/workload 矩阵)
+- **tools/diagnostics/** = 为什么慢(perf/pprof/strace)
+- **workloads/** = 施加什么性能压力(后续收敛入口)
+
+下一阶段测试 harness 会按 `references/docs/testing-benchmark.md` 收敛:
+
+```text
+E2E 验功能
+Workload 造压力
+Recorder 记长期时间线
+Benchmark 做 sensor/policy/workload 矩阵
+Diagnostic 查热点
+```
+
+原则:不要把性能 recorder、synthetic workload 或 perf/pprof 逻辑继续塞进功能 E2E 脚本。
 
 ## 快速开始
 
@@ -137,32 +160,32 @@ make e2e-agent-parse-health
 # queue backpressure/drop health smoke
 make e2e-agent-backpressure
 
-# v3 policy/control-plane smoke
+# policy/control-plane smoke
 make e2e-policy-endpoint-disable
 make e2e-policy-agent-refresh
 make e2e-policy-cloud-disable
 make e2e-policy-publish
 
-# v3 response/enforce observe-only smoke
+# response/enforce observe-only smoke
 make e2e-response-observe-only
 make e2e-response-policy-deny
 make e2e-response-scope-deny
 make e2e-response-audit
 make e2e-response-approval
 
-# v3 graph/evidence smoke
+# graph/evidence smoke
 make e2e-graph-evidence
 make e2e-incident-lifecycle
 make e2e-incident-attach-evidence
 make e2e-incident-merge
 
-# v3 store/Postgres foundation smoke
+# store/Postgres foundation smoke
 make e2e-store-status
 make e2e-query-pagination
 make e2e-postgres-store
 make e2e-postgres-all
 
-# v3 AgentGateway stream foundation smoke
+# Agent Gateway stream foundation smoke
 make e2e-agent-gateway-session
 make e2e-agent-gateway-downlink
 make e2e-agent-gateway-frames
@@ -181,6 +204,22 @@ make perf TOPO=vm DUR=10
 # 资源占用采样: 容器看宿主机上的 EDR 容器/进程占用,VM 看 node-a 内部进程占用
 make perf-resource TOPO=container SCENARIO=idle DUR=30
 make perf-resource TOPO=vm SCENARIO=idle DUR=30
+
+# VM 长跑 recorder: 可先启动 recorder,再运行任意 e2e/workload/手工操作,最后生成 summary
+make recorder-vm-start RUN_ID=my-run
+make recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=mixed-edr-storm
+make recorder-vm-stop RUN_ID=my-run
+make recorder-vm-report RUN_ID=my-run
+
+# VM collection policy benchmark: 每个 policy 都会生成 timeline/markers/summary,最后汇总 matrix
+make bench-collection-vm DIAG_SCENARIO=mixed-edr-storm
+make bench-collection-vm DIAG_SCENARIO=benign-business
+make bench-edr-lifecycle-vm DIAG_SCENARIO=mixed-edr-storm
+make bench-e2e-vm TOPO=vm SCENARIO=apt-fileless-c2
+
+# VM Tetragon 热点诊断: 只用于定位 CPU 去向,不作为正式资源结论
+make diag-tetragon-vm
+make diag-tetragon-vm-workload DIAG_SCENARIO=mixed-edr-storm
 
 # 汇总
 make report
@@ -259,4 +298,8 @@ docker exec tetragon /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.1
 - VM 拓扑修改脚本后需 `make provision`(rsync + re-provision)。
 - VM topology 在 `mgr` VM 内运行 `sysarmor-manager` 和 `sysarmorctl`,在 `node-a` VM 内运行 agent stream。
 - `perf-getevents` 是短窗口采集吞吐 baseline smoke,EPS 可能为 0。
-- `perf-resource` 是 EDR 资源占用采样入口,输出 `.results/perf-resource.<topo>.<scenario>.csv`;容器拓扑看宿主机上的 `tetragon`/`sysarmor-agent` 相关占用,VM 拓扑看 `node-a` 内部的 `sysarmor-agent`/`tetragon`/`tetra` 进程占用。正式评估时应分别跑 baseline、EDR idle、EDR business、EDR detection,并对比业务延迟/吞吐。
+- `recorder-vm-*` 是当前 VM 性能评估主线。它先启动低扰动采样,中间用 marker 记录 policy apply、steady、workload 等阶段,最后生成 `timeline.csv`、`markers.ndjson`、`events.ndjson`、`signals.ndjson`、`summary.json`。CPU 采样使用 VM 内 `/proc/<pid>/stat` jiffies delta,比短窗口 `ps %CPU` 更适合长跑比较。event/signal 计数使用启动时 stream sequence cursor + labels 过滤,并优先按 frame `observedAt` 与 marker 窗口做严格 delta。
+- `bench-collection-vm` 和 `bench-edr-lifecycle-vm` 都基于 recorder,用于比较不同 collection policy 或生命周期阶段的 CPU/RSS/EPS/drop/signal。默认 collection policy 矩阵是 `minimal-high-signal / edr-balanced / incident-deep / debug-wide`。
+- `bench-e2e-vm` 用 recorder 包住 VM 功能 E2E,用于把攻击场景结果和运行期间性能曲线放到同一份 run 里。
+- `diag-tetragon-vm*` 只做 perf/pprof/strace 热点诊断。它可以复用 `workloads/vm/*`,但不输出正式资源结论。
+- `perf-resource` 是 legacy 短窗口采样入口,输出 `.results/perf-resource.<topo>.<scenario>.csv`;后续会被 recorder/container recorder 替代。

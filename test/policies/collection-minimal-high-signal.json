@@ -1,0 +1,40 @@
+{
+  "policy_id": "minimal-high-signal-linux",
+  "version": 1,
+  "behaviors": [
+    {
+      "id": "process.exec",
+      "enabled": true,
+      "selectors": {
+        "process": {
+          "binary_prefixes": ["/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
+        }
+      }
+    },
+    {
+      "id": "network.connect",
+      "enabled": true,
+      "selectors": {
+        "process": {
+          "binary_prefixes": ["/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/", "/usr/bin/curl", "/usr/bin/wget", "/usr/bin/nc", "/usr/bin/socat"]
+        },
+        "socket": {
+          "families": ["AF_INET", "AF_INET6"],
+          "addr_refs": ["ioc:c2-ip-feed"],
+          "port_refs": ["ioc:c2-port-feed"]
+        }
+      }
+    },
+    {
+      "id": "file.write",
+      "enabled": true,
+      "selectors": {
+        "file": {
+          "prefix_refs": ["ctx:payload-path-prefixes", "ctx:persistence-path-prefixes"]
+        }
+      }
+    }
+  ],
+  "scope_type": "host",
+  "observe_only": true
+}

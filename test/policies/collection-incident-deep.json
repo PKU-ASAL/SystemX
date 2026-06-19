@@ -1,0 +1,68 @@
+{
+  "policy_id": "incident-deep-linux",
+  "version": 1,
+  "behaviors": [
+    {
+      "id": "process.exec",
+      "enabled": true,
+      "selectors": {
+        "process": {
+          "binary_prefixes": ["/bin/", "/usr/bin/", "/usr/local/bin/", "/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
+        }
+      }
+    },
+    {
+      "id": "process.fork",
+      "enabled": true,
+      "selectors": {
+        "process": {
+          "binary_prefixes": ["/bin/", "/usr/bin/", "/usr/local/bin/", "/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
+        }
+      }
+    },
+    {
+      "id": "process.exit",
+      "enabled": true
+    },
+    {
+      "id": "network.connect",
+      "enabled": true,
+      "selectors": {
+        "socket": {
+          "families": ["AF_INET", "AF_INET6"],
+          "addr_refs": ["ioc:c2-ip-feed"],
+          "port_refs": ["ioc:c2-port-feed"]
+        }
+      }
+    },
+    {
+      "id": "file.read",
+      "enabled": true,
+      "selectors": {
+        "file": {
+          "prefix_refs": ["ctx:credential-path-prefixes", "ctx:secret-volume-prefixes"]
+        }
+      }
+    },
+    {
+      "id": "file.write",
+      "enabled": true,
+      "selectors": {
+        "file": {
+          "prefix_refs": ["ctx:payload-path-prefixes", "ctx:persistence-path-prefixes"]
+        }
+      }
+    },
+    {
+      "id": "file.chmod",
+      "enabled": true,
+      "selectors": {
+        "file": {
+          "prefix_refs": ["ctx:payload-path-prefixes", "ctx:persistence-path-prefixes"]
+        }
+      }
+    }
+  ],
+  "scope_type": "host",
+  "observe_only": true
+}

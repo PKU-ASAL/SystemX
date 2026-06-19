@@ -1,0 +1,17 @@
+{
+  "api_version": "sysarmor.content/v1",
+  "kind": "contextset",
+  "metadata": {
+    "id": "ctx:payload-path-prefixes",
+    "version": "2026.06.18.1"
+  },
+  "spec": {
+    "value_type": "path_prefix",
+    "values": [
+      "/dev/shm/",
+      "/tmp/.sysarmor-attack/",
+      "/var/tmp/.sysarmor-attack/",
+      "/var/lib/app/plugins"
+    ]
+  }
+}

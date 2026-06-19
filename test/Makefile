@@ -7,6 +7,7 @@
 
 TOPO      ?= container
 SCENARIO  ?= apt-fileless-c2
+DIAG_SCENARIO ?= mixed-edr-storm
 DUR       ?= 30
 
 # ── 拓扑生命周期 ──────────────────────────────────────
@@ -33,7 +34,7 @@ status-vm:
 
 # ── 场景采集 + 断言 ──────────────────────────────────
 
-.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all report
+.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-collection-vm bench-edr-lifecycle-vm bench-e2e-vm report
 
 capture:                      ## 跑场景 + tetragon 抓事件
 	bash harness/capture-$(TOPO).sh $(SCENARIO) $(DUR)
@@ -50,10 +51,12 @@ endif
 report:                       ## 汇总报告矩阵
 	python3 harness/report.py
 
+# ── 性能 / Benchmark / 诊断 ──────────────────────────
+
 perf:                         ## 采集 getevents 性能基线
 	bash harness/perf-getevents.sh $(TOPO) $(DUR)
 
-perf-resource:                ## 采集 EDR 资源占用时间序列
+perf-resource:                ## legacy: 短窗口 EDR 资源占用时间序列
 	bash harness/perf-resource.sh $(TOPO) $(DUR) $(SCENARIO)
 
 perf-resource-container:      ## 采集 container EDR idle 资源占用
@@ -63,6 +66,33 @@ perf-resource-vm:             ## 采集 VM EDR idle 资源占用
 	bash harness/perf-resource.sh vm $(DUR) edr-idle
 
 perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 container/VM EDR idle 资源占用
+
+recorder-vm-start:            ## 启动 VM 长期 performance recorder
+	RUN_ID=$(or $(RUN_ID),manual) bash tools/recorder/recorder-vm.sh start
+
+recorder-vm-mark:             ## 给 VM recorder 打 marker: PHASE=<name> [DETAIL=...]
+	RUN_ID=$(or $(RUN_ID),manual) PHASE=$(PHASE) DETAIL="$(DETAIL)" bash tools/recorder/recorder-vm.sh mark
+
+recorder-vm-stop:             ## 停止 VM recorder 并拉取 timeline
+	RUN_ID=$(or $(RUN_ID),manual) bash tools/recorder/recorder-vm.sh stop
+
+recorder-vm-report:           ## 根据 timeline + markers 生成 recorder summary
+	RUN_ID=$(or $(RUN_ID),manual) bash tools/recorder/recorder-vm.sh report
+
+diag-tetragon-vm:             ## 对运行中的 VM agent-owned Tetragon 采集 strace/perf/pprof 诊断产物
+	bash tools/diagnostics/diagnose-tetragon-vm.sh
+
+diag-tetragon-vm-workload:    ## 对运行中的 VM Tetragon 在 workload 下采集 perf/pprof 诊断产物
+	SCENARIO=$(DIAG_SCENARIO) SYSARMOR_DIAG_MODE=workload SYSARMOR_DIAG_PREFIX=tetragon-diagnostics-vm.$(DIAG_SCENARIO).workload bash tools/diagnostics/diagnose-tetragon-vm.sh
+
+bench-collection-vm:          ## 对多份 collection policy 跑 VM 真路径资源/eps benchmark matrix
+	DIAG_SCENARIO=$(DIAG_SCENARIO) bash tools/benchmarks/bench-collection-vm.sh
+
+bench-edr-lifecycle-vm:       ## 采集 VM EDR baseline/start/apply/steady/workload 生命周期曲线
+	DIAG_SCENARIO=$(DIAG_SCENARIO) bash tools/benchmarks/bench-edr-lifecycle-vm.sh
+
+bench-e2e-vm:                 ## 用 recorder 包住 VM 功能 E2E,同时产出功能结果和性能曲线
+	SCENARIO=$(SCENARIO) bash tools/benchmarks/bench-e2e-vm.sh
 
 # ── 常用组合 ──────────────────────────────────────────
 
@@ -350,6 +380,7 @@ help:                         ## 显示帮助
 	@echo ""
 	@echo "拓扑:  TOPO=container (默认) | vm"
 	@echo "场景:  SCENARIO=apt-fileless-c2 (默认) | apt-staged-drop | benign-ci-noise"
+	@echo "诊断场景: DIAG_SCENARIO=mixed-edr-storm (默认) | exec-storm | file-write-storm | network-connect-storm | VM attack.sh 场景"
 	@echo ""
 	@echo "targets:"
 	@echo "  up          启动拓扑"
@@ -357,8 +388,14 @@ help:                         ## 显示帮助
 	@echo "  capture     跑场景 + 抓事件"
 	@echo "  assert      通过 sysarmorctl 执行契约断言"
 	@echo "  perf        采集 getevents 性能基线"
-	@echo "  perf-resource  采集 EDR 资源占用时间序列"
-	@echo "  perf-resource-all  聚合采集 container/VM EDR idle 资源占用"
+	@echo "  perf-resource  legacy 短窗口 EDR 资源占用时间序列"
+	@echo "  perf-resource-all  legacy 聚合采集 container/VM EDR idle 资源占用"
+	@echo "  recorder-vm-start/mark/stop/report  VM 长期 performance recorder"
+	@echo "  diag-tetragon-vm  对运行中的 VM Tetragon 采集 strace/perf/pprof 诊断产物"
+	@echo "  diag-tetragon-vm-workload  对运行中的 VM Tetragon 在 DIAG_SCENARIO 负载下采集 perf/pprof"
+	@echo "  bench-collection-vm  对多份 collection policy 跑 VM 真路径资源/eps benchmark matrix"
+	@echo "  bench-edr-lifecycle-vm  采集 VM EDR baseline/start/apply/steady/workload 生命周期曲线"
+	@echo "  bench-e2e-vm  用 recorder 包住 VM 功能 E2E"
 	@echo "  report      汇总报告"
 	@echo "  e2e         up + capture + assert"
 	@echo "  e2e-manager-idempotency  v2 repeated AgentGateway batch does not amplify manager ingest"

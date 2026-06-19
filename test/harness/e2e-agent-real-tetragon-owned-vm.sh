@@ -12,6 +12,11 @@ DUR="${DUR:-8}"
 C2="${C2:-10.66.0.99}"
 GAP="${GAP:-3}"
 TETRAGON_ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
+TETRAGON_CGROUP_RATE="${SYSARMOR_TETRAGON_CGROUP_RATE:-}"
+TETRAGON_PROCESS_CACHE_SIZE="${SYSARMOR_TETRAGON_PROCESS_CACHE_SIZE:-4096}"
+TETRAGON_DATA_CACHE_SIZE="${SYSARMOR_TETRAGON_DATA_CACHE_SIZE:-128}"
+TETRAGON_EVENT_QUEUE_SIZE="${SYSARMOR_TETRAGON_EVENT_QUEUE_SIZE:-1024}"
+TETRAGON_RB_QUEUE_SIZE="${SYSARMOR_TETRAGON_RB_QUEUE_SIZE:-8192}"
 CAPTURE_PERF="${SYSARMOR_CAPTURE_PERF:-1}"
 
 mkdir -p "$RESULTS"
@@ -37,6 +42,8 @@ fi
 vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
 vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
+vagrant upload "$REPO/test/content" /tmp/sysarmor-content.upload node-a >/dev/null
+vagrant upload "$REPO/test/policies/collection-edr-balanced.json" /tmp/sysarmor-collection-edr-balanced.json node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
 TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
@@ -103,6 +110,11 @@ sensor:
   restart: always
   max_restarts: 3
   restart_window: 500ms
+  cgroup_rate: $TETRAGON_CGROUP_RATE
+  process_cache_size: $TETRAGON_PROCESS_CACHE_SIZE
+  data_cache_size: $TETRAGON_DATA_CACHE_SIZE
+  event_queue_size: $TETRAGON_EVENT_QUEUE_SIZE
+  rb_queue_size: $TETRAGON_RB_QUEUE_SIZE
 
 spool:
   path: /var/lib/sysarmor/agent/spool-owned-tetragon
@@ -197,6 +209,33 @@ wait_absent() {
 
 wait_socket "$AGENT_SOCK"
 
+echo "[e2e-agent-real-tetragon-owned-vm] applying EDR-balanced content and collection policy via local control"
+for content_name in \
+  context-credential-path-prefixes.json \
+  context-payload-path-prefixes.json \
+  context-persistence-path-prefixes.json \
+  context-secret-volume-prefixes.json \
+  ioc-c2-ip-feed.json \
+  ioc-c2-port-feed.json; do
+  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-content.upload/$content_name' --allow-unsigned --agent-id vm-owned-tetragon --tenant-id default" \
+    > "$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json" \
+    2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json.err"
+done
+vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-collection-edr-balanced.json --agent-id vm-owned-tetragon --tenant-id default --timeout 60s" \
+  > "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json" \
+  2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json.err"
+if ! grep -Fq 'resolved_refs' "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json"; then
+  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] collection apply did not report resolvedRefs" >&2
+  cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json" >&2 2>/dev/null || true
+  cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json.err" >&2 2>/dev/null || true
+  exit 1
+fi
+if ! grep -Fq 'process.binary_prefix' "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json"; then
+  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] collection apply did not report process.binary_prefix pushdown" >&2
+  cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json" >&2 2>/dev/null || true
+  exit 1
+fi
+
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
   vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health ok" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
@@ -221,19 +260,51 @@ wait_contains "agent-owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agen
 echo "[e2e-agent-real-tetragon-owned-vm] running apt-staged-drop attack"
 vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json.err"
-PERF_PID=""
 if [[ "$CAPTURE_PERF" == "1" ]]; then
   rm -f "$RESULTS/perf-resource.vm.$SCENARIO.csv"
-  INTERVAL="${PERF_INTERVAL:-2}" bash "$HERE/perf-resource.sh" vm "$((DUR + GAP + 6))" "$SCENARIO" \
-    > "$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.out" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.err" &
-  PERF_PID="$!"
+  vagrant ssh node-a -c "sudo tee /tmp/sysarmor-vm-perf-sampler.sh >/dev/null <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+DUR=\"\${1:-30}\"
+INTERVAL=\"\${2:-2}\"
+SCENARIO=\"\${3:-idle}\"
+OUT=/tmp/sysarmor-perf-resource.csv
+DONE=/tmp/sysarmor-perf-resource.done
+rm -f \"\$OUT\" \"\$DONE\"
+echo 'topology,scenario,sample_ts,elapsed_s,edr_cpu_pct,edr_rss_mb,agent_cpu_pct,agent_rss_mb,tetragon_cpu_pct,tetragon_rss_mb,tetra_cpu_pct,tetra_rss_mb,workload_cpu_pct,workload_rss_mb,business_latency_p95_ms,business_throughput_rps,dropped_events,parse_errors,notes' > \"\$OUT\"
+pair() {
+  local pattern=\"\$1\"
+  ps -eo comm,pcpu,rss 2>/dev/null | awk -v p=\"\$pattern\" '\$1 ~ p { cpu += \$2; rss += \$3 } END { printf \"%.2f,%.1f\", cpu, rss / 1024 }'
+}
+sum3() {
+  awk -F, -v a=\"\$1\" -v b=\"\$2\" -v c=\"\$3\" 'BEGIN { split(a, aa, \",\"); split(b, bb, \",\"); split(c, cc, \",\"); printf \"%.2f,%.1f\", aa[1] + bb[1] + cc[1], aa[2] + bb[2] + cc[2] }'
+}
+elapsed=0
+while (( elapsed <= DUR )); do
+  ts=\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+  agent=\"\$(pair '^sysarmor-agent$')\"
+  tetragon=\"\$(pair '^tetragon$')\"
+  tetra=\"\$(pair '^tetra$')\"
+  total=\"\$(sum3 \"\$agent\" \"\$tetragon\" \"\$tetra\")\"
+  workload=\"\$(pair '^(java|bash|curl|python|node|nginx|apache2)$')\"
+  echo \"vm,\$SCENARIO,\$ts,\$elapsed,\$total,\$agent,\$tetragon,\$tetra,\$workload,0,0,0,0,vm_in_guest_sampler\" >> \"\$OUT\"
+  (( elapsed >= DUR )) && break
+  sleep \"\$INTERVAL\"
+  elapsed=\$((elapsed + INTERVAL))
+done
+touch \"\$DONE\"
+EOS
+sudo chmod +x /tmp/sysarmor-vm-perf-sampler.sh
+sudo nohup /tmp/sysarmor-vm-perf-sampler.sh '$((DUR + GAP + 6))' '${PERF_INTERVAL:-2}' '$SCENARIO' >/tmp/sysarmor-vm-perf-sampler.log 2>&1 &" \
+    > "$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.out" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.err"
 fi
 vagrant ssh node-a -c "sudo bash -c 'GAP=$GAP C2=$C2 bash /vagrant/test/scenarios/vm/apt-staged-drop/attack.sh'" >/dev/null
 sleep "$DUR"
 vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json.err"
-if [[ -n "$PERF_PID" ]]; then
-  wait "$PERF_PID" || true
+if [[ "$CAPTURE_PERF" == "1" ]]; then
+  vagrant ssh node-a -c "deadline=\$((SECONDS + 60)); until sudo test -f /tmp/sysarmor-perf-resource.done; do if (( SECONDS >= deadline )); then sudo cat /tmp/sysarmor-vm-perf-sampler.log 2>/dev/null || true; exit 1; fi; sleep 1; done; sudo cat /tmp/sysarmor-perf-resource.csv" \
+    > "$RESULTS/perf-resource.vm.$SCENARIO.csv" 2>>"$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.err"
   python3 "$HERE/local_perf_report.py" "$SCENARIO" \
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json" \
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json" \
@@ -241,7 +312,7 @@ if [[ -n "$PERF_PID" ]]; then
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-summary.json"
 fi
 
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 2000 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson.err"
 if ! grep -Fq '"name":"payload_dropped"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson"; then
   echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local attack signal not found: payload_dropped" >&2
@@ -333,7 +404,7 @@ wait_contains "agent-health policy after service start" '"policyLoaded":true' "$
   vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "owned tetragon process after service start" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-service-start.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
-wait_contains "owned tetra getevents after service start" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-service-start.txt" \
+wait_absent "owned tetra getevents process after service start" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-service-start.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetra | grep getevents | grep -v grep"
 
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-real-tetragon-owned-vm.systemd.txt" 2>&1 || true
