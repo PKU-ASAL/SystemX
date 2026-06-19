@@ -1,0 +1,197 @@
+# Testing And Benchmarking
+
+This document defines the test and benchmark model for SysArmor Next.
+
+## Test Roles
+
+The test system answers five questions:
+
+| Role | Question |
+|---|---|
+| Scenario | Does a security behavior produce expected events, signals, response, evidence, or incident state? |
+| Workload | Can we generate stable non-security or synthetic pressure? |
+| Recorder | What are CPU, RSS, EPS, drops, and signal counts over time? |
+| Benchmark | How do sensor, policy, and workload combinations compare? |
+| Diagnostic | Why is a sensor or agent expensive under a specific load? |
+
+Functional E2E, benchmark, and diagnostic logic should stay separate.
+
+## Directory Contract
+
+```text
+test/
+  env/                 topology setup for VM/container
+  scenarios/           security scenarios with expected behavior
+  workloads/           performance workloads without security assertions
+  policies/            collection/detection/resource policy samples
+  harness/             functional E2E orchestration
+  tools/
+    recorder/          long-running low-disturbance timeline sampler
+    benchmarks/        matrix runners and reports
+    diagnostics/       perf/pprof/strace helpers
+  .results/            generated outputs
+```
+
+## Scenario Vs Workload
+
+Scenario is a functional contract. Examples:
+
+- `apt-fileless-c2`;
+- `apt-staged-drop`;
+- `benign-ci-noise`.
+
+It should assert whether expected events, signals, incidents, evidence, and responses appear or do not appear.
+
+Workload is a pressure source. Examples:
+
+- `exec-storm`;
+- `file-write-storm`;
+- `file-read-storm`;
+- `network-connect-storm`;
+- `mixed-edr-storm`;
+- `benign-business`.
+
+It should be repeatable, configurable, and not depend on unstable external downloads.
+
+## Labels And Watch Filters
+
+Tests must not force product architecture to depend on a test-only `scenario` field. Current event/signal watch filtering uses generic labels:
+
+```text
+benchmark_run=...
+workload=...
+policy_profile=...
+sensor_runtime=...
+scope_type=...
+```
+
+Watch filters support:
+
+- labels;
+- `after_sequence`;
+- `since_observed_at`;
+- `until_observed_at`.
+
+This is useful for tests and production debugging.
+
+## Recorder
+
+The VM recorder is the current performance baseline tool:
+
+```bash
+make -C test recorder-vm-start RUN_ID=my-run
+make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=mixed-edr-storm
+make -C test recorder-vm-stop RUN_ID=my-run
+make -C test recorder-vm-report RUN_ID=my-run
+```
+
+Recorder output:
+
+```text
+test/.results/recordings/<run-id>/
+  timeline.csv
+  markers.ndjson
+  events.ndjson
+  signals.ndjson
+  summary.json
+```
+
+`timeline.csv` is for resource and health samples:
+
+- agent CPU/RSS;
+- sensor CPU/RSS;
+- total EDR CPU/RSS;
+- sensor global events seen;
+- scoped event/signal counters;
+- drops and parse errors;
+- active policy id/version.
+
+`events.ndjson` and `signals.ndjson` are scoped by labels and sequence cursor. Reports count phase event/signal deltas by frame `observedAt` and marker windows.
+
+## Benchmark
+
+Benchmark composes policy, sensor, and workload:
+
+```bash
+make -C test bench-collection-vm \
+  DIAG_SCENARIO=benign-business \
+  POLICIES='test/policies/collection-minimal-high-signal.json'
+```
+
+Each case should:
+
+1. attach labels;
+2. start recorder;
+3. mark baseline;
+4. apply content;
+5. apply collection policy;
+6. mark settle and steady windows;
+7. run workload or scenario;
+8. stop recorder;
+9. generate summary and matrix.
+
+Important output:
+
+```text
+test/.results/bench-collection-vm/<run-id>/
+  matrix.csv
+  matrix.json
+  <policy>/
+    timeline.csv
+    markers.ndjson
+    events.ndjson
+    signals.ndjson
+    summary.json
+    collection-apply.json
+    workload.out
+    workload.err
+```
+
+## Resource Metrics
+
+For VM deployment, report resource use from inside the VM. For containerized deployment, report host/cgroup perspective.
+
+Track:
+
+- baseline without EDR;
+- EDR running idle;
+- EDR during policy apply;
+- EDR during steady state;
+- EDR during workload;
+- drops and parse errors;
+- business workload latency/throughput when available.
+
+Policy apply and sensor reload spikes must be separated from steady-state cost.
+
+## Diagnostics
+
+Diagnostics explain cost; they are not official resource conclusions.
+
+Allowed diagnostic tools:
+
+- perf top/record/report;
+- pprof where available;
+- strace summary;
+- backend-specific telemetry.
+
+Useful pattern:
+
+```text
+start diagnostic sampling
+run workload or scenario
+stop diagnostic sampling
+compare with recorder timeline
+```
+
+## Current Practical Gates
+
+Use these based on change type:
+
+```bash
+go test ./internal/agent/... ./internal/endpoint/... ./cmd/sysarmorctl
+make -C test e2e-agent-real-tetragon-owned-vm
+make -C test bench-collection-vm DIAG_SCENARIO=benign-business
+make -C test bench-collection-vm DIAG_SCENARIO=apt-fileless-c2
+```
+
+Cloud/platform paths still have broader legacy gates, but endpoint refinement work should prefer the local agent + VM real sensor path.

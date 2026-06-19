@@ -1,28 +1,35 @@
-# SysArmor MVP
+# SysArmor Next
 
-SysArmor MVP is a Go prototype of the endpoint-to-manager detection path described in `references/docs/design-essentials.md`.
+SysArmor Next is a Go prototype for an EDR/XDR platform path described in `references/docs/architecture.md`.
 
 Current product path:
 
 ```text
-Tetragon JSONL or replayed SensorEvent JSONL
-  -> sysarmor-agent normalize + endpoint fastpath
-  -> Link1 upload to sysarmor-manager
-  -> manager analytics + store
-  -> sysarmorctl JSON queries
-  -> test harness assertions
+agent-owned sensor runtime
+  -> sysarmor-agent normalize + endpoint detection
+  -> local sysarmorctl control/watch during endpoint refinement
+  -> Agent Gateway / manager / workers as the platform path matures
+  -> incident, evidence, response, and benchmark workflows
 ```
 
 ## Components
 
-- `cmd/sysarmor-agent`: reads replay JSONL or live Tetragon JSONL, normalizes events, emits endpoint signals, uploads batches.
-- `cmd/sysarmor-manager`: exposes Link1 HTTP/gRPC ingest plus query endpoints for agents, events, signals, incidents, metrics, and recompute controls.
-- `cmd/sysarmorctl`: stable CLI/query boundary used by tests.
+- `cmd/sysarmor-agent`: owns endpoint runtime, sensor lifecycle, normalization, local detection, local control, and upload.
+- `cmd/sysarmor-manager`: platform control/query prototype for agents, policies, responses, incidents, evidence, and metrics.
+- `cmd/sysarmorctl`: CLI/control boundary used by local agent workflows and tests.
 - `api/proto`: source of truth for generated protobuf contracts.
-- `internal/endpoint`: normalizer, fastpath rules, raw event ring buffer, upload clients.
-- `internal/analytics`: MVP entity/evidence/convergence logic.
-- `internal/store`: file-backed MVP store with idempotent upsert for retry tolerance.
+- `internal/endpoint`: normalizer, detection engine, ring buffers, upload clients.
+- `internal/analytics`: entity, evidence, correlation, convergence, and incident logic.
+- `internal/store`: platform state store prototypes and Postgres foundations.
 - `test`: container and VM e2e topologies.
+
+Core docs:
+
+- `references/docs/architecture.md`
+- `references/docs/endpoint-agent.md`
+- `references/docs/policy-content.md`
+- `references/docs/testing-benchmark.md`
+- `references/docs/roadmap.md`
 
 ## Build And Test
 
@@ -52,7 +59,7 @@ make e2e TOPO=vm SCENARIO=benign-ci-noise DUR=12
 make report
 ```
 
-Expected MVP result:
+Expected result:
 
 - `apt-fileless-c2`: endpoint terminal, cloud signals, exactly one incident.
 - `apt-staged-drop`: no endpoint terminal, cross-lineage cloud stitch, exactly one incident.
@@ -90,4 +97,4 @@ sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario benign-ci-noise --mode add
 
 - Container e2e runs `sysarmor-manager` in the `mgr` container and streams live Tetragon output through `sysarmor-agent` inside the Tetragon container.
 - VM e2e runs `sysarmor-manager`/`sysarmorctl` inside the `mgr` VM and runs the agent stream on `node-a`.
-- Link1 HTTP is the default e2e transport; Link1 gRPC is also implemented from generated protobuf service code.
+- Older e2e paths still exercise manager upload/query flows; endpoint refinement should prefer the local agent control path documented in `references/docs/endpoint-agent.md`.

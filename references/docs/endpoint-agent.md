@@ -1,0 +1,195 @@
+# Endpoint Agent
+
+This document defines the endpoint-side contract: agent runtime, sensor ownership, local control, event/signal flow, and endpoint response.
+
+## Role
+
+The endpoint agent is the first trusted runtime in the EDR/XDR path. It should:
+
+- manage sensor lifecycle;
+- apply collection, detection, response, resource, and upload policies;
+- normalize sensor events;
+- add lineage, scope, labels, and entity refs;
+- run lightweight endpoint detection;
+- emit local Signals;
+- expose local control APIs for `sysarmorctl`;
+- spool and upload data reliably;
+- validate and execute authorized response commands.
+
+## Sensor Runtime
+
+Sensor Runtime hides the backend. Current backend is Tetragon; a thinner native SysArmor sensor can be added later.
+
+Required contract:
+
+```go
+Capability(ctx) -> Capability
+Apply(ctx, CollectionIntent) -> Ack
+Subscribe(ctx, CollectionIntent) -> EventEnvelope stream
+Enforce(ctx, EnforcementCommand) -> EnforcementAck
+Health(ctx) -> Health
+Stop(ctx) -> error
+```
+
+The agent must treat Tetragon as an implementation, not the product model. Product-facing behavior names are SysArmor behaviors such as `file.write` and `network.connect`; adapters map them to backend hooks/selectors.
+
+## Agent-Owned Tetragon
+
+For VM and host testing, the agent distribution owns the Tetragon bundle:
+
+- install entry point installs agent and bundled sensor together;
+- no separate "install Tetragon first" test path;
+- source definition lives under `deployments/sensors/tetragon/`;
+- collection policy is compiled into backend policy by the agent.
+
+For containerized deployment, the preferred model is an agent + sensor container with privileged visibility over selected target scopes. The target workload containers are not treated as mini VMs.
+
+## Local Control API
+
+Before manager integration is complete, `sysarmorctl` acts as a local manager.
+
+Transport:
+
+- production local path: gRPC over Unix Domain Socket;
+- optional dev/debug path: gRPC over `127.0.0.1` only when explicitly enabled.
+
+The local protocol should match the future manager-to-agent semantics so that local validation is not thrown away.
+
+Core APIs:
+
+- health and capability;
+- current policy;
+- apply collection/detection/content/response policy;
+- watch events;
+- get event;
+- watch signals;
+- response command and ack;
+- content list/get/apply.
+
+Watch APIs support a generic filter:
+
+```text
+after_sequence
+since_observed_at
+until_observed_at
+labels
+```
+
+`scenario` remains a legacy/demo field. Production filtering and benchmark scoping should use labels.
+
+## sysarmorctl Model
+
+`sysarmorctl` should be regular and symmetric:
+
+```text
+sysarmorctl agent health
+sysarmorctl agent capability
+sysarmorctl policy current
+sysarmorctl policy apply collection --file ...
+sysarmorctl content apply --file ...
+sysarmorctl event watch --label key=value --after-seq N
+sysarmorctl event get --event-id ...
+sysarmorctl signal watch --include-events --label key=value
+sysarmorctl response apply --file ...
+```
+
+Resource names should describe product concepts, not test harness concepts.
+
+## Event Pipeline
+
+```text
+sensor raw event
+  -> adapter envelope
+  -> normalizer
+  -> CanonicalEvent
+  -> local event ring
+  -> detection engine
+  -> Signal
+  -> local signal ring
+  -> spool / upload
+```
+
+CanonicalEvent carries:
+
+- behavior-first event type;
+- lineage;
+- subject and object entities;
+- scope;
+- labels;
+- raw ref;
+- timestamp.
+
+Labels are generic context:
+
+- `sensor_runtime`;
+- `scope_type`;
+- `scope_selector`;
+- `policy_id`;
+- `policy_version`;
+- `policy_mode`;
+- deployment or environment labels;
+- benchmark labels when running tests.
+
+## Detection Runtime
+
+The endpoint detection runtime should remain lightweight:
+
+- builtin rules for high-confidence local patterns;
+- expression rules for single-event predicates;
+- short sequence rules for small windows;
+- small per-lineage state;
+- terminal anchors and evidence seeds;
+- no global graph reconstruction.
+
+Global provenance graph reconstruction belongs to cloud analytics. Endpoint must produce enough identifiers and references for cloud reconstruction.
+
+## Response / Enforce
+
+Endpoint response must be policy-gated.
+
+Default mode is observe-only:
+
+```text
+Signal response intent
+  -> response policy decision
+  -> response command
+  -> agent validates scope and mode
+  -> sensor Enforce or observe-only ack
+  -> audit/result upload
+```
+
+The agent may support:
+
+- collect evidence;
+- kill process;
+- block executable or path;
+- quarantine file;
+- network block;
+- enhanced collection window.
+
+Destructive actions require explicit authorization and must be auditable.
+
+## Resource And Upload Policy
+
+Endpoint runtime must be tunable:
+
+- collection budget;
+- event rate;
+- local ring sizes;
+- spool size;
+- upload batch size;
+- retry and backoff;
+- CPU/memory guardrails;
+- deep collection windows.
+
+Default policy should keep normal business workload overhead low and enable deeper collection only for risk or investigation windows.
+
+## Current Gaps
+
+Known gaps to keep visible:
+
+- real enforce is still limited and should remain observe-only until policy, audit, and backend support are complete;
+- Tetragon policy apply can cause short CPU spikes and needs lifecycle-aware benchmarking;
+- native thin sensor path is not implemented yet;
+- manager downlink should later reuse the local control semantics but run through Agent Gateway identity and authorization;
+- local ring health and cursor visibility should continue to improve.
