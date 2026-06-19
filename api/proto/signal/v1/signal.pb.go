@@ -359,6 +359,7 @@ type Signal struct {
 	Severity       string                 `protobuf:"bytes,21,opt,name=severity,proto3" json:"severity,omitempty"`
 	Confidence     uint32                 `protobuf:"varint,22,opt,name=confidence,proto3" json:"confidence,omitempty"`
 	Mode           string                 `protobuf:"bytes,23,opt,name=mode,proto3" json:"mode,omitempty"`
+	Labels         map[string]string      `protobuf:"bytes,24,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -554,6 +555,13 @@ func (x *Signal) GetMode() string {
 	return ""
 }
 
+func (x *Signal) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 var File_api_proto_signal_v1_signal_proto protoreflect.FileDescriptor
 
 const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
@@ -581,7 +589,7 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"ContentRef\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
-	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xf7\x06\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xf2\a\n" +
 	"\x06Signal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x125\n" +
@@ -612,7 +620,11 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"\n" +
 	"confidence\x18\x16 \x01(\rR\n" +
 	"confidence\x12\x12\n" +
-	"\x04mode\x18\x17 \x01(\tR\x04mode*^\n" +
+	"\x04mode\x18\x17 \x01(\tR\x04mode\x12>\n" +
+	"\x06labels\x18\x18 \x03(\v2&.sysarmor.signal.v1.Signal.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*^\n" +
 	"\vSignalWhere\x12\x1c\n" +
 	"\x18SIGNAL_WHERE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SIGNAL_WHERE_ENDPOINT\x10\x01\x12\x16\n" +
@@ -631,7 +643,7 @@ func file_api_proto_signal_v1_signal_proto_rawDescGZIP() []byte {
 }
 
 var file_api_proto_signal_v1_signal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_api_proto_signal_v1_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_api_proto_signal_v1_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_api_proto_signal_v1_signal_proto_goTypes = []any{
 	(SignalWhere)(0),       // 0: sysarmor.signal.v1.SignalWhere
 	(*EntityRef)(nil),      // 1: sysarmor.signal.v1.EntityRef
@@ -639,6 +651,7 @@ var file_api_proto_signal_v1_signal_proto_goTypes = []any{
 	(*ResponseIntent)(nil), // 3: sysarmor.signal.v1.ResponseIntent
 	(*ContentRef)(nil),     // 4: sysarmor.signal.v1.ContentRef
 	(*Signal)(nil),         // 5: sysarmor.signal.v1.Signal
+	nil,                    // 6: sysarmor.signal.v1.Signal.LabelsEntry
 }
 var file_api_proto_signal_v1_signal_proto_depIdxs = []int32{
 	1, // 0: sysarmor.signal.v1.EvidenceBundle.entities:type_name -> sysarmor.signal.v1.EntityRef
@@ -648,11 +661,12 @@ var file_api_proto_signal_v1_signal_proto_depIdxs = []int32{
 	3, // 4: sysarmor.signal.v1.Signal.response_intent:type_name -> sysarmor.signal.v1.ResponseIntent
 	4, // 5: sysarmor.signal.v1.Signal.context_refs:type_name -> sysarmor.signal.v1.ContentRef
 	4, // 6: sysarmor.signal.v1.Signal.ioc_refs:type_name -> sysarmor.signal.v1.ContentRef
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	6, // 7: sysarmor.signal.v1.Signal.labels:type_name -> sysarmor.signal.v1.Signal.LabelsEntry
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_signal_v1_signal_proto_init() }
@@ -666,7 +680,7 @@ func file_api_proto_signal_v1_signal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_signal_v1_signal_proto_rawDesc), len(file_api_proto_signal_v1_signal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

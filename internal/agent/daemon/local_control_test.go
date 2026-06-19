@@ -185,6 +185,34 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
+	for _, contentJSON := range []string{
+		`{
+			"api_version":"sysarmor.content/v1",
+			"kind":"contextset",
+			"metadata":{"id":"ctx:payload-path-prefixes","version":"2026.06.18.1"},
+			"spec":{"value_type":"path_prefix","values":["/dev/shm"]}
+		}`,
+		`{
+			"api_version":"sysarmor.content/v1",
+			"kind":"iocpack",
+			"metadata":{"id":"ioc:c2-ip-feed","version":"2026.06.18.1"},
+			"spec":{"value_type":"ip","values":["10.66.0.99"]}
+		}`,
+		`{
+			"api_version":"sysarmor.content/v1",
+			"kind":"iocpack",
+			"metadata":{"id":"ioc:c2-port-feed","version":"2026.06.18.1"},
+			"spec":{"value_type":"port","values":["443"]}
+		}`,
+	} {
+		if _, err := client.ApplyContent(context.Background(), &controlv1.ApplyContentRequest{
+			Context:       &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content"},
+			ContentJson:   contentJSON,
+			AllowUnsigned: true,
+		}); err != nil {
+			t.Fatalf("ApplyContent() error = %v", err)
+		}
+	}
 	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
 		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-collection"},
 		PolicyType: "collection",
@@ -192,8 +220,8 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 			"policy_id":"collection-a",
 			"version":3,
 			"behaviors":[
-				{"id":"network.connect","selectors":{"socket":{"families":["AF_INET"],"addrs":["10.66.0.99"],"ports":["443"]}}},
-				{"id":"file.write","selectors":{"file":{"prefixes":["/dev/shm"]}}}
+				{"id":"network.connect","selectors":{"socket":{"families":["AF_INET"],"addr_refs":["ioc:c2-ip-feed"],"port_refs":["ioc:c2-port-feed"]}}},
+				{"id":"file.write","selectors":{"file":{"prefix_refs":["ctx:payload-path-prefixes"]}}}
 			],
 			"observe_only":true
 		}`,
@@ -207,7 +235,13 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	if ack.ReportJson == "" || !strings.Contains(ack.ReportJson, `"pushed_down_selectors"`) || !strings.Contains(ack.ReportJson, `"generated_policy_hash"`) {
 		t.Fatalf("ack report_json = %q", ack.ReportJson)
 	}
+	if !strings.Contains(ack.ReportJson, `"resolved_refs"`) || !strings.Contains(ack.ReportJson, `"ioc:c2-ip-feed"`) || !strings.Contains(ack.ReportJson, `"ctx:payload-path-prefixes"`) {
+		t.Fatalf("ack report_json = %q", ack.ReportJson)
+	}
 	if !containsString(ack.Details, "unsupported_selectors=0") {
+		t.Fatalf("ack details = %v", ack.Details)
+	}
+	if !containsString(ack.Details, "resolved_refs=3") {
 		t.Fatalf("ack details = %v", ack.Details)
 	}
 	got := sensor.lastIntent
@@ -225,7 +259,7 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	}
 }
 
-func TestLocalControlRejectsUnsupportedCollectionSelector(t *testing.T) {
+func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
 	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
@@ -254,10 +288,10 @@ func TestLocalControlRejectsUnsupportedCollectionSelector(t *testing.T) {
 
 	client := newUnixControlClient(t, socketPath)
 	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-unsupported"},
+		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-network-binary"},
 		PolicyType: "collection",
 		PolicyJson: `{
-			"policy_id":"collection-unsupported",
+			"policy_id":"collection-network-binary",
 			"version":1,
 			"behaviors":[
 				{"id":"network.connect","selectors":{"process":{"binary_prefixes":["/tmp"]},"socket":{"families":["AF_INET"]}}}
@@ -268,14 +302,14 @@ func TestLocalControlRejectsUnsupportedCollectionSelector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyPolicy(collection) error = %v", err)
 	}
-	if ack.Status != "rejected" {
-		t.Fatalf("ack status = %q, want rejected: %+v", ack.Status, ack)
+	if ack.Status != "degraded" {
+		t.Fatalf("ack status = %q, want degraded from detection dependencies: %+v", ack.Status, ack)
 	}
-	if !strings.Contains(ack.ReportJson, `"unsupported_selectors"`) || !strings.Contains(ack.ReportJson, `"process.binary_prefix"`) {
+	if strings.Contains(ack.ReportJson, `"unsupported_selectors"`) || !strings.Contains(ack.ReportJson, `"process.binary_prefix"`) || !strings.Contains(ack.ReportJson, `"pushed_down"`) {
 		t.Fatalf("ack report_json = %q", ack.ReportJson)
 	}
-	if sensor.lastIntent.Behaviors != nil {
-		t.Fatalf("sensor should not apply rejected intent: %+v", sensor.lastIntent)
+	if len(sensor.lastIntent.Behaviors) != 1 || sensor.lastIntent.BehaviorFilters[0].BinaryPrefixes[0] != "/tmp" {
+		t.Fatalf("sensor intent = %+v", sensor.lastIntent)
 	}
 }
 
@@ -449,7 +483,7 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	}
 	defer stop()
 
-	norm := normalize.NewWithOptions("agent-a", "host-a", nil, normalize.Options{TenantID: "default", ScopeType: "host"})
+	norm := normalize.NewWithOptions("agent-a", "host-a", nil, normalize.Options{TenantID: "default", ScopeType: "host", Labels: map[string]string{"benchmark_run": "run-a"}})
 	detector, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	if _, err := runner.spoolEvent(queue, norm, detector, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
 		t.Fatal(err)
@@ -469,6 +503,9 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	}
 	if eventFrame.GetEvent().GetTenantId() != "default" || eventFrame.GetEvent().GetScope().GetType() != "host" {
 		t.Fatalf("event provenance tags = %+v", eventFrame.GetEvent())
+	}
+	if eventFrame.GetEvent().GetLabels()["benchmark_run"] != "run-a" {
+		t.Fatalf("event labels = %+v", eventFrame.GetEvent().GetLabels())
 	}
 	eventGet, err := client.GetEvent(context.Background(), &controlv1.GetEventRequest{EventId: eventFrame.GetEvent().GetId()})
 	if err != nil {
@@ -490,6 +527,31 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	}
 	if len(signalFrame.GetSignal().GetEventRefs()) != 1 || signalFrame.GetSignal().GetEventRefs()[0] != eventFrame.GetEvent().GetId() {
 		t.Fatalf("signal event refs = %v, want %s", signalFrame.GetSignal().GetEventRefs(), eventFrame.GetEvent().GetId())
+	}
+	if signalFrame.GetSignal().GetLabels()["benchmark_run"] != "run-a" {
+		t.Fatalf("signal labels = %+v", signalFrame.GetSignal().GetLabels())
+	}
+	labelStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{
+		IncludeRecent: true,
+		Limit:         1,
+		Filter:        &controlv1.WatchFilter{Labels: map[string]string{"benchmark_run": "run-a"}},
+	})
+	if err != nil {
+		t.Fatalf("WatchSignals(label) error = %v", err)
+	}
+	if _, err := labelStream.Recv(); err != nil {
+		t.Fatalf("label signal Recv() error = %v", err)
+	}
+	afterStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{
+		IncludeRecent: true,
+		SnapshotOnly:  true,
+		Filter:        &controlv1.WatchFilter{AfterSequence: signalFrame.GetSequence()},
+	})
+	if err != nil {
+		t.Fatalf("WatchSignals(after sequence) error = %v", err)
+	}
+	if frame, err := afterStream.Recv(); err == nil {
+		t.Fatalf("after sequence returned frame %+v, want no recent frames", frame)
 	}
 }
 

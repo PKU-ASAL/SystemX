@@ -257,11 +257,16 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 			policy.ScopeSelector = scope.Selector
 		}
 	}
+	policy, expansionReport, err := agentpolicy.ExpandCollectionPolicyRefs(policy, collectionContentSnapshot(s.runner.contentStore().Snapshot()))
+	if err != nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "resolve collection policy refs: "+err.Error())
+	}
 	intent, err := agentpolicy.CollectionPolicyIntent(policy)
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "compile collection policy: "+err.Error())
 	}
 	compileReport := tetragon.CompileReport(intent)
+	compileReport.ResolvedRefs = expansionReport.ResolvedRefs
 	if len(compileReport.UnsupportedSelectors) > 0 {
 		return collectionAck(s.runner.Config, req.GetContext(), policy, "rejected", "collection policy contains unsupported selectors", false, compileReport)
 	}
@@ -309,7 +314,7 @@ func (s *localControlServer) WatchEvents(req *controlv1.WatchEventsRequest, stre
 	}
 	sent := uint32(0)
 	send := func(frame *controlv1.EventFrame) error {
-		if !eventMatches(frame.GetEvent(), req.GetBehavior()) {
+		if !eventFrameMatches(frame, req.GetBehavior(), req.GetFilter()) {
 			return nil
 		}
 		if err := stream.Send(frame); err != nil {
@@ -357,7 +362,7 @@ func (s *localControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, st
 	}
 	sent := uint32(0)
 	send := func(frame *controlv1.SignalFrame) error {
-		if !signalMatches(frame.GetSignal(), req.GetRuleId(), req.GetWhere()) {
+		if !signalFrameMatches(frame, req.GetRuleId(), req.GetWhere(), req.GetFilter()) {
 			return nil
 		}
 		if err := stream.Send(frame); err != nil {
@@ -460,6 +465,30 @@ func requestScope(req *controlv1.RequestContext) config.RuntimeScope {
 	return config.RuntimeScope{Type: req.GetScope().GetType(), Selector: req.GetScope().GetSelector()}
 }
 
+func collectionContentSnapshot(snapshot agentcontent.Snapshot) agentpolicy.CollectionContentSnapshot {
+	out := agentpolicy.CollectionContentSnapshot{
+		ContextSets: make(map[string]agentpolicy.CollectionValueSet, len(snapshot.ContextSets)),
+		IOCPacks:    make(map[string]agentpolicy.CollectionValueSet, len(snapshot.IOCPacks)),
+	}
+	for ref, set := range snapshot.ContextSets {
+		out.ContextSets[ref] = collectionValueSet(set)
+	}
+	for ref, set := range snapshot.IOCPacks {
+		out.IOCPacks[ref] = collectionValueSet(set)
+	}
+	return out
+}
+
+func collectionValueSet(set agentcontent.ValueSet) agentpolicy.CollectionValueSet {
+	return agentpolicy.CollectionValueSet{
+		Ref:       set.Ref,
+		Version:   set.Version,
+		Digest:    set.Digest,
+		ValueType: set.ValueType,
+		Values:    append([]string(nil), set.Values...),
+	}
+}
+
 func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool, report contract.CollectionCompileReport) *controlv1.ControlAck {
 	details := collectionReportDetails(report)
 	reportJSON := collectionReportJSON(report)
@@ -493,6 +522,9 @@ func collectionReportDetails(report contract.CollectionCompileReport) []string {
 		fmt.Sprintf("pushed_down_selectors=%d", len(report.PushedDownSelectors)),
 		fmt.Sprintf("agent_side_selectors=%d", len(report.AgentSideSelectors)),
 		fmt.Sprintf("unsupported_selectors=%d", len(report.UnsupportedSelectors)),
+	}
+	if len(report.ResolvedRefs) > 0 {
+		details = append(details, fmt.Sprintf("resolved_refs=%d", len(report.ResolvedRefs)))
 	}
 	if report.GeneratedPolicyHash != "" {
 		details = append(details, "generated_policy_hash="+report.GeneratedPolicyHash)
@@ -566,6 +598,13 @@ func eventMatches(event *eventv1.CanonicalEvent, behavior string) bool {
 	return true
 }
 
+func eventFrameMatches(frame *controlv1.EventFrame, behavior string, filter *controlv1.WatchFilter) bool {
+	if frame == nil || !eventMatches(frame.GetEvent(), behavior) {
+		return false
+	}
+	return frameMatches(frame.GetSequence(), frame.GetObservedAt(), frame.GetEvent().GetLabels(), filter)
+}
+
 func signalMatches(signal *signalv1.Signal, ruleID, where string) bool {
 	if signal == nil {
 		return false
@@ -585,6 +624,54 @@ func signalMatches(signal *signalv1.Signal, ruleID, where string) bool {
 	default:
 		return false
 	}
+}
+
+func signalFrameMatches(frame *controlv1.SignalFrame, ruleID, where string, filter *controlv1.WatchFilter) bool {
+	if frame == nil || !signalMatches(frame.GetSignal(), ruleID, where) {
+		return false
+	}
+	return frameMatches(frame.GetSequence(), frame.GetObservedAt(), frame.GetSignal().GetLabels(), filter)
+}
+
+func frameMatches(sequence uint64, observedAt string, labels map[string]string, filter *controlv1.WatchFilter) bool {
+	if filter == nil {
+		return true
+	}
+	if after := filter.GetAfterSequence(); after > 0 && sequence <= after {
+		return false
+	}
+	if !observedAtMatches(observedAt, filter.GetSinceObservedAt(), filter.GetUntilObservedAt()) {
+		return false
+	}
+	for key, want := range filter.GetLabels() {
+		if labels[key] != want {
+			return false
+		}
+	}
+	return true
+}
+
+func observedAtMatches(observedAt, since, until string) bool {
+	if strings.TrimSpace(since) == "" && strings.TrimSpace(until) == "" {
+		return true
+	}
+	ts, err := time.Parse(time.RFC3339Nano, observedAt)
+	if err != nil {
+		return false
+	}
+	if strings.TrimSpace(since) != "" {
+		start, err := time.Parse(time.RFC3339Nano, since)
+		if err != nil || ts.Before(start) {
+			return false
+		}
+	}
+	if strings.TrimSpace(until) != "" {
+		end, err := time.Parse(time.RFC3339Nano, until)
+		if err != nil || !ts.Before(end) {
+			return false
+		}
+	}
+	return true
 }
 
 func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {

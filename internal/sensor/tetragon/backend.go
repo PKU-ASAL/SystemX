@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,9 +27,18 @@ const runtimeTracingPolicyName = "sysarmor-runtime-collection"
 type Backend struct {
 	PolicyPath        string
 	EventSource       string
+	EventTransport    string
+	ServerAddress     string
 	Version           string
 	Bundle            BundleConfig
 	Restart           ProcessRestartPolicy
+	CgroupRate        string
+	PprofAddress      string
+	GopsAddress       string
+	ProcessCacheSize  int
+	DataCacheSize     int
+	EventQueueSize    int
+	RBQueueSize       string
 	ScopeType         string
 	ScopeSelector     string
 	ContainerIDPrefix string
@@ -134,14 +144,14 @@ func CollectionCapabilities() []contract.CollectionBehaviorCapability {
 			Behavior:           eventmodel.BehaviorProcessExec.String(),
 			SensorMapping:      "tetragon:process_exec/security_bprm_creds_from_file",
 			Fields:             commonProcess,
-			PushdownSelectors:  []string{"binary.prefix"},
+			PushdownSelectors:  []string{"process.binary_prefix"},
 			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
 			Behavior:           eventmodel.BehaviorProcessFork.String(),
 			SensorMapping:      "tetragon:process_exec.clone",
 			Fields:             commonProcess,
-			PushdownSelectors:  []string{"binary.prefix"},
+			PushdownSelectors:  []string{"process.binary_prefix"},
 			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
@@ -154,28 +164,35 @@ func CollectionCapabilities() []contract.CollectionBehaviorCapability {
 			Behavior:           eventmodel.BehaviorNetworkConnect.String(),
 			SensorMapping:      "tetragon:kprobe/security_socket_connect",
 			Fields:             with(commonProcess, "socket", "socket.addr", "socket.port", "object.socket_addr"),
-			PushdownSelectors:  []string{"socket.family", "socket.addr", "socket.port"},
+			PushdownSelectors:  []string{"process.binary_prefix", "socket.family", "socket.addr", "socket.port"},
 			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileOpen.String(),
 			SensorMapping:      "tetragon:kprobe/security_file_permission",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"file.path.prefix"},
+			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix"},
+			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+		},
+		{
+			Behavior:           eventmodel.BehaviorFileRead.String(),
+			SensorMapping:      "tetragon:kprobe/security_file_permission",
+			Fields:             with(commonProcess, "file.path", "object.file_path"),
+			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix", "file.access"},
 			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileWrite.String(),
 			SensorMapping:      "tetragon:process_exec.inferred_write/security_file_permission",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"file.path.prefix"},
+			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix", "file.access"},
 			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileChmod.String(),
 			SensorMapping:      "tetragon:process_exec.inferred_chmod",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"file.path.prefix"},
+			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix", "file.access"},
 			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
 		},
 	}
@@ -204,6 +221,9 @@ func CompileReport(intent contract.CollectionIntent) contract.CollectionCompileR
 		report.PushedDownSelectors = append(report.PushedDownSelectors, pushedDownSelectorsForFilter(filter)...)
 		report.AgentSideSelectors = append(report.AgentSideSelectors, scopeSelectorReports(intent, behavior)...)
 		report.UnsupportedSelectors = append(report.UnsupportedSelectors, unsupportedSelectorsForFilter(filter)...)
+	}
+	if len(report.AgentSideSelectors) > 0 {
+		report.Warnings = append(report.Warnings, "some selectors are enforced agent-side after Tetragon emission; behavior is correct but event volume can be higher")
 	}
 	if len(report.UnsupportedSelectors) > 0 {
 		report.Status = "unsupported"
@@ -236,9 +256,12 @@ func pushedDownSelectorsForFilter(filter contract.CollectionBehaviorFilter) []co
 	switch behavior {
 	case eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String():
 		if len(filter.BinaryPrefixes) > 0 {
-			add("binary.prefix", "selectors.matchArgs[index=1,operator=Prefix]")
+			add("process.binary_prefix", "selectors.matchArgs[index=1,operator=Prefix]")
 		}
 	case eventmodel.BehaviorNetworkConnect.String():
+		if len(filter.BinaryPrefixes) > 0 {
+			add("process.binary_prefix", "selectors.matchBinaries[operator=Prefix]")
+		}
 		if len(filter.SocketFamilies) > 0 {
 			add("socket.family", "selectors.matchArgs[index=1,operator=Family]")
 		}
@@ -249,8 +272,17 @@ func pushedDownSelectorsForFilter(filter contract.CollectionBehaviorFilter) []co
 			add("socket.port", "selectors.matchArgs[index=1,operator=SPort]")
 		}
 	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
+		if len(filter.BinaryPrefixes) > 0 {
+			add("process.binary_prefix", "selectors.matchBinaries[operator=Prefix]")
+		}
 		if len(filter.FilePrefixes) > 0 {
 			add("file.path.prefix", "selectors.matchArgs[index=0,operator=Prefix]")
+		}
+		switch behavior {
+		case eventmodel.BehaviorFileRead.String():
+			add("file.access", "selectors.matchArgs[index=1,operator=Equal,value=4/MAY_READ]")
+		case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
+			add("file.access", "selectors.matchArgs[index=1,operator=Equal,value=2/MAY_WRITE]")
 		}
 	}
 	return out
@@ -265,27 +297,12 @@ func scopeSelectorReports(intent contract.CollectionIntent, behavior string) []c
 		Selector: "scope." + intent.ScopeType,
 		Status:   "agent_side",
 		Location: "agent",
-		Reason:   "runtime scope is enforced by agent-side event filtering",
+		Reason:   "runtime scope is enforced after Tetragon emission; selector is correct but may collect extra events until backend pushdown is implemented",
 	}}
 }
 
 func unsupportedSelectorsForFilter(filter contract.CollectionBehaviorFilter) []contract.CollectionSelectorReport {
-	behavior := eventmodel.NormalizeBehavior(filter.Behavior).String()
-	if behavior == "" || len(filter.BinaryPrefixes) == 0 {
-		return nil
-	}
-	switch behavior {
-	case eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorProcessFork.String():
-		return nil
-	default:
-		return []contract.CollectionSelectorReport{{
-			Behavior: behavior,
-			Selector: "process.binary_prefix",
-			Status:   "unsupported",
-			Location: "none",
-			Reason:   "process binary selector for this behavior is not compiled yet",
-		}}
-	}
+	return nil
 }
 
 func (b *Backend) probeHostCapabilities() (string, bool, bool, error) {
@@ -411,6 +428,9 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 		stopSensor()
 		b.setError(err)
 		return nil, err
+	}
+	if b.useGRPCEventSource() {
+		return b.subscribeManagedGRPC(ctx, stopSensor)
 	}
 	source, closeSource, err := b.openEventSource(ctx)
 	if err != nil {
@@ -768,7 +788,10 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
     - index: 2
       type: "int"
     selectors:
-    - matchArgs:
+    -
+`)
+		writeMatchBinaries(&out, filter.BinaryPrefixes, "      ")
+		out.WriteString(`      matchArgs:
       - index: 1
         operator: "Family"
         values:
@@ -801,16 +824,8 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 			}
 		}
 	}
-	if intentHasAnyBehavior(intent, eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()) {
-		prefixes := mergeFilterStrings(
-			behaviorFilter(intent, eventmodel.BehaviorFileOpen.String()).FilePrefixes,
-			behaviorFilter(intent, eventmodel.BehaviorFileRead.String()).FilePrefixes,
-			behaviorFilter(intent, eventmodel.BehaviorFileWrite.String()).FilePrefixes,
-			behaviorFilter(intent, eventmodel.BehaviorFileChmod.String()).FilePrefixes,
-		)
-		if len(prefixes) == 0 {
-			prefixes = []string{"/root/.ssh", "/var/run/secrets", "/etc/passwd"}
-		}
+	fileSelectors := filePermissionSelectors(intent)
+	if len(fileSelectors) > 0 {
 		out.WriteString(`  - call: "security_file_permission"
     syscall: false
     return: true
@@ -823,18 +838,98 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
       index: 0
       type: "int"
     selectors:
-    - matchArgs:
+`)
+		for _, selector := range fileSelectors {
+			writeFilePermissionSelector(&out, selector)
+		}
+	}
+	return out.Bytes()
+}
+
+type filePermissionSelector struct {
+	Behavior       string
+	Access         int32
+	BinaryPrefixes []string
+	FilePrefixes   []string
+}
+
+func filePermissionSelectors(intent contract.CollectionIntent) []filePermissionSelector {
+	var selectors []filePermissionSelector
+	add := func(behavior string, access int32) {
+		if !intentHasBehavior(intent, behavior) {
+			return
+		}
+		filter := behaviorFilter(intent, behavior)
+		prefixes := filter.FilePrefixes
+		if len(prefixes) == 0 {
+			prefixes = defaultFilePrefixesForBehavior(behavior)
+		}
+		selectors = append(selectors, filePermissionSelector{
+			Behavior:       behavior,
+			Access:         access,
+			BinaryPrefixes: filter.BinaryPrefixes,
+			FilePrefixes:   prefixes,
+		})
+	}
+	add(eventmodel.BehaviorFileOpen.String(), 0)
+	add(eventmodel.BehaviorFileRead.String(), 4)
+	add(eventmodel.BehaviorFileWrite.String(), 2)
+	add(eventmodel.BehaviorFileChmod.String(), 2)
+	return selectors
+}
+
+func defaultFilePrefixesForBehavior(behavior string) []string {
+	switch eventmodel.NormalizeBehavior(behavior) {
+	case eventmodel.BehaviorFileRead:
+		return []string{"/root/.ssh", "/var/run/secrets", "/etc/passwd", "/etc/shadow", "/etc/sudoers"}
+	case eventmodel.BehaviorFileWrite, eventmodel.BehaviorFileChmod:
+		return []string{"/dev/shm", "/tmp", "/var/tmp"}
+	default:
+		return []string{"/root/.ssh", "/var/run/secrets", "/etc/passwd"}
+	}
+}
+
+func writeFilePermissionSelector(out *bytes.Buffer, selector filePermissionSelector) {
+	out.WriteString("    -\n")
+	writeMatchBinaries(out, selector.BinaryPrefixes, "      ")
+	out.WriteString(`      matchArgs:
       - index: 0
         operator: "Prefix"
         values:
 `)
-		for _, prefix := range prefixes {
-			out.WriteString("        - ")
-			out.WriteString(fmt.Sprintf("%q", prefix))
-			out.WriteString("\n")
-		}
+	for _, prefix := range mergeFilterStrings(selector.FilePrefixes) {
+		out.WriteString("        - ")
+		out.WriteString(fmt.Sprintf("%q", prefix))
+		out.WriteString("\n")
 	}
-	return out.Bytes()
+	if selector.Access != 0 {
+		out.WriteString(`      - index: 1
+        operator: "Equal"
+        values:
+`)
+		out.WriteString("        - ")
+		out.WriteString(fmt.Sprintf("%q", strconv.FormatInt(int64(selector.Access), 10)))
+		out.WriteString("\n")
+	}
+}
+
+func writeMatchBinaries(out *bytes.Buffer, prefixes []string, indent string) {
+	prefixes = mergeFilterStrings(prefixes)
+	if len(prefixes) == 0 {
+		return
+	}
+	out.WriteString(indent)
+	out.WriteString("matchBinaries:\n")
+	out.WriteString(indent)
+	out.WriteString("- operator: \"Prefix\"\n")
+	out.WriteString(indent)
+	out.WriteString("  values:\n")
+	for _, prefix := range prefixes {
+		out.WriteString(indent)
+		out.WriteString("  - ")
+		out.WriteString(fmt.Sprintf("%q", prefix))
+		out.WriteString("\n")
+	}
 }
 
 func intentHasAnyBehavior(intent contract.CollectionIntent, behaviors ...string) bool {
@@ -955,7 +1050,7 @@ func (b *Backend) startManagedSensor(ctx context.Context) (func(), error) {
 	spec := ProcessSpec{
 		Name:    "tetragon",
 		Path:    b.Bundle.TetragonPath,
-		Args:    tetragonArgs(b.Bundle.TetragonPath),
+		Args:    b.tetragonArgs(b.Bundle.TetragonPath),
 		Dir:     bundleRuntimeDir(b.Bundle.TetragonPath),
 		LogPath: "/var/log/sysarmor/tetragon.log",
 	}
@@ -1019,11 +1114,85 @@ func tetragonArgs(tetragonPath string) []string {
 	return args
 }
 
-func defaultTetragonArgs() []string {
-	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err == nil {
-		return []string{"--btf", "/sys/kernel/btf/vmlinux"}
+func (b *Backend) tetragonArgs(tetragonPath string) []string {
+	args := tetragonArgs(tetragonPath)
+	if b.useGRPCEventSource() {
+		args = append(args, "--server-address", firstNonEmpty(b.ServerAddress, defaultTetragonServerAddress))
 	}
-	return nil
+	if strings.TrimSpace(b.CgroupRate) != "" {
+		args = append(args, "--cgroup-rate", strings.TrimSpace(b.CgroupRate))
+	}
+	if strings.TrimSpace(b.PprofAddress) != "" {
+		args = append(args, "--pprof-address", strings.TrimSpace(b.PprofAddress))
+	}
+	if strings.TrimSpace(b.GopsAddress) != "" {
+		args = append(args, "--gops-address", strings.TrimSpace(b.GopsAddress))
+	}
+	if b.ProcessCacheSize > 0 {
+		args = append(args, "--process-cache-size", strconv.Itoa(b.ProcessCacheSize))
+	}
+	if b.DataCacheSize > 0 {
+		args = append(args, "--data-cache-size", strconv.Itoa(b.DataCacheSize))
+	}
+	if b.EventQueueSize > 0 {
+		args = append(args, "--event-queue-size", strconv.Itoa(b.EventQueueSize))
+	}
+	if strings.TrimSpace(b.RBQueueSize) != "" {
+		args = append(args, "--rb-queue-size", strings.TrimSpace(b.RBQueueSize))
+	}
+	return args
+}
+
+func defaultTetragonArgs() []string {
+	args := []string{
+		"--log-level", "warn",
+		"--metrics-server", "",
+		"--health-server-address", "",
+		"--enable-tracing-policy-crd=false",
+		"--enable-process-cred=false",
+		"--enable-process-ns=false",
+		"--enable-process-environment-variables=false",
+		"--enable-ancestors", "",
+		"--enable-k8s-api=false",
+		"--enable-pod-annotations=false",
+	}
+	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err == nil {
+		args = append(args, "--btf", "/sys/kernel/btf/vmlinux")
+	}
+	return args
+}
+
+func tetraGetEventsArgs(intent contract.CollectionIntent) []string {
+	args := []string{"getevents", "-o", "json", "--policy-names", runtimeTracingPolicyName}
+	eventTypes := tetraEventTypesForIntent(intent)
+	if len(eventTypes) > 0 {
+		args = append(args, "--event-types", strings.Join(eventTypes, ","))
+	}
+	return args
+}
+
+func tetraEventTypesForIntent(intent contract.CollectionIntent) []string {
+	types := map[string]bool{}
+	for _, behavior := range intent.Behaviors {
+		switch eventmodel.NormalizeBehavior(behavior).String() {
+		case eventmodel.BehaviorProcessExec.String(),
+			eventmodel.BehaviorProcessFork.String(),
+			eventmodel.BehaviorProcessExit.String(),
+			eventmodel.BehaviorNetworkConnect.String(),
+			eventmodel.BehaviorFileOpen.String(),
+			eventmodel.BehaviorFileRead.String(),
+			eventmodel.BehaviorFileWrite.String(),
+			eventmodel.BehaviorFileChmod.String():
+			types["PROCESS_KPROBE"] = true
+		}
+	}
+	var out []string
+	for _, eventType := range []string{"PROCESS_KPROBE"} {
+		if types[eventType] {
+			out = append(out, eventType)
+		}
+	}
+	return out
 }
 
 func bundleTetragonLibDir(tetragonPath string) string {
@@ -1065,7 +1234,7 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 	stdout, err := b.eventSupervisor.StartWithStdout(ctx, ProcessSpec{
 		Name: "tetra-getevents",
 		Path: b.Bundle.TetraPath,
-		Args: []string{"getevents", "-o", "json"},
+		Args: tetraGetEventsArgs(b.intent),
 		Dir:  bundleRuntimeDir(b.Bundle.TetraPath),
 	})
 	if err != nil {
@@ -1077,6 +1246,14 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 		_ = b.eventSupervisor.Stop(ctx)
 		_ = stdout.Close()
 	}, nil
+}
+
+func (b *Backend) useGRPCEventSource() bool {
+	if b.EventSource != "" {
+		return false
+	}
+	transport := strings.TrimSpace(b.EventTransport)
+	return transport == "" || transport == "grpc"
 }
 
 func bundleRuntimeDir(binaryPath string) string {

@@ -58,11 +58,23 @@ type CollectionCompileReport struct {
 	Status               string                     `json:"status"`
 	Backend              string                     `json:"backend"`
 	GeneratedPolicyHash  string                     `json:"generated_policy_hash,omitempty"`
+	ResolvedRefs         []CollectionResolvedRef    `json:"resolved_refs,omitempty"`
 	BehaviorMappings     []CollectionBehaviorMap    `json:"behavior_mappings,omitempty"`
 	PushedDownSelectors  []CollectionSelectorReport `json:"pushed_down_selectors,omitempty"`
 	AgentSideSelectors   []CollectionSelectorReport `json:"agent_side_selectors,omitempty"`
 	UnsupportedSelectors []CollectionSelectorReport `json:"unsupported_selectors,omitempty"`
 	Warnings             []string                   `json:"warnings,omitempty"`
+}
+
+type CollectionResolvedRef struct {
+	Behavior  string   `json:"behavior,omitempty"`
+	Selector  string   `json:"selector"`
+	Ref       string   `json:"ref"`
+	Version   string   `json:"version,omitempty"`
+	Digest    string   `json:"digest,omitempty"`
+	ValueType string   `json:"value_type,omitempty"`
+	Count     int      `json:"count"`
+	Values    []string `json:"values,omitempty"`
 }
 
 type CollectionBehaviorMap struct {

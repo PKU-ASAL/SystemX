@@ -246,6 +246,7 @@ type CanonicalEvent struct {
 	Pod            string                 `protobuf:"bytes,18,opt,name=pod,proto3" json:"pod,omitempty"`
 	OccurredAtNs   uint64                 `protobuf:"varint,19,opt,name=occurred_at_ns,json=occurredAtNs,proto3" json:"occurred_at_ns,omitempty"`
 	Behavior       string                 `protobuf:"bytes,20,opt,name=behavior,proto3" json:"behavior,omitempty"`
+	Labels         map[string]string      `protobuf:"bytes,21,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -413,6 +414,13 @@ func (x *CanonicalEvent) GetBehavior() string {
 	return ""
 }
 
+func (x *CanonicalEvent) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 var File_api_proto_event_v1_event_proto protoreflect.FileDescriptor
 
 const file_api_proto_event_v1_event_proto_rawDesc = "" +
@@ -434,7 +442,7 @@ const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\x15target_proc_stable_id\x18\x04 \x01(\tR\x12targetProcStableId\">\n" +
 	"\fRuntimeScope\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
-	"\bselector\x18\x02 \x01(\tR\bselector\"\xfc\x04\n" +
+	"\bselector\x18\x02 \x01(\tR\bselector\"\xfe\x05\n" +
 	"\x0eCanonicalEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x19\n" +
@@ -456,7 +464,11 @@ const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\tnamespace\x18\x11 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03pod\x18\x12 \x01(\tR\x03pod\x12$\n" +
 	"\x0eoccurred_at_ns\x18\x13 \x01(\x04R\foccurredAtNs\x12\x1a\n" +
-	"\bbehavior\x18\x14 \x01(\tR\bbehaviorJ\x04\b\a\x10\bBFZDgithub.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1b\x06proto3"
+	"\bbehavior\x18\x14 \x01(\tR\bbehavior\x12E\n" +
+	"\x06labels\x18\x15 \x03(\v2-.sysarmor.event.v1.CanonicalEvent.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\a\x10\bBFZDgithub.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1b\x06proto3"
 
 var (
 	file_api_proto_event_v1_event_proto_rawDescOnce sync.Once
@@ -470,22 +482,24 @@ func file_api_proto_event_v1_event_proto_rawDescGZIP() []byte {
 	return file_api_proto_event_v1_event_proto_rawDescData
 }
 
-var file_api_proto_event_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_api_proto_event_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_api_proto_event_v1_event_proto_goTypes = []any{
 	(*ProcessRef)(nil),     // 0: sysarmor.event.v1.ProcessRef
 	(*ObjectRef)(nil),      // 1: sysarmor.event.v1.ObjectRef
 	(*RuntimeScope)(nil),   // 2: sysarmor.event.v1.RuntimeScope
 	(*CanonicalEvent)(nil), // 3: sysarmor.event.v1.CanonicalEvent
+	nil,                    // 4: sysarmor.event.v1.CanonicalEvent.LabelsEntry
 }
 var file_api_proto_event_v1_event_proto_depIdxs = []int32{
 	0, // 0: sysarmor.event.v1.CanonicalEvent.subject_proc:type_name -> sysarmor.event.v1.ProcessRef
 	1, // 1: sysarmor.event.v1.CanonicalEvent.object:type_name -> sysarmor.event.v1.ObjectRef
 	2, // 2: sysarmor.event.v1.CanonicalEvent.scope:type_name -> sysarmor.event.v1.RuntimeScope
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 3: sysarmor.event.v1.CanonicalEvent.labels:type_name -> sysarmor.event.v1.CanonicalEvent.LabelsEntry
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_event_v1_event_proto_init() }
@@ -499,7 +513,7 @@ func file_api_proto_event_v1_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_event_v1_event_proto_rawDesc), len(file_api_proto_event_v1_event_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

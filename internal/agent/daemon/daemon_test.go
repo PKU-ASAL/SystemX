@@ -418,7 +418,7 @@ func TestRunnerTetragonRequiresEventSource(t *testing.T) {
 	cfg := config.Config{
 		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager: config.ManagerConfig{Address: "http://127.0.0.1:9443", Transport: "http"},
-		Sensor:  config.SensorConfig{Backend: "tetragon", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Sensor:  config.SensorConfig{Backend: "tetragon", Mode: "managed", PolicyPath: policyPath, EventTransport: "tetra", ObserveOnly: true},
 		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1024, BatchSize: 10, FlushInterval: time.Second},
 		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:  config.HealthConfig{Interval: time.Hour},
@@ -1431,6 +1431,15 @@ func TestTetragonRestartPolicyFromConfig(t *testing.T) {
 	}
 	if _, err := tetragonRestartPolicy(config.SensorConfig{Restart: "sometimes"}); err == nil {
 		t.Fatal("tetragonRestartPolicy(unknown) error = nil")
+	}
+}
+
+func TestTamperNoEventGracePeriodHasFloor(t *testing.T) {
+	if got := tamperNoEventGracePeriod(500*time.Millisecond, 500*time.Millisecond); got != 30*time.Second {
+		t.Fatalf("tamper grace = %s, want 30s floor", got)
+	}
+	if got := tamperNoEventGracePeriod(time.Minute, 10*time.Second); got != 100*time.Second {
+		t.Fatalf("tamper grace = %s, want 10 health intervals", got)
 	}
 }
 

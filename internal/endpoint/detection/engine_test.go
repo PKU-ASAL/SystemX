@@ -153,6 +153,35 @@ func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
 	}
 }
 
+func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
+	enabled := true
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
+	engine, _ := New(policy)
+	first := openEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	second := openEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	if got := countSignals(engine.Process(first), "credential_file_read"); got != 1 {
+		t.Fatalf("first credential signal count = %d, want 1", got)
+	}
+	if got := countSignals(engine.Process(second), "credential_file_read"); got != 0 {
+		t.Fatalf("duplicate credential signal count = %d, want 0", got)
+	}
+	third := openEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
+	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
+		t.Fatalf("different path credential signal count = %d, want 1", got)
+	}
+}
+
+func countSignals(signals []*signalv1.Signal, name string) int {
+	count := 0
+	for _, sig := range signals {
+		if sig.GetName() == name {
+			count++
+		}
+	}
+	return count
+}
+
 func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 	policy := policymodel.DefaultDetectionPolicy()
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{

@@ -33,6 +33,50 @@ func TestParseSocketConnect(t *testing.T) {
 	}
 }
 
+func TestParsePolicyFilePermissionWrite(t *testing.T) {
+	raw := []byte(`{"process_kprobe":{"process":{"pid":105,"uid":0,"binary":"/usr/bin/curl","arguments":"-o /dev/shm/x.sh","start_time":"2026-06-14T10:00:04Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"},"function_name":"security_file_permission","args":[{"file_arg":{"path":"/dev/shm/x.sh","permission":"-rw-r--r--"}},{"int_arg":2}],"return":{"int_arg":0},"policy_name":"sysarmor-runtime-collection"},"node_name":"node-a","time":"2026-06-14T10:00:04Z"}`)
+	events, ok := ParseLine(raw)
+	if !ok || len(events) != 1 {
+		t.Fatalf("events=%d ok=%v, want one file write", len(events), ok)
+	}
+	if events[0].GetBehavior() != "file.write" || events[0].GetObject().GetPath() != "/dev/shm/x.sh" {
+		t.Fatalf("event = %+v, want file.write /dev/shm/x.sh", events[0])
+	}
+}
+
+func TestParsePolicyFilePermissionRead(t *testing.T) {
+	raw := []byte(`{"process_kprobe":{"process":{"pid":106,"uid":0,"binary":"/bin/cat","arguments":"/etc/passwd","start_time":"2026-06-14T10:00:05Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"},"function_name":"security_file_permission","args":[{"file_arg":{"path":"/etc/passwd","permission":"-rw-r--r--"}},{"int_arg":4}],"return":{"int_arg":0},"policy_name":"sysarmor-runtime-collection"},"node_name":"node-a","time":"2026-06-14T10:00:05Z"}`)
+	events, ok := ParseLine(raw)
+	if !ok || len(events) != 1 {
+		t.Fatalf("events=%d ok=%v, want one file read", len(events), ok)
+	}
+	if events[0].GetBehavior() != "file.read" || events[0].GetObject().GetPath() != "/etc/passwd" {
+		t.Fatalf("event = %+v, want file.read /etc/passwd", events[0])
+	}
+}
+
+func TestParsePolicyKprobeExec(t *testing.T) {
+	raw := []byte(`{"process_kprobe":{"process":{"pid":103,"uid":0,"binary":"/bin/busybox","arguments":"id","start_time":"2026-06-14T10:00:02Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"},"function_name":"security_bprm_creds_from_file","args":[{"file_arg":{"path":"/bin/busybox"}}],"policy_name":"sysarmor-runtime-collection"},"node_name":"node-a","time":"2026-06-14T10:00:02Z"}`)
+	events, ok := ParseLine(raw)
+	if !ok || len(events) != 1 {
+		t.Fatalf("events=%d ok=%v, want one process exec", len(events), ok)
+	}
+	if events[0].GetBehavior() != "process.exec" || events[0].GetObject().GetPath() != "/bin/busybox" {
+		t.Fatalf("event = %+v, want process.exec /bin/busybox", events[0])
+	}
+}
+
+func TestParsePolicyKprobeExit(t *testing.T) {
+	raw := []byte(`{"process_kprobe":{"process":{"pid":104,"uid":0,"binary":"/usr/bin/sleep","arguments":"1","start_time":"2026-06-14T10:00:02Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"},"function_name":"do_exit","args":[{"int_arg":0}],"policy_name":"sysarmor-runtime-collection"},"node_name":"node-a","time":"2026-06-14T10:00:03Z"}`)
+	events, ok := ParseLine(raw)
+	if !ok || len(events) != 1 {
+		t.Fatalf("events=%d ok=%v, want one process exit", len(events), ok)
+	}
+	if events[0].GetBehavior() != "process.exit" {
+		t.Fatalf("behavior = %q, want process.exit", events[0].GetBehavior())
+	}
+}
+
 func TestParseProcessExitEmitsExit(t *testing.T) {
 	raw := []byte(`{"process_exit":{"process":{"pid":102,"uid":0,"binary":"/usr/bin/sleep","arguments":"1","start_time":"2026-06-14T10:00:02Z"},"parent":{"pid":1,"binary":"/sbin/init","start_time":"2026-06-14T09:00:00Z"}},"node_name":"node-a","time":"2026-06-14T10:00:03Z"}`)
 	events, ok := ParseLine(raw)

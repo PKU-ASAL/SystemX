@@ -61,4 +61,5 @@ message Signal {
   string severity = 21;
   uint32 confidence = 22;
   string mode = 23;
+  map<string, string> labels = 24;
 }

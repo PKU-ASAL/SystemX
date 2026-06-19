@@ -350,6 +350,55 @@ func TestQueryLocalAgentWatchStreamsOverUnixSocket(t *testing.T) {
 	}
 }
 
+func TestQueryLocalAgentWatchFilterArgs(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	lis, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fake := &fakeAgentControlServer{}
+	controlv1.RegisterAgentControlServiceServer(server, fake)
+	go func() {
+		_ = server.Serve(lis)
+	}()
+	defer server.Stop()
+
+	if _, err := queryLocalAgent(socketPath, []string{
+		"event", "watch",
+		"--include-recent",
+		"--limit", "1",
+		"--after-seq", "42",
+		"--since", "2026-06-19T01:02:03Z",
+		"--until", "2026-06-19T02:02:03Z",
+		"--label", "benchmark_run=run-a",
+		"--label", "workload=benign-business",
+	}); err != nil {
+		t.Fatalf("event watch error = %v", err)
+	}
+	if fake.watchEventReq.GetFilter().GetAfterSequence() != 42 {
+		t.Fatalf("event filter = %+v", fake.watchEventReq.GetFilter())
+	}
+	if fake.watchEventReq.GetFilter().GetSinceObservedAt() != "2026-06-19T01:02:03Z" || fake.watchEventReq.GetFilter().GetUntilObservedAt() != "2026-06-19T02:02:03Z" {
+		t.Fatalf("event filter time window = %+v", fake.watchEventReq.GetFilter())
+	}
+	if fake.watchEventReq.GetFilter().GetLabels()["benchmark_run"] != "run-a" || fake.watchEventReq.GetFilter().GetLabels()["workload"] != "benign-business" {
+		t.Fatalf("event filter labels = %+v", fake.watchEventReq.GetFilter().GetLabels())
+	}
+
+	if _, err := queryLocalAgent(socketPath, []string{
+		"signal", "watch",
+		"--include-recent",
+		"--limit", "1",
+		"--label", "policy_profile=collection-edr-balanced",
+	}); err != nil {
+		t.Fatalf("signal watch error = %v", err)
+	}
+	if fake.watchSignalReq.GetFilter().GetLabels()["policy_profile"] != "collection-edr-balanced" {
+		t.Fatalf("signal filter labels = %+v", fake.watchSignalReq.GetFilter().GetLabels())
+	}
+}
+
 func TestQueryLocalAgentSignalWatchIncludesEvents(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "agent.sock")
 	lis, err := net.Listen("unix", socketPath)
@@ -524,9 +573,11 @@ func nonEmptyLines(s string) []string {
 
 type fakeAgentControlServer struct {
 	controlv1.UnimplementedAgentControlServiceServer
-	applyReq    *controlv1.ApplyPolicyRequest
-	contentReq  *controlv1.ApplyContentRequest
-	getEventReq *controlv1.GetEventRequest
+	applyReq       *controlv1.ApplyPolicyRequest
+	contentReq     *controlv1.ApplyContentRequest
+	getEventReq    *controlv1.GetEventRequest
+	watchEventReq  *controlv1.WatchEventsRequest
+	watchSignalReq *controlv1.WatchSignalsRequest
 }
 
 func (fakeAgentControlServer) Capability(ctx context.Context, req *controlv1.CapabilityRequest) (*controlv1.CapabilityResponse, error) {
@@ -590,6 +641,7 @@ func (s *fakeAgentControlServer) GetEvent(ctx context.Context, req *controlv1.Ge
 }
 
 func (s *fakeAgentControlServer) WatchEvents(req *controlv1.WatchEventsRequest, stream controlv1.AgentControlService_WatchEventsServer) error {
+	s.watchEventReq = req
 	return stream.Send(&controlv1.EventFrame{
 		TenantId: "default",
 		AgentId:  "agent-a",
@@ -602,6 +654,7 @@ func (s *fakeAgentControlServer) WatchEvents(req *controlv1.WatchEventsRequest, 
 }
 
 func (s *fakeAgentControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, stream controlv1.AgentControlService_WatchSignalsServer) error {
+	s.watchSignalReq = req
 	return stream.Send(&controlv1.SignalFrame{
 		TenantId: "default",
 		AgentId:  "agent-a",

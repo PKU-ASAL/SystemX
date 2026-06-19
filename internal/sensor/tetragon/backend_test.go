@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestBackendSubscribesJSONLFile(t *testing.T) {
@@ -374,6 +376,7 @@ func TestBackendManagedEventCommandSubscribesStdout(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath, TetragonPath: tetragonPath})
+	backend.EventTransport = "tetra"
 	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{})
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -408,12 +411,13 @@ func TestBackendManagedEventCommandRecordsDroppedEvents(t *testing.T) {
 	}
 	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
 	tetraPath := filepath.Join(dir, "tetra")
-	script := "#!/bin/sh\nprintf '%s\\n' '{\"health\":{\"dropped_events\":2}}'\nprintf '%s\\n' '" + raw + "'\nprintf '%s\\n' '{\"dropped_events\":3}'\n"
+	script := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy delete\" ]; then exit 0; fi\nprintf '%s\\n' '{\"health\":{\"dropped_events\":2}}'\nprintf '%s\\n' '" + raw + "'\nprintf '%s\\n' '{\"dropped_events\":3}'\n"
 	if err := os.WriteFile(tetraPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
-	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{})
+	backend.EventTransport = "tetra"
+	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{Behaviors: []string{"process.exec"}})
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
@@ -430,6 +434,47 @@ func TestBackendManagedEventCommandRecordsDroppedEvents(t *testing.T) {
 	}
 	if health.EventsDropped != 5 || health.ParseErrors != 0 || !strings.Contains(health.LastError, "dropped events") {
 		t.Fatalf("health = %+v", health)
+	}
+}
+
+func TestEventsFromGRPCResponseProcessKprobe(t *testing.T) {
+	resp := &tetragonpb.GetEventsResponse{
+		NodeName: "node-a",
+		Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+			ProcessKprobe: &tetragonpb.ProcessKprobe{
+				PolicyName:   runtimeTracingPolicyName,
+				FunctionName: "security_socket_connect",
+				Process: &tetragonpb.Process{
+					Pid:       wrapperspb.UInt32(100),
+					Uid:       wrapperspb.UInt32(0),
+					Binary:    "/usr/bin/curl",
+					Arguments: "-s https://example.test",
+				},
+				Args: []*tetragonpb.KprobeArgument{{
+					Arg: &tetragonpb.KprobeArgument_SockArg{
+						SockArg: &tetragonpb.KprobeSock{
+							Daddr: "203.0.113.10",
+							Dport: 443,
+						},
+					},
+				}},
+			},
+		},
+	}
+
+	events, ok := eventsFromGRPCResponse(resp)
+	if !ok || len(events) != 1 {
+		t.Fatalf("eventsFromGRPCResponse() = %d,%v, want one event", len(events), ok)
+	}
+	got := events[0]
+	if got.GetBehavior() != "network.connect" {
+		t.Fatalf("behavior = %q, want network.connect", got.GetBehavior())
+	}
+	if got.GetObject().GetDst() != "203.0.113.10:443" {
+		t.Fatalf("object = %+v", got.GetObject())
+	}
+	if got.GetProc().GetBinary() != "/usr/bin/curl" {
+		t.Fatalf("proc = %+v", got.GetProc())
 	}
 }
 
@@ -470,6 +515,7 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	backend.EventTransport = "tetra"
 	intent := contract.CollectionIntent{
 		Behaviors:   []string{"process.exec", "network.connect", "file.open"},
 		ObserveOnly: true,
@@ -501,16 +547,65 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	}
 }
 
+func TestBackendManagedSubscribeUsesPolicyScopedGetEvents(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed subscribe test requires /bin/sh")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte(`{"behaviors":["process.exec"],"observe_only":true}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	argsPath := filepath.Join(dir, "getevents.args")
+	raw := `{"process_kprobe":{"process":{"pid":100,"uid":0,"binary":"/bin/busybox","arguments":"id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"},"function_name":"security_bprm_creds_from_file","args":[{"file_arg":{"path":"/bin/busybox"}}],"policy_name":"sysarmor-runtime-collection"},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	tetraPath := filepath.Join(dir, "tetra")
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy delete\" ]; then exit 0; fi\nprintf '%s\\n' \"$*\" > '" + argsPath + "'\nprintf '%s\\n' '" + raw + "'\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	backend.EventTransport = "tetra"
+	intent := contract.CollectionIntent{
+		Behaviors:   []string{"process.exec"},
+		ObserveOnly: true,
+	}
+	events, err := backend.Subscribe(context.Background(), intent)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	var got []string
+	for ev := range events {
+		got = append(got, ev.SensorEvent.GetBehavior())
+	}
+	if len(got) != 1 || got[0] != "process.exec" {
+		t.Fatalf("behaviors = %v, want process.exec", got)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := string(args)
+	for _, want := range []string{"getevents -o json", "--policy-names sysarmor-runtime-collection", "--event-types PROCESS_KPROBE"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("tetra args = %q, missing %q", joined, want)
+		}
+	}
+}
+
 func TestBuildTracingPolicyUsesCollectionFilters(t *testing.T) {
 	data := string(buildTracingPolicy(contract.CollectionIntent{
 		Behaviors: []string{"process.exec", "network.connect", "file.write"},
 		BehaviorFilters: []contract.CollectionBehaviorFilter{
 			{Behavior: "process.exec", BinaryPrefixes: []string{"/var/lib/app/plugins"}},
-			{Behavior: "network.connect", SocketFamilies: []string{"AF_INET"}, SocketAddrs: []string{"10.66.0.99"}, SocketPorts: []string{"443", "8080"}},
-			{Behavior: "file.write", FilePrefixes: []string{"/dev/shm", "/var/lib/app/plugins"}},
+			{Behavior: "network.connect", BinaryPrefixes: []string{"/usr/bin", "/opt/app/bin"}, SocketFamilies: []string{"AF_INET"}, SocketAddrs: []string{"10.66.0.99"}, SocketPorts: []string{"443", "8080"}},
+			{Behavior: "file.write", BinaryPrefixes: []string{"/usr/bin"}, FilePrefixes: []string{"/dev/shm", "/var/lib/app/plugins"}},
 		},
 	}))
-	for _, want := range []string{"security_bprm_creds_from_file", `"Prefix"`, `"security_socket_connect"`, `"AF_INET"`, `"SAddr"`, `"10.66.0.99"`, `"SPort"`, `"443"`, `"8080"`, `"security_file_permission"`, `"/dev/shm"`, `"/var/lib/app/plugins"`} {
+	for _, want := range []string{"security_bprm_creds_from_file", `"Prefix"`, `"security_socket_connect"`, "matchBinaries", `"/usr/bin"`, `"/opt/app/bin"`, `"AF_INET"`, `"SAddr"`, `"10.66.0.99"`, `"SPort"`, `"443"`, `"8080"`, `"security_file_permission"`, `"/dev/shm"`, `"/var/lib/app/plugins"`, `"Equal"`, `"2"`} {
 		if !strings.Contains(data, want) {
 			t.Fatalf("generated policy missing %q:\n%s", want, data)
 		}
@@ -518,6 +613,117 @@ func TestBuildTracingPolicyUsesCollectionFilters(t *testing.T) {
 	if strings.Contains(data, "AF_INET6") {
 		t.Fatalf("generated policy should honor explicit socket families:\n%s", data)
 	}
+}
+
+func TestBuildTracingPolicySeparatesReadAndWriteFileAccess(t *testing.T) {
+	data := string(buildTracingPolicy(contract.CollectionIntent{
+		Behaviors: []string{"file.read", "file.write"},
+		BehaviorFilters: []contract.CollectionBehaviorFilter{
+			{Behavior: "file.read", FilePrefixes: []string{"/etc/passwd"}},
+			{Behavior: "file.write", FilePrefixes: []string{"/dev/shm"}},
+		},
+	}))
+	if strings.Count(data, "operator: \"Equal\"") != 2 {
+		t.Fatalf("generated policy should have separate read/write access selectors:\n%s", data)
+	}
+	if strings.Contains(data, "\t") {
+		t.Fatalf("generated policy contains tabs:\n%s", data)
+	}
+	for _, want := range []string{`"/etc/passwd"`, `"/dev/shm"`, `"4"`, `"2"`} {
+		if !strings.Contains(data, want) {
+			t.Fatalf("generated policy missing %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestCompileReportPushesProcessBinarySelectorsForNetworkAndFile(t *testing.T) {
+	report := CompileReport(contract.CollectionIntent{
+		Behaviors: []string{"network.connect", "file.write"},
+		BehaviorFilters: []contract.CollectionBehaviorFilter{
+			{Behavior: "network.connect", BinaryPrefixes: []string{"/usr/bin"}, SocketFamilies: []string{"AF_INET"}},
+			{Behavior: "file.write", BinaryPrefixes: []string{"/usr/bin"}, FilePrefixes: []string{"/dev/shm"}},
+		},
+	})
+	if report.Status != "ok" {
+		t.Fatalf("report status = %q, unsupported = %+v", report.Status, report.UnsupportedSelectors)
+	}
+	if !selectorReportContains(report.PushedDownSelectors, "network.connect", "process.binary_prefix") {
+		t.Fatalf("network binary selector was not pushed down: %+v", report.PushedDownSelectors)
+	}
+	if !selectorReportContains(report.PushedDownSelectors, "file.write", "process.binary_prefix") {
+		t.Fatalf("file binary selector was not pushed down: %+v", report.PushedDownSelectors)
+	}
+	if !selectorReportContains(report.PushedDownSelectors, "file.write", "file.access") {
+		t.Fatalf("file access selector was not pushed down: %+v", report.PushedDownSelectors)
+	}
+}
+
+func TestTetraGetEventsArgsArePolicyScoped(t *testing.T) {
+	args := tetraGetEventsArgs(contract.CollectionIntent{
+		Behaviors: []string{"process.exec", "network.connect", "file.open"},
+	})
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"getevents", "-o json", "--policy-names " + runtimeTracingPolicyName, "--event-types PROCESS_KPROBE"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("args = %q, missing %q", joined, want)
+		}
+	}
+}
+
+func TestDefaultTetragonArgsAreSysArmorScoped(t *testing.T) {
+	args := defaultTetragonArgs()
+	joined := strings.Join(args, " ")
+	for _, want := range []string{
+		"--log-level warn",
+		"--metrics-server ",
+		"--health-server-address ",
+		"--enable-tracing-policy-crd=false",
+		"--enable-process-cred=false",
+		"--enable-process-ns=false",
+		"--enable-process-environment-variables=false",
+		"--enable-k8s-api=false",
+		"--enable-pod-annotations=false",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("args = %q, missing %q", joined, want)
+		}
+	}
+}
+
+func TestBackendTetragonArgsEnableGRPCServer(t *testing.T) {
+	backend := &Backend{
+		EventTransport:   "grpc",
+		ServerAddress:    "unix:///tmp/tetragon-test.sock",
+		CgroupRate:       "1000",
+		PprofAddress:     "127.0.0.1:6060",
+		ProcessCacheSize: 4096,
+		DataCacheSize:    128,
+		EventQueueSize:   1024,
+		RBQueueSize:      "8192",
+	}
+	joined := strings.Join(backend.tetragonArgs("/opt/sysarmor/sensors/tetragon/current/bin/tetragon"), " ")
+	for _, want := range []string{
+		"--server-address unix:///tmp/tetragon-test.sock",
+		"--cgroup-rate 1000",
+		"--pprof-address 127.0.0.1:6060",
+		"--process-cache-size 4096",
+		"--data-cache-size 128",
+		"--event-queue-size 1024",
+		"--rb-queue-size 8192",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("args = %q, missing %q", joined, want)
+		}
+	}
+}
+
+func selectorReportContains(reports []contract.CollectionSelectorReport, behavior, selector string) bool {
+	for _, report := range reports {
+		if report.Behavior == behavior && report.Selector == selector {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBackendLiveApplyReplacesGeneratedTracingPolicy(t *testing.T) {
@@ -540,6 +746,7 @@ func TestBackendLiveApplyReplacesGeneratedTracingPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	backend.EventTransport = "tetra"
 	oldIntent := contract.CollectionIntent{
 		Behaviors:    []string{"file.write"},
 		FilePrefixes: []string{"/old"},
@@ -598,6 +805,7 @@ func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	backend.EventTransport = "tetra"
 	intent := contract.CollectionIntent{
 		Behaviors:   []string{"process.exec"},
 		ObserveOnly: true,
@@ -655,6 +863,7 @@ func TestBackendRejectsUnverifiedGeneratedTracingPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	backend.EventTransport = "tetra"
 	intent := contract.CollectionIntent{
 		Behaviors:   []string{"network.connect"},
 		ObserveOnly: true,
@@ -703,6 +912,7 @@ func TestBackendRestartsManagedSensorProcess(t *testing.T) {
 		MaxRestarts: 3,
 		Delay:       10 * time.Millisecond,
 	})
+	backend.EventTransport = "tetra"
 	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{})
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)

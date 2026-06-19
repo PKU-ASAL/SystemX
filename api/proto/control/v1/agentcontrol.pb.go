@@ -1843,6 +1843,74 @@ func (x *ControlAck) GetReportJson() string {
 	return ""
 }
 
+type WatchFilter struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AfterSequence   uint64                 `protobuf:"varint,1,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	SinceObservedAt string                 `protobuf:"bytes,2,opt,name=since_observed_at,json=sinceObservedAt,proto3" json:"since_observed_at,omitempty"`
+	UntilObservedAt string                 `protobuf:"bytes,3,opt,name=until_observed_at,json=untilObservedAt,proto3" json:"until_observed_at,omitempty"`
+	Labels          map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *WatchFilter) Reset() {
+	*x = WatchFilter{}
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchFilter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchFilter) ProtoMessage() {}
+
+func (x *WatchFilter) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchFilter.ProtoReflect.Descriptor instead.
+func (*WatchFilter) Descriptor() ([]byte, []int) {
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *WatchFilter) GetAfterSequence() uint64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+func (x *WatchFilter) GetSinceObservedAt() string {
+	if x != nil {
+		return x.SinceObservedAt
+	}
+	return ""
+}
+
+func (x *WatchFilter) GetUntilObservedAt() string {
+	if x != nil {
+		return x.UntilObservedAt
+	}
+	return ""
+}
+
+func (x *WatchFilter) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 type WatchEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
@@ -1850,13 +1918,14 @@ type WatchEventsRequest struct {
 	Limit         uint32                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	IncludeRecent bool                   `protobuf:"varint,4,opt,name=include_recent,json=includeRecent,proto3" json:"include_recent,omitempty"`
 	SnapshotOnly  bool                   `protobuf:"varint,5,opt,name=snapshot_only,json=snapshotOnly,proto3" json:"snapshot_only,omitempty"`
+	Filter        *WatchFilter           `protobuf:"bytes,6,opt,name=filter,proto3" json:"filter,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WatchEventsRequest) Reset() {
 	*x = WatchEventsRequest{}
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[23]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1868,7 +1937,7 @@ func (x *WatchEventsRequest) String() string {
 func (*WatchEventsRequest) ProtoMessage() {}
 
 func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[23]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1881,7 +1950,7 @@ func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchEventsRequest.ProtoReflect.Descriptor instead.
 func (*WatchEventsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{23}
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *WatchEventsRequest) GetContext() *RequestContext {
@@ -1919,6 +1988,13 @@ func (x *WatchEventsRequest) GetSnapshotOnly() bool {
 	return false
 }
 
+func (x *WatchEventsRequest) GetFilter() *WatchFilter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
 type GetEventRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
@@ -1929,7 +2005,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[24]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1941,7 +2017,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[24]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1954,7 +2030,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{24}
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetEventRequest) GetContext() *RequestContext {
@@ -1980,7 +2056,7 @@ type EventGetResponse struct {
 
 func (x *EventGetResponse) Reset() {
 	*x = EventGetResponse{}
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[25]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1992,7 +2068,7 @@ func (x *EventGetResponse) String() string {
 func (*EventGetResponse) ProtoMessage() {}
 
 func (x *EventGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[25]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2005,7 +2081,7 @@ func (x *EventGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventGetResponse.ProtoReflect.Descriptor instead.
 func (*EventGetResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{25}
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EventGetResponse) GetFrame() *EventFrame {
@@ -2028,7 +2104,7 @@ type EventFrame struct {
 
 func (x *EventFrame) Reset() {
 	*x = EventFrame{}
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[26]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2040,7 +2116,7 @@ func (x *EventFrame) String() string {
 func (*EventFrame) ProtoMessage() {}
 
 func (x *EventFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[26]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2053,7 +2129,7 @@ func (x *EventFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventFrame.ProtoReflect.Descriptor instead.
 func (*EventFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{26}
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *EventFrame) GetTenantId() string {
@@ -2099,13 +2175,14 @@ type WatchSignalsRequest struct {
 	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	IncludeRecent bool                   `protobuf:"varint,5,opt,name=include_recent,json=includeRecent,proto3" json:"include_recent,omitempty"`
 	SnapshotOnly  bool                   `protobuf:"varint,6,opt,name=snapshot_only,json=snapshotOnly,proto3" json:"snapshot_only,omitempty"`
+	Filter        *WatchFilter           `protobuf:"bytes,7,opt,name=filter,proto3" json:"filter,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WatchSignalsRequest) Reset() {
 	*x = WatchSignalsRequest{}
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[27]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2117,7 +2194,7 @@ func (x *WatchSignalsRequest) String() string {
 func (*WatchSignalsRequest) ProtoMessage() {}
 
 func (x *WatchSignalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[27]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2130,7 +2207,7 @@ func (x *WatchSignalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSignalsRequest.ProtoReflect.Descriptor instead.
 func (*WatchSignalsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{27}
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *WatchSignalsRequest) GetContext() *RequestContext {
@@ -2175,6 +2252,13 @@ func (x *WatchSignalsRequest) GetSnapshotOnly() bool {
 	return false
 }
 
+func (x *WatchSignalsRequest) GetFilter() *WatchFilter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
 type SignalFrame struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
@@ -2188,7 +2272,7 @@ type SignalFrame struct {
 
 func (x *SignalFrame) Reset() {
 	*x = SignalFrame{}
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[28]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2200,7 +2284,7 @@ func (x *SignalFrame) String() string {
 func (*SignalFrame) ProtoMessage() {}
 
 func (x *SignalFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[28]
+	mi := &file_api_proto_control_v1_agentcontrol_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2213,7 +2297,7 @@ func (x *SignalFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalFrame.ProtoReflect.Descriptor instead.
 func (*SignalFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{28}
+	return file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SignalFrame) GetTenantId() string {
@@ -2423,13 +2507,22 @@ const file_api_proto_control_v1_agentcontrol_proto_rawDesc = "" +
 	"\adetails\x18\t \x03(\tR\adetails\x12\x1f\n" +
 	"\vreport_json\x18\n" +
 	" \x01(\tR\n" +
-	"reportJson\"\xd1\x01\n" +
+	"reportJson\"\x8d\x02\n" +
+	"\vWatchFilter\x12%\n" +
+	"\x0eafter_sequence\x18\x01 \x01(\x04R\rafterSequence\x12*\n" +
+	"\x11since_observed_at\x18\x02 \x01(\tR\x0fsinceObservedAt\x12*\n" +
+	"\x11until_observed_at\x18\x03 \x01(\tR\x0funtilObservedAt\x12D\n" +
+	"\x06labels\x18\x04 \x03(\v2,.sysarmor.control.v1.WatchFilter.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8b\x02\n" +
 	"\x12WatchEventsRequest\x12=\n" +
 	"\acontext\x18\x01 \x01(\v2#.sysarmor.control.v1.RequestContextR\acontext\x12\x1a\n" +
 	"\bbehavior\x18\x02 \x01(\tR\bbehavior\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\x12%\n" +
 	"\x0einclude_recent\x18\x04 \x01(\bR\rincludeRecent\x12#\n" +
-	"\rsnapshot_only\x18\x05 \x01(\bR\fsnapshotOnly\"k\n" +
+	"\rsnapshot_only\x18\x05 \x01(\bR\fsnapshotOnly\x128\n" +
+	"\x06filter\x18\x06 \x01(\v2 .sysarmor.control.v1.WatchFilterR\x06filter\"k\n" +
 	"\x0fGetEventRequest\x12=\n" +
 	"\acontext\x18\x01 \x01(\v2#.sysarmor.control.v1.RequestContextR\acontext\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\"I\n" +
@@ -2442,14 +2535,15 @@ const file_api_proto_control_v1_agentcontrol_proto_rawDesc = "" +
 	"\bsequence\x18\x03 \x01(\x04R\bsequence\x12\x1f\n" +
 	"\vobserved_at\x18\x04 \x01(\tR\n" +
 	"observedAt\x127\n" +
-	"\x05event\x18\x05 \x01(\v2!.sysarmor.event.v1.CanonicalEventR\x05event\"\xe5\x01\n" +
+	"\x05event\x18\x05 \x01(\v2!.sysarmor.event.v1.CanonicalEventR\x05event\"\x9f\x02\n" +
 	"\x13WatchSignalsRequest\x12=\n" +
 	"\acontext\x18\x01 \x01(\v2#.sysarmor.control.v1.RequestContextR\acontext\x12\x17\n" +
 	"\arule_id\x18\x02 \x01(\tR\x06ruleId\x12\x14\n" +
 	"\x05where\x18\x03 \x01(\tR\x05where\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\rR\x05limit\x12%\n" +
 	"\x0einclude_recent\x18\x05 \x01(\bR\rincludeRecent\x12#\n" +
-	"\rsnapshot_only\x18\x06 \x01(\bR\fsnapshotOnly\"\xb6\x01\n" +
+	"\rsnapshot_only\x18\x06 \x01(\bR\fsnapshotOnly\x128\n" +
+	"\x06filter\x18\a \x01(\v2 .sysarmor.control.v1.WatchFilterR\x06filter\"\xb6\x01\n" +
 	"\vSignalFrame\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1a\n" +
@@ -2483,7 +2577,7 @@ func file_api_proto_control_v1_agentcontrol_proto_rawDescGZIP() []byte {
 	return file_api_proto_control_v1_agentcontrol_proto_rawDescData
 }
 
-var file_api_proto_control_v1_agentcontrol_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_api_proto_control_v1_agentcontrol_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_api_proto_control_v1_agentcontrol_proto_goTypes = []any{
 	(*Scope)(nil),                        // 0: sysarmor.control.v1.Scope
 	(*RequestContext)(nil),               // 1: sysarmor.control.v1.RequestContext
@@ -2508,14 +2602,16 @@ var file_api_proto_control_v1_agentcontrol_proto_goTypes = []any{
 	(*ContentGetResponse)(nil),           // 20: sysarmor.control.v1.ContentGetResponse
 	(*AppliedSection)(nil),               // 21: sysarmor.control.v1.AppliedSection
 	(*ControlAck)(nil),                   // 22: sysarmor.control.v1.ControlAck
-	(*WatchEventsRequest)(nil),           // 23: sysarmor.control.v1.WatchEventsRequest
-	(*GetEventRequest)(nil),              // 24: sysarmor.control.v1.GetEventRequest
-	(*EventGetResponse)(nil),             // 25: sysarmor.control.v1.EventGetResponse
-	(*EventFrame)(nil),                   // 26: sysarmor.control.v1.EventFrame
-	(*WatchSignalsRequest)(nil),          // 27: sysarmor.control.v1.WatchSignalsRequest
-	(*SignalFrame)(nil),                  // 28: sysarmor.control.v1.SignalFrame
-	(*v1.CanonicalEvent)(nil),            // 29: sysarmor.event.v1.CanonicalEvent
-	(*v11.Signal)(nil),                   // 30: sysarmor.signal.v1.Signal
+	(*WatchFilter)(nil),                  // 23: sysarmor.control.v1.WatchFilter
+	(*WatchEventsRequest)(nil),           // 24: sysarmor.control.v1.WatchEventsRequest
+	(*GetEventRequest)(nil),              // 25: sysarmor.control.v1.GetEventRequest
+	(*EventGetResponse)(nil),             // 26: sysarmor.control.v1.EventGetResponse
+	(*EventFrame)(nil),                   // 27: sysarmor.control.v1.EventFrame
+	(*WatchSignalsRequest)(nil),          // 28: sysarmor.control.v1.WatchSignalsRequest
+	(*SignalFrame)(nil),                  // 29: sysarmor.control.v1.SignalFrame
+	nil,                                  // 30: sysarmor.control.v1.WatchFilter.LabelsEntry
+	(*v1.CanonicalEvent)(nil),            // 31: sysarmor.event.v1.CanonicalEvent
+	(*v11.Signal)(nil),                   // 32: sysarmor.signal.v1.Signal
 }
 var file_api_proto_control_v1_agentcontrol_proto_depIdxs = []int32{
 	0,  // 0: sysarmor.control.v1.RequestContext.scope:type_name -> sysarmor.control.v1.Scope
@@ -2539,37 +2635,40 @@ var file_api_proto_control_v1_agentcontrol_proto_depIdxs = []int32{
 	1,  // 18: sysarmor.control.v1.GetContentRequest.context:type_name -> sysarmor.control.v1.RequestContext
 	16, // 19: sysarmor.control.v1.ContentGetResponse.record:type_name -> sysarmor.control.v1.ContentRecord
 	21, // 20: sysarmor.control.v1.ControlAck.sections:type_name -> sysarmor.control.v1.AppliedSection
-	1,  // 21: sysarmor.control.v1.WatchEventsRequest.context:type_name -> sysarmor.control.v1.RequestContext
-	1,  // 22: sysarmor.control.v1.GetEventRequest.context:type_name -> sysarmor.control.v1.RequestContext
-	26, // 23: sysarmor.control.v1.EventGetResponse.frame:type_name -> sysarmor.control.v1.EventFrame
-	29, // 24: sysarmor.control.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
-	1,  // 25: sysarmor.control.v1.WatchSignalsRequest.context:type_name -> sysarmor.control.v1.RequestContext
-	30, // 26: sysarmor.control.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
-	8,  // 27: sysarmor.control.v1.AgentControlService.Health:input_type -> sysarmor.control.v1.HealthRequest
-	10, // 28: sysarmor.control.v1.AgentControlService.Capability:input_type -> sysarmor.control.v1.CapabilityRequest
-	12, // 29: sysarmor.control.v1.AgentControlService.CurrentPolicy:input_type -> sysarmor.control.v1.CurrentPolicyRequest
-	14, // 30: sysarmor.control.v1.AgentControlService.ApplyPolicy:input_type -> sysarmor.control.v1.ApplyPolicyRequest
-	15, // 31: sysarmor.control.v1.AgentControlService.ApplyContent:input_type -> sysarmor.control.v1.ApplyContentRequest
-	17, // 32: sysarmor.control.v1.AgentControlService.ListContent:input_type -> sysarmor.control.v1.ListContentRequest
-	19, // 33: sysarmor.control.v1.AgentControlService.GetContent:input_type -> sysarmor.control.v1.GetContentRequest
-	24, // 34: sysarmor.control.v1.AgentControlService.GetEvent:input_type -> sysarmor.control.v1.GetEventRequest
-	23, // 35: sysarmor.control.v1.AgentControlService.WatchEvents:input_type -> sysarmor.control.v1.WatchEventsRequest
-	27, // 36: sysarmor.control.v1.AgentControlService.WatchSignals:input_type -> sysarmor.control.v1.WatchSignalsRequest
-	9,  // 37: sysarmor.control.v1.AgentControlService.Health:output_type -> sysarmor.control.v1.HealthResponse
-	11, // 38: sysarmor.control.v1.AgentControlService.Capability:output_type -> sysarmor.control.v1.CapabilityResponse
-	13, // 39: sysarmor.control.v1.AgentControlService.CurrentPolicy:output_type -> sysarmor.control.v1.CurrentPolicyResponse
-	22, // 40: sysarmor.control.v1.AgentControlService.ApplyPolicy:output_type -> sysarmor.control.v1.ControlAck
-	22, // 41: sysarmor.control.v1.AgentControlService.ApplyContent:output_type -> sysarmor.control.v1.ControlAck
-	18, // 42: sysarmor.control.v1.AgentControlService.ListContent:output_type -> sysarmor.control.v1.ListContentResponse
-	20, // 43: sysarmor.control.v1.AgentControlService.GetContent:output_type -> sysarmor.control.v1.ContentGetResponse
-	25, // 44: sysarmor.control.v1.AgentControlService.GetEvent:output_type -> sysarmor.control.v1.EventGetResponse
-	26, // 45: sysarmor.control.v1.AgentControlService.WatchEvents:output_type -> sysarmor.control.v1.EventFrame
-	28, // 46: sysarmor.control.v1.AgentControlService.WatchSignals:output_type -> sysarmor.control.v1.SignalFrame
-	37, // [37:47] is the sub-list for method output_type
-	27, // [27:37] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	30, // 21: sysarmor.control.v1.WatchFilter.labels:type_name -> sysarmor.control.v1.WatchFilter.LabelsEntry
+	1,  // 22: sysarmor.control.v1.WatchEventsRequest.context:type_name -> sysarmor.control.v1.RequestContext
+	23, // 23: sysarmor.control.v1.WatchEventsRequest.filter:type_name -> sysarmor.control.v1.WatchFilter
+	1,  // 24: sysarmor.control.v1.GetEventRequest.context:type_name -> sysarmor.control.v1.RequestContext
+	27, // 25: sysarmor.control.v1.EventGetResponse.frame:type_name -> sysarmor.control.v1.EventFrame
+	31, // 26: sysarmor.control.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
+	1,  // 27: sysarmor.control.v1.WatchSignalsRequest.context:type_name -> sysarmor.control.v1.RequestContext
+	23, // 28: sysarmor.control.v1.WatchSignalsRequest.filter:type_name -> sysarmor.control.v1.WatchFilter
+	32, // 29: sysarmor.control.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
+	8,  // 30: sysarmor.control.v1.AgentControlService.Health:input_type -> sysarmor.control.v1.HealthRequest
+	10, // 31: sysarmor.control.v1.AgentControlService.Capability:input_type -> sysarmor.control.v1.CapabilityRequest
+	12, // 32: sysarmor.control.v1.AgentControlService.CurrentPolicy:input_type -> sysarmor.control.v1.CurrentPolicyRequest
+	14, // 33: sysarmor.control.v1.AgentControlService.ApplyPolicy:input_type -> sysarmor.control.v1.ApplyPolicyRequest
+	15, // 34: sysarmor.control.v1.AgentControlService.ApplyContent:input_type -> sysarmor.control.v1.ApplyContentRequest
+	17, // 35: sysarmor.control.v1.AgentControlService.ListContent:input_type -> sysarmor.control.v1.ListContentRequest
+	19, // 36: sysarmor.control.v1.AgentControlService.GetContent:input_type -> sysarmor.control.v1.GetContentRequest
+	25, // 37: sysarmor.control.v1.AgentControlService.GetEvent:input_type -> sysarmor.control.v1.GetEventRequest
+	24, // 38: sysarmor.control.v1.AgentControlService.WatchEvents:input_type -> sysarmor.control.v1.WatchEventsRequest
+	28, // 39: sysarmor.control.v1.AgentControlService.WatchSignals:input_type -> sysarmor.control.v1.WatchSignalsRequest
+	9,  // 40: sysarmor.control.v1.AgentControlService.Health:output_type -> sysarmor.control.v1.HealthResponse
+	11, // 41: sysarmor.control.v1.AgentControlService.Capability:output_type -> sysarmor.control.v1.CapabilityResponse
+	13, // 42: sysarmor.control.v1.AgentControlService.CurrentPolicy:output_type -> sysarmor.control.v1.CurrentPolicyResponse
+	22, // 43: sysarmor.control.v1.AgentControlService.ApplyPolicy:output_type -> sysarmor.control.v1.ControlAck
+	22, // 44: sysarmor.control.v1.AgentControlService.ApplyContent:output_type -> sysarmor.control.v1.ControlAck
+	18, // 45: sysarmor.control.v1.AgentControlService.ListContent:output_type -> sysarmor.control.v1.ListContentResponse
+	20, // 46: sysarmor.control.v1.AgentControlService.GetContent:output_type -> sysarmor.control.v1.ContentGetResponse
+	26, // 47: sysarmor.control.v1.AgentControlService.GetEvent:output_type -> sysarmor.control.v1.EventGetResponse
+	27, // 48: sysarmor.control.v1.AgentControlService.WatchEvents:output_type -> sysarmor.control.v1.EventFrame
+	29, // 49: sysarmor.control.v1.AgentControlService.WatchSignals:output_type -> sysarmor.control.v1.SignalFrame
+	40, // [40:50] is the sub-list for method output_type
+	30, // [30:40] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_control_v1_agentcontrol_proto_init() }
@@ -2583,7 +2682,7 @@ func file_api_proto_control_v1_agentcontrol_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_control_v1_agentcontrol_proto_rawDesc), len(file_api_proto_control_v1_agentcontrol_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   29,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

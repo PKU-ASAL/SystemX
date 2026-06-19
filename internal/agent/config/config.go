@@ -30,6 +30,7 @@ type AgentConfig struct {
 	TenantID string
 	Token    string
 	Scenario string
+	Labels   map[string]string
 }
 
 type ManagerConfig struct {
@@ -49,6 +50,15 @@ type SensorConfig struct {
 	InstallDir        string
 	TetraPath         string
 	TetragonPath      string
+	EventTransport    string
+	ServerAddress     string
+	CgroupRate        string
+	PprofAddress      string
+	GopsAddress       string
+	ProcessCacheSize  int
+	DataCacheSize     int
+	EventQueueSize    int
+	RBQueueSize       string
 	BTFPath           string
 	BPFFSPath         string
 	RequireBTF        bool
@@ -147,6 +157,21 @@ func (c Config) Validate() error {
 	}
 	if c.Sensor.Mode != "managed" && c.Sensor.Mode != "external" {
 		return fmt.Errorf("sensor.mode must be managed or external")
+	}
+	if c.Sensor.EventTransport == "" {
+		c.Sensor.EventTransport = "grpc"
+	}
+	if c.Sensor.EventTransport != "grpc" && c.Sensor.EventTransport != "tetra" {
+		return fmt.Errorf("sensor.event_transport must be grpc or tetra")
+	}
+	if c.Sensor.ProcessCacheSize < 0 {
+		return fmt.Errorf("sensor.process_cache_size must be non-negative")
+	}
+	if c.Sensor.DataCacheSize < 0 {
+		return fmt.Errorf("sensor.data_cache_size must be non-negative")
+	}
+	if c.Sensor.EventQueueSize < 0 {
+		return fmt.Errorf("sensor.event_queue_size must be non-negative")
 	}
 	if c.Sensor.MaxRestarts < 0 {
 		return fmt.Errorf("sensor.max_restarts must be non-negative")
@@ -275,7 +300,7 @@ func defaults() Config {
 	return Config{
 		Manager:  ManagerConfig{Transport: "stream"},
 		Control:  ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
-		Sensor:   SensorConfig{Backend: "tetragon", Mode: "managed", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
+		Sensor:   SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
 		Spool:    SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
 		Upload:   UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second},
 		Health:   HealthConfig{Interval: 10 * time.Second},
@@ -300,6 +325,17 @@ func assign(cfg *Config, section, key, value string) error {
 		case "scenario":
 			cfg.Agent.Scenario = value
 		default:
+			if labelKey, ok := strings.CutPrefix(key, "label."); ok {
+				labelKey = strings.TrimSpace(labelKey)
+				if labelKey == "" {
+					return fmt.Errorf("agent label key is empty")
+				}
+				if cfg.Agent.Labels == nil {
+					cfg.Agent.Labels = map[string]string{}
+				}
+				cfg.Agent.Labels[labelKey] = value
+				return nil
+			}
 			return unknown(section, key)
 		}
 	case "manager":
@@ -334,6 +370,36 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Sensor.TetraPath = value
 		case "tetragon_path":
 			cfg.Sensor.TetragonPath = value
+		case "event_transport":
+			cfg.Sensor.EventTransport = value
+		case "server_address":
+			cfg.Sensor.ServerAddress = value
+		case "cgroup_rate":
+			cfg.Sensor.CgroupRate = value
+		case "pprof_address":
+			cfg.Sensor.PprofAddress = value
+		case "gops_address":
+			cfg.Sensor.GopsAddress = value
+		case "process_cache_size":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("sensor.process_cache_size: %w", err)
+			}
+			cfg.Sensor.ProcessCacheSize = v
+		case "data_cache_size":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("sensor.data_cache_size: %w", err)
+			}
+			cfg.Sensor.DataCacheSize = v
+		case "event_queue_size":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("sensor.event_queue_size: %w", err)
+			}
+			cfg.Sensor.EventQueueSize = v
+		case "rb_queue_size":
+			cfg.Sensor.RBQueueSize = value
 		case "btf_path":
 			cfg.Sensor.BTFPath = value
 		case "bpffs_path":

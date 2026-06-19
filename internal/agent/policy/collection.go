@@ -47,14 +47,40 @@ type ProcessSelector struct {
 }
 
 type FileSelector struct {
-	Prefixes []string `json:"prefixes,omitempty"`
+	Prefixes   []string `json:"prefixes,omitempty"`
+	PrefixRefs []string `json:"prefix_refs,omitempty"`
 }
 
 type SocketSelector struct {
 	Families []string `json:"families,omitempty"`
 	Addrs    []string `json:"addrs,omitempty"`
+	AddrRefs []string `json:"addr_refs,omitempty"`
 	Ports    []string `json:"ports,omitempty"`
+	PortRefs []string `json:"port_refs,omitempty"`
 }
+
+type CollectionContentSnapshot struct {
+	ContextSets map[string]CollectionValueSet
+	IOCPacks    map[string]CollectionValueSet
+}
+
+type CollectionValueSet struct {
+	Ref       string
+	Version   string
+	Digest    string
+	ValueType string
+	Values    []string
+}
+
+type CollectionExpansionReport struct {
+	ResolvedRefs []contract.CollectionResolvedRef
+}
+
+const (
+	collectionMaxFilePrefixes = 128
+	collectionMaxSocketAddrs  = 512
+	collectionMaxSocketPorts  = 128
+)
 
 func LoadCollectionIntent(path string, observeOnly bool) (contract.CollectionIntent, error) {
 	data, err := os.ReadFile(path)
@@ -160,6 +186,101 @@ func NormalizeCollectionPolicy(policy CollectionPolicy) CollectionPolicy {
 	policy.ScopeType = strings.TrimSpace(policy.ScopeType)
 	policy.ScopeSelector = strings.TrimSpace(policy.ScopeSelector)
 	return policy
+}
+
+func ExpandCollectionPolicyRefs(policy CollectionPolicy, snapshot CollectionContentSnapshot) (CollectionPolicy, CollectionExpansionReport, error) {
+	policy = NormalizeCollectionPolicy(policy)
+	var report CollectionExpansionReport
+	for specIndex := range policy.BehaviorSpecs {
+		spec := &policy.BehaviorSpecs[specIndex]
+		behavior := eventmodel.NormalizeBehavior(spec.ID).String()
+		filePrefixes, resolved, err := expandSelectorRefs(snapshot, behavior, "file.path.prefix", spec.Selectors.File.PrefixRefs, []string{"path_prefix"}, collectionMaxFilePrefixes)
+		if err != nil {
+			return CollectionPolicy{}, CollectionExpansionReport{}, err
+		}
+		spec.Selectors.File.Prefixes = normalizeStringList(append(spec.Selectors.File.Prefixes, filePrefixes...))
+		report.ResolvedRefs = append(report.ResolvedRefs, resolved...)
+		socketAddrs, resolved, err := expandSelectorRefs(snapshot, behavior, "socket.addr", spec.Selectors.Socket.AddrRefs, []string{"ip", "addr", "ip_addr"}, collectionMaxSocketAddrs)
+		if err != nil {
+			return CollectionPolicy{}, CollectionExpansionReport{}, err
+		}
+		spec.Selectors.Socket.Addrs = normalizeStringList(append(spec.Selectors.Socket.Addrs, socketAddrs...))
+		report.ResolvedRefs = append(report.ResolvedRefs, resolved...)
+		socketPorts, resolved, err := expandSelectorRefs(snapshot, behavior, "socket.port", spec.Selectors.Socket.PortRefs, []string{"port"}, collectionMaxSocketPorts)
+		if err != nil {
+			return CollectionPolicy{}, CollectionExpansionReport{}, err
+		}
+		spec.Selectors.Socket.Ports = normalizeStringList(append(spec.Selectors.Socket.Ports, socketPorts...))
+		report.ResolvedRefs = append(report.ResolvedRefs, resolved...)
+		if len(spec.Selectors.File.Prefixes) > collectionMaxFilePrefixes {
+			return CollectionPolicy{}, CollectionExpansionReport{}, fmt.Errorf("collection selector file.path.prefix for %s exceeds budget: %d > %d", behavior, len(spec.Selectors.File.Prefixes), collectionMaxFilePrefixes)
+		}
+		if len(spec.Selectors.Socket.Addrs) > collectionMaxSocketAddrs {
+			return CollectionPolicy{}, CollectionExpansionReport{}, fmt.Errorf("collection selector socket.addr for %s exceeds budget: %d > %d", behavior, len(spec.Selectors.Socket.Addrs), collectionMaxSocketAddrs)
+		}
+		if len(spec.Selectors.Socket.Ports) > collectionMaxSocketPorts {
+			return CollectionPolicy{}, CollectionExpansionReport{}, fmt.Errorf("collection selector socket.port for %s exceeds budget: %d > %d", behavior, len(spec.Selectors.Socket.Ports), collectionMaxSocketPorts)
+		}
+	}
+	return NormalizeCollectionPolicy(policy), report, nil
+}
+
+func expandSelectorRefs(snapshot CollectionContentSnapshot, behavior, selector string, refs []string, valueTypes []string, budget int) ([]string, []contract.CollectionResolvedRef, error) {
+	refs = normalizeStringList(refs)
+	var values []string
+	var resolved []contract.CollectionResolvedRef
+	for _, ref := range refs {
+		set, ok := lookupCollectionValueSet(snapshot, ref)
+		if !ok {
+			return nil, nil, fmt.Errorf("collection selector %s for %s references missing content %q", selector, behavior, ref)
+		}
+		if !valueTypeAllowed(set.ValueType, valueTypes) {
+			return nil, nil, fmt.Errorf("collection selector %s for %s references %s with value_type %q, want one of %s", selector, behavior, ref, set.ValueType, strings.Join(valueTypes, ","))
+		}
+		next := normalizeStringList(append(values, set.Values...))
+		if len(next) > budget {
+			return nil, nil, fmt.Errorf("collection selector %s for %s exceeds budget after %s: %d > %d", selector, behavior, ref, len(next), budget)
+		}
+		values = next
+		resolved = append(resolved, contract.CollectionResolvedRef{
+			Behavior:  behavior,
+			Selector:  selector,
+			Ref:       set.Ref,
+			Version:   set.Version,
+			Digest:    set.Digest,
+			ValueType: set.ValueType,
+			Count:     len(set.Values),
+			Values:    append([]string(nil), set.Values...),
+		})
+	}
+	return values, resolved, nil
+}
+
+func lookupCollectionValueSet(snapshot CollectionContentSnapshot, ref string) (CollectionValueSet, bool) {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "ctx:") {
+		set, ok := snapshot.ContextSets[ref]
+		return set, ok
+	}
+	if strings.HasPrefix(ref, "ioc:") {
+		set, ok := snapshot.IOCPacks[ref]
+		return set, ok
+	}
+	if set, ok := snapshot.ContextSets[ref]; ok {
+		return set, true
+	}
+	set, ok := snapshot.IOCPacks[ref]
+	return set, ok
+}
+
+func valueTypeAllowed(valueType string, allowed []string) bool {
+	valueType = strings.TrimSpace(valueType)
+	for _, candidate := range allowed {
+		if valueType == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func CollectionPolicyIntent(policy CollectionPolicy) (contract.CollectionIntent, error) {
@@ -298,9 +419,12 @@ func normalizeBehaviorSpecs(values []CollectionBehaviorPolicy) []CollectionBehav
 		value.Selectors.Binary.Prefixes = normalizeStringList(value.Selectors.Binary.Prefixes)
 		value.Selectors.Process.BinaryPrefixes = normalizeStringList(value.Selectors.Process.BinaryPrefixes)
 		value.Selectors.File.Prefixes = normalizeStringList(value.Selectors.File.Prefixes)
+		value.Selectors.File.PrefixRefs = normalizeStringList(value.Selectors.File.PrefixRefs)
 		value.Selectors.Socket.Families = normalizeStringList(value.Selectors.Socket.Families)
 		value.Selectors.Socket.Addrs = normalizeStringList(value.Selectors.Socket.Addrs)
+		value.Selectors.Socket.AddrRefs = normalizeStringList(value.Selectors.Socket.AddrRefs)
 		value.Selectors.Socket.Ports = normalizeStringList(value.Selectors.Socket.Ports)
+		value.Selectors.Socket.PortRefs = normalizeStringList(value.Selectors.Socket.PortRefs)
 		out = append(out, value)
 	}
 	return out

@@ -175,6 +175,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		TenantID:      r.Config.Agent.TenantID,
 		ScopeType:     scopeType,
 		ScopeSelector: scopeSelector,
+		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
 	})
 	r.applyRuntimePolicy(effectivePolicy)
 	refreshCtx := ctx
@@ -253,7 +254,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				MaxRestarts:        uint64(r.Config.Sensor.MaxRestarts),
 				MaxParseErrors:     r.Config.Sensor.MaxParseErrors,
 				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
-				NoEventGracePeriod: r.Config.Sensor.RestartWindow,
+				NoEventGracePeriod: tamperNoEventGracePeriod(r.Config.Sensor.RestartWindow, r.Config.Health.Interval),
 			}); sig != nil {
 				batchID, err := r.spoolSignals(queue, []*signalv1.Signal{sig})
 				if err != nil && !spool.IsBackpressure(err) {
@@ -290,6 +291,17 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
+}
+
+func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.Duration {
+	grace := restartWindow
+	if grace < 30*time.Second {
+		grace = 30 * time.Second
+	}
+	if intervalGrace := healthInterval * 10; intervalGrace > grace {
+		grace = intervalGrace
+	}
+	return grace
 }
 
 func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, drainOnce bool, cancelUploads func(), stopRuntime func()) error {
@@ -769,6 +781,7 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, dete
 	if canonical.Scenario == "" {
 		canonical.Scenario = r.Config.Agent.Scenario
 	}
+	canonical.Labels = mergeLabels(canonical.GetLabels(), r.policyLabels())
 	signals := detector.Process(canonical)
 	for _, sig := range signals {
 		if sig.Scenario == "" {
@@ -788,6 +801,71 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, dete
 		Signals: signals,
 	}
 	return queue.Append(batch)
+}
+
+func (r *Runner) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) map[string]string {
+	labels := cloneStringMap(r.Config.Agent.Labels)
+	if r.Config.Agent.Scenario != "" {
+		labels["scenario"] = r.Config.Agent.Scenario
+	}
+	if sensorRuntime != "" {
+		labels["sensor_runtime"] = sensorRuntime
+	}
+	if scopeType != "" {
+		labels["scope_type"] = scopeType
+	}
+	if scopeSelector != "" {
+		labels["scope_selector"] = scopeSelector
+	}
+	if len(labels) == 0 {
+		return nil
+	}
+	return labels
+}
+
+func (r *Runner) policyLabels() map[string]string {
+	policy := r.activePolicy()
+	labels := map[string]string{}
+	if policy.PolicyID != "" {
+		labels["policy_id"] = policy.PolicyID
+	}
+	if policy.Version > 0 {
+		labels["policy_version"] = fmt.Sprintf("%d", policy.Version)
+	}
+	if policy.Mode != "" {
+		labels["policy_mode"] = policy.Mode
+	}
+	if len(labels) == 0 {
+		return nil
+	}
+	return labels
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := map[string]string{}
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func mergeLabels(base, extra map[string]string) map[string]string {
+	out := cloneStringMap(base)
+	for key, value := range extra {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (string, error) {
@@ -1059,6 +1137,15 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 			TetraPath:    cfg.Sensor.TetraPath,
 			TetragonPath: cfg.Sensor.TetragonPath,
 		}, restart)
+		backend.EventTransport = cfg.Sensor.EventTransport
+		backend.ServerAddress = cfg.Sensor.ServerAddress
+		backend.CgroupRate = cfg.Sensor.CgroupRate
+		backend.PprofAddress = cfg.Sensor.PprofAddress
+		backend.GopsAddress = cfg.Sensor.GopsAddress
+		backend.ProcessCacheSize = cfg.Sensor.ProcessCacheSize
+		backend.DataCacheSize = cfg.Sensor.DataCacheSize
+		backend.EventQueueSize = cfg.Sensor.EventQueueSize
+		backend.RBQueueSize = cfg.Sensor.RBQueueSize
 		scope, err := cfg.Sensor.EffectiveScope()
 		if err != nil {
 			return nil, err

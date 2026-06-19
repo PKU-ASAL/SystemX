@@ -57,6 +57,7 @@ type tetragonProcess struct {
 type kprobeArg struct {
 	File     *fileArg     `json:"file_arg"`
 	Sockaddr *sockaddrArg `json:"sockaddr_arg"`
+	Int      *int32       `json:"int_arg"`
 }
 
 type fileArg struct {
@@ -122,6 +123,17 @@ func execEvents(env envelope, pe processEvent, raw string) []*sensorv1.SensorEve
 
 func kprobeEventToSensor(env envelope, kp kprobeEvent, raw string) *sensorv1.SensorEvent {
 	switch kp.Function {
+	case "security_bprm_creds_from_file":
+		obj := &sensorv1.RawObject{}
+		for _, arg := range kp.Args {
+			if arg.File != nil && arg.File.Path != "" {
+				obj.Path = arg.File.Path
+				break
+			}
+		}
+		return sensorEvent(env, kp.Process, kp.Parent, eventmodel.BehaviorProcessExec.String(), obj, raw)
+	case "do_exit":
+		return sensorEvent(env, kp.Process, kp.Parent, eventmodel.BehaviorProcessExit.String(), nil, raw)
 	case "security_socket_connect":
 		for _, arg := range kp.Args {
 			if arg.Sockaddr != nil && arg.Sockaddr.Addr != "" && arg.Sockaddr.Port != 0 {
@@ -133,11 +145,27 @@ func kprobeEventToSensor(env envelope, kp kprobeEvent, raw string) *sensorv1.Sen
 	case "security_file_permission":
 		for _, arg := range kp.Args {
 			if arg.File != nil && arg.File.Path != "" {
-				return sensorEvent(env, kp.Process, kp.Parent, eventmodel.BehaviorFileOpen.String(), &sensorv1.RawObject{Path: arg.File.Path}, raw)
+				behavior := eventmodel.BehaviorFileOpen.String()
+				switch kprobePermission(kp.Args) {
+				case 2:
+					behavior = eventmodel.BehaviorFileWrite.String()
+				case 4:
+					behavior = eventmodel.BehaviorFileRead.String()
+				}
+				return sensorEvent(env, kp.Process, kp.Parent, behavior, &sensorv1.RawObject{Path: arg.File.Path}, raw)
 			}
 		}
 	}
 	return nil
+}
+
+func kprobePermission(args []kprobeArg) int32 {
+	for _, arg := range args {
+		if arg.Int != nil {
+			return *arg.Int
+		}
+	}
+	return 0
 }
 
 func sensorEvent(env envelope, proc, parent tetragonProcess, behavior string, obj *sensorv1.RawObject, raw string) *sensorv1.SensorEvent {

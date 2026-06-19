@@ -222,6 +222,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 			Limit:         uint32Flag(args, "--limit"),
 			IncludeRecent: hasFlag(args, "--include-recent"),
 			SnapshotOnly:  hasFlag(args, "--snapshot"),
+			Filter:        watchFilter(args),
 		})
 		if err != nil {
 			return nil, err
@@ -235,6 +236,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 			Limit:         uint32Flag(args, "--limit"),
 			IncludeRecent: hasFlag(args, "--include-recent"),
 			SnapshotOnly:  hasFlag(args, "--snapshot"),
+			Filter:        watchFilter(args),
 		})
 		if err != nil {
 			return nil, err
@@ -560,6 +562,30 @@ func requestContext(args []string) *controlv1.RequestContext {
 			Selector: flagValue(args, "--scope-selector"),
 		},
 	}
+}
+
+func watchFilter(args []string) *controlv1.WatchFilter {
+	filter := &controlv1.WatchFilter{
+		AfterSequence:   uint64Flag(args, "--after-seq", 0),
+		SinceObservedAt: flagValue(args, "--since"),
+		UntilObservedAt: flagValue(args, "--until"),
+		Labels:          map[string]string{},
+	}
+	for _, item := range flagValues(args, "--label") {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		filter.Labels[key] = value
+	}
+	if filter.AfterSequence == 0 && filter.SinceObservedAt == "" && filter.UntilObservedAt == "" && len(filter.Labels) == 0 {
+		return nil
+	}
+	return filter
 }
 
 func commandTimeout(args []string, fallback time.Duration) time.Duration {

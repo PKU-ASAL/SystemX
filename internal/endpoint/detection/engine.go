@@ -17,17 +17,20 @@ import (
 const builtinRuleSetRef = "ruleset:endpoint-linux-builtin"
 const defaultMaxCEPGroups = 4096
 const defaultMaxCEPRefs = 128
+const credentialReadSuppressWindow = 5 * time.Minute
+const maxSuppressionKeys = 8192
 
 type Engine struct {
-	nextID  uint64
-	rules   map[string]effectiveRule
-	state   map[string]*lineageState
-	cep     map[string]*cepRuleState
-	limits  EngineLimits
-	metrics Metrics
-	ctx     ContextSnapshot
-	ioc     IOCSnapshot
-	refs    ContentSnapshot
+	nextID      uint64
+	rules       map[string]effectiveRule
+	state       map[string]*lineageState
+	cep         map[string]*cepRuleState
+	suppression map[string]time.Time
+	limits      EngineLimits
+	metrics     Metrics
+	ctx         ContextSnapshot
+	ioc         IOCSnapshot
+	refs        ContentSnapshot
 }
 
 type EngineLimits struct {
@@ -177,13 +180,14 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 	}
 	limits = normalizeLimits(limits)
 	engine := &Engine{
-		rules:  make(map[string]effectiveRule),
-		state:  make(map[string]*lineageState),
-		cep:    make(map[string]*cepRuleState),
-		limits: limits,
-		ctx:    resolveContext(normalized.ContextRefs, content),
-		ioc:    resolveIOC(normalized.IOCRefs, content),
-		refs:   content,
+		rules:       make(map[string]effectiveRule),
+		state:       make(map[string]*lineageState),
+		cep:         make(map[string]*cepRuleState),
+		suppression: make(map[string]time.Time),
+		limits:      limits,
+		ctx:         resolveContext(normalized.ContextRefs, content),
+		ioc:         resolveIOC(normalized.IOCRefs, content),
+		refs:        content,
 	}
 	report := ApplyReport{Status: "applied", Message: "detection policy applied"}
 	for _, rule := range resolveRules(normalized, content) {
@@ -383,7 +387,45 @@ func (e *Engine) detectCredentialRead(ev *eventv1.CanonicalEvent) []*signalv1.Si
 	if isTrustedBinary(ev.GetSubjectProc().GetBinary(), e.ctx.TrustedAdminBinaries) {
 		return nil
 	}
+	if e.suppressSignal("credential_file_read:"+credentialReadKey(ev, path), eventWallTime(ev), credentialReadSuppressWindow) {
+		return nil
+	}
 	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), fileEntity(path, "object"))}
+}
+
+func credentialReadKey(ev *eventv1.CanonicalEvent, path string) string {
+	proc := ev.GetSubjectProc()
+	processKey := firstNonEmpty(proc.GetStableId(), proc.GetBinary(), ev.GetLineageId(), "unknown-process")
+	return processKey + "|" + path
+}
+
+func eventWallTime(ev *eventv1.CanonicalEvent) time.Time {
+	if ev.GetOccurredAtNs() > 0 {
+		return time.Unix(0, int64(ev.GetOccurredAtNs())).UTC()
+	}
+	if ev.GetMonoNs() > 0 {
+		return time.Unix(0, int64(ev.GetMonoNs())).UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (e *Engine) suppressSignal(key string, now time.Time, window time.Duration) bool {
+	if e == nil || key == "" || window <= 0 {
+		return false
+	}
+	if last, ok := e.suppression[key]; ok && now.Sub(last) < window {
+		return true
+	}
+	if len(e.suppression) >= maxSuppressionKeys {
+		cutoff := now.Add(-window)
+		for got, last := range e.suppression {
+			if last.Before(cutoff) {
+				delete(e.suppression, got)
+			}
+		}
+	}
+	e.suppression[key] = now
+	return false
 }
 
 func (e *Engine) detectPayloadDrop(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
@@ -430,6 +472,7 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, rule effectiveRule, refs []s
 		EventRefs:    refs,
 		Terminal:     terminal,
 		Scenario:     ev.GetScenario(),
+		Labels:       cloneLabels(ev.GetLabels()),
 		ContextRefs:  e.signalContentRefs(rule.spec.ContextRefs, e.refs.ContextRefs),
 		IocRefs:      e.signalContentRefs(rule.spec.IOCRefs, e.refs.IOCRefs),
 	}
@@ -457,6 +500,24 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, rule effectiveRule, refs []s
 		}
 	}
 	return sig
+}
+
+func cloneLabels(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (e *Engine) signalContentRefs(refs []string, resolved map[string]ContentRef) []*signalv1.ContentRef {
@@ -904,7 +965,7 @@ func builtinRules() []RuleSpec {
 		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-port-feed"}, ResponseIntent: collect},
 		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}},
 		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
-		{RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileOpen.String()}, ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"}},
+		{RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileRead.String()}, ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"}},
 	}
 }
 

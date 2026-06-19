@@ -90,6 +90,8 @@ agent:
   tenant_id: default
   token: dev-token
   scenario: apt-fileless-c2-managed
+  label.env: test
+  label.deployment: endpoint-refinement
 
 manager:
   address: http://10.66.0.10:9443
@@ -142,6 +144,9 @@ resource:
 	}
 	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
 		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
+	}
+	if cfg.Agent.Labels["env"] != "test" || cfg.Agent.Labels["deployment"] != "endpoint-refinement" {
+		t.Fatalf("agent labels = %+v", cfg.Agent.Labels)
 	}
 	if cfg.Sensor.Scope.Type != "container" || cfg.Sensor.Scope.Selector != "abc123" {
 		t.Fatalf("canonical scope = %q/%q", cfg.Sensor.Scope.Type, cfg.Sensor.Scope.Selector)

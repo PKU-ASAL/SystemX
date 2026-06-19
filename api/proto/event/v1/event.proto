@@ -46,4 +46,5 @@ message CanonicalEvent {
   string pod = 18;
   uint64 occurred_at_ns = 19;
   string behavior = 20;
+  map<string, string> labels = 21;
 }

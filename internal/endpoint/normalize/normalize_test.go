@@ -67,6 +67,7 @@ func TestNormalizeAddsProvenanceTags(t *testing.T) {
 		TenantID:      "tenant-a",
 		ScopeType:     "container",
 		ScopeSelector: "container-123",
+		Labels:        map[string]string{"env": "test", "benchmark_run": "run-a"},
 	})
 	ev := n.Normalize(&sensorv1.SensorEvent{
 		MonoNs:      12345,
@@ -82,5 +83,8 @@ func TestNormalizeAddsProvenanceTags(t *testing.T) {
 	}
 	if ev.GetContainerId() != "container-123" || ev.GetCgroup() != "cg-a" || ev.GetOccurredAtNs() != 12345 {
 		t.Fatalf("runtime tags not set: %+v", ev)
+	}
+	if ev.GetLabels()["env"] != "test" || ev.GetLabels()["benchmark_run"] != "run-a" {
+		t.Fatalf("labels not set: %+v", ev.GetLabels())
 	}
 }

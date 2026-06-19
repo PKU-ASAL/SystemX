@@ -20,6 +20,7 @@ type Normalizer struct {
 	tenantID      string
 	scopeType     string
 	scopeSelector string
+	labels        map[string]string
 	table         *endpointctx.Table
 	seq           atomic.Uint64
 }
@@ -28,6 +29,7 @@ type Options struct {
 	TenantID      string
 	ScopeType     string
 	ScopeSelector string
+	Labels        map[string]string
 }
 
 func New(agentID, hostID string, table *endpointctx.Table) *Normalizer {
@@ -47,6 +49,7 @@ func NewWithOptions(agentID, hostID string, table *endpointctx.Table, opts Optio
 		tenantID:      opts.TenantID,
 		scopeType:     opts.ScopeType,
 		scopeSelector: opts.ScopeSelector,
+		labels:        cloneLabels(opts.Labels),
 		table:         table,
 	}
 }
@@ -100,7 +103,26 @@ func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent
 		Scope:          &eventv1.RuntimeScope{Type: n.scopeType, Selector: n.scopeSelector},
 		ContainerId:    ev.GetContainerId(),
 		Cgroup:         ev.GetProc().GetCgroup(),
+		Labels:         cloneLabels(n.labels),
 	}
+}
+
+func cloneLabels(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func eventBehavior(ev *sensorv1.SensorEvent) string {

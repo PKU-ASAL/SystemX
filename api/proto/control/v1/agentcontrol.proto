@@ -214,12 +214,20 @@ message ControlAck {
   string report_json = 10;
 }
 
+message WatchFilter {
+  uint64 after_sequence = 1;
+  string since_observed_at = 2;
+  string until_observed_at = 3;
+  map<string, string> labels = 4;
+}
+
 message WatchEventsRequest {
   RequestContext context = 1;
   string behavior = 2;
   uint32 limit = 3;
   bool include_recent = 4;
   bool snapshot_only = 5;
+  WatchFilter filter = 6;
 }
 
 message GetEventRequest {
@@ -246,6 +254,7 @@ message WatchSignalsRequest {
   uint32 limit = 4;
   bool include_recent = 5;
   bool snapshot_only = 6;
+  WatchFilter filter = 7;
 }
 
 message SignalFrame {
