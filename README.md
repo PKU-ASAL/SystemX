@@ -74,7 +74,7 @@ Production agent-to-manager traffic is split into two gRPC services:
 - `AgentDataService.Upload(DataBatch)`: agent to manager data flow. Events and signals are uploaded as durable `DataBatch` units from the agent spool/WAL. A `DataAck` commits the batch cursor only when its status is `STATUS_ACCEPTED` or `STATUS_DUPLICATE`.
 - `AgentControlService.ControlStream`: bidirectional control flow. Agent frames carry health, capability, response acks, and evidence results. Server frames carry policy updates, resume cursors, response commands, evidence pullbacks, and structured rejected acks.
 
-The contract envelope is intentionally explicit. `ControlStream` uses `contract_version=1` and per-stream sequence numbers starting at `1`; replayed frames are rejected as `AlreadyExists`, and sequence gaps are rejected as `FailedPrecondition`. `DataAck` uses stable status and reason classes: invalid payloads are terminal `invalid_upload` rejections, while transient server/storage/capacity failures are `STATUS_RETRYABLE` with `retry_after_ms`.
+The contract envelope is intentionally explicit. `ControlStream` uses `contract_version=1`, a required `request_id`, and per-stream sequence numbers starting at `1`; replayed frames are rejected as `AlreadyExists`, and sequence gaps are rejected as `FailedPrecondition`. Reusing the same `request_id` with a new valid sequence is idempotent and replays the prior response without re-running the command. `DataAck` uses stable status and reason classes: invalid payloads are terminal `invalid_upload` rejections, while transient server/storage/capacity failures are `STATUS_RETRYABLE` with `retry_after_ms`.
 
 Both services share the same production mTLS identity model. The preferred agent certificate identity is:
 

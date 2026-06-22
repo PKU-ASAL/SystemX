@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type controlGRPCServer struct {
@@ -33,7 +34,7 @@ func (s *controlGRPCServer) ControlStream(stream controlv1.AgentControlService_C
 	if !s.authorized(stream.Context()) {
 		return status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	state := controlStreamState{nextIncoming: 1, nextOutgoing: 1}
+	state := controlStreamState{nextIncoming: 1, nextOutgoing: 1, repliesByRequestID: map[string][]*controlv1.ControlStreamFrame{}}
 	for {
 		frame, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -52,10 +53,20 @@ func (s *controlGRPCServer) ControlStream(stream controlv1.AgentControlService_C
 			}
 			continue
 		}
+		if out, ok := state.replay(frame.GetRequestId()); ok {
+			state.assignOutgoing(out)
+			for _, reply := range out {
+				if err := stream.Send(reply); err != nil {
+					return status.Errorf(codes.Internal, "send control stream frame: %v", err)
+				}
+			}
+			continue
+		}
 		out, err := s.acceptControlFrames(stream.Context(), frame)
 		if err != nil {
 			out = []*controlv1.ControlStreamFrame{controlAckFrame(frame, "rejected", err.Error(), errorCode(err), errorRetryable(err))}
 		}
+		state.remember(frame.GetRequestId(), out)
 		state.assignOutgoing(out)
 		for _, reply := range out {
 			if err := stream.Send(reply); err != nil {
@@ -66,8 +77,9 @@ func (s *controlGRPCServer) ControlStream(stream controlv1.AgentControlService_C
 }
 
 type controlStreamState struct {
-	nextIncoming uint64
-	nextOutgoing uint64
+	nextIncoming       uint64
+	nextOutgoing       uint64
+	repliesByRequestID map[string][]*controlv1.ControlStreamFrame
 }
 
 func (s *controlStreamState) acceptIncoming(frame *controlv1.ControlStreamFrame) error {
@@ -76,6 +88,9 @@ func (s *controlStreamState) acceptIncoming(frame *controlv1.ControlStreamFrame)
 	}
 	if frame.GetContractVersion() != 1 {
 		return status.Errorf(codes.InvalidArgument, "unsupported control contract_version %d", frame.GetContractVersion())
+	}
+	if frame.GetRequestId() == "" {
+		return status.Error(codes.InvalidArgument, "control stream request_id is required")
 	}
 	seq := frame.GetSequence()
 	if seq == 0 {
@@ -89,6 +104,36 @@ func (s *controlStreamState) acceptIncoming(frame *controlv1.ControlStreamFrame)
 	}
 	s.nextIncoming++
 	return nil
+}
+
+func (s *controlStreamState) remember(requestID string, frames []*controlv1.ControlStreamFrame) {
+	if requestID == "" {
+		return
+	}
+	s.repliesByRequestID[requestID] = cloneControlFrames(frames)
+}
+
+func (s *controlStreamState) replay(requestID string) ([]*controlv1.ControlStreamFrame, bool) {
+	if requestID == "" {
+		return nil, false
+	}
+	frames, ok := s.repliesByRequestID[requestID]
+	if !ok {
+		return nil, false
+	}
+	return cloneControlFrames(frames), true
+}
+
+func cloneControlFrames(frames []*controlv1.ControlStreamFrame) []*controlv1.ControlStreamFrame {
+	out := make([]*controlv1.ControlStreamFrame, 0, len(frames))
+	for _, frame := range frames {
+		if frame == nil {
+			out = append(out, nil)
+			continue
+		}
+		out = append(out, proto.Clone(frame).(*controlv1.ControlStreamFrame))
+	}
+	return out
 }
 
 func (s *controlStreamState) assignOutgoing(frames []*controlv1.ControlStreamFrame) {

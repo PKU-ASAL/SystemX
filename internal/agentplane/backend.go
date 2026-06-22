@@ -15,6 +15,17 @@ import (
 
 var ErrInvalidUpload = errors.New("invalid upload")
 
+const (
+	DataAckReasonAccepted             = "accepted"
+	DataAckReasonDuplicate            = "duplicate"
+	DataAckReasonInvalidUpload        = "invalid_upload"
+	DataAckReasonRetryableServerError = "retryable_server_error"
+	DataAckReasonServerError          = "server_error"
+	DataAckReasonRetryable            = "retryable"
+	DataAckReasonRejected             = "rejected"
+	DataAckReasonUnspecified          = "unspecified"
+)
+
 type UploadResult struct {
 	AcceptedEvents  int
 	AcceptedSignals int

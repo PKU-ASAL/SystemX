@@ -39,7 +39,7 @@ func (s *grpcServer) Upload(ctx context.Context, batch *dataplanev1.DataBatch) (
 	result, err := s.backend.AcceptUploadWithTransport(batch, "grpc")
 	if err != nil {
 		if errors.Is(err, ErrInvalidUpload) {
-			return dataAck(batch, dataplanev1.DataAck_STATUS_REJECTED, "invalid_upload", err.Error(), false, 0, UploadResult{}), nil
+			return dataAck(batch, dataplanev1.DataAck_STATUS_REJECTED, DataAckReasonInvalidUpload, err.Error(), false, 0, UploadResult{}), nil
 		}
 		statusCode := status.Code(err)
 		retryable := dataAckRetryable(statusCode)
@@ -48,11 +48,11 @@ func (s *grpcServer) Upload(ctx context.Context, batch *dataplanev1.DataBatch) (
 			retryable = true
 		}
 		ackStatus := dataplanev1.DataAck_STATUS_REJECTED
-		reason := "server_error"
+		reason := DataAckReasonServerError
 		retryAfter := uint64(0)
 		if retryable {
 			ackStatus = dataplanev1.DataAck_STATUS_RETRYABLE
-			reason = "retryable_server_error"
+			reason = DataAckReasonRetryableServerError
 			retryAfter = 1000
 		}
 		return dataAck(batch, ackStatus, reason, err.Error(), retryable, retryAfter, UploadResult{}), nil
@@ -101,15 +101,15 @@ func dataAckRetryable(code codes.Code) bool {
 func stringReasonCode(status dataplanev1.DataAck_Status) string {
 	switch status {
 	case dataplanev1.DataAck_STATUS_ACCEPTED:
-		return "accepted"
+		return DataAckReasonAccepted
 	case dataplanev1.DataAck_STATUS_DUPLICATE:
-		return "duplicate"
+		return DataAckReasonDuplicate
 	case dataplanev1.DataAck_STATUS_RETRYABLE:
-		return "retryable"
+		return DataAckReasonRetryable
 	case dataplanev1.DataAck_STATUS_REJECTED:
-		return "rejected"
+		return DataAckReasonRejected
 	default:
-		return "unspecified"
+		return DataAckReasonUnspecified
 	}
 }
 

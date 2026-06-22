@@ -314,9 +314,49 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 
 	if err := stream.Send(&controlv1.ControlStreamFrame{
 		Type:            "health_report",
+		RequestId:       "seq-idempotent",
+		ContractVersion: 1,
+		Sequence:        2,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
+	}); err != nil {
+		t.Fatalf("send idempotent original: %v", err)
+	}
+	firstAck, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv idempotent original ack: %v", err)
+	}
+	if firstAck.GetType() != "ack" || firstAck.GetSequence() != 3 || firstAck.GetAck().GetStatus() != "accepted" {
+		t.Fatalf("first idempotent ack = %+v", firstAck)
+	}
+
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:            "health_report",
+		RequestId:       "seq-idempotent",
+		ContractVersion: 1,
+		Sequence:        3,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "degraded"},
+	}); err != nil {
+		t.Fatalf("send idempotent retry: %v", err)
+	}
+	retryAck, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv idempotent retry ack: %v", err)
+	}
+	if retryAck.GetType() != "ack" || retryAck.GetSequence() != 4 || retryAck.GetAck().GetStatus() != "accepted" || retryAck.GetAck().GetMessage() != firstAck.GetAck().GetMessage() {
+		t.Fatalf("retry idempotent ack = %+v", retryAck)
+	}
+	got, ok := st.GetAgentHealth("default", "seq-agent")
+	if !ok || got.Status != "ok" {
+		t.Fatalf("agent health after idempotent retry = %+v ok=%t, want original status ok", got, ok)
+	}
+
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:            "health_report",
 		RequestId:       "seq-replay",
 		ContractVersion: 1,
-		Sequence:        1,
+		Sequence:        3,
 		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
 		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
 	}); err != nil {
@@ -326,7 +366,7 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recv replay ack: %v", err)
 	}
-	if replay.GetType() != "ack" || replay.GetSequence() != 3 || replay.GetAck().GetStatus() != "rejected" || replay.GetError().GetCode() != codes.AlreadyExists.String() || replay.GetError().GetRetryable() {
+	if replay.GetType() != "ack" || replay.GetSequence() != 5 || replay.GetAck().GetStatus() != "rejected" || replay.GetError().GetCode() != codes.AlreadyExists.String() || replay.GetError().GetRetryable() {
 		t.Fatalf("replay ack = %+v", replay)
 	}
 
@@ -334,7 +374,7 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 		Type:            "health_report",
 		RequestId:       "seq-gap",
 		ContractVersion: 1,
-		Sequence:        3,
+		Sequence:        5,
 		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
 		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
 	}); err != nil {
@@ -344,8 +384,53 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recv gap ack: %v", err)
 	}
-	if gap.GetType() != "ack" || gap.GetSequence() != 4 || gap.GetAck().GetStatus() != "rejected" || gap.GetError().GetCode() != codes.FailedPrecondition.String() || gap.GetError().GetRetryable() {
+	if gap.GetType() != "ack" || gap.GetSequence() != 6 || gap.GetAck().GetStatus() != "rejected" || gap.GetError().GetCode() != codes.FailedPrecondition.String() || gap.GetError().GetRetryable() {
 		t.Fatalf("gap ack = %+v", gap)
+	}
+}
+
+func TestControlStreamRequiresRequestID(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:            "health_report",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "request-id-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Health:          &controlv1.HealthResponse{AgentId: "request-id-agent", TenantId: "default", Status: "ok"},
+	}); err != nil {
+		t.Fatalf("send missing request_id: %v", err)
+	}
+	ack, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv missing request_id ack: %v", err)
+	}
+	if ack.GetType() != "ack" || ack.GetAck().GetStatus() != "rejected" || ack.GetError().GetCode() != codes.InvalidArgument.String() {
+		t.Fatalf("ack = %+v, want InvalidArgument rejection", ack)
 	}
 }
 
