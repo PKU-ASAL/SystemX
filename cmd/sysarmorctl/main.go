@@ -697,6 +697,9 @@ func marshalProtoJSONLine(msg proto.Message) ([]byte, error) {
 
 func query(mgr string, args []string) ([]byte, error) {
 	base := normalizeManagerURL(mgr)
+	if len(args) > 0 && args[0] == "manager" {
+		return queryManager(base, args[1:])
+	}
 	switch args[0] {
 	case "agents":
 		q := url.Values{}
@@ -1368,6 +1371,276 @@ func query(mgr string, args []string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func queryManager(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("manager command is required")
+	}
+	switch args[0] {
+	case "agents":
+		return query(base, append([]string{"agents"}, managerArgsAfterAction(args, "list")...))
+	case "health":
+		return query(base, append([]string{"agent-health"}, managerArgsAfterAction(args, "list", "get")...))
+	case "sessions":
+		return query(base, append([]string{"agent-sessions"}, managerArgsAfterAction(args, "list")...))
+	case "resume":
+		return query(base, append([]string{"data-resume"}, managerArgsAfterAction(args, "get")...))
+	case "metrics":
+		return query(base, []string{"metrics"})
+	case "status":
+		return query(base, []string{"status"})
+	case "store":
+		if len(args) >= 2 && args[1] == "status" {
+			return query(base, []string{"store-status"})
+		}
+	case "policies":
+		return queryManagerPolicies(base, args[1:])
+	case "control-commands":
+		return queryManagerControlCommands(base, args[1:])
+	case "responses":
+		return query(base, append([]string{"responses"}, managerArgsAfterAction(args, "list")...))
+	case "response":
+		if len(args) >= 2 && args[1] == "decide" {
+			return query(base, append([]string{"response-decision"}, args[2:]...))
+		}
+		if len(args) >= 2 && args[1] == "approve" {
+			return query(base, append([]string{"response-approval"}, args[2:]...))
+		}
+	case "incidents":
+		return query(base, append([]string{"incidents"}, managerArgsAfterAction(args, "list")...))
+	case "incident":
+		if len(args) >= 2 && args[1] == "evidence" {
+			return query(base, append([]string{"incident-evidence"}, args[2:]...))
+		}
+		if len(args) >= 2 && args[1] == "lifecycle" {
+			return query(base, append([]string{"incident-lifecycle"}, args[2:]...))
+		}
+		if len(args) >= 2 && args[1] == "merge" {
+			return query(base, append([]string{"incident-merge"}, args[2:]...))
+		}
+	case "evidence":
+		if len(args) >= 2 && args[1] == "pullbacks" {
+			return query(base, append([]string{"evidence-pullbacks"}, args[2:]...))
+		}
+	case "events":
+		return query(base, append([]string{"events"}, managerArgsAfterAction(args, "list")...))
+	case "signals":
+		return query(base, append([]string{"signals"}, managerArgsAfterAction(args, "list")...))
+	case "rarity":
+		if len(args) >= 2 && args[1] == "baseline" {
+			return query(base, append([]string{"rarity-baseline"}, args[2:]...))
+		}
+	case "rules":
+		return query(base, append([]string{"rules"}, managerArgsAfterAction(args, "list")...))
+	case "recompute":
+		return query(base, args)
+	}
+	return nil, fmt.Errorf("unknown manager command %q", strings.Join(args, " "))
+}
+
+func queryManagerPolicies(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list", "get":
+		return query(base, append([]string{"policies"}, args[1:]...))
+	case "publish":
+		return query(base, append([]string{"policy-publish"}, args[1:]...))
+	case "audit":
+		return query(base, append([]string{"policy-audit"}, args[1:]...))
+	case "assignments":
+		return query(base, append([]string{"policy-assignments"}, managerArgsAfterAction(args, "list")...))
+	case "assign":
+		return managerPolicyAssign(base, args[1:])
+	case "effective":
+		return query(base, append([]string{"effective-policy"}, args[1:]...))
+	default:
+		return nil, fmt.Errorf("unknown manager policies command %q", args[0])
+	}
+}
+
+func queryManagerControlCommands(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list":
+		q := url.Values{}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--tenant", "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+				}
+			case "--agent", "--agent-id":
+				i++
+				if i < len(args) {
+					q.Set("agent_id", args[i])
+				}
+			case "--type":
+				i++
+				if i < len(args) {
+					q.Set("type", args[i])
+				}
+			}
+		}
+		return httpGet(base + "/api/v1/control-commands?" + q.Encode())
+	case "create":
+		return managerControlCommandCreate(base, args[1:])
+	default:
+		return nil, fmt.Errorf("unknown manager control-commands command %q", args[0])
+	}
+}
+
+func managerControlCommandCreate(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("control command type is required")
+	}
+	commandKind := args[0]
+	req := map[string]any{}
+	switch commandKind {
+	case "content":
+		req["type"] = "content_update"
+	case "policy":
+		req["type"] = "policy_update"
+	default:
+		return nil, fmt.Errorf("unsupported control command create type %q", commandKind)
+	}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--command-id":
+			i++
+			if i < len(args) {
+				req["command_id"] = args[i]
+			}
+		case "--tenant", "--tenant-id":
+			i++
+			if i < len(args) {
+				req["tenant_id"] = args[i]
+			}
+		case "--agent", "--agent-id":
+			i++
+			if i < len(args) {
+				req["agent_id"] = args[i]
+			}
+		case "--policy-id":
+			i++
+			if i < len(args) {
+				req["policy_id"] = args[i]
+			}
+		case "--version", "--policy-version":
+			i++
+			if i < len(args) {
+				version, err := strconv.ParseUint(args[i], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid --version: %w", err)
+				}
+				req["policy_version"] = version
+			}
+		case "--file":
+			i++
+			if i < len(args) {
+				raw, err := os.ReadFile(args[i])
+				if err != nil {
+					return nil, err
+				}
+				req["payload_json"] = json.RawMessage(raw)
+			}
+		case "--actor":
+			i++
+			if i < len(args) {
+				req["actor"] = args[i]
+			}
+		case "--reason":
+			i++
+			if i < len(args) {
+				req["reason"] = args[i]
+			}
+		}
+	}
+	return httpPostJSON(base+"/api/v1/control-commands", req)
+}
+
+func managerPolicyAssign(base string, args []string) ([]byte, error) {
+	req := map[string]any{}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--assignment-id":
+			i++
+			if i < len(args) {
+				req["assignment_id"] = args[i]
+			}
+		case "--tenant", "--tenant-id":
+			i++
+			if i < len(args) {
+				req["tenant_id"] = args[i]
+			}
+		case "--agent", "--agent-id":
+			i++
+			if i < len(args) {
+				req["agent_id"] = args[i]
+			}
+		case "--scope-type":
+			i++
+			if i < len(args) {
+				req["scope_type"] = args[i]
+			}
+		case "--scope-selector":
+			i++
+			if i < len(args) {
+				req["scope_selector"] = args[i]
+			}
+		case "--policy-id":
+			i++
+			if i < len(args) {
+				req["policy_id"] = args[i]
+			}
+		case "--version", "--policy-version":
+			i++
+			if i < len(args) {
+				version, err := strconv.ParseUint(args[i], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid --version: %w", err)
+				}
+				req["policy_version"] = version
+			}
+		case "--downlink":
+			req["downlink"] = true
+		case "--command-id":
+			i++
+			if i < len(args) {
+				req["command_id"] = args[i]
+			}
+		case "--actor":
+			i++
+			if i < len(args) {
+				req["actor"] = args[i]
+			}
+		case "--reason":
+			i++
+			if i < len(args) {
+				req["reason"] = args[i]
+			}
+		}
+	}
+	return httpPostJSON(base+"/api/v1/policy-assignments", req)
+}
+
+func managerArgsAfterAction(args []string, actions ...string) []string {
+	if len(args) >= 2 {
+		for _, action := range actions {
+			if args[1] == action {
+				return args[2:]
+			}
+		}
+	}
+	if len(args) <= 1 {
+		return nil
+	}
+	return args[1:]
 }
 
 func normalizeManagerURL(mgr string) string {

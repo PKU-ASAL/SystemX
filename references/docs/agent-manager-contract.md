@@ -78,7 +78,7 @@ The production agent runner uses a long-lived `AgentControlPlaneService.Connect`
 6. On disconnect, agent reconnects with bounded backoff.
 7. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.
 
-The `policy_update` returned during `hello` synchronizes the current effective policy for the session. Operator-initiated downlinks are persisted as `ControlCommand` records before they are sent. A command uses `command_id` as the control-frame `request_id`; manager records `pending -> sent -> applied/rejected/failed` status, actor, reason, immutable payload JSON, send time, ack time, ack message, and error text. This makes content and policy downlinks auditable without adding a second control path.
+The `policy_update` returned during `hello` synchronizes the current effective policy for the session. Policy publish and assignment APIs update desired state; they do not imply an immediate control downlink by default. When an operator needs immediate delivery, the manager creates a persisted `ControlCommand` either through `/api/v1/control-commands` or by using `downlink=true` on an agent-specific policy assignment. A command uses `command_id` as the control-frame `request_id`; manager records `pending -> sent -> applied/rejected/failed` status, actor, reason, immutable payload JSON, send time, ack time, ack message, and error text. This makes content and policy downlinks auditable without adding a second control path.
 
 ## Detection Hot Update
 

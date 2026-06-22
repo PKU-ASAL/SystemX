@@ -188,6 +188,104 @@ func TestEvidencePullbackCommand(t *testing.T) {
 	}
 }
 
+func TestManagerNamespaceControlCommands(t *testing.T) {
+	dir := t.TempDir()
+	contentPath := filepath.Join(dir, "ioc.json")
+	if err := os.WriteFile(contentPath, []byte(`{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var gotMethod string
+	var gotPath string
+	var gotBody map[string]any
+	server := newLocalHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.String()
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if err := json.Unmarshal(body, &gotBody); err != nil {
+				t.Fatalf("decode body: %v body=%s", err, string(body))
+			}
+		}
+		_, _ = fmt.Fprintln(w, "{}")
+	}))
+	defer server.Close()
+
+	if _, err := query(server.URL, []string{"manager", "control-commands", "list", "--tenant", "default", "--agent", "agent-a", "--type", "content_update"}); err != nil {
+		t.Fatalf("control command list error = %v", err)
+	}
+	wantPath := "/api/v1/control-commands?agent_id=agent-a&tenant_id=default&type=content_update"
+	if gotMethod != http.MethodGet || gotPath != wantPath {
+		t.Fatalf("list method/path = %s %s, want GET %s", gotMethod, gotPath, wantPath)
+	}
+
+	if _, err := query(server.URL, []string{
+		"manager", "control-commands", "create", "content",
+		"--command-id", "ctrl-content",
+		"--tenant", "default",
+		"--agent", "agent-a",
+		"--file", contentPath,
+		"--actor", "operator",
+		"--reason", "refresh ioc",
+	}); err != nil {
+		t.Fatalf("control command create error = %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/control-commands" {
+		t.Fatalf("create method/path = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["type"] != "content_update" || gotBody["command_id"] != "ctrl-content" || gotBody["tenant_id"] != "default" || gotBody["agent_id"] != "agent-a" || gotBody["actor"] != "operator" || gotBody["reason"] != "refresh ioc" {
+		t.Fatalf("create body = %#v", gotBody)
+	}
+	payload, ok := gotBody["payload_json"].(map[string]any)
+	if !ok || payload["kind"] != "iocpack" {
+		t.Fatalf("payload_json = %#v", gotBody["payload_json"])
+	}
+}
+
+func TestManagerNamespacePolicyAssignDownlink(t *testing.T) {
+	var gotMethod string
+	var gotPath string
+	var gotBody map[string]any
+	server := newLocalHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.String()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &gotBody); err != nil {
+			t.Fatalf("decode body: %v body=%s", err, string(body))
+		}
+		_, _ = fmt.Fprintln(w, "{}")
+	}))
+	defer server.Close()
+
+	if _, err := query(server.URL, []string{
+		"manager", "policies", "assign",
+		"--tenant", "default",
+		"--agent", "agent-a",
+		"--policy-id", "edr-balanced",
+		"--version", "3",
+		"--downlink",
+		"--command-id", "ctrl-policy",
+		"--actor", "operator",
+		"--reason", "deploy now",
+	}); err != nil {
+		t.Fatalf("policy assign error = %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/policy-assignments" {
+		t.Fatalf("assign method/path = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["tenant_id"] != "default" || gotBody["agent_id"] != "agent-a" || gotBody["policy_id"] != "edr-balanced" || gotBody["downlink"] != true || gotBody["command_id"] != "ctrl-policy" {
+		t.Fatalf("assign body = %#v", gotBody)
+	}
+	if gotBody["policy_version"] != float64(3) {
+		t.Fatalf("policy_version = %#v", gotBody["policy_version"])
+	}
+}
+
 func TestQueryLocalAgentCapabilityOverUnixSocket(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "agent.sock")
 	lis, err := net.Listen("unix", socketPath)

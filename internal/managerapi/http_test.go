@@ -833,6 +833,41 @@ func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 	}
 }
 
+func TestPolicyAssignmentDownlinkCreatesPolicyUpdateCommand(t *testing.T) {
+	st := &store.Store{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "downlink-policy"
+	policy.Version = 7
+	policy.Published = true
+	st.UpsertPolicy(policy)
+	handler := NewServer(st).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-downlink",
+		"policy_id":"downlink-policy",
+		"policy_version":7,
+		"downlink":true,
+		"command_id":"ctrl-policy-downlink",
+		"actor":"policy-operator",
+		"reason":"deploy immediately"
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("assignment downlink status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"assignment"`, `"control_command"`, `"command_id":"ctrl-policy-downlink"`, `"type":"policy_update"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("assignment downlink response missing %s: %s", want, rec.Body.String())
+		}
+	}
+	commands := st.PendingControlCommands("default", "agent-downlink")
+	if len(commands) != 1 || commands[0].CommandID != "ctrl-policy-downlink" || commands[0].PolicyID != "downlink-policy" || commands[0].PolicyVersion != 7 || commands[0].Actor != "policy-operator" {
+		t.Fatalf("pending commands = %+v", commands)
+	}
+}
+
 func TestOperatorRoleBindingsAuthorizeControlPlaneWrites(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()

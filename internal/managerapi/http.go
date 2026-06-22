@@ -118,8 +118,10 @@ type policyPublishRequest struct {
 
 type policyAssignmentRequest struct {
 	policymodel.Assignment
-	Actor  string `json:"actor,omitempty"`
-	Reason string `json:"reason,omitempty"`
+	Actor     string `json:"actor,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Downlink  bool   `json:"downlink,omitempty"`
+	CommandID string `json:"command_id,omitempty"`
 }
 
 type operatorRoleBindingRequest struct {
@@ -1108,14 +1110,53 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 			Actor:         s.actorFromRequest(r, req.Actor),
 			Reason:        req.Reason,
 		})
+		var command *controlmodel.ControlCommand
+		if req.Downlink {
+			cmd, err := s.policyDownlinkCommand(r, saved, req)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			out := s.store.CreateControlCommand(cmd)
+			command = &out
+		}
 		if err := s.store.Save(); err != nil {
 			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if command != nil {
+			writeJSON(w, map[string]any{"assignment": saved, "control_command": command})
 			return
 		}
 		writeJSON(w, saved)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) policyDownlinkCommand(r *http.Request, assignment policymodel.Assignment, req policyAssignmentRequest) (controlmodel.ControlCommand, error) {
+	if strings.TrimSpace(assignment.AgentID) == "" {
+		return controlmodel.ControlCommand{}, fmt.Errorf("downlink requires agent_id on policy assignment")
+	}
+	policy, ok := s.store.GetPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
+	if !ok {
+		return controlmodel.ControlCommand{}, fmt.Errorf("policy not found for downlink")
+	}
+	payload, err := json.Marshal(policy)
+	if err != nil {
+		return controlmodel.ControlCommand{}, fmt.Errorf("encode policy downlink payload: %v", err)
+	}
+	return controlmodel.ControlCommand{
+		CommandID:     req.CommandID,
+		TenantID:      assignment.TenantID,
+		AgentID:       assignment.AgentID,
+		Type:          controlmodel.ControlCommandTypePolicyUpdate,
+		PolicyID:      policy.PolicyID,
+		PolicyVersion: policy.Version,
+		PayloadJSON:   payload,
+		Actor:         s.actorFromRequest(r, req.Actor),
+		Reason:        firstNonEmptyString(req.Reason, "policy assignment downlink"),
+	}, nil
 }
 
 func (s *Server) recordPolicyAudit(record policymodel.AuditRecord) {
@@ -1409,6 +1450,15 @@ func parseUint(raw string) uint64 {
 	}
 	v, _ := strconv.ParseUint(raw, 10, 64)
 	return v
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func removeString(in []string, value string) []string {
