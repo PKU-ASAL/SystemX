@@ -192,8 +192,8 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 		s.backend.TouchHotSession(session)
 		replies := []*controlplanev1.ControlFrame{{
 			Type:            "policy_update",
-			RequestId:       frame.GetRequestId(),
-			Context:         &controlplanev1.RequestContext{TenantId: tenantID, AgentId: ctx.GetAgentId(), Scope: ctx.GetScope()},
+			RequestId:       "policy-" + frame.GetRequestId(),
+			Context:         &controlplanev1.RequestContext{TenantId: tenantID, AgentId: ctx.GetAgentId(), RequestId: "policy-" + frame.GetRequestId(), Scope: ctx.GetScope()},
 			ContractVersion: 1,
 			PolicyUpdate:    currentPolicyFrame(policy),
 		}, {
@@ -220,6 +220,15 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 				ContractVersion:  1,
 				EvidencePullback: evidencePullbackControlFrame(req),
 			})
+		}
+		for _, cmd := range st.PendingControlCommands(tenantID, ctx.GetAgentId()) {
+			if frame := controlCommandFrame(cmd, ctx.GetScope()); frame != nil {
+				replies = append(replies, frame)
+				st.MarkControlCommandSent(cmd.CommandID, tenantID, ctx.GetAgentId(), time.Now().UTC())
+			}
+		}
+		if err := st.Save(); err != nil {
+			return nil, status.Errorf(codes.Internal, "save control hello state: %v", err)
 		}
 		return replies, nil
 	case "health_report":
@@ -287,6 +296,15 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 	case "ack":
 		if frame.GetAck() == nil {
 			return nil, status.Error(codes.InvalidArgument, "ack payload is required")
+		}
+		st := s.backend.Store()
+		ack := controlCommandAckFromControl(frame.GetAck())
+		if ack.CommandID != "" {
+			if _, ok := st.AckControlCommand(ack); ok {
+				if err := st.Save(); err != nil {
+					return nil, status.Errorf(codes.Internal, "save control command ack: %v", err)
+				}
+			}
 		}
 		return []*controlplanev1.ControlFrame{controlAckFrame(frame, "accepted", "ack accepted", "", false)}, nil
 	default:
@@ -356,6 +374,55 @@ func evidencePullbackControlFrame(req controlmodel.EvidencePullbackRequest) *con
 		Status:     req.Status,
 		Actor:      req.Actor,
 		RawJson:    string(raw),
+	}
+}
+
+func controlCommandFrame(cmd controlmodel.ControlCommand, scope *controlplanev1.Scope) *controlplanev1.ControlFrame {
+	ctx := &controlplanev1.RequestContext{TenantId: cmd.TenantID, AgentId: cmd.AgentID, RequestId: cmd.CommandID, Scope: scope}
+	frame := &controlplanev1.ControlFrame{
+		Type:            cmd.Type,
+		RequestId:       cmd.CommandID,
+		Context:         ctx,
+		ContractVersion: 1,
+		PayloadJson:     append([]byte(nil), cmd.PayloadJSON...),
+	}
+	switch cmd.Type {
+	case controlmodel.ControlCommandTypePolicyUpdate:
+		policy := policymodel.Policy{
+			PolicyID: cmd.PolicyID,
+			Version:  cmd.PolicyVersion,
+			TenantID: cmd.TenantID,
+		}
+		if len(cmd.PayloadJSON) > 0 {
+			_ = json.Unmarshal(cmd.PayloadJSON, &policy)
+		}
+		frame.PolicyUpdate = currentPolicyFrame(policymodel.Normalize(policy))
+	case controlmodel.ControlCommandTypeContentUpdate:
+		frame.ContentUpdate = &controlplanev1.ApplyContentRequest{
+			Context:       ctx,
+			ContentJson:   string(cmd.PayloadJSON),
+			AllowUnsigned: true,
+		}
+	default:
+		return nil
+	}
+	return frame
+}
+
+func controlCommandAckFromControl(in *controlplanev1.ControlAck) controlmodel.ControlCommandAck {
+	if in == nil {
+		return controlmodel.ControlCommandAck{}
+	}
+	return controlmodel.ControlCommandAck{
+		CommandID:     in.GetRequestId(),
+		TenantID:      in.GetTenantId(),
+		AgentID:       in.GetAgentId(),
+		Status:        in.GetStatus(),
+		Message:       in.GetMessage(),
+		PolicyID:      in.GetPolicyId(),
+		PolicyVersion: in.GetPolicyVersion(),
+		ReportJSON:    in.GetReportJson(),
+		ObservedAt:    time.Now().UTC(),
 	}
 }
 

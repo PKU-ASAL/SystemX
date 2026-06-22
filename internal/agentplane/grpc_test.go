@@ -19,6 +19,7 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -508,6 +509,98 @@ func TestControlPlaneConnectReconnectReturnsResumeAndPendingCommands(t *testing.
 	}
 	if cmd.GetType() != "response_command" || cmd.GetSequence() != 3 || cmd.GetResponseCommand().GetResponseId() != "resp-reconnect" {
 		t.Fatalf("pending command frame = %+v", cmd)
+	}
+}
+
+func TestControlPlaneConnectSendsPendingControlCommandAndPersistsAck(t *testing.T) {
+	st := &store.Store{}
+	st.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID:   "ctrl-content-stream",
+		TenantID:    "default",
+		AgentID:     "control-command-agent",
+		Type:        controlmodel.ControlCommandTypeContentUpdate,
+		PayloadJSON: []byte(`{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}}`),
+	})
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type:            "hello",
+		RequestId:       "hello-control-command",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "control-command-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+	}); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+	for _, want := range []string{"policy_update", "resume"} {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("recv %s: %v", want, err)
+		}
+		if frame.GetType() != want {
+			t.Fatalf("frame = %+v, want %s", frame, want)
+		}
+	}
+	cmdFrame, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv control command: %v", err)
+	}
+	if cmdFrame.GetType() != "content_update" || cmdFrame.GetRequestId() != "ctrl-content-stream" || cmdFrame.GetContentUpdate().GetContentJson() == "" {
+		t.Fatalf("control command frame = %+v", cmdFrame)
+	}
+	if got := st.ListControlCommands("default", "control-command-agent", ""); len(got) != 1 || got[0].Status != controlmodel.ControlCommandStatusSent {
+		t.Fatalf("commands after send = %+v", got)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type:            "ack",
+		RequestId:       "ctrl-content-stream",
+		ContractVersion: 1,
+		Sequence:        2,
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "control-command-agent", RequestId: "ctrl-content-stream"},
+		Ack: &controlplanev1.ControlAck{
+			RequestId: "ctrl-content-stream",
+			TenantId:  "default",
+			AgentId:   "control-command-agent",
+			Status:    "applied",
+			Message:   "content applied",
+			PolicyId:  "ioc:test",
+		},
+	}); err != nil {
+		t.Fatalf("send command ack: %v", err)
+	}
+	reply, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv command ack reply: %v", err)
+	}
+	if reply.GetType() != "ack" || reply.GetAck().GetStatus() != "accepted" {
+		t.Fatalf("ack reply = %+v", reply)
+	}
+	got := st.ListControlCommands("default", "control-command-agent", "")
+	if len(got) != 1 || got[0].Status != controlmodel.ControlCommandStatusApplied || got[0].AckMessage != "content applied" || got[0].AckPolicyID != "ioc:test" {
+		t.Fatalf("commands after ack = %+v", got)
 	}
 }
 

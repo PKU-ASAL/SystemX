@@ -57,6 +57,7 @@ type Store struct {
 	Responses        []responsemodel.Command
 	ResponseAcks     []responsemodel.Ack
 	Pullbacks        []controlmodel.EvidencePullbackRequest
+	ControlCommands  []controlmodel.ControlCommand
 	AgentSessions    []AgentSession
 	OperatorRoles    []OperatorRoleBinding
 	Metrics          Metrics
@@ -109,22 +110,23 @@ type OperatorRoleBinding struct {
 }
 
 type State struct {
-	Agents         []json.RawMessage                      `json:"agents"`
-	Events         []json.RawMessage                      `json:"events"`
-	Signals        []json.RawMessage                      `json:"signals"`
-	Incidents      []json.RawMessage                      `json:"incidents"`
-	Health         []json.RawMessage                      `json:"health"`
-	Rules          []policymodel.RuleContent              `json:"rules"`
-	Policies       []policymodel.Policy                   `json:"policies"`
-	Assignments    []policymodel.Assignment               `json:"assignments"`
-	PolicyAudits   []policymodel.AuditRecord              `json:"policy_audits"`
-	Responses      []responsemodel.Command                `json:"responses"`
-	ResponseAcks   []responsemodel.Ack                    `json:"response_acks"`
-	Pullbacks      []controlmodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
-	AgentSessions  []AgentSession                         `json:"agent_sessions"`
-	OperatorRoles  []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
-	Metrics        Metrics                                `json:"metrics"`
-	RarityBaseline rarity.Baseline                        `json:"rarity_baseline,omitempty"`
+	Agents          []json.RawMessage                      `json:"agents"`
+	Events          []json.RawMessage                      `json:"events"`
+	Signals         []json.RawMessage                      `json:"signals"`
+	Incidents       []json.RawMessage                      `json:"incidents"`
+	Health          []json.RawMessage                      `json:"health"`
+	Rules           []policymodel.RuleContent              `json:"rules"`
+	Policies        []policymodel.Policy                   `json:"policies"`
+	Assignments     []policymodel.Assignment               `json:"assignments"`
+	PolicyAudits    []policymodel.AuditRecord              `json:"policy_audits"`
+	Responses       []responsemodel.Command                `json:"responses"`
+	ResponseAcks    []responsemodel.Ack                    `json:"response_acks"`
+	Pullbacks       []controlmodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
+	ControlCommands []controlmodel.ControlCommand          `json:"control_commands,omitempty"`
+	AgentSessions   []AgentSession                         `json:"agent_sessions"`
+	OperatorRoles   []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
+	Metrics         Metrics                                `json:"metrics"`
+	RarityBaseline  rarity.Baseline                        `json:"rarity_baseline,omitempty"`
 }
 
 func Open(path string) (*Store, error) {
@@ -202,6 +204,7 @@ func (s *Store) ImportState(state State) error {
 	s.Responses = state.Responses
 	s.ResponseAcks = state.ResponseAcks
 	s.Pullbacks = state.Pullbacks
+	s.ControlCommands = state.ControlCommands
 	s.AgentSessions = state.AgentSessions
 	s.OperatorRoles = state.OperatorRoles
 	s.Metrics = state.Metrics
@@ -1080,6 +1083,139 @@ func (s *Store) CompleteEvidencePullback(result controlmodel.EvidencePullbackRes
 	return controlmodel.EvidencePullbackRequest{}, false
 }
 
+func (s *Store) CreateControlCommand(cmd controlmodel.ControlCommand) controlmodel.ControlCommand {
+	cmd = controlmodel.NormalizeControlCommand(cmd)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.ControlCommands {
+		if existing.CommandID == cmd.CommandID {
+			cmd.CreatedAt = existing.CreatedAt
+			if cmd.SentAt.IsZero() {
+				cmd.SentAt = existing.SentAt
+			}
+			if cmd.AckedAt.IsZero() {
+				cmd.AckedAt = existing.AckedAt
+			}
+			s.ControlCommands[i] = cmd
+			return cmd
+		}
+	}
+	s.ControlCommands = append(s.ControlCommands, cmd)
+	return cmd
+}
+
+func (s *Store) ListControlCommands(tenantID, agentID, commandType string) []controlmodel.ControlCommand {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]controlmodel.ControlCommand, 0, len(s.ControlCommands))
+	for _, cmd := range s.ControlCommands {
+		if tenantID != "" && cmd.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && cmd.AgentID != agentID {
+			continue
+		}
+		if commandType != "" && cmd.Type != commandType {
+			continue
+		}
+		out = append(out, cmd)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+func (s *Store) PendingControlCommands(tenantID, agentID string) []controlmodel.ControlCommand {
+	all := s.ListControlCommands(tenantID, agentID, "")
+	out := make([]controlmodel.ControlCommand, 0, len(all))
+	for _, cmd := range all {
+		if controlmodel.ControlCommandTerminalStatus(cmd.Status) {
+			continue
+		}
+		out = append(out, cmd)
+	}
+	return out
+}
+
+func (s *Store) MarkControlCommandSent(commandID, tenantID, agentID string, sentAt time.Time) (controlmodel.ControlCommand, bool) {
+	if commandID == "" {
+		return controlmodel.ControlCommand{}, false
+	}
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, cmd := range s.ControlCommands {
+		if cmd.CommandID != commandID {
+			continue
+		}
+		if tenantID != "" && cmd.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && cmd.AgentID != agentID {
+			continue
+		}
+		if !controlmodel.ControlCommandTerminalStatus(cmd.Status) {
+			cmd.Status = controlmodel.ControlCommandStatusSent
+		}
+		cmd.SentAt = sentAt
+		cmd.UpdatedAt = sentAt
+		s.ControlCommands[i] = cmd
+		return cmd, true
+	}
+	return controlmodel.ControlCommand{}, false
+}
+
+func (s *Store) AckControlCommand(ack controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool) {
+	if ack.CommandID == "" {
+		return controlmodel.ControlCommand{}, false
+	}
+	if ack.ObservedAt.IsZero() {
+		ack.ObservedAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, cmd := range s.ControlCommands {
+		if cmd.CommandID != ack.CommandID {
+			continue
+		}
+		if ack.TenantID != "" && cmd.TenantID != ack.TenantID {
+			continue
+		}
+		if ack.AgentID != "" && cmd.AgentID != ack.AgentID {
+			continue
+		}
+		status := ack.Status
+		if status == "" {
+			status = controlmodel.ControlCommandStatusApplied
+		}
+		switch status {
+		case controlmodel.ControlCommandStatusApplied, "accepted", "validated", "degraded":
+			cmd.Status = controlmodel.ControlCommandStatusApplied
+		case controlmodel.ControlCommandStatusRejected:
+			cmd.Status = controlmodel.ControlCommandStatusRejected
+			cmd.Error = ack.Message
+		case controlmodel.ControlCommandStatusFailed:
+			cmd.Status = controlmodel.ControlCommandStatusFailed
+			cmd.Error = ack.Message
+		default:
+			cmd.Status = status
+		}
+		cmd.AckStatus = ack.Status
+		cmd.AckMessage = ack.Message
+		cmd.AckPolicyID = ack.PolicyID
+		cmd.AckPolicyVer = ack.PolicyVersion
+		cmd.AckReportJSON = ack.ReportJSON
+		cmd.AckedAt = ack.ObservedAt
+		cmd.UpdatedAt = ack.ObservedAt
+		s.ControlCommands[i] = cmd
+		return cmd, true
+	}
+	return controlmodel.ControlCommand{}, false
+}
+
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
 	if scenario == "" {
 		return
@@ -1706,6 +1842,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
 	state.Pullbacks = append([]controlmodel.EvidencePullbackRequest(nil), s.Pullbacks...)
+	state.ControlCommands = append([]controlmodel.ControlCommand(nil), s.ControlCommands...)
 	state.AgentSessions = append([]AgentSession(nil), s.AgentSessions...)
 	return state, nil
 }

@@ -127,15 +127,12 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		}
 		return nil
 	case "policy_update":
-		policy, err := policyFromControlFrame(frame.GetPolicyUpdate())
-		if err != nil {
+		ack := runner.applyPolicyUpdateFromControl(frame)
+		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
 		}
-		if !samePolicyRuntime(runner.activePolicy(), policy) {
-			runner.applyRuntimePolicy(policy)
-			if runner.Out != nil {
-				fmt.Fprintf(runner.Out, "agent control policy update: policy=%s version=%d mode=%s\n", policy.PolicyID, policy.Version, policy.Mode)
-			}
+		if runner.Out != nil {
+			fmt.Fprintf(runner.Out, "agent control policy update ack: request=%s status=%s message=%q\n", ack.GetRequestId(), ack.GetStatus(), ack.GetMessage())
 		}
 		return nil
 	case "content_update":

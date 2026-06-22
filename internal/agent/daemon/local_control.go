@@ -218,6 +218,44 @@ func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplane
 	return s.runner.applyContentUpdate(req), nil
 }
 
+func (r *AgentRuntime) applyPolicyUpdateFromControl(frame *controlplanev1.ControlFrame) *controlplanev1.ControlAck {
+	ctx := frame.GetContext()
+	if ctx == nil {
+		ctx = &controlplanev1.RequestContext{}
+	}
+	if ctx.RequestId == "" {
+		ctx.RequestId = frame.GetRequestId()
+	}
+	if err := r.validateControlContext(ctx); err != nil {
+		return rejectedAck(r.Config, ctx, "policy", err.Error())
+	}
+	policy, err := policyFromControlFrame(frame.GetPolicyUpdate())
+	if err != nil {
+		return rejectedAck(r.Config, ctx, "policy", err.Error())
+	}
+	if policy.TenantID == "" {
+		policy.TenantID = r.Config.Agent.TenantID
+	}
+	if policy.TenantID != "" && policy.TenantID != r.Config.Agent.TenantID {
+		return rejectedAck(r.Config, ctx, "policy", fmt.Sprintf("tenant mismatch: policy=%s agent=%s", policy.TenantID, r.Config.Agent.TenantID))
+	}
+	if samePolicyRuntime(r.activePolicy(), policy) {
+		return appliedAck(r.Config, ctx, policy, "applied", "runtime policy already active", false)
+	}
+	report, ok := r.tryApplyRuntimePolicy(policy)
+	if !ok {
+		return rejectedAck(r.Config, ctx, "detection", "runtime policy rejected; detection rebuild failed: "+strings.Join(report.Details, "; "))
+	}
+	if policy.DataPlane != nil {
+		r.applyDataPlaneConfig(*policy.DataPlane)
+	}
+	message := "runtime policy applied"
+	if report.Status == "degraded" {
+		message = "runtime policy applied; detection dependencies degraded: " + strings.Join(report.Warnings, "; ")
+	}
+	return appliedAck(r.Config, ctx, policy, "applied", message, policy.DataPlane != nil)
+}
+
 func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentRequest) *controlplanev1.ControlAck {
 	if req == nil {
 		return rejectedAck(r.Config, nil, "content", "content update request is required")

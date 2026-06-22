@@ -46,7 +46,9 @@ type ManagerStore interface {
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
+	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
+	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
 	DeleteScenario(string)
@@ -62,6 +64,7 @@ type ManagerStore interface {
 	ListAgents() []store.AgentIdentity
 	BindAgentIdentity(store.AgentIdentity) error
 	ListAssignments(string, string) []policymodel.Assignment
+	ListControlCommands(string, string, string) []controlmodel.ControlCommand
 	ListEvents(string, string) []*eventv1.CanonicalEvent
 	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	ListIncidents(string) []*incidentv1.Incident
@@ -74,6 +77,8 @@ type ManagerStore interface {
 	ListSignals(string, string, bool) []*signalv1.Signal
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
+	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)
+	PendingControlCommands(string, string) []controlmodel.ControlCommand
 	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
@@ -155,6 +160,21 @@ type evidencePullbackRequest struct {
 	Target     string `json:"target,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 	Actor      string `json:"actor,omitempty"`
+}
+
+type controlCommandRequest struct {
+	CommandID      string          `json:"command_id,omitempty"`
+	TenantID       string          `json:"tenant_id,omitempty"`
+	AgentID        string          `json:"agent_id"`
+	Type           string          `json:"type"`
+	PolicyID       string          `json:"policy_id,omitempty"`
+	PolicyVersion  uint64          `json:"policy_version,omitempty"`
+	ContentRef     string          `json:"content_ref,omitempty"`
+	ContentKind    string          `json:"content_kind,omitempty"`
+	ContentVersion string          `json:"content_version,omitempty"`
+	PayloadJSON    json.RawMessage `json:"payload_json,omitempty"`
+	Actor          string          `json:"actor,omitempty"`
+	Reason         string          `json:"reason,omitempty"`
 }
 
 type incidentMergeRequest struct {
@@ -253,6 +273,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
 	mux.HandleFunc("/api/v1/data-resume", s.dataResume)
 	mux.HandleFunc("/api/v1/evidence-pullbacks", s.evidencePullbacks)
+	mux.HandleFunc("/api/v1/control-commands", s.controlCommands)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/agent-sessions", s.agentSessions)
@@ -631,6 +652,134 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query()
+		writeJSON(w, s.store.ListControlCommands(q.Get("tenant_id"), q.Get("agent_id"), q.Get("type")))
+	case http.MethodPost:
+		if !s.requireOperator(w, r, "control_admin") {
+			return
+		}
+		var req controlCommandRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("decode control command: %v", err), http.StatusBadRequest)
+			return
+		}
+		cmd, err := s.controlCommandFromRequest(r, req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		out := s.store.CreateControlCommand(cmd)
+		if err := s.store.Save(); err != nil {
+			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) controlCommandFromRequest(r *http.Request, req controlCommandRequest) (controlmodel.ControlCommand, error) {
+	commandType := strings.TrimSpace(req.Type)
+	if commandType == "" {
+		return controlmodel.ControlCommand{}, fmt.Errorf("type is required")
+	}
+	if strings.TrimSpace(req.AgentID) == "" {
+		return controlmodel.ControlCommand{}, fmt.Errorf("agent_id is required")
+	}
+	tenantID := req.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	payload := append(json.RawMessage(nil), req.PayloadJSON...)
+	policyID := req.PolicyID
+	policyVersion := req.PolicyVersion
+	switch commandType {
+	case controlmodel.ControlCommandTypePolicyUpdate:
+		if len(payload) == 0 {
+			if policyID == "" {
+				return controlmodel.ControlCommand{}, fmt.Errorf("policy_id or payload_json is required for policy_update")
+			}
+			policy, ok := s.store.GetPolicy(tenantID, policyID, policyVersion)
+			if !ok {
+				return controlmodel.ControlCommand{}, fmt.Errorf("policy not found")
+			}
+			raw, err := json.Marshal(policy)
+			if err != nil {
+				return controlmodel.ControlCommand{}, fmt.Errorf("encode policy payload: %v", err)
+			}
+			payload = raw
+			policyID = policy.PolicyID
+			policyVersion = policy.Version
+		} else if policyID == "" || policyVersion == 0 {
+			if parsedID, parsedVersion := policyMetadataFromPayload(payload); policyID == "" || policyVersion == 0 {
+				if policyID == "" {
+					policyID = parsedID
+				}
+				if policyVersion == 0 {
+					policyVersion = parsedVersion
+				}
+			}
+		}
+	case controlmodel.ControlCommandTypeContentUpdate:
+		if len(payload) == 0 {
+			return controlmodel.ControlCommand{}, fmt.Errorf("payload_json is required for content_update")
+		}
+		if req.ContentRef == "" || req.ContentKind == "" || req.ContentVersion == "" {
+			ref, kind, version := contentMetadataFromPayload(payload)
+			if req.ContentRef == "" {
+				req.ContentRef = ref
+			}
+			if req.ContentKind == "" {
+				req.ContentKind = kind
+			}
+			if req.ContentVersion == "" {
+				req.ContentVersion = version
+			}
+		}
+	default:
+		return controlmodel.ControlCommand{}, fmt.Errorf("unsupported control command type %q", commandType)
+	}
+	return controlmodel.ControlCommand{
+		CommandID:      req.CommandID,
+		TenantID:       tenantID,
+		AgentID:        req.AgentID,
+		Type:           commandType,
+		PolicyID:       policyID,
+		PolicyVersion:  policyVersion,
+		ContentRef:     req.ContentRef,
+		ContentKind:    req.ContentKind,
+		ContentVersion: req.ContentVersion,
+		PayloadJSON:    payload,
+		Actor:          s.actorFromRequest(r, req.Actor),
+		Reason:         req.Reason,
+	}, nil
+}
+
+func policyMetadataFromPayload(payload json.RawMessage) (string, uint64) {
+	var policy struct {
+		PolicyID string `json:"policy_id"`
+		Version  uint64 `json:"version"`
+	}
+	_ = json.Unmarshal(payload, &policy)
+	return policy.PolicyID, policy.Version
+}
+
+func contentMetadataFromPayload(payload json.RawMessage) (string, string, string) {
+	var content struct {
+		Kind     string `json:"kind"`
+		Metadata struct {
+			ID      string `json:"id"`
+			Version string `json:"version"`
+		} `json:"metadata"`
+	}
+	_ = json.Unmarshal(payload, &content)
+	return content.Metadata.ID, content.Kind, content.Metadata.Version
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

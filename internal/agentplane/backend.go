@@ -48,8 +48,11 @@ type ControlStore interface {
 	AddAgent(store.AgentIdentity)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
+	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
+	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)
+	PendingControlCommands(string, string) []controlmodel.ControlCommand
 	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession

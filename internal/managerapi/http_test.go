@@ -9,6 +9,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -784,6 +785,51 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("policy write with admin role status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
+		"command_id":"ctrl-content-api",
+		"tenant_id":"default",
+		"agent_id":"agent-a",
+		"type":"content_update",
+		"payload_json":{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}},
+		"reason":"refresh ioc"
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("control command without operator token status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
+		"command_id":"ctrl-content-api",
+		"tenant_id":"default",
+		"agent_id":"agent-a",
+		"type":"content_update",
+		"payload_json":{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}},
+		"reason":"refresh ioc"
+	}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "control_admin")
+	req.Header.Set("X-SysArmor-Actor", "control-operator")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"command_id":"ctrl-content-api"`) || !strings.Contains(rec.Body.String(), `"actor":"control-operator"`) {
+		t.Fatalf("control command create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	got := st.PendingControlCommands("default", "agent-a")
+	if len(got) != 1 || got[0].Type != controlmodel.ControlCommandTypeContentUpdate || got[0].Reason != "refresh ioc" || got[0].ContentRef != "ioc:test" || got[0].ContentKind != "iocpack" || got[0].ContentVersion != "v1" {
+		t.Fatalf("pending control commands = %+v", got)
+	}
+	rec = get(t, handler, "/api/v1/control-commands?tenant_id=default&agent_id=agent-a&type=content_update")
+	if !strings.Contains(rec.Body.String(), `"status":"pending"`) || !strings.Contains(rec.Body.String(), `"reason":"refresh ioc"`) || !strings.Contains(rec.Body.String(), `"content_ref":"ioc:test"`) {
+		t.Fatalf("control command audit response = %s", rec.Body.String())
 	}
 }
 

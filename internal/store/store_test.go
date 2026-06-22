@@ -100,6 +100,50 @@ func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	}
 }
 
+func TestControlCommandsPersistAndAck(t *testing.T) {
+	st := &Store{}
+	st.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID:   "ctrl-a",
+		TenantID:    "default",
+		AgentID:     "agent-a",
+		Type:        controlmodel.ControlCommandTypeContentUpdate,
+		PayloadJSON: []byte(`{"kind":"iocpack"}`),
+		Actor:       "operator",
+		Reason:      "hot update",
+	})
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 1 || got[0].CommandID != "ctrl-a" {
+		t.Fatalf("pending commands = %+v", got)
+	}
+	if cmd, ok := st.MarkControlCommandSent("ctrl-a", "default", "agent-a", time.Unix(10, 0).UTC()); !ok || cmd.Status != controlmodel.ControlCommandStatusSent || cmd.SentAt.IsZero() {
+		t.Fatalf("sent command = %+v ok=%t", cmd, ok)
+	}
+	if cmd, ok := st.AckControlCommand(controlmodel.ControlCommandAck{
+		CommandID:  "ctrl-a",
+		TenantID:   "default",
+		AgentID:    "agent-a",
+		Status:     "rejected",
+		Message:    "bad content",
+		ObservedAt: time.Unix(20, 0).UTC(),
+	}); !ok || cmd.Status != controlmodel.ControlCommandStatusRejected || cmd.Error != "bad content" || cmd.AckedAt.IsZero() {
+		t.Fatalf("acked command = %+v ok=%t", cmd, ok)
+	}
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending after ack = %+v", got)
+	}
+	state, err := st.ExportState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := &Store{}
+	if err := restored.ImportState(state); err != nil {
+		t.Fatal(err)
+	}
+	got := restored.ListControlCommands("default", "agent-a", controlmodel.ControlCommandTypeContentUpdate)
+	if len(got) != 1 || got[0].CommandID != "ctrl-a" || got[0].Status != controlmodel.ControlCommandStatusRejected {
+		t.Fatalf("restored commands = %+v", got)
+	}
+}
+
 func TestApproveResponseMovesPendingApprovalToPending(t *testing.T) {
 	st := &Store{}
 	st.CreateResponse(responsemodel.Command{

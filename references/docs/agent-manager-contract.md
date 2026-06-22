@@ -74,9 +74,11 @@ The production agent runner uses a long-lived `AgentControlPlaneService.Connect`
 2. Manager returns `policy_update`, `resume`, and pending commands.
 3. Agent periodically sends `health_report` and `capability_report`.
 4. Manager sends `policy_update`, `content_update`, `response_command`, and `evidence_pullback` frames on the same stream.
-5. Agent sends `ack` for `content_update`, plus `response_ack` and `evidence_pullback_result` for command/result workflows.
+5. Agent sends `ack` for `policy_update` and `content_update`, plus `response_ack` and `evidence_pullback_result` for command/result workflows.
 6. On disconnect, agent reconnects with bounded backoff.
 7. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.
+
+The `policy_update` returned during `hello` synchronizes the current effective policy for the session. Operator-initiated downlinks are persisted as `ControlCommand` records before they are sent. A command uses `command_id` as the control-frame `request_id`; manager records `pending -> sent -> applied/rejected/failed` status, actor, reason, immutable payload JSON, send time, ack time, ack message, and error text. This makes content and policy downlinks auditable without adding a second control path.
 
 ## Detection Hot Update
 
@@ -88,4 +90,4 @@ Policy/content updates that affect endpoint detection use two-phase runtime appl
 
 Agent health reports include `detection` runtime status with the active detection policy version, applied content refs, last apply status, and last apply error.
 
-Cloud-originated `content_update` frames use the same two-phase path as local `sysarmorctl content apply`. A rejected content update returns `ControlAck(status="rejected")` on the control stream and does not disconnect the session.
+Cloud-originated `policy_update` and `content_update` frames use the same two-phase path as local `sysarmorctl` apply operations. A rejected update returns `ControlAck(status="rejected")` on the control stream, keeps the previous runtime state, updates the command audit record when the frame came from a persisted command, and does not disconnect the session.
