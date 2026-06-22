@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -133,23 +133,23 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 	}
 	defer conn.Close()
 
-	client := controlv1.NewAgentControlServiceClient(conn)
+	client := controlplanev1.NewAgentControlPlaneServiceClient(conn)
 	reqCtx := requestContext(args)
 	switch args[0] + " " + args[1] {
 	case "agent health":
-		resp, err := client.Health(ctx, &controlv1.HealthRequest{Context: reqCtx})
+		resp, err := client.Health(ctx, &controlplanev1.HealthRequest{Context: reqCtx})
 		if err != nil {
 			return nil, err
 		}
 		return marshalProtoJSON(resp)
 	case "agent capability":
-		resp, err := client.Capability(ctx, &controlv1.CapabilityRequest{Context: reqCtx})
+		resp, err := client.Capability(ctx, &controlplanev1.CapabilityRequest{Context: reqCtx})
 		if err != nil {
 			return nil, err
 		}
 		return marshalProtoJSON(resp)
 	case "policy current":
-		resp, err := client.CurrentPolicy(ctx, &controlv1.CurrentPolicyRequest{Context: reqCtx})
+		resp, err := client.CurrentPolicy(ctx, &controlplanev1.CurrentPolicyRequest{Context: reqCtx})
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		if policyType == "" && len(args) > 2 && args[2] == "collection" {
 			policyType = "collection"
 		}
-		resp, err := client.ApplyPolicy(ctx, &controlv1.ApplyPolicyRequest{
+		resp, err := client.ApplyPolicy(ctx, &controlplanev1.ApplyPolicyRequest{
 			Context:    reqCtx,
 			PolicyType: policyType,
 			PolicyJson: policyJSON,
@@ -182,7 +182,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		if policyType == "" && len(args) > 2 && args[2] == "collection" {
 			policyType = "collection"
 		}
-		resp, err := client.ApplyPolicy(ctx, &controlv1.ApplyPolicyRequest{
+		resp, err := client.ApplyPolicy(ctx, &controlplanev1.ApplyPolicyRequest{
 			Context:    reqCtx,
 			PolicyType: policyType,
 			PolicyJson: policyJSON,
@@ -200,7 +200,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		resp, err := client.ApplyContent(ctx, &controlv1.ApplyContentRequest{
+		resp, err := client.ApplyContent(ctx, &controlplanev1.ApplyContentRequest{
 			Context:       reqCtx,
 			ContentJson:   contentJSON,
 			DryRun:        hasFlag(args, "--dry-run"),
@@ -211,7 +211,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		}
 		return marshalProtoJSON(resp)
 	case "content list":
-		resp, err := client.ListContent(ctx, &controlv1.ListContentRequest{
+		resp, err := client.ListContent(ctx, &controlplanev1.ListContentRequest{
 			Context: reqCtx,
 			Kind:    flagValue(args, "--kind"),
 		})
@@ -220,7 +220,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		}
 		return marshalProtoJSON(resp)
 	case "content get":
-		resp, err := client.GetContent(ctx, &controlv1.GetContentRequest{
+		resp, err := client.GetContent(ctx, &controlplanev1.GetContentRequest{
 			Context: reqCtx,
 			Ref:     flagValue(args, "--ref"),
 		})
@@ -229,7 +229,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		}
 		return marshalProtoJSON(resp)
 	case "event get":
-		resp, err := client.GetEvent(ctx, &controlv1.GetEventRequest{
+		resp, err := client.GetEvent(ctx, &controlplanev1.GetEventRequest{
 			Context: reqCtx,
 			EventId: firstNonEmpty(flagValue(args, "--event-id"), flagValue(args, "--id")),
 		})
@@ -238,7 +238,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		}
 		return marshalProtoJSON(resp)
 	case "event watch":
-		stream, err := client.WatchEvents(ctx, &controlv1.WatchEventsRequest{
+		stream, err := client.WatchEvents(ctx, &controlplanev1.WatchEventsRequest{
 			Context:       reqCtx,
 			Behavior:      flagValue(args, "--behavior"),
 			Limit:         uint32Flag(args, "--limit"),
@@ -251,7 +251,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		}
 		return collectEventFrames(stream)
 	case "signal watch":
-		stream, err := client.WatchSignals(ctx, &controlv1.WatchSignalsRequest{
+		stream, err := client.WatchSignals(ctx, &controlplanev1.WatchSignalsRequest{
 			Context:       reqCtx,
 			RuleId:        flagValue(args, "--rule-id"),
 			Where:         flagValue(args, "--where"),
@@ -272,7 +272,7 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 	}
 }
 
-func collectEventFrames(stream controlv1.AgentControlService_WatchEventsClient) ([]byte, error) {
+func collectEventFrames(stream controlplanev1.AgentControlPlaneService_WatchEventsClient) ([]byte, error) {
 	var out strings.Builder
 	for {
 		frame, err := stream.Recv()
@@ -294,7 +294,7 @@ func collectEventFrames(stream controlv1.AgentControlService_WatchEventsClient) 
 	}
 }
 
-func collectSignalFrames(stream controlv1.AgentControlService_WatchSignalsClient) ([]byte, error) {
+func collectSignalFrames(stream controlplanev1.AgentControlPlaneService_WatchSignalsClient) ([]byte, error) {
 	var out strings.Builder
 	for {
 		frame, err := stream.Recv()
@@ -316,7 +316,7 @@ func collectSignalFrames(stream controlv1.AgentControlService_WatchSignalsClient
 	}
 }
 
-func collectSignalFramesWithEvents(ctx context.Context, client controlv1.AgentControlServiceClient, reqCtx *controlv1.RequestContext, stream controlv1.AgentControlService_WatchSignalsClient) ([]byte, error) {
+func collectSignalFramesWithEvents(ctx context.Context, client controlplanev1.AgentControlPlaneServiceClient, reqCtx *controlplanev1.RequestContext, stream controlplanev1.AgentControlPlaneService_WatchSignalsClient) ([]byte, error) {
 	var out strings.Builder
 	for {
 		frame, err := stream.Recv()
@@ -338,7 +338,7 @@ func collectSignalFramesWithEvents(ctx context.Context, client controlv1.AgentCo
 	}
 }
 
-func marshalSignalEventEnvelope(ctx context.Context, client controlv1.AgentControlServiceClient, reqCtx *controlv1.RequestContext, frame *controlv1.SignalFrame) ([]byte, error) {
+func marshalSignalEventEnvelope(ctx context.Context, client controlplanev1.AgentControlPlaneServiceClient, reqCtx *controlplanev1.RequestContext, frame *controlplanev1.SignalFrame) ([]byte, error) {
 	signalJSON, err := marshalProtoJSONLine(frame)
 	if err != nil {
 		return nil, err
@@ -346,7 +346,7 @@ func marshalSignalEventEnvelope(ctx context.Context, client controlv1.AgentContr
 	var events []json.RawMessage
 	var missing []string
 	for _, eventID := range uniqueSignalEventRefs(frame) {
-		resp, err := client.GetEvent(ctx, &controlv1.GetEventRequest{Context: reqCtx, EventId: eventID})
+		resp, err := client.GetEvent(ctx, &controlplanev1.GetEventRequest{Context: reqCtx, EventId: eventID})
 		if err != nil {
 			missing = append(missing, eventID)
 			continue
@@ -364,7 +364,7 @@ func marshalSignalEventEnvelope(ctx context.Context, client controlv1.AgentContr
 	})
 }
 
-func uniqueSignalEventRefs(frame *controlv1.SignalFrame) []string {
+func uniqueSignalEventRefs(frame *controlplanev1.SignalFrame) []string {
 	seen := map[string]bool{}
 	var out []string
 	if frame == nil || frame.GetSignal() == nil {
@@ -574,20 +574,20 @@ func collectionBehaviorPayloads(behaviors, binaryPrefixes, filePrefixes, socketF
 	return out
 }
 
-func requestContext(args []string) *controlv1.RequestContext {
-	return &controlv1.RequestContext{
+func requestContext(args []string) *controlplanev1.RequestContext {
+	return &controlplanev1.RequestContext{
 		RequestId: flagValue(args, "--request-id"),
 		TenantId:  flagValue(args, "--tenant-id"),
 		AgentId:   flagValue(args, "--agent-id"),
-		Scope: &controlv1.Scope{
+		Scope: &controlplanev1.Scope{
 			Type:     flagValue(args, "--scope-type"),
 			Selector: flagValue(args, "--scope-selector"),
 		},
 	}
 }
 
-func watchFilter(args []string) *controlv1.WatchFilter {
-	filter := &controlv1.WatchFilter{
+func watchFilter(args []string) *controlplanev1.WatchFilter {
+	filter := &controlplanev1.WatchFilter{
 		AfterSequence:   uint64Flag(args, "--after-seq", 0),
 		SinceObservedAt: flagValue(args, "--since"),
 		UntilObservedAt: flagValue(args, "--until"),

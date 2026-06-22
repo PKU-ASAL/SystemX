@@ -7,13 +7,12 @@ import (
 	"io"
 	"time"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 )
 
-func (r *Runner) runControlStreamLoop(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) {
+func (r *Runner) runTransportControlLoop(ctx context.Context, rt sensorruntime.Runtime, agentSpool *AgentSpool, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) {
 	backoff := r.Config.Upload.RetryInitial
 	if backoff <= 0 {
 		backoff = time.Second
@@ -23,8 +22,8 @@ func (r *Runner) runControlStreamLoop(ctx context.Context, rt sensorruntime.Runt
 		maxBackoff = 30 * time.Second
 	}
 	for {
-		if err := r.runControlStreamSession(ctx, rt, queue, worker, startedAt, scopeType, scopeSelector); err != nil && ctx.Err() == nil && r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control stream disconnected: %v\n", err)
+		if err := r.runControlChannel(ctx, rt, agentSpool, worker, startedAt, scopeType, scopeSelector); err != nil && ctx.Err() == nil && r.Out != nil {
+			fmt.Fprintf(r.Out, "agent control channel disconnected: %v\n", err)
 		}
 		if ctx.Err() != nil {
 			return
@@ -43,10 +42,10 @@ func (r *Runner) runControlStreamLoop(ctx context.Context, rt sensorruntime.Runt
 	}
 }
 
-func (r *Runner) runControlStreamSession(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) error {
+func (r *Runner) runControlChannel(ctx context.Context, rt sensorruntime.Runtime, agentSpool *AgentSpool, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) error {
 	connectCtx, cancel := context.WithTimeout(ctx, r.Config.Upload.RequestTimeout)
 	defer cancel()
-	session := NewControlStreamSession(r.Config.Manager.Address, r.Config.Agent.Token, r.managerTLS())
+	session := NewControlChannel(r.Config.Manager.Address, r.Config.Agent.Token, r.managerTLS())
 	if err := session.Open(connectCtx); err != nil {
 		return err
 	}
@@ -56,11 +55,11 @@ func (r *Runner) runControlStreamSession(ctx context.Context, rt sensorruntime.R
 		return err
 	}
 	for _, frame := range frames {
-		if err := r.handleControlStreamFrame(ctx, session, frame, queue); err != nil {
+		if err := r.handleControlFrame(ctx, session, frame, agentSpool); err != nil {
 			return err
 		}
 	}
-	health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
+	health, err := r.collectHealth(ctx, rt, agentSpool.Queue(), worker, startedAt)
 	if err == nil {
 		if err := session.SendHealth(ctx, health); err != nil {
 			return err
@@ -69,7 +68,7 @@ func (r *Runner) runControlStreamSession(ctx context.Context, rt sensorruntime.R
 			return err
 		}
 	}
-	recvCh := make(chan *controlv1.ControlStreamFrame, 1)
+	recvCh := make(chan *controlplanev1.ControlFrame, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		for {
@@ -97,15 +96,15 @@ func (r *Runner) runControlStreamSession(ctx context.Context, rt sensorruntime.R
 			return ctx.Err()
 		case err := <-errCh:
 			if errors.Is(err, io.EOF) {
-				return fmt.Errorf("control stream closed")
+				return fmt.Errorf("control channel closed")
 			}
 			return err
 		case frame := <-recvCh:
-			if err := r.handleControlStreamFrame(ctx, session, frame, queue); err != nil {
+			if err := r.handleControlFrame(ctx, session, frame, agentSpool); err != nil {
 				return err
 			}
 		case <-ticker.C:
-			health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
+			health, err := r.collectHealth(ctx, rt, agentSpool.Queue(), worker, startedAt)
 			if err != nil {
 				return err
 			}
@@ -119,11 +118,11 @@ func (r *Runner) runControlStreamSession(ctx context.Context, rt sensorruntime.R
 	}
 }
 
-func (r *Runner) handleControlStreamFrame(ctx context.Context, session *ControlStreamSession, frame *controlv1.ControlStreamFrame, queue *spool.Queue) error {
+func (r *Runner) handleControlFrame(ctx context.Context, session *ControlChannel, frame *controlplanev1.ControlFrame, agentSpool *AgentSpool) error {
 	switch frame.GetType() {
 	case "ack":
 		if frame.GetAck().GetStatus() == "rejected" {
-			return fmt.Errorf("control stream request rejected: %s", frame.GetAck().GetMessage())
+			return fmt.Errorf("control channel request rejected: %s", frame.GetAck().GetMessage())
 		}
 		return nil
 	case "policy_update":
@@ -140,10 +139,7 @@ func (r *Runner) handleControlStreamFrame(ctx context.Context, session *ControlS
 		return nil
 	case "resume":
 		cursor := frame.GetResume().GetResumeCursor()
-		if cursor == "" || queue == nil {
-			return nil
-		}
-		if err := queue.AckThrough(cursor); err != nil {
+		if err := agentSpool.AckThrough(cursor); err != nil {
 			return err
 		}
 		if r.Out != nil {

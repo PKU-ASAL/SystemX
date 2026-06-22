@@ -75,3 +75,7 @@ message DataAck {
   uint64 rejected_signals = 14;
   string contract_version = 15;
 }
+
+service AgentDataPlaneService {
+  rpc AppendBatch(DataBatch) returns (DataAck);
+}

@@ -9,7 +9,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -655,7 +655,7 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
 	return nil
 }
 
-func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []gatewaymodel.EvidencePullbackRequest) error {
+func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []controlmodel.EvidencePullbackRequest) error {
 	for _, req := range pullbacks {
 		if req.RequestID == "" {
 			continue
@@ -666,7 +666,7 @@ func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []gatew
 		}
 		status := req.Status
 		if status == "" {
-			status = gatewaymodel.EvidencePullbackStatusPending
+			status = controlmodel.EvidencePullbackStatusPending
 		}
 		data, err := json.Marshal(req)
 		if err != nil {

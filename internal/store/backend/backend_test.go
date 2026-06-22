@@ -12,7 +12,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -435,14 +435,14 @@ func TestOpenPostgresProjectsRuleAndPullbackTables(t *testing.T) {
 		MITRE:          []string{"T1571"},
 		ResponseIntent: "collect",
 	})
-	result.Store.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
+	result.Store.CreateEvidencePullback(controlmodel.EvidencePullbackRequest{
 		RequestID:  "evpb-table-pg",
 		TenantID:   "default",
 		AgentID:    "agent-pullback-pg",
 		IncidentID: "inc-pullback-pg",
 		Scenario:   "pg-pullback",
 		Target:     "process:p1",
-		Status:     gatewaymodel.EvidencePullbackStatusPending,
+		Status:     controlmodel.EvidencePullbackStatusPending,
 		CreatedAt:  time.Unix(200, 0).UTC(),
 		UpdatedAt:  time.Unix(201, 0).UTC(),
 	})

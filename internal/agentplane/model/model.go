@@ -1,4 +1,4 @@
-package gatewaymodel
+package controlmodel
 
 import (
 	"encoding/json"

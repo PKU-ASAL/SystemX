@@ -1,14 +1,14 @@
 syntax = "proto3";
 
-package sysarmor.control.v1;
+package sysarmor.controlplane.v1;
 
-option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1;controlv1";
+option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1;controlplanev1";
 
 import "api/proto/event/v1/event.proto";
 import "api/proto/signal/v1/signal.proto";
 
-service AgentControlService {
-  rpc ControlStream(stream ControlStreamFrame) returns (stream ControlStreamFrame);
+service AgentControlPlaneService {
+  rpc Connect(stream ControlFrame) returns (stream ControlFrame);
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc Capability(CapabilityRequest) returns (CapabilityResponse);
   rpc CurrentPolicy(CurrentPolicyRequest) returns (CurrentPolicyResponse);
@@ -21,7 +21,7 @@ service AgentControlService {
   rpc WatchSignals(WatchSignalsRequest) returns (stream SignalFrame);
 }
 
-message ControlStreamFrame {
+message ControlFrame {
   string type = 1;
   string request_id = 2;
   RequestContext context = 3;

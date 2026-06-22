@@ -4,7 +4,7 @@
 #
 # attacker  10.66.0.99  C2 (http :8080 + nc :443)
 # node-a    10.66.0.11  受害端点（web 运行时 + CI 构建 + 假凭据）
-# mgr       10.66.0.10  manager / Agent Gateway
+# mgr       10.66.0.10  manager / agent data-control endpoint
 # worker    10.66.0.13  Kafka ingest consumer + detection/indexing
 # postgres 10.66.0.20  control/state/audit store
 # kafka    10.66.0.21  telemetry ingest log

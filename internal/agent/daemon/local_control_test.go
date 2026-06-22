@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -69,7 +68,7 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
-	health, err := client.Health(context.Background(), &controlv1.HealthRequest{Context: &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a"}})
+	health, err := client.Health(context.Background(), &controlplanev1.HealthRequest{Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"}})
 	if err != nil {
 		t.Fatalf("Health() error = %v", err)
 	}
@@ -82,7 +81,7 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	if health.GetWal().GetMaxBytes() != 16384 || health.GetWal().GetQueuedBatches() != 0 {
 		t.Fatalf("wal health = %+v", health.GetWal())
 	}
-	cap, err := client.Capability(context.Background(), &controlv1.CapabilityRequest{})
+	cap, err := client.Capability(context.Background(), &controlplanev1.CapabilityRequest{})
 	if err != nil {
 		t.Fatalf("Capability() error = %v", err)
 	}
@@ -92,7 +91,7 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	if len(cap.GetCollectionBehaviors()) != 1 || cap.GetCollectionBehaviors()[0].GetBehavior() != "network.connect" {
 		t.Fatalf("collection behavior capability = %+v", cap.GetCollectionBehaviors())
 	}
-	policy, err := client.CurrentPolicy(context.Background(), &controlv1.CurrentPolicyRequest{})
+	policy, err := client.CurrentPolicy(context.Background(), &controlplanev1.CurrentPolicyRequest{})
 	if err != nil {
 		t.Fatalf("CurrentPolicy() error = %v", err)
 	}
@@ -129,8 +128,8 @@ func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
-	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-explain"},
+	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-explain"},
 		PolicyType: "collection",
 		DryRun:     true,
 		PolicyJson: `{"policy_id":"collection-explain","version":1,"behaviors":[{"id":"process.exec"}],"observe_only":true}`,
@@ -179,8 +178,8 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
-	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-a"},
+	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-a"},
 		PolicyType: "agent-runtime",
 		PolicyJson: `{
 			"policy_id":"local-policy",
@@ -204,7 +203,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	if ack.Status != "applied" || ack.PolicyId != "local-policy" || ack.PolicyVersion != 7 {
 		t.Fatalf("ack = %+v", ack)
 	}
-	current, err := client.CurrentPolicy(context.Background(), &controlv1.CurrentPolicyRequest{})
+	current, err := client.CurrentPolicy(context.Background(), &controlplanev1.CurrentPolicyRequest{})
 	if err != nil {
 		t.Fatalf("CurrentPolicy() error = %v", err)
 	}
@@ -242,8 +241,8 @@ func TestLocalControlApplyUploadPolicyContract(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
-	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-upload"},
+	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-upload"},
 		PolicyType: "upload",
 		PolicyJson: `{"transport":"grpc","endpoint":"manager:9443","batch_size":64,"flush_interval":"2s","retry_initial":"500ms","retry_max":"5s","request_timeout":"3s","max_inflight":2,"compression":"gzip","tls_profile":"mtls-prod"}`,
 	})
@@ -312,16 +311,16 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 			"spec":{"value_type":"port","values":["443"]}
 		}`,
 	} {
-		if _, err := client.ApplyContent(context.Background(), &controlv1.ApplyContentRequest{
-			Context:       &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content"},
+		if _, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+			Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content"},
 			ContentJson:   contentJSON,
 			AllowUnsigned: true,
 		}); err != nil {
 			t.Fatalf("ApplyContent() error = %v", err)
 		}
 	}
-	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-collection"},
+	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-collection"},
 		PolicyType: "collection",
 		PolicyJson: `{
 			"policy_id":"collection-a",
@@ -394,8 +393,8 @@ func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
-	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-network-binary"},
+	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-network-binary"},
 		PolicyType: "collection",
 		PolicyJson: `{
 			"policy_id":"collection-network-binary",
@@ -453,8 +452,8 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 		"metadata":{"id":"ioc:c2-ip-feed","version":"2026.06.17.1"},
 		"spec":{"value_type":"ip","values":["203.0.113.10"]}
 	}`
-	ack, err := client.ApplyContent(context.Background(), &controlv1.ApplyContentRequest{
-		Context:       &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content"},
+	ack, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content"},
 		ContentJson:   contentJSON,
 		AllowUnsigned: true,
 	})
@@ -464,14 +463,14 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	if ack.Status != "applied" || ack.PolicyId != "ioc:c2-ip-feed" {
 		t.Fatalf("ack = %+v", ack)
 	}
-	list, err := client.ListContent(context.Background(), &controlv1.ListContentRequest{Kind: "iocpack"})
+	list, err := client.ListContent(context.Background(), &controlplanev1.ListContentRequest{Kind: "iocpack"})
 	if err != nil {
 		t.Fatalf("ListContent() error = %v", err)
 	}
 	if len(list.GetRecords()) != 1 || list.GetRecords()[0].GetRef() != "ioc:c2-ip-feed" {
 		t.Fatalf("list = %+v", list)
 	}
-	got, err := client.GetContent(context.Background(), &controlv1.GetContentRequest{Ref: "ioc:c2-ip-feed"})
+	got, err := client.GetContent(context.Background(), &controlplanev1.GetContentRequest{Ref: "ioc:c2-ip-feed"})
 	if err != nil {
 		t.Fatalf("GetContent() error = %v", err)
 	}
@@ -514,8 +513,8 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 		"metadata":{"id":"ioc:c2-port-feed","version":"local-9443"},
 		"spec":{"value_type":"port","values":["9443"]}
 	}`
-	if _, err := client.ApplyContent(context.Background(), &controlv1.ApplyContentRequest{
-		Context:       &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content-rebuild"},
+	if _, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-content-rebuild"},
 		ContentJson:   contentJSON,
 		AllowUnsigned: true,
 	}); err != nil {
@@ -523,10 +522,8 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	}
 
 	norm := normalize.New("agent-a", "host-a", nil)
-	if _, err := runner.spoolEvent(queue, norm, runner.currentDetection(), sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443")); err != nil {
-		t.Fatal(err)
-	}
-	signalStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "reverse_shell_pattern", Where: "endpoint"})
+	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443"))
+	signalStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "reverse_shell_pattern", Where: "endpoint"})
 	if err != nil {
 		t.Fatalf("WatchSignals() error = %v", err)
 	}
@@ -591,13 +588,11 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	defer stop()
 
 	norm := normalize.NewWithOptions("agent-a", "host-a", nil, normalize.Options{TenantID: "default", ScopeType: "host", Labels: map[string]string{"benchmark_run": "run-a"}})
-	detector, _ := detection.New(policymodel.DefaultDetectionPolicy())
-	if _, err := runner.spoolEvent(queue, norm, detector, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
-		t.Fatal(err)
-	}
+	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
 
 	client := newUnixControlClient(t, socketPath)
-	eventStream, err := client.WatchEvents(context.Background(), &controlv1.WatchEventsRequest{IncludeRecent: true, Limit: 1, Behavior: "file.write"})
+	eventStream, err := client.WatchEvents(context.Background(), &controlplanev1.WatchEventsRequest{IncludeRecent: true, Limit: 1, Behavior: "file.write"})
 	if err != nil {
 		t.Fatalf("WatchEvents() error = %v", err)
 	}
@@ -614,14 +609,14 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	if eventFrame.GetEvent().GetLabels()["benchmark_run"] != "run-a" {
 		t.Fatalf("event labels = %+v", eventFrame.GetEvent().GetLabels())
 	}
-	eventGet, err := client.GetEvent(context.Background(), &controlv1.GetEventRequest{EventId: eventFrame.GetEvent().GetId()})
+	eventGet, err := client.GetEvent(context.Background(), &controlplanev1.GetEventRequest{EventId: eventFrame.GetEvent().GetId()})
 	if err != nil {
 		t.Fatalf("GetEvent() error = %v", err)
 	}
 	if eventGet.GetFrame().GetEvent().GetId() != eventFrame.GetEvent().GetId() {
 		t.Fatalf("GetEvent frame = %+v, want event id %q", eventGet.GetFrame(), eventFrame.GetEvent().GetId())
 	}
-	signalStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "payload_dropped", Where: "endpoint"})
+	signalStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "payload_dropped", Where: "endpoint"})
 	if err != nil {
 		t.Fatalf("WatchSignals() error = %v", err)
 	}
@@ -638,10 +633,10 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	if signalFrame.GetSignal().GetLabels()["benchmark_run"] != "run-a" {
 		t.Fatalf("signal labels = %+v", signalFrame.GetSignal().GetLabels())
 	}
-	labelStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{
+	labelStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{
 		IncludeRecent: true,
 		Limit:         1,
-		Filter:        &controlv1.WatchFilter{Labels: map[string]string{"benchmark_run": "run-a"}},
+		Filter:        &controlplanev1.WatchFilter{Labels: map[string]string{"benchmark_run": "run-a"}},
 	})
 	if err != nil {
 		t.Fatalf("WatchSignals(label) error = %v", err)
@@ -649,10 +644,10 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	if _, err := labelStream.Recv(); err != nil {
 		t.Fatalf("label signal Recv() error = %v", err)
 	}
-	afterStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{
+	afterStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{
 		IncludeRecent: true,
 		SnapshotOnly:  true,
-		Filter:        &controlv1.WatchFilter{AfterSequence: signalFrame.GetSequence()},
+		Filter:        &controlplanev1.WatchFilter{AfterSequence: signalFrame.GetSequence()},
 	})
 	if err != nil {
 		t.Fatalf("WatchSignals(after sequence) error = %v", err)
@@ -689,8 +684,8 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	defer stop()
 
 	client := newUnixControlClient(t, socketPath)
-	contentAck, err := client.ApplyContent(context.Background(), &controlv1.ApplyContentRequest{
-		Context:       &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a"},
+	contentAck, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"},
 		ContentJson:   cepRulePackJSON(),
 		AllowUnsigned: true,
 	})
@@ -706,8 +701,8 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 		"mode":"observe",
 		"rulesets":[{"ref":"ruleset:cep","enabled":true}]
 	}`
-	policyAck, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
-		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a"},
+	policyAck, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"},
 		PolicyType: "detection",
 		PolicyJson: detectionPolicy,
 	})
@@ -725,12 +720,10 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 		cepSensorEventEnvelope("process.exec", "/dev/shm/cep-x", "", ""),
 		cepSensorEventEnvelope("network.connect", "/dev/shm/cep-x", "", "10.66.0.99:443"),
 	} {
-		if _, err := runner.spoolEvent(queue, norm, runner.currentDetection(), ev); err != nil {
-			t.Fatal(err)
-		}
+		appendEndpointEventForTest(t, runner, queue, norm, ev)
 	}
 
-	signalStream, err := client.WatchSignals(context.Background(), &controlv1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "cep_payload_lifecycle", Where: "endpoint"})
+	signalStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "cep_payload_lifecycle", Where: "endpoint"})
 	if err != nil {
 		t.Fatalf("WatchSignals() error = %v", err)
 	}
@@ -741,7 +734,7 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	if got := frame.GetSignal().GetEventRefs(); len(got) != 4 {
 		t.Fatalf("event refs = %v, want 4", got)
 	}
-	health, err := client.Health(context.Background(), &controlv1.HealthRequest{Context: &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a"}})
+	health, err := client.Health(context.Background(), &controlplanev1.HealthRequest{Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"}})
 	if err != nil {
 		t.Fatalf("Health() error = %v", err)
 	}
@@ -804,11 +797,11 @@ func cepRulePackJSON() string {
 
 type noopUploader struct{}
 
-func (noopUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (noopUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	return &dataplanev1.DataAck{Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
 }
 
-func newUnixControlClient(t *testing.T, socketPath string) controlv1.AgentControlServiceClient {
+func newUnixControlClient(t *testing.T, socketPath string) controlplanev1.AgentControlPlaneServiceClient {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
@@ -823,5 +816,5 @@ func newUnixControlClient(t *testing.T, socketPath string) controlv1.AgentContro
 		t.Fatalf("dial unix control socket: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return controlv1.NewAgentControlServiceClient(conn)
+	return controlplanev1.NewAgentControlPlaneServiceClient(conn)
 }

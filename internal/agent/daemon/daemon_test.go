@@ -12,11 +12,9 @@ import (
 	"testing"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
@@ -25,7 +23,6 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -41,7 +38,25 @@ import (
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
 
-func TestRunnerOnceWithFakeSensor(t *testing.T) {
+func appendEndpointEventForTest(t testing.TB, runner *Runner, queue *spool.Queue, norm *normalize.Normalizer, ev contract.EventEnvelope) string {
+	t.Helper()
+	batchID, err := NewAgentSpool(queue).AppendEndpointEvent(NewEndpointRuntime(runner, norm), ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return batchID
+}
+
+func appendEndpointSignalsForTest(t testing.TB, runner *Runner, queue *spool.Queue, signals []*signalv1.Signal) string {
+	t.Helper()
+	batchID, err := NewAgentSpool(queue).AppendEndpointSignals(NewEndpointRuntime(runner, nil), signals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return batchID
+}
+
+func TestRunnerSpoolsFakeSensorEvent(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -63,16 +78,13 @@ func TestRunnerOnceWithFakeSensor(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	var out bytes.Buffer
-	if err := runner.Run(context.Background(), Options{Once: true, Out: &out}); err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
+	runDaemonUntilSpoolBatch(t, runner, cfg.Spool.Path, &out)
 	got := out.String()
 	for _, want := range []string{"agent daemon started", "sensor=fake", "agent daemon event"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output %q does not contain %q", got, want)
 		}
 	}
-	assertSpoolBatch(t, cfg.Spool.Path)
 }
 
 func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
@@ -93,10 +105,7 @@ func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if err := runner.Run(context.Background(), Options{Once: true}); err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	batch := loadOnlySpoolBatch(t, cfg.Spool.Path)
+	batch := runDaemonUntilSpoolBatch(t, runner, cfg.Spool.Path, nil)
 	if got := batch.GetEvents()[0].GetEvent().GetScenario(); got != "daemon-scenario" {
 		t.Fatalf("event scenario = %q", got)
 	}
@@ -120,18 +129,14 @@ func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
 	runner := &Runner{Config: cfg}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
-	if _, err := runner.spoolEvent(queue, norm, runner.currentDetection(), sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
-		t.Fatal(err)
-	}
+	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
 	updated := policymodel.DefaultPolicy("default")
 	updated.PolicyID = "no-payload-after-refresh"
 	updated.Version = 2
 	disabled := false
 	updated.Detection.RuleOverrides = append(updated.Detection.RuleOverrides, policymodel.RuleOverride{RuleID: "payload_dropped", Enabled: &disabled})
 	runner.applyRuntimePolicy(updated)
-	if _, err := runner.spoolEvent(queue, norm, runner.currentDetection(), sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/x.sh", "")); err != nil {
-		t.Fatal(err)
-	}
+	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/x.sh", ""))
 	batches := loadSpoolBatches(t, filepath.Join(dir, "spool"))
 	if len(batches) != 2 {
 		t.Fatalf("batch count = %d", len(batches))
@@ -145,23 +150,11 @@ func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
 	}
 }
 
-func TestControlPolicyClientFetchesPolicy(t *testing.T) {
+func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 	st := &store.Store{}
-	policy := policymodel.DefaultPolicy("default")
-	policy.PolicyID = "stream-policy"
-	policy.Version = 3
-	disabled := false
-	policy.Detection.RuleOverrides = append(policy.Detection.RuleOverrides, policymodel.RuleOverride{RuleID: "payload_dropped", Enabled: &disabled})
-	st.UpsertPolicy(policy)
-	st.AssignPolicy(policymodel.Assignment{
-		TenantID:      "default",
-		AgentID:       "agent-stream",
-		PolicyID:      "stream-policy",
-		PolicyVersion: 3,
-	})
 	linkSrv := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -171,167 +164,7 @@ func TestControlPolicyClientFetchesPolicy(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	client := NewControlPolicyClient(lis.Addr().String(), "", time.Second)
-	got, err := client.EffectivePolicy(context.Background(), EffectivePolicyRequest{
-		TenantID: "default",
-		AgentID:  "agent-stream",
-	})
-	if err != nil {
-		t.Fatalf("EffectivePolicy() error = %v", err)
-	}
-	if got.PolicyID != "stream-policy" || got.Version != 3 || got.Mode != "observe" {
-		t.Fatalf("policy = %+v", got)
-	}
-	if got.Detection == nil || len(got.Detection.RuleOverrides) == 0 {
-		t.Fatalf("detection policy = %+v", got.Detection)
-	}
-}
-
-func TestControlResponseClientFetchesCommandAndAcks(t *testing.T) {
-	st := &store.Store{}
-	st.CreateResponse(responsemodel.Command{
-		ResponseID: "resp-stream-agent",
-		TenantID:   "default",
-		AgentID:    "agent-stream",
-		Action:     "collect",
-		Target:     "process:p1",
-	})
-	linkSrv := managerapi.NewServer(st)
-	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(linkSrv))
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
-	runner := &Runner{
-		Config: config.Config{
-			Agent:   config.AgentConfig{ID: "agent-stream", HostID: "host-stream", TenantID: "default"},
-			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
-		},
-		Sensor: &healthOnlySensor{health: contract.Health{Running: true, PolicyLoaded: true}},
-	}
-	client := NewControlResponseClient(lis.Addr().String(), "", time.Second)
-	if err := runner.pollControlResponses(context.Background(), client); err != nil {
-		t.Fatalf("pollControlResponses() error = %v", err)
-	}
-	audits := st.ListResponses("default", "agent-stream")
-	if len(audits) != 1 || audits[0].Ack == nil {
-		t.Fatalf("audits = %+v", audits)
-	}
-	ack := audits[0].Ack
-	if ack.ResponseID != "resp-stream-agent" || !ack.ObserveOnly || ack.Executed || ack.Unsupported || !ack.Accepted {
-		t.Fatalf("ack = %+v", ack)
-	}
-}
-
-func TestControlEvidenceClientHandlesPullbackResult(t *testing.T) {
-	st := &store.Store{}
-	st.AddIncident(&incidentv1.Incident{Id: "inc-stream", Scenario: "pullback-stream", Summary: "stream incident"})
-	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
-		RequestID:  "evpb-stream-agent",
-		TenantID:   "default",
-		AgentID:    "agent-stream",
-		IncidentID: "inc-stream",
-		Scenario:   "pullback-stream",
-		Target:     "process:p1",
-		Reason:     "collect graph evidence",
-	})
-	linkSrv := managerapi.NewServer(st)
-	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(linkSrv))
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
-	runner := &Runner{
-		Config: config.Config{
-			Agent:   config.AgentConfig{ID: "agent-stream", HostID: "host-stream", TenantID: "default"},
-			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
-		},
-		Sensor: &healthOnlySensor{health: contract.Health{Running: true, PolicyLoaded: true}},
-	}
-	client := NewControlEvidenceClient(lis.Addr().String(), "", time.Second)
-	if err := runner.pollControlEvidencePullbacks(context.Background(), client); err != nil {
-		t.Fatalf("pollControlEvidencePullbacks() error = %v", err)
-	}
-	pullbacks := st.ListEvidencePullbacks("default", "agent-stream")
-	if len(pullbacks) != 1 || pullbacks[0].Status != gatewaymodel.EvidencePullbackStatusCompleted || !pullbacks[0].ResultOK {
-		t.Fatalf("pullbacks = %+v", pullbacks)
-	}
-	inc, ok := st.GetIncident("inc-stream", "pullback-stream")
-	if !ok {
-		t.Fatal("incident not found")
-	}
-	nodes := inc.GetEvidence().GetNodes()
-	if len(nodes) != 1 || nodes[0].GetId() != "process:p1" || nodes[0].GetKind() != "process" {
-		t.Fatalf("evidence nodes = %+v", nodes)
-	}
-}
-
-func TestControlStreamHealthReporterSendsHeartbeatFrame(t *testing.T) {
-	st := &store.Store{}
-	linkSrv := managerapi.NewServer(st)
-	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
-	reporter := NewControlStreamHealthReporter(lis.Addr().String(), "", time.Second)
-	err = reporter.Report(context.Background(), agenthealth.AgentHealth{
-		AgentID:    "agent-control-health",
-		HostID:     "host-control-health",
-		TenantID:   "default",
-		Status:     "ok",
-		ObservedAt: time.Now().UTC(),
-		Scope:      agenthealth.RuntimeScope{Type: "container", Selector: "api"},
-		Capability: agenthealth.SensorCapability{Backend: "fake", Version: "dev", SupportsHealth: true},
-		Sensor:     agenthealth.SensorHealth{Backend: "fake", Running: true, EventsSeen: 11},
-	})
-	if err != nil {
-		t.Fatalf("Report() error = %v", err)
-	}
-	got, ok := st.GetAgentHealth("default", "agent-control-health")
-	if !ok {
-		t.Fatal("agent health not stored")
-	}
-	if got.Status != "ok" || got.Sensor.EventsSeen != 11 || got.Capability.Version != "dev" || got.Scope.Selector != "api" {
-		t.Fatalf("stored health = %+v", got)
-	}
-}
-
-func TestControlStreamSessionKeepsLongLivedContract(t *testing.T) {
-	st := &store.Store{}
-	linkSrv := managerapi.NewServer(st)
-	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
-	session := NewControlStreamSession(lis.Addr().String(), "", tlsconfig.ClientConfig{})
+	session := NewControlChannel(lis.Addr().String(), "", tlsconfig.ClientConfig{})
 	defer session.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -345,23 +178,23 @@ func TestControlStreamSessionKeepsLongLivedContract(t *testing.T) {
 	if frames[0].GetContractVersion() != 1 || frames[0].GetSequence() != 1 || frames[1].GetSequence() != 2 {
 		t.Fatalf("hello frame sequence = %d/%d contract=%d", frames[0].GetSequence(), frames[1].GetSequence(), frames[0].GetContractVersion())
 	}
-	if err := session.Send(ctx, &controlv1.ControlStreamFrame{
+	if err := session.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "health_report",
 		RequestId: "long-health",
-		Context: &controlv1.RequestContext{
+		Context: &controlplanev1.RequestContext{
 			TenantId: "default",
 			AgentId:  "agent-long-control",
-			Scope:    &controlv1.Scope{Type: "container", Selector: "api"},
+			Scope:    &controlplanev1.Scope{Type: "container", Selector: "api"},
 		},
-		Health: &controlv1.HealthResponse{
+		Health: &controlplanev1.HealthResponse{
 			AgentId:    "agent-long-control",
 			HostId:     "host-long-control",
 			TenantId:   "default",
 			Status:     "ok",
-			Scope:      &controlv1.Scope{Type: "container", Selector: "api"},
+			Scope:      &controlplanev1.Scope{Type: "container", Selector: "api"},
 			ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
-			Capability: &controlv1.SensorCapability{Backend: "fake", Version: "long", SupportsHealth: true},
-			Sensor:     &controlv1.SensorHealth{Backend: "fake", Running: true, EventsSeen: 7},
+			Capability: &controlplanev1.SensorCapability{Backend: "fake", Version: "long", SupportsHealth: true},
+			Sensor:     &controlplanev1.SensorHealth{Backend: "fake", Running: true, EventsSeen: 7},
 		},
 	}); err != nil {
 		t.Fatalf("Send(health) error = %v", err)
@@ -379,7 +212,7 @@ func TestControlStreamSessionKeepsLongLivedContract(t *testing.T) {
 	}
 }
 
-func TestRunnerControlStreamSessionProcessesPendingResponse(t *testing.T) {
+func TestRunnerControlChannelProcessesPendingResponse(t *testing.T) {
 	dir := t.TempDir()
 	st := &store.Store{}
 	st.CreateResponse(responsemodel.Command{
@@ -391,7 +224,7 @@ func TestRunnerControlStreamSessionProcessesPendingResponse(t *testing.T) {
 	})
 	linkSrv := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -424,7 +257,7 @@ func TestRunnerControlStreamSessionProcessesPendingResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- runner.runControlStreamSession(ctx, rt, queue, worker, time.Now().UTC(), "host", "")
+		done <- runner.runControlChannel(ctx, rt, NewAgentSpool(queue), worker, time.Now().UTC(), "host", "")
 	}()
 	deadline := time.After(time.Second)
 	for {
@@ -433,7 +266,7 @@ func TestRunnerControlStreamSessionProcessesPendingResponse(t *testing.T) {
 			cancel()
 			err := <-done
 			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Fatalf("runControlStreamSession() error = %v", err)
+				t.Fatalf("runControlChannel() error = %v", err)
 			}
 			ack := audits[0].Ack
 			if ack.ResponseID != "resp-runner-long" || !ack.Accepted || !ack.ObserveOnly || ack.Executed {
@@ -450,66 +283,6 @@ func TestRunnerControlStreamSessionProcessesPendingResponse(t *testing.T) {
 			t.Fatalf("response ack not observed; audits=%+v", audits)
 		case <-time.After(10 * time.Millisecond):
 		}
-	}
-}
-
-func TestControlResumeClientAcksLocalSpoolThroughCursor(t *testing.T) {
-	dir := t.TempDir()
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id1, err := queue.AppendDataBatch(testDataBatch("local-1", "agent-stream", "host-stream"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id2, err := queue.AppendDataBatch(testDataBatch("local-2", "agent-stream", "host-stream"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id3, err := queue.AppendDataBatch(testDataBatch("local-3", "agent-stream", "host-stream"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := &store.Store{}
-	st.RecordDataUpload(store.AgentIdentity{AgentID: "agent-stream", HostID: "host-stream", TenantID: "default"}, id2, "control", time.Now().UTC())
-	linkSrv := managerapi.NewServer(st)
-	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(linkSrv))
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
-	runner := &Runner{
-		Config: config.Config{
-			Agent:   config.AgentConfig{ID: "agent-stream", HostID: "host-stream", TenantID: "default"},
-			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
-			Upload:  config.UploadConfig{RequestTimeout: time.Second},
-		},
-	}
-	worker, err := runner.uploadWorker(queue)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stats, err := worker.ResumeOnce(context.Background())
-	if err != nil {
-		t.Fatalf("ResumeOnce() error = %v", err)
-	}
-	if stats.RemainingBatches != 1 || stats.LastError != "" {
-		t.Fatalf("stats = %+v", stats)
-	}
-	entries, err := queue.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].ID != id3 || entries[0].ID == id1 {
-		t.Fatalf("remaining entries = %+v, cursor = %s", entries, id2)
 	}
 }
 
@@ -537,16 +310,13 @@ func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	var out bytes.Buffer
-	if err := runner.Run(context.Background(), Options{Once: true, Out: &out}); err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
+	runDaemonUntilOutput(t, runner, &out, "agent daemon event")
 	got := out.String()
 	for _, want := range []string{"sensor=tetragon", "agent daemon event"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output %q does not contain %q", got, want)
 		}
 	}
-	assertSpoolBatch(t, cfg.Spool.Path)
 }
 
 func TestRunnerTetragonRequiresEventSource(t *testing.T) {
@@ -567,43 +337,11 @@ func TestRunnerTetragonRequiresEventSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	err = runner.Run(context.Background(), Options{Once: true})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = runner.Run(ctx, Options{})
 	if err == nil {
 		t.Fatal("Run() error = nil")
-	}
-}
-
-func TestRunnerDrainOnceUploadsAndAcksSpool(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1024, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
-	}
-	runner, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := runner.Run(context.Background(), Options{Once: true, DrainOnce: true, Out: &out}); err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 0 {
-		t.Fatalf("spool batches after drain = %v", matches)
-	}
-	if !strings.Contains(out.String(), "agent upload drain: uploaded=1 remaining=0") {
-		t.Fatalf("output = %q", out.String())
 	}
 }
 
@@ -729,9 +467,13 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Run(context.Background(), Options{Once: true}); err != nil {
-		t.Fatalf("first Run() error = %v", err)
+	first.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	queue, err := spool.OpenWithLimit(spoolPath, cfg.Spool.MaxBytes)
+	if err != nil {
+		t.Fatal(err)
 	}
+	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
+	appendEndpointEventForTest(t, first, queue, norm, sensorEventEnvelope("process.exec", 100, "/bin/bash", "", ""))
 	matches, err := filepath.Glob(filepath.Join(spoolPath, "*.batch.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -744,10 +486,6 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	oldID := oldBatch.GetEvents()[0].GetEvent().GetId()
 
 	worker, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	queue, err := spool.OpenWithLimit(spoolPath, cfg.Spool.MaxBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,9 +531,7 @@ func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := runner.Run(context.Background(), Options{Once: true, Out: &out}); err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
+	runDaemonUntilOutput(t, runner, &out, "agent spool backpressure")
 	if !strings.Contains(out.String(), "agent spool backpressure") {
 		t.Fatalf("output = %q", out.String())
 	}
@@ -916,9 +652,7 @@ func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
 	if sig == nil {
 		t.Fatal("tamper Evaluate() = nil")
 	}
-	if _, err := runner.spoolSignals(queue, []*signalv1.Signal{sig}); err != nil {
-		t.Fatal(err)
-	}
+	appendEndpointSignalsForTest(t, runner, queue, []*signalv1.Signal{sig})
 	batch := loadOnlySpoolBatch(t, runner.Config.Spool.Path)
 	sig = batch.GetSignals()[0].GetSignal()
 	if sig.GetName() != tamper.SignalName || !sig.GetTerminal() || sig.GetWhere() != signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT {
@@ -1203,6 +937,76 @@ func assertSpoolBatch(t *testing.T, dir string) {
 	batch := loadOnlySpoolBatch(t, dir)
 	if batch.GetHeader().GetAgentId() != "agent-a" {
 		t.Fatalf("spool batch header = %+v", batch.GetHeader())
+	}
+}
+
+func runDaemonUntilSpoolBatch(t *testing.T, runner *Runner, spoolPath string, out *bytes.Buffer) *dataplanev1.DataBatch {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		opts := Options{}
+		if out != nil {
+			opts.Out = out
+		}
+		errCh <- runner.Run(ctx, opts)
+	}()
+	deadline := time.After(2 * time.Second)
+	for {
+		batches := loadSpoolBatches(t, spoolPath)
+		if len(batches) > 0 {
+			cancel()
+			if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run() error = %v", err)
+			}
+			return batches[0]
+		}
+		select {
+		case err := <-errCh:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run() error = %v", err)
+			}
+			t.Fatalf("daemon exited before spooling a batch")
+		case <-deadline:
+			cancel()
+			t.Fatalf("timed out waiting for spool batch")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func runDaemonUntilOutput(t *testing.T, runner *Runner, out *bytes.Buffer, want string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx, Options{Out: out})
+	}()
+	deadline := time.After(2 * time.Second)
+	for {
+		if strings.Contains(out.String(), want) {
+			cancel()
+			if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run() error = %v", err)
+			}
+			return
+		}
+		select {
+		case err := <-errCh:
+			if strings.Contains(out.String(), want) {
+				return
+			}
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run() error = %v", err)
+			}
+			t.Fatalf("daemon exited before output %q; got %q", want, out.String())
+		case <-deadline:
+			cancel()
+			t.Fatalf("timed out waiting for output %q; got %q", want, out.String())
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }
 

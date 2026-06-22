@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
@@ -39,7 +38,7 @@ func NewGRPCUploaderWithTLS(manager string, timeout time.Duration, token string,
 	return &GRPCUploader{manager: normalizeGRPCAddress(manager), timeout: timeout, token: token, tls: tlsCfg}
 }
 
-func (u *GRPCUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (u *GRPCUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), u.timeout)
 	defer cancel()
 	if u.token != "" {
@@ -54,12 +53,12 @@ func (u *GRPCUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAc
 		return nil, err
 	}
 	defer conn.Close()
-	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, batch)
+	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, batch)
 	if err != nil {
 		return nil, err
 	}
 	if !AckCommitted(ack) {
-		return ack, fmt.Errorf("upload rejected: %s", ack.GetMessage())
+		return ack, fmt.Errorf("append batch rejected: %s", ack.GetMessage())
 	}
 	return ack, nil
 }

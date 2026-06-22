@@ -17,7 +17,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -56,7 +56,7 @@ type Store struct {
 	PolicyAudits     []policymodel.AuditRecord
 	Responses        []responsemodel.Command
 	ResponseAcks     []responsemodel.Ack
-	Pullbacks        []gatewaymodel.EvidencePullbackRequest
+	Pullbacks        []controlmodel.EvidencePullbackRequest
 	AgentSessions    []AgentSession
 	OperatorRoles    []OperatorRoleBinding
 	Metrics          Metrics
@@ -120,7 +120,7 @@ type State struct {
 	PolicyAudits   []policymodel.AuditRecord              `json:"policy_audits"`
 	Responses      []responsemodel.Command                `json:"responses"`
 	ResponseAcks   []responsemodel.Ack                    `json:"response_acks"`
-	Pullbacks      []gatewaymodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
+	Pullbacks      []controlmodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
 	AgentSessions  []AgentSession                         `json:"agent_sessions"`
 	OperatorRoles  []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
 	Metrics        Metrics                                `json:"metrics"`
@@ -980,8 +980,8 @@ func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool)
 	return command, true
 }
 
-func (s *Store) CreateEvidencePullback(req gatewaymodel.EvidencePullbackRequest) gatewaymodel.EvidencePullbackRequest {
-	req = gatewaymodel.NormalizeEvidencePullback(req)
+func (s *Store) CreateEvidencePullback(req controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest {
+	req = controlmodel.NormalizeEvidencePullback(req)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, existing := range s.Pullbacks {
@@ -995,10 +995,10 @@ func (s *Store) CreateEvidencePullback(req gatewaymodel.EvidencePullbackRequest)
 	return req
 }
 
-func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []gatewaymodel.EvidencePullbackRequest {
+func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []controlmodel.EvidencePullbackRequest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]gatewaymodel.EvidencePullbackRequest, 0, len(s.Pullbacks))
+	out := make([]controlmodel.EvidencePullbackRequest, 0, len(s.Pullbacks))
 	for _, req := range s.Pullbacks {
 		if tenantID != "" && req.TenantID != tenantID {
 			continue
@@ -1014,9 +1014,9 @@ func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []gatewaymodel.E
 	return out
 }
 
-func (s *Store) GetEvidencePullback(requestID, tenantID, agentID string) (gatewaymodel.EvidencePullbackRequest, bool) {
+func (s *Store) GetEvidencePullback(requestID, tenantID, agentID string) (controlmodel.EvidencePullbackRequest, bool) {
 	if requestID == "" {
-		return gatewaymodel.EvidencePullbackRequest{}, false
+		return controlmodel.EvidencePullbackRequest{}, false
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1032,23 +1032,23 @@ func (s *Store) GetEvidencePullback(requestID, tenantID, agentID string) (gatewa
 		}
 		return req, true
 	}
-	return gatewaymodel.EvidencePullbackRequest{}, false
+	return controlmodel.EvidencePullbackRequest{}, false
 }
 
-func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []gatewaymodel.EvidencePullbackRequest {
+func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []controlmodel.EvidencePullbackRequest {
 	all := s.ListEvidencePullbacks(tenantID, agentID)
-	out := make([]gatewaymodel.EvidencePullbackRequest, 0, len(all))
+	out := make([]controlmodel.EvidencePullbackRequest, 0, len(all))
 	for _, req := range all {
-		if req.Status == gatewaymodel.EvidencePullbackStatusPending {
+		if req.Status == controlmodel.EvidencePullbackStatusPending {
 			out = append(out, req)
 		}
 	}
 	return out
 }
 
-func (s *Store) CompleteEvidencePullback(result gatewaymodel.EvidencePullbackResult) (gatewaymodel.EvidencePullbackRequest, bool) {
+func (s *Store) CompleteEvidencePullback(result controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool) {
 	if result.RequestID == "" {
-		return gatewaymodel.EvidencePullbackRequest{}, false
+		return controlmodel.EvidencePullbackRequest{}, false
 	}
 	if result.ObservedAt.IsZero() {
 		result.ObservedAt = time.Now().UTC()
@@ -1070,14 +1070,14 @@ func (s *Store) CompleteEvidencePullback(result gatewaymodel.EvidencePullbackRes
 		req.UpdatedAt = result.ObservedAt
 		req.CompletedAt = result.ObservedAt
 		if result.OK {
-			req.Status = gatewaymodel.EvidencePullbackStatusCompleted
+			req.Status = controlmodel.EvidencePullbackStatusCompleted
 		} else {
-			req.Status = gatewaymodel.EvidencePullbackStatusFailed
+			req.Status = controlmodel.EvidencePullbackStatusFailed
 		}
 		s.Pullbacks[i] = req
 		return req, true
 	}
-	return gatewaymodel.EvidencePullbackRequest{}, false
+	return controlmodel.EvidencePullbackRequest{}, false
 }
 
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
@@ -1705,7 +1705,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.PolicyAudits = append([]policymodel.AuditRecord(nil), s.PolicyAudits...)
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
-	state.Pullbacks = append([]gatewaymodel.EvidencePullbackRequest(nil), s.Pullbacks...)
+	state.Pullbacks = append([]controlmodel.EvidencePullbackRequest(nil), s.Pullbacks...)
 	state.AgentSessions = append([]AgentSession(nil), s.AgentSessions...)
 	return state, nil
 }

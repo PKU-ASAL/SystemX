@@ -11,7 +11,7 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
@@ -46,14 +46,14 @@ type ManagerStore interface {
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
-	CompleteEvidencePullback(gatewaymodel.EvidencePullbackResult) (gatewaymodel.EvidencePullbackRequest, bool)
-	CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest) gatewaymodel.EvidencePullbackRequest
+	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
+	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
 	DeleteScenario(string)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	EnsureDefaultPolicy(string)
 	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
-	GetEvidencePullback(string, string, string) (gatewaymodel.EvidencePullbackRequest, bool)
+	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
 	GetIncident(string, string) (*incidentv1.Incident, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
 	GetSignal(string) (*signalv1.Signal, bool)
@@ -63,7 +63,7 @@ type ManagerStore interface {
 	BindAgentIdentity(store.AgentIdentity) error
 	ListAssignments(string, string) []policymodel.Assignment
 	ListEvents(string, string) []*eventv1.CanonicalEvent
-	ListEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
+	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	ListIncidents(string) []*incidentv1.Incident
 	ListAgentSessions(string, string) []store.AgentSession
 	ListPolicies(string) []policymodel.Policy
@@ -74,7 +74,7 @@ type ManagerStore interface {
 	ListSignals(string, string, bool) []*signalv1.Signal
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
-	PendingEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
+	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
 	CloseAgentSession(string, string, time.Time) store.AgentSession
@@ -609,7 +609,7 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "agent_id is required", http.StatusBadRequest)
 			return
 		}
-		out := s.store.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
+		out := s.store.CreateEvidencePullback(controlmodel.EvidencePullbackRequest{
 			RequestID:  req.RequestID,
 			TenantID:   req.TenantID,
 			AgentID:    req.AgentID,

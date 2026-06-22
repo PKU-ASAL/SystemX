@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
@@ -48,7 +48,7 @@ func (r *Runner) startLocalControlServer(ctx context.Context, rt sensorruntime.R
 		return nil, err
 	}
 	server := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(server, &localControlServer{
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &localControlServer{
 		runner:    r,
 		runtime:   rt,
 		queue:     queue,
@@ -74,7 +74,7 @@ func (r *Runner) startLocalControlServer(ctx context.Context, rt sensorruntime.R
 }
 
 type localControlServer struct {
-	controlv1.UnimplementedAgentControlServiceServer
+	controlplanev1.UnimplementedAgentControlPlaneServiceServer
 	runner    *Runner
 	runtime   sensorruntime.Runtime
 	queue     *spool.Queue
@@ -82,7 +82,7 @@ type localControlServer struct {
 	startedAt time.Time
 }
 
-func (s *localControlServer) Health(ctx context.Context, req *controlv1.HealthRequest) (*controlv1.HealthResponse, error) {
+func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
 	health, err := s.runner.collectHealth(ctx, s.runtime, s.queue, s.worker, s.startedAt)
 	if err != nil {
 		return nil, err
@@ -90,9 +90,9 @@ func (s *localControlServer) Health(ctx context.Context, req *controlv1.HealthRe
 	return healthResponse(health), nil
 }
 
-func (s *localControlServer) Capability(ctx context.Context, req *controlv1.CapabilityRequest) (*controlv1.CapabilityResponse, error) {
+func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
 	cfg := s.runner.Config
-	return &controlv1.CapabilityResponse{
+	return &controlplanev1.CapabilityResponse{
 		AgentId:  cfg.Agent.ID,
 		HostId:   cfg.Agent.HostID,
 		TenantId: cfg.Agent.TenantID,
@@ -112,17 +112,17 @@ func (s *localControlServer) Capability(ctx context.Context, req *controlv1.Capa
 	}, nil
 }
 
-func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlv1.CurrentPolicyRequest) (*controlv1.CurrentPolicyResponse, error) {
+func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
 	policy := policymodel.Normalize(s.runner.activePolicy())
 	raw, err := json.Marshal(policy)
 	if err != nil {
 		return nil, err
 	}
-	return &controlv1.CurrentPolicyResponse{
+	return &controlplanev1.CurrentPolicyResponse{
 		PolicyId: policy.PolicyID,
 		Version:  policy.Version,
 		TenantId: policy.TenantID,
-		Scope: &controlv1.Scope{
+		Scope: &controlplanev1.Scope{
 			Type:     policy.Scope.Type,
 			Selector: policy.Scope.Selector,
 		},
@@ -133,7 +133,7 @@ func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlv1.C
 	}, nil
 }
 
-func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlv1.ApplyPolicyRequest) (*controlv1.ControlAck, error) {
+func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) (*controlplanev1.ControlAck, error) {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", err.Error()), nil
 	}
@@ -181,7 +181,7 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlv1.App
 	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", uploadSection != nil), nil
 }
 
-func (s *localControlServer) applyUploadPolicy(req *controlv1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) *controlv1.ControlAck {
+func (s *localControlServer) applyUploadPolicy(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) *controlplanev1.ControlAck {
 	if fallback == nil && strings.TrimSpace(req.GetPolicyJson()) != "" {
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(req.GetPolicyJson()), &raw); err != nil {
@@ -211,7 +211,7 @@ func (s *localControlServer) applyUploadPolicy(req *controlv1.ApplyPolicyRequest
 	return uploadAck(s.runner.Config, req.GetContext(), "applied", "upload policy applied; restart upload worker to take effect", true, *upload)
 }
 
-func (s *localControlServer) ApplyContent(ctx context.Context, req *controlv1.ApplyContentRequest) (*controlv1.ControlAck, error) {
+func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
 	}
@@ -231,14 +231,14 @@ func (s *localControlServer) ApplyContent(ctx context.Context, req *controlv1.Ap
 	if len(report.Warnings) > 0 {
 		message += "; detection dependencies degraded: " + strings.Join(report.Warnings, "; ")
 	}
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId: requestID(req.GetContext()),
 		TenantId:  s.runner.Config.Agent.TenantID,
 		AgentId:   s.runner.Config.Agent.ID,
 		Status:    status,
 		Message:   message,
 		PolicyId:  record.Ref,
-		Sections: []*controlv1.AppliedSection{{
+		Sections: []*controlplanev1.AppliedSection{{
 			Name:    "content",
 			Status:  status,
 			Message: message,
@@ -246,19 +246,19 @@ func (s *localControlServer) ApplyContent(ctx context.Context, req *controlv1.Ap
 	}, nil
 }
 
-func (s *localControlServer) ListContent(ctx context.Context, req *controlv1.ListContentRequest) (*controlv1.ListContentResponse, error) {
+func (s *localControlServer) ListContent(ctx context.Context, req *controlplanev1.ListContentRequest) (*controlplanev1.ListContentResponse, error) {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return nil, err
 	}
 	records := s.runner.contentStore().List(strings.TrimSpace(req.GetKind()))
-	out := make([]*controlv1.ContentRecord, 0, len(records))
+	out := make([]*controlplanev1.ContentRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, contentRecordMessage(record))
 	}
-	return &controlv1.ListContentResponse{Records: out}, nil
+	return &controlplanev1.ListContentResponse{Records: out}, nil
 }
 
-func (s *localControlServer) GetContent(ctx context.Context, req *controlv1.GetContentRequest) (*controlv1.ContentGetResponse, error) {
+func (s *localControlServer) GetContent(ctx context.Context, req *controlplanev1.GetContentRequest) (*controlplanev1.ContentGetResponse, error) {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return nil, err
 	}
@@ -266,10 +266,10 @@ func (s *localControlServer) GetContent(ctx context.Context, req *controlv1.GetC
 	if !ok {
 		return nil, fmt.Errorf("content ref %q not found", req.GetRef())
 	}
-	return &controlv1.ContentGetResponse{Record: contentRecordMessage(record)}, nil
+	return &controlplanev1.ContentGetResponse{Record: contentRecordMessage(record)}, nil
 }
 
-func (s *localControlServer) GetEvent(ctx context.Context, req *controlv1.GetEventRequest) (*controlv1.EventGetResponse, error) {
+func (s *localControlServer) GetEvent(ctx context.Context, req *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error) {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return nil, err
 	}
@@ -281,10 +281,10 @@ func (s *localControlServer) GetEvent(ctx context.Context, req *controlv1.GetEve
 	if !ok {
 		return nil, fmt.Errorf("event %q not found in spool WAL", eventID)
 	}
-	return &controlv1.EventGetResponse{Frame: frame}, nil
+	return &controlplanev1.EventGetResponse{Frame: frame}, nil
 }
 
-func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *controlv1.ApplyPolicyRequest) *controlv1.ControlAck {
+func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
 	policy, err := agentpolicy.ParseCollectionPolicyJSON([]byte(req.GetPolicyJson()), s.runner.Config.Sensor.ObserveOnly)
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "invalid collection policy: "+err.Error())
@@ -336,7 +336,7 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false, compileReport, &report.Coverage)
 }
 
-func (s *localControlServer) applyDetectionPolicy(req *controlv1.ApplyPolicyRequest) *controlv1.ControlAck {
+func (s *localControlServer) applyDetectionPolicy(req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
 	var envelope struct {
 		Detection *policymodel.DetectionPolicy `json:"detection"`
 	}
@@ -358,12 +358,12 @@ func (s *localControlServer) applyDetectionPolicy(req *controlv1.ApplyPolicyRequ
 	return detectionAck(s.runner.Config, req.GetContext(), active, report.Status, report.Message, false, report)
 }
 
-func (s *localControlServer) WatchEvents(req *controlv1.WatchEventsRequest, stream controlv1.AgentControlService_WatchEventsServer) error {
+func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return err
 	}
 	sent := uint32(0)
-	send := func(frame *controlv1.EventFrame) error {
+	send := func(frame *controlplanev1.EventFrame) error {
 		if !eventFrameMatches(frame, req.GetBehavior(), req.GetFilter()) {
 			return nil
 		}
@@ -406,12 +406,12 @@ func (s *localControlServer) WatchEvents(req *controlv1.WatchEventsRequest, stre
 	}
 }
 
-func (s *localControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, stream controlv1.AgentControlService_WatchSignalsServer) error {
+func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return err
 	}
 	sent := uint32(0)
-	send := func(frame *controlv1.SignalFrame) error {
+	send := func(frame *controlplanev1.SignalFrame) error {
 		if !signalFrameMatches(frame, req.GetRuleId(), req.GetWhere(), req.GetFilter()) {
 			return nil
 		}
@@ -454,7 +454,7 @@ func (s *localControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, st
 	}
 }
 
-func (s *localControlServer) snapshotEntries(filter *controlv1.WatchFilter, includeRecent bool) []spool.Entry {
+func (s *localControlServer) snapshotEntries(filter *controlplanev1.WatchFilter, includeRecent bool) []spool.Entry {
 	if !includeRecent {
 		return nil
 	}
@@ -465,7 +465,7 @@ func (s *localControlServer) snapshotEntries(filter *controlv1.WatchFilter, incl
 	return entries
 }
 
-func (s *localControlServer) sendEventEntry(id string, send func(*controlv1.EventFrame) error) error {
+func (s *localControlServer) sendEventEntry(id string, send func(*controlplanev1.EventFrame) error) error {
 	batch, err := s.queue.LoadDataBatch(id)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -475,7 +475,7 @@ func (s *localControlServer) sendEventEntry(id string, send func(*controlv1.Even
 	}
 	header := batch.GetHeader()
 	for _, frame := range batch.GetEvents() {
-		out := &controlv1.EventFrame{
+		out := &controlplanev1.EventFrame{
 			TenantId:   header.GetTenantId(),
 			AgentId:    header.GetAgentId(),
 			Sequence:   frame.GetSequence(),
@@ -489,7 +489,7 @@ func (s *localControlServer) sendEventEntry(id string, send func(*controlv1.Even
 	return nil
 }
 
-func (s *localControlServer) sendSignalEntry(id string, send func(*controlv1.SignalFrame) error) error {
+func (s *localControlServer) sendSignalEntry(id string, send func(*controlplanev1.SignalFrame) error) error {
 	batch, err := s.queue.LoadDataBatch(id)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -499,7 +499,7 @@ func (s *localControlServer) sendSignalEntry(id string, send func(*controlv1.Sig
 	}
 	header := batch.GetHeader()
 	for _, frame := range batch.GetSignals() {
-		out := &controlv1.SignalFrame{
+		out := &controlplanev1.SignalFrame{
 			TenantId:   header.GetTenantId(),
 			AgentId:    header.GetAgentId(),
 			Sequence:   frame.GetSequence(),
@@ -513,14 +513,14 @@ func (s *localControlServer) sendSignalEntry(id string, send func(*controlv1.Sig
 	return nil
 }
 
-func (s *localControlServer) eventFrameByID(eventID string) (*controlv1.EventFrame, bool) {
+func (s *localControlServer) eventFrameByID(eventID string) (*controlplanev1.EventFrame, bool) {
 	entries, err := s.queue.SnapshotAfter("")
 	if err != nil {
 		return nil, false
 	}
 	for _, entry := range entries {
-		var found *controlv1.EventFrame
-		err := s.sendEventEntry(entry.ID, func(frame *controlv1.EventFrame) error {
+		var found *controlplanev1.EventFrame
+		err := s.sendEventEntry(entry.ID, func(frame *controlplanev1.EventFrame) error {
 			if frame.GetEvent().GetId() == eventID {
 				found = frame
 			}
@@ -536,7 +536,7 @@ func (s *localControlServer) eventFrameByID(eventID string) (*controlv1.EventFra
 	return nil, false
 }
 
-func (s *localControlServer) watchAfterBatchID(filter *controlv1.WatchFilter, includeRecent bool) string {
+func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {
 	if filter != nil && strings.TrimSpace(filter.GetAfterBatchId()) != "" {
 		return strings.TrimSpace(filter.GetAfterBatchId())
 	}
@@ -550,7 +550,7 @@ func (s *localControlServer) watchAfterBatchID(filter *controlv1.WatchFilter, in
 	return entries[len(entries)-1].ID
 }
 
-func (s *localControlServer) validateContext(ctx *controlv1.RequestContext) error {
+func (s *localControlServer) validateContext(ctx *controlplanev1.RequestContext) error {
 	if ctx == nil {
 		return nil
 	}
@@ -563,7 +563,7 @@ func (s *localControlServer) validateContext(ctx *controlv1.RequestContext) erro
 	return nil
 }
 
-func uploadPolicyFromRequest(req *controlv1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) (*policymodel.UploadPolicy, error) {
+func uploadPolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) (*policymodel.UploadPolicy, error) {
 	if req.GetUpload() != nil {
 		upload := &policymodel.UploadPolicy{
 			Transport:      req.GetUpload().GetTransport(),
@@ -678,14 +678,14 @@ func parseOptionalDuration(value string) time.Duration {
 	return d
 }
 
-func rejectedAck(cfg config.Config, req *controlv1.RequestContext, section, message string) *controlv1.ControlAck {
-	return &controlv1.ControlAck{
+func rejectedAck(cfg config.Config, req *controlplanev1.RequestContext, section, message string) *controlplanev1.ControlAck {
+	return &controlplanev1.ControlAck{
 		RequestId: requestID(req),
 		TenantId:  cfg.Agent.TenantID,
 		AgentId:   cfg.Agent.ID,
 		Status:    "rejected",
 		Message:   message,
-		Sections: []*controlv1.AppliedSection{{
+		Sections: []*controlplanev1.AppliedSection{{
 			Name:    section,
 			Status:  "rejected",
 			Message: message,
@@ -693,15 +693,15 @@ func rejectedAck(cfg config.Config, req *controlv1.RequestContext, section, mess
 	}
 }
 
-func uploadAck(cfg config.Config, req *controlv1.RequestContext, status, message string, requiresRestart bool, upload policymodel.UploadPolicy) *controlv1.ControlAck {
+func uploadAck(cfg config.Config, req *controlplanev1.RequestContext, status, message string, requiresRestart bool, upload policymodel.UploadPolicy) *controlplanev1.ControlAck {
 	report, _ := json.Marshal(map[string]any{"upload": upload})
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId: requestID(req),
 		TenantId:  cfg.Agent.TenantID,
 		AgentId:   cfg.Agent.ID,
 		Status:    status,
 		Message:   message,
-		Sections: []*controlv1.AppliedSection{{
+		Sections: []*controlplanev1.AppliedSection{{
 			Name:            "upload",
 			Status:          status,
 			Message:         message,
@@ -712,7 +712,7 @@ func uploadAck(cfg config.Config, req *controlv1.RequestContext, status, message
 	}
 }
 
-func appliedAck(cfg config.Config, req *controlv1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool) *controlv1.ControlAck {
+func appliedAck(cfg config.Config, req *controlplanev1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool) *controlplanev1.ControlAck {
 	uploadStatus := "unchanged"
 	uploadMessage := "upload policy unchanged"
 	uploadRequiresRestart := requiresRestart
@@ -721,7 +721,7 @@ func appliedAck(cfg config.Config, req *controlv1.RequestContext, policy policym
 		uploadMessage = "upload policy accepted; restart upload worker to take effect"
 		uploadRequiresRestart = true
 	}
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
 		AgentId:       cfg.Agent.ID,
@@ -729,7 +729,7 @@ func appliedAck(cfg config.Config, req *controlv1.RequestContext, policy policym
 		Message:       message,
 		PolicyId:      policy.PolicyID,
 		PolicyVersion: policy.Version,
-		Sections: []*controlv1.AppliedSection{
+		Sections: []*controlplanev1.AppliedSection{
 			{Name: "detection", Status: status, Message: "endpoint rules updated", RequiresRestart: false},
 			{Name: "response", Status: status, Message: "response policy updated", RequiresRestart: false},
 			{Name: "resource", Status: "unsupported", Message: "resource policy contract is reserved for the next phase", RequiresRestart: requiresRestart},
@@ -739,14 +739,14 @@ func appliedAck(cfg config.Config, req *controlv1.RequestContext, policy policym
 	}
 }
 
-func requestID(req *controlv1.RequestContext) string {
+func requestID(req *controlplanev1.RequestContext) string {
 	if req == nil {
 		return ""
 	}
 	return req.GetRequestId()
 }
 
-func requestScope(req *controlv1.RequestContext) config.RuntimeScope {
+func requestScope(req *controlplanev1.RequestContext) config.RuntimeScope {
 	if req == nil || req.GetScope() == nil {
 		return config.RuntimeScope{}
 	}
@@ -782,10 +782,10 @@ type collectionExplainReport struct {
 	DetectionCoverage *detection.CoverageReport `json:"detection_coverage,omitempty"`
 }
 
-func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool, report contract.CollectionCompileReport, coverage *detection.CoverageReport) *controlv1.ControlAck {
+func collectionAck(cfg config.Config, req *controlplanev1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool, report contract.CollectionCompileReport, coverage *detection.CoverageReport) *controlplanev1.ControlAck {
 	details := collectionReportDetails(report, coverage)
 	reportJSON := collectionReportJSON(report, coverage)
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
 		AgentId:       cfg.Agent.ID,
@@ -795,7 +795,7 @@ func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agen
 		PolicyVersion: policy.Version,
 		Details:       details,
 		ReportJson:    reportJSON,
-		Sections: []*controlv1.AppliedSection{{
+		Sections: []*controlplanev1.AppliedSection{{
 			Name:            "collection",
 			Status:          status,
 			Message:         message,
@@ -853,7 +853,7 @@ func collectionReportJSON(report contract.CollectionCompileReport, coverage *det
 	return string(data)
 }
 
-func detectionAck(cfg config.Config, req *controlv1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool, report detection.ApplyReport) *controlv1.ControlAck {
+func detectionAck(cfg config.Config, req *controlplanev1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool, report detection.ApplyReport) *controlplanev1.ControlAck {
 	if status == "" {
 		status = "applied"
 	}
@@ -865,7 +865,7 @@ func detectionAck(cfg config.Config, req *controlv1.RequestContext, policy polic
 		sectionMessage = sectionMessage + ": " + strings.Join(report.Details, "; ")
 	}
 	reportJSON := detectionReportJSON(report)
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
 		AgentId:       cfg.Agent.ID,
@@ -873,7 +873,7 @@ func detectionAck(cfg config.Config, req *controlv1.RequestContext, policy polic
 		Message:       sectionMessage,
 		PolicyId:      policy.PolicyID,
 		PolicyVersion: policy.Version,
-		Sections: []*controlv1.AppliedSection{{
+		Sections: []*controlplanev1.AppliedSection{{
 			Name:            "detection",
 			Status:          status,
 			Message:         sectionMessage,
@@ -892,8 +892,8 @@ func detectionReportJSON(report detection.ApplyReport) string {
 	return string(data)
 }
 
-func contentRecordMessage(record agentcontent.Record) *controlv1.ContentRecord {
-	return &controlv1.ContentRecord{
+func contentRecordMessage(record agentcontent.Record) *controlplanev1.ContentRecord {
+	return &controlplanev1.ContentRecord{
 		Ref:     record.Ref,
 		Kind:    record.Kind,
 		Version: record.Version,
@@ -914,7 +914,7 @@ func eventMatches(event *eventv1.CanonicalEvent, behavior string) bool {
 	return true
 }
 
-func eventFrameMatches(frame *controlv1.EventFrame, behavior string, filter *controlv1.WatchFilter) bool {
+func eventFrameMatches(frame *controlplanev1.EventFrame, behavior string, filter *controlplanev1.WatchFilter) bool {
 	if frame == nil || !eventMatches(frame.GetEvent(), behavior) {
 		return false
 	}
@@ -942,14 +942,14 @@ func signalMatches(signal *signalv1.Signal, ruleID, where string) bool {
 	}
 }
 
-func signalFrameMatches(frame *controlv1.SignalFrame, ruleID, where string, filter *controlv1.WatchFilter) bool {
+func signalFrameMatches(frame *controlplanev1.SignalFrame, ruleID, where string, filter *controlplanev1.WatchFilter) bool {
 	if frame == nil || !signalMatches(frame.GetSignal(), ruleID, where) {
 		return false
 	}
 	return frameMatches(frame.GetSequence(), frame.GetObservedAt(), frame.GetSignal().GetLabels(), filter)
 }
 
-func frameMatches(sequence uint64, observedAt string, labels map[string]string, filter *controlv1.WatchFilter) bool {
+func frameMatches(sequence uint64, observedAt string, labels map[string]string, filter *controlplanev1.WatchFilter) bool {
 	if filter == nil {
 		return true
 	}
@@ -990,8 +990,8 @@ func observedAtMatches(observedAt, since, until string) bool {
 	return true
 }
 
-func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
-	return &controlv1.HealthResponse{
+func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthResponse {
+	return &controlplanev1.HealthResponse{
 		AgentId:       health.AgentID,
 		HostId:        health.HostID,
 		TenantId:      health.TenantID,
@@ -1002,7 +1002,7 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 		PolicyMode:    health.PolicyMode,
 		UptimeSeconds: health.UptimeSeconds,
 		Capability:    capabilityMessage(health.Capability),
-		Sensor: &controlv1.SensorHealth{
+		Sensor: &controlplanev1.SensorHealth{
 			Backend:        health.Sensor.Backend,
 			Installed:      health.Sensor.Installed,
 			Running:        health.Sensor.Running,
@@ -1016,7 +1016,7 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 			LastExitReason: health.Sensor.LastExitReason,
 			LastError:      health.Sensor.LastError,
 		},
-		Queue: &controlv1.QueueHealth{
+		Queue: &controlplanev1.QueueHealth{
 			QueuedBatches:     uint32(health.Queue.QueuedBatches),
 			QueuedBytes:       health.Queue.QueuedBytes,
 			MaxBytes:          health.Queue.MaxBytes,
@@ -1025,7 +1025,7 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 			DroppedBytes:      health.Queue.DroppedBytes,
 			LastError:         health.Queue.LastError,
 		},
-		Wal: &controlv1.WALHealth{
+		Wal: &controlplanev1.WALHealth{
 			QueuedBatches:     uint32(health.WAL.QueuedBatches),
 			QueuedBytes:       health.WAL.QueuedBytes,
 			MaxBytes:          health.WAL.MaxBytes,
@@ -1038,13 +1038,13 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 			DroppedBytes:      health.WAL.DroppedBytes,
 			LastError:         health.WAL.LastError,
 		},
-		Upload: &controlv1.UploadHealth{
+		Upload: &controlplanev1.UploadHealth{
 			UploadedBatches:  uint32(health.Upload.UploadedBatches),
 			RemainingBatches: uint32(health.Upload.RemainingBatches),
 			RemainingBytes:   health.Upload.RemainingBytes,
 			LastError:        health.Upload.LastError,
 		},
-		Cep: &controlv1.CEPHealth{
+		Cep: &controlplanev1.CEPHealth{
 			ActiveGroups:     health.CEP.ActiveGroups,
 			EvictedGroups:    health.CEP.EvictedGroups,
 			ExpiredGroups:    health.CEP.ExpiredGroups,
@@ -1053,7 +1053,7 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 			EmittedSignals:   health.CEP.EmittedSignals,
 			Degraded:         health.CEP.Degraded,
 		},
-		Streams: &controlv1.LocalStreamHealth{
+		Streams: &controlplanev1.LocalStreamHealth{
 			EventCapacity:        health.Streams.EventCapacity,
 			EventBuffered:        health.Streams.EventBuffered,
 			EventNextSequence:    health.Streams.EventNextSequence,
@@ -1073,12 +1073,12 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 	}
 }
 
-func scopeMessage(scope agenthealth.RuntimeScope) *controlv1.Scope {
-	return &controlv1.Scope{Type: scope.Type, Selector: scope.Selector}
+func scopeMessage(scope agenthealth.RuntimeScope) *controlplanev1.Scope {
+	return &controlplanev1.Scope{Type: scope.Type, Selector: scope.Selector}
 }
 
-func capabilityMessage(cap agenthealth.SensorCapability) *controlv1.SensorCapability {
-	return &controlv1.SensorCapability{
+func capabilityMessage(cap agenthealth.SensorCapability) *controlplanev1.SensorCapability {
+	return &controlplanev1.SensorCapability{
 		Backend:         cap.Backend,
 		Version:         cap.Version,
 		SupportsExec:    cap.SupportsExec,
@@ -1092,10 +1092,10 @@ func capabilityMessage(cap agenthealth.SensorCapability) *controlv1.SensorCapabi
 	}
 }
 
-func collectionBehaviorMessages(in []agenthealth.CollectionBehaviorCapability) []*controlv1.CollectionBehaviorCapability {
-	out := make([]*controlv1.CollectionBehaviorCapability, 0, len(in))
+func collectionBehaviorMessages(in []agenthealth.CollectionBehaviorCapability) []*controlplanev1.CollectionBehaviorCapability {
+	out := make([]*controlplanev1.CollectionBehaviorCapability, 0, len(in))
 	for _, item := range in {
-		out = append(out, &controlv1.CollectionBehaviorCapability{
+		out = append(out, &controlplanev1.CollectionBehaviorCapability{
 			Behavior:             item.Behavior,
 			Fields:               append([]string(nil), item.Fields...),
 			PushdownSelectors:    append([]string(nil), item.PushdownSelectors...),

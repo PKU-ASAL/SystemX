@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
@@ -25,7 +25,7 @@ func validatePeerDataIdentity(ctx context.Context, header *dataplanev1.BatchHead
 	return peerID, true, nil
 }
 
-func validatePeerControlIdentity(ctx context.Context, reqCtx *controlv1.RequestContext) (tlsconfig.PeerIdentity, bool, error) {
+func validatePeerControlIdentity(ctx context.Context, reqCtx *controlplanev1.RequestContext) (tlsconfig.PeerIdentity, bool, error) {
 	peerID, ok := tlsconfig.PeerAgentIdentity(ctx)
 	if !ok {
 		return tlsconfig.PeerIdentity{}, false, nil

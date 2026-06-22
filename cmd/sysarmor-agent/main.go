@@ -81,8 +81,6 @@ func runDaemonCommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 	configPath := fs.String("config", "/etc/sysarmor/agent.yaml", "agent config path")
 	dryRun := fs.Bool("dry-run", false, "validate config and exit")
-	once := fs.Bool("once", false, "run until the first daemon event or health tick and exit")
-	drainOnce := fs.Bool("drain-once", false, "attempt one oldest-first spool upload drain after receiving an event")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -101,7 +99,7 @@ func runDaemonCommand(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runner.Run(ctx, daemon.Options{Once: *once, DrainOnce: *drainOnce, Out: os.Stdout})
+	return runner.Run(ctx, daemon.Options{Out: os.Stdout})
 }
 
 func uploadJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, tlsCfg tlsconfig.ClientConfig) error {
@@ -128,7 +126,7 @@ func uploadJSONL(manager, transport, agentID, hostID, tenantID, scenario, input 
 	if err != nil {
 		return err
 	}
-	_, err = up.Upload(batch)
+	_, err = up.AppendBatch(batch)
 	return err
 }
 

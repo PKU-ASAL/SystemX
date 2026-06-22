@@ -102,13 +102,13 @@ effectiveness-report:         ## 从 expected.yaml + 已有结果生成 scenario
 
 # ── 常用组合 ──────────────────────────────────────────
 
-.PHONY: e2e e2e-agent-manager-contract e2e-manager-idempotency e2e-agent-mtls e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-session-projection e2e-postgres-rarity-projection e2e-postgres-all e2e-agent-session e2e-agent-control-stream-resume e2e-agent-control-stream-policy e2e-agent-control-stream-response e2e-agent-control-stream-evidence e2e-agent-control-stream-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
+.PHONY: e2e e2e-agent-manager-contract e2e-manager-idempotency e2e-agent-mtls e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-session-projection e2e-postgres-rarity-projection e2e-postgres-all e2e-agent-session e2e-agent-control-plane-contract e2e-agent-control-plane-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
-e2e-agent-manager-contract:   ## v3: ControlStream sequence/replay and DataAck error-class contract
-	cd .. && go test ./internal/agentplane -run 'Test(ControlStreamSequenceRejectsReplayAndGap|ControlStreamRequiresRequestID|DataAckClassifiesRetryableBackendError|GRPCUploadRequiresAgentIdentity)'
-	cd .. && go test ./internal/agent/daemon -run 'Test(ControlStreamSessionKeepsLongLivedContract|RunnerControlStreamSessionProcessesPendingResponse)'
+e2e-agent-manager-contract:   ## v3: AgentControlPlaneService.Connect sequence/replay and DataAck error-class contract
+	cd .. && go test ./internal/agentplane -run 'Test(ControlPlaneConnectSequenceRejectsReplayAndGap|ControlPlaneConnectRequiresRequestID|DataAckClassifiesRetryableBackendError|DataPlaneAppendBatchRequiresAgentIdentity)'
+	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|RunnerControlChannelProcessesPendingResponse)'
 
 e2e-manager-idempotency:      ## v2: repeated DataBatch does not amplify manager ingest
 	bash harness/e2e-manager-idempotency.sh
@@ -299,19 +299,10 @@ e2e-postgres-all: e2e-store-status e2e-query-pagination e2e-postgres-store e2e-p
 e2e-agent-session: ## v3: data upload updates agent session cursor state
 	bash harness/e2e-agent-session.sh
 
-e2e-agent-control-stream-resume: ## v3: agent ControlStream can resume and ack local spool through cursor
-	cd .. && go test ./internal/agent/daemon -run TestControlResumeClientAcksLocalSpoolThroughCursor
+e2e-agent-control-plane-contract: ## v3: long-lived AgentControlPlaneService.Connect policy/resume/response/evidence contract
+	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|RunnerControlChannelProcessesPendingResponse)'
 
-e2e-agent-control-stream-policy: ## v3: agent can fetch effective policy through ControlStream
-	cd .. && go test ./internal/agent/daemon -run TestControlPolicyClientFetchesPolicy
-
-e2e-agent-control-stream-response: ## v3: agent can ack observe-only response command through ControlStream
-	cd .. && go test ./internal/agent/daemon -run TestControlResponseClientFetchesCommandAndAcks
-
-e2e-agent-control-stream-evidence: ## v3: agent can handle evidence pullback through ControlStream
-	cd .. && go test ./internal/agent/daemon -run TestControlEvidenceClientHandlesPullbackResult
-
-e2e-agent-control-stream-all: e2e-agent-session e2e-agent-control-stream-resume e2e-agent-control-stream-policy e2e-agent-control-stream-response e2e-agent-control-stream-evidence ## v3: current ControlStream foundation gates
+e2e-agent-control-plane-all: e2e-agent-session e2e-agent-control-plane-contract ## v3: current AgentControlPlaneService.Connect foundation gates
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
 	bash harness/e2e-agent-daemon-container.sh
@@ -440,10 +431,8 @@ help:                         ## 显示帮助
 	@echo "  e2e-postgres-rarity-projection  v3 Postgres backend projects rarity baseline into table path"
 	@echo "  e2e-postgres-all  run current v3 Postgres/store foundation gates"
 	@echo "  e2e-agent-session  v3 data upload updates session cursor state"
-	@echo "  e2e-agent-control-stream-policy  v3 agent can fetch effective policy through ControlStream"
-	@echo "  e2e-agent-control-stream-response  v3 agent can ack observe-only response command through ControlStream"
-	@echo "  e2e-agent-control-stream-evidence  v3 agent can handle evidence pullback through ControlStream"
-	@echo "  e2e-agent-control-stream-all  run current v3 ControlStream foundation gates"
+	@echo "  e2e-agent-control-plane-contract  v3 long-lived AgentControlPlaneService.Connect contract"
+	@echo "  e2e-agent-control-plane-all  run current v3 AgentControlPlaneService.Connect foundation gates"
 	@echo "  e2e-agent-daemon-container  v2 container topology daemon smoke"
 	@echo "  e2e-agent-managed-container  v2 container managed fake Tetragon bundle smoke"
 	@echo "  e2e-agent-managed-recover-container  v2 container managed degraded to recovered smoke"

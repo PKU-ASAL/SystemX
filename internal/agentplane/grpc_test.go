@@ -15,8 +15,7 @@ import (
 	"testing"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
@@ -33,11 +32,11 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-func TestGRPCUpload(t *testing.T) {
+func TestDataPlaneAppendBatch(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -56,7 +55,7 @@ func TestGRPCUpload(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("00000000000000000007", "grpc-agent", "grpc-host", []*signalv1.Signal{
+	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("00000000000000000007", "grpc-agent", "grpc-host", []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
 		endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-a", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
@@ -72,7 +71,7 @@ func TestGRPCUpload(t *testing.T) {
 	}
 }
 
-func TestAgentDataServiceMTLSBindsBatchIdentity(t *testing.T) {
+func TestAgentDataPlaneServiceMTLSBindsBatchIdentity(t *testing.T) {
 	certs := writeTestMTLSFiles(t, "default", "grpc-agent")
 	serverOpt, err := tlsconfig.ServerOption(certs.serverCert, certs.serverKey, certs.ca, true)
 	if err != nil {
@@ -81,7 +80,7 @@ func TestAgentDataServiceMTLSBindsBatchIdentity(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
 	grpcServer := grpc.NewServer(serverOpt)
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -105,17 +104,17 @@ func TestAgentDataServiceMTLSBindsBatchIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	client := analyticsv1.NewAgentDataServiceClient(conn)
-	if _, err := client.Upload(context.Background(), grpcDataBatch("mtls-ok", "grpc-agent", "grpc-host", nil)); err != nil {
-		t.Fatalf("Upload() matching mTLS identity error = %v", err)
+	client := dataplanev1.NewAgentDataPlaneServiceClient(conn)
+	if _, err := client.AppendBatch(context.Background(), grpcDataBatch("mtls-ok", "grpc-agent", "grpc-host", nil)); err != nil {
+		t.Fatalf("AppendBatch() matching mTLS identity error = %v", err)
 	}
-	_, err = client.Upload(context.Background(), grpcDataBatch("mtls-denied", "other-agent", "grpc-host", nil))
+	_, err = client.AppendBatch(context.Background(), grpcDataBatch("mtls-denied", "other-agent", "grpc-host", nil))
 	if status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("Upload() mismatched mTLS identity error = %v, want permission denied", err)
+		t.Fatalf("AppendBatch() mismatched mTLS identity error = %v, want permission denied", err)
 	}
 }
 
-func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
+func TestControlPlaneConnectMTLSBindsFrameIdentity(t *testing.T) {
 	certs := writeTestMTLSFiles(t, "default", "control-agent")
 	serverOpt, err := tlsconfig.ServerOption(certs.serverCert, certs.serverKey, certs.ca, true)
 	if err != nil {
@@ -124,7 +123,7 @@ func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer(serverOpt)
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -149,16 +148,16 @@ func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(context.Background())
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "hello",
 		RequestId:       "mtls-control-ok",
 		ContractVersion: 1,
 		Sequence:        1,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlplanev1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send matching hello: %v", err)
 	}
@@ -184,12 +183,12 @@ func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
 		t.Fatalf("registered agents = %+v, want mTLS identity binding", agents)
 	}
 
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "hello",
 		RequestId:       "mtls-control-denied",
 		ContractVersion: 1,
 		Sequence:        2,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "other-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "other-agent", Scope: &controlplanev1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send mismatched hello: %v", err)
 	}
@@ -205,11 +204,11 @@ func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
 	}
 }
 
-func TestControlStreamAcceptsHealthReport(t *testing.T) {
+func TestControlPlaneConnectAcceptsHealthReport(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -228,25 +227,25 @@ func TestControlStreamAcceptsHealthReport(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "health_report",
 		RequestId:       "health-test",
 		ContractVersion: 1,
 		Sequence:        1,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
-		Health: &controlv1.HealthResponse{
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Health: &controlplanev1.HealthResponse{
 			AgentId:    "control-agent",
 			HostId:     "control-host",
 			TenantId:   "default",
 			Status:     "ok",
-			Scope:      &controlv1.Scope{Type: "host"},
+			Scope:      &controlplanev1.Scope{Type: "host"},
 			ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
-			Capability: &controlv1.SensorCapability{Backend: "fake", Version: "dev", SupportsHealth: true},
-			Sensor:     &controlv1.SensorHealth{Backend: "fake", Running: true, EventsSeen: 9},
+			Capability: &controlplanev1.SensorCapability{Backend: "fake", Version: "dev", SupportsHealth: true},
+			Sensor:     &controlplanev1.SensorHealth{Backend: "fake", Running: true, EventsSeen: 9},
 		},
 	}); err != nil {
 		t.Fatalf("send health report: %v", err)
@@ -264,11 +263,11 @@ func TestControlStreamAcceptsHealthReport(t *testing.T) {
 	}
 }
 
-func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
+func TestControlPlaneConnectSequenceRejectsReplayAndGap(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -287,16 +286,16 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "hello",
 		RequestId:       "seq-ok",
 		ContractVersion: 1,
 		Sequence:        1,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlplanev1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send hello: %v", err)
 	}
@@ -312,13 +311,13 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 		t.Fatalf("downlink sequence policy=%d/%d resume=%d/%d", policy.GetContractVersion(), policy.GetSequence(), resume.GetContractVersion(), resume.GetSequence())
 	}
 
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "health_report",
 		RequestId:       "seq-idempotent",
 		ContractVersion: 1,
 		Sequence:        2,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
-		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Health:          &controlplanev1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
 	}); err != nil {
 		t.Fatalf("send idempotent original: %v", err)
 	}
@@ -330,13 +329,13 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 		t.Fatalf("first idempotent ack = %+v", firstAck)
 	}
 
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "health_report",
 		RequestId:       "seq-idempotent",
 		ContractVersion: 1,
 		Sequence:        3,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
-		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "degraded"},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Health:          &controlplanev1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "degraded"},
 	}); err != nil {
 		t.Fatalf("send idempotent retry: %v", err)
 	}
@@ -352,13 +351,13 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 		t.Fatalf("agent health after idempotent retry = %+v ok=%t, want original status ok", got, ok)
 	}
 
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "health_report",
 		RequestId:       "seq-replay",
 		ContractVersion: 1,
 		Sequence:        3,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
-		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Health:          &controlplanev1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
 	}); err != nil {
 		t.Fatalf("send replay: %v", err)
 	}
@@ -370,13 +369,13 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 		t.Fatalf("replay ack = %+v", replay)
 	}
 
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "health_report",
 		RequestId:       "seq-gap",
 		ContractVersion: 1,
 		Sequence:        5,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
-		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Health:          &controlplanev1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
 	}); err != nil {
 		t.Fatalf("send gap: %v", err)
 	}
@@ -389,11 +388,11 @@ func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
 	}
 }
 
-func TestControlStreamRequiresRequestID(t *testing.T) {
+func TestControlPlaneConnectRequiresRequestID(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -412,16 +411,16 @@ func TestControlStreamRequiresRequestID(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "health_report",
 		ContractVersion: 1,
 		Sequence:        1,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "request-id-agent", Scope: &controlv1.Scope{Type: "host"}},
-		Health:          &controlv1.HealthResponse{AgentId: "request-id-agent", TenantId: "default", Status: "ok"},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "request-id-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Health:          &controlplanev1.HealthResponse{AgentId: "request-id-agent", TenantId: "default", Status: "ok"},
 	}); err != nil {
 		t.Fatalf("send missing request_id: %v", err)
 	}
@@ -529,7 +528,7 @@ func writePEM(t *testing.T, path, typ string, der []byte) {
 	}
 }
 
-func TestControlStreamHelloReturnsPolicyUpdate(t *testing.T) {
+func TestControlPlaneConnectHelloReturnsPolicyUpdate(t *testing.T) {
 	st := &store.Store{}
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "control-policy"
@@ -538,7 +537,7 @@ func TestControlStreamHelloReturnsPolicyUpdate(t *testing.T) {
 	st.AssignPolicy(policymodel.Assignment{TenantID: "default", AgentID: "control-agent", PolicyID: "control-policy", PolicyVersion: 9})
 	server := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -557,16 +556,16 @@ func TestControlStreamHelloReturnsPolicyUpdate(t *testing.T) {
 	}
 	defer conn.Close()
 
-	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&controlv1.ControlStreamFrame{
+	if err := stream.Send(&controlplanev1.ControlFrame{
 		Type:            "hello",
 		RequestId:       "hello-policy",
 		ContractVersion: 1,
 		Sequence:        1,
-		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlplanev1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send hello: %v", err)
 	}
@@ -583,7 +582,7 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServerWithAuth(st, "dev-token")
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -602,25 +601,25 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	}
 	defer conn.Close()
 
-	_, err = analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
+	_, err = dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
 	if status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("Upload() error = %v, want unauthenticated", err)
+		t.Fatalf("AppendBatch() error = %v, want unauthenticated", err)
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", "dev-token")
-	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
+	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
 	if err != nil {
-		t.Fatalf("Upload() with token error = %v", err)
+		t.Fatalf("AppendBatch() with token error = %v", err)
 	}
 	if !ack.GetAccepted() {
 		t.Fatalf("ack = %#v", ack)
 	}
 }
 
-func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
+func TestDataPlaneAppendBatchRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -639,11 +638,11 @@ func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, &dataplanev1.DataBatch{
+	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, &dataplanev1.DataBatch{
 		Header: &dataplanev1.BatchHeader{AgentId: "grpc-agent", HostId: "grpc-host"},
 	})
 	if err != nil {
-		t.Fatalf("Upload() error = %v, want structured DataAck rejection", err)
+		t.Fatalf("AppendBatch() error = %v, want structured DataAck rejection", err)
 	}
 	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "invalid_upload" || ack.GetRetryable() || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want non-retryable invalid_upload rejection", ack)
@@ -652,7 +651,7 @@ func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
 
 func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 	grpcServer := grpc.NewServer()
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(retryableUploadBackend{err: status.Error(codes.Unavailable, "durable telemetry unavailable")}))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(retryableUploadBackend{err: status.Error(codes.Unavailable, "durable telemetry unavailable")}))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -671,9 +670,9 @@ func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("retryable-batch", "grpc-agent", "grpc-host", nil))
+	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("retryable-batch", "grpc-agent", "grpc-host", nil))
 	if err != nil {
-		t.Fatalf("Upload() error = %v, want structured retryable DataAck", err)
+		t.Fatalf("AppendBatch() error = %v, want structured retryable DataAck", err)
 	}
 	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_RETRYABLE || ack.GetReasonCode() != "retryable_server_error" || !ack.GetRetryable() || ack.GetRetryAfterMs() == 0 || ack.GetBatchId() != "retryable-batch" || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want retryable server error", ack)

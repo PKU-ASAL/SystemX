@@ -40,7 +40,7 @@ func main() {
 		ServerName: *tlsServerName,
 		Insecure:   *tlsInsecure,
 	})
-	ack, err := up.Upload(batch)
+	ack, err := up.AppendBatch(batch)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "upload: %v\n", err)
 		os.Exit(1)

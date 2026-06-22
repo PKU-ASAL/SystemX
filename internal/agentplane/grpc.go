@@ -5,23 +5,22 @@ import (
 	"errors"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-type grpcServer struct {
-	analyticsv1.UnimplementedAgentDataServiceServer
+type DataServer struct {
+	dataplanev1.UnimplementedAgentDataPlaneServiceServer
 	backend Backend
 }
 
-func NewDataServer(backend Backend) analyticsv1.AgentDataServiceServer {
-	return &grpcServer{backend: backend}
+func NewDataServer(backend Backend) dataplanev1.AgentDataPlaneServiceServer {
+	return &DataServer{backend: backend}
 }
 
-func (s *grpcServer) Upload(ctx context.Context, batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (s *DataServer) AppendBatch(ctx context.Context, batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if !s.authorized(ctx) {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
@@ -113,7 +112,7 @@ func stringReasonCode(status dataplanev1.DataAck_Status) string {
 	}
 }
 
-func (s *grpcServer) authorized(ctx context.Context) bool {
+func (s *DataServer) authorized(ctx context.Context) bool {
 	token := s.backend.AgentToken()
 	if token == "" {
 		return true

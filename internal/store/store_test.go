@@ -5,7 +5,7 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"path/filepath"
@@ -76,7 +76,7 @@ func TestMetricsSnapshotAndReset(t *testing.T) {
 
 func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	st := &Store{}
-	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
+	st.CreateEvidencePullback(controlmodel.EvidencePullbackRequest{
 		RequestID:  "evpb-a",
 		TenantID:   "default",
 		AgentID:    "agent-a",
@@ -95,7 +95,7 @@ func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("pullbacks = %+v", got)
 	}
-	if got[0].RequestID != "evpb-a" || got[0].Status != gatewaymodel.EvidencePullbackStatusPending {
+	if got[0].RequestID != "evpb-a" || got[0].Status != controlmodel.EvidencePullbackStatusPending {
 		t.Fatalf("pullback = %+v", got[0])
 	}
 }
@@ -187,12 +187,12 @@ func TestApproveResponseRequiresThresholdAndAllowedRole(t *testing.T) {
 
 func TestCompleteEvidencePullbackUpdatesStatus(t *testing.T) {
 	st := &Store{}
-	st.CreateEvidencePullback(gatewaymodel.EvidencePullbackRequest{
+	st.CreateEvidencePullback(controlmodel.EvidencePullbackRequest{
 		RequestID: "evpb-a",
 		TenantID:  "default",
 		AgentID:   "agent-a",
 	})
-	req, ok := st.CompleteEvidencePullback(gatewaymodel.EvidencePullbackResult{
+	req, ok := st.CompleteEvidencePullback(controlmodel.EvidencePullbackResult{
 		RequestID: "evpb-a",
 		TenantID:  "default",
 		AgentID:   "agent-a",
@@ -202,7 +202,7 @@ func TestCompleteEvidencePullbackUpdatesStatus(t *testing.T) {
 	if !ok {
 		t.Fatal("CompleteEvidencePullback ok = false")
 	}
-	if req.Status != gatewaymodel.EvidencePullbackStatusCompleted || !req.ResultOK || req.Result != "collected" || req.CompletedAt.IsZero() {
+	if req.Status != controlmodel.EvidencePullbackStatusCompleted || !req.ResultOK || req.Result != "collected" || req.CompletedAt.IsZero() {
 		t.Fatalf("completed request = %+v", req)
 	}
 	if got := st.PendingEvidencePullbacks("default", "agent-a"); len(got) != 0 {

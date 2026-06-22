@@ -24,7 +24,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
@@ -47,7 +47,7 @@ func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) erro
 
 type localBatchUploader struct{}
 
-func (localBatchUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (localBatchUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if batch == nil {
 		return &dataplanev1.DataAck{Accepted: true, Status: dataplanev1.DataAck_STATUS_ACCEPTED}, nil
 	}
@@ -60,9 +60,7 @@ func (localBatchUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.Dat
 }
 
 type Options struct {
-	Once      bool
-	DrainOnce bool
-	Out       io.Writer
+	Out io.Writer
 }
 
 type Runner struct {
@@ -78,6 +76,8 @@ type Runner struct {
 	signalSeq  uint64
 }
 
+type AgentRuntime = Runner
+
 type healthReporter interface {
 	Report(context.Context, agenthealth.AgentHealth) error
 }
@@ -92,6 +92,10 @@ func New(cfg config.Config) (*Runner, error) {
 		return nil, err
 	}
 	return &Runner{Config: cfg, Sensor: sensor, content: contentStore}, nil
+}
+
+func NewAgentRuntime(cfg config.Config) (*AgentRuntime, error) {
+	return New(cfg)
 }
 
 func (r *Runner) Run(ctx context.Context, opts Options) error {
@@ -125,12 +129,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
-	longControl := r.Config.Manager.Transport == "grpc" && !opts.Once && !opts.DrainOnce
+	longControl := r.Config.Manager.Transport == "grpc"
 	effectivePolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
 	r.setPolicy(effectivePolicy)
-	if !longControl {
-		effectivePolicy = r.fetchStartupPolicy(ctx, scopeType, scopeSelector)
-	}
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
 		return failStartup("subscribe", err)
@@ -139,57 +140,30 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("spool", err)
 	}
+	agentSpool := NewAgentSpool(queue)
 	worker, err := r.uploadWorker(queue)
 	if err != nil {
 		return failStartup("upload", err)
 	}
-	stopLocalControl := func() {}
-	if !opts.Once && !opts.DrainOnce {
-		stopLocalControl, err = r.startLocalControlServer(ctx, rt, queue, worker, startedAt)
-		if err != nil {
-			return failStartup("local_control", err)
-		}
-		defer stopLocalControl()
+	stopLocalControl, err := r.startLocalControlServer(ctx, rt, queue, worker, startedAt)
+	if err != nil {
+		return failStartup("local_control", err)
 	}
-	if r.Config.Manager.Transport == "grpc" && !longControl {
-		stats, err := worker.ResumeOnce(ctx)
-		if err != nil {
-			return failStartup("resume", err)
-		}
-		if r.Out != nil && stats.LastError != "" {
-			fmt.Fprintf(r.Out, "agent data resume error: %s\n", stats.LastError)
-		}
-	}
-	var controlResponseClient *ControlResponseClient
-	var controlEvidenceClient *ControlEvidenceClient
-	if r.Config.Manager.Transport == "grpc" && !longControl {
-		controlResponseClient = NewControlResponseClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
-		controlEvidenceClient = NewControlEvidenceClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
-	}
-	uploadCtx := ctx
-	cancelUploads := func() {}
-	if !opts.Once && !opts.DrainOnce {
-		uploadCtx, cancelUploads = context.WithCancel(ctx)
-		defer cancelUploads()
-		go runUploadLoop(uploadCtx, worker, r.Config.Spool.FlushInterval)
-		if longControl {
-			go r.runControlStreamLoop(uploadCtx, rt, queue, worker, startedAt, scopeType, scopeSelector)
-		}
-	}
+	localRuntime := NewLocalRuntime(stopLocalControl)
+	defer localRuntime.Close()
+	uploadCtx, cancelUploads := context.WithCancel(ctx)
+	defer cancelUploads()
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
 		TenantID:      r.Config.Agent.TenantID,
 		ScopeType:     scopeType,
 		ScopeSelector: scopeSelector,
 		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
 	})
+	endpointRuntime := NewEndpointRuntime(r, norm)
+	transportRuntime := NewTransportRuntime(r, rt, agentSpool, worker, startedAt, scopeType, scopeSelector)
+	go transportRuntime.RunDataFlow(uploadCtx)
+	go transportRuntime.RunControlFlow(uploadCtx)
 	r.applyRuntimePolicy(effectivePolicy)
-	refreshCtx := ctx
-	cancelRefresh := func() {}
-	if !opts.Once && !longControl && r.Config.Policy.RefreshInterval > 0 && r.Config.Manager.Transport == "grpc" {
-		refreshCtx, cancelRefresh = context.WithCancel(ctx)
-		defer cancelRefresh()
-		go r.runPolicyRefreshLoop(refreshCtx, scopeType, scopeSelector)
-	}
 	if r.Out != nil {
 		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s behaviors=%d policy=%s version=%d mode=%s\n",
 			r.Config.Agent.ID, r.Config.Agent.HostID, r.Config.Agent.TenantID, capability.Backend, capability.Version, len(intent.Behaviors), effectivePolicy.PolicyID, effectivePolicy.Version, effectivePolicy.Mode)
@@ -211,20 +185,24 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	for {
 		select {
 		case <-ctx.Done():
-			drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, opts.DrainOnce, cancelUploads, stopRuntime)
+			drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelUploads, stopRuntime)
 			if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 				return drainErr
 			}
 			return ctx.Err()
 		case ev, ok := <-events:
 			if !ok {
-				drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, opts.DrainOnce, cancelUploads, stopRuntime)
+				drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelUploads, stopRuntime)
 				if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 					return drainErr
 				}
 				return nil
 			}
-			batchID, err := r.spoolEvent(queue, norm, r.currentDetection(), ev)
+			var batchID string
+			batchID, err := agentSpool.AppendEndpointEvent(endpointRuntime, ev)
+			if err == nil && r.Out != nil {
+				fmt.Fprintf(r.Out, "agent daemon event: behavior=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetBehavior(), ev.RawRef, batchID)
+			}
 			if err != nil && !spool.IsBackpressure(err) {
 				return err
 			}
@@ -234,21 +212,6 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 					return statErr
 				}
 				fmt.Fprintf(r.Out, "agent spool backpressure: dropped_batches=%d dropped_bytes=%d last_error=%q\n", stats.DroppedBatches, stats.DroppedBytes, stats.LastError)
-			}
-			if opts.DrainOnce {
-				stats, err := worker.DrainOnce(ctx)
-				if err != nil {
-					return err
-				}
-				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent upload drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
-				}
-			}
-			if opts.Once {
-				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent daemon event: behavior=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetBehavior(), ev.RawRef, batchID)
-				}
-				return nil
 			}
 		case <-ticker.C:
 			health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
@@ -261,7 +224,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
 				NoEventGracePeriod: tamperNoEventGracePeriod(r.Config.Sensor.RestartWindow, r.Config.Health.Interval),
 			}); sig != nil {
-				batchID, err := r.spoolSignals(queue, []*signalv1.Signal{sig})
+				var batchID string
+				batchID, err = agentSpool.AppendEndpointSignals(endpointRuntime, []*signalv1.Signal{sig})
 				if err != nil && !spool.IsBackpressure(err) {
 					return err
 				}
@@ -278,19 +242,6 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_upload_error=%q\n",
 					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.Upload.LastError)
 			}
-			if controlResponseClient != nil {
-				if err := r.pollControlResponses(ctx, controlResponseClient); err != nil && r.Out != nil {
-					fmt.Fprintf(r.Out, "agent control response poll error: %v\n", err)
-				}
-			}
-			if controlEvidenceClient != nil {
-				if err := r.pollControlEvidencePullbacks(ctx, controlEvidenceClient); err != nil && r.Out != nil {
-					fmt.Fprintf(r.Out, "agent control evidence pullback poll error: %v\n", err)
-				}
-			}
-			if opts.Once {
-				return nil
-			}
 		}
 	}
 }
@@ -306,18 +257,16 @@ func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.
 	return grace
 }
 
-func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, drainOnce bool, cancelUploads func(), stopRuntime func()) error {
+func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, cancelUploads func(), stopRuntime func()) error {
 	cancelUploads()
 	stopRuntime()
 	var drainErr error
-	if !drainOnce {
-		var stats uploadworker.Stats
-		drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
-		stats, drainErr = worker.DrainOnce(drainCtx)
-		cancel()
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
-		}
+	var stats uploadworker.Stats
+	drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
+	stats, drainErr = worker.DrainOnce(drainCtx)
+	cancel()
+	if r.Out != nil {
+		fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
 	}
 	finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
 	if healthErr == nil {
@@ -367,12 +316,6 @@ func (r *Runner) reportStartupFailure(reporter healthReporter, startedAt time.Ti
 }
 
 func (r *Runner) healthReporter() healthReporter {
-	if r.Config.Manager.Transport == "local" {
-		return localHealthReporter{}
-	}
-	if r.Config.Manager.Transport == "grpc" {
-		return NewControlStreamHealthReporterWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
-	}
 	return localHealthReporter{}
 }
 
@@ -543,29 +486,6 @@ func (r *Runner) policyMode() string {
 	return "enforce"
 }
 
-func (r *Runner) fetchStartupPolicy(ctx context.Context, scopeType, scopeSelector string) policymodel.Policy {
-	defaultPolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
-	r.setPolicy(defaultPolicy)
-	if r.Config.Manager.Transport != "grpc" {
-		return defaultPolicy
-	}
-	policy, err := r.effectivePolicy(ctx, EffectivePolicyRequest{
-		TenantID:      r.Config.Agent.TenantID,
-		AgentID:       r.Config.Agent.ID,
-		ScopeType:     scopeType,
-		ScopeSelector: scopeSelector,
-	})
-	if err != nil {
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent policy fetch error: %v; using default policy\n", err)
-		}
-		return defaultPolicy
-	}
-	policy = policymodel.Normalize(policy)
-	r.setPolicy(policy)
-	return policy
-}
-
 func (r *Runner) activePolicy() policymodel.Policy {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -616,59 +536,6 @@ func (r *Runner) withCollectionCapabilities(intent contract.CollectionIntent) co
 	return intent
 }
 
-func (r *Runner) runPolicyRefreshLoop(ctx context.Context, scopeType, scopeSelector string) {
-	interval := r.Config.Policy.RefreshInterval
-	if interval <= 0 {
-		return
-	}
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			changed, err := r.refreshPolicy(ctx, scopeType, scopeSelector)
-			if err != nil && r.Out != nil {
-				fmt.Fprintf(r.Out, "agent policy refresh error: %v\n", err)
-			}
-			if changed && r.Out != nil {
-				policy := r.activePolicy()
-				fmt.Fprintf(r.Out, "agent policy refreshed: policy=%s version=%d mode=%s\n", policy.PolicyID, policy.Version, policy.Mode)
-			}
-			timer.Reset(interval)
-		}
-	}
-}
-
-func (r *Runner) refreshPolicy(ctx context.Context, scopeType, scopeSelector string) (bool, error) {
-	policy, err := r.effectivePolicy(ctx, EffectivePolicyRequest{
-		TenantID:      r.Config.Agent.TenantID,
-		AgentID:       r.Config.Agent.ID,
-		ScopeType:     scopeType,
-		ScopeSelector: scopeSelector,
-	})
-	if err != nil {
-		return false, err
-	}
-	policy = policymodel.Normalize(policy)
-	current := r.activePolicy()
-	if samePolicyRuntime(current, policy) {
-		return false, nil
-	}
-	r.applyRuntimePolicy(policy)
-	return true, nil
-}
-
-func (r *Runner) effectivePolicy(ctx context.Context, req EffectivePolicyRequest) (policymodel.Policy, error) {
-	switch r.Config.Manager.Transport {
-	case "grpc":
-		return NewControlPolicyClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS()).EffectivePolicy(ctx, req)
-	default:
-		return policymodel.Policy{}, fmt.Errorf("policy fetch unsupported for transport %q", r.Config.Manager.Transport)
-	}
-}
-
 func (r *Runner) applyRuntimePolicy(policy policymodel.Policy) {
 	policy = policymodel.Normalize(policy)
 	engine, _ := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
@@ -697,7 +564,7 @@ func samePolicyRuntime(a, b policymodel.Policy) bool {
 		reflect.DeepEqual(a.Detection, b.Detection)
 }
 
-func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
+func (r *Runner) runTransportDataLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
 	if interval <= 0 {
 		interval = time.Second
 	}
@@ -723,17 +590,6 @@ func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) 
 		Queue:    queue,
 		Uploader: up,
 		Backoff:  uploadworker.Backoff{Initial: r.Config.Upload.RetryInitial, Max: r.Config.Upload.RetryMax},
-	}
-	switch r.Config.Manager.Transport {
-	case "grpc":
-		worker.ResumeSource = NewControlResumeClientWithTLS(
-			r.Config.Manager.Address,
-			r.Config.Agent.Token,
-			r.Config.Upload.RequestTimeout,
-			r.Config.Agent.TenantID,
-			r.Config.Agent.ID,
-			r.managerTLS(),
-		)
 	}
 	return worker, nil
 }
@@ -780,27 +636,6 @@ func parseTrustKeys(raw string) map[string]ed25519.PublicKey {
 		}
 	}
 	return out
-}
-
-func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, detector *detection.Engine, ev contract.EventEnvelope) (string, error) {
-	if ev.SensorEvent == nil {
-		return "", fmt.Errorf("sensor event is nil")
-	}
-	if ev.SensorEvent.RawRef == "" {
-		ev.SensorEvent.RawRef = ev.RawRef
-	}
-	canonical := norm.Normalize(ev.SensorEvent)
-	if canonical.Scenario == "" {
-		canonical.Scenario = r.Config.Agent.Scenario
-	}
-	canonical.Labels = mergeLabels(canonical.GetLabels(), r.policyLabels())
-	signals := detector.Process(canonical)
-	for _, sig := range signals {
-		if sig.Scenario == "" {
-			sig.Scenario = r.Config.Agent.Scenario
-		}
-	}
-	return queue.AppendDataBatch(r.dataBatchForEvent(canonical, signals))
 }
 
 func (r *Runner) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) map[string]string {
@@ -866,10 +701,6 @@ func mergeLabels(base, extra map[string]string) map[string]string {
 		return nil
 	}
 	return out
-}
-
-func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (string, error) {
-	return queue.AppendDataBatch(r.dataBatchForSignals(signals))
 }
 
 func (r *Runner) dataBatchForEvent(event *eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
@@ -1066,23 +897,6 @@ func requiredBehaviors(events []agentcontent.RequiredEvent) []string {
 	return out
 }
 
-func (r *Runner) pollControlResponses(ctx context.Context, client *ControlResponseClient) error {
-	commands, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
-	if err != nil {
-		return err
-	}
-	for _, cmd := range commands {
-		ack := r.executeResponse(ctx, cmd)
-		if err := client.Ack(ctx, ack); err != nil {
-			return err
-		}
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
-		}
-	}
-	return nil
-}
-
 func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command) responsemodel.Ack {
 	cmd = responsemodel.NormalizeCommand(cmd)
 	if cmd.Mode == "" {
@@ -1110,25 +924,8 @@ func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command)
 	return out
 }
 
-func (r *Runner) pollControlEvidencePullbacks(ctx context.Context, client *ControlEvidenceClient) error {
-	requests, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
-	if err != nil {
-		return err
-	}
-	for _, req := range requests {
-		result := r.collectEvidencePullback(req)
-		if err := client.Result(ctx, result); err != nil {
-			return err
-		}
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
-		}
-	}
-	return nil
-}
-
-func (r *Runner) collectEvidencePullback(req gatewaymodel.EvidencePullbackRequest) gatewaymodel.EvidencePullbackResult {
-	result := gatewaymodel.EvidencePullbackResult{
+func (r *Runner) collectEvidencePullback(req controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackResult {
+	result := controlmodel.EvidencePullbackResult{
 		RequestID:  req.RequestID,
 		TenantID:   r.Config.Agent.TenantID,
 		AgentID:    r.Config.Agent.ID,

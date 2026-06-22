@@ -87,7 +87,7 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 			stats.LastError = err.Error()
 			return w.withRemaining(stats)
 		}
-		ack, err := w.Uploader.Upload(batch)
+		ack, err := w.Uploader.AppendBatch(batch)
 		if err != nil {
 			if uploader.AckRetryable(ack) {
 				if ack.GetRetryAfterMs() > 0 {

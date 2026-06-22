@@ -353,28 +353,28 @@ func TestUploadRequiresDurableTelemetryAppend(t *testing.T) {
 	}
 }
 
-func TestGatewayUploadOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testing.T) {
+func TestDataPlaneUploadOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testing.T) {
 	st, _ := store.Open("")
 	producer := &recordingProducer{}
 	srv := NewServer(st).WithProducer(producer)
-	result, err := srv.AcceptUploadWithTransport(httpDataBatch("batch-gateway-only", "agent-gateway-only", "host-gateway-only", []*eventv1.CanonicalEvent{{Id: "ev-gateway-only", Scenario: "gateway-only"}}, []*signalv1.Signal{endpointSignalForScenario("gateway-only", "payload_dropped", "lin-gateway-only", false)}), "grpc")
+	result, err := srv.AcceptUploadWithTransport(httpDataBatch("batch-data-plane-only", "agent-data-plane-only", "host-data-plane-only", []*eventv1.CanonicalEvent{{Id: "ev-data-plane-only", Scenario: "data-plane-only"}}, []*signalv1.Signal{endpointSignalForScenario("data-plane-only", "payload_dropped", "lin-data-plane-only", false)}), "grpc")
 	if err != nil {
 		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
 	}
 	if result.AcceptedEvents != 0 || result.AcceptedSignals != 0 || result.CloudSignals != 0 || result.Incidents != 0 {
-		t.Fatalf("gateway result = %+v, want ack-only counts before worker processing", result)
+		t.Fatalf("data-plane result = %+v, want ack-only counts before worker processing", result)
 	}
 	if len(producer.messages) != 1 || producer.messages[0].Topic != "sysarmor.agent.upload.raw" {
 		t.Fatalf("producer messages = %+v, want one raw upload append", producer.messages)
 	}
-	if got := st.ListEvents("gateway-only", ""); len(got) != 0 {
-		t.Fatalf("gateway stored events before worker processing: %+v", got)
+	if got := st.ListEvents("data-plane-only", ""); len(got) != 0 {
+		t.Fatalf("data-plane stored events before worker processing: %+v", got)
 	}
-	if got := st.ListSignals("gateway-only", "endpoint", false); len(got) != 0 {
-		t.Fatalf("gateway stored signals before worker processing: %+v", got)
+	if got := st.ListSignals("data-plane-only", "endpoint", false); len(got) != 0 {
+		t.Fatalf("data-plane stored signals before worker processing: %+v", got)
 	}
-	sessions := st.ListAgentSessions("default", "agent-gateway-only")
-	if len(sessions) != 1 || sessions[0].LastAckCursor != "batch-gateway-only" || sessions[0].DataTransport != "grpc" {
+	sessions := st.ListAgentSessions("default", "agent-data-plane-only")
+	if len(sessions) != 1 || sessions[0].LastAckCursor != "batch-data-plane-only" || sessions[0].DataTransport != "grpc" {
 		t.Fatalf("sessions = %+v, want cursor/session recorded", sessions)
 	}
 }

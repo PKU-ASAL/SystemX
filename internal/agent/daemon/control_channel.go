@@ -7,32 +7,32 @@ import (
 	"io"
 	"time"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-type ControlStreamSession struct {
+type ControlChannel struct {
 	manager string
 	token   string
 	tls     tlsconfig.ClientConfig
 
 	conn   *grpc.ClientConn
-	stream controlv1.AgentControlService_ControlStreamClient
+	stream controlplanev1.AgentControlPlaneService_ConnectClient
 	next   uint64
 }
 
-func NewControlStreamSession(manager, token string, tlsCfg tlsconfig.ClientConfig) *ControlStreamSession {
-	return &ControlStreamSession{manager: normalizeGRPCAddress(manager), token: token, tls: tlsCfg, next: 1}
+func NewControlChannel(manager, token string, tlsCfg tlsconfig.ClientConfig) *ControlChannel {
+	return &ControlChannel{manager: normalizeGRPCAddress(manager), token: token, tls: tlsCfg, next: 1}
 }
 
-func (s *ControlStreamSession) Open(ctx context.Context) error {
+func (s *ControlChannel) Open(ctx context.Context) error {
 	if s == nil {
-		return fmt.Errorf("control stream session is nil")
+		return fmt.Errorf("control channel session is nil")
 	}
 	if s.stream != nil {
 		return nil
@@ -48,7 +48,7 @@ func (s *ControlStreamSession) Open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
 	if err != nil {
 		_ = conn.Close()
 		return err
@@ -58,20 +58,20 @@ func (s *ControlStreamSession) Open(ctx context.Context) error {
 	return nil
 }
 
-func (s *ControlStreamSession) Hello(ctx context.Context, tenantID, agentID, scopeType, scopeSelector string) ([]*controlv1.ControlStreamFrame, error) {
+func (s *ControlChannel) Hello(ctx context.Context, tenantID, agentID, scopeType, scopeSelector string) ([]*controlplanev1.ControlFrame, error) {
 	requestID := "hello-" + time.Now().UTC().Format("20060102T150405.000000000Z")
-	if err := s.Send(ctx, &controlv1.ControlStreamFrame{
+	if err := s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "hello",
 		RequestId: requestID,
-		Context: &controlv1.RequestContext{
+		Context: &controlplanev1.RequestContext{
 			TenantId: tenantID,
 			AgentId:  agentID,
-			Scope:    &controlv1.Scope{Type: scopeType, Selector: scopeSelector},
+			Scope:    &controlplanev1.Scope{Type: scopeType, Selector: scopeSelector},
 		},
 	}); err != nil {
 		return nil, err
 	}
-	var frames []*controlv1.ControlStreamFrame
+	var frames []*controlplanev1.ControlFrame
 	for {
 		frame, err := s.Recv()
 		if err != nil {
@@ -82,7 +82,7 @@ func (s *ControlStreamSession) Hello(ctx context.Context, tenantID, agentID, sco
 			continue
 		}
 		if frame.GetType() == "ack" && frame.GetAck().GetStatus() == "rejected" {
-			return nil, fmt.Errorf("control stream hello rejected: %s", frame.GetAck().GetMessage())
+			return nil, fmt.Errorf("control channel hello rejected: %s", frame.GetAck().GetMessage())
 		}
 		frames = append(frames, frame)
 		if frame.GetType() == "resume" {
@@ -91,7 +91,7 @@ func (s *ControlStreamSession) Hello(ctx context.Context, tenantID, agentID, sco
 	}
 }
 
-func (s *ControlStreamSession) ReportHealth(ctx context.Context, health agenthealth.AgentHealth) error {
+func (s *ControlChannel) ReportHealth(ctx context.Context, health agenthealth.AgentHealth) error {
 	if err := s.SendHealth(ctx, health); err != nil {
 		return err
 	}
@@ -100,30 +100,30 @@ func (s *ControlStreamSession) ReportHealth(ctx context.Context, health agenthea
 		return err
 	}
 	if reply.GetType() != "ack" || reply.GetAck().GetStatus() != "accepted" {
-		return fmt.Errorf("control stream health rejected: %s", reply.GetAck().GetMessage())
+		return fmt.Errorf("control channel health rejected: %s", reply.GetAck().GetMessage())
 	}
 	return nil
 }
 
-func (s *ControlStreamSession) SendHealth(ctx context.Context, health agenthealth.AgentHealth) error {
-	return s.Send(ctx, &controlv1.ControlStreamFrame{
+func (s *ControlChannel) SendHealth(ctx context.Context, health agenthealth.AgentHealth) error {
+	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "health_report",
 		RequestId: "health-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
-		Context: &controlv1.RequestContext{
+		Context: &controlplanev1.RequestContext{
 			TenantId: health.TenantID,
 			AgentId:  health.AgentID,
-			Scope:    &controlv1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
+			Scope:    &controlplanev1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
 		},
 		Health: healthResponse(health),
 	})
 }
 
-func (s *ControlStreamSession) SendResponseAck(ctx context.Context, ack responsemodel.Ack) error {
-	return s.Send(ctx, &controlv1.ControlStreamFrame{
+func (s *ControlChannel) SendResponseAck(ctx context.Context, ack responsemodel.Ack) error {
+	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "response_ack",
 		RequestId: ack.ResponseID,
-		Context:   &controlv1.RequestContext{TenantId: ack.TenantID, AgentId: ack.AgentID},
-		ResponseAck: &controlv1.ResponseAck{
+		Context:   &controlplanev1.RequestContext{TenantId: ack.TenantID, AgentId: ack.AgentID},
+		ResponseAck: &controlplanev1.ResponseAck{
 			ResponseId:  ack.ResponseID,
 			TenantId:    ack.TenantID,
 			AgentId:     ack.AgentID,
@@ -137,12 +137,12 @@ func (s *ControlStreamSession) SendResponseAck(ctx context.Context, ack response
 	})
 }
 
-func (s *ControlStreamSession) SendEvidenceResult(ctx context.Context, result gatewaymodel.EvidencePullbackResult) error {
-	return s.Send(ctx, &controlv1.ControlStreamFrame{
+func (s *ControlChannel) SendEvidenceResult(ctx context.Context, result controlmodel.EvidencePullbackResult) error {
+	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "evidence_pullback_result",
 		RequestId: result.RequestID,
-		Context:   &controlv1.RequestContext{TenantId: result.TenantID, AgentId: result.AgentID},
-		EvidenceResult: &controlv1.EvidencePullbackResult{
+		Context:   &controlplanev1.RequestContext{TenantId: result.TenantID, AgentId: result.AgentID},
+		EvidenceResult: &controlplanev1.EvidencePullbackResult{
 			RequestId:    result.RequestID,
 			TenantId:     result.TenantID,
 			AgentId:      result.AgentID,
@@ -154,21 +154,21 @@ func (s *ControlStreamSession) SendEvidenceResult(ctx context.Context, result ga
 	})
 }
 
-func (s *ControlStreamSession) SendCapability(ctx context.Context, health agenthealth.AgentHealth) error {
-	return s.Send(ctx, &controlv1.ControlStreamFrame{
+func (s *ControlChannel) SendCapability(ctx context.Context, health agenthealth.AgentHealth) error {
+	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "capability_report",
 		RequestId: "capability-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
-		Context: &controlv1.RequestContext{
+		Context: &controlplanev1.RequestContext{
 			TenantId: health.TenantID,
 			AgentId:  health.AgentID,
-			Scope:    &controlv1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
+			Scope:    &controlplanev1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
 		},
 		Capability: capabilityResponse(health),
 	})
 }
 
-func capabilityResponse(health agenthealth.AgentHealth) *controlv1.CapabilityResponse {
-	return &controlv1.CapabilityResponse{
+func capabilityResponse(health agenthealth.AgentHealth) *controlplanev1.CapabilityResponse {
+	return &controlplanev1.CapabilityResponse{
 		AgentId:                  health.AgentID,
 		HostId:                   health.HostID,
 		TenantId:                 health.TenantID,
@@ -180,15 +180,15 @@ func capabilityResponse(health agenthealth.AgentHealth) *controlv1.CapabilityRes
 	}
 }
 
-func (s *ControlStreamSession) Send(ctx context.Context, frame *controlv1.ControlStreamFrame) error {
+func (s *ControlChannel) Send(ctx context.Context, frame *controlplanev1.ControlFrame) error {
 	if s == nil {
-		return fmt.Errorf("control stream session is nil")
+		return fmt.Errorf("control channel session is nil")
 	}
 	if frame == nil {
-		return fmt.Errorf("control stream frame is nil")
+		return fmt.Errorf("control channel frame is nil")
 	}
 	if frame.GetRequestId() == "" {
-		return fmt.Errorf("control stream request_id is required")
+		return fmt.Errorf("control channel request_id is required")
 	}
 	if s.stream == nil {
 		if err := s.Open(ctx); err != nil {
@@ -201,9 +201,9 @@ func (s *ControlStreamSession) Send(ctx context.Context, frame *controlv1.Contro
 	return s.stream.Send(frame)
 }
 
-func (s *ControlStreamSession) Recv() (*controlv1.ControlStreamFrame, error) {
+func (s *ControlChannel) Recv() (*controlplanev1.ControlFrame, error) {
 	if s == nil || s.stream == nil {
-		return nil, fmt.Errorf("control stream session is not open")
+		return nil, fmt.Errorf("control channel session is not open")
 	}
 	frame, err := s.stream.Recv()
 	if errors.Is(err, io.EOF) {
@@ -215,7 +215,7 @@ func (s *ControlStreamSession) Recv() (*controlv1.ControlStreamFrame, error) {
 	return frame, nil
 }
 
-func (s *ControlStreamSession) Close() error {
+func (s *ControlChannel) Close() error {
 	if s == nil {
 		return nil
 	}

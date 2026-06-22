@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"google.golang.org/grpc"
@@ -195,7 +195,7 @@ func TestQueryLocalAgentCapabilityOverUnixSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(server, &fakeAgentControlServer{})
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &fakeAgentControlServer{})
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -226,7 +226,7 @@ func TestQueryLocalAgentPolicyApplyOverUnixSocket(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	fake := &fakeAgentControlServer{}
-	controlv1.RegisterAgentControlServiceServer(server, fake)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -270,7 +270,7 @@ func TestQueryLocalAgentPolicyApplyCollectionFlags(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	fake := &fakeAgentControlServer{}
-	controlv1.RegisterAgentControlServiceServer(server, fake)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -328,7 +328,7 @@ func TestQueryLocalAgentWatchStreamsOverUnixSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(server, &fakeAgentControlServer{})
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &fakeAgentControlServer{})
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -358,7 +358,7 @@ func TestQueryLocalAgentWatchFilterArgs(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	fake := &fakeAgentControlServer{}
-	controlv1.RegisterAgentControlServiceServer(server, fake)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -407,7 +407,7 @@ func TestQueryLocalAgentSignalWatchIncludesEvents(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	fake := &fakeAgentControlServer{}
-	controlv1.RegisterAgentControlServiceServer(server, fake)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -442,7 +442,7 @@ func TestQueryLocalAgentEventGetOverUnixSocket(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	fake := &fakeAgentControlServer{}
-	controlv1.RegisterAgentControlServiceServer(server, fake)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -484,7 +484,7 @@ func TestQueryLocalAgentContentCommands(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	fake := &fakeAgentControlServer{}
-	controlv1.RegisterAgentControlServiceServer(server, fake)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -546,7 +546,7 @@ func TestQueryLocalAgentWatchReturnsPartialFramesOnTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	controlv1.RegisterAgentControlServiceServer(server, &blockingAgentControlServer{})
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &blockingAgentControlServer{})
 	go func() {
 		_ = server.Serve(lis)
 	}()
@@ -572,25 +572,25 @@ func nonEmptyLines(s string) []string {
 }
 
 type fakeAgentControlServer struct {
-	controlv1.UnimplementedAgentControlServiceServer
-	applyReq       *controlv1.ApplyPolicyRequest
-	contentReq     *controlv1.ApplyContentRequest
-	getEventReq    *controlv1.GetEventRequest
-	watchEventReq  *controlv1.WatchEventsRequest
-	watchSignalReq *controlv1.WatchSignalsRequest
+	controlplanev1.UnimplementedAgentControlPlaneServiceServer
+	applyReq       *controlplanev1.ApplyPolicyRequest
+	contentReq     *controlplanev1.ApplyContentRequest
+	getEventReq    *controlplanev1.GetEventRequest
+	watchEventReq  *controlplanev1.WatchEventsRequest
+	watchSignalReq *controlplanev1.WatchSignalsRequest
 }
 
-func (fakeAgentControlServer) Capability(ctx context.Context, req *controlv1.CapabilityRequest) (*controlv1.CapabilityResponse, error) {
-	return &controlv1.CapabilityResponse{
+func (fakeAgentControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
+	return &controlplanev1.CapabilityResponse{
 		AgentId:  req.GetContext().GetAgentId(),
 		TenantId: req.GetContext().GetTenantId(),
-		Sensor:   &controlv1.SensorCapability{Backend: "fake", SupportsExec: true},
+		Sensor:   &controlplanev1.SensorCapability{Backend: "fake", SupportsExec: true},
 	}, nil
 }
 
-func (s *fakeAgentControlServer) ApplyPolicy(ctx context.Context, req *controlv1.ApplyPolicyRequest) (*controlv1.ControlAck, error) {
+func (s *fakeAgentControlServer) ApplyPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) (*controlplanev1.ControlAck, error) {
 	s.applyReq = req
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId:     req.GetContext().GetRequestId(),
 		TenantId:      req.GetContext().GetTenantId(),
 		AgentId:       req.GetContext().GetAgentId(),
@@ -600,9 +600,9 @@ func (s *fakeAgentControlServer) ApplyPolicy(ctx context.Context, req *controlv1
 	}, nil
 }
 
-func (s *fakeAgentControlServer) ApplyContent(ctx context.Context, req *controlv1.ApplyContentRequest) (*controlv1.ControlAck, error) {
+func (s *fakeAgentControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
 	s.contentReq = req
-	return &controlv1.ControlAck{
+	return &controlplanev1.ControlAck{
 		RequestId: req.GetContext().GetRequestId(),
 		TenantId:  req.GetContext().GetTenantId(),
 		AgentId:   req.GetContext().GetAgentId(),
@@ -611,25 +611,25 @@ func (s *fakeAgentControlServer) ApplyContent(ctx context.Context, req *controlv
 	}, nil
 }
 
-func (s *fakeAgentControlServer) ListContent(ctx context.Context, req *controlv1.ListContentRequest) (*controlv1.ListContentResponse, error) {
-	return &controlv1.ListContentResponse{Records: []*controlv1.ContentRecord{{
+func (s *fakeAgentControlServer) ListContent(ctx context.Context, req *controlplanev1.ListContentRequest) (*controlplanev1.ListContentResponse, error) {
+	return &controlplanev1.ListContentResponse{Records: []*controlplanev1.ContentRecord{{
 		Ref:     "ioc:c2-ip-feed",
 		Kind:    "iocpack",
 		Version: "2026.06.17.1",
 	}}}, nil
 }
 
-func (s *fakeAgentControlServer) GetContent(ctx context.Context, req *controlv1.GetContentRequest) (*controlv1.ContentGetResponse, error) {
-	return &controlv1.ContentGetResponse{Record: &controlv1.ContentRecord{
+func (s *fakeAgentControlServer) GetContent(ctx context.Context, req *controlplanev1.GetContentRequest) (*controlplanev1.ContentGetResponse, error) {
+	return &controlplanev1.ContentGetResponse{Record: &controlplanev1.ContentRecord{
 		Ref:     req.GetRef(),
 		Kind:    "iocpack",
 		Version: "2026.06.17.1",
 	}}, nil
 }
 
-func (s *fakeAgentControlServer) GetEvent(ctx context.Context, req *controlv1.GetEventRequest) (*controlv1.EventGetResponse, error) {
+func (s *fakeAgentControlServer) GetEvent(ctx context.Context, req *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error) {
 	s.getEventReq = req
-	return &controlv1.EventGetResponse{Frame: &controlv1.EventFrame{
+	return &controlplanev1.EventGetResponse{Frame: &controlplanev1.EventFrame{
 		TenantId: "default",
 		AgentId:  "agent-a",
 		Sequence: 1,
@@ -640,9 +640,9 @@ func (s *fakeAgentControlServer) GetEvent(ctx context.Context, req *controlv1.Ge
 	}}, nil
 }
 
-func (s *fakeAgentControlServer) WatchEvents(req *controlv1.WatchEventsRequest, stream controlv1.AgentControlService_WatchEventsServer) error {
+func (s *fakeAgentControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
 	s.watchEventReq = req
-	return stream.Send(&controlv1.EventFrame{
+	return stream.Send(&controlplanev1.EventFrame{
 		TenantId: "default",
 		AgentId:  "agent-a",
 		Sequence: 1,
@@ -653,9 +653,9 @@ func (s *fakeAgentControlServer) WatchEvents(req *controlv1.WatchEventsRequest, 
 	})
 }
 
-func (s *fakeAgentControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, stream controlv1.AgentControlService_WatchSignalsServer) error {
+func (s *fakeAgentControlServer) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
 	s.watchSignalReq = req
-	return stream.Send(&controlv1.SignalFrame{
+	return stream.Send(&controlplanev1.SignalFrame{
 		TenantId: "default",
 		AgentId:  "agent-a",
 		Sequence: 1,
@@ -669,11 +669,11 @@ func (s *fakeAgentControlServer) WatchSignals(req *controlv1.WatchSignalsRequest
 }
 
 type blockingAgentControlServer struct {
-	controlv1.UnimplementedAgentControlServiceServer
+	controlplanev1.UnimplementedAgentControlPlaneServiceServer
 }
 
-func (s *blockingAgentControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, stream controlv1.AgentControlService_WatchSignalsServer) error {
-	if err := stream.Send(&controlv1.SignalFrame{
+func (s *blockingAgentControlServer) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
+	if err := stream.Send(&controlplanev1.SignalFrame{
 		TenantId: "default",
 		AgentId:  "agent-a",
 		Sequence: 1,

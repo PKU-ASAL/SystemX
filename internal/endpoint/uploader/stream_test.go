@@ -14,7 +14,7 @@ type recordingUploader struct {
 	batches []*dataplanev1.DataBatch
 }
 
-func (u *recordingUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (u *recordingUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	u.batches = append(u.batches, batch)
 	return &dataplanev1.DataAck{Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
 }

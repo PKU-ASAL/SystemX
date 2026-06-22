@@ -319,7 +319,7 @@ type recordingUploader struct {
 	returnAckError    bool
 }
 
-func (u *recordingUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (u *recordingUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	u.attempts++
 	if u.failBeforeSuccess > 0 && u.attempts <= u.failBeforeSuccess {
 		return nil, errors.New("temporary upload failure")

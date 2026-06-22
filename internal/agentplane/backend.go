@@ -7,7 +7,7 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -47,10 +47,10 @@ type ControlStore interface {
 	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
 	AddAgent(store.AgentIdentity)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
-	CompleteEvidencePullback(gatewaymodel.EvidencePullbackResult) (gatewaymodel.EvidencePullbackRequest, bool)
+	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
-	GetEvidencePullback(string, string, string) (gatewaymodel.EvidencePullbackRequest, bool)
-	PendingEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
+	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
+	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession
 	Save() error

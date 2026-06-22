@@ -18,7 +18,7 @@ import (
 )
 
 type BatchUploader interface {
-	Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error)
+	AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error)
 }
 
 type StreamOptions struct {
@@ -65,7 +65,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchUploader, opts Stream
 		if len(batch.GetEvents()) == 0 && len(batch.GetSignals()) == 0 {
 			return nil
 		}
-		if _, err := up.Upload(batch); err != nil {
+		if _, err := up.AppendBatch(batch); err != nil {
 			return err
 		}
 		stats.Batches++

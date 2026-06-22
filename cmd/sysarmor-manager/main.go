@@ -12,8 +12,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
-	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
@@ -71,9 +71,9 @@ func main() {
 		}
 	}()
 	st := storeResult.Store
-	gatewaySrv := managerapi.NewServerWithTokens(st, *devToken, *operatorToken)
+	managerSrv := managerapi.NewServerWithTokens(st, *devToken, *operatorToken)
 	if *localIngest {
-		gatewaySrv.WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+		managerSrv.WithLocalProcessor(ingestworker.NewProcessor(st, nil))
 	}
 	if *kafkaBrokers != "" {
 		producer, err := platformkafka.NewWriterProducer(splitCSV(*kafkaBrokers))
@@ -86,7 +86,7 @@ func main() {
 				log.Printf("close kafka producer: %v", err)
 			}
 		}()
-		gatewaySrv.WithProducer(producer)
+		managerSrv.WithProducer(producer)
 	}
 	if *redisAddr != "" {
 		hotState, err := platformredis.NewClientHotState(*redisAddr, 2*time.Minute)
@@ -99,7 +99,7 @@ func main() {
 				log.Printf("close redis hot state: %v", err)
 			}
 		}()
-		gatewaySrv.WithHotState(hotState)
+		managerSrv.WithHotState(hotState)
 	}
 	var grpcOptions []grpc.ServerOption
 	grpcTLSOption, err := tlsconfig.ServerOption(*grpcTLSCert, *grpcTLSKey, *grpcClientCA, *grpcRequireClientCert)
@@ -111,8 +111,8 @@ func main() {
 		grpcOptions = append(grpcOptions, grpcTLSOption)
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
-	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(gatewaySrv))
-	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(gatewaySrv))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(managerSrv))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(managerSrv))
 	lis, err := net.Listen("tcp", *grpcListen)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "manager grpc listen: %v\n", err)
@@ -127,7 +127,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    *listen,
-		Handler: gatewaySrv.Handler(),
+		Handler: managerSrv.Handler(),
 	}
 	log.Printf("sysarmor-manager listening on %s store_backend=%s store=%s", *listen, *storeBackend, *storePath)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
