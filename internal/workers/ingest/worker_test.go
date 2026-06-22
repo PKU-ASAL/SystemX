@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -34,14 +34,15 @@ func (c *stubConsumer) Commit(context.Context, platformkafka.Message) error {
 func (c *stubConsumer) Close() error { return nil }
 
 func TestWorkerConsumesKafkaUploadAndProcessesAfterCommit(t *testing.T) {
-	raw, err := protojson.Marshal(&analyticsv1.UploadBatch{
-		BatchId: "batch-worker",
-		Agent:   &analyticsv1.AgentHello{TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
-		Signals: []*signalv1.Signal{{
-			Id:       "sig-worker",
-			Name:     "payload_dropped",
-			Scenario: "worker-scenario",
-			Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+	raw, err := protojson.Marshal(&dataplanev1.DataBatch{
+		Header: &dataplanev1.BatchHeader{BatchId: "batch-worker", TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
+		Signals: []*dataplanev1.SignalFrame{{
+			Signal: &signalv1.Signal{
+				Id:       "sig-worker",
+				Name:     "payload_dropped",
+				Scenario: "worker-scenario",
+				Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+			},
 		}},
 	})
 	if err != nil {

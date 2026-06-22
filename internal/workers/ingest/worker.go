@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -27,7 +27,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		batch := &analyticsv1.UploadBatch{}
+		batch := &dataplanev1.DataBatch{}
 		if err := protojson.Unmarshal(msg.Value, batch); err != nil {
 			return fmt.Errorf("decode raw upload key=%q: %w", msg.Key, err)
 		}

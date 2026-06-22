@@ -1,23 +1,17 @@
-package agentgateway
+package managerapi
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
-
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
+	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
@@ -29,6 +23,10 @@ import (
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Server struct {
@@ -42,7 +40,7 @@ type Server struct {
 
 type ManagerStore interface {
 	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
-	AddAgent(*analyticsv1.AgentHello)
+	AddAgent(store.AgentIdentity)
 	AddEvent(*eventv1.CanonicalEvent) bool
 	AddSignal(*signalv1.Signal) bool
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
@@ -61,12 +59,13 @@ type ManagerStore interface {
 	GetSignal(string) (*signalv1.Signal, bool)
 	Info() store.Info
 	ListAgentHealth() []agenthealth.AgentHealth
-	ListAgents() []*analyticsv1.AgentHello
+	ListAgents() []store.AgentIdentity
+	BindAgentIdentity(store.AgentIdentity) error
 	ListAssignments(string, string) []policymodel.Assignment
 	ListEvents(string, string) []*eventv1.CanonicalEvent
 	ListEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
 	ListIncidents(string) []*incidentv1.Incident
-	ListAgentGatewaySessions(string, string) []store.AgentGatewaySession
+	ListAgentSessions(string, string) []store.AgentSession
 	ListPolicies(string) []policymodel.Policy
 	ListPolicyAudits(string, string) []policymodel.AuditRecord
 	ListOperatorRoleBindings(string) []store.OperatorRoleBinding
@@ -78,10 +77,10 @@ type ManagerStore interface {
 	PendingEvidencePullbacks(string, string) []gatewaymodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
-	CloseAgentGatewaySession(string, string, time.Time) store.AgentGatewaySession
-	RecordAgentGatewayUpload(*analyticsv1.AgentHello, string, string, time.Time) store.AgentGatewaySession
-	RecordAgentGatewaySessionSeen(string, string, time.Time) store.AgentGatewaySession
-	RecordAgentGatewayStreamOpen(string, string, string, time.Time) store.AgentGatewaySession
+	CloseAgentSession(string, string, time.Time) store.AgentSession
+	RecordDataUpload(store.AgentIdentity, string, string, time.Time) store.AgentSession
+	RecordAgentSessionSeen(string, string, time.Time) store.AgentSession
+	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
 	OperatorRolesForActor(string) ([]string, bool)
 	RarityBaselineSnapshot() rarity.Baseline
@@ -93,13 +92,6 @@ type ManagerStore interface {
 }
 
 var _ ManagerStore = (*store.Store)(nil)
-
-type UploadResult struct {
-	AcceptedEvents  int
-	AcceptedSignals int
-	CloudSignals    int
-	Incidents       int
-}
 
 type responseDecisionRequest struct {
 	SignalID string              `json:"signal_id"`
@@ -181,7 +173,10 @@ type AgentListItem struct {
 	HealthObserved time.Time                    `json:"health_observed_at,omitempty"`
 }
 
-var ErrInvalidUpload = errors.New("invalid upload")
+var ErrInvalidUpload = agentplane.ErrInvalidUpload
+
+type UploadResult = agentplane.UploadResult
+type ResumeCursor = agentplane.ResumeCursor
 
 func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
@@ -218,11 +213,30 @@ func (s *Server) WithLocalProcessor(processor *ingestworker.Processor) *Server {
 	return s
 }
 
+func (s *Server) AgentToken() string {
+	return s.authToken
+}
+
+func (s *Server) Store() agentplane.ControlStore {
+	return s.store
+}
+
+func (s *Server) BindAgentIdentity(agent store.AgentIdentity) error {
+	return s.store.BindAgentIdentity(agent)
+}
+
+func (s *Server) TouchHotSession(session store.AgentSession) {
+	s.touchHotSession(session)
+}
+
+func (s *Server) ResumeCursor(tenantID, agentID string) agentplane.ResumeCursor {
+	return s.resumeCursor(tenantID, agentID)
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/api/v1/reset", s.reset)
-	mux.HandleFunc("/api/v1/upload", s.upload)
 	mux.HandleFunc("/api/v1/recompute", s.recompute)
 	mux.HandleFunc("/api/v1/rules", s.rules)
 	mux.HandleFunc("/api/v1/policies", s.policies)
@@ -235,13 +249,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
 	mux.HandleFunc("/api/v1/response-approvals", s.responseApprovals)
 	mux.HandleFunc("/api/v1/response-acks", s.responseAcks)
-	mux.HandleFunc("/api/v1/agent-gateway-frames", s.agentgatewayFrames)
-	mux.HandleFunc("/api/v1/agent-gateway-downlink", s.agentgatewayDownlink)
-	mux.HandleFunc("/api/v1/agent-gateway-resume", s.agentgatewayResume)
+	mux.HandleFunc("/api/v1/data-resume", s.dataResume)
 	mux.HandleFunc("/api/v1/evidence-pullbacks", s.evidencePullbacks)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
-	mux.HandleFunc("/api/v1/agent-gateway-sessions", s.agentgatewaySessions)
+	mux.HandleFunc("/api/v1/agent-sessions", s.agentSessions)
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
@@ -275,48 +287,11 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "scenario": scenario})
 }
 
-func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.authorized(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("read body: %v", err), http.StatusBadRequest)
-		return
-	}
-	batch := &analyticsv1.UploadBatch{}
-	if err := protojson.Unmarshal(body, batch); err != nil {
-		http.Error(w, fmt.Sprintf("decode upload batch: %v", err), http.StatusBadRequest)
-		return
-	}
-	result, err := s.AcceptUploadWithTransport(batch, "http")
-	if err != nil {
-		if errors.Is(err, ErrInvalidUpload) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeProtoJSON(w, &analyticsv1.UploadAck{
-		Ok:              true,
-		Message:         "accepted",
-		AcceptedEvents:  uint64(result.AcceptedEvents),
-		AcceptedSignals: uint64(result.AcceptedSignals),
-		BatchId:         batch.GetBatchId(),
-	})
-}
-
-func (s *Server) AcceptUpload(batch *analyticsv1.UploadBatch) (UploadResult, error) {
+func (s *Server) AcceptUpload(batch *dataplanev1.DataBatch) (UploadResult, error) {
 	return s.AcceptUploadWithTransport(batch, "")
 }
 
-func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, transport string) (UploadResult, error) {
+func (s *Server) AcceptUploadWithTransport(batch *dataplanev1.DataBatch, transport string) (UploadResult, error) {
 	if err := validateUploadIdentity(batch); err != nil {
 		return UploadResult{}, err
 	}
@@ -324,11 +299,22 @@ func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, trans
 	if err != nil {
 		return UploadResult{}, fmt.Errorf("encode raw upload: %w", err)
 	}
-	key := strings.Join([]string{batch.GetAgent().GetTenantId(), batch.GetAgent().GetAgentId(), batch.GetBatchId()}, ":")
+	header := batch.GetHeader()
+	if s.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId()) {
+		agent := store.AgentIdentityFromDataBatch(batch)
+		session := s.store.RecordDataUpload(agent, header.GetBatchId(), transport, time.Now().UTC())
+		s.touchHotSession(session)
+		if err := s.store.Save(); err != nil {
+			return UploadResult{}, err
+		}
+		return UploadResult{Duplicate: true}, nil
+	}
+	key := strings.Join([]string{header.GetTenantId(), header.GetAgentId(), header.GetBatchId()}, ":")
 	if err := s.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.upload.raw", Key: key, Value: raw}); err != nil {
 		return UploadResult{}, fmt.Errorf("append raw telemetry: %w", err)
 	}
-	session := s.store.RecordAgentGatewayUpload(batch.GetAgent(), batch.GetBatchId(), transport, time.Now().UTC())
+	agent := store.AgentIdentityFromDataBatch(batch)
+	session := s.store.RecordDataUpload(agent, header.GetBatchId(), transport, time.Now().UTC())
 	s.touchHotSession(session)
 	if err := s.store.Save(); err != nil {
 		return UploadResult{}, err
@@ -343,32 +329,48 @@ func (s *Server) AcceptUploadWithTransport(batch *analyticsv1.UploadBatch, trans
 	return UploadResult{AcceptedEvents: result.AcceptedEvents, AcceptedSignals: result.AcceptedSignals, CloudSignals: result.CloudSignals, Incidents: result.Incidents}, nil
 }
 
-func (s *Server) touchHotSession(session store.AgentGatewaySession) {
+func (s *Server) isDuplicateBatch(tenantID, agentID, batchID string) bool {
+	if batchID == "" {
+		return false
+	}
+	for _, session := range s.store.ListAgentSessions(tenantID, agentID) {
+		if session.LastAckCursor == batchID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) touchHotSession(session store.AgentSession) {
 	if session.AgentID == "" {
 		return
 	}
 	_ = s.hotState.TouchAgentSession(context.Background(), platformredis.AgentSession{
-		TenantID:      session.TenantID,
-		AgentID:       session.AgentID,
-		Owner:         "sysarmor-manager",
-		LastSeenAt:    session.LastSeenAt,
-		LastAckCursor: session.LastAckCursor,
+		TenantID:          session.TenantID,
+		AgentID:           session.AgentID,
+		Owner:             "sysarmor-manager",
+		LastSeenAt:        session.LastSeenAt,
+		LastDataSeenAt:    session.LastDataSeenAt,
+		LastControlSeenAt: session.LastControlSeenAt,
+		LastAckCursor:     session.LastAckCursor,
+		DataTransport:     session.DataTransport,
+		ControlTransport:  session.ControlTransport,
 	})
 }
 
-func validateUploadIdentity(batch *analyticsv1.UploadBatch) error {
-	if batch == nil || batch.GetAgent() == nil {
-		return fmt.Errorf("%w: agent identity is required", ErrInvalidUpload)
+func validateUploadIdentity(batch *dataplanev1.DataBatch) error {
+	if batch == nil || batch.GetHeader() == nil {
+		return fmt.Errorf("%w: batch header identity is required", ErrInvalidUpload)
 	}
-	agent := batch.GetAgent()
+	header := batch.GetHeader()
 	missing := []string{}
-	if agent.GetAgentId() == "" {
+	if header.GetAgentId() == "" {
 		missing = append(missing, "agent_id")
 	}
-	if agent.GetHostId() == "" {
+	if header.GetHostId() == "" {
 		missing = append(missing, "host_id")
 	}
-	if agent.GetTenantId() == "" {
+	if header.GetTenantId() == "" {
 		missing = append(missing, "tenant_id")
 	}
 	if len(missing) > 0 {
@@ -386,16 +388,16 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 	agents := s.store.ListAgents()
 	out := make([]AgentListItem, 0, len(agents))
 	for _, agent := range agents {
-		if tenantID != "" && agent.GetTenantId() != tenantID {
+		if tenantID != "" && agent.TenantID != tenantID {
 			continue
 		}
 		item := AgentListItem{
-			AgentID:  agent.GetAgentId(),
-			HostID:   agent.GetHostId(),
-			TenantID: agent.GetTenantId(),
-			Version:  agent.GetVersion(),
+			AgentID:  agent.AgentID,
+			HostID:   agent.HostID,
+			TenantID: agent.TenantID,
+			Version:  agent.Version,
 		}
-		if health, ok := s.store.GetAgentHealth(agent.GetTenantId(), agent.GetAgentId()); ok {
+		if health, ok := s.store.GetAgentHealth(agent.TenantID, agent.AgentID); ok {
 			item.HealthStatus = health.Status
 			item.Scope = health.Scope
 			item.Capability = health.Capability
@@ -552,42 +554,16 @@ func rolesAllowed(granted []string, required ...string) bool {
 	return false
 }
 
-func (s *Server) agentgatewaySessions(w http.ResponseWriter, r *http.Request) {
+func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	q := r.URL.Query()
-	writeJSON(w, map[string]any{"sessions": s.store.ListAgentGatewaySessions(q.Get("tenant_id"), q.Get("agent_id"))})
+	writeJSON(w, map[string]any{"sessions": s.store.ListAgentSessions(q.Get("tenant_id"), q.Get("agent_id"))})
 }
 
-func (s *Server) agentgatewayDownlink(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	agentID := q.Get("agent_id")
-	if agentID == "" {
-		http.Error(w, "agent_id is required", http.StatusBadRequest)
-		return
-	}
-	tenantID := q.Get("tenant_id")
-	if tenantID == "" {
-		tenantID = "default"
-	}
-	policy, _ := s.store.EffectivePolicy(tenantID, agentID, q.Get("scope_type"), q.Get("scope_selector"))
-	frames := []DownlinkFrame{resumeFrame(s.resumeCursor(tenantID, agentID)), policyUpdateFrame(policy)}
-	for _, cmd := range s.store.PendingResponses(tenantID, agentID) {
-		frames = append(frames, responseCommandFrame(cmd))
-	}
-	for _, req := range s.store.PendingEvidencePullbacks(tenantID, agentID) {
-		frames = append(frames, evidencePullbackFrame(req))
-	}
-	writeJSON(w, map[string]any{"frames": frames})
-}
-
-func (s *Server) agentgatewayResume(w http.ResponseWriter, r *http.Request) {
+func (s *Server) dataResume(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -607,7 +583,7 @@ func (s *Server) agentgatewayResume(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) resumeCursor(tenantID, agentID string) ResumeCursor {
 	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
-	sessions := s.store.ListAgentGatewaySessions(tenantID, agentID)
+	sessions := s.store.ListAgentSessions(tenantID, agentID)
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
 		resume.ResumeCursor = sessions[0].LastAckCursor
@@ -1232,111 +1208,6 @@ func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
-}
-
-func (s *Server) agentgatewayFrames(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.authorized(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	var frames []UplinkFrame
-	if err := json.NewDecoder(r.Body).Decode(&frames); err != nil {
-		http.Error(w, fmt.Sprintf("decode agentgateway frames: %v", err), http.StatusBadRequest)
-		return
-	}
-	results := make([]UplinkFrameResult, 0, len(frames))
-	for _, frame := range frames {
-		result, err := s.acceptUplinkFrame(frame)
-		if err != nil {
-			result = UplinkFrameResult{Type: frame.Type, OK: false, Message: err.Error()}
-		}
-		results = append(results, result)
-	}
-	writeJSON(w, map[string]any{"results": results})
-}
-
-func (s *Server) acceptUplinkFrame(frame UplinkFrame) (UplinkFrameResult, error) {
-	return s.acceptUplinkFrameWithTransport(frame, "frame")
-}
-
-func (s *Server) acceptUplinkFrameWithTransport(frame UplinkFrame, transport string) (UplinkFrameResult, error) {
-	switch frame.Type {
-	case UplinkUpload:
-		batch := &analyticsv1.UploadBatch{}
-		if err := protojson.Unmarshal(frame.Payload, batch); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode upload frame: %w", err)
-		}
-		result, err := s.AcceptUploadWithTransport(batch, transport)
-		if err != nil {
-			return UplinkFrameResult{Type: frame.Type}, err
-		}
-		return UplinkFrameResult{
-			Type:            frame.Type,
-			OK:              true,
-			Message:         "accepted",
-			BatchID:         batch.GetBatchId(),
-			AcceptedEvents:  result.AcceptedEvents,
-			AcceptedSignals: result.AcceptedSignals,
-		}, nil
-	case UplinkHealth:
-		var health agenthealth.AgentHealth
-		if err := json.Unmarshal(frame.Payload, &health); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode health frame: %w", err)
-		}
-		if health.AgentID == "" {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("agent_id is required")
-		}
-		s.store.UpsertAgentHealth(health)
-		if err := s.store.Save(); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, err
-		}
-		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
-	case UplinkAck:
-		var ack responsemodel.Ack
-		if err := json.Unmarshal(frame.Payload, &ack); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode ack frame: %w", err)
-		}
-		if _, ok := s.store.AckResponse(ack); !ok {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("response command not found")
-		}
-		if err := s.store.Save(); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, err
-		}
-		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
-	case UplinkEvidencePullbackResult:
-		var result gatewaymodel.EvidencePullbackResult
-		if err := json.Unmarshal(frame.Payload, &result); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode evidence pullback result frame: %w", err)
-		}
-		req, ok := s.store.GetEvidencePullback(result.RequestID, result.TenantID, result.AgentID)
-		if !ok {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("evidence pullback request not found")
-		}
-		if len(result.Evidence) > 0 {
-			evidence := &incidentv1.EvidenceSubgraph{}
-			if err := protojson.Unmarshal(result.Evidence, evidence); err != nil {
-				return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("decode evidence pullback evidence: %w", err)
-			}
-			if _, ok := s.store.AttachIncidentEvidence(req.IncidentID, req.Scenario, evidence); !ok {
-				return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("incident for evidence pullback not found")
-			}
-		}
-		if _, ok := s.store.CompleteEvidencePullback(result); !ok {
-			return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("evidence pullback request not found")
-		}
-		if err := s.store.Save(); err != nil {
-			return UplinkFrameResult{Type: frame.Type}, err
-		}
-		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted", RequestID: result.RequestID}, nil
-	case UplinkError:
-		return UplinkFrameResult{Type: frame.Type, OK: true, Message: "accepted"}, nil
-	default:
-		return UplinkFrameResult{Type: frame.Type}, fmt.Errorf("unknown frame type %q", frame.Type)
-	}
 }
 
 func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {

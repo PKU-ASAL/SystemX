@@ -5,20 +5,18 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
-
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
 	"google.golang.org/protobuf/encoding/protojson"
+	"strings"
 )
 
 const snapshotStateKey = "default"
@@ -123,7 +121,7 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
 		return err
 	}
-	if err := projectAgentGatewaySessions(ctx, db, state.AgentGatewaySessions); err != nil {
+	if err := projectAgentSessions(ctx, db, state.AgentSessions); err != nil {
 		return err
 	}
 	if err := projectRarityBaseline(ctx, db, state.RarityBaseline); err != nil {
@@ -415,16 +413,13 @@ ORDER BY tenant_id ASC, assignment_id ASC
 
 func projectAgents(ctx context.Context, db *sql.DB, agentRows []json.RawMessage) error {
 	for _, raw := range agentRows {
-		var agent analyticsv1.AgentHello
-		if err := protojson.Unmarshal(raw, &agent); err != nil {
+		var agent store.AgentIdentity
+		if err := json.Unmarshal(raw, &agent); err != nil {
 			return fmt.Errorf("decode agent projection: %w", err)
 		}
-		if agent.GetAgentId() == "" {
+		agent = agent.Normalized()
+		if !agent.Valid() {
 			continue
-		}
-		tenantID := agent.GetTenantId()
-		if tenantID == "" {
-			tenantID = "default"
 		}
 		_, err := db.ExecContext(ctx, `
 INSERT INTO agents (tenant_id, agent_id, host_id, version, data)
@@ -434,7 +429,7 @@ ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
   version = EXCLUDED.version,
   observed_at = now(),
   data = EXCLUDED.data
-`, tenantID, agent.GetAgentId(), agent.GetHostId(), agent.GetVersion(), []byte(raw))
+`, agent.TenantID, agent.AgentID, agent.HostID, agent.Version, []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project agent: %w", err)
 		}
@@ -1151,7 +1146,7 @@ ON CONFLICT (tenant_id, workload_key, signal_name) DO UPDATE SET
 	return nil
 }
 
-func projectAgentGatewaySessions(ctx context.Context, db *sql.DB, sessions []store.AgentGatewaySession) error {
+func projectAgentSessions(ctx context.Context, db *sql.DB, sessions []store.AgentSession) error {
 	for _, session := range sessions {
 		if session.SessionID == "" || session.AgentID == "" {
 			continue
@@ -1162,51 +1157,68 @@ func projectAgentGatewaySessions(ctx context.Context, db *sql.DB, sessions []sto
 		}
 		data, err := json.Marshal(session)
 		if err != nil {
-			return fmt.Errorf("encode agentgateway session projection: %w", err)
+			return fmt.Errorf("encode agent session projection: %w", err)
 		}
 		startedAt := session.StartedAt
 		lastSeenAt := session.LastSeenAt
+		var lastDataSeenAt any
+		if !session.LastDataSeenAt.IsZero() {
+			lastDataSeenAt = session.LastDataSeenAt
+		}
+		var lastControlSeenAt any
+		if !session.LastControlSeenAt.IsZero() {
+			lastControlSeenAt = session.LastControlSeenAt
+		}
 		if startedAt.IsZero() || lastSeenAt.IsZero() {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO agent_gateway_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (tenant_id, session_id) DO UPDATE SET
-  agent_id = EXCLUDED.agent_id,
-  status = EXCLUDED.status,
-  transport = EXCLUDED.transport,
-  last_ack_cursor = EXCLUDED.last_ack_cursor,
-  last_seen_at = now(),
-  data = EXCLUDED.data
-`, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, data)
-		} else if session.ClosedAt.IsZero() {
-			_, err = db.ExecContext(ctx, `
-INSERT INTO agent_gateway_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (tenant_id, session_id) DO UPDATE SET
-  agent_id = EXCLUDED.agent_id,
-  status = EXCLUDED.status,
-  transport = EXCLUDED.transport,
-  last_ack_cursor = EXCLUDED.last_ack_cursor,
-  last_seen_at = EXCLUDED.last_seen_at,
-  closed_at = NULL,
-  data = EXCLUDED.data
-`, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, startedAt, lastSeenAt, data)
-		} else {
-			_, err = db.ExecContext(ctx, `
-INSERT INTO agent_gateway_sessions (tenant_id, session_id, agent_id, status, transport, last_ack_cursor, started_at, last_seen_at, closed_at, data)
+INSERT INTO agent_sessions (tenant_id, session_id, agent_id, status, data_transport, control_transport, last_ack_cursor, last_data_seen_at, last_control_seen_at, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (tenant_id, session_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
   status = EXCLUDED.status,
-  transport = EXCLUDED.transport,
+  data_transport = EXCLUDED.data_transport,
+  control_transport = EXCLUDED.control_transport,
+  last_ack_cursor = EXCLUDED.last_ack_cursor,
+  last_data_seen_at = EXCLUDED.last_data_seen_at,
+  last_control_seen_at = EXCLUDED.last_control_seen_at,
+  last_seen_at = now(),
+  data = EXCLUDED.data
+`, tenantID, session.SessionID, session.AgentID, session.Status, session.DataTransport, session.ControlTransport, session.LastAckCursor, lastDataSeenAt, lastControlSeenAt, data)
+		} else if session.ClosedAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO agent_sessions (tenant_id, session_id, agent_id, status, data_transport, control_transport, last_ack_cursor, started_at, last_seen_at, last_data_seen_at, last_control_seen_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  status = EXCLUDED.status,
+  data_transport = EXCLUDED.data_transport,
+  control_transport = EXCLUDED.control_transport,
   last_ack_cursor = EXCLUDED.last_ack_cursor,
   last_seen_at = EXCLUDED.last_seen_at,
+  last_data_seen_at = EXCLUDED.last_data_seen_at,
+  last_control_seen_at = EXCLUDED.last_control_seen_at,
+  closed_at = NULL,
+  data = EXCLUDED.data
+`, tenantID, session.SessionID, session.AgentID, session.Status, session.DataTransport, session.ControlTransport, session.LastAckCursor, startedAt, lastSeenAt, lastDataSeenAt, lastControlSeenAt, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO agent_sessions (tenant_id, session_id, agent_id, status, data_transport, control_transport, last_ack_cursor, started_at, last_seen_at, last_data_seen_at, last_control_seen_at, closed_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  status = EXCLUDED.status,
+  data_transport = EXCLUDED.data_transport,
+  control_transport = EXCLUDED.control_transport,
+  last_ack_cursor = EXCLUDED.last_ack_cursor,
+  last_seen_at = EXCLUDED.last_seen_at,
+  last_data_seen_at = EXCLUDED.last_data_seen_at,
+  last_control_seen_at = EXCLUDED.last_control_seen_at,
   closed_at = EXCLUDED.closed_at,
   data = EXCLUDED.data
-`, tenantID, session.SessionID, session.AgentID, session.Status, session.Transport, session.LastAckCursor, startedAt, lastSeenAt, session.ClosedAt, data)
+`, tenantID, session.SessionID, session.AgentID, session.Status, session.DataTransport, session.ControlTransport, session.LastAckCursor, startedAt, lastSeenAt, lastDataSeenAt, lastControlSeenAt, session.ClosedAt, data)
 		}
 		if err != nil {
-			return fmt.Errorf("project agentgateway session: %w", err)
+			return fmt.Errorf("project agent session: %w", err)
 		}
 	}
 	return nil

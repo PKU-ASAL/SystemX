@@ -1,0 +1,506 @@
+package agentplane_test
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
+	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
+)
+
+func TestGRPCUpload(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("00000000000000000007", "grpc-agent", "grpc-host", []*signalv1.Signal{
+		endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
+		endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
+		endpointSignal("reverse_shell_pattern", "lin-a", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ack.GetAccepted() || ack.GetBatchId() != "00000000000000000007" {
+		t.Fatalf("ack = %#v, want accepted with batch id", ack)
+	}
+	if got := st.ListIncidents("apt-fileless-c2"); len(got) != 1 {
+		t.Fatalf("incidents = %d, want 1", len(got))
+	}
+}
+
+func TestAgentDataServiceMTLSBindsBatchIdentity(t *testing.T) {
+	certs := writeTestMTLSFiles(t, "default", "grpc-agent")
+	serverOpt, err := tlsconfig.ServerOption(certs.serverCert, certs.serverKey, certs.ca, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &store.Store{}
+	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	grpcServer := grpc.NewServer(serverOpt)
+	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	creds, err := tlsconfig.ClientCredentials(tlsconfig.ClientConfig{
+		CAFile:     certs.ca,
+		CertFile:   certs.clientCert,
+		KeyFile:    certs.clientKey,
+		ServerName: "localhost",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := grpc.DialContext(context.Background(), lis.Addr().String(), grpc.WithTransportCredentials(creds), grpc.WithBlock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := analyticsv1.NewAgentDataServiceClient(conn)
+	if _, err := client.Upload(context.Background(), grpcDataBatch("mtls-ok", "grpc-agent", "grpc-host", nil)); err != nil {
+		t.Fatalf("Upload() matching mTLS identity error = %v", err)
+	}
+	_, err = client.Upload(context.Background(), grpcDataBatch("mtls-denied", "other-agent", "grpc-host", nil))
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Upload() mismatched mTLS identity error = %v, want permission denied", err)
+	}
+}
+
+func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
+	certs := writeTestMTLSFiles(t, "default", "control-agent")
+	serverOpt, err := tlsconfig.ServerOption(certs.serverCert, certs.serverKey, certs.ca, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &store.Store{}
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer(serverOpt)
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	creds, err := tlsconfig.ClientCredentials(tlsconfig.ClientConfig{
+		CAFile:     certs.ca,
+		CertFile:   certs.clientCert,
+		KeyFile:    certs.clientKey,
+		ServerName: "localhost",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := grpc.DialContext(context.Background(), lis.Addr().String(), grpc.WithTransportCredentials(creds), grpc.WithBlock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:      "hello",
+		RequestId: "mtls-control-ok",
+		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+	}); err != nil {
+		t.Fatalf("send matching hello: %v", err)
+	}
+	frame, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv matching hello response: %v", err)
+	}
+	if frame.GetType() != "policy_update" {
+		t.Fatalf("matching hello frame = %+v, want policy_update", frame)
+	}
+	if frame.GetContractVersion() != 1 {
+		t.Fatalf("policy_update contract_version = %d, want 1", frame.GetContractVersion())
+	}
+	frame, err = stream.Recv()
+	if err != nil {
+		t.Fatalf("recv matching hello resume: %v", err)
+	}
+	if frame.GetType() != "resume" {
+		t.Fatalf("matching hello frame = %+v, want resume", frame)
+	}
+	agents := st.ListAgents()
+	if len(agents) != 1 || agents[0].AuthType != "mtls" || agents[0].CertIdentity == "" {
+		t.Fatalf("registered agents = %+v, want mTLS identity binding", agents)
+	}
+
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:      "hello",
+		RequestId: "mtls-control-denied",
+		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "other-agent", Scope: &controlv1.Scope{Type: "host"}},
+	}); err != nil {
+		t.Fatalf("send mismatched hello: %v", err)
+	}
+	frame, err = stream.Recv()
+	if err != nil {
+		t.Fatalf("recv mismatched hello response: %v", err)
+	}
+	if frame.GetType() != "ack" || frame.GetAck().GetStatus() != "rejected" {
+		t.Fatalf("mismatched hello frame = %+v, want rejected ack", frame)
+	}
+	if frame.GetError().GetCode() != codes.PermissionDenied.String() || frame.GetError().GetRetryable() {
+		t.Fatalf("mismatched hello error = %+v, want non-retryable permission denied", frame.GetError())
+	}
+}
+
+func TestControlStreamAcceptsHealthReport(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:      "health_report",
+		RequestId: "health-test",
+		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Health: &controlv1.HealthResponse{
+			AgentId:    "control-agent",
+			HostId:     "control-host",
+			TenantId:   "default",
+			Status:     "ok",
+			Scope:      &controlv1.Scope{Type: "host"},
+			ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			Capability: &controlv1.SensorCapability{Backend: "fake", Version: "dev", SupportsHealth: true},
+			Sensor:     &controlv1.SensorHealth{Backend: "fake", Running: true, EventsSeen: 9},
+		},
+	}); err != nil {
+		t.Fatalf("send health report: %v", err)
+	}
+	ack, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv ack: %v", err)
+	}
+	if ack.GetType() != "ack" || ack.GetAck().GetStatus() != "accepted" || ack.GetAck().GetRequestId() != "health-test" {
+		t.Fatalf("ack = %+v", ack)
+	}
+	got, ok := st.GetAgentHealth("default", "control-agent")
+	if !ok || got.Status != "ok" || got.Sensor.EventsSeen != 9 || got.Capability.Version != "dev" {
+		t.Fatalf("agent health = %+v ok=%t", got, ok)
+	}
+}
+
+type testMTLSFiles struct {
+	ca         string
+	serverCert string
+	serverKey  string
+	clientCert string
+	clientKey  string
+}
+
+func writeTestMTLSFiles(t *testing.T, tenantID, agentID string) testMTLSFiles {
+	t.Helper()
+	dir := t.TempDir()
+	caKey, caCert := newTestCA(t)
+	serverCert, serverKey := newTestCert(t, caCert, caKey, "localhost", nil, []string{"localhost"})
+	identityURI := &url.URL{Scheme: "spiffe", Host: "sysarmor.local", Path: "/tenant/" + tenantID + "/agent/" + agentID}
+	clientCert, clientKey := newTestCert(t, caCert, caKey, tenantID+"/"+agentID, []*url.URL{identityURI}, nil)
+	files := testMTLSFiles{
+		ca:         filepath.Join(dir, "ca.pem"),
+		serverCert: filepath.Join(dir, "server.pem"),
+		serverKey:  filepath.Join(dir, "server-key.pem"),
+		clientCert: filepath.Join(dir, "client.pem"),
+		clientKey:  filepath.Join(dir, "client-key.pem"),
+	}
+	writePEM(t, files.ca, "CERTIFICATE", caCert.Raw)
+	writePEM(t, files.serverCert, "CERTIFICATE", serverCert.Raw)
+	writePEM(t, files.serverKey, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(serverKey))
+	writePEM(t, files.clientCert, "CERTIFICATE", clientCert.Raw)
+	writePEM(t, files.clientKey, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(clientKey))
+	return files
+}
+
+func newTestCA(t *testing.T) (*rsa.PrivateKey, *x509.Certificate) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: "sysarmor-test-ca"},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key, cert
+}
+
+func newTestCert(t *testing.T, caCert *x509.Certificate, caKey *rsa.PrivateKey, cn string, uris []*url.URL, dns []string) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		URIs:         uris,
+		DNSNames:     dns,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert, key
+}
+
+func writePEM(t *testing.T, path, typ string, der []byte) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := pem.Encode(f, &pem.Block{Type: typ, Bytes: der}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestControlStreamHelloReturnsPolicyUpdate(t *testing.T) {
+	st := &store.Store{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "control-policy"
+	policy.Version = 9
+	st.UpsertPolicy(policy)
+	st.AssignPolicy(policymodel.Assignment{TenantID: "default", AgentID: "control-agent", PolicyID: "control-policy", PolicyVersion: 9})
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:      "hello",
+		RequestId: "hello-policy",
+		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+	}); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+	frame, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv policy update: %v", err)
+	}
+	if frame.GetType() != "policy_update" || frame.GetPolicyUpdate().GetPolicyId() != "control-policy" || frame.GetPolicyUpdate().GetVersion() != 9 {
+		t.Fatalf("policy frame = %+v", frame)
+	}
+}
+
+func TestGRPCAuthRequiresDevToken(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServerWithAuth(st, "dev-token")
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	_, err = analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Upload() error = %v, want unauthenticated", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", "dev-token")
+	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
+	if err != nil {
+		t.Fatalf("Upload() with token error = %v", err)
+	}
+	if !ack.GetAccepted() {
+		t.Fatalf("ack = %#v", ack)
+	}
+}
+
+func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	_, err = analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, &dataplanev1.DataBatch{
+		Header: &dataplanev1.BatchHeader{AgentId: "grpc-agent", HostId: "grpc-host"},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("Upload() error = %v, want invalid argument", err)
+	}
+}
+
+func grpcDataBatch(batchID, agentID, hostID string, signals []*signalv1.Signal) *dataplanev1.DataBatch {
+	batch := &dataplanev1.DataBatch{
+		Header: &dataplanev1.BatchHeader{BatchId: batchID, AgentId: agentID, HostId: hostID, TenantId: "default"},
+	}
+	for _, sig := range signals {
+		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{Signal: sig})
+	}
+	return batch
+}
+
+func endpointSignal(name, lineage string, terminal bool, entities ...*signalv1.EntityRef) *signalv1.Signal {
+	return &signalv1.Signal{
+		Id:           "sig-" + name,
+		Name:         name,
+		Where:        signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+		BaseRisk:     50,
+		GlobalRarity: 1,
+		LineageId:    lineage,
+		Terminal:     terminal,
+		Scenario:     "apt-fileless-c2",
+		Entities:     entities,
+	}
+}
+
+func processEntity(key string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "process", Key: "process:" + key, Role: "subject"}
+}
+
+func fileEntity(path string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "file", Key: "file:" + path, Role: "object"}
+}
+
+func socketEntity(addr string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "socket", Key: "socket:" + addr, Role: "object"}
+}

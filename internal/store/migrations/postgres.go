@@ -174,15 +174,18 @@ CREATE TABLE IF NOT EXISTS evidence_pullbacks (
   PRIMARY KEY (tenant_id, request_id)
 );
 
-CREATE TABLE IF NOT EXISTS agent_gateway_sessions (
+CREATE TABLE IF NOT EXISTS agent_sessions (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   session_id TEXT NOT NULL,
   agent_id TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT '',
-  transport TEXT NOT NULL DEFAULT '',
+  data_transport TEXT NOT NULL DEFAULT '',
+  control_transport TEXT NOT NULL DEFAULT '',
   last_ack_cursor TEXT NOT NULL DEFAULT '',
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_data_seen_at TIMESTAMPTZ,
+  last_control_seen_at TIMESTAMPTZ,
   closed_at TIMESTAMPTZ,
   data JSONB NOT NULL,
   PRIMARY KEY (tenant_id, session_id)
@@ -224,8 +227,8 @@ CREATE INDEX IF NOT EXISTS idx_response_audit_agent ON response_audit (tenant_id
 CREATE INDEX IF NOT EXISTS idx_response_audit_status ON response_audit (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_agent ON evidence_pullbacks (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_status ON evidence_pullbacks (tenant_id, status);
-CREATE INDEX IF NOT EXISTS idx_agent_gateway_sessions_agent ON agent_gateway_sessions (tenant_id, agent_id);
-CREATE INDEX IF NOT EXISTS idx_agent_gateway_sessions_status ON agent_gateway_sessions (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions (tenant_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_workload ON rarity_baseline (tenant_id, workload_key);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_signal ON rarity_baseline (tenant_id, signal_name);
 

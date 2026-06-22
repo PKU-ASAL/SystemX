@@ -7,6 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	"google.golang.org/protobuf/encoding/protojson"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,19 +28,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	"github.com/sysarmor/sysarmor-next-project/internal/agentgateway"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
-	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestOpenFileAndMemoryBackends(t *testing.T) {
@@ -133,10 +132,10 @@ func TestOpenPostgresProjectsAgentInventoryTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	result.Store.AddAgent(&analyticsv1.AgentHello{
-		TenantId: "default",
-		AgentId:  "agent-inventory-pg",
-		HostId:   "host-inventory-pg",
+	result.Store.AddAgent(store.AgentIdentity{
+		TenantID: "default",
+		AgentID:  "agent-inventory-pg",
+		HostID:   "host-inventory-pg",
 		Version:  "v-test",
 	})
 	result.Store.UpsertAgentHealth(agenthealth.AgentHealth{
@@ -881,7 +880,7 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 	}
 }
 
-func TestOpenPostgresProjectsAgentGatewaySessionTable(t *testing.T) {
+func TestOpenPostgresProjectsAgentSessionTable(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -892,22 +891,22 @@ func TestOpenPostgresProjectsAgentGatewaySessionTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	result.Store.RecordAgentGatewayStreamOpen("default", "agent-agent-gateway-pg", "stream", time.Unix(300, 0).UTC())
-	result.Store.RecordAgentGatewayUpload(&analyticsv1.AgentHello{
-		TenantId: "default",
-		AgentId:  "agent-agent-gateway-pg",
-	}, "batch-agent-gateway-pg", "stream", time.Unix(301, 0).UTC())
-	result.Store.CloseAgentGatewaySession("default", "agent-agent-gateway-pg", time.Unix(302, 0).UTC())
+	result.Store.RecordControlSessionOpen("default", "agent-session-pg", "control", time.Unix(300, 0).UTC())
+	result.Store.RecordDataUpload(store.AgentIdentity{
+		TenantID: "default",
+		AgentID:  "agent-session-pg",
+	}, "batch-agent-session-pg", "grpc", time.Unix(301, 0).UTC())
+	result.Store.CloseAgentSession("default", "agent-session-pg", time.Unix(302, 0).UTC())
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	execLog := fakeExecLog()
 	for _, want := range []string{
-		"INSERT INTO agent_gateway_sessions",
-		"agent-agent-gateway-pg",
+		"INSERT INTO agent_sessions",
+		"agent-session-pg",
 		"closed",
-		"stream",
-		"batch-agent-gateway-pg",
+		"grpc",
+		"batch-agent-session-pg",
 	} {
 		if !strings.Contains(execLog, want) {
 			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
@@ -1080,24 +1079,22 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	handler := agentgateway.NewServer(result.Store).WithLocalProcessor(ingestworker.NewProcessor(result.Store, nil)).Handler()
-	batch := &analyticsv1.UploadBatch{
-		BatchId: "pg-api-batch-1",
-		Agent:   &analyticsv1.AgentHello{AgentId: "agent-pg-api", HostId: "host-pg-api", TenantId: "default"},
-		Events: []*eventv1.CanonicalEvent{{
+	server := managerapi.NewServer(result.Store).WithLocalProcessor(ingestworker.NewProcessor(result.Store, nil))
+	handler := server.Handler()
+	batch := backendDataBatch("pg-api-batch-1", "agent-pg-api", "host-pg-api",
+		[]*eventv1.CanonicalEvent{{
 			Id:       "ev-pg-api",
 			Scenario: "pg-api",
 			Behavior: "process.exec",
 			AgentId:  "agent-pg-api",
 			HostId:   "host-pg-api",
 		}},
-		Signals: []*signalv1.Signal{
+		[]*signalv1.Signal{
 			postgresEndpointSignal("sig-pg-web", "pg-api", "web_runtime_spawns_shell", "lin-pg", false, postgresProcess("process:p-web")),
 			postgresEndpointSignal("sig-pg-drop", "pg-api", "payload_dropped", "lin-pg", false, postgresFile("/dev/shm/x.sh")),
 			postgresEndpointSignal("sig-pg-c2", "pg-api", "reverse_shell_pattern", "lin-pg", true, postgresProcess("process:p-bash"), postgresSocket("10.66.0.99:443")),
-		},
-	}
-	postProtoUpload(t, handler, batch)
+		})
+	acceptDataBatch(t, server, batch)
 	assertGetContains(t, handler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
 	assertGetContains(t, handler, "/api/v1/signals?scenario=pg-api&layer=endpoint", `"id":"sig-pg-c2"`)
 	assertGetContains(t, handler, "/api/v1/incidents?scenario=pg-api", `"scenario":"pg-api"`)
@@ -1126,7 +1123,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
-	reopenedHandler := agentgateway.NewServer(reopened.Store).Handler()
+	reopenedHandler := managerapi.NewServer(reopened.Store).Handler()
 	assertGetContains(t, reopenedHandler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/incidents?scenario=pg-api", `"status":"suppressed"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
@@ -1146,17 +1143,32 @@ func TestOpenPostgresValidatesConfigAndWrapsMigrationError(t *testing.T) {
 	}
 }
 
-func postProtoUpload(t *testing.T, handler http.Handler, batch *analyticsv1.UploadBatch) {
-	t.Helper()
-	data, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(batch)
-	if err != nil {
-		t.Fatal(err)
+func backendDataBatch(batchID, agentID, hostID string, events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
+	batch := &dataplanev1.DataBatch{
+		Header: &dataplanev1.BatchHeader{
+			BatchId:  batchID,
+			AgentId:  agentID,
+			HostId:   hostID,
+			TenantId: "default",
+		},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", strings.NewReader(string(data)))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("upload status = %d body=%s", rec.Code, rec.Body.String())
+	for i, event := range events {
+		batch.Events = append(batch.Events, &dataplanev1.EventFrame{Sequence: uint64(i + 1), Event: event})
+	}
+	for i, signal := range signals {
+		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{Sequence: uint64(i + 1), Signal: signal})
+	}
+	return batch
+}
+
+func acceptDataBatch(t *testing.T, server *managerapi.Server, batch *dataplanev1.DataBatch) {
+	t.Helper()
+	result, err := server.AcceptUploadWithTransport(batch, "grpc")
+	if err != nil {
+		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+	}
+	if result.Duplicate {
+		t.Fatalf("data batch rejected: %+v", result)
 	}
 }
 

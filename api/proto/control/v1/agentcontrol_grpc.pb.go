@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	AgentControlService_ControlStream_FullMethodName = "/sysarmor.control.v1.AgentControlService/ControlStream"
 	AgentControlService_Health_FullMethodName        = "/sysarmor.control.v1.AgentControlService/Health"
 	AgentControlService_Capability_FullMethodName    = "/sysarmor.control.v1.AgentControlService/Capability"
 	AgentControlService_CurrentPolicy_FullMethodName = "/sysarmor.control.v1.AgentControlService/CurrentPolicy"
@@ -35,6 +36,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AgentControlServiceClient interface {
+	ControlStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlStreamFrame, ControlStreamFrame], error)
 	Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
 	Capability(ctx context.Context, in *CapabilityRequest, opts ...grpc.CallOption) (*CapabilityResponse, error)
 	CurrentPolicy(ctx context.Context, in *CurrentPolicyRequest, opts ...grpc.CallOption) (*CurrentPolicyResponse, error)
@@ -54,6 +56,19 @@ type agentControlServiceClient struct {
 func NewAgentControlServiceClient(cc grpc.ClientConnInterface) AgentControlServiceClient {
 	return &agentControlServiceClient{cc}
 }
+
+func (c *agentControlServiceClient) ControlStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlStreamFrame, ControlStreamFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentControlService_ServiceDesc.Streams[0], AgentControlService_ControlStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ControlStreamFrame, ControlStreamFrame]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentControlService_ControlStreamClient = grpc.BidiStreamingClient[ControlStreamFrame, ControlStreamFrame]
 
 func (c *agentControlServiceClient) Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -137,7 +152,7 @@ func (c *agentControlServiceClient) GetEvent(ctx context.Context, in *GetEventRe
 
 func (c *agentControlServiceClient) WatchEvents(ctx context.Context, in *WatchEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &AgentControlService_ServiceDesc.Streams[0], AgentControlService_WatchEvents_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &AgentControlService_ServiceDesc.Streams[1], AgentControlService_WatchEvents_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +171,7 @@ type AgentControlService_WatchEventsClient = grpc.ServerStreamingClient[EventFra
 
 func (c *agentControlServiceClient) WatchSignals(ctx context.Context, in *WatchSignalsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SignalFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &AgentControlService_ServiceDesc.Streams[1], AgentControlService_WatchSignals_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &AgentControlService_ServiceDesc.Streams[2], AgentControlService_WatchSignals_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +192,7 @@ type AgentControlService_WatchSignalsClient = grpc.ServerStreamingClient[SignalF
 // All implementations must embed UnimplementedAgentControlServiceServer
 // for forward compatibility.
 type AgentControlServiceServer interface {
+	ControlStream(grpc.BidiStreamingServer[ControlStreamFrame, ControlStreamFrame]) error
 	Health(context.Context, *HealthRequest) (*HealthResponse, error)
 	Capability(context.Context, *CapabilityRequest) (*CapabilityResponse, error)
 	CurrentPolicy(context.Context, *CurrentPolicyRequest) (*CurrentPolicyResponse, error)
@@ -197,6 +213,9 @@ type AgentControlServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentControlServiceServer struct{}
 
+func (UnimplementedAgentControlServiceServer) ControlStream(grpc.BidiStreamingServer[ControlStreamFrame, ControlStreamFrame]) error {
+	return status.Error(codes.Unimplemented, "method ControlStream not implemented")
+}
 func (UnimplementedAgentControlServiceServer) Health(context.Context, *HealthRequest) (*HealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Health not implemented")
 }
@@ -247,6 +266,13 @@ func RegisterAgentControlServiceServer(s grpc.ServiceRegistrar, srv AgentControl
 	}
 	s.RegisterService(&AgentControlService_ServiceDesc, srv)
 }
+
+func _AgentControlService_ControlStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentControlServiceServer).ControlStream(&grpc.GenericServerStream[ControlStreamFrame, ControlStreamFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentControlService_ControlStreamServer = grpc.BidiStreamingServer[ControlStreamFrame, ControlStreamFrame]
 
 func _AgentControlService_Health_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HealthRequest)
@@ -455,6 +481,12 @@ var AgentControlService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ControlStream",
+			Handler:       _AgentControlService_ControlStream_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
 		{
 			StreamName:    "WatchEvents",
 			Handler:       _AgentControlService_WatchEvents_Handler,

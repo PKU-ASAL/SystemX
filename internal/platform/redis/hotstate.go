@@ -12,11 +12,15 @@ import (
 var ErrDisabled = errors.New("redis hot state is disabled")
 
 type AgentSession struct {
-	TenantID      string
-	AgentID       string
-	Owner         string
-	LastSeenAt    time.Time
-	LastAckCursor string
+	TenantID          string
+	AgentID           string
+	Owner             string
+	LastSeenAt        time.Time
+	LastDataSeenAt    time.Time
+	LastControlSeenAt time.Time
+	LastAckCursor     string
+	DataTransport     string
+	ControlTransport  string
 }
 
 type HotState interface {
@@ -61,7 +65,7 @@ func (s *ClientHotState) TouchAgentSession(ctx context.Context, session AgentSes
 	if err != nil {
 		return err
 	}
-	key := "sysarmor:agent_gateway:session:" + session.TenantID + ":" + session.AgentID
+	key := "sysarmor:agent_session:" + session.TenantID + ":" + session.AgentID
 	return s.client.Set(ctx, key, raw, s.ttl).Err()
 }
 

@@ -13,12 +13,11 @@ import (
 	"sync"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -29,39 +28,39 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu                   sync.RWMutex
-	path                 string
-	backendInfo          *Info
-	saveState            func(State) error
-	listEvents           func(scenario, behavior string) ([]*eventv1.CanonicalEvent, error)
-	listSignals          func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
-	listIncidents        func(scenario string) ([]*incidentv1.Incident, error)
-	listResponses        func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
-	listPolicies         func(tenantID string) ([]policymodel.Policy, error)
-	listAssignments      func(tenantID, agentID string) ([]policymodel.Assignment, error)
-	listPolicyAudits     func(tenantID, policyID string) ([]policymodel.AuditRecord, error)
-	getPolicy            func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
-	effectivePolicy      func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
-	writeResponse        func(responsemodel.Command, *responsemodel.Ack) error
-	writePolicy          func(policymodel.Policy) error
-	writeAssignment      func(policymodel.Assignment) error
-	writePolicyAudit     func(policymodel.AuditRecord) error
-	Agents               []*analyticsv1.AgentHello
-	Events               []*eventv1.CanonicalEvent
-	Signals              []*signalv1.Signal
-	Incidents            []*incidentv1.Incident
-	Health               map[string]agenthealth.AgentHealth
-	Rules                []policymodel.RuleContent
-	Policies             []policymodel.Policy
-	Assignments          []policymodel.Assignment
-	PolicyAudits         []policymodel.AuditRecord
-	Responses            []responsemodel.Command
-	ResponseAcks         []responsemodel.Ack
-	Pullbacks            []gatewaymodel.EvidencePullbackRequest
-	AgentGatewaySessions []AgentGatewaySession
-	OperatorRoles        []OperatorRoleBinding
-	Metrics              Metrics
-	RarityBaseline       rarity.Baseline
+	mu               sync.RWMutex
+	path             string
+	backendInfo      *Info
+	saveState        func(State) error
+	listEvents       func(scenario, behavior string) ([]*eventv1.CanonicalEvent, error)
+	listSignals      func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
+	listIncidents    func(scenario string) ([]*incidentv1.Incident, error)
+	listResponses    func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
+	listPolicies     func(tenantID string) ([]policymodel.Policy, error)
+	listAssignments  func(tenantID, agentID string) ([]policymodel.Assignment, error)
+	listPolicyAudits func(tenantID, policyID string) ([]policymodel.AuditRecord, error)
+	getPolicy        func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
+	effectivePolicy  func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
+	writeResponse    func(responsemodel.Command, *responsemodel.Ack) error
+	writePolicy      func(policymodel.Policy) error
+	writeAssignment  func(policymodel.Assignment) error
+	writePolicyAudit func(policymodel.AuditRecord) error
+	Agents           []AgentIdentity
+	Events           []*eventv1.CanonicalEvent
+	Signals          []*signalv1.Signal
+	Incidents        []*incidentv1.Incident
+	Health           map[string]agenthealth.AgentHealth
+	Rules            []policymodel.RuleContent
+	Policies         []policymodel.Policy
+	Assignments      []policymodel.Assignment
+	PolicyAudits     []policymodel.AuditRecord
+	Responses        []responsemodel.Command
+	ResponseAcks     []responsemodel.Ack
+	Pullbacks        []gatewaymodel.EvidencePullbackRequest
+	AgentSessions    []AgentSession
+	OperatorRoles    []OperatorRoleBinding
+	Metrics          Metrics
+	RarityBaseline   rarity.Baseline
 }
 
 type Info struct {
@@ -87,16 +86,19 @@ type Metrics struct {
 	AverageConvergenceLatency float64 `json:"average_convergence_latency_ms"`
 }
 
-type AgentGatewaySession struct {
-	SessionID     string    `json:"session_id"`
-	TenantID      string    `json:"tenant_id"`
-	AgentID       string    `json:"agent_id"`
-	StartedAt     time.Time `json:"started_at"`
-	LastSeenAt    time.Time `json:"last_seen_at"`
-	ClosedAt      time.Time `json:"closed_at,omitempty"`
-	LastAckCursor string    `json:"last_ack_cursor,omitempty"`
-	Transport     string    `json:"transport,omitempty"`
-	Status        string    `json:"status,omitempty"`
+type AgentSession struct {
+	SessionID         string    `json:"session_id"`
+	TenantID          string    `json:"tenant_id"`
+	AgentID           string    `json:"agent_id"`
+	StartedAt         time.Time `json:"started_at"`
+	LastSeenAt        time.Time `json:"last_seen_at"`
+	LastDataSeenAt    time.Time `json:"last_data_seen_at,omitempty"`
+	LastControlSeenAt time.Time `json:"last_control_seen_at,omitempty"`
+	ClosedAt          time.Time `json:"closed_at,omitempty"`
+	LastAckCursor     string    `json:"last_ack_cursor,omitempty"`
+	DataTransport     string    `json:"data_transport,omitempty"`
+	ControlTransport  string    `json:"control_transport,omitempty"`
+	Status            string    `json:"status,omitempty"`
 }
 
 type OperatorRoleBinding struct {
@@ -107,22 +109,22 @@ type OperatorRoleBinding struct {
 }
 
 type State struct {
-	Agents               []json.RawMessage                      `json:"agents"`
-	Events               []json.RawMessage                      `json:"events"`
-	Signals              []json.RawMessage                      `json:"signals"`
-	Incidents            []json.RawMessage                      `json:"incidents"`
-	Health               []json.RawMessage                      `json:"health"`
-	Rules                []policymodel.RuleContent              `json:"rules"`
-	Policies             []policymodel.Policy                   `json:"policies"`
-	Assignments          []policymodel.Assignment               `json:"assignments"`
-	PolicyAudits         []policymodel.AuditRecord              `json:"policy_audits"`
-	Responses            []responsemodel.Command                `json:"responses"`
-	ResponseAcks         []responsemodel.Ack                    `json:"response_acks"`
-	Pullbacks            []gatewaymodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
-	AgentGatewaySessions []AgentGatewaySession                  `json:"agent_gateway_sessions"`
-	OperatorRoles        []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
-	Metrics              Metrics                                `json:"metrics"`
-	RarityBaseline       rarity.Baseline                        `json:"rarity_baseline,omitempty"`
+	Agents         []json.RawMessage                      `json:"agents"`
+	Events         []json.RawMessage                      `json:"events"`
+	Signals        []json.RawMessage                      `json:"signals"`
+	Incidents      []json.RawMessage                      `json:"incidents"`
+	Health         []json.RawMessage                      `json:"health"`
+	Rules          []policymodel.RuleContent              `json:"rules"`
+	Policies       []policymodel.Policy                   `json:"policies"`
+	Assignments    []policymodel.Assignment               `json:"assignments"`
+	PolicyAudits   []policymodel.AuditRecord              `json:"policy_audits"`
+	Responses      []responsemodel.Command                `json:"responses"`
+	ResponseAcks   []responsemodel.Ack                    `json:"response_acks"`
+	Pullbacks      []gatewaymodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
+	AgentSessions  []AgentSession                         `json:"agent_sessions"`
+	OperatorRoles  []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
+	Metrics        Metrics                                `json:"metrics"`
+	RarityBaseline rarity.Baseline                        `json:"rarity_baseline,omitempty"`
 }
 
 func Open(path string) (*Store, error) {
@@ -156,11 +158,14 @@ func (s *Store) ImportState(state State) error {
 	s.Incidents = nil
 	s.Health = map[string]agenthealth.AgentHealth{}
 	for _, raw := range state.Agents {
-		msg := &analyticsv1.AgentHello{}
-		if err := protojson.Unmarshal(raw, msg); err != nil {
+		var msg AgentIdentity
+		if err := json.Unmarshal(raw, &msg); err != nil {
 			return err
 		}
-		s.Agents = append(s.Agents, msg)
+		msg = msg.Normalized()
+		if msg.Valid() {
+			s.Agents = append(s.Agents, msg)
+		}
 	}
 	for _, raw := range state.Events {
 		msg := &eventv1.CanonicalEvent{}
@@ -197,7 +202,7 @@ func (s *Store) ImportState(state State) error {
 	s.Responses = state.Responses
 	s.ResponseAcks = state.ResponseAcks
 	s.Pullbacks = state.Pullbacks
-	s.AgentGatewaySessions = state.AgentGatewaySessions
+	s.AgentSessions = state.AgentSessions
 	s.OperatorRoles = state.OperatorRoles
 	s.Metrics = state.Metrics
 	s.RarityBaseline = state.RarityBaseline.Snapshot()
@@ -268,19 +273,65 @@ func (s *Store) Info() Info {
 	}
 }
 
-func (s *Store) AddAgent(agent *analyticsv1.AgentHello) {
-	if agent == nil || agent.GetAgentId() == "" {
+func (s *Store) AddAgent(agent AgentIdentity) {
+	agent = agent.Normalized()
+	if !agent.Valid() {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, existing := range s.Agents {
-		if existing.GetTenantId() == agent.GetTenantId() && existing.GetAgentId() == agent.GetAgentId() {
+		if existing.TenantID == agent.TenantID && existing.AgentID == agent.AgentID {
+			if agent.HostID == "" {
+				agent.HostID = existing.HostID
+			}
+			if agent.Version == "" {
+				agent.Version = existing.Version
+			}
+			if agent.AuthType == "" {
+				agent.AuthType = existing.AuthType
+			}
+			if agent.CertIdentity == "" {
+				agent.CertIdentity = existing.CertIdentity
+			}
 			s.Agents[i] = agent
 			return
 		}
 	}
 	s.Agents = append(s.Agents, agent)
+}
+
+func (s *Store) BindAgentIdentity(agent AgentIdentity) error {
+	agent = agent.Normalized()
+	if !agent.Valid() {
+		return fmt.Errorf("agent_id is required")
+	}
+	if agent.AuthType == "" || agent.CertIdentity == "" {
+		return fmt.Errorf("auth_type and cert_identity are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Agents {
+		if existing.TenantID != agent.TenantID || existing.AgentID != agent.AgentID {
+			continue
+		}
+		if existing.CertIdentity != "" && existing.CertIdentity != agent.CertIdentity {
+			return fmt.Errorf("agent identity binding mismatch: registered=%s presented=%s", existing.CertIdentity, agent.CertIdentity)
+		}
+		if existing.AuthType != "" && existing.AuthType != agent.AuthType {
+			return fmt.Errorf("agent auth binding mismatch: registered=%s presented=%s", existing.AuthType, agent.AuthType)
+		}
+		if agent.HostID == "" {
+			agent.HostID = existing.HostID
+		}
+		if agent.Version == "" {
+			agent.Version = existing.Version
+		}
+		s.Agents[i] = agent
+		return nil
+	}
+	s.Agents = append(s.Agents, agent)
+	return nil
 }
 
 func (s *Store) AddEvent(ev *eventv1.CanonicalEvent) bool {
@@ -1086,57 +1137,65 @@ func (s *Store) RecordUpload(events, endpointSignals, cloudSignals, incidents in
 	s.Metrics.AverageConvergenceLatency = float64(s.Metrics.TotalConvergenceLatencyMs) / float64(s.Metrics.UploadBatches)
 }
 
-func (s *Store) RecordAgentGatewayUpload(agent *analyticsv1.AgentHello, batchID, transport string, observedAt time.Time) AgentGatewaySession {
-	if agent == nil || agent.GetAgentId() == "" {
-		return AgentGatewaySession{}
+func (s *Store) RecordDataUpload(agent AgentIdentity, batchID, transport string, observedAt time.Time) AgentSession {
+	agent = agent.Normalized()
+	if !agent.Valid() {
+		return AgentSession{}
 	}
 	if observedAt.IsZero() {
 		observedAt = time.Now().UTC()
 	}
-	sessionID := agentgatewaySessionID(agent.GetTenantId(), agent.GetAgentId())
-	session := AgentGatewaySession{
-		SessionID:     sessionID,
-		TenantID:      agent.GetTenantId(),
-		AgentID:       agent.GetAgentId(),
-		StartedAt:     observedAt,
-		LastSeenAt:    observedAt,
-		LastAckCursor: batchID,
-		Transport:     transport,
-		Status:        "active",
-	}
+	sessionID := agentSessionID(agent.TenantID, agent.AgentID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i, existing := range s.AgentGatewaySessions {
+	for i, existing := range s.AgentSessions {
 		if existing.SessionID == sessionID {
-			session.StartedAt = existing.StartedAt
-			if session.LastAckCursor == "" {
-				session.LastAckCursor = existing.LastAckCursor
+			existing.LastSeenAt = observedAt
+			existing.LastDataSeenAt = observedAt
+			if batchID != "" {
+				existing.LastAckCursor = batchID
 			}
-			s.AgentGatewaySessions[i] = session
-			return session
+			if transport != "" {
+				existing.DataTransport = transport
+			}
+			existing.Status = "active"
+			existing.ClosedAt = time.Time{}
+			s.AgentSessions[i] = existing
+			return existing
 		}
 	}
-	s.AgentGatewaySessions = append(s.AgentGatewaySessions, session)
+	session := AgentSession{
+		SessionID:      sessionID,
+		TenantID:       agent.TenantID,
+		AgentID:        agent.AgentID,
+		StartedAt:      observedAt,
+		LastSeenAt:     observedAt,
+		LastDataSeenAt: observedAt,
+		LastAckCursor:  batchID,
+		DataTransport:  transport,
+		Status:         "active",
+	}
+	s.AgentSessions = append(s.AgentSessions, session)
 	return session
 }
 
-func (s *Store) RecordAgentGatewayStreamOpen(tenantID, agentID, transport string, observedAt time.Time) AgentGatewaySession {
-	return s.updateAgentGatewaySession(tenantID, agentID, transport, "", "open", observedAt, false)
+func (s *Store) RecordControlSessionOpen(tenantID, agentID, transport string, observedAt time.Time) AgentSession {
+	return s.updateAgentSession(tenantID, agentID, transport, "", "open", observedAt, false)
 }
 
-func (s *Store) RecordAgentGatewaySessionSeen(tenantID, agentID string, observedAt time.Time) AgentGatewaySession {
-	return s.updateAgentGatewaySession(tenantID, agentID, "", "", "", observedAt, false)
+func (s *Store) RecordAgentSessionSeen(tenantID, agentID string, observedAt time.Time) AgentSession {
+	return s.updateAgentSession(tenantID, agentID, "", "", "", observedAt, false)
 }
 
-func (s *Store) CloseAgentGatewaySession(tenantID, agentID string, observedAt time.Time) AgentGatewaySession {
-	return s.updateAgentGatewaySession(tenantID, agentID, "", "", "closed", observedAt, true)
+func (s *Store) CloseAgentSession(tenantID, agentID string, observedAt time.Time) AgentSession {
+	return s.updateAgentSession(tenantID, agentID, "", "", "closed", observedAt, true)
 }
 
-func (s *Store) updateAgentGatewaySession(tenantID, agentID, transport, cursor, status string, observedAt time.Time, closeSession bool) AgentGatewaySession {
+func (s *Store) updateAgentSession(tenantID, agentID, transport, cursor, status string, observedAt time.Time, closeSession bool) AgentSession {
 	tenantID = strings.TrimSpace(tenantID)
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
-		return AgentGatewaySession{}
+		return AgentSession{}
 	}
 	if tenantID == "" {
 		tenantID = "default"
@@ -1144,16 +1203,17 @@ func (s *Store) updateAgentGatewaySession(tenantID, agentID, transport, cursor, 
 	if observedAt.IsZero() {
 		observedAt = time.Now().UTC()
 	}
-	sessionID := agentgatewaySessionID(tenantID, agentID)
+	sessionID := agentSessionID(tenantID, agentID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i, session := range s.AgentGatewaySessions {
+	for i, session := range s.AgentSessions {
 		if session.SessionID != sessionID {
 			continue
 		}
 		session.LastSeenAt = observedAt
 		if transport != "" {
-			session.Transport = transport
+			session.ControlTransport = transport
+			session.LastControlSeenAt = observedAt
 		}
 		if cursor != "" {
 			session.LastAckCursor = cursor
@@ -1166,18 +1226,21 @@ func (s *Store) updateAgentGatewaySession(tenantID, agentID, transport, cursor, 
 		} else if status == "open" {
 			session.ClosedAt = time.Time{}
 		}
-		s.AgentGatewaySessions[i] = session
+		s.AgentSessions[i] = session
 		return session
 	}
-	session := AgentGatewaySession{
-		SessionID:     sessionID,
-		TenantID:      tenantID,
-		AgentID:       agentID,
-		StartedAt:     observedAt,
-		LastSeenAt:    observedAt,
-		LastAckCursor: cursor,
-		Transport:     transport,
-		Status:        status,
+	session := AgentSession{
+		SessionID:        sessionID,
+		TenantID:         tenantID,
+		AgentID:          agentID,
+		StartedAt:        observedAt,
+		LastSeenAt:       observedAt,
+		LastAckCursor:    cursor,
+		ControlTransport: transport,
+		Status:           status,
+	}
+	if transport != "" {
+		session.LastControlSeenAt = observedAt
 	}
 	if session.Status == "" {
 		session.Status = "active"
@@ -1185,23 +1248,23 @@ func (s *Store) updateAgentGatewaySession(tenantID, agentID, transport, cursor, 
 	if closeSession {
 		session.ClosedAt = observedAt
 	}
-	s.AgentGatewaySessions = append(s.AgentGatewaySessions, session)
+	s.AgentSessions = append(s.AgentSessions, session)
 	return session
 }
 
-func (s *Store) ListAgents() []*analyticsv1.AgentHello {
+func (s *Store) ListAgents() []AgentIdentity {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*analyticsv1.AgentHello, len(s.Agents))
+	out := make([]AgentIdentity, len(s.Agents))
 	copy(out, s.Agents)
 	return out
 }
 
-func (s *Store) ListAgentGatewaySessions(tenantID, agentID string) []AgentGatewaySession {
+func (s *Store) ListAgentSessions(tenantID, agentID string) []AgentSession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]AgentGatewaySession, 0, len(s.AgentGatewaySessions))
-	for _, session := range s.AgentGatewaySessions {
+	out := make([]AgentSession, 0, len(s.AgentSessions))
+	for _, session := range s.AgentSessions {
 		if tenantID != "" && session.TenantID != tenantID {
 			continue
 		}
@@ -1514,7 +1577,7 @@ func (s *Store) DeleteScenario(scenario string) {
 		s.Signals = nil
 		s.Incidents = nil
 		s.Health = map[string]agenthealth.AgentHealth{}
-		s.AgentGatewaySessions = nil
+		s.AgentSessions = nil
 		s.Metrics = Metrics{}
 		return
 	}
@@ -1590,14 +1653,14 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Metrics = s.Metrics
 	state.RarityBaseline = s.RarityBaseline.Snapshot()
 	state.OperatorRoles = append([]OperatorRoleBinding(nil), s.OperatorRoles...)
-	mo := protojson.MarshalOptions{UseProtoNames: true}
 	for _, agent := range s.Agents {
-		raw, err := mo.Marshal(agent)
+		raw, err := json.Marshal(agent)
 		if err != nil {
 			return State{}, err
 		}
 		state.Agents = append(state.Agents, raw)
 	}
+	mo := protojson.MarshalOptions{UseProtoNames: true}
 	for _, ev := range s.Events {
 		raw, err := mo.Marshal(ev)
 		if err != nil {
@@ -1643,7 +1706,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Responses = append([]responsemodel.Command(nil), s.Responses...)
 	state.ResponseAcks = append([]responsemodel.Ack(nil), s.ResponseAcks...)
 	state.Pullbacks = append([]gatewaymodel.EvidencePullbackRequest(nil), s.Pullbacks...)
-	state.AgentGatewaySessions = append([]AgentGatewaySession(nil), s.AgentGatewaySessions...)
+	state.AgentSessions = append([]AgentSession(nil), s.AgentSessions...)
 	return state, nil
 }
 
@@ -1651,7 +1714,7 @@ func agentHealthKey(tenantID, agentID string) string {
 	return tenantID + "/" + agentID
 }
 
-func agentgatewaySessionID(tenantID, agentID string) string {
+func agentSessionID(tenantID, agentID string) string {
 	return stableKey(tenantID, agentID)
 }
 

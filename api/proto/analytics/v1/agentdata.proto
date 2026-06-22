@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package sysarmor.analytics.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1;analyticsv1";
+
+import "api/proto/dataplane/v1/dataplane.proto";
+
+service AgentDataService {
+  rpc Upload(sysarmor.dataplane.v1.DataBatch) returns (sysarmor.dataplane.v1.DataAck);
+}

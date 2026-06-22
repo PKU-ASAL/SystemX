@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
@@ -36,35 +36,38 @@ func NewProcessor(st *store.Store, indexer platformopensearch.Indexer) *Processo
 	return &Processor{store: st, engine: analyticingest.NewEngine(), indexer: indexer}
 }
 
-func (p *Processor) Process(ctx context.Context, batch *analyticsv1.UploadBatch) (Result, error) {
+func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (Result, error) {
 	if p == nil || p.store == nil {
 		return Result{}, fmt.Errorf("ingest processor store is nil")
 	}
-	if batch == nil || batch.GetAgent() == nil {
-		return Result{}, fmt.Errorf("upload batch agent identity is required")
+	if batch == nil || batch.GetHeader() == nil {
+		return Result{}, fmt.Errorf("data batch header identity is required")
 	}
-	p.store.AddAgent(batch.GetAgent())
-	touchedScenarios := map[string]*analyticsv1.AgentHello{}
+	agent := store.AgentIdentityFromDataBatch(batch)
+	p.store.AddAgent(agent)
+	touchedScenarios := map[string]store.AgentIdentity{}
 	acceptedEvents := 0
 	acceptedSignals := 0
 	acceptedSignalList := []*signalv1.Signal{}
-	for _, ev := range batch.GetEvents() {
+	for _, frame := range batch.GetEvents() {
+		ev := frame.GetEvent()
 		inserted := p.store.AddEvent(ev)
 		if inserted {
 			acceptedEvents++
 		}
 		if inserted && ev.GetScenario() != "" {
-			touchedScenarios[ev.GetScenario()] = batch.GetAgent()
+			touchedScenarios[ev.GetScenario()] = agent
 		}
 	}
-	for _, sig := range batch.GetSignals() {
+	for _, frame := range batch.GetSignals() {
+		sig := frame.GetSignal()
 		inserted := p.store.AddSignal(sig)
 		if inserted {
 			acceptedSignals++
 			acceptedSignalList = append(acceptedSignalList, sig)
 		}
 		if inserted && sig.GetScenario() != "" {
-			touchedScenarios[sig.GetScenario()] = batch.GetAgent()
+			touchedScenarios[sig.GetScenario()] = agent
 		}
 	}
 	start := time.Now()
@@ -80,7 +83,7 @@ func (p *Processor) Process(ctx context.Context, batch *analyticsv1.UploadBatch)
 	return Result{AcceptedEvents: acceptedEvents, AcceptedSignals: acceptedSignals, CloudSignals: cloudSignals, Incidents: incidents}, nil
 }
 
-func (p *Processor) recomputeTouchedScenarios(touchedScenarios map[string]*analyticsv1.AgentHello) (int, int) {
+func (p *Processor) recomputeTouchedScenarios(touchedScenarios map[string]store.AgentIdentity) (int, int) {
 	totalCloud := 0
 	totalIncidents := 0
 	for scenario, agent := range touchedScenarios {
@@ -95,21 +98,23 @@ func (p *Processor) recomputeTouchedScenarios(touchedScenarios map[string]*analy
 	return totalCloud, totalIncidents
 }
 
-func (p *Processor) effectiveDetectionPolicyForAgent(agent *analyticsv1.AgentHello) *policyv1.DetectionPolicy {
-	if agent == nil {
+func (p *Processor) effectiveDetectionPolicyForAgent(agent store.AgentIdentity) *policyv1.DetectionPolicy {
+	agent = agent.Normalized()
+	if !agent.Valid() {
 		policy, _ := p.store.EffectivePolicy("default", "", "", "")
 		return policy.DetectionPolicy()
 	}
 	var scope agenthealth.RuntimeScope
-	if health, ok := p.store.GetAgentHealth(agent.GetTenantId(), agent.GetAgentId()); ok {
+	if health, ok := p.store.GetAgentHealth(agent.TenantID, agent.AgentID); ok {
 		scope = health.Scope
 	}
-	policy, _ := p.store.EffectivePolicy(agent.GetTenantId(), agent.GetAgentId(), scope.Type, scope.Selector)
+	policy, _ := p.store.EffectivePolicy(agent.TenantID, agent.AgentID, scope.Type, scope.Selector)
 	return policy.DetectionPolicy()
 }
 
-func (p *Processor) indexSecurityData(ctx context.Context, batch *analyticsv1.UploadBatch, touchedScenarios map[string]*analyticsv1.AgentHello) {
-	for _, ev := range batch.GetEvents() {
+func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.DataBatch, touchedScenarios map[string]store.AgentIdentity) {
+	for _, frame := range batch.GetEvents() {
+		ev := frame.GetEvent()
 		if ev.GetId() == "" {
 			continue
 		}
@@ -118,7 +123,8 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *analyticsv1.Up
 			_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-events", ID: ev.GetId(), Body: raw})
 		}
 	}
-	for _, sig := range batch.GetSignals() {
+	for _, frame := range batch.GetSignals() {
+		sig := frame.GetSignal()
 		id := SignalDocumentID(sig)
 		if id == "" {
 			continue

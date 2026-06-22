@@ -1,18 +1,16 @@
 package store
 
 import (
-	"path/filepath"
-	"testing"
-	"time"
-
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	"path/filepath"
+	"testing"
+	"time"
 )
 
 func TestListSignalsFiltersScenarioLayerAndTerminal(t *testing.T) {
@@ -419,17 +417,43 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 
 func TestAddAgentSeparatesTenants(t *testing.T) {
 	st := &Store{}
-	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "tenant-a"})
-	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-b", TenantId: "tenant-b"})
-	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a2", TenantId: "tenant-a"})
+	st.AddAgent(AgentIdentity{AgentID: "agent-a", HostID: "host-a", TenantID: "tenant-a"})
+	st.AddAgent(AgentIdentity{AgentID: "agent-a", HostID: "host-b", TenantID: "tenant-b"})
+	st.AddAgent(AgentIdentity{AgentID: "agent-a", HostID: "host-a2", TenantID: "tenant-a"})
 	agents := st.ListAgents()
 	if len(agents) != 2 {
 		t.Fatalf("agents = %d, want 2 tenant-scoped entries", len(agents))
 	}
 	for _, agent := range agents {
-		if agent.GetTenantId() == "tenant-a" && agent.GetHostId() != "host-a2" {
+		if agent.TenantID == "tenant-a" && agent.HostID != "host-a2" {
 			t.Fatalf("tenant-a agent was not updated: %+v", agent)
 		}
+	}
+}
+
+func TestBindAgentIdentityLocksCertificatePrincipal(t *testing.T) {
+	st := &Store{}
+	if err := st.BindAgentIdentity(AgentIdentity{
+		AgentID:      "agent-a",
+		TenantID:     "tenant-a",
+		AuthType:     "mtls",
+		CertIdentity: "spiffe://sysarmor.local/tenant/tenant-a/agent/agent-a",
+	}); err != nil {
+		t.Fatalf("BindAgentIdentity() error = %v", err)
+	}
+	st.AddAgent(AgentIdentity{AgentID: "agent-a", TenantID: "tenant-a", HostID: "host-a", Version: "v1"})
+	agents := st.ListAgents()
+	if len(agents) != 1 || agents[0].CertIdentity == "" || agents[0].AuthType != "mtls" || agents[0].HostID != "host-a" {
+		t.Fatalf("agents = %+v, want preserved mTLS binding with updated host", agents)
+	}
+	err := st.BindAgentIdentity(AgentIdentity{
+		AgentID:      "agent-a",
+		TenantID:     "tenant-a",
+		AuthType:     "mtls",
+		CertIdentity: "spiffe://sysarmor.local/tenant/tenant-a/agent/agent-b",
+	})
+	if err == nil {
+		t.Fatal("BindAgentIdentity() mismatched cert identity succeeded")
 	}
 }
 
@@ -480,12 +504,12 @@ func TestAgentHealthUpsertAndPersistence(t *testing.T) {
 
 func TestExportImportStateRoundTrip(t *testing.T) {
 	st := &Store{}
-	st.AddAgent(&analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"})
+	st.AddAgent(AgentIdentity{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Version: "test"})
 	st.AddEvent(testEvent("ev-a", "scenario-a"))
 	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
 	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
-	st.RecordAgentGatewayUpload(&analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
+	st.RecordDataUpload(AgentIdentity{AgentID: "agent-a", TenantID: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.UpsertOperatorRoleBinding(OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin", "policy_admin", "responder"}})
 	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
 	st.ObserveRaritySignals([]*signalv1.Signal{{
@@ -504,7 +528,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	if err := reloaded.ImportState(state); err != nil {
 		t.Fatal(err)
 	}
-	if got := reloaded.ListAgents(); len(got) != 1 || got[0].GetAgentId() != "agent-a" {
+	if got := reloaded.ListAgents(); len(got) != 1 || got[0].AgentID != "agent-a" {
 		t.Fatalf("agents after import = %+v", got)
 	}
 	if got := reloaded.ListEvents("scenario-a", ""); len(got) != 1 || got[0].GetId() != "ev-a" {
@@ -519,8 +543,8 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	if _, ok := reloaded.GetAgentHealth("default", "agent-a"); !ok {
 		t.Fatal("agent health missing after import")
 	}
-	if got := reloaded.ListAgentGatewaySessions("default", "agent-a"); len(got) != 1 || got[0].LastAckCursor != "batch-a" {
-		t.Fatalf("agentgateway sessions after import = %+v", got)
+	if got := reloaded.ListAgentSessions("default", "agent-a"); len(got) != 1 || got[0].LastAckCursor != "batch-a" {
+		t.Fatalf("agent sessions after import = %+v", got)
 	}
 	if got, ok := reloaded.OperatorRolesForActor("alice"); !ok || len(got) != 2 || got[0] != "policy_admin" || got[1] != "responder" {
 		t.Fatalf("operator roles after import = %+v ok=%v", got, ok)
@@ -533,41 +557,41 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRecordAgentGatewayUploadUpdatesSessionCursor(t *testing.T) {
+func TestRecordDataUploadUpdatesSessionCursor(t *testing.T) {
 	st := &Store{}
-	agent := &analyticsv1.AgentHello{AgentId: "agent-a", TenantId: "default"}
-	first := st.RecordAgentGatewayUpload(agent, "batch-1", "http", time.Unix(10, 0).UTC())
-	second := st.RecordAgentGatewayUpload(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
+	agent := AgentIdentity{AgentID: "agent-a", TenantID: "default"}
+	first := st.RecordDataUpload(agent, "batch-1", "http", time.Unix(10, 0).UTC())
+	second := st.RecordDataUpload(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
 	if first.SessionID == "" || first.SessionID != second.SessionID {
 		t.Fatalf("session ids = %q/%q", first.SessionID, second.SessionID)
 	}
-	sessions := st.ListAgentGatewaySessions("default", "agent-a")
+	sessions := st.ListAgentSessions("default", "agent-a")
 	if len(sessions) != 1 {
 		t.Fatalf("sessions len = %d, want 1", len(sessions))
 	}
 	got := sessions[0]
-	if got.StartedAt != first.StartedAt || got.LastSeenAt != second.LastSeenAt || got.LastAckCursor != "batch-2" || got.Transport != "grpc" {
+	if got.StartedAt != first.StartedAt || got.LastSeenAt != second.LastSeenAt || got.LastAckCursor != "batch-2" || got.DataTransport != "grpc" {
 		t.Fatalf("session after update = %+v", got)
 	}
 }
 
-func TestAgentGatewayStreamSessionLifecycle(t *testing.T) {
+func TestAgentSessionLifecycle(t *testing.T) {
 	st := &Store{}
-	opened := st.RecordAgentGatewayStreamOpen("default", "agent-stream", "stream", time.Unix(10, 0).UTC())
-	if opened.Status != "open" || opened.Transport != "stream" || !opened.ClosedAt.IsZero() {
+	opened := st.RecordControlSessionOpen("default", "agent-control", "control", time.Unix(10, 0).UTC())
+	if opened.Status != "open" || opened.ControlTransport != "control" || !opened.ClosedAt.IsZero() {
 		t.Fatalf("opened session = %+v", opened)
 	}
-	seen := st.RecordAgentGatewaySessionSeen("default", "agent-stream", time.Unix(20, 0).UTC())
+	seen := st.RecordAgentSessionSeen("default", "agent-control", time.Unix(20, 0).UTC())
 	if seen.Status != "open" || !seen.LastSeenAt.Equal(time.Unix(20, 0).UTC()) {
 		t.Fatalf("seen session = %+v", seen)
 	}
-	st.RecordAgentGatewayUpload(&analyticsv1.AgentHello{AgentId: "agent-stream", TenantId: "default"}, "batch-stream", "stream", time.Unix(25, 0).UTC())
-	closed := st.CloseAgentGatewaySession("default", "agent-stream", time.Unix(30, 0).UTC())
-	if closed.Status != "closed" || !closed.ClosedAt.Equal(time.Unix(30, 0).UTC()) || closed.LastAckCursor != "batch-stream" {
+	st.RecordDataUpload(AgentIdentity{AgentID: "agent-control", TenantID: "default"}, "batch-grpc", "grpc", time.Unix(25, 0).UTC())
+	closed := st.CloseAgentSession("default", "agent-control", time.Unix(30, 0).UTC())
+	if closed.Status != "closed" || !closed.ClosedAt.Equal(time.Unix(30, 0).UTC()) || closed.LastAckCursor != "batch-grpc" {
 		t.Fatalf("closed session = %+v", closed)
 	}
-	reopened := st.RecordAgentGatewayStreamOpen("default", "agent-stream", "stream", time.Unix(40, 0).UTC())
-	if reopened.Status != "open" || !reopened.ClosedAt.IsZero() || reopened.LastAckCursor != "batch-stream" {
+	reopened := st.RecordControlSessionOpen("default", "agent-control", "control", time.Unix(40, 0).UTC())
+	if reopened.Status != "open" || reopened.ControlTransport != "control" || !reopened.ClosedAt.IsZero() || reopened.LastAckCursor != "batch-grpc" {
 		t.Fatalf("reopened session = %+v", reopened)
 	}
 }
