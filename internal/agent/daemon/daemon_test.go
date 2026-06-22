@@ -316,6 +316,68 @@ func TestControlStreamHealthReporterSendsHeartbeatFrame(t *testing.T) {
 	}
 }
 
+func TestControlStreamSessionKeepsLongLivedContract(t *testing.T) {
+	st := &store.Store{}
+	linkSrv := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	session := NewControlStreamSession(lis.Addr().String(), "", tlsconfig.ClientConfig{})
+	defer session.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	frames, err := session.Hello(ctx, "default", "agent-long-control", "container", "api")
+	if err != nil {
+		t.Fatalf("Hello() error = %v", err)
+	}
+	if len(frames) != 2 || frames[0].GetType() != "policy_update" || frames[1].GetType() != "resume" {
+		t.Fatalf("hello frames = %+v", frames)
+	}
+	if frames[0].GetContractVersion() != 1 || frames[0].GetSequence() != 1 || frames[1].GetSequence() != 2 {
+		t.Fatalf("hello frame sequence = %d/%d contract=%d", frames[0].GetSequence(), frames[1].GetSequence(), frames[0].GetContractVersion())
+	}
+	if err := session.Send(ctx, &controlv1.ControlStreamFrame{
+		Type:      "health_report",
+		RequestId: "long-health",
+		Context: &controlv1.RequestContext{
+			TenantId: "default",
+			AgentId:  "agent-long-control",
+			Scope:    &controlv1.Scope{Type: "container", Selector: "api"},
+		},
+		Health: &controlv1.HealthResponse{
+			AgentId:    "agent-long-control",
+			HostId:     "host-long-control",
+			TenantId:   "default",
+			Status:     "ok",
+			Scope:      &controlv1.Scope{Type: "container", Selector: "api"},
+			ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			Capability: &controlv1.SensorCapability{Backend: "fake", Version: "long", SupportsHealth: true},
+			Sensor:     &controlv1.SensorHealth{Backend: "fake", Running: true, EventsSeen: 7},
+		},
+	}); err != nil {
+		t.Fatalf("Send(health) error = %v", err)
+	}
+	ack, err := session.Recv()
+	if err != nil {
+		t.Fatalf("Recv(health ack) error = %v", err)
+	}
+	if ack.GetType() != "ack" || ack.GetSequence() != 3 || ack.GetAck().GetStatus() != "accepted" {
+		t.Fatalf("health ack = %+v", ack)
+	}
+	got, ok := st.GetAgentHealth("default", "agent-long-control")
+	if !ok || got.Capability.Version != "long" || got.Sensor.EventsSeen != 7 {
+		t.Fatalf("stored long stream health = %+v ok=%t", got, ok)
+	}
+}
+
 func TestControlResumeClientAcksLocalSpoolThroughCursor(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)

@@ -83,6 +83,8 @@ Stable DataAck error classes are intentionally small. Invalid payloads return `S
 
 Local `sysarmorctl --agent-sock` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataService` for data flow and `ControlStream` for control flow.
 
+The table-form contract is maintained in `references/docs/agent-manager-contract.md`.
+
 Development certificates can be generated with:
 
 ```bash

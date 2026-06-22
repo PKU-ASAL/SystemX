@@ -27,6 +27,8 @@ GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sys
 
 PKI_DIR="$TMP/pki"
 "$ROOT/tools/pki/gen-mtls-dev.sh" "$PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
+UNTRUSTED_PKI_DIR="$TMP/untrusted-pki"
+"$ROOT/tools/pki/gen-mtls-dev.sh" "$UNTRUSTED_PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
 
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
@@ -126,6 +128,18 @@ wrong_status=$?
   > "$RESULTS/e2e-agent-mtls.no-client-cert.out" \
   2> "$RESULTS/e2e-agent-mtls.no-client-cert.err"
 no_cert_status=$?
+
+"$BIN/sysarmor-databatch-upload" \
+  --manager "127.0.0.1:$GRPC_PORT" \
+  --input "$TMP/batch-good.json" \
+  --tls-ca "$PKI_DIR/ca.pem" \
+  --tls-cert "$UNTRUSTED_PKI_DIR/agent.pem" \
+  --tls-key "$UNTRUSTED_PKI_DIR/agent-key.pem" \
+  --tls-server-name localhost \
+  --timeout 2s \
+  > "$RESULTS/e2e-agent-mtls.untrusted-ca.out" \
+  2> "$RESULTS/e2e-agent-mtls.untrusted-ca.err"
+untrusted_ca_status=$?
 set -e
 
 if [[ "$wrong_status" -eq 0 ]]; then
@@ -139,6 +153,15 @@ if ! grep -Fq "PermissionDenied" "$RESULTS/e2e-agent-mtls.wrong-agent.err"; then
 fi
 if [[ "$no_cert_status" -eq 0 ]]; then
   echo "[e2e-agent-mtls][ERROR] upload without client certificate unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ "$untrusted_ca_status" -eq 0 ]]; then
+  echo "[e2e-agent-mtls][ERROR] upload with untrusted client CA unexpectedly succeeded" >&2
+  exit 1
+fi
+if ! grep -Eiq "certificate|handshake|unknown authority|bad certificate|context deadline exceeded" "$RESULTS/e2e-agent-mtls.untrusted-ca.err"; then
+  echo "[e2e-agent-mtls][ERROR] untrusted client CA did not fail with a TLS certificate error" >&2
+  cat "$RESULTS/e2e-agent-mtls.untrusted-ca.err" >&2
   exit 1
 fi
 

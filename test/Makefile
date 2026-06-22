@@ -108,6 +108,7 @@ e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
 e2e-agent-manager-contract:   ## v3: ControlStream sequence/replay and DataAck error-class contract
 	cd .. && go test ./internal/agentplane -run 'Test(ControlStreamSequenceRejectsReplayAndGap|ControlStreamRequiresRequestID|DataAckClassifiesRetryableBackendError|GRPCUploadRequiresAgentIdentity)'
+	cd .. && go test ./internal/agent/daemon -run TestControlStreamSessionKeepsLongLivedContract
 
 e2e-manager-idempotency:      ## v2: repeated DataBatch does not amplify manager ingest
 	bash harness/e2e-manager-idempotency.sh

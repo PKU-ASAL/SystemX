@@ -64,6 +64,14 @@ Identity:
   tenant_id: $TENANT_ID
   agent_id:  $AGENT_ID
   uri_san:   spiffe://$TRUST_DOMAIN/tenant/$TENANT_ID/agent/$AGENT_ID
+  cn:        tenant_id:$TENANT_ID,agent_id:$AGENT_ID
+
+Production convention:
+  - The URI SAN is the canonical agent identity.
+  - The manager must validate the issuing CA and bind uri_san to tenant_id/agent_id.
+  - Reusing tenant_id/agent_id with a different certificate principal is rejected.
+  - Rotation should issue a new certificate for the same URI SAN from a trusted CA.
+  - Revocation and short certificate lifetimes should be handled by production PKI.
 
 Files:
   ca.pem
