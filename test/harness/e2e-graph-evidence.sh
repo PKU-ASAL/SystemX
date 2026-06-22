@@ -26,7 +26,8 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -52,47 +53,49 @@ wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/health
 
 cat > "$TMP/batch.json" <<JSON
 {
-  "batch_id": "graph-evidence-batch",
-  "agent": {
-    "agent_id": "graph-evidence-agent",
-    "host_id": "graph-evidence-host",
-    "tenant_id": "default",
-    "version": "e2e"
+  "header": {
+    "batchId": "graph-evidence-batch",
+    "agentId": "graph-evidence-agent",
+    "hostId": "graph-evidence-host",
+    "tenantId": "default",
+    "signalCount": 2,
+    "labels": {"agent_version": "e2e"}
   },
   "signals": [
     {
-      "id": "sig-graph-payload",
-      "name": "payload_dropped",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 45,
-      "global_rarity": 1,
-      "lineage_id": "lin-drop",
-      "scenario": "$SCENARIO",
-      "entities": [
-        {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"}
-      ]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-graph-payload",
+        "name": "payload_dropped",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 45,
+        "globalRarity": 1,
+        "lineageId": "lin-drop",
+        "scenario": "$SCENARIO",
+        "entities": [{"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"}]
+      }
     },
     {
-      "id": "sig-graph-connect",
-      "name": "suspicious_exec_connect",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 65,
-      "global_rarity": 1,
-      "lineage_id": "lin-connect",
-      "scenario": "$SCENARIO",
-      "entities": [
-        {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"},
-        {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
-      ]
+      "sequence": 2,
+      "signal": {
+        "id": "sig-graph-connect",
+        "name": "suspicious_exec_connect",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 65,
+        "globalRarity": 1,
+        "lineageId": "lin-connect",
+        "scenario": "$SCENARIO",
+        "entities": [
+          {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"},
+          {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
+        ]
+      }
     }
   ]
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/batch.json" > "$RESULTS/e2e-graph-evidence.upload.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-graph-evidence.upload.json"
 
 wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-graph-evidence.incidents.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario "$SCENARIO"

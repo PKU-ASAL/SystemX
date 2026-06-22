@@ -26,7 +26,8 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -52,46 +53,50 @@ wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/health
 
 cat > "$TMP/batch.json" <<JSON
 {
-  "batch_id": "incident-attach-evidence-batch",
-  "agent": {
-    "agent_id": "incident-attach-evidence-agent",
-    "host_id": "incident-attach-evidence-host",
-    "tenant_id": "default",
-    "version": "e2e"
+  "header": {
+    "batchId": "incident-attach-evidence-batch",
+    "agentId": "incident-attach-evidence-agent",
+    "hostId": "incident-attach-evidence-host",
+    "tenantId": "default",
+    "signalCount": 2,
+    "labels": {"agent_version": "e2e"}
   },
   "signals": [
     {
-      "id": "sig-attach-web",
-      "name": "web_runtime_spawns_shell",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 50,
-      "global_rarity": 1,
-      "lineage_id": "lin-attach",
-      "scenario": "$SCENARIO",
-      "entities": [{"kind": "process", "key": "process:p-web", "role": "subject"}]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-attach-web",
+        "name": "web_runtime_spawns_shell",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 50,
+        "globalRarity": 1,
+        "lineageId": "lin-attach",
+        "scenario": "$SCENARIO",
+        "entities": [{"kind": "process", "key": "process:p-web", "role": "subject"}]
+      }
     },
     {
-      "id": "sig-attach-rev",
-      "name": "reverse_shell_pattern",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 80,
-      "global_rarity": 1,
-      "lineage_id": "lin-attach",
-      "terminal": true,
-      "scenario": "$SCENARIO",
-      "entities": [
-        {"kind": "process", "key": "process:p-bash", "role": "subject"},
-        {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
-      ]
+      "sequence": 2,
+      "signal": {
+        "id": "sig-attach-rev",
+        "name": "reverse_shell_pattern",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 80,
+        "globalRarity": 1,
+        "lineageId": "lin-attach",
+        "terminal": true,
+        "scenario": "$SCENARIO",
+        "entities": [
+          {"kind": "process", "key": "process:p-bash", "role": "subject"},
+          {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
+        ]
+      }
     }
   ]
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/batch.json" > "$RESULTS/e2e-incident-attach-evidence.upload.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-incident-attach-evidence.upload.json"
 
 wait_contains "incident" '"status":"open"' "$RESULTS/e2e-incident-attach-evidence.incidents.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario "$SCENARIO"

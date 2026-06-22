@@ -26,7 +26,8 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -52,42 +53,43 @@ wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/health
 
 cat > "$TMP/batch.json" <<JSON
 {
-  "batch_id": "response-audit-batch",
-  "agent": {
-    "agent_id": "$AGENT_ID",
-    "host_id": "response-audit-host",
-    "tenant_id": "default",
-    "version": "e2e"
+  "header": {
+    "batchId": "response-audit-batch",
+    "agentId": "$AGENT_ID",
+    "hostId": "response-audit-host",
+    "tenantId": "default",
+    "signalCount": 1,
+    "labels": {"agent_version": "e2e"}
   },
   "signals": [
     {
-      "id": "sig-response-intent",
-      "name": "reverse_shell_pattern",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 80,
-      "global_rarity": 1,
-      "lineage_id": "lin-response-audit",
-      "terminal": true,
-      "scenario": "response-audit",
-      "response_intent": {
-        "response_intent": "collect",
-        "recommended_action": "collect",
-        "confidence": 80,
-        "reason": "terminal reverse shell pattern"
-      },
-      "entities": [
-        {"kind": "process", "key": "process:p-bash", "role": "subject"},
-        {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
-      ]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-response-intent",
+        "name": "reverse_shell_pattern",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 80,
+        "globalRarity": 1,
+        "lineageId": "lin-response-audit",
+        "terminal": true,
+        "scenario": "response-audit",
+        "responseIntent": {
+          "responseIntent": "collect",
+          "recommendedAction": "collect",
+          "confidence": 80,
+          "reason": "terminal reverse shell pattern"
+        },
+        "entities": [
+          {"kind": "process", "key": "process:p-bash", "role": "subject"},
+          {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
+        ]
+      }
     }
   ]
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/batch.json" > "$RESULTS/e2e-response-audit.upload.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-response-audit.upload.json"
 
 wait_contains "signal intent" '"response_intent":{"response_intent":"collect","recommended_action":"collect","confidence":80,"reason":"terminal reverse shell pattern"}' "$RESULTS/e2e-response-audit.signals.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario response-audit --terminal

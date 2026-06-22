@@ -21,10 +21,13 @@ Endpoint:
 - agent-owned Tetragon VM install path;
 - behavior-first collection policy;
 - content package apply for ContextSet / IOCPack / RulePack;
-- event and signal local watch;
+- WAL-backed event and signal local watch;
 - labels and WatchFilter;
 - event refs and signal-to-event lookup;
 - lightweight endpoint detection including builtin and CEP-like rules;
+- collection policy explain with ref resolution, selector pushdown/degrade report, and detection coverage;
+- spool/WAL health with backlog, cursor, watcher, backpressure, and upload drain visibility;
+- observe-only response ack loop with explicit would-execute audit semantics;
 - VM recorder and benchmark matrix;
 - resource timeline with CPU/RSS/EPS/drop/signal counts.
 
@@ -40,14 +43,12 @@ Platform foundations:
 ## Near-Term Work
 
 1. Tighten endpoint contracts.
-   - Complete local control API symmetry.
-   - Add stream health/capacity visibility.
+   - Complete local control API symmetry beyond the current health, policy, content, event, signal, and explain paths.
    - Make Event/Signal ring buffer and cursor behavior explicit.
    - Keep scenario as legacy/demo only; prefer labels.
 
 2. Improve collection compiler.
    - Expand Tetragon selector coverage.
-   - Add capability/degrade/explain reports.
    - Keep collection behavior objective and sensor-neutral.
    - Continue reducing default collection noise.
 
@@ -58,7 +59,7 @@ Platform foundations:
 
 4. Response/enforce loop.
    - Keep observe-only by default.
-   - Add safe response commands and audit.
+   - Add safe response command payloads beyond would-execute audit.
    - Gate destructive actions behind explicit policy and authorization.
 
 5. Benchmark and diagnostics.
@@ -73,9 +74,11 @@ Platform foundations:
    - Remove file store from product paths.
    - Make policy, response, incident metadata, agent sessions, and cursors table-first.
 
-2. Agent Gateway.
-   - Replace old Link1 naming with Agent Gateway.
+2. Agent data/control plane.
+   - Use AgentDataService for DataBatch upload and ControlStream for control flow.
    - Provide durable upload, ack/resume, downlink, hot state, and identity.
+   - Treat mTLS certificate URI SAN as the production agent principal and bind it to tenant_id/agent_id in the manager registry.
+   - Keep local Unix socket sysarmorctl as a local operator/debug boundary, not a second production data plane.
    - Do not keep legacy compatibility interfaces once the new boundary is ready.
 
 3. Kafka ingest.

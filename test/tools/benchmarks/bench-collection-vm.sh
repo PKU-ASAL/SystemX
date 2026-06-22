@@ -163,8 +163,8 @@ for policy in $POLICIES_RAW; do
       exit 1
     }
   mark "$rec_run_id" policy_apply_done "$policy"
-  if ! grep -Fq 'resolved_refs' "$policy_out/collection-apply.json"; then
-    echo "[bench-collection-vm][ERROR] policy apply did not report resolved refs: $policy" >&2
+  if ! grep -Fq 'generated_policy_hash' "$policy_out/collection-apply.json" && ! grep -Fq 'resolved_refs' "$policy_out/collection-apply.json"; then
+    echo "[bench-collection-vm][ERROR] policy apply did not report generated policy details: $policy" >&2
     cat "$policy_out/collection-apply.json" >&2 2>/dev/null || true
     exit 1
   fi
@@ -184,6 +184,8 @@ for policy in $POLICIES_RAW; do
   cp "$rec_dir/timeline.csv" "$policy_out/timeline.csv"
   cp "$rec_dir/markers.ndjson" "$policy_out/markers.ndjson"
   cp "$rec_dir/summary.json" "$policy_out/summary.json"
+  cp "$rec_dir/events.ndjson" "$policy_out/events.ndjson" 2>/dev/null || true
+  cp "$rec_dir/signals.ndjson" "$policy_out/signals.ndjson" 2>/dev/null || true
 done
 
 python3 "$HERE/bench_collection_report.py" "$OUT_DIR"

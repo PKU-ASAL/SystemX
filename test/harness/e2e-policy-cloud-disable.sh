@@ -26,7 +26,8 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -95,43 +96,47 @@ wait_contains "effective policy" '"policy_id":"no-cross-incident"' "$RESULTS/e2e
 
 cat > "$TMP/batch.json" <<EOF
 {
-  "agent": {
-    "agent_id": "policy-agent",
-    "host_id": "policy-host",
-    "tenant_id": "default",
-    "version": "e2e"
+  "header": {
+    "batchId": "policy-cloud-disable-1",
+    "agentId": "policy-agent",
+    "hostId": "policy-host",
+    "tenantId": "default",
+    "signalCount": 2,
+    "labels": {"agent_version": "e2e"}
   },
   "signals": [
     {
-      "name": "payload_dropped",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 50,
-      "global_rarity": 1,
-      "lineage_id": "lin-drop",
-      "scenario": "$SCENARIO",
-      "entities": [{"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"}]
+      "sequence": 1,
+      "signal": {
+        "name": "payload_dropped",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 50,
+        "globalRarity": 1,
+        "lineageId": "lin-drop",
+        "scenario": "$SCENARIO",
+        "entities": [{"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"}]
+      }
     },
     {
-      "name": "suspicious_exec_connect",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 50,
-      "global_rarity": 1,
-      "lineage_id": "lin-connect",
-      "scenario": "$SCENARIO",
-      "entities": [
-        {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"},
-        {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
-      ]
+      "sequence": 2,
+      "signal": {
+        "name": "suspicious_exec_connect",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 50,
+        "globalRarity": 1,
+        "lineageId": "lin-connect",
+        "scenario": "$SCENARIO",
+        "entities": [
+          {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"},
+          {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
+        ]
+      }
     }
-  ],
-  "batch_id": "policy-cloud-disable-1"
+  ]
 }
 EOF
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/batch.json" > "$RESULTS/e2e-policy-cloud-disable.ack.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-policy-cloud-disable.ack.json"
 
 "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario "$SCENARIO" --layer cloud > "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"
 if grep -Fq 'dropped_payload_executed_and_connects' "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"; then

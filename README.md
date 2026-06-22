@@ -8,7 +8,7 @@ Current product path:
 agent-owned sensor runtime
   -> sysarmor-agent normalize + endpoint detection
   -> local sysarmorctl control/watch during endpoint refinement
-  -> Agent Gateway / manager / workers as the platform path matures
+  -> AgentDataService + ControlStream / manager / workers as the platform path matures
   -> incident, evidence, response, and benchmark workflows
 ```
 
@@ -67,6 +67,23 @@ Expected result:
 
 `test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored.
 
+## Data And Control Plane Contract
+
+Production agent-to-manager traffic is split into two gRPC services:
+
+- `AgentDataService.Upload(DataBatch)`: agent to manager data flow. Events and signals are uploaded as durable `DataBatch` units from the agent spool/WAL. A `DataAck` commits the batch cursor only when its status is `STATUS_ACCEPTED` or `STATUS_DUPLICATE`.
+- `AgentControlService.ControlStream`: bidirectional control flow. Agent frames carry health, capability, response acks, and evidence results. Server frames carry policy updates, resume cursors, response commands, evidence pullbacks, and structured rejected acks.
+
+Both services share the same production mTLS identity model. The preferred agent certificate identity is:
+
+```text
+spiffe://sysarmor.local/tenant/<tenant_id>/agent/<agent_id>
+```
+
+The manager checks the certificate identity against `DataBatch.header.tenant_id/agent_id` and `ControlStream.context.tenant_id/agent_id`, then binds the certificate principal into the agent registry. A later connection for the same tenant/agent with a different certificate principal is rejected.
+
+`sysarmorctl --agent-sock ...` is a local operator/debug boundary. It talks to the local agent over Unix socket gRPC and reads the local spool/WAL as a side channel for watch/query commands. Cloud or manager communication must use `AgentDataService` and `ControlStream`; local ctl is not a second production data plane.
+
 ## Useful Debug Commands
 
 Container manager:
@@ -92,6 +109,16 @@ Control recompute checks do not mutate the store:
 sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario apt-staged-drop --disable cloud.cross_lineage --json
 sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario benign-ci-noise --mode additive_threshold --json
 ```
+
+Endpoint policy explain and WAL health:
+
+```bash
+sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/policies/collection-edr-balanced.json
+sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/policies/collection-edr-balanced.json --report-only
+sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json agent health
+```
+
+`policy explain collection` performs a dry-run compile: it resolves content refs, reports backend mappings, pushdown/agent-side selectors, unsupported selectors, and detection coverage gaps without applying the policy. `agent health` includes spool/WAL backlog, cursor, watcher, backpressure, and upload drain status.
 
 ## Notes
 

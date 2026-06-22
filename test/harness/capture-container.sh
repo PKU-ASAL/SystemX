@@ -48,7 +48,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon

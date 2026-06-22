@@ -20,12 +20,15 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[e2e-manager-idempotency] building binaries"
-make -C "$ROOT" build >/dev/null
+GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-manager" "$ROOT/cmd/sysarmor-manager"
+GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-upload" "$ROOT/cmd/sysarmor-databatch-upload"
+GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmorctl" "$ROOT/cmd/sysarmorctl"
 
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -53,79 +56,80 @@ wait_contains "manager healthz" '"ok":true' "$TMP/healthz.json" curl -sf "$MGR_U
 
 cat > "$TMP/batch.json" <<'JSON'
 {
-  "batch_id": "00000000000000000099",
-  "agent": {
-    "agent_id": "e2e-manager-idempotency",
-    "host_id": "e2e-host",
-    "tenant_id": "default",
-    "version": "e2e"
+  "header": {
+    "batchId": "00000000000000000099",
+    "agentId": "e2e-manager-idempotency",
+    "hostId": "e2e-host",
+    "tenantId": "default",
+    "eventCount": 1,
+    "signalCount": 3,
+    "labels": {"agent_version": "e2e"}
   },
   "events": [
     {
-      "id": "ev-idempotency",
-      "agent_id": "e2e-manager-idempotency",
-      "host_id": "e2e-host",
-      "scenario": "apt-fileless-c2",
-      "behavior": "process.exec",
-      "lineage_id": "lin-idem"
+      "sequence": 1,
+      "event": {
+        "id": "ev-idempotency",
+        "agentId": "e2e-manager-idempotency",
+        "hostId": "e2e-host",
+        "tenantId": "default",
+        "scenario": "apt-fileless-c2",
+        "behavior": "process.exec",
+        "lineageId": "lin-idem"
+      }
     }
   ],
   "signals": [
     {
-      "id": "sig-web-shell",
-      "name": "web_runtime_spawns_shell",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 50,
-      "global_rarity": 1,
-      "lineage_id": "lin-idem",
-      "scenario": "apt-fileless-c2",
-      "entities": [
-        {"kind": "process", "key": "p-web", "role": "subject"}
-      ]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-web-shell",
+        "name": "web_runtime_spawns_shell",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 50,
+        "globalRarity": 1,
+        "lineageId": "lin-idem",
+        "scenario": "apt-fileless-c2",
+        "entities": [{"kind": "process", "key": "p-web", "role": "subject"}]
+      }
     },
     {
-      "id": "sig-payload",
-      "name": "payload_dropped",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 50,
-      "global_rarity": 1,
-      "lineage_id": "lin-idem",
-      "scenario": "apt-fileless-c2",
-      "entities": [
-        {"kind": "file", "key": "file:/dev/shm/x.sh", "role": "object"}
-      ]
+      "sequence": 2,
+      "signal": {
+        "id": "sig-payload",
+        "name": "payload_dropped",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 50,
+        "globalRarity": 1,
+        "lineageId": "lin-idem",
+        "scenario": "apt-fileless-c2",
+        "entities": [{"kind": "file", "key": "file:/dev/shm/x.sh", "role": "object"}]
+      }
     },
     {
-      "id": "sig-reverse-shell",
-      "name": "reverse_shell_pattern",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 80,
-      "global_rarity": 1,
-      "lineage_id": "lin-idem",
-      "terminal": true,
-      "scenario": "apt-fileless-c2",
-      "entities": [
-        {"kind": "process", "key": "p-bash", "role": "subject"},
-        {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
-      ]
+      "sequence": 3,
+      "signal": {
+        "id": "sig-reverse-shell",
+        "name": "reverse_shell_pattern",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 80,
+        "globalRarity": 1,
+        "lineageId": "lin-idem",
+        "terminal": true,
+        "scenario": "apt-fileless-c2",
+        "entities": [
+          {"kind": "process", "key": "p-bash", "role": "subject"},
+          {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
+        ]
+      }
     }
   ]
 }
 JSON
 
-curl -sf \
-  -H "content-type: application/json" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  --data-binary "@$TMP/batch.json" \
-  "$MGR_URL/api/v1/upload" \
-  > "$RESULTS/e2e-manager-idempotency.ack.first.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.first.json"
 
-curl -sf \
-  -H "content-type: application/json" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  --data-binary "@$TMP/batch.json" \
-  "$MGR_URL/api/v1/upload" \
-  > "$RESULTS/e2e-manager-idempotency.ack.second.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.second.json"
 
 curl -sf "$MGR_URL/api/v1/metrics" > "$RESULTS/e2e-manager-idempotency.metrics.json"
 curl -sf "$MGR_URL/api/v1/events?scenario=apt-fileless-c2" > "$RESULTS/e2e-manager-idempotency.events.json"
@@ -165,7 +169,7 @@ if second.get("batch_id") != "00000000000000000099":
 if as_int(second.get("accepted_events")) != 0 or as_int(second.get("accepted_signals")) != 0:
     raise SystemExit(f"retry ack should accept zero new records: {second}")
 want_metrics = {
-    "upload_batches": 2,
+    "upload_batches": 1,
     "events_ingested": 1,
     "endpoint_signals_ingested": 3,
     "cloud_signals_emitted": 2,

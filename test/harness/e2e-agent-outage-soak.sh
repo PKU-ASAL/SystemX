@@ -36,8 +36,8 @@ agent:
   token: $TOKEN
 
 manager:
-  address: $MGR_URL
-  transport: http
+  address: 127.0.0.1:$GRPC_PORT
+  transport: grpc
 
 sensor:
   backend: fake
@@ -112,7 +112,7 @@ cp "$TMP"/spool/*.batch.json "$RESULTS/e2e-agent-outage-soak.before/"
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!

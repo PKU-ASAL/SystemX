@@ -25,7 +25,8 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -51,22 +52,31 @@ wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/health
 
 cat > "$TMP/target.json" <<JSON
 {
-  "batch_id": "incident-merge-target-batch",
-  "agent": {"agent_id": "incident-merge-agent", "host_id": "incident-merge-host", "tenant_id": "default", "version": "e2e"},
+  "header": {
+    "batchId": "incident-merge-target-batch",
+    "agentId": "incident-merge-agent",
+    "hostId": "incident-merge-host",
+    "tenantId": "default",
+    "signalCount": 1,
+    "labels": {"agent_version": "e2e"}
+  },
   "signals": [
     {
-      "id": "sig-merge-target",
-      "name": "reverse_shell_pattern",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 80,
-      "global_rarity": 1,
-      "lineage_id": "lin-merge-target",
-      "terminal": true,
-      "scenario": "incident-merge-target",
-      "entities": [
-        {"kind": "process", "key": "process:p-target", "role": "subject"},
-        {"kind": "socket", "key": "socket:10.66.0.10:443", "role": "object"}
-      ]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-merge-target",
+        "name": "reverse_shell_pattern",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 80,
+        "globalRarity": 1,
+        "lineageId": "lin-merge-target",
+        "terminal": true,
+        "scenario": "incident-merge-target",
+        "entities": [
+          {"kind": "process", "key": "process:p-target", "role": "subject"},
+          {"kind": "socket", "key": "socket:10.66.0.10:443", "role": "object"}
+        ]
+      }
     }
   ]
 }
@@ -74,36 +84,39 @@ JSON
 
 cat > "$TMP/source.json" <<JSON
 {
-  "batch_id": "incident-merge-source-batch",
-  "agent": {"agent_id": "incident-merge-agent", "host_id": "incident-merge-host", "tenant_id": "default", "version": "e2e"},
+  "header": {
+    "batchId": "incident-merge-source-batch",
+    "agentId": "incident-merge-agent",
+    "hostId": "incident-merge-host",
+    "tenantId": "default",
+    "signalCount": 1,
+    "labels": {"agent_version": "e2e"}
+  },
   "signals": [
     {
-      "id": "sig-merge-source",
-      "name": "reverse_shell_pattern",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 80,
-      "global_rarity": 1,
-      "lineage_id": "lin-merge-source",
-      "terminal": true,
-      "scenario": "incident-merge-source",
-      "entities": [
-        {"kind": "process", "key": "process:p-source", "role": "subject"},
-        {"kind": "socket", "key": "socket:10.66.0.20:443", "role": "object"}
-      ]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-merge-source",
+        "name": "reverse_shell_pattern",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 80,
+        "globalRarity": 1,
+        "lineageId": "lin-merge-source",
+        "terminal": true,
+        "scenario": "incident-merge-source",
+        "entities": [
+          {"kind": "process", "key": "process:p-source", "role": "subject"},
+          {"kind": "socket", "key": "socket:10.66.0.20:443", "role": "object"}
+        ]
+      }
     }
   ]
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/target.json" > "$RESULTS/e2e-incident-merge.target-upload.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/target.json" > "$RESULTS/e2e-incident-merge.target-upload.json"
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/source.json" > "$RESULTS/e2e-incident-merge.source-upload.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/source.json" > "$RESULTS/e2e-incident-merge.source-upload.json"
 
 wait_contains "target incident" '"id":"inc-00000000000000000001"' "$RESULTS/e2e-incident-merge.target.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario incident-merge-target

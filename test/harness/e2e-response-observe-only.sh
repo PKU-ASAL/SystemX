@@ -28,7 +28,7 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store "$TMP/store.json" \
+  --store-backend memory \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -64,8 +64,8 @@ agent:
   tenant_id: default
   token: $TOKEN
 manager:
-  address: $MGR_URL
-  transport: http
+  address: 127.0.0.1:$GRPC_PORT
+  transport: grpc
 sensor:
   backend: fake
   mode: managed

@@ -26,8 +26,8 @@ make -C "$ROOT" build >/dev/null
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
   --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store-backend file \
-  --store "$TMP/store.json" \
+  --store-backend memory \
+  --local-ingest \
   --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
@@ -53,48 +53,53 @@ wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/health
 
 cat > "$TMP/batch.json" <<JSON
 {
-  "batch_id": "query-pagination-batch",
-  "agent": {
-    "agent_id": "query-pagination-agent",
-    "host_id": "query-pagination-host",
-    "tenant_id": "default",
-    "version": "e2e"
+  "header": {
+    "batchId": "query-pagination-batch",
+    "agentId": "query-pagination-agent",
+    "hostId": "query-pagination-host",
+    "tenantId": "default",
+    "eventCount": 3,
+    "signalCount": 2,
+    "labels": {"agent_version": "e2e"}
   },
   "events": [
-    {"id": "ev-page-1", "scenario": "$SCENARIO", "behavior": "process.exec"},
-    {"id": "ev-page-2", "scenario": "$SCENARIO", "behavior": "file.open"},
-    {"id": "ev-page-3", "scenario": "$SCENARIO", "behavior": "network.connect"}
+    {"sequence": 1, "event": {"id": "ev-page-1", "agentId": "query-pagination-agent", "hostId": "query-pagination-host", "tenantId": "default", "scenario": "$SCENARIO", "behavior": "process.exec"}},
+    {"sequence": 2, "event": {"id": "ev-page-2", "agentId": "query-pagination-agent", "hostId": "query-pagination-host", "tenantId": "default", "scenario": "$SCENARIO", "behavior": "file.open"}},
+    {"sequence": 3, "event": {"id": "ev-page-3", "agentId": "query-pagination-agent", "hostId": "query-pagination-host", "tenantId": "default", "scenario": "$SCENARIO", "behavior": "network.connect"}}
   ],
   "signals": [
     {
-      "id": "sig-page-1",
-      "name": "payload_dropped",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 40,
-      "global_rarity": 1,
-      "lineage_id": "lin-page-1",
-      "scenario": "$SCENARIO",
-      "entities": [{"kind": "file", "key": "file:/tmp/a", "role": "object"}]
+      "sequence": 1,
+      "signal": {
+        "id": "sig-page-1",
+        "name": "payload_dropped",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 40,
+        "globalRarity": 1,
+        "lineageId": "lin-page-1",
+        "scenario": "$SCENARIO",
+        "entities": [{"kind": "file", "key": "file:/tmp/a", "role": "object"}]
+      }
     },
     {
-      "id": "sig-page-2",
-      "name": "reverse_shell_pattern",
-      "where": "SIGNAL_WHERE_ENDPOINT",
-      "base_risk": 80,
-      "global_rarity": 1,
-      "lineage_id": "lin-page-2",
-      "terminal": true,
-      "scenario": "$SCENARIO",
-      "entities": [{"kind": "process", "key": "process:p-bash", "role": "subject"}]
+      "sequence": 2,
+      "signal": {
+        "id": "sig-page-2",
+        "name": "reverse_shell_pattern",
+        "where": "SIGNAL_WHERE_ENDPOINT",
+        "baseRisk": 80,
+        "globalRarity": 1,
+        "lineageId": "lin-page-2",
+        "terminal": true,
+        "scenario": "$SCENARIO",
+        "entities": [{"kind": "process", "key": "process:p-bash", "role": "subject"}]
+      }
     }
   ]
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/upload" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$TMP/batch.json" > "$RESULTS/e2e-query-pagination.upload.json"
+"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-query-pagination.upload.json"
 
 "$BIN/sysarmorctl" --mgr "$MGR_URL" --json events \
   --scenario "$SCENARIO" --limit 1 --offset 1 > "$RESULTS/e2e-query-pagination.events.json"

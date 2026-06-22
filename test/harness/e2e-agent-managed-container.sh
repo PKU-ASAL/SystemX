@@ -61,7 +61,7 @@ agent:
 
 manager:
   address: http://127.0.0.1:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon
