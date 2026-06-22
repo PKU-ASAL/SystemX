@@ -76,14 +76,14 @@ for want in '"response_id":"resp-approval-collect"' '"status":"pending_approval"
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json responses --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-approval.pending-before.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-approval.pending-before.json"
 if grep -Fq 'resp-approval-collect' "$RESULTS/e2e-response-approval.pending-before.json"; then
   echo "[e2e-response-approval][ERROR] pending_approval command is pending before approval" >&2
   cat "$RESULTS/e2e-response-approval.pending-before.json" >&2
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json response-approval \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager response approve \
   --tenant-id default \
   --agent-id "$AGENT_ID" \
   --response-id resp-approval-collect \
@@ -98,7 +98,7 @@ for want in '"response_id":"resp-approval-collect"' '"status":"pending"' '"appro
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json responses --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-approval.pending-after.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-approval.pending-after.json"
 if ! grep -Fq '"response_id":"resp-approval-collect"' "$RESULTS/e2e-response-approval.pending-after.json"; then
   echo "[e2e-response-approval][ERROR] approved command is not pending" >&2
   cat "$RESULTS/e2e-response-approval.pending-after.json" >&2

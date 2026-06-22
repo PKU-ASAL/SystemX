@@ -190,7 +190,11 @@ CREATE TABLE IF NOT EXISTS control_commands (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   sent_at TIMESTAMPTZ,
+  last_sent_at TIMESTAMPTZ,
   acked_at TIMESTAMPTZ,
+  canceled_at TIMESTAMPTZ,
+  expired_at TIMESTAMPTZ,
+  attempt_count BIGINT NOT NULL DEFAULT 0,
   data JSONB NOT NULL,
   PRIMARY KEY (tenant_id, command_id)
 );

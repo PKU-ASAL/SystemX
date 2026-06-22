@@ -90,7 +90,7 @@ EOF
 AGENT_PID=$!
 
 wait_contains "agent health" '"agent_id":"response-agent"' "$RESULTS/e2e-response-observe-only.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --tenant-id default --agent-id "$AGENT_ID"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --tenant-id default --agent-id "$AGENT_ID"
 
 cat > "$TMP/response.json" <<JSON
 {
@@ -112,7 +112,7 @@ curl -sf -X POST "$MGR_URL/api/v1/responses" \
 wait_contains "agent ack log" 'agent response ack: response=resp-observe-1 action=collect observe_only=true' "$RESULTS/e2e-response-observe-only.agent-ack.txt" \
   grep -F 'agent response ack: response=resp-observe-1 action=collect observe_only=true' "$TMP/agent.log"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json responses --tenant-id default --agent-id "$AGENT_ID" > "$RESULTS/e2e-response-observe-only.audit.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" > "$RESULTS/e2e-response-observe-only.audit.json"
 for want in '"response_id":"resp-observe-1"' '"status":"acked"' '"observe_only":true' '"executed":false'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-response-observe-only.audit.json"; then
     echo "[e2e-response-observe-only][ERROR] audit missing $want" >&2

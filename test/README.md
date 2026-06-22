@@ -33,7 +33,7 @@ sysarmor-agent run --config ...
   -> agent-owned Tetragon + tetra getevents
   -> normalize + endpoint detection engine
   -> durable spool WAL
-  -> sysarmorctl --agent-sock /var/run/sysarmor/agent.sock
+  -> sysarmorctl --socket /var/run/sysarmor/agent.sock
   -> harness/assert-vm-local.sh
 ```
 
@@ -43,13 +43,13 @@ sysarmor-agent run --config ...
 sysarmor-agent
   -> durable spool + data batch dispatcher
   -> sysarmor-manager AgentDataPlaneService AppendBatch(DataBatch) / analytics / store
-  -> sysarmorctl JSON query
+  -> sysarmorctl manager ... JSON query
   -> harness/assert.py
 ```
 
 Data append has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-append` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
 
-`sysarmorctl --agent-sock` is a local-only side channel over Unix socket gRPC. Its watch/get tests observe the agent spool/WAL and do not exercise the cloud manager data plane. Cloud manager control behavior is covered by `AgentControlPlaneService.Connect` contract tests.
+`sysarmorctl --socket` is a local-only side channel over Unix socket gRPC. Its watch/get tests observe the agent spool/WAL and do not exercise the cloud manager data plane. Cloud manager control behavior is covered by `AgentControlPlaneService.Connect` contract tests.
 
 ## Agent mTLS Identity
 
@@ -83,9 +83,19 @@ Stable DataAck error classes are intentionally small. Duplicate batches return `
 
 `AgentControlPlaneService.Connect` frames use `contract_version=1` and require `request_id`. Agent-to-manager sequence numbers are per stream, start at `1`, and must strictly increase. Replays return a rejected ack with `ControlError.code=AlreadyExists`; sequence gaps return `ControlError.code=FailedPrecondition`. If an agent retries the same `request_id` with a new valid sequence, the manager returns the previous response without re-running the command. Server-to-agent frames also carry per-stream monotonically increasing `sequence` values. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
 
-Local `sysarmorctl --agent-sock` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataPlaneService` for data flow and `AgentControlPlaneService.Connect` for control flow.
+Local `sysarmorctl --socket` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataPlaneService` for data flow and `AgentControlPlaneService.Connect` for control flow.
 
 `sysarmorctl` keeps local agent operations at the top level (`agent`, `policy`, `content`, `event`, `signal`). Manager HTTP administration is explicit under `manager`, for example `sysarmorctl manager policies assign --agent agent-a --policy-id edr-balanced --version 3 --downlink` or `sysarmorctl manager control-commands create content --agent agent-a --file ioc.json`. Policy publish/assignment APIs represent desired state; a persisted `ControlCommand` is created only when an operator explicitly asks for downlink delivery.
+
+Common manager query examples:
+
+```bash
+sysarmorctl --manager-url http://127.0.0.1:9443 --json manager agents list
+sysarmorctl --manager-url http://127.0.0.1:9443 --json manager health get --agent-id agent-a --tenant-id default
+sysarmorctl --manager-url http://127.0.0.1:9443 --json manager signals list --scenario apt-fileless-c2 --layer endpoint
+sysarmorctl --manager-url http://127.0.0.1:9443 --json manager control-commands cancel --command-id ctrl-a --agent agent-a --reason "bad rollout"
+sysarmorctl --manager-url http://127.0.0.1:9443 --json manager roles upsert --actor alice --roles policy_admin,control_admin
+```
 
 The table-form contract is maintained in `references/docs/agent-manager-contract.md`.
 

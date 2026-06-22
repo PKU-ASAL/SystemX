@@ -94,11 +94,11 @@ wait_contains() {
 }
 
 wait_contains "agent-health" '"backend":"tetragon"' "$RESULTS/e2e-agent-apt-container.health.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-managed --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-node-a-managed --tenant-id default
 wait_contains "agent-health installed" '"installed":true' "$RESULTS/e2e-agent-apt-container.health.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-managed --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-node-a-managed --tenant-id default
 deadline=$((SECONDS + 30))
-until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
   if (( SECONDS >= deadline )); then
     echo "[e2e-agent-apt-container][ERROR] managed Tetra subscription did not become ready" >&2
     docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
@@ -113,19 +113,19 @@ C2="$C2" bash "$ROOT/scenarios/container/apt-fileless-c2/attack.sh"
 sleep "$DUR"
 
 wait_contains "scenario events" "\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-apt-container.events.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json events --scenario "$SCENARIO"
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --scenario "$SCENARIO"
 wait_contains "endpoint reverse shell signal" 'reverse_shell_pattern' "$RESULTS/e2e-agent-apt-container.signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer endpoint
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --layer endpoint
 wait_contains "endpoint payload signal" 'payload_dropped' "$RESULTS/e2e-agent-apt-container.signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer endpoint
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --layer endpoint
 wait_contains "cloud dropped/connect signal" 'dropped_payload_executed_and_connects' "$RESULTS/e2e-agent-apt-container.cloud-signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer cloud
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --layer cloud
 wait_contains "cloud web shell signal" 'web_shell_chain' "$RESULTS/e2e-agent-apt-container.cloud-signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer cloud
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --layer cloud
 wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-agent-apt-container.incidents.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json incidents --scenario "$SCENARIO"
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list --scenario "$SCENARIO"
 wait_contains "incident converge" '"method":"rarity+causal-topk"' "$RESULTS/e2e-agent-apt-container.incidents.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json incidents --scenario "$SCENARIO"
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list --scenario "$SCENARIO"
 
 docker exec tetragon cat "$WORK/agent.log" > "$RESULTS/e2e-agent-apt-container.agent.log"
 

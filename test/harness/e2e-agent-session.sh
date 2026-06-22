@@ -77,7 +77,7 @@ JSON
   "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/$batch.json" > "$RESULTS/e2e-agent-session.$batch.data_plane.json"
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-sessions \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager sessions list \
   --tenant-id default \
   --agent-id agent-session-agent > "$RESULTS/e2e-agent-session.sessions.json"
 
@@ -94,7 +94,7 @@ if grep -Fq '"last_ack_cursor":"agent-session-batch-1"' "$RESULTS/e2e-agent-sess
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json data-resume \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager resume get \
   --tenant-id default \
   --agent-id agent-session-agent > "$RESULTS/e2e-agent-session.resume.json"
 if ! grep -Fq '"resume_cursor":"agent-session-batch-2"' "$RESULTS/e2e-agent-session.resume.json"; then

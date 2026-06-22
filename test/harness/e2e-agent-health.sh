@@ -100,27 +100,27 @@ wait_contains "manager healthz" '"ok":true' "$TMP/healthz.json" curl -sf "$MGR_U
 AGENT_PID=$!
 
 wait_contains "sysarmorctl agents" "e2e-agent-health" "$RESULTS/e2e-agent-health.agents.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list
 wait_contains "sysarmorctl agents tenant" '"tenant_id":"default"' "$RESULTS/e2e-agent-health.agents.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list
 wait_contains "sysarmorctl agents health status" '"health_status":"ok"' "$RESULTS/e2e-agent-health.agents.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list
 wait_contains "sysarmorctl agents scope" '"scope":{"type":"container","selector":"e2e-scope"}' "$RESULTS/e2e-agent-health.agents.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list
 wait_contains "sysarmorctl agents filtered" '"agent_id":"e2e-agent-health"' "$RESULTS/e2e-agent-health.agents-filtered.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
 wait_contains "sysarmorctl agents filtered scope" '"scope":{"type":"container","selector":"e2e-scope"}' "$RESULTS/e2e-agent-health.agents-filtered.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
 wait_contains "sysarmorctl agents filtered capability" '"sensor_capability"' "$RESULTS/e2e-agent-health.agents-filtered.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agents --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager agents list --tenant-id default --scope-type container --scope-selector e2e-scope --health-status ok
 wait_contains "sysarmorctl agent-health" '"agent_id":"e2e-agent-health"' "$RESULTS/e2e-agent-health.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-health.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl agent-health scope type" '"scope":{"type":"container","selector":"e2e-scope"}' "$RESULTS/e2e-agent-health.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-health --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-health --tenant-id default
 wait_contains "sysarmorctl metrics" '"events_ingested":1' "$RESULTS/e2e-agent-health.metrics.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json metrics
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager metrics
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-health.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-health.manager.log"

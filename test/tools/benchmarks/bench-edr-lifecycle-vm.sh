@@ -80,7 +80,7 @@ mark content_apply_start
 vagrant upload "$REPO/$CONTENT_DIR" /tmp/sysarmor-life-content node-a >/dev/null
 for content in "$REPO/$CONTENT_DIR"/*.json; do
   name="$(basename "$content")"
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-life-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-life-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
     > "$OUT_DIR/content.$name.apply.json" 2>"$OUT_DIR/content.$name.apply.err" || {
       echo "[bench-edr-lifecycle-vm][ERROR] content apply failed: $name" >&2
       exit 1
@@ -90,7 +90,7 @@ mark content_apply_done
 
 mark policy_apply_start "$POLICY"
 vagrant upload "$REPO/$POLICY" /tmp/sysarmor-life-policy node-a >/dev/null
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-life-policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-life-policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
   > "$OUT_DIR/collection-apply.json" 2>"$OUT_DIR/collection-apply.err" || {
     echo "[bench-edr-lifecycle-vm][ERROR] policy apply failed" >&2
     cat "$OUT_DIR/collection-apply.err" >&2 2>/dev/null || true

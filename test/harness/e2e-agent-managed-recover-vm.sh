@@ -146,17 +146,17 @@ wait_contains() {
 }
 
 wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-managed-recover-vm.degraded.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed-recover --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed-recover --tenant-id default"
 wait_contains "agent-health recovered" '"status":"ok"' "$RESULTS/e2e-agent-managed-recover-vm.recovered.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed-recover --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed-recover --tenant-id default"
 wait_contains "agent-health running" '"running":true' "$RESULTS/e2e-agent-managed-recover-vm.recovered.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed-recover --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed-recover --tenant-id default"
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-managed-recover-vm.recovered.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed-recover --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed-recover --tenant-id default"
 wait_contains "agent-health restart count" '"restart_count":3' "$RESULTS/e2e-agent-managed-recover-vm.recovered.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed-recover --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed-recover --tenant-id default"
 wait_contains "metrics" '"events_ingested":' "$RESULTS/e2e-agent-managed-recover-vm.metrics.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json metrics"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics"
 
 COUNT="$(vagrant ssh node-a -c "cat /tmp/sysarmor-managed-recover-vm-tetragon-count 2>/dev/null || true" 2>/dev/null | tr -d '\r' | tail -1)"
 if [[ "$COUNT" != "2" ]]; then

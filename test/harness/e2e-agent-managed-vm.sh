@@ -140,13 +140,13 @@ wait_contains() {
 }
 
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-managed-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed --tenant-id default"
 wait_contains "agent-health installed" '"installed":true' "$RESULTS/e2e-agent-managed-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed --tenant-id default"
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-managed-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-agent-managed --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-agent-managed --tenant-id default"
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-managed-vm.metrics.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json metrics"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics"
 
 COUNT="$(vagrant ssh node-a -c "cat /tmp/sysarmor-managed-vm-tetragon-count 2>/dev/null || true" 2>/dev/null | tr -d '\r' | tail -1)"
 if [[ "$COUNT" != "1" ]]; then

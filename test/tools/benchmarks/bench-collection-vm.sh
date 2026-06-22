@@ -125,7 +125,7 @@ vagrant upload "$REPO/$CONTENT_DIR" /tmp/sysarmor-bench-content node-a >/dev/nul
 
 for content in "$REPO/$CONTENT_DIR"/*.json; do
   name="$(basename "$content")"
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
     > "$OUT_DIR/content.$name.apply.json" \
     2>"$OUT_DIR/content.$name.apply.err" || {
       echo "[bench-collection-vm][ERROR] content apply failed: $name" >&2
@@ -155,7 +155,7 @@ for policy in $POLICIES_RAW; do
   echo "[bench-collection-vm] applying policy: $policy"
   mark "$rec_run_id" policy_apply_start "$policy"
   vagrant upload "$REPO/$policy" "/tmp/sysarmor-bench-$name.policy" node-a >/dev/null
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json policy apply collection --file '/tmp/sysarmor-bench-$name.policy' --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply collection --file '/tmp/sysarmor-bench-$name.policy' --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
     > "$policy_out/collection-apply.json" \
     2>"$policy_out/collection-apply.err" || {
       echo "[bench-collection-vm][ERROR] policy apply failed: $policy" >&2

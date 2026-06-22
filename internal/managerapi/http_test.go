@@ -868,6 +868,94 @@ func TestPolicyAssignmentDownlinkCreatesPolicyUpdateCommand(t *testing.T) {
 	}
 }
 
+func TestPolicyAssignmentDownlinkRequiresControlAdmin(t *testing.T) {
+	st := &store.Store{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID = "downlink-auth-policy"
+	policy.Version = 1
+	policy.Published = true
+	st.UpsertPolicy(policy)
+	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+
+	body := `{"tenant_id":"default","agent_id":"agent-a","policy_id":"downlink-auth-policy","policy_version":1,"downlink":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(body))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "policy_admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("downlink with policy_admin only status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(body))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "policy_admin,control_admin")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"control_command"`) {
+		t.Fatalf("downlink with control_admin status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestControlCommandActionsUpdateLifecycle(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServer(st).Handler()
+	st.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID:   "ctrl-action",
+		TenantID:    "default",
+		AgentID:     "agent-a",
+		Type:        controlmodel.ControlCommandTypeContentUpdate,
+		PayloadJSON: []byte(`{"kind":"iocpack"}`),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
+		"action":"cancel",
+		"command_id":"ctrl-action",
+		"tenant_id":"default",
+		"agent_id":"agent-a",
+		"actor":"operator",
+		"reason":"bad rollout"
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"canceled"`) || !strings.Contains(rec.Body.String(), `"error":"bad rollout"`) {
+		t.Fatalf("cancel status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending after cancel = %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
+		"action":"retry",
+		"command_id":"ctrl-action",
+		"tenant_id":"default",
+		"agent_id":"agent-a",
+		"actor":"operator",
+		"reason":"retry rollout"
+	}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"pending"`) || !strings.Contains(rec.Body.String(), `"reason":"retry rollout"`) {
+		t.Fatalf("retry status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 1 || got[0].CommandID != "ctrl-action" {
+		t.Fatalf("pending after retry = %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
+		"action":"expire",
+		"command_id":"ctrl-action",
+		"tenant_id":"default",
+		"agent_id":"agent-a",
+		"reason":"ttl elapsed"
+	}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"expired"`) || !strings.Contains(rec.Body.String(), `"error":"ttl elapsed"`) {
+		t.Fatalf("expire status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestOperatorRoleBindingsAuthorizeControlPlaneWrites(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()

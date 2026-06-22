@@ -8,7 +8,7 @@ This document is the stable contract for production agent-manager traffic.
 |---|---|---|---|
 | Data | Agent -> Manager | `AgentDataPlaneService.AppendBatch(DataBatch)` | Append durable event/signal batches from the agent spool/WAL. |
 | Control | Bidirectional | `AgentControlPlaneService.Connect` | Agent health/capability/acks/results and manager policy/content/response/evidence commands. |
-| Local operator | Local only | Unix socket gRPC | `sysarmorctl --agent-sock` debug/operator side channel over local spool/WAL. |
+| Local operator | Local only | Unix socket gRPC | `sysarmorctl --socket` debug/operator side channel over local spool/WAL. |
 
 Production data and control traffic use gRPC with mTLS. Local ctl is not a production cloud data plane.
 
@@ -20,7 +20,7 @@ tools/pki/gen-agent-plane-mtls.sh ./pki default agent-prod-001 sysarmor-manager.
 
 ## Local Operator Boundary
 
-`sysarmorctl --agent-sock` talks to the local agent over Unix socket gRPC. It is intentionally a local operator/debug side channel:
+`sysarmorctl --socket` talks to the local agent over Unix socket gRPC. It is intentionally a local operator/debug side channel:
 
 - it does not send data to the cloud manager;
 - watch/get commands read the same local `AgentSpool` WAL used by the data plane;
@@ -79,6 +79,41 @@ The production agent runner uses a long-lived `AgentControlPlaneService.Connect`
 7. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.
 
 The `policy_update` returned during `hello` synchronizes the current effective policy for the session. Policy publish and assignment APIs update desired state; they do not imply an immediate control downlink by default. When an operator needs immediate delivery, the manager creates a persisted `ControlCommand` either through `/api/v1/control-commands` or by using `downlink=true` on an agent-specific policy assignment. A command uses `command_id` as the control-frame `request_id`; manager records `pending -> sent -> applied/rejected/failed` status, actor, reason, immutable payload JSON, send time, ack time, ack message, and error text. This makes content and policy downlinks auditable without adding a second control path.
+
+### ControlCommand Lifecycle
+
+| Status | Meaning | Next normal transition |
+|---|---|---|
+| `pending` | Persisted and eligible for manager delivery on `AgentControlPlaneService.Connect`. | `sent`, `canceled`, `expired` |
+| `sent` | Written to the control stream at least once. `attempt_count` and `last_sent_at` are updated on each send. | `applied`, `rejected`, `failed`, `canceled`, `expired` |
+| `applied` | Agent accepted and applied the command. Terminal. | none |
+| `rejected` | Agent rejected the payload or policy/content build. Terminal unless operator retries. | `pending` via retry |
+| `failed` | Agent attempted execution but failed. Terminal unless operator retries. | `pending` via retry |
+| `canceled` | Operator canceled an undelivered or in-flight command. Terminal unless operator retries. | `pending` via retry |
+| `expired` | Manager expired an undelivered or in-flight command. Terminal unless operator retries. | `pending` via retry |
+
+Manager API actions use the same audit object:
+
+| Action | API | Required role | Effect |
+|---|---|---|---|
+| create | `POST /api/v1/control-commands` | `control_admin` | Create `pending` `policy_update` or `content_update`. |
+| cancel | `POST /api/v1/control-commands {"action":"cancel"}` | `control_admin` | Mark non-terminal command `canceled`. |
+| retry | `POST /api/v1/control-commands {"action":"retry"}` | `control_admin` | Move rejected/failed/canceled/expired/sent command back to `pending`; `applied` is not retried. |
+| expire | `POST /api/v1/control-commands {"action":"expire"}` | `control_admin` | Mark non-terminal command `expired`. |
+
+## Manager API Role Matrix
+
+Manager HTTP APIs are an operator/admin surface, not the agent data/control transport. Read APIs are query surfaces; write APIs require explicit operator roles.
+
+| Role | Write APIs | Purpose |
+|---|---|---|
+| `admin` | `POST /api/v1/reset`, `POST /api/v1/operator-role-bindings` | Platform administration and role binding. |
+| `policy_admin` | `POST /api/v1/policies`, `POST /api/v1/policy-publish`, `POST /api/v1/policy-assignments` | Desired-state policy lifecycle. |
+| `control_admin` | `POST /api/v1/control-commands`, policy assignment with `downlink=true` | Auditable agent downlink operations. |
+| `responder` | `POST /api/v1/responses`, `POST /api/v1/response-decisions`, `POST /api/v1/response-approvals` | Endpoint response decision and approval workflow. |
+| `incident_admin` | `POST /api/v1/incident-lifecycle`, `POST /api/v1/incident-evidence`, `POST /api/v1/incident-merge`, `POST /api/v1/evidence-pullbacks` | Incident operations, evidence mutation, and pullback requests. |
+
+`X-SysArmor-Operator-Token` authenticates operator writes when configured. `X-SysArmor-Actor` identifies the operator principal. `X-SysArmor-Role` must match either an explicitly presented role or a stored role binding for the actor.
 
 ## Detection Hot Update
 

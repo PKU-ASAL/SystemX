@@ -98,9 +98,9 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-graph-evidence.data_plane.json"
 
 wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-graph-evidence.incidents.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence --scenario "$SCENARIO" > "$RESULTS/e2e-graph-evidence.evidence.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence --scenario "$SCENARIO" > "$RESULTS/e2e-graph-evidence.evidence.json"
 for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:443"' '"from":"file:/var/lib/app/plugins/helper"' '"to":"socket:10.66.0.99:443"' '"kind":"connect"'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-graph-evidence.evidence.json"; then
     echo "[e2e-graph-evidence][ERROR] evidence missing $want" >&2
@@ -109,7 +109,7 @@ for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:4
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence \
   --scenario "$SCENARIO" \
   --path-from "file:/var/lib/app/plugins/helper" \
   --path-to "socket:10.66.0.99:443" > "$RESULTS/e2e-graph-evidence.path.json"
@@ -121,7 +121,7 @@ for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:4
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence \
   --scenario "$SCENARIO" \
   --seed "file:/var/lib/app/plugins/helper" \
   --hops 1 > "$RESULTS/e2e-graph-evidence.khop.json"

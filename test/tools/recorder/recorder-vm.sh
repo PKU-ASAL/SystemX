@@ -136,8 +136,8 @@ label_args() {
 }
 LABEL_ARGS=()
 label_args \"\$LABELS\"
-sudo sysarmorctl --agent-sock \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_EVENTS_NDJSON\" 2>/dev/null || true
-sudo sysarmorctl --agent-sock \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_SIGNALS_NDJSON\" 2>/dev/null || true
+sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_EVENTS_NDJSON\" 2>/dev/null || true
+sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_SIGNALS_NDJSON\" 2>/dev/null || true
 EVENT_CURSOR=\"\$(max_sequence \"\$CURSOR_EVENTS_NDJSON\")\"
 SIGNAL_CURSOR=\"\$(max_sequence \"\$CURSOR_SIGNALS_NDJSON\")\"
 pid_list() {
@@ -205,9 +205,9 @@ while [ \"\$elapsed\" -le \"\$DUR\" ]; do
   prev_sample_epoch=\"\$sample_epoch\"
   agent_active=\"\$(systemctl is-active sysarmor-agent 2>/dev/null || true)\"
   if pidof tetragon >/dev/null 2>&1 || pidof sysarmor-sensor >/dev/null 2>&1; then sensor_running=1; else sensor_running=0; fi
-  sudo sysarmorctl --agent-sock \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || true
-  sudo sysarmorctl --agent-sock \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$EVENTS_NDJSON\" 2>/dev/null || true
-  sudo sysarmorctl --agent-sock \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SIGNALS_NDJSON\" 2>/dev/null || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$EVENTS_NDJSON\" 2>/dev/null || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SIGNALS_NDJSON\" 2>/dev/null || true
   events=\"\$(num_json sensor.eventsSeen \"\$HEALTH_JSON\")\"
   events_scoped=\"\$(wc -l <\"\$EVENTS_NDJSON\" 2>/dev/null || echo 0)\"
   signals_scoped=\"\$(wc -l <\"\$SIGNALS_NDJSON\" 2>/dev/null || echo 0)\"

@@ -123,11 +123,11 @@ if [[ "$AGENT_RC" -eq 0 ]]; then
 fi
 
 wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-capability.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-capability --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability --tenant-id default
 wait_contains "agent-health stopped" '"running":false' "$RESULTS/e2e-agent-capability.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-capability --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability --tenant-id default
 wait_contains "agent-health startup error" 'checksum mismatch' "$RESULTS/e2e-agent-capability.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-capability --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability --tenant-id default
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-capability.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-capability.manager.log"

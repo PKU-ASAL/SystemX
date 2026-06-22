@@ -58,7 +58,7 @@ wait_payload_count() {
   local out="$2"
   local deadline=$((SECONDS + 10))
   while true; do
-    "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario "$SCENARIO" --layer endpoint > "$out"
+    "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario "$SCENARIO" --layer endpoint > "$out"
     local got
     got="$({ grep -o 'payload_dropped' "$out" || true; } | wc -l | tr -d ' ')"
     if [[ "$got" == "$want" ]]; then
@@ -173,7 +173,7 @@ sleep 0.6
 wait_payload_count 1 "$RESULTS/e2e-policy-agent-refresh.signals-after.json"
 
 wait_contains "agent health refreshed policy" '"policy_id":"no-payload-after-refresh"' "$RESULTS/e2e-policy-agent-refresh.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --tenant-id default --agent-id "$AGENT_ID"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --tenant-id default --agent-id "$AGENT_ID"
 if ! grep -Fq '"policy_version":2' "$RESULTS/e2e-policy-agent-refresh.health.json"; then
   echo "[e2e-policy-agent-refresh][ERROR] health missing refreshed policy version" >&2
   cat "$RESULTS/e2e-policy-agent-refresh.health.json" >&2

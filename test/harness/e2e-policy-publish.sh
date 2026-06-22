@@ -98,7 +98,7 @@ if [[ "$status" != "400" ]]; then
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json policy-publish \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager policies publish \
   --tenant-id default \
   --policy-id draft-policy \
   --version 2 \
@@ -118,14 +118,14 @@ curl -sf -X POST "$MGR_URL/api/v1/policy-assignments" \
   --data-binary @"$TMP/assignment.json" > "$RESULTS/e2e-policy-publish.assignment-after.json"
 
 wait_contains "effective policy" '"policy_id":"draft-policy"' "$RESULTS/e2e-policy-publish.effective.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json effective-policy --tenant-id default --agent-id "$AGENT_ID"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager policies effective --tenant-id default --agent-id "$AGENT_ID"
 if ! grep -Fq '"published":true' "$RESULTS/e2e-policy-publish.effective.json"; then
   echo "[e2e-policy-publish][ERROR] effective policy is not published" >&2
   cat "$RESULTS/e2e-policy-publish.effective.json" >&2
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json policy-audit \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager policies audit \
   --tenant-id default \
   --policy-id draft-policy > "$RESULTS/e2e-policy-publish.audit.json"
 

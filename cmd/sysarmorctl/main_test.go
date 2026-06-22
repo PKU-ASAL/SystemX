@@ -39,12 +39,18 @@ func TestQueryAgentsFilters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := query(server.URL, []string{"agents", "--tenant-id", "default", "--scope-type", "container", "--scope-selector", "abc123", "--health-status", "ok"}); err != nil {
+	if _, err := query(server.URL, []string{"manager", "agents", "list", "--tenant-id", "default", "--scope-type", "container", "--scope-selector", "abc123", "--health-status", "ok"}); err != nil {
 		t.Fatalf("query() error = %v", err)
 	}
 	want := "/api/v1/agents?health_status=ok&scope_selector=abc123&scope_type=container&tenant_id=default"
 	if gotPath != want {
 		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+}
+
+func TestTopLevelManagerCommandsRequireManagerNamespace(t *testing.T) {
+	if _, err := query("http://127.0.0.1:9443", []string{"agents"}); err == nil || !strings.Contains(err.Error(), "manager namespace") {
+		t.Fatalf("query old top-level command error = %v", err)
 	}
 }
 
@@ -56,14 +62,14 @@ func TestQueryPolicyCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := query(server.URL, []string{"rules", "--where", "cloud"}); err != nil {
+	if _, err := query(server.URL, []string{"manager", "rules", "list", "--where", "cloud"}); err != nil {
 		t.Fatalf("rules query error = %v", err)
 	}
 	if gotPath != "/api/v1/rules?where=cloud" {
 		t.Fatalf("rules path = %q", gotPath)
 	}
 
-	if _, err := query(server.URL, []string{"effective-policy", "--tenant-id", "default", "--agent-id", "agent-a", "--scope-type", "container", "--scope-selector", "abc123"}); err != nil {
+	if _, err := query(server.URL, []string{"manager", "policies", "effective", "--tenant-id", "default", "--agent-id", "agent-a", "--scope-type", "container", "--scope-selector", "abc123"}); err != nil {
 		t.Fatalf("effective-policy query error = %v", err)
 	}
 	want := "/api/v1/effective-policy?agent_id=agent-a&scope_selector=abc123&scope_type=container&tenant_id=default"
@@ -80,7 +86,7 @@ func TestQueryRarityBaseline(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := query(server.URL, []string{"rarity-baseline", "--workload", "container:checkout-api", "--signal", "download_by_lolbin"}); err != nil {
+	if _, err := query(server.URL, []string{"manager", "rarity", "baseline", "--workload", "container:checkout-api", "--signal", "download_by_lolbin"}); err != nil {
 		t.Fatalf("rarity-baseline query error = %v", err)
 	}
 	want := "/api/v1/rarity-baseline?signal=download_by_lolbin&workload=container%3Acheckout-api"
@@ -109,8 +115,8 @@ func TestOperatorRoleBindingsCommand(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := query(server.URL, []string{"operator-role-bindings", "--upsert", "--actor", "alice", "--roles", "policy_admin,responder"}); err != nil {
-		t.Fatalf("operator-role-bindings upsert error = %v", err)
+	if _, err := query(server.URL, []string{"manager", "roles", "upsert", "--actor", "alice", "--roles", "policy_admin,responder"}); err != nil {
+		t.Fatalf("roles upsert error = %v", err)
 	}
 	if gotMethod != http.MethodPost || gotPath != "/api/v1/operator-role-bindings" {
 		t.Fatalf("upsert method/path = %s %s", gotMethod, gotPath)
@@ -123,8 +129,8 @@ func TestOperatorRoleBindingsCommand(t *testing.T) {
 		t.Fatalf("roles = %#v", gotBody["roles"])
 	}
 
-	if _, err := query(server.URL, []string{"operator-role-bindings", "--actor", "alice"}); err != nil {
-		t.Fatalf("operator-role-bindings list error = %v", err)
+	if _, err := query(server.URL, []string{"manager", "roles", "list", "--actor", "alice"}); err != nil {
+		t.Fatalf("roles list error = %v", err)
 	}
 	if gotMethod != http.MethodGet || gotPath != "/api/v1/operator-role-bindings?actor=alice" {
 		t.Fatalf("list method/path = %s %s", gotMethod, gotPath)
@@ -152,7 +158,7 @@ func TestEvidencePullbackCommand(t *testing.T) {
 	defer server.Close()
 
 	if _, err := query(server.URL, []string{
-		"evidence-pullbacks",
+		"manager", "evidence", "pullbacks",
 		"--create",
 		"--request-id", "evpb-a",
 		"--tenant-id", "default",
@@ -179,7 +185,7 @@ func TestEvidencePullbackCommand(t *testing.T) {
 		}
 	}
 
-	if _, err := query(server.URL, []string{"evidence-pullbacks", "--tenant-id", "default", "--agent-id", "agent-a"}); err != nil {
+	if _, err := query(server.URL, []string{"manager", "evidence", "pullbacks", "--tenant-id", "default", "--agent-id", "agent-a"}); err != nil {
 		t.Fatalf("list query error = %v", err)
 	}
 	wantPath := "/api/v1/evidence-pullbacks?agent_id=agent-a&tenant_id=default"
@@ -241,6 +247,23 @@ func TestManagerNamespaceControlCommands(t *testing.T) {
 	payload, ok := gotBody["payload_json"].(map[string]any)
 	if !ok || payload["kind"] != "iocpack" {
 		t.Fatalf("payload_json = %#v", gotBody["payload_json"])
+	}
+
+	if _, err := query(server.URL, []string{
+		"manager", "control-commands", "cancel",
+		"--command-id", "ctrl-content",
+		"--tenant", "default",
+		"--agent", "agent-a",
+		"--actor", "operator",
+		"--reason", "bad rollout",
+	}); err != nil {
+		t.Fatalf("control command cancel error = %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/control-commands" {
+		t.Fatalf("cancel method/path = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["action"] != "cancel" || gotBody["command_id"] != "ctrl-content" || gotBody["tenant_id"] != "default" || gotBody["agent_id"] != "agent-a" || gotBody["actor"] != "operator" || gotBody["reason"] != "bad rollout" {
+		t.Fatalf("cancel body = %#v", gotBody)
 	}
 }
 

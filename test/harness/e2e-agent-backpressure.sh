@@ -99,13 +99,13 @@ wait_contains "manager healthz" '"ok":true' "$TMP/healthz.json" curl -sf "$MGR_U
 AGENT_PID=$!
 
 wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-backpressure.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-backpressure --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-backpressure --tenant-id default
 wait_contains "agent-health backpressure count" '"backpressure_count":1' "$RESULTS/e2e-agent-backpressure.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-backpressure --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-backpressure --tenant-id default
 wait_contains "agent-health dropped batches" '"dropped_batches":1' "$RESULTS/e2e-agent-backpressure.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-backpressure --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-backpressure --tenant-id default
 wait_contains "agent-health last error" 'spool max_bytes exceeded' "$RESULTS/e2e-agent-backpressure.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-backpressure --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-backpressure --tenant-id default
 
 if compgen -G "$TMP/spool/*.batch.json" >/dev/null; then
   echo "[e2e-agent-backpressure][ERROR] expected no persisted batches after forced drop" >&2

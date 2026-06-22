@@ -24,20 +24,20 @@ DRY = CTL is None
 def _query(mgr, topology, *args):
     """调 sysarmorctl 取 JSON；DRY-RUN 下返回 None。"""
     if DRY:
-        print(f"  [dry-run] sysarmorctl --mgr {mgr} {' '.join(args)} --json")
+        print(f"  [dry-run] sysarmorctl --manager-url {mgr} --json {' '.join(args)}")
         return None
     if topology == "vm":
-        cmd = " ".join(shlex.quote(x) for x in ["/tmp/sysarmorctl", "--mgr", "127.0.0.1:9443", *args, "--json"])
+        cmd = " ".join(shlex.quote(x) for x in ["/tmp/sysarmorctl", "--manager-url", "127.0.0.1:9443", "--json", *args])
         out = subprocess.check_output([
             "vagrant", "ssh", "mgr", "-c", cmd,
         ], cwd=VM_ENV)
     elif DOCKER and _container_running("mgr"):
         out = subprocess.check_output([
             DOCKER, "exec", "mgr", "/opt/sysarmor/bin/sysarmorctl",
-            "--mgr", "127.0.0.1:9443", *args, "--json",
+            "--manager-url", "127.0.0.1:9443", "--json", *args,
         ])
     else:
-        out = subprocess.check_output([CTL, "--mgr", mgr, *args, "--json"])
+        out = subprocess.check_output([CTL, "--manager-url", mgr, "--json", *args])
     return json.loads(out)
 
 
@@ -64,7 +64,7 @@ def assert_incident(exp, mgr, topology, scenario, r):
     inc = exp.get("incident")
     if not inc:
         return
-    data = _query(mgr, topology, "incidents", "--scenario", scenario)
+    data = _query(mgr, topology, "manager", "incidents", "list", "--scenario", scenario)
     if "count" in inc:
         r.check(f"incident.count=={inc['count']}",
                 None if data is None else len(data.get("incidents", [])) == inc["count"])
@@ -83,7 +83,7 @@ def assert_signals(exp, mgr, topology, scenario, r):
         spec = exp.get(layer)
         if not spec:
             continue
-        data = _query(mgr, topology, "signals", "--scenario", scenario, "--layer", layer.split("_")[0])
+        data = _query(mgr, topology, "manager", "signals", "list", "--scenario", scenario, "--layer", layer.split("_")[0])
         names = [] if data is None else [s.get("name") for s in data]
         for want in spec.get("must_contain", []):
             nm = want["name"] if isinstance(want, dict) else want
@@ -96,18 +96,18 @@ def assert_signals(exp, mgr, topology, scenario, r):
 def assert_negative(exp, mgr, topology, scenario, r):
     neg = exp.get("negative", {})
     if "endpoint_terminal_count" in neg:
-        data = _query(mgr, topology, "signals", "--scenario", scenario, "--terminal")
+        data = _query(mgr, topology, "manager", "signals", "list", "--scenario", scenario, "--terminal")
         r.check(f"negative.endpoint_terminal_count=={neg['endpoint_terminal_count']}",
                 None if data is None else len(data) == neg["endpoint_terminal_count"])
     if neg.get("endpoint_terminal_required"):
-        data = _query(mgr, topology, "signals", "--scenario", scenario, "--terminal")
+        data = _query(mgr, topology, "manager", "signals", "list", "--scenario", scenario, "--terminal")
         r.check("negative.endpoint_terminal_required",
                 None if data is None else len(data) >= 1)
 
 
 def assert_controls(exp, mgr, topology, scenario, r):
     for ctl in exp.get("control_assertions", []):
-        args = ["recompute", "--scenario", scenario]
+        args = ["manager", "recompute", "--scenario", scenario]
         label = ctl.get("disable") or ctl.get("switch")
         if ctl.get("disable"):
             args.extend(["--disable", ctl["disable"]])
@@ -130,12 +130,12 @@ def assert_lifecycle(exp, mgr, topology, scenario, r):
     if not spec:
         return
     if spec.get("agent_registered"):
-        agents = _query(mgr, topology, "agents")
+        agents = _query(mgr, topology, "manager", "agents", "list")
         r.check("lifecycle.agent_registered",
                 None if agents is None else any(a.get("agent_id") for a in agents))
     visible = spec.get("events_visible")
     if visible:
-        events = _query(mgr, topology, "events", "--scenario", scenario, "--behavior", visible.get("behavior", ""))
+        events = _query(mgr, topology, "manager", "events", "list", "--scenario", scenario, "--behavior", visible.get("behavior", ""))
         r.check("lifecycle.events_visible", None if events is None else len(events) >= 1)
         if visible.get("require_stable_id"):
             r.check("lifecycle.events_visible.stable_id",
@@ -144,7 +144,7 @@ def assert_lifecycle(exp, mgr, topology, scenario, r):
             r.check("lifecycle.events_visible.lineage_id",
                     None if events is None else all(e.get("lineage_id") for e in events))
     if spec.get("policy_applied"):
-        status = _query(mgr, topology, "status")
+        status = _query(mgr, topology, "manager", "status")
         r.check("lifecycle.policy_applied", None if status is None else status.get("ok") is True)
     resource = spec.get("resource", {})
     if resource.get("no_panic") and DOCKER and _container_running("mgr"):
@@ -160,7 +160,7 @@ def main():
     ap.add_argument("--scenario", required=True)
     ap.add_argument("--expected", required=True)
     ap.add_argument("--topology", default="unknown")
-    ap.add_argument("--mgr", default="127.0.0.1:19443")
+    ap.add_argument("--manager-url", default="127.0.0.1:19443")
     a = ap.parse_args()
     exp = yaml.safe_load(open(a.expected))
     print(f"[assert] topology={a.topology} scenario={a.scenario} dry_run={DRY}")

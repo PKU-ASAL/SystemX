@@ -217,11 +217,11 @@ for content_name in \
   context-secret-volume-prefixes.json \
   ioc-c2-ip-feed.json \
   ioc-c2-port-feed.json; do
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-content.upload/$content_name' --allow-unsigned --agent-id vm-owned-tetragon --tenant-id default" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-content.upload/$content_name' --allow-unsigned --agent-id vm-owned-tetragon --tenant-id default" \
     > "$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json" \
     2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json.err"
 done
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-collection-edr-balanced.json --agent-id vm-owned-tetragon --tenant-id default --timeout 60s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-collection-edr-balanced.json --agent-id vm-owned-tetragon --tenant-id default --timeout 60s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json" \
   2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json.err"
 if ! grep -Fq 'resolved_refs' "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json"; then
@@ -237,28 +237,28 @@ if ! grep -Fq 'process.binary_prefix' "$RESULTS/e2e-agent-real-tetragon-owned-vm
 fi
 
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health ok" '"status":"ok"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health capability kernel" '"kernelRelease":' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health capability btf" '"btfAvailable":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health capability bpffs" '"bpffsAvailable":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy" '"policyLoaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent capability collection" 'process.exec' "$RESULTS/e2e-agent-real-tetragon-owned-vm.capability.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent capability --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent capability --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent current policy" '"policyId":"default-edr-policy"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.policy.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json policy current --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy current --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESULTS/e2e-agent-real-tetragon-owned-vm.tracingpolicy.txt" \
   vagrant ssh node-a -c "sudo '$TETRA_PATH' tracingpolicy list"
 wait_contains "agent-owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 
 echo "[e2e-agent-real-tetragon-owned-vm] running apt-staged-drop attack"
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json.err"
 if [[ "$CAPTURE_PERF" == "1" ]]; then
   rm -f "$RESULTS/perf-resource.vm.$SCENARIO.csv"
@@ -300,7 +300,7 @@ sudo nohup /tmp/sysarmor-vm-perf-sampler.sh '$((DUR + GAP + 6))' '${PERF_INTERVA
 fi
 vagrant ssh node-a -c "sudo bash -c 'GAP=$GAP C2=$C2 bash /vagrant/test/scenarios/vm/apt-staged-drop/attack.sh'" >/dev/null
 sleep "$DUR"
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json.err"
 if [[ "$CAPTURE_PERF" == "1" ]]; then
   vagrant ssh node-a -c "deadline=\$((SECONDS + 60)); until sudo test -f /tmp/sysarmor-perf-resource.done; do if (( SECONDS >= deadline )); then sudo cat /tmp/sysarmor-vm-perf-sampler.log 2>/dev/null || true; exit 1; fi; sleep 1; done; sudo cat /tmp/sysarmor-perf-resource.csv" \
@@ -312,7 +312,7 @@ if [[ "$CAPTURE_PERF" == "1" ]]; then
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-summary.json"
 fi
 
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 2000 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 2000 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson.err"
 if ! grep -Fq '"name":"payload_dropped"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson"; then
   echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local attack signal not found: payload_dropped" >&2
@@ -329,7 +329,7 @@ if ! grep -Fq '"where":"SIGNAL_WHERE_ENDPOINT"' "$RESULTS/e2e-agent-real-tetrago
   cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" >&2 2>/dev/null || true
   exit 1
 fi
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson.err"
 if ! grep -Fq "\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson"; then
   echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local events do not contain scenario=$SCENARIO" >&2
@@ -379,13 +379,13 @@ until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE"
 done
 
 wait_contains "agent-health recovered after restart" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health capability after restart" '"kernelRelease":' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health running after restart" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy after restart" '"policyLoaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "owned tetragon process after restart" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-restart.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 
@@ -397,11 +397,11 @@ wait_absent "owned tetra getevents process" "$TETRA_PATH" "$RESULTS/e2e-agent-re
   vagrant ssh node-a -c "ps -ef | grep tetra | grep getevents | grep -v grep"
 vagrant ssh node-a -c "sudo systemctl start sysarmor-agent" >/dev/null
 wait_contains "agent-health recovered after service start" '"running":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health capability after service start" '"bpffsAvailable":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "agent-health policy after service start" '"policyLoaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-owned-tetragon --tenant-id default"
 wait_contains "owned tetragon process after service start" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-service-start.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 wait_absent "owned tetra getevents process after service start" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-service-start.txt" \

@@ -763,16 +763,28 @@ func projectControlCommands(ctx context.Context, db *sql.DB, commands []controlm
 		if !cmd.SentAt.IsZero() {
 			sentAt = cmd.SentAt
 		}
+		var lastSentAt any
+		if !cmd.LastSentAt.IsZero() {
+			lastSentAt = cmd.LastSentAt
+		}
 		var ackedAt any
 		if !cmd.AckedAt.IsZero() {
 			ackedAt = cmd.AckedAt
+		}
+		var canceledAt any
+		if !cmd.CanceledAt.IsZero() {
+			canceledAt = cmd.CanceledAt
+		}
+		var expiredAt any
+		if !cmd.ExpiredAt.IsZero() {
+			expiredAt = cmd.ExpiredAt
 		}
 		createdAt := cmd.CreatedAt
 		updatedAt := cmd.UpdatedAt
 		if createdAt.IsZero() || updatedAt.IsZero() {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, sent_at, acked_at, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, sent_at, last_sent_at, acked_at, canceled_at, expired_at, attempt_count, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 ON CONFLICT (tenant_id, command_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
   command_type = EXCLUDED.command_type,
@@ -786,13 +798,17 @@ ON CONFLICT (tenant_id, command_id) DO UPDATE SET
   reason = EXCLUDED.reason,
   updated_at = now(),
   sent_at = EXCLUDED.sent_at,
+  last_sent_at = EXCLUDED.last_sent_at,
   acked_at = EXCLUDED.acked_at,
+  canceled_at = EXCLUDED.canceled_at,
+  expired_at = EXCLUDED.expired_at,
+  attempt_count = EXCLUDED.attempt_count,
   data = EXCLUDED.data
-`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, sentAt, ackedAt, data)
+`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, sentAt, lastSentAt, ackedAt, canceledAt, expiredAt, cmd.AttemptCount, data)
 		} else {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, created_at, updated_at, sent_at, acked_at, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, created_at, updated_at, sent_at, last_sent_at, acked_at, canceled_at, expired_at, attempt_count, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 ON CONFLICT (tenant_id, command_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
   command_type = EXCLUDED.command_type,
@@ -806,9 +822,13 @@ ON CONFLICT (tenant_id, command_id) DO UPDATE SET
   reason = EXCLUDED.reason,
   updated_at = EXCLUDED.updated_at,
   sent_at = EXCLUDED.sent_at,
+  last_sent_at = EXCLUDED.last_sent_at,
   acked_at = EXCLUDED.acked_at,
+  canceled_at = EXCLUDED.canceled_at,
+  expired_at = EXCLUDED.expired_at,
+  attempt_count = EXCLUDED.attempt_count,
   data = EXCLUDED.data
-`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, createdAt, updatedAt, sentAt, ackedAt, data)
+`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, createdAt, updatedAt, sentAt, lastSentAt, ackedAt, canceledAt, expiredAt, cmd.AttemptCount, data)
 		}
 		if err != nil {
 			return fmt.Errorf("project control command: %w", err)

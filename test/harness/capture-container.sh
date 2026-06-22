@@ -91,7 +91,7 @@ EOF"
   fi
   docker exec node-a /bin/true >/dev/null 2>&1 || true
   deadline=$((SECONDS + 30))
-  until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+  until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
     if (( SECONDS >= deadline )); then
       echo "[capture-container][ERROR] agent-managed Tetra subscription did not become ready"
       docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
@@ -104,10 +104,10 @@ EOF"
   sleep "$DUR"
   cleanup_agent
   docker exec tetragon cat "$WORK/agent.log" > "$RESULTS/$S.container.agent.log" 2>/dev/null || true
-  EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario "$S" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario "$S" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
+  EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager incidents list --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
   python3 - "$RESULTS/container.$S.managed.json" "$S" "$EVENTS" "$ENDPOINT_SIGNALS" "$CLOUD_SIGNALS" "$INCIDENTS" <<'PY'
 import json, sys
 path, scenario = sys.argv[1], sys.argv[2]
@@ -143,10 +143,10 @@ wait $CAP 2>/dev/null || true
 docker exec tetragon cat /tmp/cap-$S.json > "$RESULTS/$S.container.tetragon.jsonl"
 echo "[capture-container] 落盘: $RESULTS/$S.container.tetragon.jsonl ($(wc -l < "$RESULTS/$S.container.tetragon.jsonl") 行)"
 
-STREAM_EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-STREAM_ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario "$S-stream" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-STREAM_CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario "$S-stream" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-STREAM_INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --scenario "$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
+STREAM_EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+STREAM_ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S-stream" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+STREAM_CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S-stream" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+STREAM_INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager incidents list --scenario "$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
 python3 - "$RESULTS/container.$S.stream.json" "$S" "$STREAM_EVENTS" "$STREAM_ENDPOINT_SIGNALS" "$STREAM_CLOUD_SIGNALS" "$STREAM_INCIDENTS" <<'PY'
 import json, sys
 path, scenario = sys.argv[1], sys.argv[2]

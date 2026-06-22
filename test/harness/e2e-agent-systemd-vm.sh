@@ -99,11 +99,11 @@ wait_contains() {
 }
 
 wait_contains "agent-health" '"agent_id":"vm-systemd-agent"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-systemd-agent --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-systemd-agent --tenant-id default"
 wait_contains "agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-systemd-agent --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-systemd-agent --tenant-id default"
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-systemd-vm.metrics.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json metrics"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics"
 
 PID_BEFORE="$(vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent" 2>/dev/null | tr -d '\r' | tail -1)"
 if [[ -z "$PID_BEFORE" || "$PID_BEFORE" == "0" ]]; then
@@ -129,7 +129,7 @@ until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE"
 done
 
 wait_contains "agent-health after systemd restart" '"agent_id":"vm-systemd-agent"' "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id vm-systemd-agent --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-systemd-agent --tenant-id default"
 
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-systemd-vm.systemd.txt" 2>&1 || true
 vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 120" > "$RESULTS/e2e-agent-systemd-vm.journal.txt" 2>&1 || true

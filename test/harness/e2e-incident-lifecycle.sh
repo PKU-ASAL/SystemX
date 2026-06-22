@@ -99,9 +99,9 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-incident-lifecycle.data_plane.json"
 
 wait_contains "incident open" '"status":"open"' "$RESULTS/e2e-incident-lifecycle.open.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-lifecycle \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident lifecycle \
   --scenario "$SCENARIO" \
   --status suppressed \
   --reason "known drill" \
@@ -115,7 +115,7 @@ for want in '"status":"suppressed"' '"status_reason":"known drill"' '"status_act
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-lifecycle \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident lifecycle \
   --scenario "$SCENARIO" \
   --status closed \
   --reason "triaged" \
@@ -129,7 +129,7 @@ for want in '"status":"closed"' '"status_reason":"triaged"'; do
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-lifecycle \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident lifecycle \
   --scenario "$SCENARIO" \
   --status open \
   --reason "reopened" \

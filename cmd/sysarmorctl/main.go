@@ -27,12 +27,17 @@ import (
 var version = "dev"
 
 func main() {
-	mgr := flag.String("mgr", "127.0.0.1:9443", "sysarmor-manager address")
-	agentSock := flag.String("agent-sock", defaultAgentSock(), "local sysarmor-agent control socket")
+	managerURL := flag.String("manager-url", defaultManagerURL(), "sysarmor-manager HTTP URL")
+	socketPath := flag.String("socket", defaultAgentSock(), "local sysarmor-agent control socket")
 	jsonOut := flag.Bool("json", false, "emit JSON")
+	flag.Usage = usage
 	flag.Parse()
 
 	args := flag.Args()
+	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		usage()
+		return
+	}
 	if len(args) == 1 && args[0] == "version" {
 		fmt.Println(version)
 		return
@@ -40,10 +45,10 @@ func main() {
 
 	if len(args) == 0 {
 		if *jsonOut {
-			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"manager": *mgr, "agent_sock": *agentSock})
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"manager_url": *managerURL, "socket": *socketPath})
 			return
 		}
-		fmt.Fprintf(os.Stdout, "sysarmorctl: manager=%s agent_sock=%s\n", *mgr, *agentSock)
+		usage()
 		return
 	}
 
@@ -61,7 +66,7 @@ func main() {
 	}
 
 	if isLocalAgentCommand(args) {
-		body, err := queryLocalAgent(*agentSock, args)
+		body, err := queryLocalAgent(*socketPath, args)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
 			os.Exit(1)
@@ -73,7 +78,7 @@ func main() {
 		return
 	}
 
-	body, err := query(*mgr, args)
+	body, err := query(*managerURL, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
 		os.Exit(1)
@@ -86,6 +91,39 @@ func main() {
 		return
 	}
 	fmt.Println(string(body))
+}
+
+func usage() {
+	fmt.Fprint(os.Stdout, `Usage:
+  sysarmorctl [--socket PATH] [--json] agent health
+  sysarmorctl [--socket PATH] policy current
+  sysarmorctl [--socket PATH] policy apply --file policy.json
+  sysarmorctl [--socket PATH] content apply --file content.json --allow-unsigned
+  sysarmorctl [--socket PATH] event watch --include-recent --limit 10
+  sysarmorctl [--socket PATH] signal watch --include-events --limit 10
+
+  sysarmorctl [--manager-url URL] manager agents list
+  sysarmorctl [--manager-url URL] manager policies assign --agent AGENT --policy-id POLICY --version N [--downlink]
+  sysarmorctl [--manager-url URL] manager control-commands list --agent AGENT
+  sysarmorctl [--manager-url URL] manager control-commands create content --agent AGENT --file content.json
+  sysarmorctl [--manager-url URL] manager control-commands cancel --command-id ID --agent AGENT
+  sysarmorctl [--manager-url URL] manager roles list [--actor ACTOR]
+  sysarmorctl [--manager-url URL] manager roles upsert --actor ACTOR --roles policy_admin,control_admin
+
+Global flags:
+  --socket PATH        local agent Unix socket, default $SYSARMOR_AGENT_SOCK or /var/run/sysarmor/agent.sock
+  --manager-url URL    manager HTTP URL, default $SYSARMOR_MANAGER_URL or http://127.0.0.1:9443
+  --json               emit JSON without extra formatting
+
+Local commands stay at the top level. Manager HTTP administration must use the manager namespace.
+`)
+}
+
+func defaultManagerURL() string {
+	if v := strings.TrimSpace(os.Getenv("SYSARMOR_MANAGER_URL")); v != "" {
+		return v
+	}
+	return "http://127.0.0.1:9443"
 }
 
 func defaultAgentSock() string {
@@ -117,7 +155,7 @@ func isLocalAgentCommand(args []string) bool {
 
 func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 	if strings.TrimSpace(socketPath) == "" {
-		return nil, fmt.Errorf("--agent-sock is required")
+		return nil, fmt.Errorf("--socket is required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout(args, 5*time.Second))
 	defer cancel()
@@ -700,6 +738,10 @@ func query(mgr string, args []string) ([]byte, error) {
 	if len(args) > 0 && args[0] == "manager" {
 		return queryManager(base, args[1:])
 	}
+	return nil, fmt.Errorf("unknown command %q; manager HTTP commands must use the manager namespace", strings.Join(args, " "))
+}
+
+func queryManagerAPI(base string, args []string) ([]byte, error) {
 	switch args[0] {
 	case "agents":
 		q := url.Values{}
@@ -1379,62 +1421,67 @@ func queryManager(base string, args []string) ([]byte, error) {
 	}
 	switch args[0] {
 	case "agents":
-		return query(base, append([]string{"agents"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"agents"}, managerArgsAfterAction(args, "list")...))
 	case "health":
-		return query(base, append([]string{"agent-health"}, managerArgsAfterAction(args, "list", "get")...))
+		return queryManagerAPI(base, append([]string{"agent-health"}, managerArgsAfterAction(args, "list", "get")...))
 	case "sessions":
-		return query(base, append([]string{"agent-sessions"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"agent-sessions"}, managerArgsAfterAction(args, "list")...))
 	case "resume":
-		return query(base, append([]string{"data-resume"}, managerArgsAfterAction(args, "get")...))
+		return queryManagerAPI(base, append([]string{"data-resume"}, managerArgsAfterAction(args, "get")...))
 	case "metrics":
-		return query(base, []string{"metrics"})
+		return queryManagerAPI(base, []string{"metrics"})
 	case "status":
-		return query(base, []string{"status"})
+		return queryManagerAPI(base, []string{"status"})
 	case "store":
 		if len(args) >= 2 && args[1] == "status" {
-			return query(base, []string{"store-status"})
+			return queryManagerAPI(base, []string{"store-status"})
 		}
 	case "policies":
 		return queryManagerPolicies(base, args[1:])
 	case "control-commands":
 		return queryManagerControlCommands(base, args[1:])
+	case "roles":
+		return queryManagerRoles(base, args[1:])
 	case "responses":
-		return query(base, append([]string{"responses"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"responses"}, managerArgsAfterAction(args, "list")...))
 	case "response":
 		if len(args) >= 2 && args[1] == "decide" {
-			return query(base, append([]string{"response-decision"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"response-decision"}, args[2:]...))
 		}
 		if len(args) >= 2 && args[1] == "approve" {
-			return query(base, append([]string{"response-approval"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"response-approval"}, args[2:]...))
 		}
 	case "incidents":
-		return query(base, append([]string{"incidents"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"incidents"}, managerArgsAfterAction(args, "list")...))
 	case "incident":
+		if len(args) >= 3 && args[1] == "evidence" && args[2] == "attach" {
+			return queryManagerAPI(base, append([]string{"incident-evidence-attach"}, args[3:]...))
+		}
 		if len(args) >= 2 && args[1] == "evidence" {
-			return query(base, append([]string{"incident-evidence"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"incident-evidence"}, args[2:]...))
 		}
 		if len(args) >= 2 && args[1] == "lifecycle" {
-			return query(base, append([]string{"incident-lifecycle"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"incident-lifecycle"}, args[2:]...))
 		}
 		if len(args) >= 2 && args[1] == "merge" {
-			return query(base, append([]string{"incident-merge"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"incident-merge"}, args[2:]...))
 		}
 	case "evidence":
 		if len(args) >= 2 && args[1] == "pullbacks" {
-			return query(base, append([]string{"evidence-pullbacks"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"evidence-pullbacks"}, args[2:]...))
 		}
 	case "events":
-		return query(base, append([]string{"events"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"events"}, managerArgsAfterAction(args, "list")...))
 	case "signals":
-		return query(base, append([]string{"signals"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"signals"}, managerArgsAfterAction(args, "list")...))
 	case "rarity":
 		if len(args) >= 2 && args[1] == "baseline" {
-			return query(base, append([]string{"rarity-baseline"}, args[2:]...))
+			return queryManagerAPI(base, append([]string{"rarity-baseline"}, args[2:]...))
 		}
 	case "rules":
-		return query(base, append([]string{"rules"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"rules"}, managerArgsAfterAction(args, "list")...))
 	case "recompute":
-		return query(base, args)
+		return queryManagerAPI(base, args)
 	}
 	return nil, fmt.Errorf("unknown manager command %q", strings.Join(args, " "))
 }
@@ -1445,17 +1492,17 @@ func queryManagerPolicies(base string, args []string) ([]byte, error) {
 	}
 	switch args[0] {
 	case "list", "get":
-		return query(base, append([]string{"policies"}, args[1:]...))
+		return queryManagerAPI(base, append([]string{"policies"}, args[1:]...))
 	case "publish":
-		return query(base, append([]string{"policy-publish"}, args[1:]...))
+		return queryManagerAPI(base, append([]string{"policy-publish"}, args[1:]...))
 	case "audit":
-		return query(base, append([]string{"policy-audit"}, args[1:]...))
+		return queryManagerAPI(base, append([]string{"policy-audit"}, args[1:]...))
 	case "assignments":
-		return query(base, append([]string{"policy-assignments"}, managerArgsAfterAction(args, "list")...))
+		return queryManagerAPI(base, append([]string{"policy-assignments"}, managerArgsAfterAction(args, "list")...))
 	case "assign":
 		return managerPolicyAssign(base, args[1:])
 	case "effective":
-		return query(base, append([]string{"effective-policy"}, args[1:]...))
+		return queryManagerAPI(base, append([]string{"effective-policy"}, args[1:]...))
 	default:
 		return nil, fmt.Errorf("unknown manager policies command %q", args[0])
 	}
@@ -1490,9 +1537,45 @@ func queryManagerControlCommands(base string, args []string) ([]byte, error) {
 		return httpGet(base + "/api/v1/control-commands?" + q.Encode())
 	case "create":
 		return managerControlCommandCreate(base, args[1:])
+	case "cancel", "retry", "expire":
+		return managerControlCommandAction(base, args[0], args[1:])
 	default:
 		return nil, fmt.Errorf("unknown manager control-commands command %q", args[0])
 	}
+}
+
+func managerControlCommandAction(base, action string, args []string) ([]byte, error) {
+	req := map[string]any{"action": action}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--command-id":
+			i++
+			if i < len(args) {
+				req["command_id"] = args[i]
+			}
+		case "--tenant", "--tenant-id":
+			i++
+			if i < len(args) {
+				req["tenant_id"] = args[i]
+			}
+		case "--agent", "--agent-id":
+			i++
+			if i < len(args) {
+				req["agent_id"] = args[i]
+			}
+		case "--actor":
+			i++
+			if i < len(args) {
+				req["actor"] = args[i]
+			}
+		case "--reason":
+			i++
+			if i < len(args) {
+				req["reason"] = args[i]
+			}
+		}
+	}
+	return httpPostJSON(base+"/api/v1/control-commands", req)
 }
 
 func managerControlCommandCreate(base string, args []string) ([]byte, error) {
@@ -1627,6 +1710,20 @@ func managerPolicyAssign(base string, args []string) ([]byte, error) {
 		}
 	}
 	return httpPostJSON(base+"/api/v1/policy-assignments", req)
+}
+
+func queryManagerRoles(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list":
+		return queryManagerAPI(base, append([]string{"operator-role-bindings"}, managerArgsAfterAction(args, "list")...))
+	case "upsert":
+		return queryManagerAPI(base, append([]string{"operator-role-bindings", "--upsert"}, args[1:]...))
+	default:
+		return nil, fmt.Errorf("unknown manager roles command %q", args[0])
+	}
 }
 
 func managerArgsAfterAction(args []string, actions ...string) []string {

@@ -47,6 +47,7 @@ type ManagerStore interface {
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
 	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
+	CancelControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
@@ -89,6 +90,8 @@ type ManagerStore interface {
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
 	OperatorRolesForActor(string) ([]string, bool)
 	RarityBaselineSnapshot() rarity.Baseline
+	RetryControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
+	ExpireControlCommand(string, string, string, string) (controlmodel.ControlCommand, bool)
 	Save() error
 	UpdateIncidentStatus(string, string, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
@@ -165,6 +168,7 @@ type evidencePullbackRequest struct {
 }
 
 type controlCommandRequest struct {
+	Action         string          `json:"action,omitempty"`
 	CommandID      string          `json:"command_id,omitempty"`
 	TenantID       string          `json:"tenant_id,omitempty"`
 	AgentID        string          `json:"agent_id"`
@@ -670,6 +674,10 @@ func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("decode control command: %v", err), http.StatusBadRequest)
 			return
 		}
+		if strings.TrimSpace(req.Action) != "" {
+			s.controlCommandAction(w, r, req)
+			return
+		}
 		cmd, err := s.controlCommandFromRequest(r, req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -684,6 +692,43 @@ func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) controlCommandAction(w http.ResponseWriter, r *http.Request, req controlCommandRequest) {
+	commandID := strings.TrimSpace(req.CommandID)
+	if commandID == "" {
+		http.Error(w, "command_id is required", http.StatusBadRequest)
+		return
+	}
+	tenantID := req.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	actor := s.actorFromRequest(r, req.Actor)
+	var (
+		out controlmodel.ControlCommand
+		ok  bool
+	)
+	switch strings.TrimSpace(req.Action) {
+	case "cancel":
+		out, ok = s.store.CancelControlCommand(commandID, tenantID, req.AgentID, actor, req.Reason)
+	case "retry":
+		out, ok = s.store.RetryControlCommand(commandID, tenantID, req.AgentID, actor, req.Reason)
+	case "expire":
+		out, ok = s.store.ExpireControlCommand(commandID, tenantID, req.AgentID, req.Reason)
+	default:
+		http.Error(w, fmt.Sprintf("unsupported control command action %q", req.Action), http.StatusBadRequest)
+		return
+	}
+	if !ok {
+		http.Error(w, "control command not found", http.StatusNotFound)
+		return
+	}
+	if err := s.store.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) controlCommandFromRequest(r *http.Request, req controlCommandRequest) (controlmodel.ControlCommand, error) {
@@ -1093,6 +1138,9 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 		var req policyAssignmentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode assignment: %v", err), http.StatusBadRequest)
+			return
+		}
+		if req.Downlink && !s.requireOperator(w, r, "control_admin") {
 			return
 		}
 		assignment := req.Assignment

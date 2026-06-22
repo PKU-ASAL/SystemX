@@ -114,7 +114,7 @@ func TestControlCommandsPersistAndAck(t *testing.T) {
 	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 1 || got[0].CommandID != "ctrl-a" {
 		t.Fatalf("pending commands = %+v", got)
 	}
-	if cmd, ok := st.MarkControlCommandSent("ctrl-a", "default", "agent-a", time.Unix(10, 0).UTC()); !ok || cmd.Status != controlmodel.ControlCommandStatusSent || cmd.SentAt.IsZero() {
+	if cmd, ok := st.MarkControlCommandSent("ctrl-a", "default", "agent-a", time.Unix(10, 0).UTC()); !ok || cmd.Status != controlmodel.ControlCommandStatusSent || cmd.SentAt.IsZero() || cmd.LastSentAt.IsZero() || cmd.AttemptCount != 1 {
 		t.Fatalf("sent command = %+v ok=%t", cmd, ok)
 	}
 	if cmd, ok := st.AckControlCommand(controlmodel.ControlCommandAck{
@@ -141,6 +141,35 @@ func TestControlCommandsPersistAndAck(t *testing.T) {
 	got := restored.ListControlCommands("default", "agent-a", controlmodel.ControlCommandTypeContentUpdate)
 	if len(got) != 1 || got[0].CommandID != "ctrl-a" || got[0].Status != controlmodel.ControlCommandStatusRejected {
 		t.Fatalf("restored commands = %+v", got)
+	}
+}
+
+func TestControlCommandLifecycleActions(t *testing.T) {
+	st := &Store{}
+	st.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID:   "ctrl-life",
+		TenantID:    "default",
+		AgentID:     "agent-a",
+		Type:        controlmodel.ControlCommandTypePolicyUpdate,
+		PayloadJSON: []byte(`{"policy_id":"p1","version":1}`),
+	})
+	if cmd, ok := st.CancelControlCommand("ctrl-life", "default", "agent-a", "operator", "bad rollout"); !ok || cmd.Status != controlmodel.ControlCommandStatusCanceled || cmd.CanceledAt.IsZero() || cmd.Actor != "operator" || cmd.Error != "bad rollout" {
+		t.Fatalf("cancel command = %+v ok=%t", cmd, ok)
+	}
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending after cancel = %+v", got)
+	}
+	if cmd, ok := st.RetryControlCommand("ctrl-life", "default", "agent-a", "operator", "retry rollout"); !ok || cmd.Status != controlmodel.ControlCommandStatusPending || !cmd.CanceledAt.IsZero() || cmd.Reason != "retry rollout" || cmd.Error != "" {
+		t.Fatalf("retry command = %+v ok=%t", cmd, ok)
+	}
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 1 || got[0].CommandID != "ctrl-life" {
+		t.Fatalf("pending after retry = %+v", got)
+	}
+	if cmd, ok := st.ExpireControlCommand("ctrl-life", "default", "agent-a", "ttl elapsed"); !ok || cmd.Status != controlmodel.ControlCommandStatusExpired || cmd.ExpiredAt.IsZero() || cmd.Error != "ttl elapsed" {
+		t.Fatalf("expire command = %+v ok=%t", cmd, ok)
+	}
+	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 0 {
+		t.Fatalf("pending after expire = %+v", got)
 	}
 }
 

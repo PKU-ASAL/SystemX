@@ -121,17 +121,17 @@ wait_contains() {
 }
 
 wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-managed-recover-container.degraded.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-managed-recover --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-recover --tenant-id default
 wait_contains "agent-health recovered" '"status":"ok"' "$RESULTS/e2e-agent-managed-recover-container.recovered.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-managed-recover --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-recover --tenant-id default
 wait_contains "agent-health running" '"running":true' "$RESULTS/e2e-agent-managed-recover-container.recovered.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-managed-recover --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-recover --tenant-id default
 wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-managed-recover-container.recovered.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-managed-recover --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-recover --tenant-id default
 wait_contains "agent-health restart count" '"restart_count":3' "$RESULTS/e2e-agent-managed-recover-container.recovered.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-managed-recover --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-recover --tenant-id default
 wait_contains "metrics" '"events_ingested":' "$RESULTS/e2e-agent-managed-recover-container.metrics.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json metrics
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics
 
 if [[ "$(docker exec mgr cat "$WORK/tetragon.count" 2>/dev/null | tr -d '\r')" != "2" ]]; then
   echo "[e2e-agent-managed-recover-container][ERROR] fake tetragon recover count mismatch" >&2

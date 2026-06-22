@@ -101,7 +101,7 @@ JSON
 
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-query-pagination.data_plane.json"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json events \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager events list \
   --scenario "$SCENARIO" --limit 1 --offset 1 > "$RESULTS/e2e-query-pagination.events.json"
 if grep -Fq '"id":"ev-page-1"' "$RESULTS/e2e-query-pagination.events.json" || ! grep -Fq '"id":"ev-page-2"' "$RESULTS/e2e-query-pagination.events.json" || grep -Fq '"id":"ev-page-3"' "$RESULTS/e2e-query-pagination.events.json"; then
   echo "[e2e-query-pagination][ERROR] events page mismatch" >&2
@@ -109,7 +109,7 @@ if grep -Fq '"id":"ev-page-1"' "$RESULTS/e2e-query-pagination.events.json" || ! 
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list \
   --scenario "$SCENARIO" --limit 1 --offset 1 > "$RESULTS/e2e-query-pagination.signals.json"
 if grep -Fq '"id":"sig-page-1"' "$RESULTS/e2e-query-pagination.signals.json" || ! grep -Fq '"id":"sig-page-2"' "$RESULTS/e2e-query-pagination.signals.json"; then
   echo "[e2e-query-pagination][ERROR] signals page mismatch" >&2

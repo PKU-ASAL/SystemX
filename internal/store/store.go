@@ -1172,6 +1172,8 @@ func (s *Store) MarkControlCommandSent(commandID, tenantID, agentID string, sent
 			cmd.Status = controlmodel.ControlCommandStatusSent
 		}
 		cmd.SentAt = sentAt
+		cmd.LastSentAt = sentAt
+		cmd.AttemptCount++
 		cmd.UpdatedAt = sentAt
 		s.ControlCommands[i] = cmd
 		s.mu.Unlock()
@@ -1186,7 +1188,111 @@ func (s *Store) MarkControlCommandSent(commandID, tenantID, agentID string, sent
 			cmd.Status = controlmodel.ControlCommandStatusSent
 		}
 		cmd.SentAt = sentAt
+		cmd.LastSentAt = sentAt
+		cmd.AttemptCount++
 		cmd.UpdatedAt = sentAt
+		s.mu.Lock()
+		s.ControlCommands = upsertControlCommandSnapshot(s.ControlCommands, cmd)
+		s.mu.Unlock()
+		return cmd, true
+	}
+	return controlmodel.ControlCommand{}, false
+}
+
+func (s *Store) CancelControlCommand(commandID, tenantID, agentID, actor, reason string) (controlmodel.ControlCommand, bool) {
+	if commandID == "" {
+		return controlmodel.ControlCommand{}, false
+	}
+	now := time.Now().UTC()
+	return s.updateControlCommand(commandID, tenantID, agentID, func(cmd controlmodel.ControlCommand) controlmodel.ControlCommand {
+		if controlmodel.ControlCommandTerminalStatus(cmd.Status) {
+			return cmd
+		}
+		cmd.Status = controlmodel.ControlCommandStatusCanceled
+		cmd.CanceledAt = now
+		cmd.UpdatedAt = now
+		if actor != "" {
+			cmd.Actor = actor
+		}
+		if reason != "" {
+			cmd.Error = reason
+		}
+		return cmd
+	})
+}
+
+func (s *Store) RetryControlCommand(commandID, tenantID, agentID, actor, reason string) (controlmodel.ControlCommand, bool) {
+	if commandID == "" {
+		return controlmodel.ControlCommand{}, false
+	}
+	now := time.Now().UTC()
+	return s.updateControlCommand(commandID, tenantID, agentID, func(cmd controlmodel.ControlCommand) controlmodel.ControlCommand {
+		if cmd.Status == controlmodel.ControlCommandStatusApplied {
+			return cmd
+		}
+		cmd.Status = controlmodel.ControlCommandStatusPending
+		cmd.UpdatedAt = now
+		cmd.AckedAt = time.Time{}
+		cmd.CanceledAt = time.Time{}
+		cmd.ExpiredAt = time.Time{}
+		cmd.AckStatus = ""
+		cmd.AckMessage = ""
+		cmd.AckPolicyID = ""
+		cmd.AckPolicyVer = 0
+		cmd.AckReportJSON = ""
+		cmd.Error = ""
+		if actor != "" {
+			cmd.Actor = actor
+		}
+		if reason != "" {
+			cmd.Reason = reason
+		}
+		return cmd
+	})
+}
+
+func (s *Store) ExpireControlCommand(commandID, tenantID, agentID, reason string) (controlmodel.ControlCommand, bool) {
+	if commandID == "" {
+		return controlmodel.ControlCommand{}, false
+	}
+	now := time.Now().UTC()
+	return s.updateControlCommand(commandID, tenantID, agentID, func(cmd controlmodel.ControlCommand) controlmodel.ControlCommand {
+		if controlmodel.ControlCommandTerminalStatus(cmd.Status) {
+			return cmd
+		}
+		cmd.Status = controlmodel.ControlCommandStatusExpired
+		cmd.ExpiredAt = now
+		cmd.UpdatedAt = now
+		if reason != "" {
+			cmd.Error = reason
+		}
+		return cmd
+	})
+}
+
+func (s *Store) updateControlCommand(commandID, tenantID, agentID string, update func(controlmodel.ControlCommand) controlmodel.ControlCommand) (controlmodel.ControlCommand, bool) {
+	s.mu.Lock()
+	for i, cmd := range s.ControlCommands {
+		if cmd.CommandID != commandID {
+			continue
+		}
+		if tenantID != "" && cmd.TenantID != tenantID {
+			continue
+		}
+		if agentID != "" && cmd.AgentID != agentID {
+			continue
+		}
+		cmd = update(cmd)
+		s.ControlCommands[i] = cmd
+		s.mu.Unlock()
+		return cmd, true
+	}
+	s.mu.Unlock()
+	for _, cmd := range s.ListControlCommands(tenantID, agentID, "") {
+		if cmd.CommandID != commandID {
+			continue
+		}
+		cmd = update(cmd)
 		s.mu.Lock()
 		s.ControlCommands = upsertControlCommandSnapshot(s.ControlCommands, cmd)
 		s.mu.Unlock()

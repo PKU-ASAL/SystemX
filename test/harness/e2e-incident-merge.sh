@@ -119,11 +119,11 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/source.json" > "$RESULTS/e2e-incident-merge.source-data_plane.json"
 
 wait_contains "target incident" '"id":"inc-00000000000000000001"' "$RESULTS/e2e-incident-merge.target.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario incident-merge-target
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario incident-merge-target
 wait_contains "source incident" '"id":"inc-00000000000000000002"' "$RESULTS/e2e-incident-merge.source.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario incident-merge-source
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario incident-merge-source
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-merge \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident merge \
   --target-incident-id inc-00000000000000000001 \
   --source-incident-id inc-00000000000000000002 > "$RESULTS/e2e-incident-merge.merge.json"
 
@@ -135,7 +135,7 @@ for want in '"id":"inc-00000000000000000001"' '"lin-merge-target"' '"lin-merge-s
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents > "$RESULTS/e2e-incident-merge.all.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list > "$RESULTS/e2e-incident-merge.all.json"
 if grep -Fq '"id":"inc-00000000000000000002"' "$RESULTS/e2e-incident-merge.all.json"; then
   echo "[e2e-incident-merge][ERROR] source incident still queryable after merge" >&2
   cat "$RESULTS/e2e-incident-merge.all.json" >&2

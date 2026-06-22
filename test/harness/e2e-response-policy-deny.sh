@@ -76,7 +76,7 @@ if [[ "$status" != "403" ]]; then
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json responses --tenant-id default --agent-id "$AGENT_ID" > "$RESULTS/e2e-response-policy-deny.audit.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" > "$RESULTS/e2e-response-policy-deny.audit.json"
 for want in '"response_id":"resp-deny-kill"' '"status":"denied"' 'destructive response action requires explicit policy approval'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-response-policy-deny.audit.json"; then
     echo "[e2e-response-policy-deny][ERROR] audit missing $want" >&2
@@ -85,7 +85,7 @@ for want in '"response_id":"resp-deny-kill"' '"status":"denied"' 'destructive re
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json responses --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-policy-deny.pending.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-policy-deny.pending.json"
 if grep -Fq 'resp-deny-kill' "$RESULTS/e2e-response-policy-deny.pending.json"; then
   echo "[e2e-response-policy-deny][ERROR] denied command is pending" >&2
   cat "$RESULTS/e2e-response-policy-deny.pending.json" >&2

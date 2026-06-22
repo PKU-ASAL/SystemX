@@ -92,7 +92,7 @@ curl -sf -X POST "$MGR_URL/api/v1/policy-assignments" \
   --data-binary @"$TMP/assignment.json" > "$RESULTS/e2e-policy-cloud-disable.assignment.json"
 
 wait_contains "effective policy" '"policy_id":"no-cross-incident"' "$RESULTS/e2e-policy-cloud-disable.effective.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json effective-policy --tenant-id default --agent-id policy-agent
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager policies effective --tenant-id default --agent-id policy-agent
 
 cat > "$TMP/batch.json" <<EOF
 {
@@ -138,21 +138,21 @@ EOF
 
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-policy-cloud-disable.ack.json"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario "$SCENARIO" --layer cloud > "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario "$SCENARIO" --layer cloud > "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"
 if grep -Fq 'dropped_payload_executed_and_connects' "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"; then
   echo "[e2e-policy-cloud-disable][ERROR] disabled cloud rule still emitted signal" >&2
   cat "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json" >&2
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario "$SCENARIO" > "$RESULTS/e2e-policy-cloud-disable.incidents.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO" > "$RESULTS/e2e-policy-cloud-disable.incidents.json"
 if grep -Fq '"inc-' "$RESULTS/e2e-policy-cloud-disable.incidents.json"; then
   echo "[e2e-policy-cloud-disable][ERROR] disabled cloud rule still created incident" >&2
   cat "$RESULTS/e2e-policy-cloud-disable.incidents.json" >&2
   exit 1
 fi
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json policy-assignments --tenant-id default --agent-id policy-agent > "$RESULTS/e2e-policy-cloud-disable.assignments.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager policies assignments --tenant-id default --agent-id policy-agent > "$RESULTS/e2e-policy-cloud-disable.assignments.json"
 if ! grep -Fq '"policy_id":"no-cross-incident"' "$RESULTS/e2e-policy-cloud-disable.assignments.json"; then
   echo "[e2e-policy-cloud-disable][ERROR] assignment not queryable" >&2
   cat "$RESULTS/e2e-policy-cloud-disable.assignments.json" >&2

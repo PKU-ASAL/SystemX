@@ -49,7 +49,7 @@ wait_contains() {
 
 wait_contains "healthz" '"ok":true' "$RESULTS/e2e-store-status.health.json" curl -sf "$MGR_URL/healthz"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json store-status > "$RESULTS/e2e-store-status.store.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager store status > "$RESULTS/e2e-store-status.store.json"
 for want in '"backend":"memory"' '"state_version":1' '"migration_version":1' '"postgres_schema_version":1'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-store-status.store.json"; then
     echo "[e2e-store-status][ERROR] store status missing $want" >&2

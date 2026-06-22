@@ -92,9 +92,9 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-response-audit.data_plane.json"
 
 wait_contains "signal intent" '"response_intent":{"response_intent":"collect","recommended_action":"collect","confidence":80,"reason":"terminal reverse shell pattern"}' "$RESULTS/e2e-response-audit.signals.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario response-audit --terminal
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario response-audit --terminal
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json response-decision \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager response decide \
   --tenant-id default \
   --agent-id "$AGENT_ID" \
   --signal-id sig-response-intent \
@@ -108,7 +108,7 @@ for want in '"response_id":"resp-sig-response-intent"' '"signal_id":"sig-respons
   fi
 done
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json responses --tenant-id default --agent-id "$AGENT_ID" > "$RESULTS/e2e-response-audit.audit.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" > "$RESULTS/e2e-response-audit.audit.json"
 for want in '"response_id":"resp-sig-response-intent"' '"signal_id":"sig-response-intent"' 'response_intent=collect confidence=80'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-response-audit.audit.json"; then
     echo "[e2e-response-audit][ERROR] audit missing $want" >&2

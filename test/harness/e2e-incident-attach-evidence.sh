@@ -99,9 +99,9 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-incident-attach-evidence.data_plane.json"
 
 wait_contains "incident" '"status":"open"' "$RESULTS/e2e-incident-attach-evidence.incidents.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence-attach \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence attach \
   --scenario "$SCENARIO" \
   --node-id "user:root" \
   --node-kind user \
@@ -110,7 +110,7 @@ wait_contains "incident" '"status":"open"' "$RESULTS/e2e-incident-attach-evidenc
   --edge-to "user:root" \
   --edge-kind ran_as > "$RESULTS/e2e-incident-attach-evidence.attach.json"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json incident-evidence \
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence \
   --scenario "$SCENARIO" > "$RESULTS/e2e-incident-attach-evidence.evidence.json"
 
 for want in '"id":"user:root"' '"kind":"user"' '"from":"process:p-bash"' '"to":"user:root"' '"kind":"ran_as"'; do

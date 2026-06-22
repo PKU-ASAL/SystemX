@@ -108,6 +108,8 @@ sysarmorctl signal watch --include-events --label key=value
 sysarmorctl manager policies assign --agent agent-a --policy-id edr-balanced --version 3 --downlink
 sysarmorctl manager control-commands create content --agent agent-a --file ioc.json
 sysarmorctl manager control-commands list --agent agent-a
+sysarmorctl manager control-commands cancel --command-id ctrl-a --agent agent-a
+sysarmorctl manager roles upsert --actor alice --roles policy_admin,control_admin
 ```
 
 Local agent operations stay at the top level and use the Unix socket. Manager administration is explicit under `manager`; desired-state policy changes are separate from auditable downlink commands. Resource names should describe product concepts, not test harness concepts.

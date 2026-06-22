@@ -131,11 +131,11 @@ EOF
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
 
 wait_contains "agent health" '"status":"ok"' "$RESULTS/vm.$S.agent-health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-node-a --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-node-a --tenant-id default"
 wait_contains "agent health tetragon" '"backend":"tetragon"' "$RESULTS/vm.$S.agent-health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent health --agent-id vm-node-a --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-node-a --tenant-id default"
 wait_contains "agent capability" 'process.exec' "$RESULTS/vm.$S.agent-capability.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json agent capability --agent-id vm-node-a --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent capability --agent-id vm-node-a --tenant-id default"
 wait_contains "tracing policy" 'sysarmor-runtime-collection' "$RESULTS/vm.$S.tracingpolicy.txt" \
   vagrant ssh node-a -c "sudo '$TETRA_PATH' tracingpolicy list"
 wait_contains "owned tetragon process" "$TETRAGON_PATH" "$RESULTS/vm.$S.tetragon-process.txt" \
@@ -153,7 +153,7 @@ vagrant ssh node-a -c "sudo bash -c '
 sleep "$DUR"
 
 if [[ -n "$SIGNAL_RULE" ]]; then
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-node-a --tenant-id default --timeout 20s" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-node-a --tenant-id default --timeout 20s" \
     > "$RESULTS/vm.$S.signals.ndjson" 2>"$RESULTS/vm.$S.signals.ndjson.err"
   if ! grep -Fq "\"name\":\"$SIGNAL_RULE\"" "$RESULTS/vm.$S.signals.ndjson"; then
     echo "[capture-vm][ERROR] local attack signal not found: $SIGNAL_RULE" >&2
@@ -161,10 +161,10 @@ if [[ -n "$SIGNAL_RULE" ]]; then
     exit 1
   fi
 else
-  vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-node-a --tenant-id default --timeout 5s" > "$RESULTS/vm.$S.signals.ndjson" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-node-a --tenant-id default --timeout 5s" > "$RESULTS/vm.$S.signals.ndjson" 2>/dev/null || true
 fi
 
-vagrant ssh node-a -c "sudo sysarmorctl --agent-sock '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-node-a --tenant-id default --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-node-a --tenant-id default --timeout 20s" \
   > "$RESULTS/vm.$S.events.ndjson" 2>"$RESULTS/vm.$S.events.ndjson.err"
 if ! grep -Fq "\"scenario\":\"$S\"" "$RESULTS/vm.$S.events.ndjson"; then
   echo "[capture-vm][ERROR] local events do not contain scenario=$S" >&2

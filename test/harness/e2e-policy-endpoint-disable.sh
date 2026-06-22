@@ -99,7 +99,7 @@ curl -sf -X POST "$MGR_URL/api/v1/policy-assignments" \
   --data-binary @"$TMP/assignment.json" > "$RESULTS/e2e-policy-endpoint-disable.assignment.json"
 
 wait_contains "effective policy" '"policy_id":"no-payload-drop"' "$RESULTS/e2e-policy-endpoint-disable.effective.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json effective-policy --tenant-id default --agent-id "$AGENT_ID"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager policies effective --tenant-id default --agent-id "$AGENT_ID"
 
 cat > "$TMP/collection.yaml" <<'POLICY'
 {"behaviors":["file.write"],"observe_only":true}
@@ -147,9 +147,9 @@ wait_contains "agent assigned policy" 'policy=no-payload-drop version=2 mode=obs
   grep -F 'policy=no-payload-drop version=2 mode=observe' "$TMP/agent.log"
 
 wait_contains "uploaded event" "$SCENARIO" "$RESULTS/e2e-policy-endpoint-disable.events.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json events --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager events list --scenario "$SCENARIO"
 
-"$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario "$SCENARIO" --layer endpoint > "$RESULTS/e2e-policy-endpoint-disable.signals.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario "$SCENARIO" --layer endpoint > "$RESULTS/e2e-policy-endpoint-disable.signals.json"
 if grep -Fq 'payload_dropped' "$RESULTS/e2e-policy-endpoint-disable.signals.json"; then
   echo "[e2e-policy-endpoint-disable][ERROR] disabled endpoint rule still emitted signal" >&2
   cat "$RESULTS/e2e-policy-endpoint-disable.signals.json" >&2
@@ -157,7 +157,7 @@ if grep -Fq 'payload_dropped' "$RESULTS/e2e-policy-endpoint-disable.signals.json
 fi
 
 wait_contains "agent health policy" '"policy_id":"no-payload-drop"' "$RESULTS/e2e-policy-endpoint-disable.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --tenant-id default --agent-id "$AGENT_ID"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --tenant-id default --agent-id "$AGENT_ID"
 if ! grep -Fq '"policy_version":2' "$RESULTS/e2e-policy-endpoint-disable.health.json"; then
   echo "[e2e-policy-endpoint-disable][ERROR] health missing assigned policy version" >&2
   cat "$RESULTS/e2e-policy-endpoint-disable.health.json" >&2

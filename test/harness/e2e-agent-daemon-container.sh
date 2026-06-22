@@ -83,9 +83,9 @@ wait_contains() {
 }
 
 wait_contains "agent-health" '"agent_id":"container-agent-daemon"' "$RESULTS/e2e-agent-daemon-container.health.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-agent-daemon --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-daemon --tenant-id default
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-daemon-container.metrics.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json metrics
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics
 
 docker exec mgr cat /tmp/sysarmor-agent-container/agent.log > "$RESULTS/e2e-agent-daemon-container.agent.log"
 

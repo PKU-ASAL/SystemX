@@ -20,6 +20,8 @@ const (
 	ControlCommandStatusApplied  = "applied"
 	ControlCommandStatusRejected = "rejected"
 	ControlCommandStatusFailed   = "failed"
+	ControlCommandStatusCanceled = "canceled"
+	ControlCommandStatusExpired  = "expired"
 )
 
 type ControlCommand struct {
@@ -39,7 +41,11 @@ type ControlCommand struct {
 	CreatedAt      time.Time       `json:"created_at,omitempty"`
 	UpdatedAt      time.Time       `json:"updated_at,omitempty"`
 	SentAt         time.Time       `json:"sent_at,omitempty"`
+	LastSentAt     time.Time       `json:"last_sent_at,omitempty"`
 	AckedAt        time.Time       `json:"acked_at,omitempty"`
+	CanceledAt     time.Time       `json:"canceled_at,omitempty"`
+	ExpiredAt      time.Time       `json:"expired_at,omitempty"`
+	AttemptCount   uint32          `json:"attempt_count,omitempty"`
 	AckStatus      string          `json:"ack_status,omitempty"`
 	AckMessage     string          `json:"ack_message,omitempty"`
 	AckPolicyID    string          `json:"ack_policy_id,omitempty"`
@@ -126,7 +132,7 @@ func NormalizeControlCommand(cmd ControlCommand) ControlCommand {
 
 func ControlCommandTerminalStatus(status string) bool {
 	switch status {
-	case ControlCommandStatusApplied, ControlCommandStatusRejected, ControlCommandStatusFailed:
+	case ControlCommandStatusApplied, ControlCommandStatusRejected, ControlCommandStatusFailed, ControlCommandStatusCanceled, ControlCommandStatusExpired:
 		return true
 	default:
 		return false

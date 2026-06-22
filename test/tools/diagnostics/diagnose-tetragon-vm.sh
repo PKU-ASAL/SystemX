@@ -119,7 +119,7 @@ agent_sock=\$(awk \"/socket_path:/ {print \\\$2}\" /etc/sysarmor/agent.yaml 2>/d
 if [ -z \"\$agent_sock\" ]; then
   agent_sock=/var/run/sysarmor/agent.sock
 fi
-sysarmorctl --agent-sock \"\$agent_sock\" --json agent health --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} >/tmp/sysarmor-tetragon-health-before.json 2>/tmp/sysarmor-tetragon-health-before.err || true
+sysarmorctl --socket \"\$agent_sock\" --json agent health --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} >/tmp/sysarmor-tetragon-health-before.json 2>/tmp/sysarmor-tetragon-health-before.err || true
 
 perf stat -e ${PERF_STAT_EVENTS} -p \"\$pid\" -- sleep ${PERF_RECORD_SECONDS} >/tmp/sysarmor-tetragon-perf-stat.out 2>/tmp/sysarmor-tetragon-perf-stat.txt &
 stat_pid=\$!
@@ -147,8 +147,8 @@ fi
 
 perf report --stdio -i /tmp/sysarmor-tetragon-perf.data >/tmp/sysarmor-tetragon-perf-report.txt 2>/tmp/sysarmor-tetragon-perf-report.err || true
 curl -fsS \"http://${PPROF_ADDRESS}/debug/pprof/goroutine?debug=1\" -o /tmp/sysarmor-tetragon-pprof-goroutine.txt >/tmp/sysarmor-tetragon-pprof-goroutine.out 2>/tmp/sysarmor-tetragon-pprof-goroutine.err || true
-sysarmorctl --agent-sock \"\$agent_sock\" --json agent health --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} >/tmp/sysarmor-tetragon-health-after.json 2>/tmp/sysarmor-tetragon-health-after.err || true
-sysarmorctl --agent-sock \"\$agent_sock\" --json signal watch --include-recent --snapshot --limit 2000 --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} --timeout 5s >/tmp/sysarmor-tetragon-signals.ndjson 2>/tmp/sysarmor-tetragon-signals.err || true
+sysarmorctl --socket \"\$agent_sock\" --json agent health --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} >/tmp/sysarmor-tetragon-health-after.json 2>/tmp/sysarmor-tetragon-health-after.err || true
+sysarmorctl --socket \"\$agent_sock\" --json signal watch --include-recent --snapshot --limit 2000 --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} --timeout 5s >/tmp/sysarmor-tetragon-signals.ndjson 2>/tmp/sysarmor-tetragon-signals.err || true
 
 if grep -Fq \"data has no samples\" /tmp/sysarmor-tetragon-perf-report.err 2>/dev/null; then
   perf_samples=false

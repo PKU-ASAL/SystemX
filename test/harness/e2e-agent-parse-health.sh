@@ -133,13 +133,13 @@ wait_contains "manager healthz" '"ok":true' "$TMP/healthz.json" curl -sf "$MGR_U
 AGENT_PID=$!
 
 wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-parse-health.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-parse-health --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-parse-health --tenant-id default
 wait_contains "agent-health parse counter" '"parse_errors":' "$RESULTS/e2e-agent-parse-health.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-parse-health --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-parse-health --tenant-id default
 wait_contains "agent-health last error" 'unrecognized tetragon event' "$RESULTS/e2e-agent-parse-health.health.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-health --agent-id e2e-agent-parse-health --tenant-id default
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-parse-health --tenant-id default
 wait_contains "tamper signal" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-parse-health.signals.json" \
-  "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario agent-health --layer endpoint --terminal true
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario agent-health --layer endpoint --terminal true
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-parse-health.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-parse-health.manager.log"

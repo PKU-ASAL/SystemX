@@ -95,9 +95,9 @@ wait_contains() {
 }
 
 wait_contains "agent-health" '"backend":"tetragon"' "$RESULTS/e2e-agent-benign-container.health.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json agent-health --agent-id container-node-a-benign --tenant-id default
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-node-a-benign --tenant-id default
 deadline=$((SECONDS + 30))
-until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 events --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
   if (( SECONDS >= deadline )); then
     echo "[e2e-agent-benign-container][ERROR] managed Tetra subscription did not become ready" >&2
     docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
@@ -112,11 +112,11 @@ C2="$C2" CYCLES="$CYCLES" bash "$ROOT/scenarios/container/benign-ci-noise/attack
 sleep "$DUR"
 
 wait_contains "scenario events" "\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-benign-container.events.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json events --scenario "$SCENARIO"
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --scenario "$SCENARIO"
 wait_contains "endpoint download signal" 'download_by_lolbin' "$RESULTS/e2e-agent-benign-container.signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --layer endpoint
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --layer endpoint
 
-INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json incidents --scenario "$SCENARIO")"
+INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list --scenario "$SCENARIO")"
 printf '%s\n' "$INCIDENTS" > "$RESULTS/e2e-agent-benign-container.incidents.json"
 if [[ "$INCIDENTS" != '{"incidents":[]}' ]]; then
   echo "[e2e-agent-benign-container][ERROR] expected no default incident" >&2
@@ -125,7 +125,7 @@ if [[ "$INCIDENTS" != '{"incidents":[]}' ]]; then
   exit 1
 fi
 
-TERMINALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json signals --scenario "$SCENARIO" --terminal true)"
+TERMINALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --terminal true)"
 printf '%s\n' "$TERMINALS" > "$RESULTS/e2e-agent-benign-container.terminals.json"
 if [[ "$TERMINALS" != "[]" ]]; then
   echo "[e2e-agent-benign-container][ERROR] expected no terminal signals" >&2
@@ -135,7 +135,7 @@ if [[ "$TERMINALS" != "[]" ]]; then
 fi
 
 wait_contains "additive control incident" '"incidents":[{' "$RESULTS/e2e-agent-benign-container.additive.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 --json recompute --scenario "$SCENARIO" --mode additive_threshold
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager recompute --scenario "$SCENARIO" --mode additive_threshold
 
 docker exec tetragon cat "$WORK/agent.log" > "$RESULTS/e2e-agent-benign-container.agent.log"
 
