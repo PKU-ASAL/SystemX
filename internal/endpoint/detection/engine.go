@@ -210,6 +210,13 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		engine.rules[rule.spec.RuleID] = rule
 		report.RuleIDs = append(report.RuleIDs, rule.spec.RuleID)
 	}
+	if errs := validateEffectiveRules(engine.rules); len(errs) > 0 {
+		report.Status = "rejected"
+		report.Message = "detection policy rejected"
+		report.Details = append(report.Details, errs...)
+		report.Warnings = append(report.Warnings, errs...)
+		return engine, report
+	}
 	report.Coverage = CheckCoverageWithContent(normalized, collection, content)
 	report.Warnings = append(report.Warnings, report.Coverage.Warnings...)
 	if len(report.Warnings) > 0 {
@@ -218,6 +225,35 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		report.Details = append(report.Details, report.Warnings...)
 	}
 	return engine, report
+}
+
+func validateEffectiveRules(rules map[string]effectiveRule) []string {
+	var out []string
+	for _, rule := range rules {
+		runtimeType := rule.runtimeType()
+		switch runtimeType {
+		case "", "builtin", "expr", "sequence":
+		default:
+			out = append(out, fmt.Sprintf("rule %s has unsupported runtime type %q", rule.spec.RuleID, runtimeType))
+		}
+		if runtimeType == "expr" && len(rule.spec.Expr.Conditions) == 0 {
+			out = append(out, fmt.Sprintf("rule %s expr runtime requires conditions", rule.spec.RuleID))
+		}
+		if runtimeType == "sequence" {
+			if len(rule.spec.Sequence.Steps) == 0 {
+				out = append(out, fmt.Sprintf("rule %s sequence runtime requires steps", rule.spec.RuleID))
+			}
+			for _, step := range rule.spec.Sequence.Steps {
+				if strings.TrimSpace(step.ID) == "" {
+					out = append(out, fmt.Sprintf("rule %s sequence step id is required", rule.spec.RuleID))
+				}
+				if strings.TrimSpace(step.Behavior) == "" {
+					out = append(out, fmt.Sprintf("rule %s sequence step %s behavior is required", rule.spec.RuleID, step.ID))
+				}
+			}
+		}
+	}
+	return out
 }
 
 func normalizeLimits(limits EngineLimits) EngineLimits {

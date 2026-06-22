@@ -12,6 +12,12 @@ This document is the stable contract for production agent-manager traffic.
 
 Production data and control traffic use gRPC with mTLS. Local ctl is not a production cloud data plane.
 
+Sample production-shaped certificate material and config live under `deployments/agent-plane-mtls/`. The helper script is:
+
+```bash
+tools/pki/gen-agent-plane-mtls.sh ./pki default agent-prod-001 sysarmor-manager.example.com
+```
+
 ## Local Operator Boundary
 
 `sysarmorctl --agent-sock` talks to the local agent over Unix socket gRPC. It is intentionally a local operator/debug side channel:
@@ -71,3 +77,13 @@ The production agent runner uses a long-lived `AgentControlPlaneService.Connect`
 5. Agent sends `response_ack` and `evidence_pullback_result`.
 6. On disconnect, agent reconnects with bounded backoff.
 7. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.
+
+## Detection Hot Update
+
+Policy/content updates that affect endpoint detection use two-phase runtime application:
+
+1. Build a candidate detection engine with the new policy/content snapshot.
+2. If build status is `applied` or `degraded`, commit the content/policy and atomically switch the engine.
+3. If build status is `rejected`, keep the previous effective engine and content/policy state.
+
+Agent health reports include `detection` runtime status with the active detection policy version, applied content refs, last apply status, and last apply error.

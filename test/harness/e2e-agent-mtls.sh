@@ -16,6 +16,7 @@ HOST_ID="${HOST_ID:-host-mtls}"
 mkdir -p "$RESULTS" "$BIN"
 
 cleanup() {
+  if [[ -n "${AGENT_PID:-}" ]]; then kill "$AGENT_PID" 2>/dev/null || true; fi
   if [[ -n "${MGR_PID:-}" ]]; then kill "$MGR_PID" 2>/dev/null || true; fi
   rm -rf "$TMP"
 }
@@ -24,11 +25,12 @@ trap cleanup EXIT
 echo "[e2e-agent-mtls] building required binaries"
 GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-manager" "$ROOT/cmd/sysarmor-manager"
 GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-append" "$ROOT/cmd/sysarmor-databatch-append"
+GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-agent" "$ROOT/cmd/sysarmor-agent"
 
 PKI_DIR="$TMP/pki"
-"$ROOT/tools/pki/gen-mtls-dev.sh" "$PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
+"$ROOT/tools/pki/gen-agent-plane-mtls.sh" "$PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
 UNTRUSTED_PKI_DIR="$TMP/untrusted-pki"
-"$ROOT/tools/pki/gen-mtls-dev.sh" "$UNTRUSTED_PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
+"$ROOT/tools/pki/gen-agent-plane-mtls.sh" "$UNTRUSTED_PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
 
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
@@ -172,6 +174,62 @@ if ! grep -Fq '"last_ack_cursor":"mtls-good-batch"' "$RESULTS/e2e-agent-mtls.ses
   exit 1
 fi
 
+cat > "$TMP/collection.json" <<'JSON'
+{"policy_id":"mtls-e2e-collection","version":1,"behaviors":[{"id":"process.exec"},{"id":"file.write"},{"id":"network.connect"}],"observe_only":true}
+JSON
+cat > "$TMP/agent.yaml" <<YAML
+agent:
+  id: "$AGENT_ID"
+  host_id: "$HOST_ID"
+  tenant_id: "$TENANT_ID"
+  token: "mtls-local-token"
+manager:
+  address: "127.0.0.1:$GRPC_PORT"
+  transport: "grpc"
+  tls_ca: "$PKI_DIR/ca.pem"
+  tls_cert: "$PKI_DIR/agent.pem"
+  tls_key: "$PKI_DIR/agent-key.pem"
+  tls_server_name: "localhost"
+control:
+  socket_path: "$TMP/agent.sock"
+sensor:
+  backend: "fake"
+  mode: "managed"
+  policy_path: "$TMP/collection.json"
+  fake_startup_events: 1
+  observe_only: true
+spool:
+  path: "$TMP/spool"
+  max_bytes: 1048576
+  batch_size: 8
+  flush_interval: 200ms
+data_plane:
+  retry_initial: 100ms
+  retry_max: 500ms
+  request_timeout: 2s
+health:
+  interval: 200ms
+content:
+  path: "$TMP/content"
+YAML
+
+"$BIN/sysarmor-agent" run --config "$TMP/agent.yaml" >"$TMP/agent.log" 2>&1 &
+AGENT_PID=$!
+wait_contains "agent control health" '"agent_id":"'"$AGENT_ID"'"' "$TMP/agent-health.json" curl -sf "$MGR_URL/api/v1/agent-health?tenant_id=$TENANT_ID&agent_id=$AGENT_ID"
+if ! grep -Fq '"auth_type":"mtls"' "$RESULTS/e2e-agent-mtls.sessions.json" "$TMP/agent-health.json" 2>/dev/null; then
+  curl -sf "$MGR_URL/api/v1/agents?tenant_id=$TENANT_ID" > "$RESULTS/e2e-agent-mtls.agents.json"
+  if ! grep -Fq '"auth_type":"mtls"' "$RESULTS/e2e-agent-mtls.agents.json"; then
+    echo "[e2e-agent-mtls][ERROR] agent did not register with mTLS auth type" >&2
+    cat "$RESULTS/e2e-agent-mtls.agents.json" >&2
+    cat "$TMP/agent.log" >&2
+    exit 1
+  fi
+fi
+kill "$AGENT_PID" 2>/dev/null || true
+wait "$AGENT_PID" 2>/dev/null || true
+unset AGENT_PID
+
 cp "$PKI_DIR/README.txt" "$RESULTS/e2e-agent-mtls.pki-readme.txt"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-mtls.manager.log"
+cp "$TMP/agent.log" "$RESULTS/e2e-agent-mtls.agent.log"
 echo "[e2e-agent-mtls] ok"

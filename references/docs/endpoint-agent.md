@@ -157,6 +157,8 @@ The endpoint detection runtime should remain lightweight:
 
 Global provenance graph reconstruction belongs to cloud analytics. Endpoint must produce enough identifiers and references for cloud reconstruction.
 
+Policy and content hot updates are applied as a candidate runtime first. The agent only switches to the new detection engine after the candidate builds successfully. Missing collection dependencies may produce a `degraded` status while still applying; invalid rule/runtime content is `rejected` and the previous effective engine remains active. Agent health exposes the active detection policy/content refs and the last apply status.
+
 ## Response / Enforce
 
 Endpoint response must be policy-gated.
@@ -205,5 +207,4 @@ Known gaps to keep visible:
 - real enforce is still limited and should remain observe-only until policy, audit, and backend support are complete;
 - Tetragon policy apply can cause short CPU spikes and needs lifecycle-aware benchmarking;
 - native thin sensor path is not implemented yet;
-- manager downlink should later reuse the local control semantics but run through AgentControlPlaneService.Connect identity and authorization;
-- local ring health and cursor visibility should continue to improve.
+- richer detection rule validation and signature/rotation workflows should continue to mature.

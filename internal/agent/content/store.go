@@ -184,16 +184,31 @@ func (s *Store) Load() error {
 }
 
 func (s *Store) Apply(raw string, allowUnsigned bool, dryRun bool) (Record, error) {
-	env, err := Parse(raw)
+	record, _, err := s.Prepare(raw, allowUnsigned)
 	if err != nil {
 		return Record{}, err
 	}
-	if err := s.Validate(env, allowUnsigned); err != nil {
+	if dryRun {
+		record.Status = "validated"
+		return record, nil
+	}
+	if err := s.Commit(record); err != nil {
 		return Record{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) Prepare(raw string, allowUnsigned bool) (Record, Snapshot, error) {
+	env, err := Parse(raw)
+	if err != nil {
+		return Record{}, Snapshot{}, err
+	}
+	if err := s.Validate(env, allowUnsigned); err != nil {
+		return Record{}, Snapshot{}, err
 	}
 	raw, env, err = s.resolvePatch(env)
 	if err != nil {
-		return Record{}, err
+		return Record{}, Snapshot{}, err
 	}
 	record := Record{
 		Ref:     env.Metadata.ID,
@@ -204,10 +219,10 @@ func (s *Store) Apply(raw string, allowUnsigned bool, dryRun bool) (Record, erro
 		Status:  "applied",
 		RawJSON: raw,
 	}
-	if dryRun {
-		record.Status = "validated"
-		return record, nil
-	}
+	return record, s.SnapshotWith(record), nil
+}
+
+func (s *Store) Commit(record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.records == nil {
@@ -216,9 +231,9 @@ func (s *Store) Apply(raw string, allowUnsigned bool, dryRun bool) (Record, erro
 	s.records[record.Ref] = record
 	if err := s.persistLocked(record); err != nil {
 		delete(s.records, record.Ref)
-		return Record{}, err
+		return err
 	}
-	return record, nil
+	return nil
 }
 
 func (s *Store) List(kind string) []Record {
@@ -250,12 +265,29 @@ func (s *Store) Get(ref string) (Record, bool) {
 func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return snapshotFromRecords(s.records)
+}
+
+func (s *Store) SnapshotWith(record Record) Snapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	records := make(map[string]Record, len(s.records)+1)
+	for ref, current := range s.records {
+		records[ref] = current
+	}
+	if record.Ref != "" {
+		records[record.Ref] = record
+	}
+	return snapshotFromRecords(records)
+}
+
+func snapshotFromRecords(records map[string]Record) Snapshot {
 	out := Snapshot{
 		RulePacks:   make(map[string]Record),
 		ContextSets: make(map[string]ValueSet),
 		IOCPacks:    make(map[string]ValueSet),
 	}
-	for _, record := range s.records {
+	for _, record := range records {
 		switch record.Kind {
 		case "rulepack":
 			out.RulePacks[record.Ref] = record

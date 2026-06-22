@@ -24,7 +24,7 @@ CLIENT_EXT="$OUT_DIR/agent.ext"
 
 openssl genrsa -out "$CA_KEY" 4096 >/dev/null 2>&1
 openssl req -x509 -new -nodes -key "$CA_KEY" -sha256 -days "$DAYS" \
-  -subj "/CN=SysArmor Dev CA" \
+  -subj "/CN=SysArmor Agent Plane CA" \
   -out "$CA_CERT" >/dev/null 2>&1
 
 openssl genrsa -out "$SERVER_KEY" 2048 >/dev/null 2>&1
@@ -58,7 +58,7 @@ chmod 644 "$CA_CERT" "$SERVER_CERT" "$CLIENT_CERT"
 rm -f "$SERVER_CSR" "$CLIENT_CSR" "$SERVER_EXT" "$CLIENT_EXT"
 
 cat > "$OUT_DIR/README.txt" <<EOF
-SysArmor development mTLS material
+SysArmor agent-facing plane mTLS sample material
 
 Identity:
   tenant_id: $TENANT_ID
@@ -72,6 +72,7 @@ Production convention:
   - Reusing tenant_id/agent_id with a different certificate principal is rejected.
   - Rotation should issue a new certificate for the same URI SAN from a trusted CA.
   - Revocation and short certificate lifetimes should be handled by production PKI.
+  - CN exists only as a compatibility fallback; new deployments should use URI SAN.
 
 Files:
   ca.pem

@@ -139,6 +139,22 @@ message CEPHealth {
   bool degraded = 7;
 }
 
+message DetectionContentRef {
+  string ref = 1;
+  string kind = 2;
+  string version = 3;
+  string digest = 4;
+}
+
+message DetectionRuntimeHealth {
+  string policy_id = 1;
+  uint64 policy_version = 2;
+  repeated DetectionContentRef content_refs = 3;
+  string last_apply_status = 4;
+  string last_apply_error = 5;
+  string updated_at = 6;
+}
+
 message LocalStreamHealth {
   uint64 event_capacity = 1;
   uint64 event_buffered = 2;
@@ -192,6 +208,7 @@ message HealthResponse {
   CEPHealth cep = 15;
   LocalStreamHealth streams = 16;
   WALHealth wal = 17;
+  DetectionRuntimeHealth detection = 18;
 }
 
 message CapabilityRequest {

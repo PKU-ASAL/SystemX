@@ -17,9 +17,26 @@ type AgentHealth struct {
 	Queue         QueueHealth       `json:"queue_health"`
 	WAL           WALHealth         `json:"wal_health"`
 	DataPlane     DataPlaneHealth   `json:"data_plane_health"`
+	Detection     DetectionHealth   `json:"detection_health"`
 	CEP           CEPHealth         `json:"cep_health"`
 	Streams       LocalStreamHealth `json:"stream_health"`
 	ObservedAt    time.Time         `json:"observed_at"`
+}
+
+type DetectionHealth struct {
+	PolicyID        string       `json:"policy_id,omitempty"`
+	PolicyVersion   uint64       `json:"policy_version,omitempty"`
+	ContentRefs     []ContentRef `json:"content_refs,omitempty"`
+	LastApplyStatus string       `json:"last_apply_status,omitempty"`
+	LastApplyError  string       `json:"last_apply_error,omitempty"`
+	UpdatedAt       time.Time    `json:"updated_at,omitempty"`
+}
+
+type ContentRef struct {
+	Ref     string `json:"ref"`
+	Kind    string `json:"kind,omitempty"`
+	Version string `json:"version,omitempty"`
+	Digest  string `json:"digest,omitempty"`
 }
 
 type RuntimeScope struct {

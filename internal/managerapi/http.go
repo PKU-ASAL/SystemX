@@ -167,6 +167,8 @@ type AgentListItem struct {
 	HostID         string                       `json:"host_id"`
 	TenantID       string                       `json:"tenant_id"`
 	Version        string                       `json:"version,omitempty"`
+	AuthType       string                       `json:"auth_type,omitempty"`
+	CertIdentity   string                       `json:"cert_identity,omitempty"`
 	HealthStatus   string                       `json:"health_status,omitempty"`
 	Scope          agenthealth.RuntimeScope     `json:"scope,omitempty"`
 	Capability     agenthealth.SensorCapability `json:"sensor_capability,omitempty"`
@@ -392,10 +394,12 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		item := AgentListItem{
-			AgentID:  agent.AgentID,
-			HostID:   agent.HostID,
-			TenantID: agent.TenantID,
-			Version:  agent.Version,
+			AgentID:      agent.AgentID,
+			HostID:       agent.HostID,
+			TenantID:     agent.TenantID,
+			Version:      agent.Version,
+			AuthType:     agent.AuthType,
+			CertIdentity: agent.CertIdentity,
 		}
 		if health, ok := s.store.GetAgentHealth(agent.TenantID, agent.AgentID); ok {
 			item.HealthStatus = health.Status

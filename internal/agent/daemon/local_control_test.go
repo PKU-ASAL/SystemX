@@ -542,6 +542,187 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	}
 }
 
+func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "agent.sock")
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	runner := &AgentRuntime{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control: config.ControlConfig{SocketPath: socketPath},
+			Sensor:  config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}},
+		},
+		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
+		capability: contract.Capability{Backend: "fake", SupportsExec: true, SupportsFile: true, SupportsConnect: true},
+	}
+	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatalf("startLocalControlServer() error = %v", err)
+	}
+	defer stop()
+
+	client := newUnixControlClient(t, socketPath)
+	good := `{
+		"api_version":"sysarmor.content/v1",
+		"kind":"iocpack",
+		"metadata":{"id":"ioc:c2-port-feed","version":"good-9443"},
+		"spec":{"value_type":"port","values":["9443"]}
+	}`
+	goodAck, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-good-content"},
+		ContentJson:   good,
+		AllowUnsigned: true,
+	})
+	if err != nil {
+		t.Fatalf("ApplyContent(good) error = %v", err)
+	}
+	if goodAck.GetStatus() != "applied" {
+		t.Fatalf("good content ack = %+v", goodAck)
+	}
+	policyAck, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-bad-policy"},
+		PolicyType: "detection",
+		PolicyJson: `{
+			"policy_id":"bad-runtime-candidate",
+			"version":2,
+			"mode":"observe",
+			"rulesets":[
+				{"ref":"ruleset:endpoint-linux-builtin","enabled":true},
+				{"ref":"ruleset:bad-runtime","enabled":true}
+			]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy(detection) error = %v", err)
+	}
+	if policyAck.GetStatus() != "applied" {
+		t.Fatalf("policy ack = %+v", policyAck)
+	}
+
+	badAck, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-bad-content"},
+		ContentJson:   badRuntimeRulePackJSON(),
+		AllowUnsigned: true,
+	})
+	if err != nil {
+		t.Fatalf("ApplyContent(bad) error = %v", err)
+	}
+	if badAck.GetStatus() != "rejected" || !strings.Contains(badAck.GetMessage(), "detection rebuild failed") {
+		t.Fatalf("bad content ack = %+v", badAck)
+	}
+	if _, ok := runner.contentStore().Get("rulepack:bad-runtime"); ok {
+		t.Fatalf("rejected content was committed")
+	}
+
+	norm := normalize.New("agent-a", "host-a", nil)
+	batchID := appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/kept.sh", ""))
+	batch, err := queue.LoadDataBatch(batchID)
+	if err != nil {
+		t.Fatalf("LoadDataBatch() error = %v", err)
+	}
+	if len(batch.GetSignals()) != 1 || batch.GetSignals()[0].GetSignal().GetName() != "payload_dropped" {
+		t.Fatalf("signals after rejected rebuild = %+v, want previous detection engine still active", batch.GetSignals())
+	}
+	health, err := client.Health(context.Background(), &controlplanev1.HealthRequest{Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"}})
+	if err != nil {
+		t.Fatalf("Health() error = %v", err)
+	}
+	if health.GetDetection().GetLastApplyStatus() != "rejected" || !strings.Contains(health.GetDetection().GetLastApplyError(), "bad_runtime_rule") {
+		t.Fatalf("detection health = %+v", health.GetDetection())
+	}
+	for _, ref := range health.GetDetection().GetContentRefs() {
+		if ref.GetRef() == "rulepack:bad-runtime" {
+			t.Fatalf("detection health includes rejected content ref: %+v", health.GetDetection())
+		}
+	}
+}
+
+func TestLocalControlDetectionPolicyRebuildFailureKeepsPreviousPolicy(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "agent.sock")
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	runner := &AgentRuntime{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control: config.ControlConfig{SocketPath: socketPath},
+			Sensor:  config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}},
+		},
+		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
+		capability: contract.Capability{Backend: "fake", SupportsExec: true, SupportsFile: true, SupportsConnect: true},
+	}
+	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatalf("startLocalControlServer() error = %v", err)
+	}
+	defer stop()
+
+	client := newUnixControlClient(t, socketPath)
+	if _, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
+		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-bad-rulepack"},
+		ContentJson:   badRuntimeRulePackJSON(),
+		AllowUnsigned: true,
+	}); err != nil {
+		t.Fatalf("ApplyContent(bad rulepack not enabled) error = %v", err)
+	}
+	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-bad-detection-policy"},
+		PolicyType: "detection",
+		PolicyJson: `{
+			"policy_id":"bad-runtime-policy",
+			"version":9,
+			"mode":"observe",
+			"rulesets":[{"ref":"ruleset:bad-runtime","enabled":true}]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy(bad detection) error = %v", err)
+	}
+	if ack.GetStatus() != "rejected" {
+		t.Fatalf("ack = %+v, want rejected", ack)
+	}
+	if runner.activePolicy().Detection.PolicyID == "bad-runtime-policy" {
+		t.Fatalf("bad detection policy replaced active policy")
+	}
+	batchID := appendEndpointEventForTest(t, runner, queue, normalize.New("agent-a", "host-a", nil), sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/kept-policy.sh", ""))
+	batch, err := queue.LoadDataBatch(batchID)
+	if err != nil {
+		t.Fatalf("LoadDataBatch() error = %v", err)
+	}
+	if len(batch.GetSignals()) != 1 || batch.GetSignals()[0].GetSignal().GetName() != "payload_dropped" {
+		t.Fatalf("signals after rejected policy = %+v, want previous detection policy still active", batch.GetSignals())
+	}
+}
+
+func badRuntimeRulePackJSON() string {
+	return `{
+		"api_version":"sysarmor.content/v1",
+		"kind":"rulepack",
+		"metadata":{"id":"rulepack:bad-runtime","version":"bad-v1"},
+		"spec":{"rulesets":[{"id":"ruleset:bad-runtime","version":"v1","rules":[{
+			"rule_id":"bad_runtime_rule",
+			"version":1,
+			"severity":"high",
+			"runtime":{"type":"made_up_runtime"}
+		}]}]}
+	}`
+}
+
 type recordingCollectionSensor struct {
 	healthOnlySensor
 	lastIntent contract.CollectionIntent

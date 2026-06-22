@@ -1,0 +1,38 @@
+agent:
+  id: "agent-prod-001"
+  host_id: "host-prod-001"
+  tenant_id: "default"
+  token: "unused-with-mtls-but-required-by-local-config"
+manager:
+  address: "sysarmor-manager.example.com:9444"
+  transport: "grpc"
+  tls_ca: "/etc/sysarmor/pki/ca.pem"
+  tls_cert: "/etc/sysarmor/pki/agent.pem"
+  tls_key: "/etc/sysarmor/pki/agent-key.pem"
+  tls_server_name: "sysarmor-manager.example.com"
+control:
+  socket_path: "/var/run/sysarmor/agent.sock"
+sensor:
+  backend: "tetragon"
+  mode: "managed"
+  policy_path: "/etc/sysarmor/collection.json"
+  observe_only: true
+spool:
+  path: "/var/lib/sysarmor/agent/spool"
+  max_bytes: 268435456
+  batch_size: 256
+  flush_interval: 1s
+data_plane:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+  max_inflight: 1
+  compression: "none"
+  tls_profile: "agent-plane-mtls"
+health:
+  interval: 10s
+content:
+  path: "/var/lib/sysarmor/agent/content"
+resource:
+  max_active_cep_groups: 4096
+  max_event_refs_per_signal: 128

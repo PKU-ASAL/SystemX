@@ -64,16 +64,17 @@ type Options struct {
 }
 
 type AgentRuntime struct {
-	Config     config.Config
-	Sensor     contract.Sensor
-	Out        io.Writer
-	capability contract.Capability
-	mu         sync.RWMutex
-	policy     policymodel.Policy
-	detection  *detection.Engine
-	collection contract.CollectionIntent
-	content    *agentcontent.Store
-	signalSeq  uint64
+	Config          config.Config
+	Sensor          contract.Sensor
+	Out             io.Writer
+	capability      contract.Capability
+	mu              sync.RWMutex
+	policy          policymodel.Policy
+	detection       *detection.Engine
+	collection      contract.CollectionIntent
+	content         *agentcontent.Store
+	detectionStatus agenthealth.DetectionHealth
+	signalSeq       uint64
 }
 
 type healthReporter interface {
@@ -427,6 +428,7 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 			RemainingBytes:   dataPlaneStats.RemainingBytes,
 			LastError:        dataPlaneStats.LastError,
 		},
+		Detection: r.detectionHealth(),
 		CEP: agenthealth.CEPHealth{
 			ActiveGroups:     cepMetrics.ActiveCEPGroups,
 			EvictedGroups:    cepMetrics.EvictedCEPGroups,
@@ -535,17 +537,82 @@ func (r *AgentRuntime) withCollectionCapabilities(intent contract.CollectionInte
 }
 
 func (r *AgentRuntime) applyRuntimePolicy(policy policymodel.Policy) {
+	r.tryApplyRuntimePolicy(policy)
+}
+
+func (r *AgentRuntime) tryApplyRuntimePolicy(policy policymodel.Policy) (detection.ApplyReport, bool) {
 	policy = policymodel.Normalize(policy)
-	engine, _ := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
+	engine, report := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
+	if report.Status == "rejected" {
+		r.setDetectionStatus(policy, report, r.contentStore().Snapshot())
+		return report, false
+	}
 	r.setPolicy(policy)
 	r.setDetection(engine)
+	r.setDetectionStatus(policy, report, r.contentStore().Snapshot())
+	return report, true
 }
 
 func (r *AgentRuntime) rebuildDetection() detection.ApplyReport {
 	policy := policymodel.Normalize(r.activePolicy())
 	engine, report := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
+	if report.Status == "rejected" {
+		r.setDetectionStatus(policy, report, r.contentStore().Snapshot())
+		return report
+	}
 	r.setDetection(engine)
+	r.setDetectionStatus(policy, report, r.contentStore().Snapshot())
 	return report
+}
+
+func (r *AgentRuntime) buildDetectionWithSnapshot(snapshot agentcontent.Snapshot) (*detection.Engine, detection.ApplyReport) {
+	policy := policymodel.Normalize(r.activePolicy())
+	engine, report := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), detectionContentSnapshotFromContent(snapshot), r.detectionLimits())
+	return engine, report
+}
+
+func (r *AgentRuntime) commitDetectionContent(record agentcontent.Record, snapshot agentcontent.Snapshot, engine *detection.Engine, report detection.ApplyReport) error {
+	if report.Status == "rejected" {
+		r.setDetectionStatus(r.activePolicy(), report, r.contentStore().Snapshot())
+		return fmt.Errorf("%s", report.Message)
+	}
+	if err := r.contentStore().Commit(record); err != nil {
+		return err
+	}
+	r.setDetection(engine)
+	r.setDetectionStatus(r.activePolicy(), report, snapshot)
+	return nil
+}
+
+func (r *AgentRuntime) setDetectionStatus(policy policymodel.Policy, report detection.ApplyReport, snapshot agentcontent.Snapshot) {
+	status := agenthealth.DetectionHealth{
+		PolicyID:        firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
+		PolicyVersion:   policy.Detection.Version,
+		LastApplyStatus: report.Status,
+		UpdatedAt:       time.Now().UTC(),
+		ContentRefs:     detectionContentRefs(snapshot),
+	}
+	if report.Status == "rejected" {
+		status.LastApplyError = strings.Join(report.Details, "; ")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.detectionStatus = status
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (r *AgentRuntime) detectionHealth() agenthealth.DetectionHealth {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.detectionStatus
 }
 
 func (r *AgentRuntime) detectionLimits() detection.EngineLimits {
@@ -763,7 +830,10 @@ func (r *AgentRuntime) contentStore() *agentcontent.Store {
 }
 
 func (r *AgentRuntime) detectionContentSnapshot() detection.ContentSnapshot {
-	snapshot := r.contentStore().Snapshot()
+	return detectionContentSnapshotFromContent(r.contentStore().Snapshot())
+}
+
+func detectionContentSnapshotFromContent(snapshot agentcontent.Snapshot) detection.ContentSnapshot {
 	out := detection.ContentSnapshot{
 		ContextRefs: make(map[string]detection.ContentRef),
 		IOCRefs:     make(map[string]detection.ContentRef),
@@ -804,6 +874,20 @@ func (r *AgentRuntime) detectionContentSnapshot() detection.ContentSnapshot {
 				Reason:     rule.ResponseIntent.Reason,
 			},
 		})
+	}
+	return out
+}
+
+func detectionContentRefs(snapshot agentcontent.Snapshot) []agenthealth.ContentRef {
+	var out []agenthealth.ContentRef
+	for ref, record := range snapshot.RulePacks {
+		out = append(out, agenthealth.ContentRef{Ref: ref, Kind: record.Kind, Version: record.Version, Digest: record.Digest})
+	}
+	for ref, set := range snapshot.ContextSets {
+		out = append(out, agenthealth.ContentRef{Ref: ref, Kind: "contextset", Version: set.Version, Digest: set.Digest})
+	}
+	for ref, set := range snapshot.IOCPacks {
+		out = append(out, agenthealth.ContentRef{Ref: ref, Kind: "iocpack", Version: set.Version, Digest: set.Digest})
 	}
 	return out
 }

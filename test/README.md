@@ -90,10 +90,10 @@ The table-form contract is maintained in `references/docs/agent-manager-contract
 Development certificates can be generated with:
 
 ```bash
-tools/pki/gen-mtls-dev.sh test/.results/pki default agent-a localhost
+tools/pki/gen-agent-plane-mtls.sh test/.results/pki default agent-a localhost
 ```
 
-The mTLS smoke test covers successful append, forged `agent_id` rejection, and missing client certificate rejection:
+The mTLS smoke test covers successful append, control-plane connect/health over mTLS, forged `agent_id` rejection, missing client certificate rejection, and untrusted client CA rejection:
 
 ```bash
 make -C test e2e-agent-mtls

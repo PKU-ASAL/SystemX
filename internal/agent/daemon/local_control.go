@@ -174,7 +174,10 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 	if req.GetDryRun() {
 		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", dataPlaneSection != nil), nil
 	}
-	s.runner.applyRuntimePolicy(next)
+	report, ok := s.runner.tryApplyRuntimePolicy(next)
+	if !ok {
+		return rejectedAck(s.runner.Config, req.GetContext(), "detection", "runtime policy rejected; detection rebuild failed: "+strings.Join(report.Details, "; ")), nil
+	}
 	if dataPlaneSection != nil {
 		s.runner.applyDataPlaneConfig(*dataPlaneSection)
 	}
@@ -215,14 +218,31 @@ func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplane
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
 	}
-	record, err := s.runner.contentStore().Apply(req.GetContentJson(), req.GetAllowUnsigned(), req.GetDryRun())
+	var report detection.ApplyReport
+	record, err := s.runner.contentStore().Apply(req.GetContentJson(), req.GetAllowUnsigned(), true)
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
 	}
 	status := record.Status
-	var report detection.ApplyReport
-	if !req.GetDryRun() {
-		report = s.runner.rebuildDetection()
+	if req.GetDryRun() {
+		status = "validated"
+	} else {
+		var snapshot agentcontent.Snapshot
+		record, snapshot, err := s.runner.contentStore().Prepare(req.GetContentJson(), req.GetAllowUnsigned())
+		if err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+		}
+		var engine *detection.Engine
+		engine, report = s.runner.buildDetectionWithSnapshot(snapshot)
+		if report.Status == "rejected" {
+			message := "content rejected; detection rebuild failed: " + strings.Join(report.Details, "; ")
+			s.runner.setDetectionStatus(s.runner.activePolicy(), report, s.runner.contentStore().Snapshot())
+			return rejectedAck(s.runner.Config, req.GetContext(), "content", message), nil
+		}
+		if err := s.runner.commitDetectionContent(record, snapshot, engine, report); err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+		}
+		status = record.Status
 		if report.Status == "degraded" {
 			status = "degraded"
 		}
@@ -353,8 +373,13 @@ func (s *localControlServer) applyDetectionPolicy(req *controlplanev1.ApplyPolic
 	if req.GetDryRun() {
 		return detectionAck(s.runner.Config, req.GetContext(), active, report.Status, "detection policy accepted in dry-run: "+report.Message, false, report)
 	}
+	if report.Status == "rejected" {
+		s.runner.setDetectionStatus(active, report, s.runner.contentStore().Snapshot())
+		return detectionAck(s.runner.Config, req.GetContext(), active, "rejected", "detection policy rejected: "+strings.Join(report.Details, "; "), false, report)
+	}
 	s.runner.setPolicy(active)
 	s.runner.setDetection(engine)
+	s.runner.setDetectionStatus(active, report, s.runner.contentStore().Snapshot())
 	return detectionAck(s.runner.Config, req.GetContext(), active, report.Status, report.Message, false, report)
 }
 
@@ -1044,6 +1069,14 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 			RemainingBytes:   health.DataPlane.RemainingBytes,
 			LastError:        health.DataPlane.LastError,
 		},
+		Detection: &controlplanev1.DetectionRuntimeHealth{
+			PolicyId:        health.Detection.PolicyID,
+			PolicyVersion:   health.Detection.PolicyVersion,
+			ContentRefs:     detectionContentRefMessages(health.Detection.ContentRefs),
+			LastApplyStatus: health.Detection.LastApplyStatus,
+			LastApplyError:  health.Detection.LastApplyError,
+			UpdatedAt:       timestampString(health.Detection.UpdatedAt),
+		},
 		Cep: &controlplanev1.CEPHealth{
 			ActiveGroups:     health.CEP.ActiveGroups,
 			EvictedGroups:    health.CEP.EvictedGroups,
@@ -1071,6 +1104,19 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 		},
 		ObservedAt: timestampString(health.ObservedAt),
 	}
+}
+
+func detectionContentRefMessages(in []agenthealth.ContentRef) []*controlplanev1.DetectionContentRef {
+	out := make([]*controlplanev1.DetectionContentRef, 0, len(in))
+	for _, item := range in {
+		out = append(out, &controlplanev1.DetectionContentRef{
+			Ref:     item.Ref,
+			Kind:    item.Kind,
+			Version: item.Version,
+			Digest:  item.Digest,
+		})
+	}
+	return out
 }
 
 func scopeMessage(scope agenthealth.RuntimeScope) *controlplanev1.Scope {
