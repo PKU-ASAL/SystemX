@@ -267,6 +267,58 @@ func TestControlPlaneConnectAcceptsHealthReport(t *testing.T) {
 	}
 }
 
+func TestControlPlaneConnectAcceptsAgentAck(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type:            "ack",
+		RequestId:       "content-update-ack",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "ack-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+		Ack: &controlplanev1.ControlAck{
+			RequestId: "content-update-1",
+			TenantId:  "default",
+			AgentId:   "ack-agent",
+			Status:    "applied",
+			Message:   "content applied",
+		},
+	}); err != nil {
+		t.Fatalf("send ack: %v", err)
+	}
+	reply, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv ack reply: %v", err)
+	}
+	if reply.GetType() != "ack" || reply.GetAck().GetStatus() != "accepted" || reply.GetAck().GetMessage() != "ack accepted" {
+		t.Fatalf("ack reply = %+v", reply)
+	}
+}
+
 func TestControlPlaneConnectSequenceRejectsReplayAndGap(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)

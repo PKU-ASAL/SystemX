@@ -215,32 +215,39 @@ func (s *localControlServer) applyDataPlanePolicy(req *controlplanev1.ApplyPolic
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
-	if err := s.validateContext(req.GetContext()); err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+	return s.runner.applyContentUpdate(req), nil
+}
+
+func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentRequest) *controlplanev1.ControlAck {
+	if req == nil {
+		return rejectedAck(r.Config, nil, "content", "content update request is required")
+	}
+	if err := r.validateControlContext(req.GetContext()); err != nil {
+		return rejectedAck(r.Config, req.GetContext(), "content", err.Error())
 	}
 	var report detection.ApplyReport
-	record, err := s.runner.contentStore().Apply(req.GetContentJson(), req.GetAllowUnsigned(), true)
+	record, err := r.contentStore().Apply(req.GetContentJson(), req.GetAllowUnsigned(), true)
 	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+		return rejectedAck(r.Config, req.GetContext(), "content", err.Error())
 	}
 	status := record.Status
 	if req.GetDryRun() {
 		status = "validated"
 	} else {
 		var snapshot agentcontent.Snapshot
-		record, snapshot, err := s.runner.contentStore().Prepare(req.GetContentJson(), req.GetAllowUnsigned())
+		record, snapshot, err := r.contentStore().Prepare(req.GetContentJson(), req.GetAllowUnsigned())
 		if err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+			return rejectedAck(r.Config, req.GetContext(), "content", err.Error())
 		}
 		var engine *detection.Engine
-		engine, report = s.runner.buildDetectionWithSnapshot(snapshot)
+		engine, report = r.buildDetectionWithSnapshot(snapshot)
 		if report.Status == "rejected" {
 			message := "content rejected; detection rebuild failed: " + strings.Join(report.Details, "; ")
-			s.runner.setDetectionStatus(s.runner.activePolicy(), report, s.runner.contentStore().Snapshot())
-			return rejectedAck(s.runner.Config, req.GetContext(), "content", message), nil
+			r.setDetectionStatus(r.activePolicy(), report, r.contentStore().Snapshot())
+			return rejectedAck(r.Config, req.GetContext(), "content", message)
 		}
-		if err := s.runner.commitDetectionContent(record, snapshot, engine, report); err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+		if err := r.commitDetectionContent(record, snapshot, engine, report); err != nil {
+			return rejectedAck(r.Config, req.GetContext(), "content", err.Error())
 		}
 		status = record.Status
 		if report.Status == "degraded" {
@@ -253,8 +260,8 @@ func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplane
 	}
 	return &controlplanev1.ControlAck{
 		RequestId: requestID(req.GetContext()),
-		TenantId:  s.runner.Config.Agent.TenantID,
-		AgentId:   s.runner.Config.Agent.ID,
+		TenantId:  r.Config.Agent.TenantID,
+		AgentId:   r.Config.Agent.ID,
 		Status:    status,
 		Message:   message,
 		PolicyId:  record.Ref,
@@ -263,7 +270,7 @@ func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplane
 			Status:  status,
 			Message: message,
 		}},
-	}, nil
+	}
 }
 
 func (s *localControlServer) ListContent(ctx context.Context, req *controlplanev1.ListContentRequest) (*controlplanev1.ListContentResponse, error) {
@@ -576,14 +583,18 @@ func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilte
 }
 
 func (s *localControlServer) validateContext(ctx *controlplanev1.RequestContext) error {
+	return s.runner.validateControlContext(ctx)
+}
+
+func (r *AgentRuntime) validateControlContext(ctx *controlplanev1.RequestContext) error {
 	if ctx == nil {
 		return nil
 	}
-	if tenantID := strings.TrimSpace(ctx.GetTenantId()); tenantID != "" && tenantID != s.runner.Config.Agent.TenantID {
-		return fmt.Errorf("tenant mismatch: request=%s agent=%s", tenantID, s.runner.Config.Agent.TenantID)
+	if tenantID := strings.TrimSpace(ctx.GetTenantId()); tenantID != "" && tenantID != r.Config.Agent.TenantID {
+		return fmt.Errorf("tenant mismatch: request=%s agent=%s", tenantID, r.Config.Agent.TenantID)
 	}
-	if agentID := strings.TrimSpace(ctx.GetAgentId()); agentID != "" && agentID != s.runner.Config.Agent.ID {
-		return fmt.Errorf("agent mismatch: request=%s agent=%s", agentID, s.runner.Config.Agent.ID)
+	if agentID := strings.TrimSpace(ctx.GetAgentId()); agentID != "" && agentID != r.Config.Agent.ID {
+		return fmt.Errorf("agent mismatch: request=%s agent=%s", agentID, r.Config.Agent.ID)
 	}
 	return nil
 }

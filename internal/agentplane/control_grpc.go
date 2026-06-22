@@ -284,6 +284,11 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 			return nil, status.Errorf(codes.Internal, "save evidence pullback result: %v", err)
 		}
 		return []*controlplanev1.ControlFrame{controlAckFrame(frame, "accepted", "evidence pullback result accepted", "", false)}, nil
+	case "ack":
+		if frame.GetAck() == nil {
+			return nil, status.Error(codes.InvalidArgument, "ack payload is required")
+		}
+		return []*controlplanev1.ControlFrame{controlAckFrame(frame, "accepted", "ack accepted", "", false)}, nil
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported control frame type %q", frame.GetType())
 	}

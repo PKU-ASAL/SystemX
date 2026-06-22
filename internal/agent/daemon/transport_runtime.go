@@ -138,6 +138,16 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 			}
 		}
 		return nil
+	case "content_update":
+		req := contentUpdateFromControlFrame(frame)
+		ack := runner.applyContentUpdate(req)
+		if err := session.SendControlAck(ctx, ack); err != nil {
+			return err
+		}
+		if runner.Out != nil {
+			fmt.Fprintf(runner.Out, "agent control content update ack: request=%s status=%s message=%q\n", ack.GetRequestId(), ack.GetStatus(), ack.GetMessage())
+		}
+		return nil
 	case "resume":
 		cursor := frame.GetResume().GetResumeCursor()
 		if err := r.spool.AckThrough(cursor); err != nil {
@@ -176,4 +186,46 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 	default:
 		return nil
 	}
+}
+
+func contentUpdateFromControlFrame(frame *controlplanev1.ControlFrame) *controlplanev1.ApplyContentRequest {
+	if frame == nil {
+		return &controlplanev1.ApplyContentRequest{}
+	}
+	req := protoCloneApplyContentRequest(frame.GetContentUpdate())
+	if req.Context == nil {
+		req.Context = frame.GetContext()
+	}
+	if req.Context == nil {
+		req.Context = &controlplanev1.RequestContext{}
+	}
+	if req.Context.RequestId == "" {
+		req.Context.RequestId = frame.GetRequestId()
+	}
+	if req.Context.TenantId == "" {
+		req.Context.TenantId = frame.GetContext().GetTenantId()
+	}
+	if req.Context.AgentId == "" {
+		req.Context.AgentId = frame.GetContext().GetAgentId()
+	}
+	if req.Context.Scope == nil {
+		req.Context.Scope = frame.GetContext().GetScope()
+	}
+	return req
+}
+
+func protoCloneApplyContentRequest(in *controlplanev1.ApplyContentRequest) *controlplanev1.ApplyContentRequest {
+	if in == nil {
+		return &controlplanev1.ApplyContentRequest{}
+	}
+	out := *in
+	if in.Context != nil {
+		ctx := *in.Context
+		if in.Context.Scope != nil {
+			scope := *in.Context.Scope
+			ctx.Scope = &scope
+		}
+		out.Context = &ctx
+	}
+	return &out
 }

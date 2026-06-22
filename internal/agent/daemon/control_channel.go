@@ -154,6 +154,26 @@ func (s *ControlChannel) SendEvidenceResult(ctx context.Context, result controlm
 	})
 }
 
+func (s *ControlChannel) SendControlAck(ctx context.Context, ack *controlplanev1.ControlAck) error {
+	if ack == nil {
+		return fmt.Errorf("control ack is nil")
+	}
+	requestID := ack.GetRequestId()
+	if requestID == "" {
+		requestID = "ack-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	}
+	return s.Send(ctx, &controlplanev1.ControlFrame{
+		Type:      "ack",
+		RequestId: requestID,
+		Context: &controlplanev1.RequestContext{
+			RequestId: requestID,
+			TenantId:  ack.GetTenantId(),
+			AgentId:   ack.GetAgentId(),
+		},
+		Ack: ack,
+	})
+}
+
 func (s *ControlChannel) SendCapability(ctx context.Context, health agenthealth.AgentHealth) error {
 	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "capability_report",

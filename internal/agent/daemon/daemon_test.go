@@ -3,7 +3,9 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -283,6 +285,85 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 			t.Fatalf("response ack not observed; audits=%+v", audits)
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+}
+
+func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
+	dir := t.TempDir()
+	server := &contentUpdateControlServer{
+		tenantID: "default",
+		agentID:  "agent-content-update",
+		contentJSON: `{
+			"api_version":"sysarmor.content/v1",
+			"kind":"iocpack",
+			"metadata":{"id":"ioc:c2-port-feed","version":"control-9443"},
+			"spec":{"value_type":"port","values":["9443"]}
+		}`,
+	}
+	runner, queue, done, cancel := runTestControlChannel(t, dir, server, "agent-content-update")
+	defer cancel()
+
+	ack := waitForControlAck(t, server, "content-update-1")
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunControlChannel() error = %v", err)
+	}
+	if ack.GetStatus() != "applied" || ack.GetPolicyId() != "ioc:c2-port-feed" {
+		t.Fatalf("content ack = %+v", ack)
+	}
+	if record, ok := runner.contentStore().Get("ioc:c2-port-feed"); !ok || record.Version != "control-9443" {
+		t.Fatalf("content record = %+v ok=%t", record, ok)
+	}
+
+	batchID := appendEndpointEventForTest(t, runner, queue, normalize.New("agent-content-update", "host-content-update", nil), sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443"))
+	batch, err := queue.LoadDataBatch(batchID)
+	if err != nil {
+		t.Fatalf("LoadDataBatch() error = %v", err)
+	}
+	if len(batch.GetSignals()) == 0 {
+		t.Fatalf("signals after content update = none, want detection runtime to use updated content")
+	}
+}
+
+func TestAgentRuntimeControlChannelRejectsBadContentUpdateWithoutReplacingDetection(t *testing.T) {
+	dir := t.TempDir()
+	server := &contentUpdateControlServer{
+		tenantID: "default",
+		agentID:  "agent-bad-content-update",
+		contentJSON: `{
+			"api_version":"sysarmor.content/v1",
+			"kind":"rulepack",
+			"metadata":{"id":"rulepack:bad-runtime","version":"bad-v1"},
+			"spec":{"rulesets":[{"id":"ruleset:bad-runtime","version":"v1","rules":[{
+				"rule_id":"bad_runtime_rule",
+				"version":1,
+				"severity":"high",
+				"runtime":{"type":"made_up_runtime"}
+			}]}]}
+		}`,
+		policy: badRuntimeCandidatePolicy("default"),
+	}
+	runner, queue, done, cancel := runTestControlChannel(t, dir, server, "agent-bad-content-update")
+	defer cancel()
+
+	ack := waitForControlAck(t, server, "content-update-1")
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunControlChannel() error = %v", err)
+	}
+	if ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "detection rebuild failed") {
+		t.Fatalf("bad content ack = %+v", ack)
+	}
+	if _, ok := runner.contentStore().Get("rulepack:bad-runtime"); ok {
+		t.Fatalf("rejected content update was committed")
+	}
+	batchID := appendEndpointEventForTest(t, runner, queue, normalize.New("agent-bad-content-update", "host-bad-content-update", nil), sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/kept-control.sh", ""))
+	batch, err := queue.LoadDataBatch(batchID)
+	if err != nil {
+		t.Fatalf("LoadDataBatch() error = %v", err)
+	}
+	if len(batch.GetSignals()) != 1 || batch.GetSignals()[0].GetSignal().GetName() != "payload_dropped" {
+		t.Fatalf("signals after rejected content update = %+v, want previous detection engine active", batch.GetSignals())
 	}
 }
 
@@ -763,6 +844,147 @@ func TestTamperNoEventGracePeriodHasFloor(t *testing.T) {
 
 type healthOnlySensor struct {
 	health contract.Health
+}
+
+type contentUpdateControlServer struct {
+	controlplanev1.UnimplementedAgentControlPlaneServiceServer
+	tenantID    string
+	agentID     string
+	contentJSON string
+	policy      policymodel.Policy
+	acks        chan *controlplanev1.ControlAck
+}
+
+func (s *contentUpdateControlServer) Connect(stream controlplanev1.AgentControlPlaneService_ConnectServer) error {
+	hello, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if hello.GetType() != "hello" {
+		return fmt.Errorf("first frame type = %q, want hello", hello.GetType())
+	}
+	tenantID := firstNonEmptyString(s.tenantID, "default")
+	agentID := firstNonEmptyString(s.agentID, hello.GetContext().GetAgentId())
+	policy := s.policy
+	if policy.PolicyID == "" {
+		policy = policymodel.DefaultPolicy(tenantID)
+	}
+	policy.TenantID = tenantID
+	rawPolicy, _ := json.Marshal(policy)
+	for _, frame := range []*controlplanev1.ControlFrame{{
+		Type:            "policy_update",
+		RequestId:       hello.GetRequestId(),
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlplanev1.RequestContext{TenantId: tenantID, AgentId: agentID},
+		PolicyUpdate: &controlplanev1.CurrentPolicyResponse{
+			PolicyId: policy.PolicyID,
+			Version:  policy.Version,
+			TenantId: tenantID,
+			Mode:     policy.Mode,
+			RawJson:  string(rawPolicy),
+		},
+	}, {
+		Type:            "resume",
+		RequestId:       hello.GetRequestId(),
+		ContractVersion: 1,
+		Sequence:        2,
+		Context:         &controlplanev1.RequestContext{TenantId: tenantID, AgentId: agentID},
+		Resume:          &controlplanev1.ResumeCursor{TenantId: tenantID, AgentId: agentID},
+	}, {
+		Type:            "content_update",
+		RequestId:       "content-update-1",
+		ContractVersion: 1,
+		Sequence:        3,
+		Context:         &controlplanev1.RequestContext{TenantId: tenantID, AgentId: agentID, RequestId: "content-update-1"},
+		ContentUpdate: &controlplanev1.ApplyContentRequest{
+			Context:       &controlplanev1.RequestContext{TenantId: tenantID, AgentId: agentID, RequestId: "content-update-1"},
+			ContentJson:   s.contentJSON,
+			AllowUnsigned: true,
+		},
+	}} {
+		if err := stream.Send(frame); err != nil {
+			return err
+		}
+	}
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if frame.GetType() == "ack" && frame.GetAck().GetRequestId() == "content-update-1" {
+			s.acks <- frame.GetAck()
+			return nil
+		}
+	}
+}
+
+func runTestControlChannel(t *testing.T, dir string, server *contentUpdateControlServer, agentID string) (*AgentRuntime, *spool.Queue, <-chan error, context.CancelFunc) {
+	t.Helper()
+	if server.acks == nil {
+		server.acks = make(chan *controlplanev1.ControlAck, 1)
+	}
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, server)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	t.Cleanup(grpcServer.Stop)
+
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &AgentRuntime{
+		Config: config.Config{
+			Agent:     config.AgentConfig{ID: agentID, HostID: "host-" + agentID, TenantID: "default"},
+			Manager:   config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
+			DataPlane: config.DataPlaneConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second},
+			Health:    config.HealthConfig{Interval: time.Hour},
+		},
+		Sensor: &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3}},
+		capability: contract.Capability{
+			Backend:        "fake",
+			Version:        "long",
+			SupportsHealth: true,
+		},
+	}
+	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- NewTransportRuntime(runner, rt, NewAgentSpool(queue), worker, time.Now().UTC(), "host", "").RunControlChannel(ctx)
+	}()
+	return runner, queue, done, cancel
+}
+
+func waitForControlAck(t *testing.T, server *contentUpdateControlServer, requestID string) *controlplanev1.ControlAck {
+	t.Helper()
+	select {
+	case ack := <-server.acks:
+		if ack.GetRequestId() != requestID {
+			t.Fatalf("ack request_id = %q, want %q", ack.GetRequestId(), requestID)
+		}
+		return ack
+	case <-time.After(time.Second):
+		t.Fatalf("timeout waiting for control ack %q", requestID)
+		return nil
+	}
+}
+
+func badRuntimeCandidatePolicy(tenantID string) policymodel.Policy {
+	policy := policymodel.DefaultPolicy(tenantID)
+	policy.PolicyID = "bad-runtime-candidate"
+	policy.Version = 2
+	enabled := true
+	policy.Detection.RuleSets = append(policy.Detection.RuleSets, policymodel.RuleSetRef{Ref: "ruleset:bad-runtime", Enabled: &enabled})
+	return policy
 }
 
 type safeBuffer struct {
