@@ -53,8 +53,10 @@ func (r *ControlStreamHealthReporter) Report(ctx context.Context, health agenthe
 		return err
 	}
 	frame := &controlv1.ControlStreamFrame{
-		Type:      "health_report",
-		RequestId: "health-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
+		Type:            "health_report",
+		RequestId:       "health-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
+		ContractVersion: 1,
+		Sequence:        1,
 		Context: &controlv1.RequestContext{
 			TenantId: health.TenantID,
 			AgentId:  health.AgentID,

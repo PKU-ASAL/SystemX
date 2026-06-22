@@ -154,9 +154,11 @@ func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := stream.Send(&controlv1.ControlStreamFrame{
-		Type:      "hello",
-		RequestId: "mtls-control-ok",
-		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Type:            "hello",
+		RequestId:       "mtls-control-ok",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send matching hello: %v", err)
 	}
@@ -183,9 +185,11 @@ func TestControlStreamMTLSBindsFrameIdentity(t *testing.T) {
 	}
 
 	if err := stream.Send(&controlv1.ControlStreamFrame{
-		Type:      "hello",
-		RequestId: "mtls-control-denied",
-		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "other-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Type:            "hello",
+		RequestId:       "mtls-control-denied",
+		ContractVersion: 1,
+		Sequence:        2,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "other-agent", Scope: &controlv1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send mismatched hello: %v", err)
 	}
@@ -229,9 +233,11 @@ func TestControlStreamAcceptsHealthReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := stream.Send(&controlv1.ControlStreamFrame{
-		Type:      "health_report",
-		RequestId: "health-test",
-		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Type:            "health_report",
+		RequestId:       "health-test",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
 		Health: &controlv1.HealthResponse{
 			AgentId:    "control-agent",
 			HostId:     "control-host",
@@ -255,6 +261,91 @@ func TestControlStreamAcceptsHealthReport(t *testing.T) {
 	got, ok := st.GetAgentHealth("default", "control-agent")
 	if !ok || got.Status != "ok" || got.Sensor.EventsSeen != 9 || got.Capability.Version != "dev" {
 		t.Fatalf("agent health = %+v ok=%t", got, ok)
+	}
+}
+
+func TestControlStreamSequenceRejectsReplayAndGap(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlv1.NewAgentControlServiceClient(conn).ControlStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:            "hello",
+		RequestId:       "seq-ok",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
+	}); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+	policy, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv policy: %v", err)
+	}
+	resume, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv resume: %v", err)
+	}
+	if policy.GetSequence() != 1 || resume.GetSequence() != 2 || policy.GetContractVersion() != 1 || resume.GetContractVersion() != 1 {
+		t.Fatalf("downlink sequence policy=%d/%d resume=%d/%d", policy.GetContractVersion(), policy.GetSequence(), resume.GetContractVersion(), resume.GetSequence())
+	}
+
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:            "health_report",
+		RequestId:       "seq-replay",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
+	}); err != nil {
+		t.Fatalf("send replay: %v", err)
+	}
+	replay, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv replay ack: %v", err)
+	}
+	if replay.GetType() != "ack" || replay.GetSequence() != 3 || replay.GetAck().GetStatus() != "rejected" || replay.GetError().GetCode() != codes.AlreadyExists.String() || replay.GetError().GetRetryable() {
+		t.Fatalf("replay ack = %+v", replay)
+	}
+
+	if err := stream.Send(&controlv1.ControlStreamFrame{
+		Type:            "health_report",
+		RequestId:       "seq-gap",
+		ContractVersion: 1,
+		Sequence:        3,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "seq-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Health:          &controlv1.HealthResponse{AgentId: "seq-agent", TenantId: "default", Status: "ok"},
+	}); err != nil {
+		t.Fatalf("send gap: %v", err)
+	}
+	gap, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv gap ack: %v", err)
+	}
+	if gap.GetType() != "ack" || gap.GetSequence() != 4 || gap.GetAck().GetStatus() != "rejected" || gap.GetError().GetCode() != codes.FailedPrecondition.String() || gap.GetError().GetRetryable() {
+		t.Fatalf("gap ack = %+v", gap)
 	}
 }
 
@@ -386,9 +477,11 @@ func TestControlStreamHelloReturnsPolicyUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := stream.Send(&controlv1.ControlStreamFrame{
-		Type:      "hello",
-		RequestId: "hello-policy",
-		Context:   &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
+		Type:            "hello",
+		RequestId:       "hello-policy",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlv1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlv1.Scope{Type: "host"}},
 	}); err != nil {
 		t.Fatalf("send hello: %v", err)
 	}
@@ -461,13 +554,66 @@ func TestGRPCUploadRequiresAgentIdentity(t *testing.T) {
 	}
 	defer conn.Close()
 
-	_, err = analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, &dataplanev1.DataBatch{
+	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, &dataplanev1.DataBatch{
 		Header: &dataplanev1.BatchHeader{AgentId: "grpc-agent", HostId: "grpc-host"},
 	})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("Upload() error = %v, want invalid argument", err)
+	if err != nil {
+		t.Fatalf("Upload() error = %v, want structured DataAck rejection", err)
+	}
+	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "invalid_upload" || ack.GetRetryable() || ack.GetContractVersion() != "dataplane.v1" {
+		t.Fatalf("ack = %+v, want non-retryable invalid_upload rejection", ack)
 	}
 }
+
+func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
+	grpcServer := grpc.NewServer()
+	analyticsv1.RegisterAgentDataServiceServer(grpcServer, agentplane.NewDataServer(retryableUploadBackend{err: status.Error(codes.Unavailable, "durable telemetry unavailable")}))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, grpcDataBatch("retryable-batch", "grpc-agent", "grpc-host", nil))
+	if err != nil {
+		t.Fatalf("Upload() error = %v, want structured retryable DataAck", err)
+	}
+	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_RETRYABLE || ack.GetReasonCode() != "retryable_server_error" || !ack.GetRetryable() || ack.GetRetryAfterMs() == 0 || ack.GetBatchId() != "retryable-batch" || ack.GetContractVersion() != "dataplane.v1" {
+		t.Fatalf("ack = %+v, want retryable server error", ack)
+	}
+}
+
+type retryableUploadBackend struct {
+	err error
+}
+
+func (b retryableUploadBackend) AgentToken() string { return "" }
+
+func (b retryableUploadBackend) AcceptUploadWithTransport(*dataplanev1.DataBatch, string) (agentplane.UploadResult, error) {
+	return agentplane.UploadResult{}, b.err
+}
+
+func (b retryableUploadBackend) BindAgentIdentity(store.AgentIdentity) error { return nil }
+
+func (b retryableUploadBackend) Store() agentplane.ControlStore { return &store.Store{} }
+
+func (b retryableUploadBackend) ResumeCursor(string, string) agentplane.ResumeCursor {
+	return agentplane.ResumeCursor{}
+}
+
+func (b retryableUploadBackend) TouchHotSession(store.AgentSession) {}
 
 func grpcDataBatch(batchID, agentID, hostID string, signals []*signalv1.Signal) *dataplanev1.DataBatch {
 	batch := &dataplanev1.DataBatch{

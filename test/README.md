@@ -77,7 +77,9 @@ The manager verifies that this certificate identity matches the `DataBatch.heade
 | `STATUS_RETRYABLE` | keep local spool entry | yes, optionally after `retry_after_ms` |
 | `STATUS_REJECTED` | terminal reject unless `retryable=true`; local worker may drop with health error | no |
 
-`ControlStream` frames use `contract_version=1`. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
+Stable DataAck error classes are intentionally small. Invalid payloads return `STATUS_REJECTED` with `reason_code=invalid_upload` and `retryable=false`; server capacity, durability, timeout, and transient internal failures return `STATUS_RETRYABLE` with `reason_code=retryable_server_error` and a non-zero `retry_after_ms`. Authentication and mTLS identity failures remain gRPC status errors because the agent is not yet authorized to participate in the data-plane contract.
+
+`ControlStream` frames use `contract_version=1`. Agent-to-manager sequence numbers are per stream, start at `1`, and must strictly increase. Replays return a rejected ack with `ControlError.code=AlreadyExists`; sequence gaps return `ControlError.code=FailedPrecondition`. Server-to-agent frames also carry per-stream monotonically increasing `sequence` values. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
 
 Local `sysarmorctl --agent-sock` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataService` for data flow and `ControlStream` for control flow.
 

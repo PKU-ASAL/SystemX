@@ -39,28 +39,63 @@ func (s *grpcServer) Upload(ctx context.Context, batch *dataplanev1.DataBatch) (
 	result, err := s.backend.AcceptUploadWithTransport(batch, "grpc")
 	if err != nil {
 		if errors.Is(err, ErrInvalidUpload) {
-			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+			return dataAck(batch, dataplanev1.DataAck_STATUS_REJECTED, "invalid_upload", err.Error(), false, 0, UploadResult{}), nil
 		}
-		return nil, status.Errorf(codes.Internal, "accept upload: %v", err)
+		statusCode := status.Code(err)
+		retryable := dataAckRetryable(statusCode)
+		if statusCode == codes.OK {
+			statusCode = codes.Internal
+			retryable = true
+		}
+		ackStatus := dataplanev1.DataAck_STATUS_REJECTED
+		reason := "server_error"
+		retryAfter := uint64(0)
+		if retryable {
+			ackStatus = dataplanev1.DataAck_STATUS_RETRYABLE
+			reason = "retryable_server_error"
+			retryAfter = 1000
+		}
+		return dataAck(batch, ackStatus, reason, err.Error(), retryable, retryAfter, UploadResult{}), nil
 	}
-	status := dataplanev1.DataAck_STATUS_ACCEPTED
+	ackStatus := dataplanev1.DataAck_STATUS_ACCEPTED
 	message := "accepted"
 	if result.Duplicate {
-		status = dataplanev1.DataAck_STATUS_DUPLICATE
+		ackStatus = dataplanev1.DataAck_STATUS_DUPLICATE
 		message = "duplicate"
 	}
+	return dataAck(batch, ackStatus, stringReasonCode(ackStatus), message, false, 0, result), nil
+}
+
+func dataAck(batch *dataplanev1.DataBatch, ackStatus dataplanev1.DataAck_Status, reason, message string, retryable bool, retryAfterMs uint64, result UploadResult) *dataplanev1.DataAck {
+	batchID := ""
+	if batch != nil && batch.GetHeader() != nil {
+		batchID = batch.GetHeader().GetBatchId()
+	}
+	accepted := ackStatus == dataplanev1.DataAck_STATUS_ACCEPTED || ackStatus == dataplanev1.DataAck_STATUS_DUPLICATE
 	return &dataplanev1.DataAck{
-		BatchId:         batch.GetHeader().GetBatchId(),
-		Accepted:        true,
-		Status:          status,
+		BatchId:         batchID,
+		Accepted:        accepted,
+		Status:          ackStatus,
 		Message:         message,
-		ReasonCode:      stringReasonCode(status),
-		CommittedCursor: batch.GetHeader().GetBatchId(),
+		ReasonCode:      reason,
+		CommittedCursor: batchID,
 		ServerTime:      time.Now().UTC().Format(time.RFC3339Nano),
 		AcceptedEvents:  uint64(result.AcceptedEvents),
 		AcceptedSignals: uint64(result.AcceptedSignals),
+		Retryable:       retryable,
+		RetryAfterMs:    retryAfterMs,
+		Partial:         result.AcceptedEvents > 0 || result.AcceptedSignals > 0,
 		ContractVersion: "dataplane.v1",
-	}, nil
+	}
+}
+
+func dataAckRetryable(code codes.Code) bool {
+	switch code {
+	case codes.Unavailable, codes.ResourceExhausted, codes.DeadlineExceeded, codes.Aborted, codes.Internal, codes.Unknown:
+		return true
+	default:
+		return false
+	}
 }
 
 func stringReasonCode(status dataplanev1.DataAck_Status) string {

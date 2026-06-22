@@ -33,6 +33,7 @@ func (s *controlGRPCServer) ControlStream(stream controlv1.AgentControlService_C
 	if !s.authorized(stream.Context()) {
 		return status.Error(codes.Unauthenticated, "unauthorized")
 	}
+	state := controlStreamState{nextIncoming: 1, nextOutgoing: 1}
 	for {
 		frame, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -41,15 +42,63 @@ func (s *controlGRPCServer) ControlStream(stream controlv1.AgentControlService_C
 		if err != nil {
 			return status.Errorf(codes.Internal, "recv control stream frame: %v", err)
 		}
+		if err := state.acceptIncoming(frame); err != nil {
+			out := []*controlv1.ControlStreamFrame{controlAckFrame(frame, "rejected", err.Error(), errorCode(err), errorRetryable(err))}
+			state.assignOutgoing(out)
+			for _, reply := range out {
+				if err := stream.Send(reply); err != nil {
+					return status.Errorf(codes.Internal, "send control stream frame: %v", err)
+				}
+			}
+			continue
+		}
 		out, err := s.acceptControlFrames(stream.Context(), frame)
 		if err != nil {
 			out = []*controlv1.ControlStreamFrame{controlAckFrame(frame, "rejected", err.Error(), errorCode(err), errorRetryable(err))}
 		}
+		state.assignOutgoing(out)
 		for _, reply := range out {
 			if err := stream.Send(reply); err != nil {
 				return status.Errorf(codes.Internal, "send control stream frame: %v", err)
 			}
 		}
+	}
+}
+
+type controlStreamState struct {
+	nextIncoming uint64
+	nextOutgoing uint64
+}
+
+func (s *controlStreamState) acceptIncoming(frame *controlv1.ControlStreamFrame) error {
+	if frame == nil {
+		return status.Error(codes.InvalidArgument, "control stream frame is nil")
+	}
+	if frame.GetContractVersion() != 1 {
+		return status.Errorf(codes.InvalidArgument, "unsupported control contract_version %d", frame.GetContractVersion())
+	}
+	seq := frame.GetSequence()
+	if seq == 0 {
+		return status.Error(codes.InvalidArgument, "control stream sequence is required")
+	}
+	if seq < s.nextIncoming {
+		return status.Errorf(codes.AlreadyExists, "control stream replay sequence %d; expected %d", seq, s.nextIncoming)
+	}
+	if seq > s.nextIncoming {
+		return status.Errorf(codes.FailedPrecondition, "control stream sequence gap: got %d; expected %d", seq, s.nextIncoming)
+	}
+	s.nextIncoming++
+	return nil
+}
+
+func (s *controlStreamState) assignOutgoing(frames []*controlv1.ControlStreamFrame) {
+	for _, frame := range frames {
+		if frame == nil {
+			continue
+		}
+		frame.ContractVersion = 1
+		frame.Sequence = s.nextOutgoing
+		s.nextOutgoing++
 	}
 }
 

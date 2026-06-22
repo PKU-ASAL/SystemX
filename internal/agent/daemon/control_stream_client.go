@@ -33,8 +33,10 @@ func controlStreamHello(ctx context.Context, manager, token string, timeout time
 		return nil, err
 	}
 	if err := stream.Send(&controlv1.ControlStreamFrame{
-		Type:      "hello",
-		RequestId: "hello-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
+		Type:            "hello",
+		RequestId:       "hello-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
+		ContractVersion: 1,
+		Sequence:        1,
 		Context: &controlv1.RequestContext{
 			TenantId: tenantID,
 			AgentId:  agentID,
@@ -81,6 +83,8 @@ func controlStreamSend(ctx context.Context, manager, token string, timeout time.
 	if err != nil {
 		return err
 	}
+	frame.ContractVersion = 1
+	frame.Sequence = 1
 	if err := stream.Send(frame); err != nil {
 		return err
 	}
