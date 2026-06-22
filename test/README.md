@@ -42,12 +42,12 @@ sysarmor-agent run --config ...
 ```text
 sysarmor-agent
   -> durable spool + upload worker
-  -> sysarmor-manager AgentDataService Upload(DataBatch) / analytics / store
+  -> sysarmor-manager AgentDataPlaneService AppendBatch(DataBatch) / analytics / store
   -> sysarmorctl JSON query
   -> harness/assert.py
 ```
 
-Data upload has a single transport: gRPC `AgentDataService.Upload(DataBatch)`. Test fixtures use `sysarmor-databatch-upload` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
+Data upload has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-upload` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
 
 ## Agent mTLS Identity
 
@@ -66,7 +66,7 @@ The agent certificate identity is bound to `tenant_id` and `agent_id`. The prefe
 spiffe://sysarmor.local/tenant/<tenant_id>/agent/<agent_id>
 ```
 
-The manager verifies that this certificate identity matches the `DataBatch.header.tenant_id/agent_id` and the `ControlStream.context.tenant_id/agent_id`. It also records the presented certificate principal in the agent registry; the same `tenant_id/agent_id` cannot later present a different mTLS principal. Common Name formats such as `<tenant_id>/<agent_id>` are accepted only as a compatibility fallback.
+The manager verifies that this certificate identity matches the `DataBatch.header.tenant_id/agent_id` and the `ControlFrame.context.tenant_id/agent_id`. It also records the presented certificate principal in the agent registry; the same `tenant_id/agent_id` cannot later present a different mTLS principal. Common Name formats such as `<tenant_id>/<agent_id>` are accepted only as a compatibility fallback.
 
 `DataAck` semantics:
 
@@ -79,9 +79,9 @@ The manager verifies that this certificate identity matches the `DataBatch.heade
 
 Stable DataAck error classes are intentionally small. Invalid payloads return `STATUS_REJECTED` with `reason_code=invalid_upload` and `retryable=false`; server capacity, durability, timeout, and transient internal failures return `STATUS_RETRYABLE` with `reason_code=retryable_server_error` and a non-zero `retry_after_ms`. Authentication and mTLS identity failures remain gRPC status errors because the agent is not yet authorized to participate in the data-plane contract.
 
-`ControlStream` frames use `contract_version=1` and require `request_id`. Agent-to-manager sequence numbers are per stream, start at `1`, and must strictly increase. Replays return a rejected ack with `ControlError.code=AlreadyExists`; sequence gaps return `ControlError.code=FailedPrecondition`. If an agent retries the same `request_id` with a new valid sequence, the manager returns the previous response without re-running the command. Server-to-agent frames also carry per-stream monotonically increasing `sequence` values. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
+`AgentControlPlaneService.Connect` frames use `contract_version=1` and require `request_id`. Agent-to-manager sequence numbers are per stream, start at `1`, and must strictly increase. Replays return a rejected ack with `ControlError.code=AlreadyExists`; sequence gaps return `ControlError.code=FailedPrecondition`. If an agent retries the same `request_id` with a new valid sequence, the manager returns the previous response without re-running the command. Server-to-agent frames also carry per-stream monotonically increasing `sequence` values. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
 
-Local `sysarmorctl --agent-sock` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataService` for data flow and `ControlStream` for control flow.
+Local `sysarmorctl --agent-sock` is intentionally separate from cloud control. It is a local Unix socket operator/debug path and can watch/query the local spool/WAL as a read-only side channel. Production manager traffic remains `AgentDataPlaneService` for data flow and `AgentControlPlaneService.Connect` for control flow.
 
 The table-form contract is maintained in `references/docs/agent-manager-contract.md`.
 

@@ -6,8 +6,8 @@ This document is the stable contract for production agent-manager traffic.
 
 | Plane | Direction | Service | Purpose |
 |---|---|---|---|
-| Data | Agent -> Manager | `AgentDataService.Upload(DataBatch)` | Upload durable event/signal batches from the agent spool/WAL. |
-| Control | Bidirectional | `AgentControlService.ControlStream` | Agent health/capability/acks/results and manager policy/content/response/evidence commands. |
+| Data | Agent -> Manager | `AgentDataPlaneService.AppendBatch(DataBatch)` | Append durable event/signal batches from the agent spool/WAL. |
+| Control | Bidirectional | `AgentControlPlaneService.Connect` | Agent health/capability/acks/results and manager policy/content/response/evidence commands. |
 | Local operator | Local only | Unix socket gRPC | `sysarmorctl --agent-sock` debug/operator side channel over local spool/WAL. |
 
 Production data and control traffic use gRPC with mTLS. Local ctl is not a production cloud data plane.
@@ -19,7 +19,7 @@ Production data and control traffic use gRPC with mTLS. Local ctl is not a produ
 | Canonical certificate identity | `spiffe://sysarmor.local/tenant/<tenant_id>/agent/<agent_id>` URI SAN |
 | Compatibility fallback | certificate CN can encode `tenant_id:<tenant_id>,agent_id:<agent_id>` |
 | Data identity check | certificate identity must match `DataBatch.header.tenant_id/agent_id` |
-| Control identity check | certificate identity must match `ControlStream.context.tenant_id/agent_id` |
+| Control identity check | certificate identity must match `ControlFrame.context.tenant_id/agent_id` |
 | Binding | the first accepted certificate principal is bound to the agent registry |
 | Principal mismatch | same tenant/agent with a different certificate principal is rejected |
 
@@ -35,7 +35,7 @@ Production data and control traffic use gRPC with mTLS. Local ctl is not a produ
 
 Authentication and mTLS failures are gRPC status errors because the agent has not entered the data-plane contract.
 
-## ControlStream
+## AgentControlPlaneService.Connect
 
 | Envelope field | Rule |
 |---|---|
@@ -51,7 +51,7 @@ Server-to-agent frames also carry `contract_version=1` and monotonically increas
 
 ## Long Connection Shape
 
-The production agent runner uses a long-lived `ControlStream`:
+The production agent runner uses a long-lived `AgentControlPlaneService.Connect`:
 
 1. Agent opens stream and sends `hello`.
 2. Manager returns `policy_update`, `resume`, and pending commands.

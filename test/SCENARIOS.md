@@ -292,7 +292,7 @@ Current assertion layers:
 | Negative | absence of terminal signals or incidents | scenario expected files |
 | Control | counterfactual behavior when a capability is disabled | `control_assertions` |
 
-`harness/assert.py` is the generic historical assertion entrypoint. Some newer and more reliable checks live in focused `harness/e2e-*.sh` scripts, especially for local VM agent paths, graph/evidence, response, agent session, and ControlStream behavior.
+`harness/assert.py` is the generic historical assertion entrypoint. Some newer and more reliable checks live in focused `harness/e2e-*.sh` scripts, especially for local VM agent paths, graph/evidence, response, agent session, and AgentControlPlaneService.Connect behavior.
 
 ## Event And Signal Output
 

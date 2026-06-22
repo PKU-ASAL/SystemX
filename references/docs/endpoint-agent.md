@@ -33,6 +33,21 @@ Stop(ctx) -> error
 
 The agent must treat Tetragon as an implementation, not the product model. Product-facing behavior names are SysArmor behaviors such as `file.write` and `network.connect`; adapters map them to backend hooks/selectors.
 
+## Agent Runtime Components
+
+The endpoint agent stays lightweight and single-process, but its code boundaries follow the production data/control split:
+
+```text
+AgentRuntime
+  SensorRuntime      owns backend lifecycle and collection pushdown
+  EndpointRuntime    normalizes events and runs endpoint detection
+  AgentSpool         durable local WAL for DataBatch records
+  TransportRuntime   flushes data and maintains manager control connection
+  LocalRuntime       exposes local sysarmorctl side-channel APIs
+```
+
+The important rule is that `AgentSpool` is the only local event/signal durability path. Local `sysarmorctl` watch/read commands observe the spool as a side channel; they do not create a second event buffer.
+
 ## Agent-Owned Tetragon
 
 For VM and host testing, the agent distribution owns the Tetragon bundle:
@@ -98,15 +113,14 @@ Resource names should describe product concepts, not test harness concepts.
 ## Event Pipeline
 
 ```text
-sensor raw event
-  -> adapter envelope
-  -> normalizer
-  -> CanonicalEvent
-  -> local event ring
-  -> detection engine
-  -> Signal
-  -> local signal ring
-  -> spool / upload
+SensorRuntime
+  -> EventEnvelope
+  -> EndpointRuntime
+  -> CanonicalEvent + endpoint Signal
+  -> DataBatch
+  -> AgentSpool
+  -> TransportRuntime
+  -> AgentDataPlaneService.AppendBatch
 ```
 
 CanonicalEvent carries:
@@ -191,5 +205,5 @@ Known gaps to keep visible:
 - real enforce is still limited and should remain observe-only until policy, audit, and backend support are complete;
 - Tetragon policy apply can cause short CPU spikes and needs lifecycle-aware benchmarking;
 - native thin sensor path is not implemented yet;
-- manager downlink should later reuse the local control semantics but run through Agent Gateway identity and authorization;
+- manager downlink should later reuse the local control semantics but run through AgentControlPlaneService.Connect identity and authorization;
 - local ring health and cursor visibility should continue to improve.

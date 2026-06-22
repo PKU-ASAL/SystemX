@@ -75,14 +75,14 @@ Platform foundations:
    - Make policy, response, incident metadata, agent sessions, and cursors table-first.
 
 2. Agent data/control plane.
-   - Use AgentDataService for DataBatch upload and ControlStream for control flow.
+   - Use AgentDataPlaneService.AppendBatch for DataBatch append and AgentControlPlaneService.Connect for control flow.
    - Provide durable upload, ack/resume, downlink, hot state, and identity.
    - Treat mTLS certificate URI SAN as the production agent principal and bind it to tenant_id/agent_id in the manager registry.
    - Keep local Unix socket sysarmorctl as a local operator/debug boundary, not a second production data plane.
    - Do not keep legacy compatibility interfaces once the new boundary is ready.
 
 3. Kafka ingest.
-   - Gateway ack after durable append.
+   - DataAck after durable append.
    - Workers consume asynchronously.
    - Topics should follow product data families, for example:
      - `sysarmor.endpoint.events`;
@@ -108,7 +108,7 @@ Platform foundations:
 
 6. Containerized platform environment.
    - manager;
-   - gateway;
+   - agent-facing data/control endpoint;
    - worker;
    - Postgres;
    - Kafka;

@@ -46,11 +46,11 @@ Control Plane
 Cloud Analytics
   entity normalization, graph, rarity, correlation, converge, incident, evidence
 
-Agent Gateway
-  agent session, durable upload, ack/resume, downlink policy/response/evidence requests
+Agent-Facing Plane
+  data batch append, control plane connection, agent session, ack/resume, downlink policy/response/evidence requests
 
 Endpoint Core
-  normalize, lineage, labels, local detection, response validation, spool, local control API
+  AgentRuntime, EndpointRuntime, AgentSpool, TransportRuntime, LocalRuntime
 
 Sensor Runtime
   Tetragon or native sensor capability, collection compiler, subscribe, health, enforce
@@ -65,7 +65,8 @@ Layering rules:
 - Cloud and manager code should not consume raw sensor JSON directly.
 - Collection semantics are behavior-first and sensor-neutral.
 - Response cannot bypass policy authorization.
-- External export is not a replacement for the Agent Gateway protocol.
+- External export is not a replacement for the native agent data/control protocols.
+- The endpoint agent keeps one durable local data path: EndpointRuntime writes DataBatch records to AgentSpool; TransportRuntime and LocalRuntime read that path for upload and local observation.
 
 ## Core Facts
 
@@ -177,21 +178,24 @@ Storage responsibilities should be explicit:
 
 Raw high-frequency telemetry should not be forced into Postgres as the primary store.
 
-## Agent Gateway
+## Agent-Facing Plane
 
-Agent Gateway is the native Agent-to-cloud channel. It should provide:
+The agent-facing plane is the native Agent-to-cloud boundary. It is split into:
+
+- data plane: AgentDataPlaneService.AppendBatch(DataBatch) for endpoint events, signals, health-adjacent telemetry, evidence seeds, and response results;
+- control plane: AgentControlPlaneService.Connect(ControlFrame stream) for policy, content, response commands, evidence requests, health reports, and capability reports.
+
+Together they should provide:
 
 - session establishment;
-- upload of events, signals, health, evidence seeds, and response results;
-- downlink of policy, content, response commands, and evidence requests;
 - batch id, ack cursor, resume, idempotency, and backpressure;
 - authentication, authorization, and version negotiation.
 
-Long term, this should be a secure bidirectional stream. Simple HTTP/gRPC unary flows are acceptable only as early implementation slices.
+The production control plane is a secure bidirectional gRPC stream. The production data plane is the durable DataBatch upload path.
 
 ## Security Boundaries
 
-Agent identity and manager/gateway communication should be based on mTLS or equivalent workload identity. Operator actions require tenant-aware authorization and audit.
+Agent identity and manager agent-facing communication should be based on mTLS or equivalent workload identity. Operator actions require tenant-aware authorization and audit.
 
 Every destructive or potentially disruptive action must record:
 
