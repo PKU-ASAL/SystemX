@@ -63,7 +63,7 @@ type Options struct {
 	Out io.Writer
 }
 
-type Runner struct {
+type AgentRuntime struct {
 	Config     config.Config
 	Sensor     contract.Sensor
 	Out        io.Writer
@@ -76,13 +76,13 @@ type Runner struct {
 	signalSeq  uint64
 }
 
-type AgentRuntime = Runner
+type Runner = AgentRuntime
 
 type healthReporter interface {
 	Report(context.Context, agenthealth.AgentHealth) error
 }
 
-func New(cfg config.Config) (*Runner, error) {
+func New(cfg config.Config) (*AgentRuntime, error) {
 	sensor, err := sensorFromConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -91,14 +91,14 @@ func New(cfg config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{Config: cfg, Sensor: sensor, content: contentStore}, nil
+	return &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore}, nil
 }
 
 func NewAgentRuntime(cfg config.Config) (*AgentRuntime, error) {
 	return New(cfg)
 }
 
-func (r *Runner) Run(ctx context.Context, opts Options) error {
+func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	if opts.Out != nil {
 		r.Out = opts.Out
 	}
@@ -257,7 +257,7 @@ func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.
 	return grace
 }
 
-func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, cancelUploads func(), stopRuntime func()) error {
+func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, cancelUploads func(), stopRuntime func()) error {
 	cancelUploads()
 	stopRuntime()
 	var drainErr error
@@ -281,7 +281,7 @@ func (r *Runner) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime
 	return drainErr
 }
 
-func (r *Runner) reportStartupFailure(reporter healthReporter, startedAt time.Time, stage string, startupErr error) {
+func (r *AgentRuntime) reportStartupFailure(reporter healthReporter, startedAt time.Time, stage string, startupErr error) {
 	if reporter == nil || startupErr == nil {
 		return
 	}
@@ -315,11 +315,11 @@ func (r *Runner) reportStartupFailure(reporter healthReporter, startedAt time.Ti
 	}
 }
 
-func (r *Runner) healthReporter() healthReporter {
+func (r *AgentRuntime) healthReporter() healthReporter {
 	return localHealthReporter{}
 }
 
-func (r *Runner) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
 	health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
@@ -343,7 +343,7 @@ func shutdownDrainTimeout(cfg config.Config) time.Duration {
 	return timeout
 }
 
-func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
 	sensor, err := rt.Health(ctx)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
@@ -441,7 +441,7 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 	}, nil
 }
 
-func (r *Runner) runtimeCapability() agenthealth.SensorCapability {
+func (r *AgentRuntime) runtimeCapability() agenthealth.SensorCapability {
 	collection := make([]agenthealth.CollectionBehaviorCapability, 0, len(r.capability.Collection))
 	for _, behavior := range r.capability.Collection {
 		collection = append(collection, agenthealth.CollectionBehaviorCapability{
@@ -468,7 +468,7 @@ func (r *Runner) runtimeCapability() agenthealth.SensorCapability {
 	}
 }
 
-func (r *Runner) runtimeScope() agenthealth.RuntimeScope {
+func (r *AgentRuntime) runtimeScope() agenthealth.RuntimeScope {
 	scope, err := r.Config.Sensor.EffectiveScope()
 	if err != nil {
 		return agenthealth.RuntimeScope{Type: "host"}
@@ -476,7 +476,7 @@ func (r *Runner) runtimeScope() agenthealth.RuntimeScope {
 	return agenthealth.RuntimeScope{Type: scope.Type, Selector: scope.Selector}
 }
 
-func (r *Runner) policyMode() string {
+func (r *AgentRuntime) policyMode() string {
 	if mode := r.activePolicy().Mode; mode != "" {
 		return mode
 	}
@@ -486,7 +486,7 @@ func (r *Runner) policyMode() string {
 	return "enforce"
 }
 
-func (r *Runner) activePolicy() policymodel.Policy {
+func (r *AgentRuntime) activePolicy() policymodel.Policy {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.policy.PolicyID != "" {
@@ -495,13 +495,13 @@ func (r *Runner) activePolicy() policymodel.Policy {
 	return policymodel.DefaultPolicy(r.Config.Agent.TenantID)
 }
 
-func (r *Runner) setPolicy(policy policymodel.Policy) {
+func (r *AgentRuntime) setPolicy(policy policymodel.Policy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.policy = policy
 }
 
-func (r *Runner) currentDetection() *detection.Engine {
+func (r *AgentRuntime) currentDetection() *detection.Engine {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.detection != nil {
@@ -511,46 +511,46 @@ func (r *Runner) currentDetection() *detection.Engine {
 	return engine
 }
 
-func (r *Runner) setDetection(engine *detection.Engine) {
+func (r *AgentRuntime) setDetection(engine *detection.Engine) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.detection = engine
 }
 
-func (r *Runner) setCollectionIntent(intent contract.CollectionIntent) {
+func (r *AgentRuntime) setCollectionIntent(intent contract.CollectionIntent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.collection = r.withCollectionCapabilities(intent)
 }
 
-func (r *Runner) currentCollectionIntent() contract.CollectionIntent {
+func (r *AgentRuntime) currentCollectionIntent() contract.CollectionIntent {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.collection
 }
 
-func (r *Runner) withCollectionCapabilities(intent contract.CollectionIntent) contract.CollectionIntent {
+func (r *AgentRuntime) withCollectionCapabilities(intent contract.CollectionIntent) contract.CollectionIntent {
 	if len(intent.Capabilities) == 0 && len(r.capability.Collection) > 0 {
 		intent.Capabilities = append([]contract.CollectionBehaviorCapability(nil), r.capability.Collection...)
 	}
 	return intent
 }
 
-func (r *Runner) applyRuntimePolicy(policy policymodel.Policy) {
+func (r *AgentRuntime) applyRuntimePolicy(policy policymodel.Policy) {
 	policy = policymodel.Normalize(policy)
 	engine, _ := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
 	r.setPolicy(policy)
 	r.setDetection(engine)
 }
 
-func (r *Runner) rebuildDetection() detection.ApplyReport {
+func (r *AgentRuntime) rebuildDetection() detection.ApplyReport {
 	policy := policymodel.Normalize(r.activePolicy())
 	engine, report := detection.NewWithRuntimeLimits(policy.Detection, r.currentCollectionIntent(), r.detectionContentSnapshot(), r.detectionLimits())
 	r.setDetection(engine)
 	return report
 }
 
-func (r *Runner) detectionLimits() detection.EngineLimits {
+func (r *AgentRuntime) detectionLimits() detection.EngineLimits {
 	return detection.EngineLimits{
 		MaxCEPGroups: r.Config.Resource.MaxActiveCEPGroups,
 		MaxCEPRefs:   r.Config.Resource.MaxEventRefsPerSignal,
@@ -564,24 +564,7 @@ func samePolicyRuntime(a, b policymodel.Policy) bool {
 		reflect.DeepEqual(a.Detection, b.Detection)
 }
 
-func (r *Runner) runTransportDataLoop(ctx context.Context, worker *uploadworker.Worker, interval time.Duration) {
-	if interval <= 0 {
-		interval = time.Second
-	}
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			_, _ = worker.DrainWithRetry(ctx)
-			timer.Reset(interval)
-		}
-	}
-}
-
-func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) {
+func (r *AgentRuntime) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) {
 	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.Upload.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 	if err != nil {
 		return nil, err
@@ -594,7 +577,7 @@ func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) 
 	return worker, nil
 }
 
-func (r *Runner) managerTLS() tlsconfig.ClientConfig {
+func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 	return tlsconfig.ClientConfig{
 		CAFile:     r.Config.Manager.TLSCA,
 		CertFile:   r.Config.Manager.TLSCert,
@@ -638,7 +621,7 @@ func parseTrustKeys(raw string) map[string]ed25519.PublicKey {
 	return out
 }
 
-func (r *Runner) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) map[string]string {
+func (r *AgentRuntime) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) map[string]string {
 	labels := cloneStringMap(r.Config.Agent.Labels)
 	if r.Config.Agent.Scenario != "" {
 		labels["scenario"] = r.Config.Agent.Scenario
@@ -658,7 +641,7 @@ func (r *Runner) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) m
 	return labels
 }
 
-func (r *Runner) policyLabels() map[string]string {
+func (r *AgentRuntime) policyLabels() map[string]string {
 	policy := r.activePolicy()
 	labels := map[string]string{}
 	if policy.PolicyID != "" {
@@ -703,7 +686,7 @@ func mergeLabels(base, extra map[string]string) map[string]string {
 	return out
 }
 
-func (r *Runner) dataBatchForEvent(event *eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
+func (r *AgentRuntime) dataBatchForEvent(event *eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
 	now := time.Now().UTC()
 	batch := r.newDataBatch(now)
 	if event != nil {
@@ -723,7 +706,7 @@ func (r *Runner) dataBatchForEvent(event *eventv1.CanonicalEvent, signals []*sig
 	return batch
 }
 
-func (r *Runner) dataBatchForSignals(signals []*signalv1.Signal) *dataplanev1.DataBatch {
+func (r *AgentRuntime) dataBatchForSignals(signals []*signalv1.Signal) *dataplanev1.DataBatch {
 	now := time.Now().UTC()
 	batch := r.newDataBatch(now)
 	for _, sig := range signals {
@@ -736,7 +719,7 @@ func (r *Runner) dataBatchForSignals(signals []*signalv1.Signal) *dataplanev1.Da
 	return batch
 }
 
-func (r *Runner) newDataBatch(now time.Time) *dataplanev1.DataBatch {
+func (r *AgentRuntime) newDataBatch(now time.Time) *dataplanev1.DataBatch {
 	policy := r.activePolicy()
 	labels := cloneStringMap(r.Config.Agent.Labels)
 	if labels == nil {
@@ -765,14 +748,14 @@ func (r *Runner) newDataBatch(now time.Time) *dataplanev1.DataBatch {
 	}
 }
 
-func (r *Runner) nextSignalSequence() uint64 {
+func (r *AgentRuntime) nextSignalSequence() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.signalSeq++
 	return r.signalSeq
 }
 
-func (r *Runner) contentStore() *agentcontent.Store {
+func (r *AgentRuntime) contentStore() *agentcontent.Store {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.content == nil {
@@ -781,7 +764,7 @@ func (r *Runner) contentStore() *agentcontent.Store {
 	return r.content
 }
 
-func (r *Runner) detectionContentSnapshot() detection.ContentSnapshot {
+func (r *AgentRuntime) detectionContentSnapshot() detection.ContentSnapshot {
 	snapshot := r.contentStore().Snapshot()
 	out := detection.ContentSnapshot{
 		ContextRefs: make(map[string]detection.ContentRef),
@@ -897,7 +880,7 @@ func requiredBehaviors(events []agentcontent.RequiredEvent) []string {
 	return out
 }
 
-func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command) responsemodel.Ack {
+func (r *AgentRuntime) executeResponse(ctx context.Context, cmd responsemodel.Command) responsemodel.Ack {
 	cmd = responsemodel.NormalizeCommand(cmd)
 	if cmd.Mode == "" {
 		cmd.Mode = responsemodel.DefaultMode
@@ -924,7 +907,7 @@ func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command)
 	return out
 }
 
-func (r *Runner) collectEvidencePullback(req controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackResult {
+func (r *AgentRuntime) collectEvidencePullback(req controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackResult {
 	result := controlmodel.EvidencePullbackResult{
 		RequestID:  req.RequestID,
 		TenantID:   r.Config.Agent.TenantID,

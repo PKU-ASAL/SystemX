@@ -26,7 +26,7 @@ const (
 	DataAckReasonUnspecified          = "unspecified"
 )
 
-type UploadResult struct {
+type DataAppendResult struct {
 	AcceptedEvents  int
 	AcceptedSignals int
 	CloudSignals    int
@@ -36,7 +36,7 @@ type UploadResult struct {
 
 type Backend interface {
 	AgentToken() string
-	AcceptUploadWithTransport(*dataplanev1.DataBatch, string) (UploadResult, error)
+	AppendDataBatchWithTransport(*dataplanev1.DataBatch, string) (DataAppendResult, error)
 	BindAgentIdentity(store.AgentIdentity) error
 	Store() ControlStore
 	ResumeCursor(string, string) ResumeCursor

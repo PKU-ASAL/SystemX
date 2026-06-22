@@ -49,6 +49,8 @@ sysarmor-agent
 
 Data upload has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-upload` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
 
+`sysarmorctl --agent-sock` is a local-only side channel over Unix socket gRPC. Its watch/get tests observe the agent spool/WAL and do not exercise the cloud manager data plane. Cloud manager control behavior is covered by `AgentControlPlaneService.Connect` contract tests.
+
 ## Agent mTLS Identity
 
 Production agent-to-manager gRPC should run with mTLS enabled on the manager:

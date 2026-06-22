@@ -509,7 +509,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
 	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
-	st.RecordDataUpload(AgentIdentity{AgentID: "agent-a", TenantID: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
+	st.RecordDataBatchAppend(AgentIdentity{AgentID: "agent-a", TenantID: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.UpsertOperatorRoleBinding(OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin", "policy_admin", "responder"}})
 	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
 	st.ObserveRaritySignals([]*signalv1.Signal{{
@@ -557,11 +557,11 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRecordDataUploadUpdatesSessionCursor(t *testing.T) {
+func TestRecordDataBatchAppendUpdatesSessionCursor(t *testing.T) {
 	st := &Store{}
 	agent := AgentIdentity{AgentID: "agent-a", TenantID: "default"}
-	first := st.RecordDataUpload(agent, "batch-1", "http", time.Unix(10, 0).UTC())
-	second := st.RecordDataUpload(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
+	first := st.RecordDataBatchAppend(agent, "batch-1", "http", time.Unix(10, 0).UTC())
+	second := st.RecordDataBatchAppend(agent, "batch-2", "grpc", time.Unix(20, 0).UTC())
 	if first.SessionID == "" || first.SessionID != second.SessionID {
 		t.Fatalf("session ids = %q/%q", first.SessionID, second.SessionID)
 	}
@@ -585,7 +585,7 @@ func TestAgentSessionLifecycle(t *testing.T) {
 	if seen.Status != "open" || !seen.LastSeenAt.Equal(time.Unix(20, 0).UTC()) {
 		t.Fatalf("seen session = %+v", seen)
 	}
-	st.RecordDataUpload(AgentIdentity{AgentID: "agent-control", TenantID: "default"}, "batch-grpc", "grpc", time.Unix(25, 0).UTC())
+	st.RecordDataBatchAppend(AgentIdentity{AgentID: "agent-control", TenantID: "default"}, "batch-grpc", "grpc", time.Unix(25, 0).UTC())
 	closed := st.CloseAgentSession("default", "agent-control", time.Unix(30, 0).UTC())
 	if closed.Status != "closed" || !closed.ClosedAt.Equal(time.Unix(30, 0).UTC()) || closed.LastAckCursor != "batch-grpc" {
 		t.Fatalf("closed session = %+v", closed)

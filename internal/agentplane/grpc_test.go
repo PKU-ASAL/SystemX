@@ -21,6 +21,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
@@ -65,6 +66,9 @@ func TestDataPlaneAppendBatch(t *testing.T) {
 	}
 	if !ack.GetAccepted() || ack.GetBatchId() != "00000000000000000007" {
 		t.Fatalf("ack = %#v, want accepted with batch id", ack)
+	}
+	if ack.GetPartial() {
+		t.Fatalf("ack partial = true, want false until partial append is explicitly supported")
 	}
 	if got := st.ListIncidents("apt-fileless-c2"); len(got) != 1 {
 		t.Fatalf("incidents = %d, want 1", len(got))
@@ -388,6 +392,73 @@ func TestControlPlaneConnectSequenceRejectsReplayAndGap(t *testing.T) {
 	}
 }
 
+func TestControlPlaneConnectReconnectReturnsResumeAndPendingCommands(t *testing.T) {
+	st := &store.Store{}
+	st.RecordDataBatchAppend(store.AgentIdentity{TenantID: "default", AgentID: "reconnect-agent"}, "batch-before-reconnect", "grpc", time.Unix(10, 0).UTC())
+	st.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-reconnect",
+		TenantID:   "default",
+		AgentID:    "reconnect-agent",
+		Action:     "collect",
+		Target:     "process:p1",
+	})
+	server := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type:            "hello",
+		RequestId:       "hello-reconnect",
+		ContractVersion: 1,
+		Sequence:        1,
+		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "reconnect-agent", Scope: &controlplanev1.Scope{Type: "host"}},
+	}); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+	policy, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv policy: %v", err)
+	}
+	resume, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv resume: %v", err)
+	}
+	cmd, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv pending command: %v", err)
+	}
+	if policy.GetType() != "policy_update" || policy.GetSequence() != 1 {
+		t.Fatalf("policy frame = %+v", policy)
+	}
+	if resume.GetType() != "resume" || resume.GetSequence() != 2 || resume.GetResume().GetResumeCursor() != "batch-before-reconnect" {
+		t.Fatalf("resume frame = %+v", resume)
+	}
+	if cmd.GetType() != "response_command" || cmd.GetSequence() != 3 || cmd.GetResponseCommand().GetResponseId() != "resp-reconnect" {
+		t.Fatalf("pending command frame = %+v", cmd)
+	}
+}
+
 func TestControlPlaneConnectRequiresRequestID(t *testing.T) {
 	st := &store.Store{}
 	server := managerapi.NewServer(st)
@@ -685,8 +756,8 @@ type retryableUploadBackend struct {
 
 func (b retryableUploadBackend) AgentToken() string { return "" }
 
-func (b retryableUploadBackend) AcceptUploadWithTransport(*dataplanev1.DataBatch, string) (agentplane.UploadResult, error) {
-	return agentplane.UploadResult{}, b.err
+func (b retryableUploadBackend) AppendDataBatchWithTransport(*dataplanev1.DataBatch, string) (agentplane.DataAppendResult, error) {
+	return agentplane.DataAppendResult{}, b.err
 }
 
 func (b retryableUploadBackend) BindAgentIdentity(store.AgentIdentity) error { return nil }

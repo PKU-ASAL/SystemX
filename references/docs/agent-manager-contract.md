@@ -12,6 +12,17 @@ This document is the stable contract for production agent-manager traffic.
 
 Production data and control traffic use gRPC with mTLS. Local ctl is not a production cloud data plane.
 
+## Local Operator Boundary
+
+`sysarmorctl --agent-sock` talks to the local agent over Unix socket gRPC. It is intentionally a local operator/debug side channel:
+
+- it does not send data to the cloud manager;
+- watch/get commands read the same local `AgentSpool` WAL used by the data plane;
+- local policy/content apply commands affect only the local agent process;
+- cloud-originated debug, response, policy, content, and evidence workflows must use `AgentControlPlaneService.Connect`.
+
+This keeps production agent-manager traffic on one stable data plane and one stable control plane while still allowing local inspection without adding a second event buffer.
+
 ## Identity
 
 | Field | Rule |

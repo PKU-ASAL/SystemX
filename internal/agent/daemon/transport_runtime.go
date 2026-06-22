@@ -8,22 +8,21 @@ import (
 	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 )
 
-func (r *Runner) runTransportControlLoop(ctx context.Context, rt sensorruntime.Runtime, agentSpool *AgentSpool, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) {
-	backoff := r.Config.Upload.RetryInitial
+func (r *TransportRuntime) runControlFlow(ctx context.Context) {
+	runner := r.runner
+	backoff := runner.Config.Upload.RetryInitial
 	if backoff <= 0 {
 		backoff = time.Second
 	}
-	maxBackoff := r.Config.Upload.RetryMax
+	maxBackoff := runner.Config.Upload.RetryMax
 	if maxBackoff <= 0 {
 		maxBackoff = 30 * time.Second
 	}
 	for {
-		if err := r.runControlChannel(ctx, rt, agentSpool, worker, startedAt, scopeType, scopeSelector); err != nil && ctx.Err() == nil && r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control channel disconnected: %v\n", err)
+		if err := r.RunControlChannel(ctx); err != nil && ctx.Err() == nil && runner.Out != nil {
+			fmt.Fprintf(runner.Out, "agent control channel disconnected: %v\n", err)
 		}
 		if ctx.Err() != nil {
 			return
@@ -42,24 +41,25 @@ func (r *Runner) runTransportControlLoop(ctx context.Context, rt sensorruntime.R
 	}
 }
 
-func (r *Runner) runControlChannel(ctx context.Context, rt sensorruntime.Runtime, agentSpool *AgentSpool, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) error {
-	connectCtx, cancel := context.WithTimeout(ctx, r.Config.Upload.RequestTimeout)
+func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
+	runner := r.runner
+	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.Upload.RequestTimeout)
 	defer cancel()
-	session := NewControlChannel(r.Config.Manager.Address, r.Config.Agent.Token, r.managerTLS())
+	session := NewControlChannel(runner.Config.Manager.Address, runner.Config.Agent.Token, runner.managerTLS())
 	if err := session.Open(connectCtx); err != nil {
 		return err
 	}
 	defer session.Close()
-	frames, err := session.Hello(connectCtx, r.Config.Agent.TenantID, r.Config.Agent.ID, scopeType, scopeSelector)
+	frames, err := session.Hello(connectCtx, runner.Config.Agent.TenantID, runner.Config.Agent.ID, r.scopeType, r.scopeSelector)
 	if err != nil {
 		return err
 	}
 	for _, frame := range frames {
-		if err := r.handleControlFrame(ctx, session, frame, agentSpool); err != nil {
+		if err := r.handleControlFrame(ctx, session, frame); err != nil {
 			return err
 		}
 	}
-	health, err := r.collectHealth(ctx, rt, agentSpool.Queue(), worker, startedAt)
+	health, err := runner.collectHealth(ctx, r.sensor, r.spool.Queue(), r.worker, r.startedAt)
 	if err == nil {
 		if err := session.SendHealth(ctx, health); err != nil {
 			return err
@@ -84,7 +84,7 @@ func (r *Runner) runControlChannel(ctx context.Context, rt sensorruntime.Runtime
 			}
 		}
 	}()
-	interval := r.Config.Health.Interval
+	interval := runner.Config.Health.Interval
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
@@ -100,11 +100,11 @@ func (r *Runner) runControlChannel(ctx context.Context, rt sensorruntime.Runtime
 			}
 			return err
 		case frame := <-recvCh:
-			if err := r.handleControlFrame(ctx, session, frame, agentSpool); err != nil {
+			if err := r.handleControlFrame(ctx, session, frame); err != nil {
 				return err
 			}
 		case <-ticker.C:
-			health, err := r.collectHealth(ctx, rt, agentSpool.Queue(), worker, startedAt)
+			health, err := runner.collectHealth(ctx, r.sensor, r.spool.Queue(), r.worker, r.startedAt)
 			if err != nil {
 				return err
 			}
@@ -118,7 +118,8 @@ func (r *Runner) runControlChannel(ctx context.Context, rt sensorruntime.Runtime
 	}
 }
 
-func (r *Runner) handleControlFrame(ctx context.Context, session *ControlChannel, frame *controlplanev1.ControlFrame, agentSpool *AgentSpool) error {
+func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *ControlChannel, frame *controlplanev1.ControlFrame) error {
+	runner := r.runner
 	switch frame.GetType() {
 	case "ack":
 		if frame.GetAck().GetStatus() == "rejected" {
@@ -130,20 +131,20 @@ func (r *Runner) handleControlFrame(ctx context.Context, session *ControlChannel
 		if err != nil {
 			return err
 		}
-		if !samePolicyRuntime(r.activePolicy(), policy) {
-			r.applyRuntimePolicy(policy)
-			if r.Out != nil {
-				fmt.Fprintf(r.Out, "agent control policy update: policy=%s version=%d mode=%s\n", policy.PolicyID, policy.Version, policy.Mode)
+		if !samePolicyRuntime(runner.activePolicy(), policy) {
+			runner.applyRuntimePolicy(policy)
+			if runner.Out != nil {
+				fmt.Fprintf(runner.Out, "agent control policy update: policy=%s version=%d mode=%s\n", policy.PolicyID, policy.Version, policy.Mode)
 			}
 		}
 		return nil
 	case "resume":
 		cursor := frame.GetResume().GetResumeCursor()
-		if err := agentSpool.AckThrough(cursor); err != nil {
+		if err := r.spool.AckThrough(cursor); err != nil {
 			return err
 		}
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control resume cursor: %s\n", cursor)
+		if runner.Out != nil {
+			fmt.Fprintf(runner.Out, "agent control resume cursor: %s\n", cursor)
 		}
 		return nil
 	case "response_command":
@@ -151,12 +152,12 @@ func (r *Runner) handleControlFrame(ctx context.Context, session *ControlChannel
 		if err != nil {
 			return err
 		}
-		ack := r.executeResponse(ctx, cmd)
+		ack := runner.executeResponse(ctx, cmd)
 		if err := session.SendResponseAck(ctx, ack); err != nil {
 			return err
 		}
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
+		if runner.Out != nil {
+			fmt.Fprintf(runner.Out, "agent control response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
 		}
 		return nil
 	case "evidence_pullback":
@@ -164,12 +165,12 @@ func (r *Runner) handleControlFrame(ctx context.Context, session *ControlChannel
 		if err != nil {
 			return err
 		}
-		result := r.collectEvidencePullback(req)
+		result := runner.collectEvidencePullback(req)
 		if err := session.SendEvidenceResult(ctx, result); err != nil {
 			return err
 		}
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent control evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
+		if runner.Out != nil {
+			fmt.Fprintf(runner.Out, "agent control evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
 		}
 		return nil
 	default:

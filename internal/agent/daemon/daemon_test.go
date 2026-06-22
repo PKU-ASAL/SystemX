@@ -38,7 +38,7 @@ import (
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
 
-func appendEndpointEventForTest(t testing.TB, runner *Runner, queue *spool.Queue, norm *normalize.Normalizer, ev contract.EventEnvelope) string {
+func appendEndpointEventForTest(t testing.TB, runner *AgentRuntime, queue *spool.Queue, norm *normalize.Normalizer, ev contract.EventEnvelope) string {
 	t.Helper()
 	batchID, err := NewAgentSpool(queue).AppendEndpointEvent(NewEndpointRuntime(runner, norm), ev)
 	if err != nil {
@@ -47,7 +47,7 @@ func appendEndpointEventForTest(t testing.TB, runner *Runner, queue *spool.Queue
 	return batchID
 }
 
-func appendEndpointSignalsForTest(t testing.TB, runner *Runner, queue *spool.Queue, signals []*signalv1.Signal) string {
+func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, queue *spool.Queue, signals []*signalv1.Signal) string {
 	t.Helper()
 	batchID, err := NewAgentSpool(queue).AppendEndpointSignals(NewEndpointRuntime(runner, nil), signals)
 	if err != nil {
@@ -56,7 +56,7 @@ func appendEndpointSignalsForTest(t testing.TB, runner *Runner, queue *spool.Que
 	return batchID
 }
 
-func TestRunnerSpoolsFakeSensorEvent(t *testing.T) {
+func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -87,7 +87,7 @@ func TestRunnerSpoolsFakeSensorEvent(t *testing.T) {
 	}
 }
 
-func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
+func TestAgentRuntimeSpoolsConfiguredScenario(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -117,7 +117,7 @@ func TestRunnerSpoolsConfiguredScenario(t *testing.T) {
 	}
 }
 
-func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
+func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
 	if err != nil {
@@ -126,7 +126,7 @@ func TestRunnerRefreshesEndpointPolicy(t *testing.T) {
 	cfg := config.Config{
 		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "refresh-scenario"},
 	}
-	runner := &Runner{Config: cfg}
+	runner := &AgentRuntime{Config: cfg}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
 	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
@@ -212,7 +212,7 @@ func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 	}
 }
 
-func TestRunnerControlChannelProcessesPendingResponse(t *testing.T) {
+func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 	dir := t.TempDir()
 	st := &store.Store{}
 	st.CreateResponse(responsemodel.Command{
@@ -238,7 +238,7 @@ func TestRunnerControlChannelProcessesPendingResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
 			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
@@ -257,7 +257,7 @@ func TestRunnerControlChannelProcessesPendingResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- runner.runControlChannel(ctx, rt, NewAgentSpool(queue), worker, time.Now().UTC(), "host", "")
+		done <- NewTransportRuntime(runner, rt, NewAgentSpool(queue), worker, time.Now().UTC(), "host", "").RunControlChannel(ctx)
 	}()
 	deadline := time.After(time.Second)
 	for {
@@ -266,7 +266,7 @@ func TestRunnerControlChannelProcessesPendingResponse(t *testing.T) {
 			cancel()
 			err := <-done
 			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Fatalf("runControlChannel() error = %v", err)
+				t.Fatalf("RunControlChannel() error = %v", err)
 			}
 			ack := audits[0].Ack
 			if ack.ResponseID != "resp-runner-long" || !ack.Accepted || !ack.ObserveOnly || ack.Executed {
@@ -286,7 +286,7 @@ func TestRunnerControlChannelProcessesPendingResponse(t *testing.T) {
 	}
 }
 
-func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
+func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
 	eventPath := filepath.Join(dir, "events.jsonl")
@@ -319,7 +319,7 @@ func TestRunnerOnceWithTetragonJSONLSource(t *testing.T) {
 	}
 }
 
-func TestRunnerTetragonRequiresEventSource(t *testing.T) {
+func TestAgentRuntimeTetragonRequiresEventSource(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -345,7 +345,7 @@ func TestRunnerTetragonRequiresEventSource(t *testing.T) {
 	}
 }
 
-func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
+func TestAgentRuntimeBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -390,7 +390,7 @@ func TestRunnerBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	}
 }
 
-func TestRunnerGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
+func TestAgentRuntimeGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -512,7 +512,7 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	}
 }
 
-func TestRunnerReportsSpoolBackpressure(t *testing.T) {
+func TestAgentRuntimeReportsSpoolBackpressure(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -544,7 +544,7 @@ func TestRunnerReportsSpoolBackpressure(t *testing.T) {
 	}
 }
 
-func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
+func TestAgentRuntimeMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -599,13 +599,13 @@ func TestRunnerMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 	}
 }
 
-func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
+func TestAgentRuntimeSpoolsTamperSignalFromHealth(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:  config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 			Sensor: config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true, RestartWindow: time.Hour},
@@ -660,7 +660,7 @@ func TestRunnerSpoolsTamperSignalFromHealth(t *testing.T) {
 	}
 }
 
-func TestRunnerMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T) {
+func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -674,7 +674,7 @@ func TestRunnerMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T) {
 		Upload:  config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
 		Health:  config.HealthConfig{Interval: time.Hour},
 	}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: cfg,
 		Sensor: &healthOnlySensor{health: contract.Health{
 			Backend:      "tetragon",
@@ -940,7 +940,7 @@ func assertSpoolBatch(t *testing.T, dir string) {
 	}
 }
 
-func runDaemonUntilSpoolBatch(t *testing.T, runner *Runner, spoolPath string, out *bytes.Buffer) *dataplanev1.DataBatch {
+func runDaemonUntilSpoolBatch(t *testing.T, runner *AgentRuntime, spoolPath string, out *bytes.Buffer) *dataplanev1.DataBatch {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -976,7 +976,7 @@ func runDaemonUntilSpoolBatch(t *testing.T, runner *Runner, spoolPath string, ou
 	}
 }
 
-func runDaemonUntilOutput(t *testing.T, runner *Runner, out *bytes.Buffer, want string) {
+func runDaemonUntilOutput(t *testing.T, runner *AgentRuntime, out *bytes.Buffer, want string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

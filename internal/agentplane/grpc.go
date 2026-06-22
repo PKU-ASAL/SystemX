@@ -35,10 +35,10 @@ func (s *DataServer) AppendBatch(ctx context.Context, batch *dataplanev1.DataBat
 			return nil, status.Error(codes.PermissionDenied, err.Error())
 		}
 	}
-	result, err := s.backend.AcceptUploadWithTransport(batch, "grpc")
+	result, err := s.backend.AppendDataBatchWithTransport(batch, "grpc")
 	if err != nil {
 		if errors.Is(err, ErrInvalidUpload) {
-			return dataAck(batch, dataplanev1.DataAck_STATUS_REJECTED, DataAckReasonInvalidUpload, err.Error(), false, 0, UploadResult{}), nil
+			return dataAck(batch, dataplanev1.DataAck_STATUS_REJECTED, DataAckReasonInvalidUpload, err.Error(), false, 0, DataAppendResult{}), nil
 		}
 		statusCode := status.Code(err)
 		retryable := dataAckRetryable(statusCode)
@@ -54,7 +54,7 @@ func (s *DataServer) AppendBatch(ctx context.Context, batch *dataplanev1.DataBat
 			reason = DataAckReasonRetryableServerError
 			retryAfter = 1000
 		}
-		return dataAck(batch, ackStatus, reason, err.Error(), retryable, retryAfter, UploadResult{}), nil
+		return dataAck(batch, ackStatus, reason, err.Error(), retryable, retryAfter, DataAppendResult{}), nil
 	}
 	ackStatus := dataplanev1.DataAck_STATUS_ACCEPTED
 	message := "accepted"
@@ -65,7 +65,7 @@ func (s *DataServer) AppendBatch(ctx context.Context, batch *dataplanev1.DataBat
 	return dataAck(batch, ackStatus, stringReasonCode(ackStatus), message, false, 0, result), nil
 }
 
-func dataAck(batch *dataplanev1.DataBatch, ackStatus dataplanev1.DataAck_Status, reason, message string, retryable bool, retryAfterMs uint64, result UploadResult) *dataplanev1.DataAck {
+func dataAck(batch *dataplanev1.DataBatch, ackStatus dataplanev1.DataAck_Status, reason, message string, retryable bool, retryAfterMs uint64, result DataAppendResult) *dataplanev1.DataAck {
 	batchID := ""
 	if batch != nil && batch.GetHeader() != nil {
 		batchID = batch.GetHeader().GetBatchId()
@@ -83,7 +83,7 @@ func dataAck(batch *dataplanev1.DataBatch, ackStatus dataplanev1.DataAck_Status,
 		AcceptedSignals: uint64(result.AcceptedSignals),
 		Retryable:       retryable,
 		RetryAfterMs:    retryAfterMs,
-		Partial:         result.AcceptedEvents > 0 || result.AcceptedSignals > 0,
+		Partial:         false,
 		ContractVersion: "dataplane.v1",
 	}
 }

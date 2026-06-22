@@ -78,7 +78,7 @@ type ManagerStore interface {
 	PendingResponses(string, string) []responsemodel.Command
 	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
 	CloseAgentSession(string, string, time.Time) store.AgentSession
-	RecordDataUpload(store.AgentIdentity, string, string, time.Time) store.AgentSession
+	RecordDataBatchAppend(store.AgentIdentity, string, string, time.Time) store.AgentSession
 	RecordAgentSessionSeen(string, string, time.Time) store.AgentSession
 	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
@@ -175,7 +175,7 @@ type AgentListItem struct {
 
 var ErrInvalidUpload = agentplane.ErrInvalidUpload
 
-type UploadResult = agentplane.UploadResult
+type DataAppendResult = agentplane.DataAppendResult
 type ResumeCursor = agentplane.ResumeCursor
 
 func NewServer(st ManagerStore) *Server {
@@ -287,46 +287,46 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "scenario": scenario})
 }
 
-func (s *Server) AcceptUpload(batch *dataplanev1.DataBatch) (UploadResult, error) {
-	return s.AcceptUploadWithTransport(batch, "")
+func (s *Server) AppendDataBatch(batch *dataplanev1.DataBatch) (DataAppendResult, error) {
+	return s.AppendDataBatchWithTransport(batch, "")
 }
 
-func (s *Server) AcceptUploadWithTransport(batch *dataplanev1.DataBatch, transport string) (UploadResult, error) {
+func (s *Server) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, transport string) (DataAppendResult, error) {
 	if err := validateUploadIdentity(batch); err != nil {
-		return UploadResult{}, err
+		return DataAppendResult{}, err
 	}
 	raw, err := protojson.Marshal(batch)
 	if err != nil {
-		return UploadResult{}, fmt.Errorf("encode raw upload: %w", err)
+		return DataAppendResult{}, fmt.Errorf("encode raw upload: %w", err)
 	}
 	header := batch.GetHeader()
 	if s.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId()) {
 		agent := store.AgentIdentityFromDataBatch(batch)
-		session := s.store.RecordDataUpload(agent, header.GetBatchId(), transport, time.Now().UTC())
+		session := s.store.RecordDataBatchAppend(agent, header.GetBatchId(), transport, time.Now().UTC())
 		s.touchHotSession(session)
 		if err := s.store.Save(); err != nil {
-			return UploadResult{}, err
+			return DataAppendResult{}, err
 		}
-		return UploadResult{Duplicate: true}, nil
+		return DataAppendResult{Duplicate: true}, nil
 	}
 	key := strings.Join([]string{header.GetTenantId(), header.GetAgentId(), header.GetBatchId()}, ":")
 	if err := s.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.upload.raw", Key: key, Value: raw}); err != nil {
-		return UploadResult{}, fmt.Errorf("append raw telemetry: %w", err)
+		return DataAppendResult{}, fmt.Errorf("append raw telemetry: %w", err)
 	}
 	agent := store.AgentIdentityFromDataBatch(batch)
-	session := s.store.RecordDataUpload(agent, header.GetBatchId(), transport, time.Now().UTC())
+	session := s.store.RecordDataBatchAppend(agent, header.GetBatchId(), transport, time.Now().UTC())
 	s.touchHotSession(session)
 	if err := s.store.Save(); err != nil {
-		return UploadResult{}, err
+		return DataAppendResult{}, err
 	}
 	if s.localProcessor == nil {
-		return UploadResult{}, nil
+		return DataAppendResult{}, nil
 	}
 	result, err := s.localProcessor.Process(context.Background(), batch)
 	if err != nil {
-		return UploadResult{}, err
+		return DataAppendResult{}, err
 	}
-	return UploadResult{AcceptedEvents: result.AcceptedEvents, AcceptedSignals: result.AcceptedSignals, CloudSignals: result.CloudSignals, Incidents: result.Incidents}, nil
+	return DataAppendResult{AcceptedEvents: result.AcceptedEvents, AcceptedSignals: result.AcceptedSignals, CloudSignals: result.CloudSignals, Incidents: result.Incidents}, nil
 }
 
 func (s *Server) isDuplicateBatch(tenantID, agentID, batchID string) bool {

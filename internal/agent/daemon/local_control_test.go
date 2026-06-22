@@ -33,7 +33,7 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 		Queue:    queue,
 		Uploader: noopUploader{},
 	}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -109,7 +109,7 @@ func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -158,7 +158,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -220,7 +220,7 @@ func TestLocalControlApplyUploadPolicyContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -272,7 +272,7 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -374,7 +374,7 @@ func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -427,7 +427,7 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -487,7 +487,7 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -569,7 +569,7 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},
@@ -665,7 +665,7 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
-	runner := &Runner{
+	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control: config.ControlConfig{SocketPath: socketPath},

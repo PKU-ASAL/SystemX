@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (r *Runner) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (func(), error) {
+func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (func(), error) {
 	socketPath := r.Config.Control.SocketPath
 	if socketPath == "" {
 		return func() {}, nil
@@ -75,7 +75,7 @@ func (r *Runner) startLocalControlServer(ctx context.Context, rt sensorruntime.R
 
 type localControlServer struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
-	runner    *Runner
+	runner    *AgentRuntime
 	runtime   sensorruntime.Runtime
 	queue     *spool.Queue
 	worker    *uploadworker.Worker
@@ -635,7 +635,7 @@ func validateUploadPolicy(upload *policymodel.UploadPolicy) error {
 	return nil
 }
 
-func (r *Runner) applyUploadConfig(upload policymodel.UploadPolicy) {
+func (r *AgentRuntime) applyUploadConfig(upload policymodel.UploadPolicy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if transport := strings.TrimSpace(upload.Transport); transport != "" {

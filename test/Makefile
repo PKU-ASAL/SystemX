@@ -107,8 +107,8 @@ effectiveness-report:         ## 从 expected.yaml + 已有结果生成 scenario
 e2e: up capture assert        ## 一键: 起拓扑 → 跑场景 → 断言
 
 e2e-agent-manager-contract:   ## v3: AgentControlPlaneService.Connect sequence/replay and DataAck error-class contract
-	cd .. && go test ./internal/agentplane -run 'Test(ControlPlaneConnectSequenceRejectsReplayAndGap|ControlPlaneConnectRequiresRequestID|DataAckClassifiesRetryableBackendError|DataPlaneAppendBatchRequiresAgentIdentity)'
-	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|RunnerControlChannelProcessesPendingResponse)'
+	cd .. && go test ./internal/agentplane -run 'Test(DataPlaneAppendBatch|ControlPlaneConnectSequenceRejectsReplayAndGap|ControlPlaneConnectReconnectReturnsResumeAndPendingCommands|ControlPlaneConnectRequiresRequestID|DataAckClassifiesRetryableBackendError|DataPlaneAppendBatchRequiresAgentIdentity)'
+	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|AgentRuntimeControlChannelProcessesPendingResponse)'
 
 e2e-manager-idempotency:      ## v2: repeated DataBatch does not amplify manager ingest
 	bash harness/e2e-manager-idempotency.sh
@@ -300,7 +300,7 @@ e2e-agent-session: ## v3: data upload updates agent session cursor state
 	bash harness/e2e-agent-session.sh
 
 e2e-agent-control-plane-contract: ## v3: long-lived AgentControlPlaneService.Connect policy/resume/response/evidence contract
-	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|RunnerControlChannelProcessesPendingResponse)'
+	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|AgentRuntimeControlChannelProcessesPendingResponse)'
 
 e2e-agent-control-plane-all: e2e-agent-session e2e-agent-control-plane-contract ## v3: current AgentControlPlaneService.Connect foundation gates
 

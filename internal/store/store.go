@@ -1137,7 +1137,7 @@ func (s *Store) RecordUpload(events, endpointSignals, cloudSignals, incidents in
 	s.Metrics.AverageConvergenceLatency = float64(s.Metrics.TotalConvergenceLatencyMs) / float64(s.Metrics.UploadBatches)
 }
 
-func (s *Store) RecordDataUpload(agent AgentIdentity, batchID, transport string, observedAt time.Time) AgentSession {
+func (s *Store) RecordDataBatchAppend(agent AgentIdentity, batchID, transport string, observedAt time.Time) AgentSession {
 	agent = agent.Normalized()
 	if !agent.Valid() {
 		return AgentSession{}

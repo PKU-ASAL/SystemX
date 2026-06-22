@@ -192,7 +192,7 @@ func TestIncidentMergeAPI(t *testing.T) {
 	}
 }
 
-func TestDataUploadRecordsSessionCursor(t *testing.T) {
+func TestDataBatchAppendRecordsSessionCursor(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
 	handler := srv.Handler()
@@ -241,7 +241,7 @@ func TestQueryPagination(t *testing.T) {
 	}
 }
 
-func TestDataUploadRetryIsIdempotentForAcceptedCounts(t *testing.T) {
+func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
 	handler := srv.Handler()
@@ -333,33 +333,33 @@ func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) 
 func TestUploadRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
 	srv := NewServer(st)
-	_, err := srv.AcceptUploadWithTransport(&dataplanev1.DataBatch{
+	_, err := srv.AppendDataBatchWithTransport(&dataplanev1.DataBatch{
 		Header: &dataplanev1.BatchHeader{AgentId: "agent-a", HostId: "host-a"},
 	}, "grpc")
 	if err == nil || !strings.Contains(err.Error(), "tenant_id") {
-		t.Fatalf("AcceptUploadWithTransport error = %v, want missing tenant_id", err)
+		t.Fatalf("AppendDataBatchWithTransport error = %v, want missing tenant_id", err)
 	}
 }
 
 func TestUploadRequiresDurableTelemetryAppend(t *testing.T) {
 	st, _ := store.Open("")
 	srv := NewServer(st).WithProducer(failingProducer{err: errors.New("kafka unavailable")})
-	_, err := srv.AcceptUploadWithTransport(httpDataBatch("batch-kafka", "agent-kafka", "host-kafka", []*eventv1.CanonicalEvent{{Id: "ev-kafka", Scenario: "kafka-gate"}}, nil), "grpc")
+	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-kafka", "agent-kafka", "host-kafka", []*eventv1.CanonicalEvent{{Id: "ev-kafka", Scenario: "kafka-gate"}}, nil), "grpc")
 	if err == nil || !strings.Contains(err.Error(), "append raw telemetry") {
-		t.Fatalf("AcceptUploadWithTransport error = %v, want append failure", err)
+		t.Fatalf("AppendDataBatchWithTransport error = %v, want append failure", err)
 	}
 	if got := st.ListEvents("kafka-gate", ""); len(got) != 0 {
 		t.Fatalf("events were stored before durable append: %+v", got)
 	}
 }
 
-func TestDataPlaneUploadOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testing.T) {
+func TestDataPlaneAppendOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testing.T) {
 	st, _ := store.Open("")
 	producer := &recordingProducer{}
 	srv := NewServer(st).WithProducer(producer)
-	result, err := srv.AcceptUploadWithTransport(httpDataBatch("batch-data-plane-only", "agent-data-plane-only", "host-data-plane-only", []*eventv1.CanonicalEvent{{Id: "ev-data-plane-only", Scenario: "data-plane-only"}}, []*signalv1.Signal{endpointSignalForScenario("data-plane-only", "payload_dropped", "lin-data-plane-only", false)}), "grpc")
+	result, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-data-plane-only", "agent-data-plane-only", "host-data-plane-only", []*eventv1.CanonicalEvent{{Id: "ev-data-plane-only", Scenario: "data-plane-only"}}, []*signalv1.Signal{endpointSignalForScenario("data-plane-only", "payload_dropped", "lin-data-plane-only", false)}), "grpc")
 	if err != nil {
-		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
 	}
 	if result.AcceptedEvents != 0 || result.AcceptedSignals != 0 || result.CloudSignals != 0 || result.Incidents != 0 {
 		t.Fatalf("data-plane result = %+v, want ack-only counts before worker processing", result)
@@ -383,13 +383,13 @@ func TestUploadIndexesSecurityDocuments(t *testing.T) {
 	st, _ := store.Open("")
 	indexer := &recordingIndexer{}
 	srv := NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, indexer))
-	_, err := srv.AcceptUploadWithTransport(httpDataBatch("batch-index", "agent-index", "host-index", []*eventv1.CanonicalEvent{{Id: "ev-index", Scenario: "apt-fileless-c2", Behavior: "process.exec"}}, []*signalv1.Signal{
+	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-index", "agent-index", "host-index", []*eventv1.CanonicalEvent{{Id: "ev-index", Scenario: "apt-fileless-c2", Behavior: "process.exec"}}, []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-index", false, processEntity("p-web")),
 		endpointSignal("payload_dropped", "lin-index", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-index", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
 	}), "grpc")
 	if err != nil {
-		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
 	}
 	indexes := map[string]bool{}
 	for _, doc := range indexer.docs {
@@ -968,9 +968,9 @@ func uploadAndAck(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) *data
 	if batch.Header.TenantId == "" {
 		batch.Header.TenantId = "default"
 	}
-	result, err := srv.AcceptUploadWithTransport(batch, "grpc")
+	result, err := srv.AppendDataBatchWithTransport(batch, "grpc")
 	if err != nil {
-		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
 	}
 	status := dataplanev1.DataAck_STATUS_ACCEPTED
 	message := "accepted"

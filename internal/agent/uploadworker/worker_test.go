@@ -123,6 +123,27 @@ func TestDrainOnceAcksTerminalRejectedAck(t *testing.T) {
 	}
 }
 
+func TestDrainOnceAcksTerminalRejectedAckWithoutTransportError(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{ackStatus: dataplanev1.DataAck_STATUS_REJECTED, ackMessage: "invalid payload"}
+	worker := &Worker{Queue: queue, Uploader: up}
+	stats, err := worker.DrainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("DrainOnce() error = %v", err)
+	}
+	if stats.RejectedBatches != 1 || stats.UploadedBatches != 0 || stats.RemainingBatches != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	entries, err := queue.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v, want terminal rejected batch removed from WAL", entries)
+	}
+}
+
 func TestDrainWithRetryBacksOffAndRecovers(t *testing.T) {
 	queue := openQueue(t)
 	mustAppend(t, queue, "event-1")

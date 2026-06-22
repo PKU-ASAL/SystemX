@@ -892,7 +892,7 @@ func TestOpenPostgresProjectsAgentSessionTable(t *testing.T) {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
 	result.Store.RecordControlSessionOpen("default", "agent-session-pg", "control", time.Unix(300, 0).UTC())
-	result.Store.RecordDataUpload(store.AgentIdentity{
+	result.Store.RecordDataBatchAppend(store.AgentIdentity{
 		TenantID: "default",
 		AgentID:  "agent-session-pg",
 	}, "batch-agent-session-pg", "grpc", time.Unix(301, 0).UTC())
@@ -1163,9 +1163,9 @@ func backendDataBatch(batchID, agentID, hostID string, events []*eventv1.Canonic
 
 func acceptDataBatch(t *testing.T, server *managerapi.Server, batch *dataplanev1.DataBatch) {
 	t.Helper()
-	result, err := server.AcceptUploadWithTransport(batch, "grpc")
+	result, err := server.AppendDataBatchWithTransport(batch, "grpc")
 	if err != nil {
-		t.Fatalf("AcceptUploadWithTransport() error = %v", err)
+		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
 	}
 	if result.Duplicate {
 		t.Fatalf("data batch rejected: %+v", result)

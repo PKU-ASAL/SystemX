@@ -10,11 +10,11 @@ import (
 )
 
 type EndpointRuntime struct {
-	runner     *Runner
+	runner     *AgentRuntime
 	normalizer *normalize.Normalizer
 }
 
-func NewEndpointRuntime(runner *Runner, normalizer *normalize.Normalizer) *EndpointRuntime {
+func NewEndpointRuntime(runner *AgentRuntime, normalizer *normalize.Normalizer) *EndpointRuntime {
 	return &EndpointRuntime{runner: runner, normalizer: normalizer}
 }
 
