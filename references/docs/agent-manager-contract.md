@@ -51,12 +51,12 @@ Server-to-agent frames also carry `contract_version=1` and monotonically increas
 
 ## Long Connection Shape
 
-The preferred production shape is a long-lived `ControlStream`:
+The production agent runner uses a long-lived `ControlStream`:
 
 1. Agent opens stream and sends `hello`.
 2. Manager returns `policy_update`, `resume`, and pending commands.
 3. Agent periodically sends `health_report` and `capability_report`.
 4. Manager sends policy/content/response/evidence commands on the same stream.
 5. Agent sends `response_ack` and `evidence_pullback_result`.
-6. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.
-
+6. On disconnect, agent reconnects with bounded backoff.
+7. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.

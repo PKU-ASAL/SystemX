@@ -9,6 +9,8 @@ import (
 
 	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -90,17 +92,7 @@ func (s *ControlStreamSession) Hello(ctx context.Context, tenantID, agentID, sco
 }
 
 func (s *ControlStreamSession) ReportHealth(ctx context.Context, health agenthealth.AgentHealth) error {
-	requestID := "health-" + time.Now().UTC().Format("20060102T150405.000000000Z")
-	if err := s.Send(ctx, &controlv1.ControlStreamFrame{
-		Type:      "health_report",
-		RequestId: requestID,
-		Context: &controlv1.RequestContext{
-			TenantId: health.TenantID,
-			AgentId:  health.AgentID,
-			Scope:    &controlv1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
-		},
-		Health: healthResponse(health),
-	}); err != nil {
+	if err := s.SendHealth(ctx, health); err != nil {
 		return err
 	}
 	reply, err := s.Recv()
@@ -111,6 +103,81 @@ func (s *ControlStreamSession) ReportHealth(ctx context.Context, health agenthea
 		return fmt.Errorf("control stream health rejected: %s", reply.GetAck().GetMessage())
 	}
 	return nil
+}
+
+func (s *ControlStreamSession) SendHealth(ctx context.Context, health agenthealth.AgentHealth) error {
+	return s.Send(ctx, &controlv1.ControlStreamFrame{
+		Type:      "health_report",
+		RequestId: "health-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
+		Context: &controlv1.RequestContext{
+			TenantId: health.TenantID,
+			AgentId:  health.AgentID,
+			Scope:    &controlv1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
+		},
+		Health: healthResponse(health),
+	})
+}
+
+func (s *ControlStreamSession) SendResponseAck(ctx context.Context, ack responsemodel.Ack) error {
+	return s.Send(ctx, &controlv1.ControlStreamFrame{
+		Type:      "response_ack",
+		RequestId: ack.ResponseID,
+		Context:   &controlv1.RequestContext{TenantId: ack.TenantID, AgentId: ack.AgentID},
+		ResponseAck: &controlv1.ResponseAck{
+			ResponseId:  ack.ResponseID,
+			TenantId:    ack.TenantID,
+			AgentId:     ack.AgentID,
+			Accepted:    ack.Accepted,
+			Unsupported: ack.Unsupported,
+			ObserveOnly: ack.ObserveOnly,
+			Executed:    ack.Executed,
+			Message:     ack.Message,
+			ObservedAt:  ack.ObservedAt.UTC().Format(time.RFC3339Nano),
+		},
+	})
+}
+
+func (s *ControlStreamSession) SendEvidenceResult(ctx context.Context, result gatewaymodel.EvidencePullbackResult) error {
+	return s.Send(ctx, &controlv1.ControlStreamFrame{
+		Type:      "evidence_pullback_result",
+		RequestId: result.RequestID,
+		Context:   &controlv1.RequestContext{TenantId: result.TenantID, AgentId: result.AgentID},
+		EvidenceResult: &controlv1.EvidencePullbackResult{
+			RequestId:    result.RequestID,
+			TenantId:     result.TenantID,
+			AgentId:      result.AgentID,
+			Ok:           result.OK,
+			Message:      result.Message,
+			EvidenceJson: append([]byte(nil), result.Evidence...),
+			ObservedAt:   result.ObservedAt.UTC().Format(time.RFC3339Nano),
+		},
+	})
+}
+
+func (s *ControlStreamSession) SendCapability(ctx context.Context, health agenthealth.AgentHealth) error {
+	return s.Send(ctx, &controlv1.ControlStreamFrame{
+		Type:      "capability_report",
+		RequestId: "capability-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
+		Context: &controlv1.RequestContext{
+			TenantId: health.TenantID,
+			AgentId:  health.AgentID,
+			Scope:    &controlv1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
+		},
+		Capability: capabilityResponse(health),
+	})
+}
+
+func capabilityResponse(health agenthealth.AgentHealth) *controlv1.CapabilityResponse {
+	return &controlv1.CapabilityResponse{
+		AgentId:                  health.AgentID,
+		HostId:                   health.HostID,
+		TenantId:                 health.TenantID,
+		Scope:                    scopeMessage(health.Scope),
+		Sensor:                   capabilityMessage(health.Capability),
+		SupportedPolicySections:  []string{"collection", "detection", "upload"},
+		SupportedResponseActions: []string{"collect", "noop"},
+		CollectionBehaviors:      collectionBehaviorMessages(health.Capability.Collection),
+	}
 }
 
 func (s *ControlStreamSession) Send(ctx context.Context, frame *controlv1.ControlStreamFrame) error {

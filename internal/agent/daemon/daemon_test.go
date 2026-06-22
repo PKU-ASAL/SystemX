@@ -23,6 +23,7 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
@@ -375,6 +376,80 @@ func TestControlStreamSessionKeepsLongLivedContract(t *testing.T) {
 	got, ok := st.GetAgentHealth("default", "agent-long-control")
 	if !ok || got.Capability.Version != "long" || got.Sensor.EventsSeen != 7 {
 		t.Fatalf("stored long stream health = %+v ok=%t", got, ok)
+	}
+}
+
+func TestRunnerControlStreamSessionProcessesPendingResponse(t *testing.T) {
+	dir := t.TempDir()
+	st := &store.Store{}
+	st.CreateResponse(responsemodel.Command{
+		ResponseID: "resp-runner-long",
+		TenantID:   "default",
+		AgentID:    "agent-runner-long",
+		Action:     "collect",
+		Target:     "process:p1",
+	})
+	linkSrv := managerapi.NewServer(st)
+	grpcServer := grpc.NewServer()
+	controlv1.RegisterAgentControlServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
+			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
+			Upload:  config.UploadConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second},
+			Health:  config.HealthConfig{Interval: 10 * time.Millisecond},
+		},
+		Sensor: &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3}},
+		capability: contract.Capability{
+			Backend:        "fake",
+			Version:        "long",
+			SupportsHealth: true,
+		},
+	}
+	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.runControlStreamSession(ctx, rt, queue, worker, time.Now().UTC(), "host", "")
+	}()
+	deadline := time.After(time.Second)
+	for {
+		audits := st.ListResponses("default", "agent-runner-long")
+		if len(audits) == 1 && audits[0].Ack != nil {
+			cancel()
+			err := <-done
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("runControlStreamSession() error = %v", err)
+			}
+			ack := audits[0].Ack
+			if ack.ResponseID != "resp-runner-long" || !ack.Accepted || !ack.ObserveOnly || ack.Executed {
+				t.Fatalf("ack = %+v", ack)
+			}
+			if health, ok := st.GetAgentHealth("default", "agent-runner-long"); !ok || health.Capability.Version != "long" {
+				t.Fatalf("health = %+v ok=%t", health, ok)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatalf("response ack not observed; audits=%+v", audits)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }
 

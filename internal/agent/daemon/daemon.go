@@ -125,7 +125,12 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
-	effectivePolicy := r.fetchStartupPolicy(ctx, scopeType, scopeSelector)
+	longControl := r.Config.Manager.Transport == "grpc" && !opts.Once && !opts.DrainOnce
+	effectivePolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
+	r.setPolicy(effectivePolicy)
+	if !longControl {
+		effectivePolicy = r.fetchStartupPolicy(ctx, scopeType, scopeSelector)
+	}
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
 		return failStartup("subscribe", err)
@@ -146,7 +151,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		}
 		defer stopLocalControl()
 	}
-	if r.Config.Manager.Transport == "grpc" {
+	if r.Config.Manager.Transport == "grpc" && !longControl {
 		stats, err := worker.ResumeOnce(ctx)
 		if err != nil {
 			return failStartup("resume", err)
@@ -157,7 +162,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	}
 	var controlResponseClient *ControlResponseClient
 	var controlEvidenceClient *ControlEvidenceClient
-	if r.Config.Manager.Transport == "grpc" {
+	if r.Config.Manager.Transport == "grpc" && !longControl {
 		controlResponseClient = NewControlResponseClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
 		controlEvidenceClient = NewControlEvidenceClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
 	}
@@ -167,6 +172,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		uploadCtx, cancelUploads = context.WithCancel(ctx)
 		defer cancelUploads()
 		go runUploadLoop(uploadCtx, worker, r.Config.Spool.FlushInterval)
+		if longControl {
+			go r.runControlStreamLoop(uploadCtx, rt, queue, worker, startedAt, scopeType, scopeSelector)
+		}
 	}
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
 		TenantID:      r.Config.Agent.TenantID,
@@ -177,7 +185,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	r.applyRuntimePolicy(effectivePolicy)
 	refreshCtx := ctx
 	cancelRefresh := func() {}
-	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && r.Config.Manager.Transport == "grpc" {
+	if !opts.Once && !longControl && r.Config.Policy.RefreshInterval > 0 && r.Config.Manager.Transport == "grpc" {
 		refreshCtx, cancelRefresh = context.WithCancel(ctx)
 		defer cancelRefresh()
 		go r.runPolicyRefreshLoop(refreshCtx, scopeType, scopeSelector)
@@ -261,8 +269,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 					fmt.Fprintf(r.Out, "agent tamper signal: name=%s reason=%q spool_batch=%s\n", sig.GetName(), sig.GetEvidence().GetSummary(), batchID)
 				}
 			}
-			if err := reporter.Report(ctx, health); err != nil && r.Out != nil {
-				fmt.Fprintf(r.Out, "agent health report error: %v\n", err)
+			if !longControl {
+				if err := reporter.Report(ctx, health); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent health report error: %v\n", err)
+				}
 			}
 			if r.Out != nil {
 				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_upload_error=%q\n",
