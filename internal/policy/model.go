@@ -70,7 +70,7 @@ type Policy struct {
 	TenantID      string                   `json:"tenant_id"`
 	Scope         ScopeSelector            `json:"scope,omitempty"`
 	Detection     *DetectionPolicy         `json:"detection,omitempty"`
-	Upload        *UploadPolicy            `json:"upload,omitempty"`
+	DataPlane     *DataPlanePolicy         `json:"data_plane,omitempty"`
 	EndpointRules []string                 `json:"endpoint_rules,omitempty"`
 	CloudRules    []string                 `json:"cloud_rules,omitempty"`
 	Mode          string                   `json:"mode,omitempty"`
@@ -82,7 +82,7 @@ type Policy struct {
 	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
 }
 
-type UploadPolicy struct {
+type DataPlanePolicy struct {
 	Transport      string `json:"transport,omitempty"`
 	Endpoint       string `json:"endpoint,omitempty"`
 	BatchSize      int    `json:"batch_size,omitempty"`

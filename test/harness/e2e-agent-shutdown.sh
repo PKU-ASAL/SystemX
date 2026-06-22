@@ -52,7 +52,7 @@ spool:
   batch_size: 256
   flush_interval: 1h
 
-upload:
+data_plane:
   retry_initial: 50ms
   retry_max: 100ms
   request_timeout: 2s
@@ -133,7 +133,7 @@ while compgen -G "$TMP/spool/*.batch.json" >/dev/null; do
   sleep 0.1
 done
 
-if ! grep -Fq 'agent shutdown drain: uploaded=1 remaining=0' "$TMP/agent.log"; then
+if ! grep -Fq 'agent shutdown drain: appended=1 remaining=0' "$TMP/agent.log"; then
   echo "[e2e-agent-shutdown][ERROR] expected shutdown drain evidence in agent log" >&2
   cat "$TMP/agent.log" >&2
   exit 1

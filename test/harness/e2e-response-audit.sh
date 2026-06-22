@@ -89,7 +89,7 @@ cat > "$TMP/batch.json" <<JSON
 }
 JSON
 
-"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-response-audit.upload.json"
+"$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-response-audit.data_plane.json"
 
 wait_contains "signal intent" '"response_intent":{"response_intent":"collect","recommended_action":"collect","confidence":80,"reason":"terminal reverse shell pattern"}' "$RESULTS/e2e-response-audit.signals.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json signals --scenario response-audit --terminal

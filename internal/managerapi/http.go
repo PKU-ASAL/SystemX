@@ -297,7 +297,7 @@ func (s *Server) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, tran
 	}
 	raw, err := protojson.Marshal(batch)
 	if err != nil {
-		return DataAppendResult{}, fmt.Errorf("encode raw upload: %w", err)
+		return DataAppendResult{}, fmt.Errorf("encode raw data batch: %w", err)
 	}
 	header := batch.GetHeader()
 	if s.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId()) {
@@ -310,8 +310,8 @@ func (s *Server) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, tran
 		return DataAppendResult{Duplicate: true}, nil
 	}
 	key := strings.Join([]string{header.GetTenantId(), header.GetAgentId(), header.GetBatchId()}, ":")
-	if err := s.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.upload.raw", Key: key, Value: raw}); err != nil {
-		return DataAppendResult{}, fmt.Errorf("append raw telemetry: %w", err)
+	if err := s.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.databatch.raw", Key: key, Value: raw}); err != nil {
+		return DataAppendResult{}, fmt.Errorf("append raw data batch: %w", err)
 	}
 	agent := store.AgentIdentityFromDataBatch(batch)
 	session := s.store.RecordDataBatchAppend(agent, header.GetBatchId(), transport, time.Now().UTC())

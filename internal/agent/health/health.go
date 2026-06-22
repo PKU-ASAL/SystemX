@@ -16,7 +16,7 @@ type AgentHealth struct {
 	Sensor        SensorHealth      `json:"sensor_health"`
 	Queue         QueueHealth       `json:"queue_health"`
 	WAL           WALHealth         `json:"wal_health"`
-	Upload        UploadHealth      `json:"upload_health"`
+	DataPlane     DataPlaneHealth   `json:"data_plane_health"`
 	CEP           CEPHealth         `json:"cep_health"`
 	Streams       LocalStreamHealth `json:"stream_health"`
 	ObservedAt    time.Time         `json:"observed_at"`
@@ -89,8 +89,8 @@ type WALHealth struct {
 	LastError         string `json:"last_error,omitempty"`
 }
 
-type UploadHealth struct {
-	UploadedBatches  int    `json:"uploaded_batches"`
+type DataPlaneHealth struct {
+	AppendedBatches  int    `json:"appended_batches"`
 	RemainingBatches int    `json:"remaining_batches"`
 	RemainingBytes   int64  `json:"remaining_bytes"`
 	LastError        string `json:"last_error,omitempty"`

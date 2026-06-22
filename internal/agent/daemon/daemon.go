@@ -19,15 +19,15 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
 	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -45,9 +45,9 @@ func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) erro
 	return nil
 }
 
-type localBatchUploader struct{}
+type localBatchAppender struct{}
 
-func (localBatchUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (localBatchAppender) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if batch == nil {
 		return &dataplanev1.DataAck{Accepted: true, Status: dataplanev1.DataAck_STATUS_ACCEPTED}, nil
 	}
@@ -75,8 +75,6 @@ type AgentRuntime struct {
 	content    *agentcontent.Store
 	signalSeq  uint64
 }
-
-type Runner = AgentRuntime
 
 type healthReporter interface {
 	Report(context.Context, agenthealth.AgentHealth) error
@@ -141,9 +139,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		return failStartup("spool", err)
 	}
 	agentSpool := NewAgentSpool(queue)
-	worker, err := r.uploadWorker(queue)
+	worker, err := r.dataBatchWorker(queue)
 	if err != nil {
-		return failStartup("upload", err)
+		return failStartup("data_plane", err)
 	}
 	stopLocalControl, err := r.startLocalControlServer(ctx, rt, queue, worker, startedAt)
 	if err != nil {
@@ -151,8 +149,8 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	}
 	localRuntime := NewLocalRuntime(stopLocalControl)
 	defer localRuntime.Close()
-	uploadCtx, cancelUploads := context.WithCancel(ctx)
-	defer cancelUploads()
+	dataPlaneCtx, cancelDataPlane := context.WithCancel(ctx)
+	defer cancelDataPlane()
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
 		TenantID:      r.Config.Agent.TenantID,
 		ScopeType:     scopeType,
@@ -161,8 +159,8 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	})
 	endpointRuntime := NewEndpointRuntime(r, norm)
 	transportRuntime := NewTransportRuntime(r, rt, agentSpool, worker, startedAt, scopeType, scopeSelector)
-	go transportRuntime.RunDataFlow(uploadCtx)
-	go transportRuntime.RunControlFlow(uploadCtx)
+	go transportRuntime.RunDataFlow(dataPlaneCtx)
+	go transportRuntime.RunControlFlow(dataPlaneCtx)
 	r.applyRuntimePolicy(effectivePolicy)
 	if r.Out != nil {
 		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s behaviors=%d policy=%s version=%d mode=%s\n",
@@ -185,14 +183,14 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	for {
 		select {
 		case <-ctx.Done():
-			drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelUploads, stopRuntime)
+			drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelDataPlane, stopRuntime)
 			if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 				return drainErr
 			}
 			return ctx.Err()
 		case ev, ok := <-events:
 			if !ok {
-				drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelUploads, stopRuntime)
+				drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelDataPlane, stopRuntime)
 				if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 					return drainErr
 				}
@@ -239,8 +237,8 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				}
 			}
 			if r.Out != nil {
-				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_upload_error=%q\n",
-					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.Upload.LastError)
+				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_data_plane_error=%q\n",
+					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.DataPlane.LastError)
 			}
 		}
 	}
@@ -257,16 +255,16 @@ func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.
 	return grace
 }
 
-func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, reporter healthReporter, startedAt time.Time, cancelUploads func(), stopRuntime func()) error {
-	cancelUploads()
+func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, reporter healthReporter, startedAt time.Time, cancelDataPlane func(), stopRuntime func()) error {
+	cancelDataPlane()
 	stopRuntime()
 	var drainErr error
-	var stats uploadworker.Stats
+	var stats databatchworker.Stats
 	drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
 	stats, drainErr = worker.DrainOnce(drainCtx)
 	cancel()
 	if r.Out != nil {
-		fmt.Fprintf(r.Out, "agent shutdown drain: uploaded=%d remaining=%d last_error=%q\n", stats.UploadedBatches, stats.RemainingBatches, stats.LastError)
+		fmt.Fprintf(r.Out, "agent shutdown drain: appended=%d remaining=%d last_error=%q\n", stats.AppendedBatches, stats.RemainingBatches, stats.LastError)
 	}
 	finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
 	if healthErr == nil {
@@ -274,8 +272,8 @@ func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.R
 			fmt.Fprintf(r.Out, "agent final health report error: %v\n", err)
 		}
 		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_upload_error=%q\n",
-				finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.Upload.LastError)
+			fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_data_plane_error=%q\n",
+				finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.DataPlane.LastError)
 		}
 	}
 	return drainErr
@@ -305,7 +303,7 @@ func (r *AgentRuntime) reportStartupFailure(reporter healthReporter, startedAt t
 		},
 		Capability: r.runtimeCapability(),
 		Queue:      agenthealth.QueueHealth{},
-		Upload:     agenthealth.UploadHealth{},
+		DataPlane:  agenthealth.DataPlaneHealth{},
 	}
 	if err := reporter.Report(context.Background(), health); err != nil && r.Out != nil {
 		fmt.Fprintf(r.Out, "agent startup health report error: %v\n", err)
@@ -319,7 +317,7 @@ func (r *AgentRuntime) healthReporter() healthReporter {
 	return localHealthReporter{}
 }
 
-func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
 	health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
@@ -333,17 +331,17 @@ func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorrunti
 }
 
 func shutdownDrainTimeout(cfg config.Config) time.Duration {
-	timeout := cfg.Upload.RequestTimeout
+	timeout := cfg.DataPlane.RequestTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	if cfg.Upload.RetryInitial > timeout {
-		timeout = cfg.Upload.RetryInitial
+	if cfg.DataPlane.RetryInitial > timeout {
+		timeout = cfg.DataPlane.RetryInitial
 	}
 	return timeout
 }
 
-func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
 	sensor, err := rt.Health(ctx)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
@@ -352,12 +350,12 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
 	}
-	uploadStats, err := worker.Stats()
+	dataPlaneStats, err := worker.Stats()
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
 	}
 	status := "ok"
-	if !sensor.Running || sensor.LastError != "" || queueStats.LastError != "" || uploadStats.LastError != "" {
+	if !sensor.Running || sensor.LastError != "" || queueStats.LastError != "" || dataPlaneStats.LastError != "" {
 		status = "degraded"
 	}
 	if queueStats.BackpressureCount > 0 || queueStats.DroppedBatches > 0 || queueStats.DroppedBytes > 0 {
@@ -423,11 +421,11 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 			DroppedBytes:      queueStats.DroppedBytes,
 			LastError:         queueStats.LastError,
 		},
-		Upload: agenthealth.UploadHealth{
-			UploadedBatches:  uploadStats.UploadedBatches,
-			RemainingBatches: uploadStats.RemainingBatches,
-			RemainingBytes:   uploadStats.RemainingBytes,
-			LastError:        uploadStats.LastError,
+		DataPlane: agenthealth.DataPlaneHealth{
+			AppendedBatches:  dataPlaneStats.AppendedBatches,
+			RemainingBatches: dataPlaneStats.RemainingBatches,
+			RemainingBytes:   dataPlaneStats.RemainingBytes,
+			LastError:        dataPlaneStats.LastError,
 		},
 		CEP: agenthealth.CEPHealth{
 			ActiveGroups:     cepMetrics.ActiveCEPGroups,
@@ -564,15 +562,15 @@ func samePolicyRuntime(a, b policymodel.Policy) bool {
 		reflect.DeepEqual(a.Detection, b.Detection)
 }
 
-func (r *AgentRuntime) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) {
-	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.Upload.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
+func (r *AgentRuntime) dataBatchWorker(queue *spool.Queue) (*databatchworker.Worker, error) {
+	up, err := newBatchAppender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 	if err != nil {
 		return nil, err
 	}
-	worker := &uploadworker.Worker{
+	worker := &databatchworker.Worker{
 		Queue:    queue,
 		Uploader: up,
-		Backoff:  uploadworker.Backoff{Initial: r.Config.Upload.RetryInitial, Max: r.Config.Upload.RetryMax},
+		Backoff:  databatchworker.Backoff{Initial: r.Config.DataPlane.RetryInitial, Max: r.Config.DataPlane.RetryMax},
 	}
 	return worker, nil
 }
@@ -587,12 +585,12 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 	}
 }
 
-func newBatchUploader(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (uploader.BatchUploader, error) {
+func newBatchAppender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchAppender, error) {
 	switch transport {
 	case "grpc":
-		return uploader.NewGRPCUploaderWithTLS(manager, timeout, token, tlsCfg), nil
+		return dataappend.NewGRPCAppenderWithTLS(manager, timeout, token, tlsCfg), nil
 	case "local":
-		return localBatchUploader{}, nil
+		return localBatchAppender{}, nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}

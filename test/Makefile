@@ -116,7 +116,7 @@ e2e-manager-idempotency:      ## v2: repeated DataBatch does not amplify manager
 e2e-agent-mtls:               ## v3: manager gRPC mTLS requires client cert and binds cert identity to agent_id
 	bash harness/e2e-agent-mtls.sh
 
-e2e-agent-daemon:             ## v2: 本机 fake sensor daemon → health/upload → manager 查询
+e2e-agent-daemon:             ## v2: 本机 fake sensor daemon → health/data-plane → manager 查询
 	bash harness/e2e-agent-daemon.sh
 
 e2e-agent-sensor-restart:     ## v2: fake tetragon bundle → restart/degraded/tamper → manager 查询
@@ -296,7 +296,7 @@ e2e-postgres-rarity-projection: ## v3: Postgres backend projects rarity baseline
 
 e2e-postgres-all: e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-session-projection e2e-postgres-rarity-projection ## v3: current Postgres/store foundation gates
 
-e2e-agent-session: ## v3: data upload updates agent session cursor state
+e2e-agent-session: ## v3: data append updates agent session cursor state
 	bash harness/e2e-agent-session.sh
 
 e2e-agent-control-plane-contract: ## v3: long-lived AgentControlPlaneService.Connect policy/resume/response/evidence contract
@@ -376,7 +376,7 @@ help:                         ## 显示帮助
 	@echo "  e2e         up + capture + assert"
 	@echo "  e2e-manager-idempotency  v2 repeated DataBatch does not amplify manager ingest"
 	@echo "  e2e-agent-mtls  v3 manager gRPC mTLS cert identity binding smoke"
-	@echo "  e2e-agent-daemon  v2 fake daemon + health/upload manager smoke"
+	@echo "  e2e-agent-daemon  v2 fake daemon + health/data-plane manager smoke"
 	@echo "  e2e-agent-sensor-restart  v2 managed sensor restart + tamper smoke"
 	@echo "  e2e-agent-sensor-recover  v2 managed sensor degraded to recovered smoke"
 	@echo "  e2e-agent-spool  v2 manager outage + durable spool recovery smoke"
@@ -430,7 +430,7 @@ help:                         ## 显示帮助
 	@echo "  e2e-postgres-agent-session-projection  v3 Postgres backend projects agent sessions into table path"
 	@echo "  e2e-postgres-rarity-projection  v3 Postgres backend projects rarity baseline into table path"
 	@echo "  e2e-postgres-all  run current v3 Postgres/store foundation gates"
-	@echo "  e2e-agent-session  v3 data upload updates session cursor state"
+	@echo "  e2e-agent-session  v3 data append updates session cursor state"
 	@echo "  e2e-agent-control-plane-contract  v3 long-lived AgentControlPlaneService.Connect contract"
 	@echo "  e2e-agent-control-plane-all  run current v3 AgentControlPlaneService.Connect foundation gates"
 	@echo "  e2e-agent-daemon-container  v2 container topology daemon smoke"

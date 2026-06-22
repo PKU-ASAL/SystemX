@@ -114,9 +114,9 @@ cat > "$TMP/source.json" <<JSON
 }
 JSON
 
-"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/target.json" > "$RESULTS/e2e-incident-merge.target-upload.json"
+"$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/target.json" > "$RESULTS/e2e-incident-merge.target-data_plane.json"
 
-"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/source.json" > "$RESULTS/e2e-incident-merge.source-upload.json"
+"$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/source.json" > "$RESULTS/e2e-incident-merge.source-data_plane.json"
 
 wait_contains "target incident" '"id":"inc-00000000000000000001"' "$RESULTS/e2e-incident-merge.target.json" \
   "$BIN/sysarmorctl" --mgr "$MGR_URL" --json incidents --scenario incident-merge-target

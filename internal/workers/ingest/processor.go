@@ -74,7 +74,7 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
 	cloudSignals, incidents := p.recomputeTouchedScenarios(touchedScenarios)
 	convergenceLatency := time.Since(start)
-	p.store.RecordUpload(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
+	p.store.RecordDataBatchIngest(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	p.store.ObserveRaritySignals(acceptedSignalList)
 	p.indexSecurityData(ctx, batch, touchedScenarios)
 	if err := p.store.Save(); err != nil {

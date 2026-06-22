@@ -807,9 +807,9 @@ func (x *QueueHealth) GetLastError() string {
 	return ""
 }
 
-type UploadHealth struct {
+type DataPlaneHealth struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	UploadedBatches  uint32                 `protobuf:"varint,1,opt,name=uploaded_batches,json=uploadedBatches,proto3" json:"uploaded_batches,omitempty"`
+	AppendedBatches  uint32                 `protobuf:"varint,1,opt,name=appended_batches,json=appendedBatches,proto3" json:"appended_batches,omitempty"`
 	RemainingBatches uint32                 `protobuf:"varint,2,opt,name=remaining_batches,json=remainingBatches,proto3" json:"remaining_batches,omitempty"`
 	RemainingBytes   int64                  `protobuf:"varint,3,opt,name=remaining_bytes,json=remainingBytes,proto3" json:"remaining_bytes,omitempty"`
 	LastError        string                 `protobuf:"bytes,4,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
@@ -817,20 +817,20 @@ type UploadHealth struct {
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *UploadHealth) Reset() {
-	*x = UploadHealth{}
+func (x *DataPlaneHealth) Reset() {
+	*x = DataPlaneHealth{}
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UploadHealth) String() string {
+func (x *DataPlaneHealth) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UploadHealth) ProtoMessage() {}
+func (*DataPlaneHealth) ProtoMessage() {}
 
-func (x *UploadHealth) ProtoReflect() protoreflect.Message {
+func (x *DataPlaneHealth) ProtoReflect() protoreflect.Message {
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -842,40 +842,40 @@ func (x *UploadHealth) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UploadHealth.ProtoReflect.Descriptor instead.
-func (*UploadHealth) Descriptor() ([]byte, []int) {
+// Deprecated: Use DataPlaneHealth.ProtoReflect.Descriptor instead.
+func (*DataPlaneHealth) Descriptor() ([]byte, []int) {
 	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *UploadHealth) GetUploadedBatches() uint32 {
+func (x *DataPlaneHealth) GetAppendedBatches() uint32 {
 	if x != nil {
-		return x.UploadedBatches
+		return x.AppendedBatches
 	}
 	return 0
 }
 
-func (x *UploadHealth) GetRemainingBatches() uint32 {
+func (x *DataPlaneHealth) GetRemainingBatches() uint32 {
 	if x != nil {
 		return x.RemainingBatches
 	}
 	return 0
 }
 
-func (x *UploadHealth) GetRemainingBytes() int64 {
+func (x *DataPlaneHealth) GetRemainingBytes() int64 {
 	if x != nil {
 		return x.RemainingBytes
 	}
 	return 0
 }
 
-func (x *UploadHealth) GetLastError() string {
+func (x *DataPlaneHealth) GetLastError() string {
 	if x != nil {
 		return x.LastError
 	}
 	return ""
 }
 
-type UploadPolicy struct {
+type DataPlanePolicy struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Transport      string                 `protobuf:"bytes,1,opt,name=transport,proto3" json:"transport,omitempty"`
 	Endpoint       string                 `protobuf:"bytes,2,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
@@ -891,20 +891,20 @@ type UploadPolicy struct {
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *UploadPolicy) Reset() {
-	*x = UploadPolicy{}
+func (x *DataPlanePolicy) Reset() {
+	*x = DataPlanePolicy{}
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UploadPolicy) String() string {
+func (x *DataPlanePolicy) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UploadPolicy) ProtoMessage() {}
+func (*DataPlanePolicy) ProtoMessage() {}
 
-func (x *UploadPolicy) ProtoReflect() protoreflect.Message {
+func (x *DataPlanePolicy) ProtoReflect() protoreflect.Message {
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -916,75 +916,75 @@ func (x *UploadPolicy) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UploadPolicy.ProtoReflect.Descriptor instead.
-func (*UploadPolicy) Descriptor() ([]byte, []int) {
+// Deprecated: Use DataPlanePolicy.ProtoReflect.Descriptor instead.
+func (*DataPlanePolicy) Descriptor() ([]byte, []int) {
 	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *UploadPolicy) GetTransport() string {
+func (x *DataPlanePolicy) GetTransport() string {
 	if x != nil {
 		return x.Transport
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetEndpoint() string {
+func (x *DataPlanePolicy) GetEndpoint() string {
 	if x != nil {
 		return x.Endpoint
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetBatchSize() uint32 {
+func (x *DataPlanePolicy) GetBatchSize() uint32 {
 	if x != nil {
 		return x.BatchSize
 	}
 	return 0
 }
 
-func (x *UploadPolicy) GetFlushInterval() string {
+func (x *DataPlanePolicy) GetFlushInterval() string {
 	if x != nil {
 		return x.FlushInterval
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetRetryInitial() string {
+func (x *DataPlanePolicy) GetRetryInitial() string {
 	if x != nil {
 		return x.RetryInitial
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetRetryMax() string {
+func (x *DataPlanePolicy) GetRetryMax() string {
 	if x != nil {
 		return x.RetryMax
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetRequestTimeout() string {
+func (x *DataPlanePolicy) GetRequestTimeout() string {
 	if x != nil {
 		return x.RequestTimeout
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetMaxInflight() uint32 {
+func (x *DataPlanePolicy) GetMaxInflight() uint32 {
 	if x != nil {
 		return x.MaxInflight
 	}
 	return 0
 }
 
-func (x *UploadPolicy) GetCompression() string {
+func (x *DataPlanePolicy) GetCompression() string {
 	if x != nil {
 		return x.Compression
 	}
 	return ""
 }
 
-func (x *UploadPolicy) GetTlsProfile() string {
+func (x *DataPlanePolicy) GetTlsProfile() string {
 	if x != nil {
 		return x.TlsProfile
 	}
@@ -1413,7 +1413,7 @@ type HealthResponse struct {
 	Capability    *SensorCapability      `protobuf:"bytes,10,opt,name=capability,proto3" json:"capability,omitempty"`
 	Sensor        *SensorHealth          `protobuf:"bytes,11,opt,name=sensor,proto3" json:"sensor,omitempty"`
 	Queue         *QueueHealth           `protobuf:"bytes,12,opt,name=queue,proto3" json:"queue,omitempty"`
-	Upload        *UploadHealth          `protobuf:"bytes,13,opt,name=upload,proto3" json:"upload,omitempty"`
+	DataPlane     *DataPlaneHealth       `protobuf:"bytes,13,opt,name=data_plane,json=dataPlane,proto3" json:"data_plane,omitempty"`
 	ObservedAt    string                 `protobuf:"bytes,14,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
 	Cep           *CEPHealth             `protobuf:"bytes,15,opt,name=cep,proto3" json:"cep,omitempty"`
 	Streams       *LocalStreamHealth     `protobuf:"bytes,16,opt,name=streams,proto3" json:"streams,omitempty"`
@@ -1536,9 +1536,9 @@ func (x *HealthResponse) GetQueue() *QueueHealth {
 	return nil
 }
 
-func (x *HealthResponse) GetUpload() *UploadHealth {
+func (x *HealthResponse) GetDataPlane() *DataPlaneHealth {
 	if x != nil {
-		return x.Upload
+		return x.DataPlane
 	}
 	return nil
 }
@@ -2497,7 +2497,7 @@ type ApplyPolicyRequest struct {
 	PolicyType    string                 `protobuf:"bytes,2,opt,name=policy_type,json=policyType,proto3" json:"policy_type,omitempty"`
 	PolicyJson    string                 `protobuf:"bytes,3,opt,name=policy_json,json=policyJson,proto3" json:"policy_json,omitempty"`
 	DryRun        bool                   `protobuf:"varint,4,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
-	Upload        *UploadPolicy          `protobuf:"bytes,5,opt,name=upload,proto3" json:"upload,omitempty"`
+	DataPlane     *DataPlanePolicy       `protobuf:"bytes,5,opt,name=data_plane,json=dataPlane,proto3" json:"data_plane,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2560,9 +2560,9 @@ func (x *ApplyPolicyRequest) GetDryRun() bool {
 	return false
 }
 
-func (x *ApplyPolicyRequest) GetUpload() *UploadPolicy {
+func (x *ApplyPolicyRequest) GetDataPlane() *DataPlanePolicy {
 	if x != nil {
-		return x.Upload
+		return x.DataPlane
 	}
 	return nil
 }
@@ -3703,14 +3703,14 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x0fdropped_batches\x18\x05 \x01(\x04R\x0edroppedBatches\x12#\n" +
 	"\rdropped_bytes\x18\x06 \x01(\x04R\fdroppedBytes\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\a \x01(\tR\tlastError\"\xae\x01\n" +
-	"\fUploadHealth\x12)\n" +
-	"\x10uploaded_batches\x18\x01 \x01(\rR\x0fuploadedBatches\x12+\n" +
+	"last_error\x18\a \x01(\tR\tlastError\"\xb1\x01\n" +
+	"\x0fDataPlaneHealth\x12)\n" +
+	"\x10appended_batches\x18\x01 \x01(\rR\x0fappendedBatches\x12+\n" +
 	"\x11remaining_batches\x18\x02 \x01(\rR\x10remainingBatches\x12'\n" +
 	"\x0fremaining_bytes\x18\x03 \x01(\x03R\x0eremainingBytes\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\x04 \x01(\tR\tlastError\"\xdf\x02\n" +
-	"\fUploadPolicy\x12\x1c\n" +
+	"last_error\x18\x04 \x01(\tR\tlastError\"\xe2\x02\n" +
+	"\x0fDataPlanePolicy\x12\x1c\n" +
 	"\ttransport\x18\x01 \x01(\tR\ttransport\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12\x1d\n" +
 	"\n" +
@@ -3764,7 +3764,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\v \x01(\tR\tlastError\"S\n" +
 	"\rHealthRequest\x12B\n" +
-	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\x9b\x06\n" +
+	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\xa5\x06\n" +
 	"\x0eHealthResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12\x1b\n" +
@@ -3781,8 +3781,9 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	" \x01(\v2*.sysarmor.controlplane.v1.SensorCapabilityR\n" +
 	"capability\x12>\n" +
 	"\x06sensor\x18\v \x01(\v2&.sysarmor.controlplane.v1.SensorHealthR\x06sensor\x12;\n" +
-	"\x05queue\x18\f \x01(\v2%.sysarmor.controlplane.v1.QueueHealthR\x05queue\x12>\n" +
-	"\x06upload\x18\r \x01(\v2&.sysarmor.controlplane.v1.UploadHealthR\x06upload\x12\x1f\n" +
+	"\x05queue\x18\f \x01(\v2%.sysarmor.controlplane.v1.QueueHealthR\x05queue\x12H\n" +
+	"\n" +
+	"data_plane\x18\r \x01(\v2).sysarmor.controlplane.v1.DataPlaneHealthR\tdataPlane\x12\x1f\n" +
 	"\vobserved_at\x18\x0e \x01(\tR\n" +
 	"observedAt\x125\n" +
 	"\x03cep\x18\x0f \x01(\v2#.sysarmor.controlplane.v1.CEPHealthR\x03cep\x12E\n" +
@@ -3877,15 +3878,16 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x12#\n" +
 	"\revidence_json\x18\x06 \x01(\fR\fevidenceJson\x12\x1f\n" +
 	"\vobserved_at\x18\a \x01(\tR\n" +
-	"observedAt\"\xf3\x01\n" +
+	"observedAt\"\xfd\x01\n" +
 	"\x12ApplyPolicyRequest\x12B\n" +
 	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\x12\x1f\n" +
 	"\vpolicy_type\x18\x02 \x01(\tR\n" +
 	"policyType\x12\x1f\n" +
 	"\vpolicy_json\x18\x03 \x01(\tR\n" +
 	"policyJson\x12\x17\n" +
-	"\adry_run\x18\x04 \x01(\bR\x06dryRun\x12>\n" +
-	"\x06upload\x18\x05 \x01(\v2&.sysarmor.controlplane.v1.UploadPolicyR\x06upload\"\xbc\x01\n" +
+	"\adry_run\x18\x04 \x01(\bR\x06dryRun\x12H\n" +
+	"\n" +
+	"data_plane\x18\x05 \x01(\v2).sysarmor.controlplane.v1.DataPlanePolicyR\tdataPlane\"\xbc\x01\n" +
 	"\x13ApplyContentRequest\x12B\n" +
 	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\x12!\n" +
 	"\fcontent_json\x18\x02 \x01(\tR\vcontentJson\x12\x17\n" +
@@ -4013,8 +4015,8 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_goTypes = []any{
 	(*CollectionBehaviorCapability)(nil), // 5: sysarmor.controlplane.v1.CollectionBehaviorCapability
 	(*SensorHealth)(nil),                 // 6: sysarmor.controlplane.v1.SensorHealth
 	(*QueueHealth)(nil),                  // 7: sysarmor.controlplane.v1.QueueHealth
-	(*UploadHealth)(nil),                 // 8: sysarmor.controlplane.v1.UploadHealth
-	(*UploadPolicy)(nil),                 // 9: sysarmor.controlplane.v1.UploadPolicy
+	(*DataPlaneHealth)(nil),              // 8: sysarmor.controlplane.v1.DataPlaneHealth
+	(*DataPlanePolicy)(nil),              // 9: sysarmor.controlplane.v1.DataPlanePolicy
 	(*CEPHealth)(nil),                    // 10: sysarmor.controlplane.v1.CEPHealth
 	(*LocalStreamHealth)(nil),            // 11: sysarmor.controlplane.v1.LocalStreamHealth
 	(*WALHealth)(nil),                    // 12: sysarmor.controlplane.v1.WALHealth
@@ -4069,7 +4071,7 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	4,  // 15: sysarmor.controlplane.v1.HealthResponse.capability:type_name -> sysarmor.controlplane.v1.SensorCapability
 	6,  // 16: sysarmor.controlplane.v1.HealthResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorHealth
 	7,  // 17: sysarmor.controlplane.v1.HealthResponse.queue:type_name -> sysarmor.controlplane.v1.QueueHealth
-	8,  // 18: sysarmor.controlplane.v1.HealthResponse.upload:type_name -> sysarmor.controlplane.v1.UploadHealth
+	8,  // 18: sysarmor.controlplane.v1.HealthResponse.data_plane:type_name -> sysarmor.controlplane.v1.DataPlaneHealth
 	10, // 19: sysarmor.controlplane.v1.HealthResponse.cep:type_name -> sysarmor.controlplane.v1.CEPHealth
 	11, // 20: sysarmor.controlplane.v1.HealthResponse.streams:type_name -> sysarmor.controlplane.v1.LocalStreamHealth
 	12, // 21: sysarmor.controlplane.v1.HealthResponse.wal:type_name -> sysarmor.controlplane.v1.WALHealth
@@ -4081,7 +4083,7 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	2,  // 27: sysarmor.controlplane.v1.CurrentPolicyResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
 	20, // 28: sysarmor.controlplane.v1.ResponseCommand.scope:type_name -> sysarmor.controlplane.v1.ResponseScope
 	3,  // 29: sysarmor.controlplane.v1.ApplyPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	9,  // 30: sysarmor.controlplane.v1.ApplyPolicyRequest.upload:type_name -> sysarmor.controlplane.v1.UploadPolicy
+	9,  // 30: sysarmor.controlplane.v1.ApplyPolicyRequest.data_plane:type_name -> sysarmor.controlplane.v1.DataPlanePolicy
 	3,  // 31: sysarmor.controlplane.v1.ApplyContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	3,  // 32: sysarmor.controlplane.v1.ListContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	27, // 33: sysarmor.controlplane.v1.ListContentResponse.records:type_name -> sysarmor.controlplane.v1.ContentRecord

@@ -18,7 +18,7 @@ var ErrInvalidUpload = errors.New("invalid upload")
 const (
 	DataAckReasonAccepted             = "accepted"
 	DataAckReasonDuplicate            = "duplicate"
-	DataAckReasonInvalidUpload        = "invalid_upload"
+	DataAckReasonInvalidUpload        = "invalid_data_batch"
 	DataAckReasonRetryableServerError = "retryable_server_error"
 	DataAckReasonServerError          = "server_error"
 	DataAckReasonRetryable            = "retryable"

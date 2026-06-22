@@ -52,7 +52,7 @@ spool:
   batch_size: 256
   flush_interval: 100ms
 
-upload:
+data_plane:
   retry_initial: 50ms
   retry_max: 100ms
   request_timeout: 2s
@@ -129,7 +129,7 @@ if ! grep -Fq 'connect: connection refused' "$TMP/agent.log"; then
 fi
 
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"queued_batches":0' "$RESULTS/e2e-agent-spool.health.recovered.json"
-wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"remaining_batches":0' "$RESULTS/e2e-agent-spool.health.upload.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"remaining_batches":0' "$RESULTS/e2e-agent-spool.health.data_plane.json"
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/events?scenario=" '"agent_id":"e2e-agent-spool"' "$RESULTS/e2e-agent-spool.events.json"
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-spool.agent.log"

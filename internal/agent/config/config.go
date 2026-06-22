@@ -12,16 +12,16 @@ import (
 )
 
 type Config struct {
-	Agent    AgentConfig
-	Manager  ManagerConfig
-	Control  ControlConfig
-	Sensor   SensorConfig
-	Spool    SpoolConfig
-	Upload   UploadConfig
-	Health   HealthConfig
-	Policy   PolicyConfig
-	Content  ContentConfig
-	Resource ResourceConfig
+	Agent     AgentConfig
+	Manager   ManagerConfig
+	Control   ControlConfig
+	Sensor    SensorConfig
+	Spool     SpoolConfig
+	DataPlane DataPlaneConfig
+	Health    HealthConfig
+	Policy    PolicyConfig
+	Content   ContentConfig
+	Resource  ResourceConfig
 }
 
 type AgentConfig struct {
@@ -95,7 +95,7 @@ type SpoolConfig struct {
 	FlushInterval time.Duration
 }
 
-type UploadConfig struct {
+type DataPlaneConfig struct {
 	RetryInitial   time.Duration
 	RetryMax       time.Duration
 	RequestTimeout time.Duration
@@ -208,14 +208,14 @@ func (c Config) Validate() error {
 	if c.Spool.FlushInterval <= 0 {
 		return fmt.Errorf("spool.flush_interval must be positive")
 	}
-	if c.Upload.RetryInitial <= 0 || c.Upload.RetryMax <= 0 || c.Upload.RequestTimeout <= 0 {
-		return fmt.Errorf("upload retry/request timeouts must be positive")
+	if c.DataPlane.RetryInitial <= 0 || c.DataPlane.RetryMax <= 0 || c.DataPlane.RequestTimeout <= 0 {
+		return fmt.Errorf("data_plane retry/request timeouts must be positive")
 	}
-	if c.Upload.RetryInitial > c.Upload.RetryMax {
-		return fmt.Errorf("upload.retry_initial must be <= upload.retry_max")
+	if c.DataPlane.RetryInitial > c.DataPlane.RetryMax {
+		return fmt.Errorf("data_plane.retry_initial must be <= data_plane.retry_max")
 	}
-	if c.Upload.MaxInflight < 0 {
-		return fmt.Errorf("upload.max_inflight must be non-negative")
+	if c.DataPlane.MaxInflight < 0 {
+		return fmt.Errorf("data_plane.max_inflight must be non-negative")
 	}
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("health.interval must be positive")
@@ -312,15 +312,15 @@ func parse(r *os.File) (Config, error) {
 
 func defaults() Config {
 	return Config{
-		Manager:  ManagerConfig{Transport: "grpc"},
-		Control:  ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
-		Sensor:   SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
-		Spool:    SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
-		Upload:   UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
-		Health:   HealthConfig{Interval: 10 * time.Second},
-		Policy:   PolicyConfig{RefreshInterval: 30 * time.Second},
-		Content:  ContentConfig{Path: "/var/lib/sysarmor/agent/content"},
-		Resource: ResourceConfig{MaxActiveCEPGroups: 4096, MaxEventRefsPerSignal: 128},
+		Manager:   ManagerConfig{Transport: "grpc"},
+		Control:   ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
+		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
+		Spool:     SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
+		DataPlane: DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
+		Health:    HealthConfig{Interval: 10 * time.Second},
+		Policy:    PolicyConfig{RefreshInterval: 30 * time.Second},
+		Content:   ContentConfig{Path: "/var/lib/sysarmor/agent/content"},
+		Resource:  ResourceConfig{MaxActiveCEPGroups: 4096, MaxEventRefsPerSignal: 128},
 	}
 }
 
@@ -529,36 +529,36 @@ func assign(cfg *Config, section, key, value string) error {
 		default:
 			return unknown(section, key)
 		}
-	case "upload":
+	case "data_plane":
 		switch key {
 		case "retry_initial":
 			d, err := time.ParseDuration(value)
 			if err != nil {
-				return fmt.Errorf("upload.retry_initial: %w", err)
+				return fmt.Errorf("data_plane.retry_initial: %w", err)
 			}
-			cfg.Upload.RetryInitial = d
+			cfg.DataPlane.RetryInitial = d
 		case "retry_max":
 			d, err := time.ParseDuration(value)
 			if err != nil {
-				return fmt.Errorf("upload.retry_max: %w", err)
+				return fmt.Errorf("data_plane.retry_max: %w", err)
 			}
-			cfg.Upload.RetryMax = d
+			cfg.DataPlane.RetryMax = d
 		case "request_timeout":
 			d, err := time.ParseDuration(value)
 			if err != nil {
-				return fmt.Errorf("upload.request_timeout: %w", err)
+				return fmt.Errorf("data_plane.request_timeout: %w", err)
 			}
-			cfg.Upload.RequestTimeout = d
+			cfg.DataPlane.RequestTimeout = d
 		case "max_inflight":
 			v, err := strconv.Atoi(value)
 			if err != nil {
-				return fmt.Errorf("upload.max_inflight: %w", err)
+				return fmt.Errorf("data_plane.max_inflight: %w", err)
 			}
-			cfg.Upload.MaxInflight = v
+			cfg.DataPlane.MaxInflight = v
 		case "compression":
-			cfg.Upload.Compression = value
+			cfg.DataPlane.Compression = value
 		case "tls_profile":
-			cfg.Upload.TLSProfile = value
+			cfg.DataPlane.TLSProfile = value
 		default:
 			return unknown(section, key)
 		}

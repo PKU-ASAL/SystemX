@@ -21,7 +21,7 @@ trap cleanup EXIT
 
 echo "[e2e-manager-idempotency] building binaries"
 GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-manager" "$ROOT/cmd/sysarmor-manager"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-upload" "$ROOT/cmd/sysarmor-databatch-upload"
+GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-append" "$ROOT/cmd/sysarmor-databatch-append"
 GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmorctl" "$ROOT/cmd/sysarmorctl"
 
 "$BIN/sysarmor-manager" \
@@ -127,9 +127,9 @@ cat > "$TMP/batch.json" <<'JSON'
 }
 JSON
 
-"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.first.json"
+"$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.first.json"
 
-"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.second.json"
+"$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.second.json"
 
 curl -sf "$MGR_URL/api/v1/metrics" > "$RESULTS/e2e-manager-idempotency.metrics.json"
 curl -sf "$MGR_URL/api/v1/events?scenario=apt-fileless-c2" > "$RESULTS/e2e-manager-idempotency.events.json"
@@ -169,7 +169,7 @@ if second.get("batch_id") != "00000000000000000099":
 if as_int(second.get("accepted_events")) != 0 or as_int(second.get("accepted_signals")) != 0:
     raise SystemExit(f"retry ack should accept zero new records: {second}")
 want_metrics = {
-    "upload_batches": 1,
+    "data_batches_appended": 1,
     "events_ingested": 1,
     "endpoint_signals_ingested": 3,
     "cloud_signals_emitted": 2,

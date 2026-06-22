@@ -47,7 +47,7 @@ spool:
   batch_size: 256
   flush_interval: 1s
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -125,7 +125,7 @@ spool:
   batch_size: 256
   flush_interval: 1s
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -212,7 +212,7 @@ sensor:
 spool:
   path: /var/lib/sysarmor/agent/spool
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -260,7 +260,7 @@ sensor:
 spool:
   path: /var/lib/sysarmor/agent/spool
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -303,7 +303,7 @@ sensor:
 spool:
   path: /var/lib/sysarmor/agent/spool
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -339,7 +339,7 @@ sensor:
 spool:
   path: /var/lib/sysarmor/agent/spool
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -376,7 +376,7 @@ sensor:
 spool:
   path: /var/lib/sysarmor/agent/spool
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s
@@ -414,7 +414,7 @@ sensor:
 spool:
   path: /var/lib/sysarmor/agent/spool
 
-upload:
+data_plane:
   retry_initial: 1s
   retry_max: 30s
   request_timeout: 10s

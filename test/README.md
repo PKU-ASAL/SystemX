@@ -37,17 +37,17 @@ sysarmor-agent run --config ...
   -> harness/assert-vm-local.sh
 ```
 
-容器拓扑和部分平台兼容测试仍保留 manager/upload 路径:
+容器拓扑和部分平台兼容测试仍保留 manager/data-plane 路径:
 
 ```text
 sysarmor-agent
-  -> durable spool + upload worker
+  -> durable spool + data batch dispatcher
   -> sysarmor-manager AgentDataPlaneService AppendBatch(DataBatch) / analytics / store
   -> sysarmorctl JSON query
   -> harness/assert.py
 ```
 
-Data upload has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-upload` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
+Data append has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-append` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
 
 `sysarmorctl --agent-sock` is a local-only side channel over Unix socket gRPC. Its watch/get tests observe the agent spool/WAL and do not exercise the cloud manager data plane. Cloud manager control behavior is covered by `AgentControlPlaneService.Connect` contract tests.
 
@@ -79,7 +79,7 @@ The manager verifies that this certificate identity matches the `DataBatch.heade
 | `STATUS_RETRYABLE` | keep local spool entry | yes, optionally after `retry_after_ms` |
 | `STATUS_REJECTED` | terminal reject unless `retryable=true`; local worker may drop with health error | no |
 
-Stable DataAck error classes are intentionally small. Invalid payloads return `STATUS_REJECTED` with `reason_code=invalid_upload` and `retryable=false`; server capacity, durability, timeout, and transient internal failures return `STATUS_RETRYABLE` with `reason_code=retryable_server_error` and a non-zero `retry_after_ms`. Authentication and mTLS identity failures remain gRPC status errors because the agent is not yet authorized to participate in the data-plane contract.
+Stable DataAck error classes are intentionally small. Invalid payloads return `STATUS_REJECTED` with `reason_code=invalid_data_batch` and `retryable=false`; server capacity, durability, timeout, and transient internal failures return `STATUS_RETRYABLE` with `reason_code=retryable_server_error` and a non-zero `retry_after_ms`. Authentication and mTLS identity failures remain gRPC status errors because the agent is not yet authorized to participate in the data-plane contract.
 
 `AgentControlPlaneService.Connect` frames use `contract_version=1` and require `request_id`. Agent-to-manager sequence numbers are per stream, start at `1`, and must strictly increase. Replays return a rejected ack with `ControlError.code=AlreadyExists`; sequence gaps return `ControlError.code=FailedPrecondition`. If an agent retries the same `request_id` with a new valid sequence, the manager returns the previous response without re-running the command. Server-to-agent frames also carry per-stream monotonically increasing `sequence` values. Rejected frames carry both a `ControlAck(status="rejected")` and structured `ControlError{code,message,retryable,retry_after_ms}`.
 
@@ -93,7 +93,7 @@ Development certificates can be generated with:
 tools/pki/gen-mtls-dev.sh test/.results/pki default agent-a localhost
 ```
 
-The mTLS smoke test covers successful upload, forged `agent_id` rejection, and missing client certificate rejection:
+The mTLS smoke test covers successful append, forged `agent_id` rejection, and missing client certificate rejection:
 
 ```bash
 make -C test e2e-agent-mtls

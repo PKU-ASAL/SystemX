@@ -69,7 +69,7 @@ spool:
   batch_size: 256
   flush_interval: 200ms
 
-upload:
+data_plane:
   retry_initial: 100ms
   retry_max: 500ms
   request_timeout: 2s
@@ -119,7 +119,7 @@ PY
     docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
     exit 1
   fi
-  echo "[capture-container] managed upload: events=$EVENTS endpoint=$ENDPOINT_SIGNALS cloud=$CLOUD_SIGNALS incidents=$INCIDENTS"
+  echo "[capture-container] managed data_plane: events=$EVENTS endpoint=$ENDPOINT_SIGNALS cloud=$CLOUD_SIGNALS incidents=$INCIDENTS"
   exit 0
 fi
 

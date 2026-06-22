@@ -16,10 +16,10 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (func(), error) {
+func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, startedAt time.Time) (func(), error) {
 	socketPath := r.Config.Control.SocketPath
 	if socketPath == "" {
 		return func() {}, nil
@@ -78,7 +78,7 @@ type localControlServer struct {
 	runner    *AgentRuntime
 	runtime   sensorruntime.Runtime
 	queue     *spool.Queue
-	worker    *uploadworker.Worker
+	worker    *databatchworker.Worker
 	startedAt time.Time
 }
 
@@ -103,7 +103,7 @@ func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1
 			"detection",
 			"response",
 			"resource",
-			"upload",
+			"data_plane",
 		},
 		SupportedResponseActions: []string{
 			"collect_evidence",
@@ -147,8 +147,8 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 	if policyType == "detection" {
 		return s.applyDetectionPolicy(req), nil
 	}
-	if policyType == "upload" {
-		return s.applyUploadPolicy(req, nil), nil
+	if policyType == "data_plane" {
+		return s.applyDataPlanePolicy(req, nil), nil
 	}
 	if policyType != "agent-runtime" {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("unsupported policy type %q", policyType)), nil
@@ -164,51 +164,51 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 	if next.TenantID != "" && next.TenantID != s.runner.Config.Agent.TenantID {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("tenant mismatch: policy=%s agent=%s", next.TenantID, s.runner.Config.Agent.TenantID)), nil
 	}
-	uploadSection, err := uploadPolicyFromRequest(req, next.Upload)
+	dataPlaneSection, err := dataPlanePolicyFromRequest(req, next.DataPlane)
 	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "upload", err.Error()), nil
+		return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", err.Error()), nil
 	}
-	if uploadSection != nil {
-		next.Upload = uploadSection
+	if dataPlaneSection != nil {
+		next.DataPlane = dataPlaneSection
 	}
 	if req.GetDryRun() {
-		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", uploadSection != nil), nil
+		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", dataPlaneSection != nil), nil
 	}
 	s.runner.applyRuntimePolicy(next)
-	if uploadSection != nil {
-		s.runner.applyUploadConfig(*uploadSection)
+	if dataPlaneSection != nil {
+		s.runner.applyDataPlaneConfig(*dataPlaneSection)
 	}
-	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", uploadSection != nil), nil
+	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", dataPlaneSection != nil), nil
 }
 
-func (s *localControlServer) applyUploadPolicy(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) *controlplanev1.ControlAck {
+func (s *localControlServer) applyDataPlanePolicy(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.DataPlanePolicy) *controlplanev1.ControlAck {
 	if fallback == nil && strings.TrimSpace(req.GetPolicyJson()) != "" {
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(req.GetPolicyJson()), &raw); err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "upload", "invalid upload policy json: "+err.Error())
+			return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", "invalid data plane policy json: "+err.Error())
 		}
 		payload := []byte(req.GetPolicyJson())
-		if nested, ok := raw["upload"]; ok {
+		if nested, ok := raw["data_plane"]; ok {
 			payload = nested
 		}
-		var upload policymodel.UploadPolicy
-		if err := json.Unmarshal(payload, &upload); err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "upload", "invalid upload policy json: "+err.Error())
+		var dataPlane policymodel.DataPlanePolicy
+		if err := json.Unmarshal(payload, &dataPlane); err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", "invalid data plane policy json: "+err.Error())
 		}
-		fallback = &upload
+		fallback = &dataPlane
 	}
-	upload, err := uploadPolicyFromRequest(req, fallback)
+	dataPlane, err := dataPlanePolicyFromRequest(req, fallback)
 	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "upload", err.Error())
+		return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", err.Error())
 	}
-	if upload == nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "upload", "upload policy is required")
+	if dataPlane == nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", "data plane policy is required")
 	}
 	if req.GetDryRun() {
-		return uploadAck(s.runner.Config, req.GetContext(), "validated", "upload policy accepted in dry-run", true, *upload)
+		return dataPlaneAck(s.runner.Config, req.GetContext(), "validated", "data plane policy accepted in dry-run", true, *dataPlane)
 	}
-	s.runner.applyUploadConfig(*upload)
-	return uploadAck(s.runner.Config, req.GetContext(), "applied", "upload policy applied; restart upload worker to take effect", true, *upload)
+	s.runner.applyDataPlaneConfig(*dataPlane)
+	return dataPlaneAck(s.runner.Config, req.GetContext(), "applied", "data plane policy applied; restart data batch dispatcher to take effect", true, *dataPlane)
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
@@ -563,110 +563,110 @@ func (s *localControlServer) validateContext(ctx *controlplanev1.RequestContext)
 	return nil
 }
 
-func uploadPolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) (*policymodel.UploadPolicy, error) {
-	if req.GetUpload() != nil {
-		upload := &policymodel.UploadPolicy{
-			Transport:      req.GetUpload().GetTransport(),
-			Endpoint:       req.GetUpload().GetEndpoint(),
-			BatchSize:      int(req.GetUpload().GetBatchSize()),
-			FlushInterval:  req.GetUpload().GetFlushInterval(),
-			RetryInitial:   req.GetUpload().GetRetryInitial(),
-			RetryMax:       req.GetUpload().GetRetryMax(),
-			RequestTimeout: req.GetUpload().GetRequestTimeout(),
-			MaxInflight:    int(req.GetUpload().GetMaxInflight()),
-			Compression:    req.GetUpload().GetCompression(),
-			TLSProfile:     req.GetUpload().GetTlsProfile(),
+func dataPlanePolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.DataPlanePolicy) (*policymodel.DataPlanePolicy, error) {
+	if req.GetDataPlane() != nil {
+		dataPlane := &policymodel.DataPlanePolicy{
+			Transport:      req.GetDataPlane().GetTransport(),
+			Endpoint:       req.GetDataPlane().GetEndpoint(),
+			BatchSize:      int(req.GetDataPlane().GetBatchSize()),
+			FlushInterval:  req.GetDataPlane().GetFlushInterval(),
+			RetryInitial:   req.GetDataPlane().GetRetryInitial(),
+			RetryMax:       req.GetDataPlane().GetRetryMax(),
+			RequestTimeout: req.GetDataPlane().GetRequestTimeout(),
+			MaxInflight:    int(req.GetDataPlane().GetMaxInflight()),
+			Compression:    req.GetDataPlane().GetCompression(),
+			TLSProfile:     req.GetDataPlane().GetTlsProfile(),
 		}
-		if err := validateUploadPolicy(upload); err != nil {
+		if err := validateDataPlanePolicy(dataPlane); err != nil {
 			return nil, err
 		}
-		return upload, nil
+		return dataPlane, nil
 	}
 	if fallback == nil {
 		return nil, nil
 	}
-	upload := *fallback
-	if err := validateUploadPolicy(&upload); err != nil {
+	dataPlane := *fallback
+	if err := validateDataPlanePolicy(&dataPlane); err != nil {
 		return nil, err
 	}
-	return &upload, nil
+	return &dataPlane, nil
 }
 
-func validateUploadPolicy(upload *policymodel.UploadPolicy) error {
-	if upload == nil {
+func validateDataPlanePolicy(policy *policymodel.DataPlanePolicy) error {
+	if policy == nil {
 		return nil
 	}
-	switch strings.TrimSpace(upload.Transport) {
+	switch strings.TrimSpace(policy.Transport) {
 	case "", "grpc", "local":
 	default:
-		return fmt.Errorf("unsupported upload.transport %q", upload.Transport)
+		return fmt.Errorf("unsupported data_plane.transport %q", policy.Transport)
 	}
 	for name, value := range map[string]string{
-		"flush_interval":  upload.FlushInterval,
-		"retry_initial":   upload.RetryInitial,
-		"retry_max":       upload.RetryMax,
-		"request_timeout": upload.RequestTimeout,
+		"flush_interval":  policy.FlushInterval,
+		"retry_initial":   policy.RetryInitial,
+		"retry_max":       policy.RetryMax,
+		"request_timeout": policy.RequestTimeout,
 	} {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
 		if _, err := time.ParseDuration(value); err != nil {
-			return fmt.Errorf("upload.%s: %w", name, err)
+			return fmt.Errorf("data_plane.%s: %w", name, err)
 		}
 	}
-	if upload.BatchSize < 0 {
-		return fmt.Errorf("upload.batch_size must be non-negative")
+	if policy.BatchSize < 0 {
+		return fmt.Errorf("data_plane.batch_size must be non-negative")
 	}
-	if upload.MaxInflight < 0 {
-		return fmt.Errorf("upload.max_inflight must be non-negative")
+	if policy.MaxInflight < 0 {
+		return fmt.Errorf("data_plane.max_inflight must be non-negative")
 	}
-	switch strings.TrimSpace(upload.Compression) {
+	switch strings.TrimSpace(policy.Compression) {
 	case "", "none", "gzip", "zstd":
 	default:
-		return fmt.Errorf("unsupported upload.compression %q", upload.Compression)
+		return fmt.Errorf("unsupported data_plane.compression %q", policy.Compression)
 	}
-	if upload.RetryInitial != "" && upload.RetryMax != "" {
-		initial, _ := time.ParseDuration(upload.RetryInitial)
-		maximum, _ := time.ParseDuration(upload.RetryMax)
+	if policy.RetryInitial != "" && policy.RetryMax != "" {
+		initial, _ := time.ParseDuration(policy.RetryInitial)
+		maximum, _ := time.ParseDuration(policy.RetryMax)
 		if initial > maximum {
-			return fmt.Errorf("upload.retry_initial must be <= upload.retry_max")
+			return fmt.Errorf("data_plane.retry_initial must be <= data_plane.retry_max")
 		}
 	}
 	return nil
 }
 
-func (r *AgentRuntime) applyUploadConfig(upload policymodel.UploadPolicy) {
+func (r *AgentRuntime) applyDataPlaneConfig(dataPlane policymodel.DataPlanePolicy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if transport := strings.TrimSpace(upload.Transport); transport != "" {
+	if transport := strings.TrimSpace(dataPlane.Transport); transport != "" {
 		r.Config.Manager.Transport = transport
 	}
-	if endpoint := strings.TrimSpace(upload.Endpoint); endpoint != "" {
+	if endpoint := strings.TrimSpace(dataPlane.Endpoint); endpoint != "" {
 		r.Config.Manager.Address = endpoint
 	}
-	if upload.BatchSize > 0 {
-		r.Config.Spool.BatchSize = upload.BatchSize
+	if dataPlane.BatchSize > 0 {
+		r.Config.Spool.BatchSize = dataPlane.BatchSize
 	}
-	if d := parseOptionalDuration(upload.FlushInterval); d > 0 {
+	if d := parseOptionalDuration(dataPlane.FlushInterval); d > 0 {
 		r.Config.Spool.FlushInterval = d
 	}
-	if d := parseOptionalDuration(upload.RetryInitial); d > 0 {
-		r.Config.Upload.RetryInitial = d
+	if d := parseOptionalDuration(dataPlane.RetryInitial); d > 0 {
+		r.Config.DataPlane.RetryInitial = d
 	}
-	if d := parseOptionalDuration(upload.RetryMax); d > 0 {
-		r.Config.Upload.RetryMax = d
+	if d := parseOptionalDuration(dataPlane.RetryMax); d > 0 {
+		r.Config.DataPlane.RetryMax = d
 	}
-	if d := parseOptionalDuration(upload.RequestTimeout); d > 0 {
-		r.Config.Upload.RequestTimeout = d
+	if d := parseOptionalDuration(dataPlane.RequestTimeout); d > 0 {
+		r.Config.DataPlane.RequestTimeout = d
 	}
-	if upload.MaxInflight > 0 {
-		r.Config.Upload.MaxInflight = upload.MaxInflight
+	if dataPlane.MaxInflight > 0 {
+		r.Config.DataPlane.MaxInflight = dataPlane.MaxInflight
 	}
-	if compression := strings.TrimSpace(upload.Compression); compression != "" {
-		r.Config.Upload.Compression = compression
+	if compression := strings.TrimSpace(dataPlane.Compression); compression != "" {
+		r.Config.DataPlane.Compression = compression
 	}
-	if tlsProfile := strings.TrimSpace(upload.TLSProfile); tlsProfile != "" {
-		r.Config.Upload.TLSProfile = tlsProfile
+	if tlsProfile := strings.TrimSpace(dataPlane.TLSProfile); tlsProfile != "" {
+		r.Config.DataPlane.TLSProfile = tlsProfile
 	}
 }
 
@@ -693,8 +693,8 @@ func rejectedAck(cfg config.Config, req *controlplanev1.RequestContext, section,
 	}
 }
 
-func uploadAck(cfg config.Config, req *controlplanev1.RequestContext, status, message string, requiresRestart bool, upload policymodel.UploadPolicy) *controlplanev1.ControlAck {
-	report, _ := json.Marshal(map[string]any{"upload": upload})
+func dataPlaneAck(cfg config.Config, req *controlplanev1.RequestContext, status, message string, requiresRestart bool, dataPlane policymodel.DataPlanePolicy) *controlplanev1.ControlAck {
+	report, _ := json.Marshal(map[string]any{"data_plane": dataPlane})
 	return &controlplanev1.ControlAck{
 		RequestId: requestID(req),
 		TenantId:  cfg.Agent.TenantID,
@@ -702,7 +702,7 @@ func uploadAck(cfg config.Config, req *controlplanev1.RequestContext, status, me
 		Status:    status,
 		Message:   message,
 		Sections: []*controlplanev1.AppliedSection{{
-			Name:            "upload",
+			Name:            "data_plane",
 			Status:          status,
 			Message:         message,
 			RequiresRestart: requiresRestart,
@@ -713,13 +713,13 @@ func uploadAck(cfg config.Config, req *controlplanev1.RequestContext, status, me
 }
 
 func appliedAck(cfg config.Config, req *controlplanev1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool) *controlplanev1.ControlAck {
-	uploadStatus := "unchanged"
-	uploadMessage := "upload policy unchanged"
-	uploadRequiresRestart := requiresRestart
-	if policy.Upload != nil {
-		uploadStatus = status
-		uploadMessage = "upload policy accepted; restart upload worker to take effect"
-		uploadRequiresRestart = true
+	dataPlaneStatus := "unchanged"
+	dataPlaneMessage := "data plane policy unchanged"
+	dataPlaneRequiresRestart := requiresRestart
+	if policy.DataPlane != nil {
+		dataPlaneStatus = status
+		dataPlaneMessage = "data plane policy accepted; restart data batch dispatcher to take effect"
+		dataPlaneRequiresRestart = true
 	}
 	return &controlplanev1.ControlAck{
 		RequestId:     requestID(req),
@@ -733,7 +733,7 @@ func appliedAck(cfg config.Config, req *controlplanev1.RequestContext, policy po
 			{Name: "detection", Status: status, Message: "endpoint rules updated", RequiresRestart: false},
 			{Name: "response", Status: status, Message: "response policy updated", RequiresRestart: false},
 			{Name: "resource", Status: "unsupported", Message: "resource policy contract is reserved for the next phase", RequiresRestart: requiresRestart},
-			{Name: "upload", Status: uploadStatus, Message: uploadMessage, RequiresRestart: uploadRequiresRestart},
+			{Name: "data_plane", Status: dataPlaneStatus, Message: dataPlaneMessage, RequiresRestart: dataPlaneRequiresRestart},
 			{Name: "collection", Status: "unsupported", Message: "collection hot reload requires compiler/runtime apply in the next phase", RequiresRestart: true},
 		},
 	}
@@ -1038,11 +1038,11 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 			DroppedBytes:      health.WAL.DroppedBytes,
 			LastError:         health.WAL.LastError,
 		},
-		Upload: &controlplanev1.UploadHealth{
-			UploadedBatches:  uint32(health.Upload.UploadedBatches),
-			RemainingBatches: uint32(health.Upload.RemainingBatches),
-			RemainingBytes:   health.Upload.RemainingBytes,
-			LastError:        health.Upload.LastError,
+		DataPlane: &controlplanev1.DataPlaneHealth{
+			AppendedBatches:  uint32(health.DataPlane.AppendedBatches),
+			RemainingBatches: uint32(health.DataPlane.RemainingBatches),
+			RemainingBytes:   health.DataPlane.RemainingBytes,
+			LastError:        health.DataPlane.LastError,
 		},
 		Cep: &controlplanev1.CEPHealth{
 			ActiveGroups:     health.CEP.ActiveGroups,

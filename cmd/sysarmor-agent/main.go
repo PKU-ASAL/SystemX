@@ -12,7 +12,7 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	agentconfig "github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/daemon"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 )
 
@@ -34,7 +34,7 @@ func main() {
 	}
 
 	manager := flag.String("manager", "127.0.0.1:9443", "sysarmor-manager address")
-	transport := flag.String("transport", "grpc", "upload transport: grpc")
+	transport := flag.String("transport", "grpc", "data append transport: grpc")
 	agentID := flag.String("agent-id", "agent-dev", "agent identifier")
 	hostID := flag.String("host-id", "host-dev", "host identifier")
 	tenantID := flag.String("tenant-id", "default", "tenant identifier")
@@ -44,10 +44,10 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "agent client private key for mTLS")
 	tlsServerName := flag.String("tls-server-name", "", "optional manager certificate SAN override")
 	tlsInsecure := flag.Bool("tls-insecure", false, "use insecure gRPC transport")
-	input := flag.String("input-jsonl", "", "upload CanonicalEvent/Signal protojson lines from this file")
+	input := flag.String("input-jsonl", "", "data append CanonicalEvent/Signal protojson lines from this file")
 	stream := flag.String("stream-jsonl", "", "stream SensorEvent/Tetragon JSONL from this file, or '-' for stdin")
-	batchSize := flag.Int("batch-size", 128, "stream upload batch size")
-	flushInterval := flag.Duration("flush-interval", time.Second, "stream upload flush interval")
+	batchSize := flag.Int("batch-size", 128, "stream data batch size")
+	flushInterval := flag.Duration("flush-interval", time.Second, "stream append flush interval")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	if *input != "" {
-		if err := uploadJSONL(*manager, *transport, *agentID, *hostID, *tenantID, *scenario, *input, cliTLS(*tlsCA, *tlsCert, *tlsKey, *tlsServerName, *tlsInsecure)); err != nil {
+		if err := appendJSONL(*manager, *transport, *agentID, *hostID, *tenantID, *scenario, *input, cliTLS(*tlsCA, *tlsCert, *tlsKey, *tlsServerName, *tlsInsecure)); err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmor-agent: %v\n", err)
 			os.Exit(1)
 		}
@@ -102,13 +102,13 @@ func runDaemonCommand(args []string) error {
 	return runner.Run(ctx, daemon.Options{Out: os.Stdout})
 }
 
-func uploadJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, tlsCfg tlsconfig.ClientConfig) error {
+func appendJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, tlsCfg tlsconfig.ClientConfig) error {
 	f, err := os.Open(input)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	batch, err := uploader.ReadProtoJSONL(f, agentID, hostID, scenario)
+	batch, err := dataappend.ReadProtoJSONL(f, agentID, hostID, scenario)
 	if err != nil {
 		return err
 	}
@@ -130,21 +130,21 @@ func uploadJSONL(manager, transport, agentID, hostID, tenantID, scenario, input 
 	return err
 }
 
-func streamJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, batchSize int, flushInterval time.Duration, tlsCfg tlsconfig.ClientConfig) (uploader.StreamStats, error) {
+func streamJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, batchSize int, flushInterval time.Duration, tlsCfg tlsconfig.ClientConfig) (dataappend.StreamStats, error) {
 	r := os.Stdin
 	if input != "-" {
 		f, err := os.Open(input)
 		if err != nil {
-			return uploader.StreamStats{}, err
+			return dataappend.StreamStats{}, err
 		}
 		defer f.Close()
 		r = f
 	}
 	up, err := newUploader(manager, transport, tlsCfg)
 	if err != nil {
-		return uploader.StreamStats{}, err
+		return dataappend.StreamStats{}, err
 	}
-	return uploader.StreamJSONL(context.Background(), r, up, uploader.StreamOptions{
+	return dataappend.StreamJSONL(context.Background(), r, up, dataappend.StreamOptions{
 		AgentID:       agentID,
 		HostID:        hostID,
 		TenantID:      tenantID,
@@ -155,10 +155,10 @@ func streamJSONL(manager, transport, agentID, hostID, tenantID, scenario, input 
 	})
 }
 
-func newUploader(manager, transport string, tlsCfg tlsconfig.ClientConfig) (uploader.BatchUploader, error) {
+func newUploader(manager, transport string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchAppender, error) {
 	switch transport {
 	case "grpc":
-		return uploader.NewGRPCUploaderWithTLS(manager, 10*time.Second, "", tlsCfg), nil
+		return dataappend.NewGRPCAppenderWithTLS(manager, 10*time.Second, "", tlsCfg), nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}

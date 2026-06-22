@@ -1,4 +1,4 @@
-package uploader
+package dataappend
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
 )
 
-type BatchUploader interface {
+type BatchAppender interface {
 	AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error)
 }
 
@@ -38,9 +38,9 @@ type StreamStats struct {
 	Batches int
 }
 
-func StreamJSONL(ctx context.Context, r io.Reader, up BatchUploader, opts StreamOptions) (StreamStats, error) {
+func StreamJSONL(ctx context.Context, r io.Reader, up BatchAppender, opts StreamOptions) (StreamStats, error) {
 	if up == nil {
-		return StreamStats{}, fmt.Errorf("uploader is nil")
+		return StreamStats{}, fmt.Errorf("batch appender is nil")
 	}
 	if opts.BatchSize <= 0 {
 		opts.BatchSize = 128

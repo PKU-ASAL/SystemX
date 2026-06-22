@@ -858,7 +858,7 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 			},
 		}},
 	})
-	result.Store.RecordUpload(2, 1, 1, 1, 7*time.Millisecond)
+	result.Store.RecordDataBatchIngest(2, 1, 1, 1, 7*time.Millisecond)
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -870,7 +870,7 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 		"ev-ref-b",
 		"INSERT INTO metrics",
 		"manager",
-		`"upload_batches":1`,
+		`"data_batches_appended":1`,
 		`"events_ingested":2`,
 		`"signals_emitted":2`,
 	} {

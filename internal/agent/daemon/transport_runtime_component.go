@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 )
 
@@ -12,13 +12,13 @@ type TransportRuntime struct {
 	runner        *AgentRuntime
 	sensor        sensorruntime.Runtime
 	spool         *AgentSpool
-	worker        *uploadworker.Worker
+	worker        *databatchworker.Worker
 	startedAt     time.Time
 	scopeType     string
 	scopeSelector string
 }
 
-func NewTransportRuntime(runner *AgentRuntime, sensor sensorruntime.Runtime, spool *AgentSpool, worker *uploadworker.Worker, startedAt time.Time, scopeType, scopeSelector string) *TransportRuntime {
+func NewTransportRuntime(runner *AgentRuntime, sensor sensorruntime.Runtime, spool *AgentSpool, worker *databatchworker.Worker, startedAt time.Time, scopeType, scopeSelector string) *TransportRuntime {
 	return &TransportRuntime{
 		runner:        runner,
 		sensor:        sensor,

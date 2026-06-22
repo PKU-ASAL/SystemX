@@ -1,4 +1,4 @@
-package uploader
+package dataappend
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
 		t.Fatalf("stats = %#v, want 3 events and 2 batches", stats)
 	}
 	if len(rec.batches) != 2 {
-		t.Fatalf("uploaded batches = %d, want 2", len(rec.batches))
+		t.Fatalf("appended batches = %d, want 2", len(rec.batches))
 	}
 	if rec.batches[0].GetHeader().GetAgentId() != "agent-a" {
 		t.Fatalf("agent metadata missing: %#v", rec.batches[0].GetHeader())

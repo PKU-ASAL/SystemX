@@ -8,7 +8,7 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -22,7 +22,7 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "agent client private key for mTLS")
 	tlsServerName := flag.String("tls-server-name", "", "optional manager certificate SAN override")
 	tlsInsecure := flag.Bool("tls-insecure", false, "use insecure gRPC transport")
-	timeout := flag.Duration("timeout", 10*time.Second, "upload request timeout")
+	timeout := flag.Duration("timeout", 10*time.Second, "data append request timeout")
 	flag.Parse()
 	if *input == "" {
 		fmt.Fprintln(os.Stderr, "--input is required")
@@ -33,7 +33,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "read batch: %v\n", err)
 		os.Exit(1)
 	}
-	up := uploader.NewGRPCUploaderWithTLS(*manager, *timeout, *token, tlsconfig.ClientConfig{
+	up := dataappend.NewGRPCAppenderWithTLS(*manager, *timeout, *token, tlsconfig.ClientConfig{
 		CAFile:     *tlsCA,
 		CertFile:   *tlsCert,
 		KeyFile:    *tlsKey,
@@ -42,7 +42,7 @@ func main() {
 	})
 	ack, err := up.AppendBatch(batch)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "upload: %v\n", err)
+		fmt.Fprintf(os.Stderr, "data_plane: %v\n", err)
 		os.Exit(1)
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{

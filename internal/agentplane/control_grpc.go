@@ -499,11 +499,11 @@ func agentHealthFromControl(in *controlplanev1.HealthResponse) agenthealth.Agent
 			DroppedBytes:      in.GetWal().GetDroppedBytes(),
 			LastError:         in.GetWal().GetLastError(),
 		},
-		Upload: agenthealth.UploadHealth{
-			UploadedBatches:  int(in.GetUpload().GetUploadedBatches()),
-			RemainingBatches: int(in.GetUpload().GetRemainingBatches()),
-			RemainingBytes:   in.GetUpload().GetRemainingBytes(),
-			LastError:        in.GetUpload().GetLastError(),
+		DataPlane: agenthealth.DataPlaneHealth{
+			AppendedBatches:  int(in.GetDataPlane().GetAppendedBatches()),
+			RemainingBatches: int(in.GetDataPlane().GetRemainingBatches()),
+			RemainingBytes:   in.GetDataPlane().GetRemainingBytes(),
+			LastError:        in.GetDataPlane().GetLastError(),
 		},
 		CEP: agenthealth.CEPHealth{
 			ActiveGroups:     in.GetCep().GetActiveGroups(),

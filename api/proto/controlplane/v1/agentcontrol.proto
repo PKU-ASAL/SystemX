@@ -109,14 +109,14 @@ message QueueHealth {
   string last_error = 7;
 }
 
-message UploadHealth {
-  uint32 uploaded_batches = 1;
+message DataPlaneHealth {
+  uint32 appended_batches = 1;
   uint32 remaining_batches = 2;
   int64 remaining_bytes = 3;
   string last_error = 4;
 }
 
-message UploadPolicy {
+message DataPlanePolicy {
   string transport = 1;
   string endpoint = 2;
   uint32 batch_size = 3;
@@ -187,7 +187,7 @@ message HealthResponse {
   SensorCapability capability = 10;
   SensorHealth sensor = 11;
   QueueHealth queue = 12;
-  UploadHealth upload = 13;
+  DataPlaneHealth data_plane = 13;
   string observed_at = 14;
   CEPHealth cep = 15;
   LocalStreamHealth streams = 16;
@@ -300,7 +300,7 @@ message ApplyPolicyRequest {
   string policy_type = 2;
   string policy_json = 3;
   bool dry_run = 4;
-  UploadPolicy upload = 5;
+  DataPlanePolicy data_plane = 5;
 }
 
 message ApplyContentRequest {

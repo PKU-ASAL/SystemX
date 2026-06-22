@@ -715,8 +715,8 @@ func TestDataPlaneAppendBatchRequiresAgentIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AppendBatch() error = %v, want structured DataAck rejection", err)
 	}
-	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "invalid_upload" || ack.GetRetryable() || ack.GetContractVersion() != "dataplane.v1" {
-		t.Fatalf("ack = %+v, want non-retryable invalid_upload rejection", ack)
+	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "invalid_data_batch" || ack.GetRetryable() || ack.GetContractVersion() != "dataplane.v1" {
+		t.Fatalf("ack = %+v, want non-retryable invalid_data_batch rejection", ack)
 	}
 }
 

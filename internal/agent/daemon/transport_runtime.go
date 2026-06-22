@@ -12,11 +12,11 @@ import (
 
 func (r *TransportRuntime) runControlFlow(ctx context.Context) {
 	runner := r.runner
-	backoff := runner.Config.Upload.RetryInitial
+	backoff := runner.Config.DataPlane.RetryInitial
 	if backoff <= 0 {
 		backoff = time.Second
 	}
-	maxBackoff := runner.Config.Upload.RetryMax
+	maxBackoff := runner.Config.DataPlane.RetryMax
 	if maxBackoff <= 0 {
 		maxBackoff = 30 * time.Second
 	}
@@ -43,7 +43,7 @@ func (r *TransportRuntime) runControlFlow(ctx context.Context) {
 
 func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 	runner := r.runner
-	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.Upload.RequestTimeout)
+	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.DataPlane.RequestTimeout)
 	defer cancel()
 	session := NewControlChannel(runner.Config.Manager.Address, runner.Config.Agent.Token, runner.managerTLS())
 	if err := session.Open(connectCtx); err != nil {

@@ -26,7 +26,7 @@ Endpoint:
 - event refs and signal-to-event lookup;
 - lightweight endpoint detection including builtin and CEP-like rules;
 - collection policy explain with ref resolution, selector pushdown/degrade report, and detection coverage;
-- spool/WAL health with backlog, cursor, watcher, backpressure, and upload drain visibility;
+- spool/WAL health with backlog, cursor, watcher, backpressure, and data batch drain visibility;
 - observe-only response ack loop with explicit would-execute audit semantics;
 - VM recorder and benchmark matrix;
 - resource timeline with CPU/RSS/EPS/drop/signal counts.
@@ -76,7 +76,7 @@ Platform foundations:
 
 2. Agent data/control plane.
    - Use AgentDataPlaneService.AppendBatch for DataBatch append and AgentControlPlaneService.Connect for control flow.
-   - Provide durable upload, ack/resume, downlink, hot state, and identity.
+   - Provide durable append, ack/resume, downlink, hot state, and identity.
    - Treat mTLS certificate URI SAN as the production agent principal and bind it to tenant_id/agent_id in the manager registry.
    - Keep local Unix socket sysarmorctl as a local operator/debug boundary, not a second production data plane.
    - Do not keep legacy compatibility interfaces once the new boundary is ready.

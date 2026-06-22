@@ -66,7 +66,7 @@ Layering rules:
 - Collection semantics are behavior-first and sensor-neutral.
 - Response cannot bypass policy authorization.
 - External export is not a replacement for the native agent data/control protocols.
-- The endpoint agent keeps one durable local data path: EndpointRuntime writes DataBatch records to AgentSpool; TransportRuntime and LocalRuntime read that path for upload and local observation.
+- The endpoint agent keeps one durable local data path: EndpointRuntime writes DataBatch records to AgentSpool; TransportRuntime and LocalRuntime read that path for append and local observation.
 
 ## Core Facts
 
@@ -191,7 +191,7 @@ Together they should provide:
 - batch id, ack cursor, resume, idempotency, and backpressure;
 - authentication, authorization, and version negotiation.
 
-The production control plane is a secure bidirectional gRPC stream. The production data plane is the durable DataBatch upload path.
+The production control plane is a secure bidirectional gRPC stream. The production data plane is the durable DataBatch append path.
 
 ## Security Boundaries
 

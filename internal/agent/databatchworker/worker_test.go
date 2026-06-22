@@ -1,4 +1,4 @@
-package uploadworker
+package databatchworker
 
 import (
 	"context"
@@ -23,11 +23,11 @@ func TestDrainOnceUploadsOldestFirstAndAcks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.UploadedBatches != 2 || stats.RemainingBatches != 0 {
+	if stats.AppendedBatches != 2 || stats.RemainingBatches != 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if got := up.ids; len(got) != 2 || got[0] != "event-1" || got[1] != "event-2" {
-		t.Fatalf("uploaded ids = %v", got)
+		t.Fatalf("appended ids = %v", got)
 	}
 }
 
@@ -41,7 +41,7 @@ func TestDrainOnceStopsOnFailureAndKeepsBatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.UploadedBatches != 1 || stats.RemainingBatches != 1 || stats.LastError == "" {
+	if stats.AppendedBatches != 1 || stats.RemainingBatches != 1 || stats.LastError == "" {
 		t.Fatalf("stats = %+v", stats)
 	}
 	entries, err := queue.List()
@@ -69,7 +69,7 @@ func TestDrainOnceKeepsBatchOnAckIDMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.UploadedBatches != 0 || stats.RemainingBatches != 1 || stats.LastError == "" {
+	if stats.AppendedBatches != 0 || stats.RemainingBatches != 1 || stats.LastError == "" {
 		t.Fatalf("stats = %+v", stats)
 	}
 	entries, err := queue.List()
@@ -90,7 +90,7 @@ func TestDrainOnceAcksDuplicateStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
+	if stats.AppendedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
 		t.Fatalf("stats = %+v", stats)
 	}
 }
@@ -104,7 +104,7 @@ func TestDrainOnceKeepsRetryableAck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.UploadedBatches != 0 || stats.RemainingBatches != 1 || stats.RetryAfter != 250*time.Millisecond || !strings.Contains(stats.LastError, "server busy") {
+	if stats.AppendedBatches != 0 || stats.RemainingBatches != 1 || stats.RetryAfter != 250*time.Millisecond || !strings.Contains(stats.LastError, "server busy") {
 		t.Fatalf("stats = %+v", stats)
 	}
 }
@@ -132,7 +132,7 @@ func TestDrainOnceAcksTerminalRejectedAckWithoutTransportError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.RejectedBatches != 1 || stats.UploadedBatches != 0 || stats.RemainingBatches != 0 {
+	if stats.RejectedBatches != 1 || stats.AppendedBatches != 0 || stats.RemainingBatches != 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	entries, err := queue.List()
@@ -159,7 +159,7 @@ func TestDrainWithRetryBacksOffAndRecovers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainWithRetry() error = %v", err)
 	}
-	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
+	if stats.AppendedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if up.attempts != 3 {
@@ -185,7 +185,7 @@ func TestDrainWithRetryCapsAtMaxBackoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainWithRetry() error = %v", err)
 	}
-	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
+	if stats.AppendedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if up.attempts != 5 {
@@ -343,10 +343,10 @@ type recordingUploader struct {
 func (u *recordingUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	u.attempts++
 	if u.failBeforeSuccess > 0 && u.attempts <= u.failBeforeSuccess {
-		return nil, errors.New("temporary upload failure")
+		return nil, errors.New("temporary append failure")
 	}
 	if u.failAfter > 0 && len(u.ids) >= u.failAfter {
-		return nil, errors.New("upload failed")
+		return nil, errors.New("append failed")
 	}
 	u.ids = append(u.ids, batch.GetEvents()[0].GetEvent().GetId())
 	ackID := u.ackBatchID

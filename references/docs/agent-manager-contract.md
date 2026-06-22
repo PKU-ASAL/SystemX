@@ -41,7 +41,7 @@ This keeps production agent-manager traffic on one stable data plane and one sta
 | `STATUS_ACCEPTED` | `accepted` | Commit local WAL cursor and remove batch. |
 | `STATUS_DUPLICATE` | `duplicate` | Treat as already committed and remove batch. |
 | `STATUS_RETRYABLE` | `retryable_server_error` | Keep batch and retry after `retry_after_ms` when present. |
-| `STATUS_REJECTED` | `invalid_upload` | Terminal payload rejection; drop batch and surface health error. |
+| `STATUS_REJECTED` | `invalid_data_batch` | Terminal payload rejection; drop batch and surface health error. |
 | `STATUS_REJECTED` | `server_error` | Terminal server-side rejection when not retryable. |
 
 Authentication and mTLS failures are gRPC status errors because the agent has not entered the data-plane contract.

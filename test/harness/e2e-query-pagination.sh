@@ -99,7 +99,7 @@ cat > "$TMP/batch.json" <<JSON
 }
 JSON
 
-"$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-query-pagination.upload.json"
+"$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-query-pagination.data_plane.json"
 
 "$BIN/sysarmorctl" --mgr "$MGR_URL" --json events \
   --scenario "$SCENARIO" --limit 1 --offset 1 > "$RESULTS/e2e-query-pagination.events.json"

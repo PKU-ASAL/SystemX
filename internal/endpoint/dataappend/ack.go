@@ -1,4 +1,4 @@
-package uploader
+package dataappend
 
 import dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 

@@ -48,12 +48,12 @@ func TestListSignalsFiltersScenarioLayerAndTerminal(t *testing.T) {
 
 func TestMetricsSnapshotAndReset(t *testing.T) {
 	st := &Store{}
-	st.RecordUpload(2, 3, 1, 1, 12*time.Millisecond)
-	st.RecordUpload(1, 1, 0, 0, 4*time.Millisecond)
+	st.RecordDataBatchIngest(2, 3, 1, 1, 12*time.Millisecond)
+	st.RecordDataBatchIngest(1, 1, 0, 0, 4*time.Millisecond)
 
 	got := st.MetricsSnapshot()
-	if got.UploadBatches != 2 {
-		t.Fatalf("upload batches = %d, want 2", got.UploadBatches)
+	if got.DataBatchesAppended != 2 {
+		t.Fatalf("data batches appended = %d, want 2", got.DataBatchesAppended)
 	}
 	if got.EventsIngested != 3 {
 		t.Fatalf("events ingested = %d, want 3", got.EventsIngested)
@@ -69,7 +69,7 @@ func TestMetricsSnapshotAndReset(t *testing.T) {
 	}
 
 	st.DeleteScenario("")
-	if got := st.MetricsSnapshot(); got.UploadBatches != 0 {
+	if got := st.MetricsSnapshot(); got.DataBatchesAppended != 0 {
 		t.Fatalf("metrics after full reset = %#v, want zero", got)
 	}
 }
@@ -511,7 +511,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
 	st.RecordDataBatchAppend(AgentIdentity{AgentID: "agent-a", TenantID: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.UpsertOperatorRoleBinding(OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin", "policy_admin", "responder"}})
-	st.RecordUpload(1, 1, 1, 1, time.Millisecond)
+	st.RecordDataBatchIngest(1, 1, 1, 1, time.Millisecond)
 	st.ObserveRaritySignals([]*signalv1.Signal{{
 		Name: "download_by_lolbin",
 		Entities: []*signalv1.EntityRef{{
@@ -549,7 +549,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	if got, ok := reloaded.OperatorRolesForActor("alice"); !ok || len(got) != 2 || got[0] != "policy_admin" || got[1] != "responder" {
 		t.Fatalf("operator roles after import = %+v ok=%v", got, ok)
 	}
-	if got := reloaded.MetricsSnapshot(); got.UploadBatches != 1 || got.SignalsEmitted != 2 {
+	if got := reloaded.MetricsSnapshot(); got.DataBatchesAppended != 1 || got.SignalsEmitted != 2 {
 		t.Fatalf("metrics after import = %+v", got)
 	}
 	if got := reloaded.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {

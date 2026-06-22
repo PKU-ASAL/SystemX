@@ -60,7 +60,7 @@ spool:
   batch_size: 256
   flush_interval: 200ms
 
-upload:
+data_plane:
   retry_initial: 100ms
   retry_max: 500ms
   request_timeout: 2s

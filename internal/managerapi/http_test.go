@@ -61,7 +61,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 		endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-a", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
 	})
-	upload(t, srv, batch)
+	appendBatch(t, srv, batch)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/signals?scenario=apt-fileless-c2&layer=cloud", nil)
 	rec := httptest.NewRecorder()
@@ -107,7 +107,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 
 	rec = get(t, handler, "/api/v1/metrics")
 	for _, want := range []string{
-		`"upload_batches":1`,
+		`"data_batches_appended":1`,
 		`"endpoint_signals_ingested":3`,
 		`"cloud_signals_emitted":2`,
 		`"signals_emitted":5`,
@@ -200,7 +200,7 @@ func TestDataBatchAppendRecordsSessionCursor(t *testing.T) {
 		Id:       "ev-ack",
 		Behavior: "process.exec",
 	}}, nil)
-	ack := uploadAndAck(t, srv, batch)
+	ack := appendBatchAndAck(t, srv, batch)
 	if !ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_ACCEPTED || ack.GetBatchId() != batch.GetHeader().GetBatchId() || ack.GetCommittedCursor() != batch.GetHeader().GetBatchId() || ack.GetAcceptedEvents() != 1 || ack.GetServerTime() == "" {
 		t.Fatalf("ack = %#v", ack)
 	}
@@ -254,11 +254,11 @@ func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 		endpointSignal("payload_dropped", "lin-retry", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-retry", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
 	})
-	first := uploadAndAck(t, srv, batch)
+	first := appendBatchAndAck(t, srv, batch)
 	if !first.GetAccepted() {
 		t.Fatalf("first ack = %#v", first)
 	}
-	second := uploadAndAck(t, srv, batch)
+	second := appendBatchAndAck(t, srv, batch)
 	if !second.GetAccepted() || second.GetStatus() != dataplanev1.DataAck_STATUS_DUPLICATE || second.GetReasonCode() != "duplicate" || second.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("retry ack = %#v, want duplicate idempotent retry", second)
 	}
@@ -281,7 +281,7 @@ func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	}
 	rec = get(t, handler, "/api/v1/metrics")
 	for _, want := range []string{
-		`"upload_batches":1`,
+		`"data_batches_appended":1`,
 		`"events_ingested":1`,
 		`"endpoint_signals_ingested":3`,
 		`"cloud_signals_emitted":2`,
@@ -304,17 +304,17 @@ func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) 
 		Where:        signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		BaseRisk:     50,
 		GlobalRarity: 1,
-		Scenario:     "rarity-upload",
+		Scenario:     "rarity-append",
 		Entities: []*signalv1.EntityRef{{
 			Kind: "container",
 			Key:  "checkout-api",
 		}},
 	}})
-	upload(t, srv, batch)
+	appendBatch(t, srv, batch)
 	if got := st.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {
 		t.Fatalf("workload baseline count = %d, want 1", got)
 	}
-	upload(t, srv, batch)
+	appendBatch(t, srv, batch)
 	if got := st.RarityBaselineSnapshot().Count("container:checkout-api", "download_by_lolbin"); got != 1 {
 		t.Fatalf("workload baseline count after duplicate = %d, want 1", got)
 	}
@@ -345,7 +345,7 @@ func TestUploadRequiresDurableTelemetryAppend(t *testing.T) {
 	st, _ := store.Open("")
 	srv := NewServer(st).WithProducer(failingProducer{err: errors.New("kafka unavailable")})
 	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-kafka", "agent-kafka", "host-kafka", []*eventv1.CanonicalEvent{{Id: "ev-kafka", Scenario: "kafka-gate"}}, nil), "grpc")
-	if err == nil || !strings.Contains(err.Error(), "append raw telemetry") {
+	if err == nil || !strings.Contains(err.Error(), "append raw data batch") {
 		t.Fatalf("AppendDataBatchWithTransport error = %v, want append failure", err)
 	}
 	if got := st.ListEvents("kafka-gate", ""); len(got) != 0 {
@@ -364,8 +364,8 @@ func TestDataPlaneAppendOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testin
 	if result.AcceptedEvents != 0 || result.AcceptedSignals != 0 || result.CloudSignals != 0 || result.Incidents != 0 {
 		t.Fatalf("data-plane result = %+v, want ack-only counts before worker processing", result)
 	}
-	if len(producer.messages) != 1 || producer.messages[0].Topic != "sysarmor.agent.upload.raw" {
-		t.Fatalf("producer messages = %+v, want one raw upload append", producer.messages)
+	if len(producer.messages) != 1 || producer.messages[0].Topic != "sysarmor.agent.databatch.raw" {
+		t.Fatalf("producer messages = %+v, want one raw data batch append", producer.messages)
 	}
 	if got := st.ListEvents("data-plane-only", ""); len(got) != 0 {
 		t.Fatalf("data-plane stored events before worker processing: %+v", got)
@@ -419,7 +419,7 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 		endpointSignalForScenario("apt-staged-drop", "payload_dropped", "lin-a", false, fileEntity("/var/lib/app/plugins/helper")),
 		endpointSignalForScenario("apt-staged-drop", "suspicious_exec_connect", "lin-b", false, fileEntity("/var/lib/app/plugins/helper"), socketEntity("10.66.0.99:443")),
 	})
-	upload(t, srv, batch)
+	appendBatch(t, srv, batch)
 
 	rec := get(t, handler, "/api/v1/agents")
 	if !strings.Contains(rec.Body.String(), "agent-a") {
@@ -462,7 +462,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		Capability:    agenthealth.SensorCapability{Backend: "fake", Version: "dev", SupportsExec: true, SupportsHealth: true, KernelRelease: "test-kernel", BTFAvailable: true, BPFFSAvailable: true},
 		Sensor:        agenthealth.SensorHealth{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3},
 		Queue:         agenthealth.QueueHealth{QueuedBatches: 1, QueuedBytes: 256},
-		Upload:        agenthealth.UploadHealth{RemainingBatches: 1},
+		DataPlane:     agenthealth.DataPlaneHealth{RemainingBatches: 1},
 	}
 	data, err := json.Marshal(health)
 	if err != nil {
@@ -475,7 +475,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		t.Fatalf("health status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = get(t, handler, "/api/v1/agent-health?agent_id=agent-a&tenant_id=default")
-	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability"`, `"kernel_release":"test-kernel"`, `"sensor_health"`, `"queue_health"`, `"upload_health"`} {
+	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability"`, `"kernel_release":"test-kernel"`, `"sensor_health"`, `"queue_health"`, `"data_plane_health"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("health response missing %s: %s", want, rec.Body.String())
 		}
@@ -550,7 +550,7 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	scenario := "apt-staged-drop-stream"
 	payload := fileEntity("/var/lib/app/plugins/helper")
 
-	upload(t, srv, httpDataBatch("", "", "", nil, []*signalv1.Signal{
+	appendBatch(t, srv, httpDataBatch("", "", "", nil, []*signalv1.Signal{
 		endpointSignalForScenario(scenario, "payload_dropped", "lin-drop", false, payload),
 	}))
 	rec := get(t, handler, "/api/v1/incidents?scenario="+scenario)
@@ -558,7 +558,7 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 		t.Fatalf("first split batch should not create incident: %s", rec.Body.String())
 	}
 
-	upload(t, srv, httpDataBatch("", "", "", nil, []*signalv1.Signal{
+	appendBatch(t, srv, httpDataBatch("", "", "", nil, []*signalv1.Signal{
 		endpointSignalForScenario(scenario, "suspicious_exec_connect", "lin-connect", false, payload, socketEntity("10.66.0.99:443")),
 	}))
 
@@ -578,7 +578,7 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 		}
 	}
 
-	upload(t, srv, httpDataBatch("", "", "", []*eventv1.CanonicalEvent{{Id: "noise-1", Scenario: scenario, Behavior: "process.exec"}}, nil))
+	appendBatch(t, srv, httpDataBatch("", "", "", []*eventv1.CanonicalEvent{{Id: "noise-1", Scenario: scenario, Behavior: "process.exec"}}, nil))
 	rec = get(t, handler, "/api/v1/signals?scenario="+scenario+"&layer=cloud")
 	if got := strings.Count(rec.Body.String(), "dropped_payload_executed_and_connects"); got != 1 {
 		t.Fatalf("cloud signal duplicated after recompute, count = %d: %s", got, rec.Body.String())
@@ -638,7 +638,7 @@ func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 		t.Fatalf("effective policy response = %s", rec.Body.String())
 	}
 
-	upload(t, srv, httpDataBatch("", "agent-policy", "host-a", nil, []*signalv1.Signal{
+	appendBatch(t, srv, httpDataBatch("", "agent-policy", "host-a", nil, []*signalv1.Signal{
 		endpointSignalForScenario("apt-staged-drop-policy", "payload_dropped", "lin-drop", false, fileEntity("/var/lib/app/plugins/helper")),
 		endpointSignalForScenario("apt-staged-drop-policy", "suspicious_exec_connect", "lin-connect", false, fileEntity("/var/lib/app/plugins/helper"), socketEntity("10.66.0.99:443")),
 	}))
@@ -949,12 +949,12 @@ func TestResponsePolicyCanRequireMultiApprovalRoles(t *testing.T) {
 	}
 }
 
-func upload(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) {
+func appendBatch(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) {
 	t.Helper()
-	_ = uploadAndAck(t, srv, batch)
+	_ = appendBatchAndAck(t, srv, batch)
 }
 
-func uploadAndAck(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) *dataplanev1.DataAck {
+func appendBatchAndAck(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) *dataplanev1.DataAck {
 	t.Helper()
 	if batch.Header == nil {
 		batch.Header = &dataplanev1.BatchHeader{AgentId: "agent-a", HostId: "host-a", TenantId: "default"}

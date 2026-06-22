@@ -23,7 +23,7 @@ trap cleanup EXIT
 
 echo "[e2e-agent-mtls] building required binaries"
 GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-manager" "$ROOT/cmd/sysarmor-manager"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-upload" "$ROOT/cmd/sysarmor-databatch-upload"
+GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-append" "$ROOT/cmd/sysarmor-databatch-append"
 
 PKI_DIR="$TMP/pki"
 "$ROOT/tools/pki/gen-mtls-dev.sh" "$PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
@@ -79,7 +79,7 @@ cat > "$TMP/batch-good.json" <<JSON
 }
 JSON
 
-"$BIN/sysarmor-databatch-upload" \
+"$BIN/sysarmor-databatch-append" \
   --manager "127.0.0.1:$GRPC_PORT" \
   --input "$TMP/batch-good.json" \
   --tls-ca "$PKI_DIR/ca.pem" \
@@ -108,7 +108,7 @@ cat > "$TMP/batch-wrong-agent.json" <<JSON
 JSON
 
 set +e
-"$BIN/sysarmor-databatch-upload" \
+"$BIN/sysarmor-databatch-append" \
   --manager "127.0.0.1:$GRPC_PORT" \
   --input "$TMP/batch-wrong-agent.json" \
   --tls-ca "$PKI_DIR/ca.pem" \
@@ -119,7 +119,7 @@ set +e
   2> "$RESULTS/e2e-agent-mtls.wrong-agent.err"
 wrong_status=$?
 
-"$BIN/sysarmor-databatch-upload" \
+"$BIN/sysarmor-databatch-append" \
   --manager "127.0.0.1:$GRPC_PORT" \
   --input "$TMP/batch-good.json" \
   --tls-ca "$PKI_DIR/ca.pem" \
@@ -129,7 +129,7 @@ wrong_status=$?
   2> "$RESULTS/e2e-agent-mtls.no-client-cert.err"
 no_cert_status=$?
 
-"$BIN/sysarmor-databatch-upload" \
+"$BIN/sysarmor-databatch-append" \
   --manager "127.0.0.1:$GRPC_PORT" \
   --input "$TMP/batch-good.json" \
   --tls-ca "$PKI_DIR/ca.pem" \

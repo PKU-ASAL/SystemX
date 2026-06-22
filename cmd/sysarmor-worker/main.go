@@ -26,7 +26,7 @@ func main() {
 	postgresDriver := flag.String("postgres-driver", envDefault("SYSARMOR_POSTGRES_DRIVER", "postgres"), "database/sql driver name for postgres backend")
 	postgresDSN := flag.String("postgres-dsn", envDefault("SYSARMOR_POSTGRES_DSN", ""), "Postgres DSN for postgres backend")
 	kafkaBrokers := flag.String("kafka-brokers", envDefault("SYSARMOR_KAFKA_BROKERS", ""), "comma-separated Kafka brokers for raw telemetry ingest")
-	kafkaTopic := flag.String("kafka-topic", envDefault("SYSARMOR_KAFKA_TOPIC", "sysarmor.agent.upload.raw"), "Kafka raw upload topic")
+	kafkaTopic := flag.String("kafka-topic", envDefault("SYSARMOR_KAFKA_TOPIC", "sysarmor.agent.databatch.raw"), "Kafka raw data batch topic")
 	kafkaGroupID := flag.String("kafka-group-id", envDefault("SYSARMOR_KAFKA_GROUP_ID", "sysarmor-ingest-worker"), "Kafka consumer group id")
 	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable security data")
 	flag.Parse()

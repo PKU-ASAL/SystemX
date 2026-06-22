@@ -133,7 +133,7 @@ spool:
   max_bytes: 1048576
   batch_size: 10
   flush_interval: 200ms
-upload:
+data_plane:
   retry_initial: 10ms
   retry_max: 20ms
   request_timeout: 2s

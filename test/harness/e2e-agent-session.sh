@@ -74,7 +74,7 @@ for batch in agent-session-batch-1 agent-session-batch-2; do
   ]
 }
 JSON
-  "$BIN/sysarmor-databatch-upload" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/$batch.json" > "$RESULTS/e2e-agent-session.$batch.upload.json"
+  "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/$batch.json" > "$RESULTS/e2e-agent-session.$batch.data_plane.json"
 done
 
 "$BIN/sysarmorctl" --mgr "$MGR_URL" --json agent-sessions \

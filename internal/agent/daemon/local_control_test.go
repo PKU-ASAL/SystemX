@@ -12,8 +12,8 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -29,7 +29,7 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{
+	worker := &databatchworker.Worker{
 		Queue:    queue,
 		Uploader: noopUploader{},
 	}
@@ -107,7 +107,7 @@ func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
 	runner := &AgentRuntime{
 		Config: config.Config{
@@ -157,7 +157,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -212,21 +212,21 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	}
 }
 
-func TestLocalControlApplyUploadPolicyContract(t *testing.T) {
+func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
 	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
-			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
-			Control: config.ControlConfig{SocketPath: socketPath},
-			Manager: config.ManagerConfig{Address: "127.0.0.1:9443", Transport: "grpc"},
-			Spool:   config.SpoolConfig{BatchSize: 10, FlushInterval: time.Second},
-			Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1},
+			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control:   config.ControlConfig{SocketPath: socketPath},
+			Manager:   config.ManagerConfig{Address: "127.0.0.1:9443", Transport: "grpc"},
+			Spool:     config.SpoolConfig{BatchSize: 10, FlushInterval: time.Second},
+			DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1},
 		},
 		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
 		capability: contract.Capability{Backend: "fake", SupportsExec: true},
@@ -242,12 +242,12 @@ func TestLocalControlApplyUploadPolicyContract(t *testing.T) {
 
 	client := newUnixControlClient(t, socketPath)
 	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
-		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-upload"},
-		PolicyType: "upload",
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-data-plane"},
+		PolicyType: "data_plane",
 		PolicyJson: `{"transport":"grpc","endpoint":"manager:9443","batch_size":64,"flush_interval":"2s","retry_initial":"500ms","retry_max":"5s","request_timeout":"3s","max_inflight":2,"compression":"gzip","tls_profile":"mtls-prod"}`,
 	})
 	if err != nil {
-		t.Fatalf("ApplyPolicy(upload) error = %v", err)
+		t.Fatalf("ApplyPolicy(data_plane) error = %v", err)
 	}
 	if ack.Status != "applied" || len(ack.Sections) != 1 || !ack.Sections[0].RequiresRestart {
 		t.Fatalf("ack = %+v", ack)
@@ -258,8 +258,8 @@ func TestLocalControlApplyUploadPolicyContract(t *testing.T) {
 	if runner.Config.Spool.BatchSize != 64 || runner.Config.Spool.FlushInterval != 2*time.Second {
 		t.Fatalf("spool config = %+v", runner.Config.Spool)
 	}
-	if runner.Config.Upload.RetryInitial != 500*time.Millisecond || runner.Config.Upload.RetryMax != 5*time.Second || runner.Config.Upload.RequestTimeout != 3*time.Second || runner.Config.Upload.MaxInflight != 2 || runner.Config.Upload.Compression != "gzip" || runner.Config.Upload.TLSProfile != "mtls-prod" {
-		t.Fatalf("upload config = %+v", runner.Config.Upload)
+	if runner.Config.DataPlane.RetryInitial != 500*time.Millisecond || runner.Config.DataPlane.RetryMax != 5*time.Second || runner.Config.DataPlane.RequestTimeout != 3*time.Second || runner.Config.DataPlane.MaxInflight != 2 || runner.Config.DataPlane.Compression != "gzip" || runner.Config.DataPlane.TLSProfile != "mtls-prod" {
+		t.Fatalf("data plane config = %+v", runner.Config.DataPlane)
 	}
 }
 
@@ -270,7 +270,7 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
 	runner := &AgentRuntime{
 		Config: config.Config{
@@ -372,7 +372,7 @@ func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
 	runner := &AgentRuntime{
 		Config: config.Config{
@@ -426,7 +426,7 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -486,7 +486,7 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -568,7 +568,7 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -664,7 +664,7 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},

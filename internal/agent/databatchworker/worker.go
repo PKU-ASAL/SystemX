@@ -1,4 +1,4 @@
-package uploadworker
+package databatchworker
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 )
 
 type Worker struct {
 	Queue        *spool.Queue
-	Uploader     uploader.BatchUploader
+	Uploader     dataappend.BatchAppender
 	ResumeSource ResumeSource
 	Backoff      Backoff
 
@@ -30,7 +30,7 @@ type Backoff struct {
 }
 
 type Stats struct {
-	UploadedBatches  int
+	AppendedBatches  int
 	RejectedBatches  int
 	RemainingBatches int
 	RemainingBytes   int64
@@ -68,7 +68,7 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 		return Stats{}, fmt.Errorf("spool queue is nil")
 	}
 	if w.Uploader == nil {
-		return Stats{}, fmt.Errorf("uploader is nil")
+		return Stats{}, fmt.Errorf("batch appender is nil")
 	}
 	entries, err := w.Queue.List()
 	if err != nil {
@@ -89,7 +89,7 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 		}
 		ack, err := w.Uploader.AppendBatch(batch)
 		if err != nil {
-			if uploader.AckRetryable(ack) {
+			if dataappend.AckRetryable(ack) {
 				if ack.GetRetryAfterMs() > 0 {
 					stats.RetryAfter = time.Duration(ack.GetRetryAfterMs()) * time.Millisecond
 				}
@@ -101,9 +101,9 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 				w.setLastError(stats.LastError)
 				return w.withRemaining(stats)
 			}
-			if uploader.AckTerminalRejected(ack) {
+			if dataappend.AckTerminalRejected(ack) {
 				if ack.GetBatchId() != "" && ack.GetBatchId() != entry.ID {
-					stats.LastError = fmt.Sprintf("upload ack batch_id mismatch: got %q want %q", ack.GetBatchId(), entry.ID)
+					stats.LastError = fmt.Sprintf("data ack batch_id mismatch: got %q want %q", ack.GetBatchId(), entry.ID)
 					w.setLastError(stats.LastError)
 					return w.withRemaining(stats)
 				}
@@ -120,29 +120,29 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 			return w.withRemaining(stats)
 		}
 		if ack != nil && ack.GetBatchId() != "" && ack.GetBatchId() != entry.ID {
-			stats.LastError = fmt.Sprintf("upload ack batch_id mismatch: got %q want %q", ack.GetBatchId(), entry.ID)
+			stats.LastError = fmt.Sprintf("data ack batch_id mismatch: got %q want %q", ack.GetBatchId(), entry.ID)
 			w.setLastError(stats.LastError)
 			return w.withRemaining(stats)
 		}
-		if !uploader.AckCommitted(ack) {
-			if uploader.AckRetryable(ack) {
-				message := "missing upload ack"
+		if !dataappend.AckCommitted(ack) {
+			if dataappend.AckRetryable(ack) {
+				message := "missing data ack"
 				if ack != nil {
 					message = ack.GetMessage()
 					if ack.GetRetryAfterMs() > 0 {
 						stats.RetryAfter = time.Duration(ack.GetRetryAfterMs()) * time.Millisecond
 					}
 				}
-				stats.LastError = fmt.Sprintf("upload retryable: %s", message)
+				stats.LastError = fmt.Sprintf("data append retryable: %s", message)
 				w.setLastError(stats.LastError)
 				return w.withRemaining(stats)
 			}
-			if !uploader.AckTerminalRejected(ack) {
-				message := "missing upload ack"
+			if !dataappend.AckTerminalRejected(ack) {
+				message := "missing data ack"
 				if ack != nil {
 					message = ack.GetMessage()
 				}
-				stats.LastError = fmt.Sprintf("upload rejected: %s", message)
+				stats.LastError = fmt.Sprintf("data append rejected: %s", message)
 				w.setLastError(stats.LastError)
 				return w.withRemaining(stats)
 			}
@@ -152,8 +152,8 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 			stats.LastError = err.Error()
 			return w.withRemaining(stats)
 		}
-		if uploader.AckCommitted(ack) {
-			stats.UploadedBatches++
+		if dataappend.AckCommitted(ack) {
+			stats.AppendedBatches++
 		}
 	}
 	stats.LastError = ""

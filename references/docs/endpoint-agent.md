@@ -7,13 +7,13 @@ This document defines the endpoint-side contract: agent runtime, sensor ownershi
 The endpoint agent is the first trusted runtime in the EDR/XDR path. It should:
 
 - manage sensor lifecycle;
-- apply collection, detection, response, resource, and upload policies;
+- apply collection, detection, response, resource, and data-plane policies;
 - normalize sensor events;
 - add lineage, scope, labels, and entity refs;
 - run lightweight endpoint detection;
 - emit local Signals;
 - expose local control APIs for `sysarmorctl`;
-- spool and upload data reliably;
+- spool and append data reliably;
 - validate and execute authorized response commands.
 
 ## Sensor Runtime
@@ -169,7 +169,7 @@ Signal response intent
   -> response command
   -> agent validates scope and mode
   -> sensor Enforce or observe-only ack
-  -> audit/result upload
+  -> audit/result append
 ```
 
 The agent may support:
@@ -183,7 +183,7 @@ The agent may support:
 
 Destructive actions require explicit authorization and must be auditable.
 
-## Resource And Upload Policy
+## Resource And DataPlane Policy
 
 Endpoint runtime must be tunable:
 
@@ -191,7 +191,7 @@ Endpoint runtime must be tunable:
 - event rate;
 - local ring sizes;
 - spool size;
-- upload batch size;
+- data batch size;
 - retry and backoff;
 - CPU/memory guardrails;
 - deep collection windows.

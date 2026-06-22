@@ -72,7 +72,7 @@ type Info struct {
 }
 
 type Metrics struct {
-	UploadBatches             uint64  `json:"upload_batches"`
+	DataBatchesAppended       uint64  `json:"data_batches_appended"`
 	EventsIngested            uint64  `json:"events_ingested"`
 	EndpointSignalsIngested   uint64  `json:"endpoint_signals_ingested"`
 	CloudSignalsEmitted       uint64  `json:"cloud_signals_emitted"`
@@ -1119,11 +1119,11 @@ func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signa
 	s.Incidents = append(s.Incidents, incidents...)
 }
 
-func (s *Store) RecordUpload(events, endpointSignals, cloudSignals, incidents int, convergenceLatency time.Duration) {
+func (s *Store) RecordDataBatchIngest(events, endpointSignals, cloudSignals, incidents int, convergenceLatency time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	latencyMs := uint64(convergenceLatency.Milliseconds())
-	s.Metrics.UploadBatches++
+	s.Metrics.DataBatchesAppended++
 	s.Metrics.EventsIngested += uint64(events)
 	s.Metrics.EndpointSignalsIngested += uint64(endpointSignals)
 	s.Metrics.CloudSignalsEmitted += uint64(cloudSignals)
@@ -1134,7 +1134,7 @@ func (s *Store) RecordUpload(events, endpointSignals, cloudSignals, incidents in
 	if latencyMs > s.Metrics.MaxConvergenceLatencyMs {
 		s.Metrics.MaxConvergenceLatencyMs = latencyMs
 	}
-	s.Metrics.AverageConvergenceLatency = float64(s.Metrics.TotalConvergenceLatencyMs) / float64(s.Metrics.UploadBatches)
+	s.Metrics.AverageConvergenceLatency = float64(s.Metrics.TotalConvergenceLatencyMs) / float64(s.Metrics.DataBatchesAppended)
 }
 
 func (s *Store) RecordDataBatchAppend(agent AgentIdentity, batchID, transport string, observedAt time.Time) AgentSession {

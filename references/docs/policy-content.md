@@ -9,7 +9,7 @@ Collection Policy answers: what facts should the sensor collect?
 Detection Policy answers: what rules explain those facts?
 Response Policy answers: what actions are allowed?
 Resource Policy answers: how much endpoint budget may be used?
-Upload Policy answers: how data leaves the endpoint?
+DataPlane Policy answers: how data leaves the endpoint?
 ContextSet answers: which environment objects are important?
 IOCPack answers: which threat intelligence values are active?
 RuleSet / RulePack answers: what detection content exists?

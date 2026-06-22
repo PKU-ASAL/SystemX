@@ -18,10 +18,10 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
@@ -63,12 +63,12 @@ func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -94,12 +94,12 @@ func TestAgentRuntimeSpoolsConfiguredScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "daemon-scenario"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "daemon-scenario"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -240,10 +240,10 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 	}
 	runner := &AgentRuntime{
 		Config: config.Config{
-			Agent:   config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
-			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
-			Upload:  config.UploadConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second},
-			Health:  config.HealthConfig{Interval: 10 * time.Millisecond},
+			Agent:     config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
+			Manager:   config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
+			DataPlane: config.DataPlaneConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second},
+			Health:    config.HealthConfig{Interval: 10 * time.Millisecond},
 		},
 		Sensor: &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3}},
 		capability: contract.Capability{
@@ -252,7 +252,7 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 			SupportsHealth: true,
 		},
 	}
-	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -298,12 +298,12 @@ func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "tetragon", Mode: "managed", Version: "test", PolicyPath: policyPath, EventSource: eventPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "tetragon", Mode: "managed", Version: "test", PolicyPath: policyPath, EventSource: eventPath, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -326,12 +326,12 @@ func TestAgentRuntimeTetragonRequiresEventSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "tetragon", Mode: "managed", PolicyPath: policyPath, EventTransport: "tetra", ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1024, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "tetragon", Mode: "managed", PolicyPath: policyPath, EventTransport: "tetra", ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1024, BatchSize: 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -354,12 +354,12 @@ func TestAgentRuntimeBackgroundUploadLoopDrainsSpool(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: 5 * time.Millisecond},
-		Upload:  config.UploadConfig{RetryInitial: 5 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: 5 * time.Millisecond},
+		DataPlane: config.DataPlaneConfig{RetryInitial: 5 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -397,12 +397,12 @@ func TestAgentRuntimeGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
-		Upload:  config.UploadConfig{RetryInitial: 50 * time.Millisecond, RetryMax: 50 * time.Millisecond, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		DataPlane: config.DataPlaneConfig{RetryInitial: 50 * time.Millisecond, RetryMax: 50 * time.Millisecond, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -443,12 +443,12 @@ func TestAgentRuntimeGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.
 	if len(matches) != 0 {
 		t.Fatalf("spool batches after shutdown drain = %v", matches)
 	}
-	if !strings.Contains(out.String(), "agent shutdown drain: uploaded=1 remaining=0") {
+	if !strings.Contains(out.String(), "agent shutdown drain: appended=1 remaining=0") {
 		t.Fatalf("output = %q", out.String())
 	}
 }
 
-func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
+func TestDataBatchWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -456,12 +456,12 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	}
 	spoolPath := filepath.Join(dir, "spool")
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: spoolPath, MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: 5 * time.Millisecond},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: spoolPath, MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: 5 * time.Millisecond},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	first, err := New(cfg)
 	if err != nil {
@@ -489,7 +489,7 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up, err := worker.uploadWorker(queue)
+	up, err := worker.dataBatchWorker(queue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestUploadWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainOnce() error = %v", err)
 	}
-	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 {
+	if stats.AppendedBatches != 1 || stats.RemainingBatches != 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	matches, err = filepath.Glob(filepath.Join(spoolPath, "*.batch.json"))
@@ -519,12 +519,12 @@ func TestAgentRuntimeReportsSpoolBackpressure(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Second},
-		Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -551,12 +551,12 @@ func TestAgentRuntimeMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Hour},
-		Upload:  config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Hour},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -586,7 +586,7 @@ func TestAgentRuntimeMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
 	}); !spool.IsBackpressure(err) {
 		t.Fatalf("Append() error = %v, want backpressure", err)
 	}
-	worker, err := runner.uploadWorker(queue)
+	worker, err := runner.dataBatchWorker(queue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,11 +607,11 @@ func TestAgentRuntimeSpoolsTamperSignalFromHealth(t *testing.T) {
 	}
 	runner := &AgentRuntime{
 		Config: config.Config{
-			Agent:  config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-			Sensor: config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true, RestartWindow: time.Hour},
-			Spool:  config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
-			Upload: config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
-			Health: config.HealthConfig{Interval: 5 * time.Millisecond},
+			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+			Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true, RestartWindow: time.Hour},
+			Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+			DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+			Health:    config.HealthConfig{Interval: 5 * time.Millisecond},
 		},
 		Sensor: &healthOnlySensor{health: contract.Health{
 			Backend:        "tetragon",
@@ -667,12 +667,12 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, MaxParseErrors: 1, RestartWindow: time.Hour},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
-		Upload:  config.UploadConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
-		Health:  config.HealthConfig{Interval: time.Hour},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, MaxParseErrors: 1, RestartWindow: time.Hour},
+		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner := &AgentRuntime{
 		Config: cfg,
@@ -695,7 +695,7 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker, err := runner.uploadWorker(queue)
+	worker, err := runner.dataBatchWorker(queue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +708,7 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 	}
 }
 
-func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
+func TestNewBatchAppenderAcceptsConfiguredTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		transport string
@@ -717,12 +717,12 @@ func TestNewBatchUploaderAcceptsConfiguredTimeout(t *testing.T) {
 		{name: "local", transport: "local"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			up, err := newBatchUploader("127.0.0.1:9443", tc.transport, 250*time.Millisecond, "dev-token", tlsconfig.ClientConfig{})
+			up, err := newBatchAppender("127.0.0.1:9443", tc.transport, 250*time.Millisecond, "dev-token", tlsconfig.ClientConfig{})
 			if err != nil {
-				t.Fatalf("newBatchUploader() error = %v", err)
+				t.Fatalf("newBatchAppender() error = %v", err)
 			}
 			if up == nil {
-				t.Fatal("newBatchUploader() = nil")
+				t.Fatal("newBatchAppender() = nil")
 			}
 		})
 	}
