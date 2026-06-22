@@ -471,6 +471,86 @@ func TestOpenPostgresProjectsRuleAndPullbackTables(t *testing.T) {
 	}
 }
 
+func TestOpenPostgresProjectsAndQueriesControlCommands(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("Open(postgres) error = %v", err)
+	}
+	result.Store.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID:      "ctrl-table-pg",
+		TenantID:       "default",
+		AgentID:        "agent-control-pg",
+		Type:           controlmodel.ControlCommandTypeContentUpdate,
+		Status:         controlmodel.ControlCommandStatusPending,
+		ContentRef:     "ioc:pg",
+		ContentKind:    "iocpack",
+		ContentVersion: "v1",
+		PayloadJSON:    []byte(`{"kind":"iocpack"}`),
+		Actor:          "operator",
+		Reason:         "postgres projection",
+		CreatedAt:      time.Unix(210, 0).UTC(),
+		UpdatedAt:      time.Unix(211, 0).UTC(),
+	})
+	if err := result.Store.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	execLog := fakeExecLog()
+	for _, want := range []string{
+		"INSERT INTO control_commands",
+		"ctrl-table-pg",
+		"agent-control-pg",
+		"content_update",
+		"ioc:pg",
+		"postgres projection",
+	} {
+		if !strings.Contains(execLog, want) {
+			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		}
+	}
+
+	reopened, err := Open(context.Background(), Options{
+		Kind:           KindPostgres,
+		PostgresDriver: fakeDriverName,
+		PostgresDSN:    "test-dsn",
+	})
+	if err != nil {
+		t.Fatalf("reopen postgres error = %v", err)
+	}
+	pending := reopened.Store.PendingControlCommands("default", "agent-control-pg")
+	if len(pending) != 1 || pending[0].CommandID != "ctrl-table-pg" || pending[0].ContentRef != "ioc:pg" {
+		t.Fatalf("pending control commands = %+v", pending)
+	}
+	if _, ok := reopened.Store.MarkControlCommandSent("ctrl-table-pg", "default", "agent-control-pg", time.Unix(220, 0).UTC()); !ok {
+		t.Fatal("MarkControlCommandSent ok = false")
+	}
+	if _, ok := reopened.Store.AckControlCommand(controlmodel.ControlCommandAck{
+		CommandID:  "ctrl-table-pg",
+		TenantID:   "default",
+		AgentID:    "agent-control-pg",
+		Status:     controlmodel.ControlCommandStatusApplied,
+		Message:    "applied",
+		ObservedAt: time.Unix(221, 0).UTC(),
+	}); !ok {
+		t.Fatal("AckControlCommand ok = false")
+	}
+	if err := reopened.Store.Save(); err != nil {
+		t.Fatalf("Save acked command error = %v", err)
+	}
+	commands := reopened.Store.ListControlCommands("default", "agent-control-pg", controlmodel.ControlCommandTypeContentUpdate)
+	if len(commands) != 1 || commands[0].Status != controlmodel.ControlCommandStatusApplied || commands[0].AckMessage != "applied" {
+		t.Fatalf("acked control commands = %+v", commands)
+	}
+	if got := reopened.Store.PendingControlCommands("default", "agent-control-pg"); len(got) != 0 {
+		t.Fatalf("pending after ack = %+v", got)
+	}
+}
+
 func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
@@ -1239,18 +1319,19 @@ func init() {
 
 var fakeState struct {
 	sync.Mutex
-	lastQuery       string
-	execLog         []string
-	execErr         error
-	snapshot        []byte
-	eventRows       [][]byte
-	signalRows      [][]byte
-	incidentRows    [][]byte
-	responseRows    [][]driver.Value
-	policyRows      [][]byte
-	assignmentRows  [][]byte
-	policyAuditRows [][]byte
-	closeN          int
+	lastQuery          string
+	execLog            []string
+	execErr            error
+	snapshot           []byte
+	eventRows          [][]byte
+	signalRows         [][]byte
+	incidentRows       [][]byte
+	responseRows       [][]driver.Value
+	policyRows         [][]byte
+	assignmentRows     [][]byte
+	policyAuditRows    [][]byte
+	controlCommandRows [][]byte
+	closeN             int
 }
 
 func fakeSetExecError(err error) {
@@ -1266,6 +1347,7 @@ func fakeSetExecError(err error) {
 	fakeState.policyRows = nil
 	fakeState.assignmentRows = nil
 	fakeState.policyAuditRows = nil
+	fakeState.controlCommandRows = nil
 	fakeState.closeN = 0
 }
 
@@ -1474,6 +1556,15 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			upsertFakePolicyAuditRow([]byte(data))
 		}
 	}
+	if strings.Contains(s.query, "INSERT INTO control_commands") && len(args) >= 15 {
+		dataArg := args[len(args)-1].Value
+		switch data := dataArg.(type) {
+		case []byte:
+			upsertFakeControlCommandRow(append([]byte(nil), data...))
+		case string:
+			upsertFakeControlCommandRow([]byte(data))
+		}
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -1596,6 +1687,20 @@ func upsertFakePolicyAuditRow(row []byte) {
 	fakeState.policyAuditRows = append(fakeState.policyAuditRows, row)
 }
 
+func upsertFakeControlCommandRow(row []byte) {
+	var cmd controlmodel.ControlCommand
+	if err := json.Unmarshal(row, &cmd); err == nil && cmd.CommandID != "" {
+		for i, existing := range fakeState.controlCommandRows {
+			var existingCommand controlmodel.ControlCommand
+			if err := json.Unmarshal(existing, &existingCommand); err == nil && existingCommand.TenantID == cmd.TenantID && existingCommand.CommandID == cmd.CommandID {
+				fakeState.controlCommandRows[i] = row
+				return
+			}
+		}
+	}
+	fakeState.controlCommandRows = append(fakeState.controlCommandRows, row)
+}
+
 func (s fakeStmt) Query([]driver.Value) (driver.Rows, error) {
 	return s.QueryContext(context.Background(), nil)
 }
@@ -1673,6 +1778,16 @@ func (s fakeStmt) QueryContext(_ context.Context, args []driver.NamedValue) (dri
 	if strings.Contains(s.query, "SELECT data FROM policy_audit") && len(fakeState.policyAuditRows) > 0 {
 		rows := make([][]driver.Value, 0, len(fakeState.policyAuditRows))
 		for _, row := range fakeState.policyAuditRows {
+			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
+		}
+		return &fakeRows{cols: []string{"data"}, rows: rows}, nil
+	}
+	if strings.Contains(s.query, "SELECT data FROM control_commands") {
+		fakeState.lastQuery = s.query
+	}
+	if strings.Contains(s.query, "SELECT data FROM control_commands") && len(fakeState.controlCommandRows) > 0 {
+		rows := make([][]driver.Value, 0, len(fakeState.controlCommandRows))
+		for _, row := range fakeState.controlCommandRows {
 			rows = append(rows, []driver.Value{append([]byte(nil), row...)})
 		}
 		return &fakeRows{cols: []string{"data"}, rows: rows}, nil

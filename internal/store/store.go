@@ -28,40 +28,41 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu               sync.RWMutex
-	path             string
-	backendInfo      *Info
-	saveState        func(State) error
-	listEvents       func(scenario, behavior string) ([]*eventv1.CanonicalEvent, error)
-	listSignals      func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
-	listIncidents    func(scenario string) ([]*incidentv1.Incident, error)
-	listResponses    func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
-	listPolicies     func(tenantID string) ([]policymodel.Policy, error)
-	listAssignments  func(tenantID, agentID string) ([]policymodel.Assignment, error)
-	listPolicyAudits func(tenantID, policyID string) ([]policymodel.AuditRecord, error)
-	getPolicy        func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
-	effectivePolicy  func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
-	writeResponse    func(responsemodel.Command, *responsemodel.Ack) error
-	writePolicy      func(policymodel.Policy) error
-	writeAssignment  func(policymodel.Assignment) error
-	writePolicyAudit func(policymodel.AuditRecord) error
-	Agents           []AgentIdentity
-	Events           []*eventv1.CanonicalEvent
-	Signals          []*signalv1.Signal
-	Incidents        []*incidentv1.Incident
-	Health           map[string]agenthealth.AgentHealth
-	Rules            []policymodel.RuleContent
-	Policies         []policymodel.Policy
-	Assignments      []policymodel.Assignment
-	PolicyAudits     []policymodel.AuditRecord
-	Responses        []responsemodel.Command
-	ResponseAcks     []responsemodel.Ack
-	Pullbacks        []controlmodel.EvidencePullbackRequest
-	ControlCommands  []controlmodel.ControlCommand
-	AgentSessions    []AgentSession
-	OperatorRoles    []OperatorRoleBinding
-	Metrics          Metrics
-	RarityBaseline   rarity.Baseline
+	mu                  sync.RWMutex
+	path                string
+	backendInfo         *Info
+	saveState           func(State) error
+	listEvents          func(scenario, behavior string) ([]*eventv1.CanonicalEvent, error)
+	listSignals         func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
+	listIncidents       func(scenario string) ([]*incidentv1.Incident, error)
+	listResponses       func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
+	listControlCommands func(tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
+	listPolicies        func(tenantID string) ([]policymodel.Policy, error)
+	listAssignments     func(tenantID, agentID string) ([]policymodel.Assignment, error)
+	listPolicyAudits    func(tenantID, policyID string) ([]policymodel.AuditRecord, error)
+	getPolicy           func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
+	effectivePolicy     func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
+	writeResponse       func(responsemodel.Command, *responsemodel.Ack) error
+	writePolicy         func(policymodel.Policy) error
+	writeAssignment     func(policymodel.Assignment) error
+	writePolicyAudit    func(policymodel.AuditRecord) error
+	Agents              []AgentIdentity
+	Events              []*eventv1.CanonicalEvent
+	Signals             []*signalv1.Signal
+	Incidents           []*incidentv1.Incident
+	Health              map[string]agenthealth.AgentHealth
+	Rules               []policymodel.RuleContent
+	Policies            []policymodel.Policy
+	Assignments         []policymodel.Assignment
+	PolicyAudits        []policymodel.AuditRecord
+	Responses           []responsemodel.Command
+	ResponseAcks        []responsemodel.Ack
+	Pullbacks           []controlmodel.EvidencePullbackRequest
+	ControlCommands     []controlmodel.ControlCommand
+	AgentSessions       []AgentSession
+	OperatorRoles       []OperatorRoleBinding
+	Metrics             Metrics
+	RarityBaseline      rarity.Baseline
 }
 
 type Info struct {
@@ -224,6 +225,7 @@ func (s *Store) ConfigureQueryHooks(
 	listSignals func(string, string, bool) ([]*signalv1.Signal, error),
 	listIncidents func(string) ([]*incidentv1.Incident, error),
 	listResponses func(string, string) ([]responsemodel.AuditRecord, error),
+	listControlCommands func(string, string, string) ([]controlmodel.ControlCommand, error),
 	listPolicies func(string) ([]policymodel.Policy, error),
 	listAssignments func(string, string) ([]policymodel.Assignment, error),
 	listPolicyAudits func(string, string) ([]policymodel.AuditRecord, error),
@@ -236,6 +238,7 @@ func (s *Store) ConfigureQueryHooks(
 	s.listSignals = listSignals
 	s.listIncidents = listIncidents
 	s.listResponses = listResponses
+	s.listControlCommands = listControlCommands
 	s.listPolicies = listPolicies
 	s.listAssignments = listAssignments
 	s.listPolicyAudits = listPolicyAudits
@@ -1106,6 +1109,15 @@ func (s *Store) CreateControlCommand(cmd controlmodel.ControlCommand) controlmod
 
 func (s *Store) ListControlCommands(tenantID, agentID, commandType string) []controlmodel.ControlCommand {
 	s.mu.RLock()
+	listControlCommands := s.listControlCommands
+	s.mu.RUnlock()
+	if listControlCommands != nil {
+		commands, err := listControlCommands(tenantID, agentID, commandType)
+		if err == nil && len(commands) > 0 {
+			return commands
+		}
+	}
+	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]controlmodel.ControlCommand, 0, len(s.ControlCommands))
 	for _, cmd := range s.ControlCommands {
@@ -1146,7 +1158,6 @@ func (s *Store) MarkControlCommandSent(commandID, tenantID, agentID string, sent
 		sentAt = time.Now().UTC()
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, cmd := range s.ControlCommands {
 		if cmd.CommandID != commandID {
 			continue
@@ -1163,6 +1174,22 @@ func (s *Store) MarkControlCommandSent(commandID, tenantID, agentID string, sent
 		cmd.SentAt = sentAt
 		cmd.UpdatedAt = sentAt
 		s.ControlCommands[i] = cmd
+		s.mu.Unlock()
+		return cmd, true
+	}
+	s.mu.Unlock()
+	for _, cmd := range s.ListControlCommands(tenantID, agentID, "") {
+		if cmd.CommandID != commandID {
+			continue
+		}
+		if !controlmodel.ControlCommandTerminalStatus(cmd.Status) {
+			cmd.Status = controlmodel.ControlCommandStatusSent
+		}
+		cmd.SentAt = sentAt
+		cmd.UpdatedAt = sentAt
+		s.mu.Lock()
+		s.ControlCommands = upsertControlCommandSnapshot(s.ControlCommands, cmd)
+		s.mu.Unlock()
 		return cmd, true
 	}
 	return controlmodel.ControlCommand{}, false
@@ -1176,7 +1203,6 @@ func (s *Store) AckControlCommand(ack controlmodel.ControlCommandAck) (controlmo
 		ack.ObservedAt = time.Now().UTC()
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for i, cmd := range s.ControlCommands {
 		if cmd.CommandID != ack.CommandID {
 			continue
@@ -1187,33 +1213,60 @@ func (s *Store) AckControlCommand(ack controlmodel.ControlCommandAck) (controlmo
 		if ack.AgentID != "" && cmd.AgentID != ack.AgentID {
 			continue
 		}
-		status := ack.Status
-		if status == "" {
-			status = controlmodel.ControlCommandStatusApplied
-		}
-		switch status {
-		case controlmodel.ControlCommandStatusApplied, "accepted", "validated", "degraded":
-			cmd.Status = controlmodel.ControlCommandStatusApplied
-		case controlmodel.ControlCommandStatusRejected:
-			cmd.Status = controlmodel.ControlCommandStatusRejected
-			cmd.Error = ack.Message
-		case controlmodel.ControlCommandStatusFailed:
-			cmd.Status = controlmodel.ControlCommandStatusFailed
-			cmd.Error = ack.Message
-		default:
-			cmd.Status = status
-		}
-		cmd.AckStatus = ack.Status
-		cmd.AckMessage = ack.Message
-		cmd.AckPolicyID = ack.PolicyID
-		cmd.AckPolicyVer = ack.PolicyVersion
-		cmd.AckReportJSON = ack.ReportJSON
-		cmd.AckedAt = ack.ObservedAt
-		cmd.UpdatedAt = ack.ObservedAt
+		cmd = applyControlCommandAck(cmd, ack)
 		s.ControlCommands[i] = cmd
+		s.mu.Unlock()
+		return cmd, true
+	}
+	s.mu.Unlock()
+	for _, cmd := range s.ListControlCommands(ack.TenantID, ack.AgentID, "") {
+		if cmd.CommandID != ack.CommandID {
+			continue
+		}
+		cmd = applyControlCommandAck(cmd, ack)
+		s.mu.Lock()
+		s.ControlCommands = upsertControlCommandSnapshot(s.ControlCommands, cmd)
+		s.mu.Unlock()
 		return cmd, true
 	}
 	return controlmodel.ControlCommand{}, false
+}
+
+func applyControlCommandAck(cmd controlmodel.ControlCommand, ack controlmodel.ControlCommandAck) controlmodel.ControlCommand {
+	status := ack.Status
+	if status == "" {
+		status = controlmodel.ControlCommandStatusApplied
+	}
+	switch status {
+	case controlmodel.ControlCommandStatusApplied, "accepted", "validated", "degraded":
+		cmd.Status = controlmodel.ControlCommandStatusApplied
+	case controlmodel.ControlCommandStatusRejected:
+		cmd.Status = controlmodel.ControlCommandStatusRejected
+		cmd.Error = ack.Message
+	case controlmodel.ControlCommandStatusFailed:
+		cmd.Status = controlmodel.ControlCommandStatusFailed
+		cmd.Error = ack.Message
+	default:
+		cmd.Status = status
+	}
+	cmd.AckStatus = ack.Status
+	cmd.AckMessage = ack.Message
+	cmd.AckPolicyID = ack.PolicyID
+	cmd.AckPolicyVer = ack.PolicyVersion
+	cmd.AckReportJSON = ack.ReportJSON
+	cmd.AckedAt = ack.ObservedAt
+	cmd.UpdatedAt = ack.ObservedAt
+	return cmd
+}
+
+func upsertControlCommandSnapshot(commands []controlmodel.ControlCommand, cmd controlmodel.ControlCommand) []controlmodel.ControlCommand {
+	for i, existing := range commands {
+		if existing.CommandID == cmd.CommandID && existing.TenantID == cmd.TenantID {
+			commands[i] = cmd
+			return commands
+		}
+	}
+	return append(commands, cmd)
 }
 
 func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {

@@ -76,6 +76,43 @@ func TestDataPlaneAppendBatch(t *testing.T) {
 	}
 }
 
+func TestDataPlaneAppendBatchDuplicateReturnsCommittedAck(t *testing.T) {
+	st := &store.Store{}
+	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	grpcServer := grpc.NewServer()
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	client := dataplanev1.NewAgentDataPlaneServiceClient(conn)
+	batch := grpcDataBatch("duplicate-batch", "grpc-agent", "grpc-host", nil)
+	if ack, err := client.AppendBatch(ctx, batch); err != nil || !ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_ACCEPTED {
+		t.Fatalf("first AppendBatch ack=%+v err=%v, want accepted", ack, err)
+	}
+	ack, err := client.AppendBatch(ctx, batch)
+	if err != nil {
+		t.Fatalf("duplicate AppendBatch error = %v", err)
+	}
+	if !ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_DUPLICATE || ack.GetReasonCode() != "duplicate" || ack.GetCommittedCursor() != "duplicate-batch" || ack.GetRetryable() {
+		t.Fatalf("duplicate ack = %+v, want committed duplicate", ack)
+	}
+}
+
 func TestAgentDataPlaneServiceMTLSBindsBatchIdentity(t *testing.T) {
 	certs := writeTestMTLSFiles(t, "default", "grpc-agent")
 	serverOpt, err := tlsconfig.ServerOption(certs.serverCert, certs.serverKey, certs.ca, true)
@@ -892,6 +929,36 @@ func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 	}
 	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_RETRYABLE || ack.GetReasonCode() != "retryable_server_error" || !ack.GetRetryable() || ack.GetRetryAfterMs() == 0 || ack.GetBatchId() != "retryable-batch" || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want retryable server error", ack)
+	}
+}
+
+func TestDataAckClassifiesNonRetryableBackendError(t *testing.T) {
+	grpcServer := grpc.NewServer()
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(retryableUploadBackend{err: status.Error(codes.InvalidArgument, "schema rejected")}))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("server-reject-batch", "grpc-agent", "grpc-host", nil))
+	if err != nil {
+		t.Fatalf("AppendBatch() error = %v, want structured non-retryable DataAck", err)
+	}
+	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "server_error" || ack.GetRetryable() || ack.GetRetryAfterMs() != 0 || ack.GetBatchId() != "server-reject-batch" || ack.GetContractVersion() != "dataplane.v1" {
+		t.Fatalf("ack = %+v, want non-retryable server error", ack)
 	}
 }
 

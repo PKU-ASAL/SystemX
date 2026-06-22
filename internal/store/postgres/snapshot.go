@@ -51,6 +51,9 @@ func OpenTableStore(ctx context.Context, db *sql.DB, migration MigrationResult) 
 		func(tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
 			return queryResponses(context.Background(), db, tenantID, agentID)
 		},
+		func(tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
+			return queryControlCommands(context.Background(), db, tenantID, agentID, commandType)
+		},
 		func(tenantID string) ([]policymodel.Policy, error) {
 			return queryPolicies(context.Background(), db, tenantID)
 		},
@@ -119,6 +122,9 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 		return err
 	}
 	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
+		return err
+	}
+	if err := projectControlCommands(ctx, db, state.ControlCommands); err != nil {
 		return err
 	}
 	if err := projectAgentSessions(ctx, db, state.AgentSessions); err != nil {
@@ -254,6 +260,36 @@ ORDER BY updated_at ASC, response_id ASC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate postgres response audit: %w", err)
+	}
+	return out, nil
+}
+
+func queryControlCommands(ctx context.Context, db *sql.DB, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM control_commands
+WHERE ($1 = '' OR tenant_id = $1)
+  AND ($2 = '' OR agent_id = $2)
+  AND ($3 = '' OR command_type = $3)
+ORDER BY created_at ASC, command_id ASC
+`, tenantID, agentID, commandType)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres control commands: %w", err)
+	}
+	defer rows.Close()
+	out := []controlmodel.ControlCommand{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres control command: %w", err)
+		}
+		var cmd controlmodel.ControlCommand
+		if err := json.Unmarshal(raw, &cmd); err != nil {
+			return nil, fmt.Errorf("decode postgres control command: %w", err)
+		}
+		out = append(out, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres control commands: %w", err)
 	}
 	return out, nil
 }
@@ -701,6 +737,81 @@ ON CONFLICT (tenant_id, request_id) DO UPDATE SET
 		}
 		if err != nil {
 			return fmt.Errorf("project evidence pullback: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectControlCommands(ctx context.Context, db *sql.DB, commands []controlmodel.ControlCommand) error {
+	for _, cmd := range commands {
+		if cmd.CommandID == "" {
+			continue
+		}
+		tenantID := cmd.TenantID
+		if tenantID == "" {
+			tenantID = "default"
+		}
+		status := cmd.Status
+		if status == "" {
+			status = controlmodel.ControlCommandStatusPending
+		}
+		data, err := json.Marshal(cmd)
+		if err != nil {
+			return fmt.Errorf("encode control command projection: %w", err)
+		}
+		var sentAt any
+		if !cmd.SentAt.IsZero() {
+			sentAt = cmd.SentAt
+		}
+		var ackedAt any
+		if !cmd.AckedAt.IsZero() {
+			ackedAt = cmd.AckedAt
+		}
+		createdAt := cmd.CreatedAt
+		updatedAt := cmd.UpdatedAt
+		if createdAt.IsZero() || updatedAt.IsZero() {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, sent_at, acked_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+ON CONFLICT (tenant_id, command_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  command_type = EXCLUDED.command_type,
+  status = EXCLUDED.status,
+  policy_id = EXCLUDED.policy_id,
+  policy_version = EXCLUDED.policy_version,
+  content_ref = EXCLUDED.content_ref,
+  content_kind = EXCLUDED.content_kind,
+  content_version = EXCLUDED.content_version,
+  actor = EXCLUDED.actor,
+  reason = EXCLUDED.reason,
+  updated_at = now(),
+  sent_at = EXCLUDED.sent_at,
+  acked_at = EXCLUDED.acked_at,
+  data = EXCLUDED.data
+`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, sentAt, ackedAt, data)
+		} else {
+			_, err = db.ExecContext(ctx, `
+INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, created_at, updated_at, sent_at, acked_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+ON CONFLICT (tenant_id, command_id) DO UPDATE SET
+  agent_id = EXCLUDED.agent_id,
+  command_type = EXCLUDED.command_type,
+  status = EXCLUDED.status,
+  policy_id = EXCLUDED.policy_id,
+  policy_version = EXCLUDED.policy_version,
+  content_ref = EXCLUDED.content_ref,
+  content_kind = EXCLUDED.content_kind,
+  content_version = EXCLUDED.content_version,
+  actor = EXCLUDED.actor,
+  reason = EXCLUDED.reason,
+  updated_at = EXCLUDED.updated_at,
+  sent_at = EXCLUDED.sent_at,
+  acked_at = EXCLUDED.acked_at,
+  data = EXCLUDED.data
+`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, createdAt, updatedAt, sentAt, ackedAt, data)
+		}
+		if err != nil {
+			return fmt.Errorf("project control command: %w", err)
 		}
 	}
 	return nil

@@ -174,6 +174,27 @@ CREATE TABLE IF NOT EXISTS evidence_pullbacks (
   PRIMARY KEY (tenant_id, request_id)
 );
 
+CREATE TABLE IF NOT EXISTS control_commands (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  command_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL DEFAULT '',
+  command_type TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  policy_id TEXT NOT NULL DEFAULT '',
+  policy_version BIGINT NOT NULL DEFAULT 0,
+  content_ref TEXT NOT NULL DEFAULT '',
+  content_kind TEXT NOT NULL DEFAULT '',
+  content_version TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at TIMESTAMPTZ,
+  acked_at TIMESTAMPTZ,
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, command_id)
+);
+
 CREATE TABLE IF NOT EXISTS agent_sessions (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   session_id TEXT NOT NULL,
@@ -227,6 +248,9 @@ CREATE INDEX IF NOT EXISTS idx_response_audit_agent ON response_audit (tenant_id
 CREATE INDEX IF NOT EXISTS idx_response_audit_status ON response_audit (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_agent ON evidence_pullbacks (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_status ON evidence_pullbacks (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_control_commands_agent ON control_commands (tenant_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_control_commands_status ON control_commands (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_control_commands_type ON control_commands (tenant_id, command_type);
 CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_workload ON rarity_baseline (tenant_id, workload_key);

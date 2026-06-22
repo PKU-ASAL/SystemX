@@ -22,6 +22,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"evidence",
 		"response_audit",
 		"evidence_pullbacks",
+		"control_commands",
 		"agent_sessions",
 		"rarity_baseline",
 		"metrics",
@@ -42,6 +43,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"idx_evidence_incident",
 		"idx_response_audit_agent",
 		"idx_evidence_pullbacks_agent",
+		"idx_control_commands_agent",
 		"idx_agent_sessions_agent",
 		"idx_rarity_baseline_workload",
 	} {
