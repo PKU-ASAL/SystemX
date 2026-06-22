@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
@@ -18,7 +18,7 @@ import (
 )
 
 type BatchUploader interface {
-	Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error)
+	Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error)
 }
 
 type StreamOptions struct {
@@ -102,8 +102,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchUploader, opts Stream
 			if err != nil {
 				return stats, fmt.Errorf("line %d: %w", line, err)
 			}
-			batch.Events = append(batch.Events, events...)
-			batch.Signals = append(batch.Signals, signals...)
+			appendFrames(batch, events, signals)
 			stats.Events += len(events)
 			stats.Signals += len(signals)
 			if len(batch.GetEvents())+len(batch.GetSignals()) < opts.BatchSize {
@@ -136,17 +135,46 @@ func scanLines(r io.Reader) <-chan scannedLine {
 	return out
 }
 
-func newBatch(opts StreamOptions) *analyticsv1.UploadBatch {
+func newBatch(opts StreamOptions) *dataplanev1.DataBatch {
 	tenantID := opts.TenantID
 	if tenantID == "" {
 		tenantID = "default"
 	}
-	return &analyticsv1.UploadBatch{Agent: &analyticsv1.AgentHello{
-		AgentId:  opts.AgentID,
-		HostId:   opts.HostID,
-		TenantId: tenantID,
-		Version:  opts.Version,
+	return &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{
+		AgentId:           opts.AgentID,
+		HostId:            opts.HostID,
+		TenantId:          tenantID,
+		CreatedAtUnixNano: time.Now().UTC().UnixNano(),
 	}}
+}
+
+func appendFrames(batch *dataplanev1.DataBatch, events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, ev := range events {
+		batch.Events = append(batch.Events, &dataplanev1.EventFrame{
+			Sequence:   ev.GetSeq(),
+			ObservedAt: now,
+			Event:      ev,
+		})
+	}
+	for _, sig := range signals {
+		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{
+			ObservedAt: now,
+			Signal:     sig,
+		})
+	}
+	if batch.Header != nil {
+		batch.Header.EventCount = uint32(len(batch.GetEvents()))
+		batch.Header.SignalCount = uint32(len(batch.GetSignals()))
+		if len(batch.GetEvents()) > 0 {
+			batch.Header.EventSeqStart = batch.GetEvents()[0].GetSequence()
+			batch.Header.EventSeqEnd = batch.GetEvents()[len(batch.GetEvents())-1].GetSequence()
+		}
+		if len(batch.GetSignals()) > 0 {
+			batch.Header.SignalSeqStart = batch.GetSignals()[0].GetSequence()
+			batch.Header.SignalSeqEnd = batch.GetSignals()[len(batch.GetSignals())-1].GetSequence()
+		}
+	}
 }
 
 func decodeLine(data []byte, norm *normalize.Normalizer, detector *detection.Engine, scenario string, rawRing *ringbuffer.Buffer) ([]*eventv1.CanonicalEvent, []*signalv1.Signal, error) {

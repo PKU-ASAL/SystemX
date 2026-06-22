@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 )
@@ -50,11 +51,11 @@ func TestDrainOnceStopsOnFailureAndKeepsBatch(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %+v", entries)
 	}
-	batch, err := queue.Load(entries[0].ID)
+	batch, err := queue.LoadDataBatch(entries[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if batch.GetEvents()[0].GetId() != "event-2" {
+	if batch.GetEvents()[0].GetEvent().GetId() != "event-2" {
 		t.Fatalf("remaining batch = %+v", batch)
 	}
 }
@@ -77,6 +78,48 @@ func TestDrainOnceKeepsBatchOnAckIDMismatch(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("entries = %+v", entries)
+	}
+}
+
+func TestDrainOnceAcksDuplicateStatus(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{ackStatus: dataplanev1.DataAck_STATUS_DUPLICATE}
+	worker := &Worker{Queue: queue, Uploader: up}
+	stats, err := worker.DrainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("DrainOnce() error = %v", err)
+	}
+	if stats.UploadedBatches != 1 || stats.RemainingBatches != 0 || stats.LastError != "" {
+		t.Fatalf("stats = %+v", stats)
+	}
+}
+
+func TestDrainOnceKeepsRetryableAck(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{ackStatus: dataplanev1.DataAck_STATUS_RETRYABLE, ackRetryable: true, ackMessage: "server busy", ackRetryAfterMs: 250, returnAckError: true}
+	worker := &Worker{Queue: queue, Uploader: up}
+	stats, err := worker.DrainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("DrainOnce() error = %v", err)
+	}
+	if stats.UploadedBatches != 0 || stats.RemainingBatches != 1 || stats.RetryAfter != 250*time.Millisecond || !strings.Contains(stats.LastError, "server busy") {
+		t.Fatalf("stats = %+v", stats)
+	}
+}
+
+func TestDrainOnceAcksTerminalRejectedAck(t *testing.T) {
+	queue := openQueue(t)
+	mustAppend(t, queue, "event-1")
+	up := &recordingUploader{ackStatus: dataplanev1.DataAck_STATUS_REJECTED, ackMessage: "invalid tenant", returnAckError: true}
+	worker := &Worker{Queue: queue, Uploader: up}
+	stats, err := worker.DrainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("DrainOnce() error = %v", err)
+	}
+	if stats.RejectedBatches != 1 || stats.RemainingBatches != 0 {
+		t.Fatalf("stats = %+v", stats)
 	}
 }
 
@@ -246,13 +289,15 @@ func openQueue(t *testing.T) *spool.Queue {
 
 func mustAppend(t *testing.T, q *spool.Queue, eventID string) string {
 	t.Helper()
-	id, err := q.Append(&analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{AgentId: "agent-a", HostId: "host-a", TenantId: "default", Version: "test"},
-		Events: []*eventv1.CanonicalEvent{{
-			Id:       eventID,
-			AgentId:  "agent-a",
-			HostId:   "host-a",
-			Behavior: "process.exec",
+	id, err := q.AppendDataBatch(&dataplanev1.DataBatch{
+		Header: &dataplanev1.BatchHeader{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
+		Events: []*dataplanev1.EventFrame{{
+			Event: &eventv1.CanonicalEvent{
+				Id:       eventID,
+				AgentId:  "agent-a",
+				HostId:   "host-a",
+				Behavior: "process.exec",
+			},
 		}},
 	})
 	if err != nil {
@@ -267,9 +312,14 @@ type recordingUploader struct {
 	failBeforeSuccess int
 	attempts          int
 	ackBatchID        string
+	ackStatus         dataplanev1.DataAck_Status
+	ackRetryable      bool
+	ackMessage        string
+	ackRetryAfterMs   uint64
+	returnAckError    bool
 }
 
-func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
+func (u *recordingUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	u.attempts++
 	if u.failBeforeSuccess > 0 && u.attempts <= u.failBeforeSuccess {
 		return nil, errors.New("temporary upload failure")
@@ -277,12 +327,24 @@ func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1
 	if u.failAfter > 0 && len(u.ids) >= u.failAfter {
 		return nil, errors.New("upload failed")
 	}
-	u.ids = append(u.ids, batch.GetEvents()[0].GetId())
+	u.ids = append(u.ids, batch.GetEvents()[0].GetEvent().GetId())
 	ackID := u.ackBatchID
 	if ackID == "" {
-		ackID = batch.GetBatchId()
+		ackID = batch.GetHeader().GetBatchId()
 	}
-	return &analyticsv1.UploadAck{Ok: true, BatchId: ackID}, nil
+	status := u.ackStatus
+	accepted := true
+	if status == dataplanev1.DataAck_STATUS_UNSPECIFIED {
+		status = dataplanev1.DataAck_STATUS_ACCEPTED
+	}
+	if status != dataplanev1.DataAck_STATUS_ACCEPTED && status != dataplanev1.DataAck_STATUS_DUPLICATE {
+		accepted = false
+	}
+	ack := &dataplanev1.DataAck{Accepted: accepted, Status: status, BatchId: ackID, Message: u.ackMessage, Retryable: u.ackRetryable, RetryAfterMs: u.ackRetryAfterMs}
+	if u.returnAckError {
+		return ack, errors.New(u.ackMessage)
+	}
+	return ack, nil
 }
 
 type staticResumeSource struct {

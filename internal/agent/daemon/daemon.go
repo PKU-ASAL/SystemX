@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -24,7 +24,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/uploadworker"
-	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentgateway/model"
+	gatewaymodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/uploader"
@@ -35,6 +35,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -46,15 +47,15 @@ func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) erro
 
 type localBatchUploader struct{}
 
-func (localBatchUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
+func (localBatchUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if batch == nil {
-		return &analyticsv1.UploadAck{Ok: true}, nil
+		return &dataplanev1.DataAck{Accepted: true, Status: dataplanev1.DataAck_STATUS_ACCEPTED}, nil
 	}
-	return &analyticsv1.UploadAck{
-		Ok:              true,
-		BatchId:         batch.GetBatchId(),
-		AcceptedEvents:  uint64(len(batch.GetEvents())),
-		AcceptedSignals: uint64(len(batch.GetSignals())),
+	return &dataplanev1.DataAck{
+		Accepted:        true,
+		Status:          dataplanev1.DataAck_STATUS_ACCEPTED,
+		BatchId:         batch.GetHeader().GetBatchId(),
+		CommittedCursor: batch.GetHeader().GetBatchId(),
 	}, nil
 }
 
@@ -73,8 +74,8 @@ type Runner struct {
 	policy     policymodel.Policy
 	detection  *detection.Engine
 	collection contract.CollectionIntent
-	streams    *localStreamBuffer
 	content    *agentcontent.Store
+	signalSeq  uint64
 }
 
 type healthReporter interface {
@@ -90,7 +91,7 @@ func New(cfg config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{Config: cfg, Sensor: sensor, streams: newLocalStreamBuffer(defaultLocalStreamCapacity), content: contentStore}, nil
+	return &Runner{Config: cfg, Sensor: sensor, content: contentStore}, nil
 }
 
 func (r *Runner) Run(ctx context.Context, opts Options) error {
@@ -145,24 +146,20 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 		}
 		defer stopLocalControl()
 	}
-	if r.Config.Manager.Transport == "http" || r.Config.Manager.Transport == "stream" {
+	if r.Config.Manager.Transport == "grpc" {
 		stats, err := worker.ResumeOnce(ctx)
 		if err != nil {
 			return failStartup("resume", err)
 		}
 		if r.Out != nil && stats.LastError != "" {
-			fmt.Fprintf(r.Out, "agent agentgateway resume error: %s\n", stats.LastError)
+			fmt.Fprintf(r.Out, "agent data resume error: %s\n", stats.LastError)
 		}
 	}
-	var responseClient *ResponseClient
-	if r.Config.Manager.Transport == "http" {
-		responseClient = NewResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
-	}
-	var streamResponseClient *StreamResponseClient
-	var streamEvidenceClient *StreamEvidenceClient
-	if r.Config.Manager.Transport == "stream" {
-		streamResponseClient = NewStreamResponseClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
-		streamEvidenceClient = NewStreamEvidenceClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	var controlResponseClient *ControlResponseClient
+	var controlEvidenceClient *ControlEvidenceClient
+	if r.Config.Manager.Transport == "grpc" {
+		controlResponseClient = NewControlResponseClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
+		controlEvidenceClient = NewControlEvidenceClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
 	}
 	uploadCtx := ctx
 	cancelUploads := func() {}
@@ -180,7 +177,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 	r.applyRuntimePolicy(effectivePolicy)
 	refreshCtx := ctx
 	cancelRefresh := func() {}
-	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && (r.Config.Manager.Transport == "http" || r.Config.Manager.Transport == "stream") {
+	if !opts.Once && r.Config.Policy.RefreshInterval > 0 && r.Config.Manager.Transport == "grpc" {
 		refreshCtx, cancelRefresh = context.WithCancel(ctx)
 		defer cancelRefresh()
 		go r.runPolicyRefreshLoop(refreshCtx, scopeType, scopeSelector)
@@ -271,19 +268,14 @@ func (r *Runner) Run(ctx context.Context, opts Options) error {
 				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_upload_error=%q\n",
 					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.Upload.LastError)
 			}
-			if responseClient != nil {
-				if err := r.pollResponses(ctx, responseClient); err != nil && r.Out != nil {
-					fmt.Fprintf(r.Out, "agent response poll error: %v\n", err)
+			if controlResponseClient != nil {
+				if err := r.pollControlResponses(ctx, controlResponseClient); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent control response poll error: %v\n", err)
 				}
 			}
-			if streamResponseClient != nil {
-				if err := r.pollStreamResponses(ctx, streamResponseClient); err != nil && r.Out != nil {
-					fmt.Fprintf(r.Out, "agent stream response poll error: %v\n", err)
-				}
-			}
-			if streamEvidenceClient != nil {
-				if err := r.pollStreamEvidencePullbacks(ctx, streamEvidenceClient); err != nil && r.Out != nil {
-					fmt.Fprintf(r.Out, "agent stream evidence pullback poll error: %v\n", err)
+			if controlEvidenceClient != nil {
+				if err := r.pollControlEvidencePullbacks(ctx, controlEvidenceClient); err != nil && r.Out != nil {
+					fmt.Fprintf(r.Out, "agent control evidence pullback poll error: %v\n", err)
 				}
 			}
 			if opts.Once {
@@ -368,10 +360,10 @@ func (r *Runner) healthReporter() healthReporter {
 	if r.Config.Manager.Transport == "local" {
 		return localHealthReporter{}
 	}
-	if r.Config.Manager.Transport == "stream" {
-		return NewStreamHealthReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	if r.Config.Manager.Transport == "grpc" {
+		return NewControlStreamHealthReporterWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS())
 	}
-	return agenthealth.NewReporter(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout)
+	return localHealthReporter{}
 }
 
 func (r *Runner) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *uploadworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
@@ -465,6 +457,19 @@ func (r *Runner) collectHealth(ctx context.Context, rt sensorruntime.Runtime, qu
 			DroppedBytes:      queueStats.DroppedBytes,
 			LastError:         queueStats.LastError,
 		},
+		WAL: agenthealth.WALHealth{
+			QueuedBatches:     queueStats.QueuedBatches,
+			QueuedBytes:       queueStats.QueuedBytes,
+			MaxBytes:          queueStats.MaxBytes,
+			OldestBatchID:     queueStats.OldestBatchID,
+			NewestBatchID:     queueStats.NewestBatchID,
+			LastAckedBatchID:  queueStats.LastAckedBatchID,
+			WatchSubscribers:  queueStats.WatchSubscribers,
+			BackpressureCount: queueStats.BackpressureCount,
+			DroppedBatches:    queueStats.DroppedBatches,
+			DroppedBytes:      queueStats.DroppedBytes,
+			LastError:         queueStats.LastError,
+		},
 		Upload: agenthealth.UploadHealth{
 			UploadedBatches:  uploadStats.UploadedBatches,
 			RemainingBatches: uploadStats.RemainingBatches,
@@ -531,7 +536,7 @@ func (r *Runner) policyMode() string {
 func (r *Runner) fetchStartupPolicy(ctx context.Context, scopeType, scopeSelector string) policymodel.Policy {
 	defaultPolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
 	r.setPolicy(defaultPolicy)
-	if r.Config.Manager.Transport != "http" && r.Config.Manager.Transport != "stream" {
+	if r.Config.Manager.Transport != "grpc" {
 		return defaultPolicy
 	}
 	policy, err := r.effectivePolicy(ctx, EffectivePolicyRequest{
@@ -647,10 +652,8 @@ func (r *Runner) refreshPolicy(ctx context.Context, scopeType, scopeSelector str
 
 func (r *Runner) effectivePolicy(ctx context.Context, req EffectivePolicyRequest) (policymodel.Policy, error) {
 	switch r.Config.Manager.Transport {
-	case "http":
-		return NewPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout).EffectivePolicy(ctx, req)
-	case "stream":
-		return NewStreamPolicyClient(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout).EffectivePolicy(ctx, req)
+	case "grpc":
+		return NewControlPolicyClientWithTLS(r.Config.Manager.Address, r.Config.Agent.Token, r.Config.Upload.RequestTimeout, r.managerTLS()).EffectivePolicy(ctx, req)
 	default:
 		return policymodel.Policy{}, fmt.Errorf("policy fetch unsupported for transport %q", r.Config.Manager.Transport)
 	}
@@ -702,7 +705,7 @@ func runUploadLoop(ctx context.Context, worker *uploadworker.Worker, interval ti
 }
 
 func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) {
-	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.Upload.RequestTimeout, r.Config.Agent.Token)
+	up, err := newBatchUploader(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.Upload.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 	if err != nil {
 		return nil, err
 	}
@@ -712,34 +715,33 @@ func (r *Runner) uploadWorker(queue *spool.Queue) (*uploadworker.Worker, error) 
 		Backoff:  uploadworker.Backoff{Initial: r.Config.Upload.RetryInitial, Max: r.Config.Upload.RetryMax},
 	}
 	switch r.Config.Manager.Transport {
-	case "http":
-		worker.ResumeSource = NewResumeClient(
+	case "grpc":
+		worker.ResumeSource = NewControlResumeClientWithTLS(
 			r.Config.Manager.Address,
 			r.Config.Agent.Token,
 			r.Config.Upload.RequestTimeout,
 			r.Config.Agent.TenantID,
 			r.Config.Agent.ID,
-		)
-	case "stream":
-		worker.ResumeSource = NewStreamResumeClient(
-			r.Config.Manager.Address,
-			r.Config.Agent.Token,
-			r.Config.Upload.RequestTimeout,
-			r.Config.Agent.TenantID,
-			r.Config.Agent.ID,
+			r.managerTLS(),
 		)
 	}
 	return worker, nil
 }
 
-func newBatchUploader(manager, transport string, timeout time.Duration, token string) (uploader.BatchUploader, error) {
+func (r *Runner) managerTLS() tlsconfig.ClientConfig {
+	return tlsconfig.ClientConfig{
+		CAFile:     r.Config.Manager.TLSCA,
+		CertFile:   r.Config.Manager.TLSCert,
+		KeyFile:    r.Config.Manager.TLSKey,
+		ServerName: r.Config.Manager.TLSServerName,
+		Insecure:   r.Config.Manager.TLSInsecure,
+	}
+}
+
+func newBatchUploader(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (uploader.BatchUploader, error) {
 	switch transport {
-	case "http":
-		return uploader.NewHTTPUploaderWithOptions(manager, timeout, token), nil
 	case "grpc":
-		return uploader.NewGRPCUploaderWithOptions(manager, timeout, token), nil
-	case "stream":
-		return uploader.NewStreamUploaderWithOptions(manager, timeout, token), nil
+		return uploader.NewGRPCUploaderWithTLS(manager, timeout, token, tlsCfg), nil
 	case "local":
 		return localBatchUploader{}, nil
 	default:
@@ -788,19 +790,7 @@ func (r *Runner) spoolEvent(queue *spool.Queue, norm *normalize.Normalizer, dete
 			sig.Scenario = r.Config.Agent.Scenario
 		}
 	}
-	r.localStreams().publishEvent(r.Config.Agent.TenantID, r.Config.Agent.ID, canonical)
-	r.localStreams().publishSignals(r.Config.Agent.TenantID, r.Config.Agent.ID, signals)
-	batch := &analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{
-			AgentId:  r.Config.Agent.ID,
-			HostId:   r.Config.Agent.HostID,
-			TenantId: r.Config.Agent.TenantID,
-			Version:  "dev",
-		},
-		Events:  []*eventv1.CanonicalEvent{canonical},
-		Signals: signals,
-	}
-	return queue.Append(batch)
+	return queue.AppendDataBatch(r.dataBatchForEvent(canonical, signals))
 }
 
 func (r *Runner) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) map[string]string {
@@ -869,26 +859,76 @@ func mergeLabels(base, extra map[string]string) map[string]string {
 }
 
 func (r *Runner) spoolSignals(queue *spool.Queue, signals []*signalv1.Signal) (string, error) {
-	r.localStreams().publishSignals(r.Config.Agent.TenantID, r.Config.Agent.ID, signals)
-	batch := &analyticsv1.UploadBatch{
-		Agent: &analyticsv1.AgentHello{
-			AgentId:  r.Config.Agent.ID,
-			HostId:   r.Config.Agent.HostID,
-			TenantId: r.Config.Agent.TenantID,
-			Version:  "dev",
-		},
-		Signals: signals,
-	}
-	return queue.Append(batch)
+	return queue.AppendDataBatch(r.dataBatchForSignals(signals))
 }
 
-func (r *Runner) localStreams() *localStreamBuffer {
+func (r *Runner) dataBatchForEvent(event *eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
+	now := time.Now().UTC()
+	batch := r.newDataBatch(now)
+	if event != nil {
+		batch.Events = append(batch.Events, &dataplanev1.EventFrame{
+			Sequence:   event.GetSeq(),
+			ObservedAt: now.Format(time.RFC3339Nano),
+			Event:      event,
+		})
+	}
+	for _, sig := range signals {
+		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{
+			Sequence:   r.nextSignalSequence(),
+			ObservedAt: now.Format(time.RFC3339Nano),
+			Signal:     sig,
+		})
+	}
+	return batch
+}
+
+func (r *Runner) dataBatchForSignals(signals []*signalv1.Signal) *dataplanev1.DataBatch {
+	now := time.Now().UTC()
+	batch := r.newDataBatch(now)
+	for _, sig := range signals {
+		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{
+			Sequence:   r.nextSignalSequence(),
+			ObservedAt: now.Format(time.RFC3339Nano),
+			Signal:     sig,
+		})
+	}
+	return batch
+}
+
+func (r *Runner) newDataBatch(now time.Time) *dataplanev1.DataBatch {
+	policy := r.activePolicy()
+	labels := cloneStringMap(r.Config.Agent.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	for key, value := range r.policyLabels() {
+		labels[key] = value
+	}
+	if r.Config.Agent.Scenario != "" {
+		labels["scenario"] = r.Config.Agent.Scenario
+	}
+	if len(labels) == 0 {
+		labels = nil
+	}
+	return &dataplanev1.DataBatch{
+		Header: &dataplanev1.BatchHeader{
+			TenantId:          r.Config.Agent.TenantID,
+			AgentId:           r.Config.Agent.ID,
+			HostId:            r.Config.Agent.HostID,
+			PolicyId:          policy.PolicyID,
+			PolicyVersion:     policy.Version,
+			PolicyMode:        policy.Mode,
+			CreatedAtUnixNano: now.UnixNano(),
+			Labels:            labels,
+		},
+	}
+}
+
+func (r *Runner) nextSignalSequence() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.streams == nil {
-		r.streams = newLocalStreamBuffer(defaultLocalStreamCapacity)
-	}
-	return r.streams
+	r.signalSeq++
+	return r.signalSeq
 }
 
 func (r *Runner) contentStore() *agentcontent.Store {
@@ -1016,7 +1056,7 @@ func requiredBehaviors(events []agentcontent.RequiredEvent) []string {
 	return out
 }
 
-func (r *Runner) pollResponses(ctx context.Context, client *ResponseClient) error {
+func (r *Runner) pollControlResponses(ctx context.Context, client *ControlResponseClient) error {
 	commands, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
 	if err != nil {
 		return err
@@ -1027,31 +1067,29 @@ func (r *Runner) pollResponses(ctx context.Context, client *ResponseClient) erro
 			return err
 		}
 		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
-		}
-	}
-	return nil
-}
-
-func (r *Runner) pollStreamResponses(ctx context.Context, client *StreamResponseClient) error {
-	commands, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
-	if err != nil {
-		return err
-	}
-	for _, cmd := range commands {
-		ack := r.executeResponse(ctx, cmd)
-		if err := client.Ack(ctx, ack); err != nil {
-			return err
-		}
-		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent stream response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
+			fmt.Fprintf(r.Out, "agent control response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
 		}
 	}
 	return nil
 }
 
 func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command) responsemodel.Ack {
-	cmd.Mode = responsemodel.DefaultMode
+	cmd = responsemodel.NormalizeCommand(cmd)
+	if cmd.Mode == "" {
+		cmd.Mode = responsemodel.DefaultMode
+	}
+	if cmd.Mode != "enforce" {
+		return responsemodel.Ack{
+			ResponseID:  cmd.ResponseID,
+			TenantID:    r.Config.Agent.TenantID,
+			AgentID:     r.Config.Agent.ID,
+			Accepted:    true,
+			ObserveOnly: true,
+			Executed:    false,
+			Message:     fmt.Sprintf("observe-only response accepted; would execute action=%s target=%s", cmd.Action, cmd.Target),
+			ObservedAt:  time.Now().UTC(),
+		}
+	}
 	ack, err := r.Sensor.Enforce(ctx, responsemodel.ToEnforcement(cmd))
 	if err != nil {
 		ack = contract.UnsupportedAck(responsemodel.ToEnforcement(cmd), err.Error())
@@ -1059,12 +1097,10 @@ func (r *Runner) executeResponse(ctx context.Context, cmd responsemodel.Command)
 	out := responsemodel.FromEnforcementAck(cmd, ack)
 	out.TenantID = r.Config.Agent.TenantID
 	out.AgentID = r.Config.Agent.ID
-	out.ObserveOnly = true
-	out.Executed = false
 	return out
 }
 
-func (r *Runner) pollStreamEvidencePullbacks(ctx context.Context, client *StreamEvidenceClient) error {
+func (r *Runner) pollControlEvidencePullbacks(ctx context.Context, client *ControlEvidenceClient) error {
 	requests, err := client.Pending(ctx, r.Config.Agent.TenantID, r.Config.Agent.ID)
 	if err != nil {
 		return err
@@ -1075,7 +1111,7 @@ func (r *Runner) pollStreamEvidencePullbacks(ctx context.Context, client *Stream
 			return err
 		}
 		if r.Out != nil {
-			fmt.Fprintf(r.Out, "agent stream evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
+			fmt.Fprintf(r.Out, "agent control evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
 		}
 	}
 	return nil

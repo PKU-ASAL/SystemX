@@ -147,6 +147,9 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlv1.App
 	if policyType == "detection" {
 		return s.applyDetectionPolicy(req), nil
 	}
+	if policyType == "upload" {
+		return s.applyUploadPolicy(req, nil), nil
+	}
 	if policyType != "agent-runtime" {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("unsupported policy type %q", policyType)), nil
 	}
@@ -161,11 +164,51 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlv1.App
 	if next.TenantID != "" && next.TenantID != s.runner.Config.Agent.TenantID {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("tenant mismatch: policy=%s agent=%s", next.TenantID, s.runner.Config.Agent.TenantID)), nil
 	}
+	uploadSection, err := uploadPolicyFromRequest(req, next.Upload)
+	if err != nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "upload", err.Error()), nil
+	}
+	if uploadSection != nil {
+		next.Upload = uploadSection
+	}
 	if req.GetDryRun() {
-		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", false), nil
+		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", uploadSection != nil), nil
 	}
 	s.runner.applyRuntimePolicy(next)
-	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", false), nil
+	if uploadSection != nil {
+		s.runner.applyUploadConfig(*uploadSection)
+	}
+	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", uploadSection != nil), nil
+}
+
+func (s *localControlServer) applyUploadPolicy(req *controlv1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) *controlv1.ControlAck {
+	if fallback == nil && strings.TrimSpace(req.GetPolicyJson()) != "" {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(req.GetPolicyJson()), &raw); err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "upload", "invalid upload policy json: "+err.Error())
+		}
+		payload := []byte(req.GetPolicyJson())
+		if nested, ok := raw["upload"]; ok {
+			payload = nested
+		}
+		var upload policymodel.UploadPolicy
+		if err := json.Unmarshal(payload, &upload); err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "upload", "invalid upload policy json: "+err.Error())
+		}
+		fallback = &upload
+	}
+	upload, err := uploadPolicyFromRequest(req, fallback)
+	if err != nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "upload", err.Error())
+	}
+	if upload == nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "upload", "upload policy is required")
+	}
+	if req.GetDryRun() {
+		return uploadAck(s.runner.Config, req.GetContext(), "validated", "upload policy accepted in dry-run", true, *upload)
+	}
+	s.runner.applyUploadConfig(*upload)
+	return uploadAck(s.runner.Config, req.GetContext(), "applied", "upload policy applied; restart upload worker to take effect", true, *upload)
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlv1.ApplyContentRequest) (*controlv1.ControlAck, error) {
@@ -234,9 +277,9 @@ func (s *localControlServer) GetEvent(ctx context.Context, req *controlv1.GetEve
 	if eventID == "" {
 		return nil, fmt.Errorf("event id is required")
 	}
-	frame, ok := s.runner.localStreams().getEvent(eventID)
+	frame, ok := s.eventFrameByID(eventID)
 	if !ok {
-		return nil, fmt.Errorf("event %q not found in recent buffer", eventID)
+		return nil, fmt.Errorf("event %q not found in spool WAL", eventID)
 	}
 	return &controlv1.EventGetResponse{Frame: frame}, nil
 }
@@ -268,10 +311,17 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	compileReport := tetragon.CompileReport(intent)
 	compileReport.ResolvedRefs = expansionReport.ResolvedRefs
 	if len(compileReport.UnsupportedSelectors) > 0 {
-		return collectionAck(s.runner.Config, req.GetContext(), policy, "rejected", "collection policy contains unsupported selectors", false, compileReport)
+		return collectionAck(s.runner.Config, req.GetContext(), policy, "rejected", "collection policy contains unsupported selectors", false, compileReport, nil)
 	}
+	_, detectionReport := detection.NewWithRuntimeLimits(s.runner.activePolicy().Detection, s.runner.withCollectionCapabilities(intent), s.runner.detectionContentSnapshot(), s.runner.detectionLimits())
 	if req.GetDryRun() {
-		return collectionAck(s.runner.Config, req.GetContext(), policy, "validated", "collection policy accepted in dry-run", false, compileReport)
+		status := "validated"
+		message := "collection policy accepted in dry-run"
+		if detectionReport.Status == "degraded" {
+			status = "degraded"
+			message = "collection policy accepted in dry-run; detection dependencies degraded: " + strings.Join(detectionReport.Warnings, "; ")
+		}
+		return collectionAck(s.runner.Config, req.GetContext(), policy, status, message, false, compileReport, &detectionReport.Coverage)
 	}
 	if err := s.runtime.Apply(ctx, intent); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "apply collection policy: "+err.Error())
@@ -281,9 +331,9 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	engine, report := detection.NewWithRuntimeLimits(active.Detection, intent, s.runner.detectionContentSnapshot(), s.runner.detectionLimits())
 	s.runner.setDetection(engine)
 	if report.Status == "degraded" {
-		return collectionAck(s.runner.Config, req.GetContext(), policy, "degraded", "collection policy applied; detection dependencies degraded: "+strings.Join(report.Warnings, "; "), false, compileReport)
+		return collectionAck(s.runner.Config, req.GetContext(), policy, "degraded", "collection policy applied; detection dependencies degraded: "+strings.Join(report.Warnings, "; "), false, compileReport, &report.Coverage)
 	}
-	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false, compileReport)
+	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false, compileReport, &report.Coverage)
 }
 
 func (s *localControlServer) applyDetectionPolicy(req *controlv1.ApplyPolicyRequest) *controlv1.ControlAck {
@@ -323,30 +373,30 @@ func (s *localControlServer) WatchEvents(req *controlv1.WatchEventsRequest, stre
 		sent++
 		return nil
 	}
-	if req.GetIncludeRecent() {
-		for _, frame := range s.runner.localStreams().recentEvents() {
-			if err := send(frame); err != nil {
+	if req.GetSnapshotOnly() {
+		for _, entry := range s.snapshotEntries(req.GetFilter(), req.GetIncludeRecent()) {
+			if err := s.sendEventEntry(entry.ID, send); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
 				return nil
 			}
 		}
-	}
-	if req.GetSnapshotOnly() {
 		return nil
 	}
-	ch, unsubscribe := s.runner.localStreams().subscribeEvents()
-	defer unsubscribe()
+	entries, err := s.queue.Watch(stream.Context(), s.watchAfterBatchID(req.GetFilter(), req.GetIncludeRecent()))
+	if err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-stream.Context().Done():
 			return stream.Context().Err()
-		case frame, ok := <-ch:
+		case entry, ok := <-entries:
 			if !ok {
 				return nil
 			}
-			if err := send(frame); err != nil {
+			if err := s.sendEventEntry(entry.ID, send); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
@@ -371,30 +421,30 @@ func (s *localControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, st
 		sent++
 		return nil
 	}
-	if req.GetIncludeRecent() {
-		for _, frame := range s.runner.localStreams().recentSignals() {
-			if err := send(frame); err != nil {
+	if req.GetSnapshotOnly() {
+		for _, entry := range s.snapshotEntries(req.GetFilter(), req.GetIncludeRecent()) {
+			if err := s.sendSignalEntry(entry.ID, send); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
 				return nil
 			}
 		}
-	}
-	if req.GetSnapshotOnly() {
 		return nil
 	}
-	ch, unsubscribe := s.runner.localStreams().subscribeSignals()
-	defer unsubscribe()
+	entries, err := s.queue.Watch(stream.Context(), s.watchAfterBatchID(req.GetFilter(), req.GetIncludeRecent()))
+	if err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-stream.Context().Done():
 			return stream.Context().Err()
-		case frame, ok := <-ch:
+		case entry, ok := <-entries:
 			if !ok {
 				return nil
 			}
-			if err := send(frame); err != nil {
+			if err := s.sendSignalEntry(entry.ID, send); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
@@ -402,6 +452,102 @@ func (s *localControlServer) WatchSignals(req *controlv1.WatchSignalsRequest, st
 			}
 		}
 	}
+}
+
+func (s *localControlServer) snapshotEntries(filter *controlv1.WatchFilter, includeRecent bool) []spool.Entry {
+	if !includeRecent {
+		return nil
+	}
+	entries, err := s.queue.SnapshotAfter(s.watchAfterBatchID(filter, true))
+	if err != nil {
+		return nil
+	}
+	return entries
+}
+
+func (s *localControlServer) sendEventEntry(id string, send func(*controlv1.EventFrame) error) error {
+	batch, err := s.queue.LoadDataBatch(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	header := batch.GetHeader()
+	for _, frame := range batch.GetEvents() {
+		out := &controlv1.EventFrame{
+			TenantId:   header.GetTenantId(),
+			AgentId:    header.GetAgentId(),
+			Sequence:   frame.GetSequence(),
+			ObservedAt: frame.GetObservedAt(),
+			Event:      frame.GetEvent(),
+		}
+		if err := send(out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *localControlServer) sendSignalEntry(id string, send func(*controlv1.SignalFrame) error) error {
+	batch, err := s.queue.LoadDataBatch(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	header := batch.GetHeader()
+	for _, frame := range batch.GetSignals() {
+		out := &controlv1.SignalFrame{
+			TenantId:   header.GetTenantId(),
+			AgentId:    header.GetAgentId(),
+			Sequence:   frame.GetSequence(),
+			ObservedAt: frame.GetObservedAt(),
+			Signal:     frame.GetSignal(),
+		}
+		if err := send(out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *localControlServer) eventFrameByID(eventID string) (*controlv1.EventFrame, bool) {
+	entries, err := s.queue.SnapshotAfter("")
+	if err != nil {
+		return nil, false
+	}
+	for _, entry := range entries {
+		var found *controlv1.EventFrame
+		err := s.sendEventEntry(entry.ID, func(frame *controlv1.EventFrame) error {
+			if frame.GetEvent().GetId() == eventID {
+				found = frame
+			}
+			return nil
+		})
+		if err != nil {
+			continue
+		}
+		if found != nil {
+			return found, true
+		}
+	}
+	return nil, false
+}
+
+func (s *localControlServer) watchAfterBatchID(filter *controlv1.WatchFilter, includeRecent bool) string {
+	if filter != nil && strings.TrimSpace(filter.GetAfterBatchId()) != "" {
+		return strings.TrimSpace(filter.GetAfterBatchId())
+	}
+	if includeRecent {
+		return ""
+	}
+	entries, err := s.queue.SnapshotAfter("")
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+	return entries[len(entries)-1].ID
 }
 
 func (s *localControlServer) validateContext(ctx *controlv1.RequestContext) error {
@@ -415,6 +561,121 @@ func (s *localControlServer) validateContext(ctx *controlv1.RequestContext) erro
 		return fmt.Errorf("agent mismatch: request=%s agent=%s", agentID, s.runner.Config.Agent.ID)
 	}
 	return nil
+}
+
+func uploadPolicyFromRequest(req *controlv1.ApplyPolicyRequest, fallback *policymodel.UploadPolicy) (*policymodel.UploadPolicy, error) {
+	if req.GetUpload() != nil {
+		upload := &policymodel.UploadPolicy{
+			Transport:      req.GetUpload().GetTransport(),
+			Endpoint:       req.GetUpload().GetEndpoint(),
+			BatchSize:      int(req.GetUpload().GetBatchSize()),
+			FlushInterval:  req.GetUpload().GetFlushInterval(),
+			RetryInitial:   req.GetUpload().GetRetryInitial(),
+			RetryMax:       req.GetUpload().GetRetryMax(),
+			RequestTimeout: req.GetUpload().GetRequestTimeout(),
+			MaxInflight:    int(req.GetUpload().GetMaxInflight()),
+			Compression:    req.GetUpload().GetCompression(),
+			TLSProfile:     req.GetUpload().GetTlsProfile(),
+		}
+		if err := validateUploadPolicy(upload); err != nil {
+			return nil, err
+		}
+		return upload, nil
+	}
+	if fallback == nil {
+		return nil, nil
+	}
+	upload := *fallback
+	if err := validateUploadPolicy(&upload); err != nil {
+		return nil, err
+	}
+	return &upload, nil
+}
+
+func validateUploadPolicy(upload *policymodel.UploadPolicy) error {
+	if upload == nil {
+		return nil
+	}
+	switch strings.TrimSpace(upload.Transport) {
+	case "", "grpc", "local":
+	default:
+		return fmt.Errorf("unsupported upload.transport %q", upload.Transport)
+	}
+	for name, value := range map[string]string{
+		"flush_interval":  upload.FlushInterval,
+		"retry_initial":   upload.RetryInitial,
+		"retry_max":       upload.RetryMax,
+		"request_timeout": upload.RequestTimeout,
+	} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(value); err != nil {
+			return fmt.Errorf("upload.%s: %w", name, err)
+		}
+	}
+	if upload.BatchSize < 0 {
+		return fmt.Errorf("upload.batch_size must be non-negative")
+	}
+	if upload.MaxInflight < 0 {
+		return fmt.Errorf("upload.max_inflight must be non-negative")
+	}
+	switch strings.TrimSpace(upload.Compression) {
+	case "", "none", "gzip", "zstd":
+	default:
+		return fmt.Errorf("unsupported upload.compression %q", upload.Compression)
+	}
+	if upload.RetryInitial != "" && upload.RetryMax != "" {
+		initial, _ := time.ParseDuration(upload.RetryInitial)
+		maximum, _ := time.ParseDuration(upload.RetryMax)
+		if initial > maximum {
+			return fmt.Errorf("upload.retry_initial must be <= upload.retry_max")
+		}
+	}
+	return nil
+}
+
+func (r *Runner) applyUploadConfig(upload policymodel.UploadPolicy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if transport := strings.TrimSpace(upload.Transport); transport != "" {
+		r.Config.Manager.Transport = transport
+	}
+	if endpoint := strings.TrimSpace(upload.Endpoint); endpoint != "" {
+		r.Config.Manager.Address = endpoint
+	}
+	if upload.BatchSize > 0 {
+		r.Config.Spool.BatchSize = upload.BatchSize
+	}
+	if d := parseOptionalDuration(upload.FlushInterval); d > 0 {
+		r.Config.Spool.FlushInterval = d
+	}
+	if d := parseOptionalDuration(upload.RetryInitial); d > 0 {
+		r.Config.Upload.RetryInitial = d
+	}
+	if d := parseOptionalDuration(upload.RetryMax); d > 0 {
+		r.Config.Upload.RetryMax = d
+	}
+	if d := parseOptionalDuration(upload.RequestTimeout); d > 0 {
+		r.Config.Upload.RequestTimeout = d
+	}
+	if upload.MaxInflight > 0 {
+		r.Config.Upload.MaxInflight = upload.MaxInflight
+	}
+	if compression := strings.TrimSpace(upload.Compression); compression != "" {
+		r.Config.Upload.Compression = compression
+	}
+	if tlsProfile := strings.TrimSpace(upload.TLSProfile); tlsProfile != "" {
+		r.Config.Upload.TLSProfile = tlsProfile
+	}
+}
+
+func parseOptionalDuration(value string) time.Duration {
+	if strings.TrimSpace(value) == "" {
+		return 0
+	}
+	d, _ := time.ParseDuration(value)
+	return d
 }
 
 func rejectedAck(cfg config.Config, req *controlv1.RequestContext, section, message string) *controlv1.ControlAck {
@@ -432,7 +693,34 @@ func rejectedAck(cfg config.Config, req *controlv1.RequestContext, section, mess
 	}
 }
 
+func uploadAck(cfg config.Config, req *controlv1.RequestContext, status, message string, requiresRestart bool, upload policymodel.UploadPolicy) *controlv1.ControlAck {
+	report, _ := json.Marshal(map[string]any{"upload": upload})
+	return &controlv1.ControlAck{
+		RequestId: requestID(req),
+		TenantId:  cfg.Agent.TenantID,
+		AgentId:   cfg.Agent.ID,
+		Status:    status,
+		Message:   message,
+		Sections: []*controlv1.AppliedSection{{
+			Name:            "upload",
+			Status:          status,
+			Message:         message,
+			RequiresRestart: requiresRestart,
+			ReportJson:      string(report),
+		}},
+		ReportJson: string(report),
+	}
+}
+
 func appliedAck(cfg config.Config, req *controlv1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool) *controlv1.ControlAck {
+	uploadStatus := "unchanged"
+	uploadMessage := "upload policy unchanged"
+	uploadRequiresRestart := requiresRestart
+	if policy.Upload != nil {
+		uploadStatus = status
+		uploadMessage = "upload policy accepted; restart upload worker to take effect"
+		uploadRequiresRestart = true
+	}
 	return &controlv1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
@@ -445,7 +733,7 @@ func appliedAck(cfg config.Config, req *controlv1.RequestContext, policy policym
 			{Name: "detection", Status: status, Message: "endpoint rules updated", RequiresRestart: false},
 			{Name: "response", Status: status, Message: "response policy updated", RequiresRestart: false},
 			{Name: "resource", Status: "unsupported", Message: "resource policy contract is reserved for the next phase", RequiresRestart: requiresRestart},
-			{Name: "upload", Status: "unsupported", Message: "upload policy contract is reserved for the next phase", RequiresRestart: requiresRestart},
+			{Name: "upload", Status: uploadStatus, Message: uploadMessage, RequiresRestart: uploadRequiresRestart},
 			{Name: "collection", Status: "unsupported", Message: "collection hot reload requires compiler/runtime apply in the next phase", RequiresRestart: true},
 		},
 	}
@@ -489,9 +777,14 @@ func collectionValueSet(set agentcontent.ValueSet) agentpolicy.CollectionValueSe
 	}
 }
 
-func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool, report contract.CollectionCompileReport) *controlv1.ControlAck {
-	details := collectionReportDetails(report)
-	reportJSON := collectionReportJSON(report)
+type collectionExplainReport struct {
+	contract.CollectionCompileReport
+	DetectionCoverage *detection.CoverageReport `json:"detection_coverage,omitempty"`
+}
+
+func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agentpolicy.CollectionPolicy, status, message string, requiresRestart bool, report contract.CollectionCompileReport, coverage *detection.CoverageReport) *controlv1.ControlAck {
+	details := collectionReportDetails(report, coverage)
+	reportJSON := collectionReportJSON(report, coverage)
 	return &controlv1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
@@ -513,7 +806,7 @@ func collectionAck(cfg config.Config, req *controlv1.RequestContext, policy agen
 	}
 }
 
-func collectionReportDetails(report contract.CollectionCompileReport) []string {
+func collectionReportDetails(report contract.CollectionCompileReport, coverage *detection.CoverageReport) []string {
 	if report.Backend == "" {
 		return nil
 	}
@@ -534,14 +827,26 @@ func collectionReportDetails(report contract.CollectionCompileReport) []string {
 			details = append(details, "warning="+warning)
 		}
 	}
+	if coverage != nil && coverage.Status != "" {
+		details = append(details, "detection_coverage="+coverage.Status)
+		for _, warning := range coverage.Warnings {
+			if warning != "" {
+				details = append(details, "coverage_warning="+warning)
+			}
+		}
+	}
 	return details
 }
 
-func collectionReportJSON(report contract.CollectionCompileReport) string {
+func collectionReportJSON(report contract.CollectionCompileReport, coverage *detection.CoverageReport) string {
 	if report.Backend == "" {
 		return ""
 	}
-	data, err := json.Marshal(report)
+	out := collectionExplainReport{CollectionCompileReport: report}
+	if coverage != nil {
+		out.DetectionCoverage = coverage
+	}
+	data, err := json.Marshal(out)
 	if err != nil {
 		return ""
 	}
@@ -559,6 +864,7 @@ func detectionAck(cfg config.Config, req *controlv1.RequestContext, policy polic
 	if len(report.Details) > 0 {
 		sectionMessage = sectionMessage + ": " + strings.Join(report.Details, "; ")
 	}
+	reportJSON := detectionReportJSON(report)
 	return &controlv1.ControlAck{
 		RequestId:     requestID(req),
 		TenantId:      cfg.Agent.TenantID,
@@ -572,8 +878,18 @@ func detectionAck(cfg config.Config, req *controlv1.RequestContext, policy polic
 			Status:          status,
 			Message:         sectionMessage,
 			RequiresRestart: requiresRestart,
+			ReportJson:      reportJSON,
 		}},
+		ReportJson: reportJSON,
 	}
+}
+
+func detectionReportJSON(report detection.ApplyReport) string {
+	data, err := json.Marshal(report)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func contentRecordMessage(record agentcontent.Record) *controlv1.ContentRecord {
@@ -709,6 +1025,19 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 			DroppedBytes:      health.Queue.DroppedBytes,
 			LastError:         health.Queue.LastError,
 		},
+		Wal: &controlv1.WALHealth{
+			QueuedBatches:     uint32(health.WAL.QueuedBatches),
+			QueuedBytes:       health.WAL.QueuedBytes,
+			MaxBytes:          health.WAL.MaxBytes,
+			OldestBatchId:     health.WAL.OldestBatchID,
+			NewestBatchId:     health.WAL.NewestBatchID,
+			LastAckedBatchId:  health.WAL.LastAckedBatchID,
+			WatchSubscribers:  health.WAL.WatchSubscribers,
+			BackpressureCount: health.WAL.BackpressureCount,
+			DroppedBatches:    health.WAL.DroppedBatches,
+			DroppedBytes:      health.WAL.DroppedBytes,
+			LastError:         health.WAL.LastError,
+		},
 		Upload: &controlv1.UploadHealth{
 			UploadedBatches:  uint32(health.Upload.UploadedBatches),
 			RemainingBatches: uint32(health.Upload.RemainingBatches),
@@ -723,6 +1052,22 @@ func healthResponse(health agenthealth.AgentHealth) *controlv1.HealthResponse {
 			EvalErrors:       health.CEP.EvalErrors,
 			EmittedSignals:   health.CEP.EmittedSignals,
 			Degraded:         health.CEP.Degraded,
+		},
+		Streams: &controlv1.LocalStreamHealth{
+			EventCapacity:        health.Streams.EventCapacity,
+			EventBuffered:        health.Streams.EventBuffered,
+			EventNextSequence:    health.Streams.EventNextSequence,
+			EventOldestSequence:  health.Streams.EventOldestSequence,
+			EventNewestSequence:  health.Streams.EventNewestSequence,
+			EventEvicted:         health.Streams.EventEvicted,
+			EventSubscribers:     health.Streams.EventSubscribers,
+			SignalCapacity:       health.Streams.SignalCapacity,
+			SignalBuffered:       health.Streams.SignalBuffered,
+			SignalNextSequence:   health.Streams.SignalNextSequence,
+			SignalOldestSequence: health.Streams.SignalOldestSequence,
+			SignalNewestSequence: health.Streams.SignalNewestSequence,
+			SignalEvicted:        health.Streams.SignalEvicted,
+			SignalSubscribers:    health.Streams.SignalSubscribers,
 		},
 		ObservedAt: timestampString(health.ObservedAt),
 	}

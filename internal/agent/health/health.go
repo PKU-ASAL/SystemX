@@ -3,21 +3,23 @@ package health
 import "time"
 
 type AgentHealth struct {
-	AgentID       string           `json:"agent_id"`
-	HostID        string           `json:"host_id"`
-	TenantID      string           `json:"tenant_id"`
-	Scope         RuntimeScope     `json:"scope"`
-	Status        string           `json:"status"`
-	PolicyID      string           `json:"policy_id,omitempty"`
-	PolicyVersion uint64           `json:"policy_version,omitempty"`
-	PolicyMode    string           `json:"policy_mode,omitempty"`
-	UptimeSeconds int64            `json:"uptime_seconds"`
-	Capability    SensorCapability `json:"sensor_capability,omitempty"`
-	Sensor        SensorHealth     `json:"sensor_health"`
-	Queue         QueueHealth      `json:"queue_health"`
-	Upload        UploadHealth     `json:"upload_health"`
-	CEP           CEPHealth        `json:"cep_health"`
-	ObservedAt    time.Time        `json:"observed_at"`
+	AgentID       string            `json:"agent_id"`
+	HostID        string            `json:"host_id"`
+	TenantID      string            `json:"tenant_id"`
+	Scope         RuntimeScope      `json:"scope"`
+	Status        string            `json:"status"`
+	PolicyID      string            `json:"policy_id,omitempty"`
+	PolicyVersion uint64            `json:"policy_version,omitempty"`
+	PolicyMode    string            `json:"policy_mode,omitempty"`
+	UptimeSeconds int64             `json:"uptime_seconds"`
+	Capability    SensorCapability  `json:"sensor_capability,omitempty"`
+	Sensor        SensorHealth      `json:"sensor_health"`
+	Queue         QueueHealth       `json:"queue_health"`
+	WAL           WALHealth         `json:"wal_health"`
+	Upload        UploadHealth      `json:"upload_health"`
+	CEP           CEPHealth         `json:"cep_health"`
+	Streams       LocalStreamHealth `json:"stream_health"`
+	ObservedAt    time.Time         `json:"observed_at"`
 }
 
 type RuntimeScope struct {
@@ -73,6 +75,20 @@ type QueueHealth struct {
 	LastError         string `json:"last_error,omitempty"`
 }
 
+type WALHealth struct {
+	QueuedBatches     int    `json:"queued_batches"`
+	QueuedBytes       int64  `json:"queued_bytes"`
+	MaxBytes          int64  `json:"max_bytes"`
+	OldestBatchID     string `json:"oldest_batch_id,omitempty"`
+	NewestBatchID     string `json:"newest_batch_id,omitempty"`
+	LastAckedBatchID  string `json:"last_acked_batch_id,omitempty"`
+	WatchSubscribers  uint64 `json:"watch_subscribers"`
+	BackpressureCount uint64 `json:"backpressure_count"`
+	DroppedBatches    uint64 `json:"dropped_batches"`
+	DroppedBytes      uint64 `json:"dropped_bytes"`
+	LastError         string `json:"last_error,omitempty"`
+}
+
 type UploadHealth struct {
 	UploadedBatches  int    `json:"uploaded_batches"`
 	RemainingBatches int    `json:"remaining_batches"`
@@ -88,4 +104,21 @@ type CEPHealth struct {
 	EvalErrors       uint64 `json:"eval_errors"`
 	EmittedSignals   uint64 `json:"emitted_signals"`
 	Degraded         bool   `json:"degraded"`
+}
+
+type LocalStreamHealth struct {
+	EventCapacity        uint64 `json:"event_capacity"`
+	EventBuffered        uint64 `json:"event_buffered"`
+	EventNextSequence    uint64 `json:"event_next_sequence"`
+	EventOldestSequence  uint64 `json:"event_oldest_sequence"`
+	EventNewestSequence  uint64 `json:"event_newest_sequence"`
+	EventEvicted         uint64 `json:"event_evicted"`
+	EventSubscribers     uint64 `json:"event_subscribers"`
+	SignalCapacity       uint64 `json:"signal_capacity"`
+	SignalBuffered       uint64 `json:"signal_buffered"`
+	SignalNextSequence   uint64 `json:"signal_next_sequence"`
+	SignalOldestSequence uint64 `json:"signal_oldest_sequence"`
+	SignalNewestSequence uint64 `json:"signal_newest_sequence"`
+	SignalEvicted        uint64 `json:"signal_evicted"`
+	SignalSubscribers    uint64 `json:"signal_subscribers"`
 }

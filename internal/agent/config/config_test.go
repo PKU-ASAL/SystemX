@@ -13,8 +13,8 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFile(agent.example.yaml) error = %v", err)
 	}
-	if cfg.Manager.Transport != "stream" {
-		t.Fatalf("example manager transport = %q, want stream", cfg.Manager.Transport)
+	if cfg.Manager.Transport != "grpc" {
+		t.Fatalf("example manager transport = %q, want grpc", cfg.Manager.Transport)
 	}
 	if cfg.Sensor.EventSource != "" {
 		t.Fatalf("example event_source = %q, want managed mode empty source", cfg.Sensor.EventSource)
@@ -24,7 +24,7 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	}
 }
 
-func TestDefaultManagerTransportIsStream(t *testing.T) {
+func TestDefaultManagerTransportIsGRPC(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
 agent:
@@ -59,8 +59,8 @@ health:
 	if err != nil {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
-	if cfg.Manager.Transport != "stream" {
-		t.Fatalf("default manager transport = %q, want stream", cfg.Manager.Transport)
+	if cfg.Manager.Transport != "grpc" {
+		t.Fatalf("default manager transport = %q, want grpc", cfg.Manager.Transport)
 	}
 }
 
@@ -95,7 +95,12 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
+  tls_ca: /etc/sysarmor/pki/ca.pem
+  tls_cert: /etc/sysarmor/pki/agent.pem
+  tls_key: /etc/sysarmor/pki/agent-key.pem
+  tls_server_name: manager.sysarmor.local
+  tls_insecure: false
 
 sensor:
   backend: tetragon
@@ -141,6 +146,9 @@ resource:
 	}
 	if cfg.Agent.ID != "node-a" || cfg.Sensor.Backend != "tetragon" {
 		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	if cfg.Manager.TLSCA != "/etc/sysarmor/pki/ca.pem" || cfg.Manager.TLSCert == "" || cfg.Manager.TLSKey == "" || cfg.Manager.TLSServerName != "manager.sysarmor.local" || cfg.Manager.TLSInsecure {
+		t.Fatalf("manager TLS config = %+v", cfg.Manager)
 	}
 	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
 		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
@@ -192,7 +200,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon
@@ -239,7 +247,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon
@@ -284,7 +292,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon
@@ -320,7 +328,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon
@@ -356,7 +364,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon
@@ -393,7 +401,7 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: http
+  transport: grpc
 
 sensor:
   backend: tetragon

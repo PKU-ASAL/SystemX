@@ -6,7 +6,12 @@ agent:
 
 manager:
   address: http://127.0.0.1:9443
-  transport: stream
+  transport: grpc
+  tls_ca: ""
+  tls_cert: ""
+  tls_key: ""
+  tls_server_name: ""
+  tls_insecure: false
 
 control:
   socket_path: /tmp/sysarmor-agent.sock

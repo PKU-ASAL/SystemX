@@ -31,8 +31,10 @@ type Backoff struct {
 
 type Stats struct {
 	UploadedBatches  int
+	RejectedBatches  int
 	RemainingBatches int
 	RemainingBytes   int64
+	RetryAfter       time.Duration
 	LastError        string
 }
 
@@ -80,13 +82,39 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 			return w.withRemaining(stats)
 		default:
 		}
-		batch, err := w.Queue.Load(entry.ID)
+		batch, err := w.Queue.LoadDataBatch(entry.ID)
 		if err != nil {
 			stats.LastError = err.Error()
 			return w.withRemaining(stats)
 		}
 		ack, err := w.Uploader.Upload(batch)
 		if err != nil {
+			if uploader.AckRetryable(ack) {
+				if ack.GetRetryAfterMs() > 0 {
+					stats.RetryAfter = time.Duration(ack.GetRetryAfterMs()) * time.Millisecond
+				}
+				message := err.Error()
+				if ack.GetMessage() != "" {
+					message = ack.GetMessage()
+				}
+				stats.LastError = message
+				w.setLastError(stats.LastError)
+				return w.withRemaining(stats)
+			}
+			if uploader.AckTerminalRejected(ack) {
+				if ack.GetBatchId() != "" && ack.GetBatchId() != entry.ID {
+					stats.LastError = fmt.Sprintf("upload ack batch_id mismatch: got %q want %q", ack.GetBatchId(), entry.ID)
+					w.setLastError(stats.LastError)
+					return w.withRemaining(stats)
+				}
+				if err := w.Queue.Ack(entry.ID); err != nil {
+					stats.LastError = err.Error()
+					return w.withRemaining(stats)
+				}
+				stats.RejectedBatches++
+				stats.LastError = ack.GetMessage()
+				continue
+			}
 			stats.LastError = err.Error()
 			w.setLastError(stats.LastError)
 			return w.withRemaining(stats)
@@ -96,11 +124,37 @@ func (w *Worker) DrainOnce(ctx context.Context) (Stats, error) {
 			w.setLastError(stats.LastError)
 			return w.withRemaining(stats)
 		}
+		if !uploader.AckCommitted(ack) {
+			if uploader.AckRetryable(ack) {
+				message := "missing upload ack"
+				if ack != nil {
+					message = ack.GetMessage()
+					if ack.GetRetryAfterMs() > 0 {
+						stats.RetryAfter = time.Duration(ack.GetRetryAfterMs()) * time.Millisecond
+					}
+				}
+				stats.LastError = fmt.Sprintf("upload retryable: %s", message)
+				w.setLastError(stats.LastError)
+				return w.withRemaining(stats)
+			}
+			if !uploader.AckTerminalRejected(ack) {
+				message := "missing upload ack"
+				if ack != nil {
+					message = ack.GetMessage()
+				}
+				stats.LastError = fmt.Sprintf("upload rejected: %s", message)
+				w.setLastError(stats.LastError)
+				return w.withRemaining(stats)
+			}
+			stats.RejectedBatches++
+		}
 		if err := w.Queue.Ack(entry.ID); err != nil {
 			stats.LastError = err.Error()
 			return w.withRemaining(stats)
 		}
-		stats.UploadedBatches++
+		if uploader.AckCommitted(ack) {
+			stats.UploadedBatches++
+		}
 	}
 	stats.LastError = ""
 	w.setLastError("")
@@ -126,7 +180,11 @@ func (w *Worker) DrainWithRetry(ctx context.Context) (Stats, error) {
 		if stats.RemainingBatches == 0 || stats.LastError == "" {
 			return stats, nil
 		}
-		timer := time.NewTimer(backoff)
+		delay := backoff
+		if stats.RetryAfter > 0 {
+			delay = stats.RetryAfter
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()

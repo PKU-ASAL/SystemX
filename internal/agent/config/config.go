@@ -34,8 +34,13 @@ type AgentConfig struct {
 }
 
 type ManagerConfig struct {
-	Address   string
-	Transport string
+	Address       string
+	Transport     string
+	TLSCA         string
+	TLSCert       string
+	TLSKey        string
+	TLSServerName string
+	TLSInsecure   bool
 }
 
 type ControlConfig struct {
@@ -94,6 +99,9 @@ type UploadConfig struct {
 	RetryInitial   time.Duration
 	RetryMax       time.Duration
 	RequestTimeout time.Duration
+	MaxInflight    int
+	Compression    string
+	TLSProfile     string
 }
 
 type HealthConfig struct {
@@ -149,8 +157,11 @@ func (c Config) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
-	if c.Manager.Transport != "http" && c.Manager.Transport != "grpc" && c.Manager.Transport != "stream" && c.Manager.Transport != "local" {
-		return fmt.Errorf("manager.transport must be http, grpc, stream or local")
+	if c.Manager.Transport != "grpc" && c.Manager.Transport != "local" {
+		return fmt.Errorf("manager.transport must be grpc or local")
+	}
+	if (c.Manager.TLSCert == "") != (c.Manager.TLSKey == "") {
+		return fmt.Errorf("manager.tls_cert and manager.tls_key must be configured together")
 	}
 	if c.Sensor.Backend != "tetragon" && c.Sensor.Backend != "fake" {
 		return fmt.Errorf("sensor.backend must be tetragon or fake")
@@ -202,6 +213,9 @@ func (c Config) Validate() error {
 	}
 	if c.Upload.RetryInitial > c.Upload.RetryMax {
 		return fmt.Errorf("upload.retry_initial must be <= upload.retry_max")
+	}
+	if c.Upload.MaxInflight < 0 {
+		return fmt.Errorf("upload.max_inflight must be non-negative")
 	}
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("health.interval must be positive")
@@ -298,11 +312,11 @@ func parse(r *os.File) (Config, error) {
 
 func defaults() Config {
 	return Config{
-		Manager:  ManagerConfig{Transport: "stream"},
+		Manager:  ManagerConfig{Transport: "grpc"},
 		Control:  ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
 		Sensor:   SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
 		Spool:    SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
-		Upload:   UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second},
+		Upload:   UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
 		Health:   HealthConfig{Interval: 10 * time.Second},
 		Policy:   PolicyConfig{RefreshInterval: 30 * time.Second},
 		Content:  ContentConfig{Path: "/var/lib/sysarmor/agent/content"},
@@ -344,6 +358,20 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Manager.Address = value
 		case "transport":
 			cfg.Manager.Transport = value
+		case "tls_ca":
+			cfg.Manager.TLSCA = value
+		case "tls_cert":
+			cfg.Manager.TLSCert = value
+		case "tls_key":
+			cfg.Manager.TLSKey = value
+		case "tls_server_name":
+			cfg.Manager.TLSServerName = value
+		case "tls_insecure":
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("manager.tls_insecure: %w", err)
+			}
+			cfg.Manager.TLSInsecure = b
 		default:
 			return unknown(section, key)
 		}
@@ -521,6 +549,16 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("upload.request_timeout: %w", err)
 			}
 			cfg.Upload.RequestTimeout = d
+		case "max_inflight":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("upload.max_inflight: %w", err)
+			}
+			cfg.Upload.MaxInflight = v
+		case "compression":
+			cfg.Upload.Compression = value
+		case "tls_profile":
+			cfg.Upload.TLSProfile = value
 		default:
 			return unknown(section, key)
 		}

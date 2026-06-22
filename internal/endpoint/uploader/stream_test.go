@@ -6,17 +6,17 @@ import (
 	"testing"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
 )
 
 type recordingUploader struct {
-	batches []*analyticsv1.UploadBatch
+	batches []*dataplanev1.DataBatch
 }
 
-func (u *recordingUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
+func (u *recordingUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	u.batches = append(u.batches, batch)
-	return &analyticsv1.UploadAck{Ok: true, BatchId: batch.GetBatchId()}, nil
+	return &dataplanev1.DataAck{Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
 }
 
 func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
@@ -46,13 +46,13 @@ func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
 	if len(rec.batches) != 2 {
 		t.Fatalf("uploaded batches = %d, want 2", len(rec.batches))
 	}
-	if rec.batches[0].GetAgent().GetAgentId() != "agent-a" {
-		t.Fatalf("agent metadata missing: %#v", rec.batches[0].GetAgent())
+	if rec.batches[0].GetHeader().GetAgentId() != "agent-a" {
+		t.Fatalf("agent metadata missing: %#v", rec.batches[0].GetHeader())
 	}
-	if rec.batches[0].GetAgent().GetTenantId() != "default" {
-		t.Fatalf("tenant metadata missing: %#v", rec.batches[0].GetAgent())
+	if rec.batches[0].GetHeader().GetTenantId() != "default" {
+		t.Fatalf("tenant metadata missing: %#v", rec.batches[0].GetHeader())
 	}
-	firstRef := rec.batches[0].GetEvents()[0].GetRawRef()
+	firstRef := rec.batches[0].GetEvents()[0].GetEvent().GetRawRef()
 	if firstRef == "" {
 		t.Fatal("first event raw ref is empty")
 	}
@@ -81,7 +81,7 @@ func TestStreamJSONLStoresTetragonRawLineBehindRef(t *testing.T) {
 	if stats.Events != 2 {
 		t.Fatalf("events = %d, want exec + inferred write", stats.Events)
 	}
-	ref := rec.batches[0].GetEvents()[0].GetRawRef()
+	ref := rec.batches[0].GetEvents()[0].GetEvent().GetRawRef()
 	if ref == "" || strings.HasPrefix(ref, "{") {
 		t.Fatalf("raw ref = %q, want compact ring ref", ref)
 	}

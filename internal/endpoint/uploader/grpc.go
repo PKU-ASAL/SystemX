@@ -7,8 +7,9 @@ import (
 	"time"
 
 	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -16,6 +17,7 @@ type GRPCUploader struct {
 	manager string
 	timeout time.Duration
 	token   string
+	tls     tlsconfig.ClientConfig
 }
 
 func NewGRPCUploader(manager string) *GRPCUploader {
@@ -27,28 +29,36 @@ func NewGRPCUploaderWithTimeout(manager string, timeout time.Duration) *GRPCUplo
 }
 
 func NewGRPCUploaderWithOptions(manager string, timeout time.Duration, token string) *GRPCUploader {
+	return NewGRPCUploaderWithTLS(manager, timeout, token, tlsconfig.ClientConfig{})
+}
+
+func NewGRPCUploaderWithTLS(manager string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) *GRPCUploader {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	return &GRPCUploader{manager: normalizeGRPCAddress(manager), timeout: timeout, token: token}
+	return &GRPCUploader{manager: normalizeGRPCAddress(manager), timeout: timeout, token: token, tls: tlsCfg}
 }
 
-func (u *GRPCUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
+func (u *GRPCUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), u.timeout)
 	defer cancel()
 	if u.token != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", u.token)
 	}
-	conn, err := grpc.DialContext(ctx, u.manager, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	creds, err := tlsconfig.ClientCredentials(u.tls)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := grpc.DialContext(ctx, u.manager, grpc.WithTransportCredentials(creds), grpc.WithBlock())
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	ack, err := analyticsv1.NewAgentGatewayClient(conn).Upload(ctx, batch)
+	ack, err := analyticsv1.NewAgentDataServiceClient(conn).Upload(ctx, batch)
 	if err != nil {
 		return nil, err
 	}
-	if !ack.GetOk() {
+	if !AckCommitted(ack) {
 		return ack, fmt.Errorf("upload rejected: %s", ack.GetMessage())
 	}
 	return ack, nil

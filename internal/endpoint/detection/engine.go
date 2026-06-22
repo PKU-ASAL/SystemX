@@ -153,11 +153,27 @@ type lineageState struct {
 }
 
 type ApplyReport struct {
-	Status   string
-	Message  string
-	Details  []string
-	RuleIDs  []string
-	Warnings []string
+	Status   string         `json:"status"`
+	Message  string         `json:"message"`
+	Details  []string       `json:"details,omitempty"`
+	RuleIDs  []string       `json:"rule_ids,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
+	Coverage CoverageReport `json:"coverage,omitempty"`
+}
+
+type CoverageReport struct {
+	Status   string         `json:"status"`
+	Rules    []RuleCoverage `json:"rules,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
+}
+
+type RuleCoverage struct {
+	RuleID            string   `json:"rule_id"`
+	Status            string   `json:"status"`
+	RequiredBehaviors []string `json:"required_behaviors,omitempty"`
+	RequiredFields    []string `json:"required_fields,omitempty"`
+	MissingBehaviors  []string `json:"missing_behaviors,omitempty"`
+	MissingFields     []string `json:"missing_fields,omitempty"`
 }
 
 func New(policy *policymodel.DetectionPolicy) (*Engine, ApplyReport) {
@@ -194,9 +210,8 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		engine.rules[rule.spec.RuleID] = rule
 		report.RuleIDs = append(report.RuleIDs, rule.spec.RuleID)
 	}
-	for _, warning := range CheckDependenciesWithContent(normalized, collection, content) {
-		report.Warnings = append(report.Warnings, warning)
-	}
+	report.Coverage = CheckCoverageWithContent(normalized, collection, content)
+	report.Warnings = append(report.Warnings, report.Coverage.Warnings...)
 	if len(report.Warnings) > 0 {
 		report.Status = "degraded"
 		report.Message = "detection policy applied with missing collection inputs"
@@ -974,6 +989,14 @@ func CheckDependencies(policy *policymodel.DetectionPolicy, collection contract.
 }
 
 func CheckDependenciesWithContent(policy *policymodel.DetectionPolicy, collection contract.CollectionIntent, content ContentSnapshot) []string {
+	return CheckCoverageWithContent(policy, collection, content).Warnings
+}
+
+func CheckCoverage(policy *policymodel.DetectionPolicy, collection contract.CollectionIntent) CoverageReport {
+	return CheckCoverageWithContent(policy, collection, ContentSnapshot{})
+}
+
+func CheckCoverageWithContent(policy *policymodel.DetectionPolicy, collection contract.CollectionIntent, content ContentSnapshot) CoverageReport {
 	if policy == nil {
 		tmp := policymodel.DefaultDetectionPolicy()
 		policy = tmp
@@ -986,37 +1009,51 @@ func CheckDependenciesWithContent(policy *policymodel.DetectionPolicy, collectio
 		}
 	}
 	if len(collectedBehaviors) == 0 {
-		return nil
+		return CoverageReport{Status: "unknown"}
 	}
-	var warnings []string
+	report := CoverageReport{Status: "covered"}
 	for _, rule := range resolveRules(policy, content) {
-		var missing []string
+		coverage := RuleCoverage{RuleID: rule.spec.RuleID, Status: "covered"}
 		for _, behavior := range rule.spec.RequiredBehaviors {
 			behavior = eventmodel.NormalizeBehavior(behavior).String()
-			if behavior != "" && !collectedBehaviors[behavior] {
-				missing = append(missing, behavior)
+			if behavior == "" {
+				continue
+			}
+			coverage.RequiredBehaviors = appendUnique(coverage.RequiredBehaviors, behavior)
+			if !collectedBehaviors[behavior] {
+				coverage.MissingBehaviors = appendUnique(coverage.MissingBehaviors, behavior)
 			}
 		}
 		availableFields := availableFieldsForCollection(collection)
 		for _, req := range rule.spec.RequiredEvents {
 			behavior := eventmodel.NormalizeBehavior(req.Behavior).String()
-			if behavior != "" && !collectedBehaviors[behavior] {
-				missing = append(missing, behavior)
+			if behavior != "" {
+				coverage.RequiredBehaviors = appendUnique(coverage.RequiredBehaviors, behavior)
+				if !collectedBehaviors[behavior] {
+					coverage.MissingBehaviors = appendUnique(coverage.MissingBehaviors, behavior)
+				}
 			}
 			for _, field := range req.Fields {
 				if field == "" {
 					continue
 				}
+				requiredField := fmt.Sprintf("%s:%s", firstNonEmpty(behavior, req.Behavior, "event"), field)
+				coverage.RequiredFields = appendUnique(coverage.RequiredFields, requiredField)
 				if !availableFields[field] {
-					missing = append(missing, fmt.Sprintf("%s field %s", firstNonEmpty(req.Behavior, "event"), field))
+					coverage.MissingFields = appendUnique(coverage.MissingFields, requiredField)
 				}
 			}
 		}
-		if len(missing) > 0 {
-			warnings = append(warnings, fmt.Sprintf("rule %s missing collection inputs: %s", rule.spec.RuleID, strings.Join(missing, ",")))
+		if len(coverage.MissingBehaviors) > 0 || len(coverage.MissingFields) > 0 {
+			coverage.Status = "missing_inputs"
+			report.Status = "degraded"
+			missing := append([]string(nil), coverage.MissingBehaviors...)
+			missing = append(missing, coverage.MissingFields...)
+			report.Warnings = append(report.Warnings, fmt.Sprintf("rule %s missing collection inputs: %s", rule.spec.RuleID, strings.Join(missing, ",")))
 		}
+		report.Rules = append(report.Rules, coverage)
 	}
-	return warnings
+	return report
 }
 
 func availableFieldsForCollection(collection contract.CollectionIntent) map[string]bool {

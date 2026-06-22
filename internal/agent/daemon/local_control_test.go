@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
 	controlv1 "github.com/sysarmor/sysarmor-next-project/api/proto/control/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
@@ -26,7 +26,7 @@ import (
 func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 16384)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +76,12 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	if health.AgentId != "agent-a" || health.Sensor.Backend != "fake" || !health.Sensor.Running {
 		t.Fatalf("health = %+v", health)
 	}
+	if health.GetStreams().GetEventCapacity() != 0 || health.GetStreams().GetEventNextSequence() != 0 {
+		t.Fatalf("stream health = %+v", health.GetStreams())
+	}
+	if health.GetWal().GetMaxBytes() != 16384 || health.GetWal().GetQueuedBatches() != 0 {
+		t.Fatalf("wal health = %+v", health.GetWal())
+	}
 	cap, err := client.Capability(context.Background(), &controlv1.CapabilityRequest{})
 	if err != nil {
 		t.Fatalf("Capability() error = %v", err)
@@ -92,6 +98,56 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	}
 	if policy.PolicyId != policymodel.DefaultPolicyID || policy.RawJson == "" {
 		t.Fatalf("policy = %+v", policy)
+	}
+}
+
+func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "agent.sock")
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 16384)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control: config.ControlConfig{SocketPath: socketPath},
+			Sensor:  config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}, ObserveOnly: true},
+		},
+		Sensor:     sensor,
+		capability: contract.Capability{Backend: "fake", SupportsExec: true},
+	}
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatalf("startLocalControlServer() error = %v", err)
+	}
+	defer stop()
+
+	client := newUnixControlClient(t, socketPath)
+	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
+		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-explain"},
+		PolicyType: "collection",
+		DryRun:     true,
+		PolicyJson: `{"policy_id":"collection-explain","version":1,"behaviors":[{"id":"process.exec"}],"observe_only":true}`,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy(collection dry-run) error = %v", err)
+	}
+	if ack.Status != "degraded" || ack.PolicyId != "collection-explain" {
+		t.Fatalf("ack = %+v", ack)
+	}
+	if sensor.lastIntent.Behaviors != nil {
+		t.Fatalf("dry-run applied sensor intent = %+v", sensor.lastIntent)
+	}
+	for _, want := range []string{`"behavior_mappings"`, `"detection_coverage"`, `"missing_behaviors"`} {
+		if !strings.Contains(ack.ReportJson, want) {
+			t.Fatalf("report_json missing %s: %s", want, ack.ReportJson)
+		}
 	}
 }
 
@@ -154,6 +210,57 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	}
 	if current.PolicyId != "local-policy" || current.RawJson == "" {
 		t.Fatalf("current = %+v", current)
+	}
+}
+
+func TestLocalControlApplyUploadPolicyContract(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "agent.sock")
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &uploadworker.Worker{Queue: queue, Uploader: noopUploader{}}
+	runner := &Runner{
+		Config: config.Config{
+			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control: config.ControlConfig{SocketPath: socketPath},
+			Manager: config.ManagerConfig{Address: "127.0.0.1:9443", Transport: "grpc"},
+			Spool:   config.SpoolConfig{BatchSize: 10, FlushInterval: time.Second},
+			Upload:  config.UploadConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1},
+		},
+		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
+		capability: contract.Capability{Backend: "fake", SupportsExec: true},
+	}
+	rt := sensorruntime.New(runner.Sensor)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	if err != nil {
+		t.Fatalf("startLocalControlServer() error = %v", err)
+	}
+	defer stop()
+
+	client := newUnixControlClient(t, socketPath)
+	ack, err := client.ApplyPolicy(context.Background(), &controlv1.ApplyPolicyRequest{
+		Context:    &controlv1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-upload"},
+		PolicyType: "upload",
+		PolicyJson: `{"transport":"grpc","endpoint":"manager:9443","batch_size":64,"flush_interval":"2s","retry_initial":"500ms","retry_max":"5s","request_timeout":"3s","max_inflight":2,"compression":"gzip","tls_profile":"mtls-prod"}`,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy(upload) error = %v", err)
+	}
+	if ack.Status != "applied" || len(ack.Sections) != 1 || !ack.Sections[0].RequiresRestart {
+		t.Fatalf("ack = %+v", ack)
+	}
+	if runner.Config.Manager.Transport != "grpc" || runner.Config.Manager.Address != "manager:9443" {
+		t.Fatalf("manager config = %+v", runner.Config.Manager)
+	}
+	if runner.Config.Spool.BatchSize != 64 || runner.Config.Spool.FlushInterval != 2*time.Second {
+		t.Fatalf("spool config = %+v", runner.Config.Spool)
+	}
+	if runner.Config.Upload.RetryInitial != 500*time.Millisecond || runner.Config.Upload.RetryMax != 5*time.Second || runner.Config.Upload.RequestTimeout != 3*time.Second || runner.Config.Upload.MaxInflight != 2 || runner.Config.Upload.Compression != "gzip" || runner.Config.Upload.TLSProfile != "mtls-prod" {
+		t.Fatalf("upload config = %+v", runner.Config.Upload)
 	}
 }
 
@@ -558,7 +665,7 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
+	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 16384)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,8 +804,8 @@ func cepRulePackJSON() string {
 
 type noopUploader struct{}
 
-func (noopUploader) Upload(batch *analyticsv1.UploadBatch) (*analyticsv1.UploadAck, error) {
-	return &analyticsv1.UploadAck{Ok: true, BatchId: batch.GetBatchId()}, nil
+func (noopUploader) Upload(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+	return &dataplanev1.DataAck{Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
 }
 
 func newUnixControlClient(t *testing.T, socketPath string) controlv1.AgentControlServiceClient {

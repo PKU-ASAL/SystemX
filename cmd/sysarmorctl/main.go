@@ -103,7 +103,7 @@ func isLocalAgentCommand(args []string) bool {
 	case "agent":
 		return args[1] == "health" || args[1] == "capability"
 	case "policy":
-		return args[1] == "current" || args[1] == "apply"
+		return args[1] == "current" || args[1] == "apply" || args[1] == "explain"
 	case "content":
 		return args[1] == "apply" || args[1] == "list" || args[1] == "get"
 	case "event":
@@ -171,6 +171,28 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 		})
 		if err != nil {
 			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	case "policy explain":
+		policyJSON, err := policyPayload(args)
+		if err != nil {
+			return nil, err
+		}
+		policyType := flagValue(args, "--type")
+		if policyType == "" && len(args) > 2 && args[2] == "collection" {
+			policyType = "collection"
+		}
+		resp, err := client.ApplyPolicy(ctx, &controlv1.ApplyPolicyRequest{
+			Context:    reqCtx,
+			PolicyType: policyType,
+			PolicyJson: policyJSON,
+			DryRun:     true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if hasFlag(args, "--report-only") && resp.GetReportJson() != "" {
+			return []byte(resp.GetReportJson()), nil
 		}
 		return marshalProtoJSON(resp)
 	case "content apply":
@@ -569,6 +591,7 @@ func watchFilter(args []string) *controlv1.WatchFilter {
 		AfterSequence:   uint64Flag(args, "--after-seq", 0),
 		SinceObservedAt: flagValue(args, "--since"),
 		UntilObservedAt: flagValue(args, "--until"),
+		AfterBatchId:    flagValue(args, "--after-batch-id"),
 		Labels:          map[string]string{},
 	}
 	for _, item := range flagValues(args, "--label") {
@@ -582,7 +605,7 @@ func watchFilter(args []string) *controlv1.WatchFilter {
 		}
 		filter.Labels[key] = value
 	}
-	if filter.AfterSequence == 0 && filter.SinceObservedAt == "" && filter.UntilObservedAt == "" && len(filter.Labels) == 0 {
+	if filter.AfterSequence == 0 && filter.SinceObservedAt == "" && filter.UntilObservedAt == "" && filter.AfterBatchId == "" && len(filter.Labels) == 0 {
 		return nil
 	}
 	return filter
@@ -719,7 +742,7 @@ func query(mgr string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/agent-health?" + q.Encode())
-	case "agent-gateway-sessions":
+	case "agent-sessions":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
@@ -735,35 +758,8 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			}
 		}
-		return httpGet(base + "/api/v1/agent-gateway-sessions?" + q.Encode())
-	case "agent-gateway-downlink":
-		q := url.Values{}
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--tenant-id":
-				i++
-				if i < len(args) {
-					q.Set("tenant_id", args[i])
-				}
-			case "--agent-id":
-				i++
-				if i < len(args) {
-					q.Set("agent_id", args[i])
-				}
-			case "--scope-type":
-				i++
-				if i < len(args) {
-					q.Set("scope_type", args[i])
-				}
-			case "--scope-selector":
-				i++
-				if i < len(args) {
-					q.Set("scope_selector", args[i])
-				}
-			}
-		}
-		return httpGet(base + "/api/v1/agent-gateway-downlink?" + q.Encode())
-	case "agent-gateway-resume":
+		return httpGet(base + "/api/v1/agent-sessions?" + q.Encode())
+	case "data-resume":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
@@ -779,7 +775,7 @@ func query(mgr string, args []string) ([]byte, error) {
 				}
 			}
 		}
-		return httpGet(base + "/api/v1/agent-gateway-resume?" + q.Encode())
+		return httpGet(base + "/api/v1/data-resume?" + q.Encode())
 	case "evidence-pullbacks":
 		q := url.Values{}
 		req := map[string]any{}
@@ -836,24 +832,6 @@ func query(mgr string, args []string) ([]byte, error) {
 			return httpPostJSON(base+"/api/v1/evidence-pullbacks", req)
 		}
 		return httpGet(base + "/api/v1/evidence-pullbacks?" + q.Encode())
-	case "agent-gateway-frames":
-		var file string
-		for i := 1; i < len(args); i++ {
-			if args[i] == "--file" {
-				i++
-				if i < len(args) {
-					file = args[i]
-				}
-			}
-		}
-		if file == "" {
-			return nil, fmt.Errorf("--file is required")
-		}
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return nil, err
-		}
-		return httpPostRaw(base+"/api/v1/agent-gateway-frames", data)
 	case "metrics":
 		return httpGet(base + "/api/v1/metrics")
 	case "store-status":

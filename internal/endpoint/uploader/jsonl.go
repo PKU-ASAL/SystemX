@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	analyticsv1 "github.com/sysarmor/sysarmor-next-project/api/proto/analytics/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -16,15 +16,15 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-func ReadProtoJSONL(r io.Reader, agentID, hostID, scenario string) (*analyticsv1.UploadBatch, error) {
+func ReadProtoJSONL(r io.Reader, agentID, hostID, scenario string) (*dataplanev1.DataBatch, error) {
 	return ReadProtoJSONLWithRing(r, agentID, hostID, scenario, ringbuffer.New(4096))
 }
 
-func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRing *ringbuffer.Buffer) (*analyticsv1.UploadBatch, error) {
+func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRing *ringbuffer.Buffer) (*dataplanev1.DataBatch, error) {
 	if rawRing == nil {
 		rawRing = ringbuffer.New(4096)
 	}
-	batch := &analyticsv1.UploadBatch{}
+	batch := newBatch(StreamOptions{AgentID: agentID, HostID: hostID, TenantID: "default", Scenario: scenario})
 	norm := normalize.New(agentID, hostID, nil)
 	detector, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	scanner := bufio.NewScanner(r)
@@ -40,8 +40,7 @@ func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRi
 		if err != nil {
 			return nil, fmt.Errorf("line %d is neither Signal, CanonicalEvent, SensorEvent nor Tetragon event", line)
 		}
-		batch.Events = append(batch.Events, events...)
-		batch.Signals = append(batch.Signals, signals...)
+		appendFrames(batch, events, signals)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err

@@ -7,7 +7,12 @@ agent:
 
 manager:
   address: http://10.66.0.10:9443
-  transport: stream
+  transport: grpc
+  tls_ca: "" # production: CA bundle used to verify manager gRPC
+  tls_cert: "" # production: agent client certificate
+  tls_key: "" # production: agent client private key
+  tls_server_name: "" # optional override for manager certificate SAN
+  tls_insecure: false
 
 control:
   socket_path: /var/run/sysarmor/agent.sock
