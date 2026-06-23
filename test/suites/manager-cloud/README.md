@@ -11,7 +11,7 @@ System under test:
 
 This suite verifies manager-visible events, cloud signals, incidents, graph/evidence, policy, response, and query behavior.
 
-Migrated case scripts in this suite include manager idempotency, agent health query, and response audit. Remaining legacy manager-cloud cases may still be called through wrappers until they are moved.
+Migrated case scripts in this suite include manager idempotency, agent health query, policy control, response control, and incident/graph evidence tests. Scenario container tests may still call legacy container harness scripts until the container runtime suite is moved.
 
 Out of scope:
 

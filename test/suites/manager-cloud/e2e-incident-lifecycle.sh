@@ -1,55 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULTS="$ROOT/test/.results"
-BIN="$ROOT/bin"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-incident-lifecycle.XXXXXX")"
-PORT_BASE="${PORT_BASE:-$((52000 + RANDOM % 2000))}"
-MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
-GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
-MGR_URL="http://127.0.0.1:$MANAGER_PORT"
-SCENARIO="incident-lifecycle"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../harness/lib/common.sh"
 
-mkdir -p "$RESULTS" "$BIN"
+sa_init_repo_paths
+TMP="$(sa_make_tmp sysarmor-incident-lifecycle)"
+sa_pick_ports 52000 2000
+TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+SCENARIO="incident-lifecycle"
+SA_TEST_NAME="e2e-incident-lifecycle"
+SA_WAIT_LOGS=("$TMP/manager.log")
 
 cleanup() {
-  if [[ -n "${MGR_PID:-}" ]]; then kill "$MGR_PID" 2>/dev/null || true; fi
-  rm -rf "$TMP"
+  sa_kill_pid_ref MGR_PID
+  sa_cleanup_tmp "$TMP"
 }
 trap cleanup EXIT
 
 echo "[e2e-incident-lifecycle] building binaries"
-make -C "$ROOT" build >/dev/null
+sa_build_all
 
-"$BIN/sysarmor-manager" \
-  --listen "127.0.0.1:$MANAGER_PORT" \
-  --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store-backend memory \
-  --local-ingest \
-  --dev-token "$TOKEN" \
-  >"$TMP/manager.log" 2>&1 &
-MGR_PID=$!
+sa_start_memory_manager --local-ingest --dev-token "$TOKEN"
 
 wait_contains() {
-  local name="$1"
-  local needle="$2"
-  local out="$3"
-  shift 3
-  local deadline=$((SECONDS + 10))
-  until "$@" >"$out" && grep -Fq "$needle" "$out"; do
-    if (( SECONDS >= deadline )); then
-      echo "[e2e-incident-lifecycle][ERROR] $name missing $needle" >&2
-      cat "$out" >&2 2>/dev/null || true
-      cat "$TMP/manager.log" >&2 2>/dev/null || true
-      exit 1
-    fi
-    sleep 0.2
-  done
+  sa_wait_contains "$@"
 }
 
-wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/healthz"
+sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/health.json"
 
 cat > "$TMP/batch.json" <<JSON
 {

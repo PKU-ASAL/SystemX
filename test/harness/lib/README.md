@@ -11,4 +11,5 @@ Current helpers:
 - `sa_wait_contains` and `sa_wait_url_contains`: retry a command or URL until output contains a string.
 - `sa_wait_glob` and `sa_wait_no_glob`: wait for spool/WAL artifacts to appear or drain.
 - `sa_build_all` and `sa_build_go_bins`: build project binaries for e2e scripts.
+- `sa_start_memory_manager`: start an in-memory manager on the selected HTTP/gRPC ports.
 - `sa_manager_ctl`: run `sysarmorctl --manager-url "$MGR_URL" --json manager ...`.

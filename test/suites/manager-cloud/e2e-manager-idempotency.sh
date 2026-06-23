@@ -19,14 +19,7 @@ trap cleanup EXIT
 echo "[e2e-manager-idempotency] building binaries"
 sa_build_go_bins sysarmor-manager sysarmor-databatch-append sysarmorctl
 
-"$BIN/sysarmor-manager" \
-  --listen "127.0.0.1:$MANAGER_PORT" \
-  --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store-backend memory \
-  --local-ingest \
-  --dev-token "$TOKEN" \
-  >"$TMP/manager.log" 2>&1 &
-MGR_PID=$!
+sa_start_memory_manager --local-ingest --dev-token "$TOKEN"
 
 sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/healthz.json"
 

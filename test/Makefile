@@ -200,16 +200,16 @@ e2e-agent-all: e2e-manager-idempotency e2e-agent-mtls e2e-agent-daemon e2e-agent
 e2e-agent-runtime-all: e2e-agent-all e2e-agent-detection-container-all e2e-agent-real-tetragon-owned-container e2e-agent-real-tetragon-owned-vm ## v2: end-to-end runtime and ownership gates
 
 e2e-policy-endpoint-disable: ## v3: agent effective policy disables an endpoint rule
-	bash harness/e2e-policy-endpoint-disable.sh
+	bash suites/manager-cloud/e2e-policy-endpoint-disable.sh
 
 e2e-policy-agent-refresh: ## v3: agent refreshes effective policy without restart
-	bash harness/e2e-policy-agent-refresh.sh
+	bash suites/manager-cloud/e2e-policy-agent-refresh.sh
 
 e2e-policy-cloud-disable: ## v3: manager policy assignment disables a cloud rule
-	bash harness/e2e-policy-cloud-disable.sh
+	bash suites/manager-cloud/e2e-policy-cloud-disable.sh
 
 e2e-policy-publish: ## v3: draft policy must be published before assignment/effective use and is audited
-	bash harness/e2e-policy-publish.sh
+	bash suites/manager-cloud/e2e-policy-publish.sh
 
 e2e-operator-role-bindings: ## v3: operator actor role bindings authorize control-plane writes
 	cd .. && go test ./internal/managerapi -run TestOperatorRoleBindingsAuthorizeControlPlaneWrites
@@ -219,19 +219,19 @@ e2e-operator-role-bindings: ## v3: operator actor role bindings authorize contro
 e2e-policy-all: e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings ## v3: policy/control-plane gates
 
 e2e-response-observe-only: ## v3: observe-only response command and audit
-	bash harness/e2e-response-observe-only.sh
+	bash suites/manager-cloud/e2e-response-observe-only.sh
 
 e2e-response-policy-deny: ## v3: response policy denies destructive actions by default
-	bash harness/e2e-response-policy-deny.sh
+	bash suites/manager-cloud/e2e-response-policy-deny.sh
 
 e2e-response-scope-deny: ## v3: response command must match agent runtime scope
-	bash harness/e2e-response-scope-deny.sh
+	bash suites/manager-cloud/e2e-response-scope-deny.sh
 
 e2e-response-audit: ## v3: response intent converts into auditable observe decision
 	bash suites/manager-cloud/e2e-response-audit.sh
 
 e2e-response-approval: ## v3: approval-required response waits before agent control delivery
-	bash harness/e2e-response-approval.sh
+	bash suites/manager-cloud/e2e-response-approval.sh
 
 e2e-response-multi-approval: ## v3: response policy can require multi-approval threshold and roles
 	cd .. && go test ./internal/managerapi -run TestResponsePolicyCanRequireMultiApprovalRoles
@@ -239,16 +239,16 @@ e2e-response-multi-approval: ## v3: response policy can require multi-approval t
 e2e-response-all: e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval ## v3: response/enforce observe-only gates
 
 e2e-graph-evidence: ## v3: incident evidence is queryable as graph JSON
-	bash harness/e2e-graph-evidence.sh
+	bash suites/manager-cloud/e2e-graph-evidence.sh
 
 e2e-incident-lifecycle: ## v3: incident lifecycle status can be updated and queried
-	bash harness/e2e-incident-lifecycle.sh
+	bash suites/manager-cloud/e2e-incident-lifecycle.sh
 
 e2e-incident-attach-evidence: ## v3: incident evidence can be attached and queried
-	bash harness/e2e-incident-attach-evidence.sh
+	bash suites/manager-cloud/e2e-incident-attach-evidence.sh
 
 e2e-incident-merge: ## v3: incidents can be merged by explicit id
-	bash harness/e2e-incident-merge.sh
+	bash suites/manager-cloud/e2e-incident-merge.sh
 
 e2e-rarity-baseline: ## v3: rarity baseline is updated by ingest and queryable
 	cd .. && go test ./internal/managerapi -run TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification

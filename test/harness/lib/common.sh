@@ -119,6 +119,17 @@ sa_build_go_bins() {
   done
 }
 
+sa_start_memory_manager() {
+  local extra_args=("$@")
+  "$BIN/sysarmor-manager" \
+    --listen "127.0.0.1:$MANAGER_PORT" \
+    --grpc-listen "127.0.0.1:$GRPC_PORT" \
+    --store-backend memory \
+    "${extra_args[@]}" \
+    >"$TMP/manager.log" 2>&1 &
+  MGR_PID=$!
+}
+
 sa_manager_ctl() {
   "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager "$@"
 }

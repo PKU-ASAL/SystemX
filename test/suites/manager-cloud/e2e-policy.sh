@@ -4,7 +4,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
-bash "$ROOT/harness/e2e-policy-endpoint-disable.sh"
-bash "$ROOT/harness/e2e-policy-agent-refresh.sh"
-bash "$ROOT/harness/e2e-policy-cloud-disable.sh"
-bash "$ROOT/harness/e2e-policy-publish.sh"
+bash "$ROOT/suites/manager-cloud/e2e-policy-endpoint-disable.sh"
+bash "$ROOT/suites/manager-cloud/e2e-policy-agent-refresh.sh"
+bash "$ROOT/suites/manager-cloud/e2e-policy-cloud-disable.sh"
+bash "$ROOT/suites/manager-cloud/e2e-policy-publish.sh"

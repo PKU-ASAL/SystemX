@@ -1,56 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULTS="$ROOT/test/.results"
-BIN="$ROOT/bin"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-policy-agent-refresh.XXXXXX")"
-PORT_BASE="${PORT_BASE:-$((40000 + RANDOM % 2000))}"
-MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
-GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../harness/lib/common.sh"
+
+sa_init_repo_paths
+TMP="$(sa_make_tmp sysarmor-policy-agent-refresh)"
+sa_pick_ports 40000 2000
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
-MGR_URL="http://127.0.0.1:$MANAGER_PORT"
 SCENARIO="policy-agent-refresh"
 AGENT_ID="policy-refresh-agent"
 HOST_ID="policy-refresh-host"
-
-mkdir -p "$RESULTS" "$BIN"
+SA_TEST_NAME="e2e-policy-agent-refresh"
+SA_WAIT_LOGS=("$TMP/agent.log" "$TMP/manager.log")
 
 cleanup() {
   exec 3>&- 2>/dev/null || true
-  if [[ -n "${AGENT_PID:-}" ]]; then kill "$AGENT_PID" 2>/dev/null || true; fi
-  if [[ -n "${MGR_PID:-}" ]]; then kill "$MGR_PID" 2>/dev/null || true; fi
-  rm -rf "$TMP"
+  sa_kill_pid_ref AGENT_PID
+  sa_kill_pid_ref MGR_PID
+  sa_cleanup_tmp "$TMP"
 }
 trap cleanup EXIT
 
 echo "[e2e-policy-agent-refresh] building binaries"
-make -C "$ROOT" build >/dev/null
+sa_build_all
 
-"$BIN/sysarmor-manager" \
-  --listen "127.0.0.1:$MANAGER_PORT" \
-  --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store-backend memory \
-  --dev-token "$TOKEN" \
-  >"$TMP/manager.log" 2>&1 &
-MGR_PID=$!
+sa_start_memory_manager --dev-token "$TOKEN"
 
 wait_contains() {
-  local name="$1"
-  local needle="$2"
-  local out="$3"
-  shift 3
-  local deadline=$((SECONDS + 10))
-  until "$@" >"$out" && grep -Fq "$needle" "$out"; do
-    if (( SECONDS >= deadline )); then
-      echo "[e2e-policy-agent-refresh][ERROR] $name missing $needle" >&2
-      cat "$out" >&2 2>/dev/null || true
-      cat "$TMP/manager.log" >&2 2>/dev/null || true
-      cat "$TMP/agent.log" >&2 2>/dev/null || true
-      exit 1
-    fi
-    sleep 0.2
-  done
+  sa_wait_contains "$@"
 }
 
 wait_payload_count() {
@@ -74,7 +51,7 @@ wait_payload_count() {
   done
 }
 
-wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/healthz"
+sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/health.json"
 
 cat > "$TMP/no-payload-policy.json" <<'JSON'
 {

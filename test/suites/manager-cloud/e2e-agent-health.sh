@@ -62,13 +62,7 @@ health:
   interval: 100ms
 EOF
 
-"$BIN/sysarmor-manager" \
-  --listen "127.0.0.1:$MANAGER_PORT" \
-  --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store-backend memory \
-  --dev-token "$TOKEN" \
-  >"$TMP/manager.log" 2>&1 &
-MGR_PID=$!
+sa_start_memory_manager --dev-token "$TOKEN"
 
 sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/healthz.json"
 
