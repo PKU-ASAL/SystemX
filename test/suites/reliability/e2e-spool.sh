@@ -35,6 +35,9 @@ manager:
   address: 127.0.0.1:$GRPC_PORT
   transport: grpc
 
+control:
+  socket_path: $TMP/agent.sock
+
 sensor:
   backend: fake
   mode: managed
@@ -49,6 +52,9 @@ spool:
   max_bytes: 268435456
   batch_size: 256
   flush_interval: 100ms
+
+content:
+  path: $TMP/content
 
 data_plane:
   retry_initial: 50ms
@@ -65,13 +71,7 @@ AGENT_PID=$!
 sa_wait_glob "$TMP/spool/*.batch.json" "local spool batch"
 cp "$TMP"/spool/*.batch.json "$RESULTS/e2e-agent-spool.before.batch.json"
 
-"$BIN/sysarmor-manager" \
-  --listen "127.0.0.1:$MANAGER_PORT" \
-  --grpc-listen "127.0.0.1:$GRPC_PORT" \
-  --store-backend memory \
-  --dev-token "$TOKEN" \
-  >"$TMP/manager.log" 2>&1 &
-MGR_PID=$!
+sa_start_memory_manager --dev-token "$TOKEN"
 
 sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/healthz.json"
 sa_wait_url_contains "$MGR_URL/api/v1/metrics" '"events_ingested":1' "$RESULTS/e2e-agent-spool.metrics.json"

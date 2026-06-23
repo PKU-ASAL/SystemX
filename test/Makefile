@@ -132,6 +132,8 @@ test-reliability:             ## suite: spool/outage/shutdown/backpressure relia
 	bash suites/reliability/e2e-backpressure.sh
 
 test-storage:                 ## suite: Postgres/store projection and query contract
+	bash suites/storage/e2e-store-status.sh
+	bash suites/storage/e2e-query-pagination.sh
 	bash suites/storage/e2e-postgres.sh
 
 diagnostics-vm:               ## suite: VM diagnostic capture for agent-owned Tetragon
@@ -166,13 +168,13 @@ e2e-agent-spool:              ## v2: manager outage → durable spool → recove
 	bash suites/reliability/e2e-spool.sh
 
 e2e-agent-outage-soak:        ## v2: manager outage queues multiple batches → recovery drains all
-	bash harness/e2e-agent-outage-soak.sh
+	bash suites/reliability/e2e-outage-soak.sh
 
 e2e-agent-shutdown:           ## v2: SIGTERM graceful shutdown → shutdown drain flush
-	bash harness/e2e-agent-shutdown.sh
+	bash suites/reliability/e2e-shutdown.sh
 
 e2e-agent-reliability-soak:   ## v2: longer reliability soak for outage/retry/restart/shutdown
-	bash harness/e2e-agent-reliability-soak.sh
+	bash suites/reliability/e2e-reliability-soak.sh
 
 e2e-agent-capability:         ## v2: startup capability/bundle failure → degraded health
 	bash harness/e2e-agent-capability.sh
@@ -190,7 +192,7 @@ e2e-agent-dropped-health:     ## v2: sensor dropped events → degraded health/t
 	bash harness/e2e-agent-dropped-health.sh
 
 e2e-agent-backpressure:       ## v2: spool max_bytes backpressure/drop → degraded health
-	bash harness/e2e-agent-backpressure.sh
+	bash suites/reliability/e2e-backpressure.sh
 
 e2e-agent-health:             ## v2: sysarmorctl agents/agent-health/metrics 查询 smoke
 	bash suites/manager-cloud/e2e-agent-health.sh
@@ -256,10 +258,10 @@ e2e-rarity-baseline: ## v3: rarity baseline is updated by ingest and queryable
 e2e-graph-all: e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline ## v3: graph/evidence/incident/rarity gates
 
 e2e-store-status: ## v3: store backend and migration status are queryable
-	bash harness/e2e-store-status.sh
+	bash suites/storage/e2e-store-status.sh
 
 e2e-query-pagination: ## v3: query APIs support limit/offset pagination
-	bash harness/e2e-query-pagination.sh
+	bash suites/storage/e2e-query-pagination.sh
 
 e2e-postgres-store: ## v3: Postgres snapshot adapter can persist state and close database resources
 	cd .. && go test ./internal/store/backend -run TestOpenPostgresRunsMigrationAndPersistsSnapshot

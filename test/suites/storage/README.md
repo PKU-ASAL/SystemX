@@ -14,3 +14,5 @@ Out of scope:
 - runtime agent behavior;
 - endpoint collection effectiveness;
 - cloud detection scoring.
+
+Store status and query pagination scripts are native suite cases. Postgres projection checks remain Go test entrypoints.

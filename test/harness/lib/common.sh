@@ -57,10 +57,12 @@ sa_wait_contains() {
   local timeout="${SA_WAIT_TIMEOUT:-10}"
   local interval="${SA_WAIT_INTERVAL:-0.1}"
   local deadline=$((SECONDS + timeout))
-  until "$@" >"$out" && grep -Fq "$needle" "$out"; do
+  until "$@" >"$out" 2>"$out.err" && grep -Fq "$needle" "$out"; do
     if (( SECONDS >= deadline )); then
       echo "[${SA_TEST_NAME:-harness}][ERROR] timeout waiting for $needle via $name" >&2
       sa_print_wait_debug "$out" "${SA_WAIT_LOGS[@]:-}"
+      echo "--- last error ---" >&2
+      cat "$out.err" >&2 2>/dev/null || true
       return 1
     fi
     sleep "$interval"
