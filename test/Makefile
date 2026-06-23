@@ -1,14 +1,17 @@
 # SysArmor 测试环境 Makefile
 # 用法: make <target>   (从 test/ 目录运行)
 #
-# env/       = 搭建 (拓扑定义 + 镜像 + 资源)
-# scenarios/ = 执行 (攻击脚本 + 期望契约 + PolicyEnvelope)
-# harness/   = 编排 (start/stop/cleanup/capture/assert/report)
+# suites/    = 高层测试套件入口,定义测什么和评估边界
+# harness/   = 通用执行胶水,负责启动/等待/采集/清理
+# tools/     = recorder/report/benchmark/diagnostic 等可复用工具
+# scenarios/ = 安全语义契约
+# workloads/ = 压力输入,不做安全断言
 
 TOPO      ?= container
 SCENARIO  ?= apt-fileless-c2
 DIAG_SCENARIO ?= mixed-edr-storm
 DUR       ?= 30
+EVALUATION_SCOPE ?= full
 
 # ── 拓扑生命周期 ──────────────────────────────────────
 
@@ -98,9 +101,43 @@ bench-e2e-vm:                 ## 用 recorder 包住 VM 功能 E2E,同时产出�
 	SCENARIO=$(SCENARIO) bash tools/benchmarks/bench-e2e-vm.sh
 
 effectiveness-report:         ## 从 expected.yaml + 已有结果生成 scenario 效果指标报告
-	python3 tools/benchmarks/effectiveness_report.py --topology $(TOPO) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --output-dir .results/effectiveness/$(or $(RUN_ID),manual)
+	python3 tools/benchmarks/effectiveness_report.py --topology $(TOPO) --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --output-dir .results/effectiveness/$(or $(RUN_ID),manual)
 
-# ── 常用组合 ──────────────────────────────────────────
+# ── Suite 入口 ───────────────────────────────────────
+
+.PHONY: test-local-agent bench-local-agent test-manager-cloud test-control-plane test-reliability test-storage diagnostics-vm
+
+test-local-agent:             ## suite: local agent VM real Tetragon endpoint smoke
+	bash suites/local-agent/e2e-real-tetragon-owned-vm.sh
+
+bench-local-agent:            ## suite: local agent policy x workload/scenario benchmark matrix
+	bash suites/local-agent/bench-matrix-vm.sh
+
+test-manager-cloud:           ## suite: manager ingest/query/cloud signal/incident/policy/response
+	bash suites/manager-cloud/e2e-manager-idempotency.sh
+	bash suites/manager-cloud/e2e-agent-health.sh
+	bash suites/manager-cloud/e2e-scenarios-container.sh
+	bash suites/manager-cloud/e2e-policy.sh
+	bash suites/manager-cloud/e2e-response.sh
+	bash suites/manager-cloud/e2e-incident.sh
+
+test-control-plane:           ## suite: control stream contract and mTLS identity
+	bash suites/control-plane/e2e-contract.sh
+	bash suites/control-plane/e2e-mtls.sh
+
+test-reliability:             ## suite: spool/outage/shutdown/backpressure reliability
+	bash suites/reliability/e2e-spool.sh
+	bash suites/reliability/e2e-outage-soak.sh
+	bash suites/reliability/e2e-shutdown.sh
+	bash suites/reliability/e2e-backpressure.sh
+
+test-storage:                 ## suite: Postgres/store projection and query contract
+	bash suites/storage/e2e-postgres.sh
+
+diagnostics-vm:               ## suite: VM diagnostic capture for agent-owned Tetragon
+	bash tools/diagnostics/diagnose-tetragon-vm.sh
+
+# ── 常用组合 / 细粒度 legacy 入口 ─────────────────────
 
 .PHONY: e2e e2e-agent-manager-contract e2e-manager-idempotency e2e-agent-mtls e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-reliability-soak e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health e2e-agent-all e2e-agent-runtime-all e2e-policy-endpoint-disable e2e-policy-agent-refresh e2e-policy-cloud-disable e2e-policy-publish e2e-operator-role-bindings e2e-policy-all e2e-response-observe-only e2e-response-policy-deny e2e-response-scope-deny e2e-response-audit e2e-response-approval e2e-response-multi-approval e2e-response-all e2e-graph-evidence e2e-incident-lifecycle e2e-incident-attach-evidence e2e-incident-merge e2e-rarity-baseline e2e-graph-all e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-session-projection e2e-postgres-rarity-projection e2e-postgres-all e2e-agent-session e2e-agent-control-plane-contract e2e-agent-control-plane-all e2e-agent-daemon-container e2e-agent-managed-container e2e-agent-managed-recover-container e2e-agent-managed-restart-container e2e-agent-systemd-vm e2e-agent-managed-vm e2e-agent-managed-recover-vm e2e-agent-real-tetragon-owned-vm e2e-agent-real-tetragon-owned-container e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container e2e-agent-detection-container-all clean
 
@@ -111,10 +148,10 @@ e2e-agent-manager-contract:   ## v3: AgentControlPlaneService.Connect sequence/r
 	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|AgentRuntimeControlChannelProcessesPendingResponse)'
 
 e2e-manager-idempotency:      ## v2: repeated DataBatch does not amplify manager ingest
-	bash harness/e2e-manager-idempotency.sh
+	bash suites/manager-cloud/e2e-manager-idempotency.sh
 
 e2e-agent-mtls:               ## v3: manager gRPC mTLS requires client cert and binds cert identity to agent_id
-	bash harness/e2e-agent-mtls.sh
+	bash suites/control-plane/e2e-mtls.sh
 
 e2e-agent-daemon:             ## v2: 本机 fake sensor daemon → health/data-plane → manager 查询
 	bash harness/e2e-agent-daemon.sh
@@ -126,7 +163,7 @@ e2e-agent-sensor-recover:     ## v2: fake tetragon bundle → degrade once → r
 	bash harness/e2e-agent-sensor-recover.sh
 
 e2e-agent-spool:              ## v2: manager outage → durable spool → recovery drain
-	bash harness/e2e-agent-spool.sh
+	bash suites/reliability/e2e-spool.sh
 
 e2e-agent-outage-soak:        ## v2: manager outage queues multiple batches → recovery drains all
 	bash harness/e2e-agent-outage-soak.sh
@@ -156,7 +193,7 @@ e2e-agent-backpressure:       ## v2: spool max_bytes backpressure/drop → degra
 	bash harness/e2e-agent-backpressure.sh
 
 e2e-agent-health:             ## v2: sysarmorctl agents/agent-health/metrics 查询 smoke
-	bash harness/e2e-agent-health.sh
+	bash suites/manager-cloud/e2e-agent-health.sh
 
 e2e-agent-all: e2e-manager-idempotency e2e-agent-mtls e2e-agent-daemon e2e-agent-sensor-restart e2e-agent-sensor-recover e2e-agent-spool e2e-agent-outage-soak e2e-agent-shutdown e2e-agent-capability e2e-agent-capability-btf e2e-agent-capability-bpffs e2e-agent-parse-health e2e-agent-dropped-health e2e-agent-backpressure e2e-agent-health
 
@@ -191,7 +228,7 @@ e2e-response-scope-deny: ## v3: response command must match agent runtime scope
 	bash harness/e2e-response-scope-deny.sh
 
 e2e-response-audit: ## v3: response intent converts into auditable observe decision
-	bash harness/e2e-response-audit.sh
+	bash suites/manager-cloud/e2e-response-audit.sh
 
 e2e-response-approval: ## v3: approval-required response waits before agent control delivery
 	bash harness/e2e-response-approval.sh
@@ -357,6 +394,15 @@ help:                         ## 显示帮助
 	@echo "诊断场景: DIAG_SCENARIO=mixed-edr-storm (默认) | exec-storm | file-write-storm | network-connect-storm | VM attack.sh 场景"
 	@echo ""
 	@echo "targets:"
+	@echo "  test-local-agent     suite: local agent endpoint smoke"
+	@echo "  bench-local-agent    suite: local agent policy x workload/scenario benchmark"
+	@echo "  test-manager-cloud   suite: manager ingest/query/cloud signal/incident/policy/response"
+	@echo "  test-control-plane   suite: control stream contract and mTLS identity"
+	@echo "  test-reliability     suite: spool/outage/shutdown/backpressure reliability"
+	@echo "  test-storage         suite: Postgres/store projection and query contract"
+	@echo "  diagnostics-vm       suite: VM diagnostic capture"
+	@echo ""
+	@echo "legacy/advanced targets:"
 	@echo "  up          启动拓扑"
 	@echo "  down        停止拓扑"
 	@echo "  capture     跑场景 + 抓事件"

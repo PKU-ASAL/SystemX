@@ -1,27 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULTS="$ROOT/test/.results"
-BIN="$ROOT/bin"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-response-audit.XXXXXX")"
-PORT_BASE="${PORT_BASE:-$((48000 + RANDOM % 2000))}"
-MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
-GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
-MGR_URL="http://127.0.0.1:$MANAGER_PORT"
-AGENT_ID="response-audit-agent"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../harness/lib/common.sh"
 
-mkdir -p "$RESULTS" "$BIN"
+sa_init_repo_paths
+TMP="$(sa_make_tmp sysarmor-response-audit)"
+sa_pick_ports 48000 2000
+TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+AGENT_ID="response-audit-agent"
+SA_TEST_NAME="e2e-response-audit"
+SA_WAIT_LOGS=("$TMP/manager.log")
 
 cleanup() {
-  if [[ -n "${MGR_PID:-}" ]]; then kill "$MGR_PID" 2>/dev/null || true; fi
-  rm -rf "$TMP"
+  sa_kill_pid_ref MGR_PID
+  sa_cleanup_tmp "$TMP"
 }
 trap cleanup EXIT
 
 echo "[e2e-response-audit] building binaries"
-make -C "$ROOT" build >/dev/null
+sa_build_all
 
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
@@ -32,24 +29,7 @@ make -C "$ROOT" build >/dev/null
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
 
-wait_contains() {
-  local name="$1"
-  local needle="$2"
-  local out="$3"
-  shift 3
-  local deadline=$((SECONDS + 10))
-  until "$@" >"$out" && grep -Fq "$needle" "$out"; do
-    if (( SECONDS >= deadline )); then
-      echo "[e2e-response-audit][ERROR] $name missing $needle" >&2
-      cat "$out" >&2 2>/dev/null || true
-      cat "$TMP/manager.log" >&2 2>/dev/null || true
-      exit 1
-    fi
-    sleep 0.2
-  done
-}
-
-wait_contains "healthz" '"ok":true' "$TMP/health.json" curl -sf "$MGR_URL/healthz"
+sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/health.json"
 
 cat > "$TMP/batch.json" <<JSON
 {
@@ -91,7 +71,7 @@ JSON
 
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-response-audit.data_plane.json"
 
-wait_contains "signal intent" '"response_intent":{"response_intent":"collect","recommended_action":"collect","confidence":80,"reason":"terminal reverse shell pattern"}' "$RESULTS/e2e-response-audit.signals.json" \
+sa_wait_contains "signal intent" '"response_intent":{"response_intent":"collect","recommended_action":"collect","confidence":80,"reason":"terminal reverse shell pattern"}' "$RESULTS/e2e-response-audit.signals.json" \
   "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario response-audit --terminal
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager response decide \

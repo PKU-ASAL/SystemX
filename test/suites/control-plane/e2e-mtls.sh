@@ -1,31 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULTS="$ROOT/test/.results"
-BIN="$ROOT/bin"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-agent-mtls.XXXXXX")"
-PORT_BASE="${PORT_BASE:-$((33000 + RANDOM % 5000))}"
-MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
-GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
-MGR_URL="http://127.0.0.1:$MANAGER_PORT"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../harness/lib/common.sh"
+
+sa_init_repo_paths
+TMP="$(sa_make_tmp sysarmor-agent-mtls)"
+sa_pick_ports 33000 5000
 TENANT_ID="${TENANT_ID:-default}"
 AGENT_ID="${AGENT_ID:-agent-mtls}"
 HOST_ID="${HOST_ID:-host-mtls}"
-
-mkdir -p "$RESULTS" "$BIN"
+SA_TEST_NAME="e2e-agent-mtls"
+SA_WAIT_LOGS=("$TMP/agent.log" "$TMP/manager.log")
 
 cleanup() {
-  if [[ -n "${AGENT_PID:-}" ]]; then kill "$AGENT_PID" 2>/dev/null || true; fi
-  if [[ -n "${MGR_PID:-}" ]]; then kill "$MGR_PID" 2>/dev/null || true; fi
-  rm -rf "$TMP"
+  sa_kill_pid_ref AGENT_PID
+  sa_kill_pid_ref MGR_PID
+  sa_cleanup_tmp "$TMP"
 }
 trap cleanup EXIT
 
 echo "[e2e-agent-mtls] building required binaries"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-manager" "$ROOT/cmd/sysarmor-manager"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-append" "$ROOT/cmd/sysarmor-databatch-append"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-agent" "$ROOT/cmd/sysarmor-agent"
+sa_build_go_bins sysarmor-manager sysarmor-databatch-append sysarmor-agent
 
 PKI_DIR="$TMP/pki"
 "$ROOT/tools/pki/gen-agent-plane-mtls.sh" "$PKI_DIR" "$TENANT_ID" "$AGENT_ID" localhost >/dev/null
@@ -43,24 +38,7 @@ UNTRUSTED_PKI_DIR="$TMP/untrusted-pki"
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
 
-wait_contains() {
-  local name="$1"
-  local needle="$2"
-  local out="$3"
-  shift 3
-  local deadline=$((SECONDS + 10))
-  until "$@" >"$out" && grep -Fq "$needle" "$out"; do
-    if (( SECONDS >= deadline )); then
-      echo "[e2e-agent-mtls][ERROR] timeout waiting for $needle via $name" >&2
-      cat "$out" >&2 2>/dev/null || true
-      cat "$TMP/manager.log" >&2 2>/dev/null || true
-      exit 1
-    fi
-    sleep 0.1
-  done
-}
-
-wait_contains "manager healthz" '"ok":true' "$TMP/healthz.json" curl -sf "$MGR_URL/healthz"
+sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/healthz.json"
 
 cat > "$TMP/batch-good.json" <<JSON
 {
@@ -215,7 +193,7 @@ YAML
 
 "$BIN/sysarmor-agent" run --config "$TMP/agent.yaml" >"$TMP/agent.log" 2>&1 &
 AGENT_PID=$!
-wait_contains "agent control health" '"agent_id":"'"$AGENT_ID"'"' "$TMP/agent-health.json" curl -sf "$MGR_URL/api/v1/agent-health?tenant_id=$TENANT_ID&agent_id=$AGENT_ID"
+sa_wait_url_contains "$MGR_URL/api/v1/agent-health?tenant_id=$TENANT_ID&agent_id=$AGENT_ID" '"agent_id":"'"$AGENT_ID"'"' "$TMP/agent-health.json"
 if ! grep -Fq '"auth_type":"mtls"' "$RESULTS/e2e-agent-mtls.sessions.json" "$TMP/agent-health.json" 2>/dev/null; then
   curl -sf "$MGR_URL/api/v1/agents?tenant_id=$TENANT_ID" > "$RESULTS/e2e-agent-mtls.agents.json"
   if ! grep -Fq '"auth_type":"mtls"' "$RESULTS/e2e-agent-mtls.agents.json"; then

@@ -1,28 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULTS="$ROOT/test/.results"
-BIN="$ROOT/bin"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-manager-idempotency.XXXXXX")"
-PORT_BASE="${PORT_BASE:-$((31000 + RANDOM % 5000))}"
-MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
-GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
-MGR_URL="http://127.0.0.1:$MANAGER_PORT"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../harness/lib/common.sh"
 
-mkdir -p "$RESULTS" "$BIN"
+sa_init_repo_paths
+TMP="$(sa_make_tmp sysarmor-manager-idempotency)"
+sa_pick_ports 31000 5000
+TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+SA_TEST_NAME="e2e-manager-idempotency"
+SA_WAIT_LOGS=("$TMP/manager.log")
 
 cleanup() {
-  if [[ -n "${MGR_PID:-}" ]]; then kill "$MGR_PID" 2>/dev/null || true; fi
-  rm -rf "$TMP"
+  sa_kill_pid_ref MGR_PID
+  sa_cleanup_tmp "$TMP"
 }
 trap cleanup EXIT
 
 echo "[e2e-manager-idempotency] building binaries"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-manager" "$ROOT/cmd/sysarmor-manager"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmor-databatch-append" "$ROOT/cmd/sysarmor-databatch-append"
-GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sysarmorctl" "$ROOT/cmd/sysarmorctl"
+sa_build_go_bins sysarmor-manager sysarmor-databatch-append sysarmorctl
 
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
@@ -33,26 +28,7 @@ GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/sys
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
 
-wait_contains() {
-  local name="$1"
-  local needle="$2"
-  local out="$3"
-  shift 3
-  local deadline=$((SECONDS + 10))
-  until "$@" >"$out" && grep -Fq "$needle" "$out"; do
-    if (( SECONDS >= deadline )); then
-      echo "[e2e-manager-idempotency][ERROR] timeout waiting for $needle via $name" >&2
-      echo "--- last response ---" >&2
-      cat "$out" >&2 2>/dev/null || true
-      echo "--- manager log ---" >&2
-      cat "$TMP/manager.log" >&2 2>/dev/null || true
-      exit 1
-    fi
-    sleep 0.1
-  done
-}
-
-wait_contains "manager healthz" '"ok":true' "$TMP/healthz.json" curl -sf "$MGR_URL/healthz"
+sa_wait_url_contains "$MGR_URL/healthz" '"ok":true' "$TMP/healthz.json"
 
 cat > "$TMP/batch.json" <<'JSON'
 {

@@ -286,10 +286,23 @@ def score(hit, total):
     return round(hit / total, 4) if total else None
 
 
-def summarize_effectiveness(expected, events, signals, incidents=None, bench_summary=None):
+def scope_allows(scope, layer):
+    if scope == "full":
+        return True
+    if scope == "local":
+        return layer in ("events", "endpoint_signals", "negative")
+    if scope == "manager":
+        return layer in ("events", "endpoint_signals", "cloud_signals", "incident", "negative")
+    if scope == "control":
+        return layer == "control"
+    return True
+
+
+def summarize_effectiveness(expected, events, signals, incidents=None, bench_summary=None, scope="full"):
     incidents = incidents or []
     checks = flatten_expected(expected)
     evaluated = []
+    out_of_scope = []
     totals = {
         "required": [0, 0],
         "event": [0, 0],
@@ -309,6 +322,18 @@ def summarize_effectiveness(expected, events, signals, incidents=None, bench_sum
         want = check["want"]
         required = requirement not in ("may_contain", "control_assertion")
         hit = None
+        in_scope = scope_allows(scope, layer)
+
+        if not in_scope:
+            out = dict(check)
+            out["hit"] = None
+            out["required"] = required
+            out["evaluated"] = False
+            out["out_of_scope"] = True
+            out["out_of_scope_reason"] = f"{layer} is outside evaluation_scope={scope}"
+            evaluated.append(out)
+            out_of_scope.append(out)
+            continue
 
         if layer == "events" and requirement == "must_contain":
             hit = event_hit(want, events)
@@ -361,6 +386,7 @@ def summarize_effectiveness(expected, events, signals, incidents=None, bench_sum
         out["hit"] = hit
         out["required"] = required
         out["evaluated"] = hit is not None
+        out["out_of_scope"] = False
         evaluated.append(out)
 
     workload_phase = (bench_summary or {}).get("phases", {}).get("workload", {})
@@ -371,7 +397,10 @@ def summarize_effectiveness(expected, events, signals, incidents=None, bench_sum
     cost_per_1k = round(float(edr_cpu) / events_delta * 1000, 4) if events_delta > 0 else 0.0
 
     return {
+        "evaluation_scope": scope,
         "checks": evaluated,
+        "out_of_scope_checks": out_of_scope,
+        "out_of_scope_checks_total": len(out_of_scope),
         "required_checks_total": totals["required"][0],
         "required_checks_hit": totals["required"][1],
         "effectiveness_score": score(totals["required"][1], totals["required"][0]) or 0.0,
@@ -466,11 +495,12 @@ def build_rows(args):
             assertion = load_json(results / f"{scenario}.json")
             if not assertion:
                 assertion = load_json(results / f"{args.topology}.{scenario}.json")
-            eff = summarize_effectiveness(expected, events, signals, incidents, bench_summary)
+            eff = summarize_effectiveness(expected, events, signals, incidents, bench_summary, args.scope)
             key = f"{scenario}:{policy or 'default'}"
             details[key] = {
                 "scenario": scenario,
                 "policy": policy,
+                "evaluation_scope": args.scope,
                 "expected": expected,
                 "events_path": str(events_path) if events_path else "",
                 "signals_path": str(signals_path) if signals_path else "",
@@ -481,6 +511,7 @@ def build_rows(args):
             rows.append({
                 "scenario": scenario,
                 "policy": policy,
+                "evaluation_scope": args.scope,
                 "effectiveness_score": eff["effectiveness_score"],
                 "required_hit_rate": eff["required_hit_rate"],
                 "required_event_hit_rate": eff["required_event_hit_rate"],
@@ -496,6 +527,7 @@ def build_rows(args):
                 "drop_rate": eff["drop_rate"],
                 "parse_error_rate": eff["parse_error_rate"],
                 "cost_per_1k_events_cpu": eff["cost_per_1k_events_cpu"],
+                "out_of_scope_checks_total": eff["out_of_scope_checks_total"],
                 "assert_pass": assertion.get("pass", ""),
                 "assert_fail": assertion.get("fail", ""),
                 "assert_skip": assertion.get("skip", ""),
@@ -586,6 +618,7 @@ def main():
     ap.add_argument("--scenarios", nargs="*")
     ap.add_argument("--bench-matrix-dir")
     ap.add_argument("--output-dir", required=True)
+    ap.add_argument("--scope", choices=("local", "manager", "full", "control"), default="full")
     args = ap.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -595,6 +628,7 @@ def main():
     comparison = build_policy_comparison(rows, bench_rows)
     summary = {
         "topology": args.topology,
+        "evaluation_scope": args.scope,
         "score_model": {
             "overall_score": "0.6 * effectiveness_score + 0.3 * resource_score + 0.1 * stability_score",
             "resource_score": "0.75 * inverse_cpu_score + 0.25 * inverse_rss_score",
@@ -608,6 +642,7 @@ def main():
     matrix_fields = [
         "scenario",
         "policy",
+        "evaluation_scope",
         "effectiveness_score",
         "required_hit_rate",
         "required_event_hit_rate",
@@ -623,6 +658,7 @@ def main():
         "drop_rate",
         "parse_error_rate",
         "cost_per_1k_events_cpu",
+        "out_of_scope_checks_total",
         "assert_pass",
         "assert_fail",
         "assert_skip",

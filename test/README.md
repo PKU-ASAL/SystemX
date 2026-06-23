@@ -8,7 +8,17 @@
 - agent 和 sensor 的 CPU/RSS/EPS 成本是多少;
 - 成本来自采集策略、业务负载、sensor runtime 还是后端处理链路。
 
-设计原则见 `references/docs/testing-benchmark.md`:功能 E2E、workload、recorder、benchmark、diagnostic 分开维护,不要把性能采样、synthetic workload 或 perf/pprof 逻辑塞进功能断言脚本。
+设计原则见 `references/docs/testing-benchmark.md` 和 `test/ARCHITECTURE.md`:功能 E2E、workload、recorder、benchmark、diagnostic 分开维护,不要把性能采样、synthetic workload 或 perf/pprof 逻辑塞进功能断言脚本。
+
+`suite` 和 `harness` 是两层概念:
+
+- `suites/` 定义测什么、SUT 是谁、评估边界是什么、哪些指标算分;
+- `harness/` 提供怎么跑的通用能力,例如启动拓扑、等待服务、执行场景、采集日志和清理环境;
+- `tools/` 放 recorder、report、benchmark、diagnostic 这类可复用工具。
+
+当前迁移是渐进式的:新的高层入口在 `suites/`,旧的 `harness/e2e-*.sh` 仍保留作为 legacy suite implementation。
+
+效果评估会显式写出 `evaluation_scope`。例如 `local-agent` benchmark 只给本地 event、endpoint signal 和本地 negative 断言计分;同一份 `expected.yaml` 里的 cloud signal、incident、graph evidence 会进入 `out_of_scope`,不被当作本地失败。
 
 ## Topology
 
@@ -118,6 +128,14 @@ test/
 ├── Makefile                  test entrypoints
 ├── README.md                 this document
 ├── SCENARIOS.md              scenario input/output contracts
+├── ARCHITECTURE.md           suite/harness/tool boundaries
+│
+├── suites/                   stable high-level test suites
+│   ├── local-agent/          local endpoint collection/detection/cost
+│   ├── manager-cloud/        manager ingest/query/cloud signal/incident
+│   ├── control-plane/        AgentControlPlaneService/mTLS/command contract
+│   ├── reliability/          spool/outage/restart/backpressure
+│   └── storage/              Postgres/store projection and query
 │
 ├── env/                      topology and shared environment input
 │   ├── container/
@@ -144,7 +162,8 @@ test/
 ├── policies/                 collection/detection/resource/telemetry/response samples
 ├── content/                  IOC/context/rulepack content used by policies
 │
-├── harness/                  functional orchestration and assertions
+├── harness/                  shared execution glue and legacy e2e scripts
+│   ├── lib/                  shared wait/query/build/cleanup helpers
 │   ├── start-*.sh
 │   ├── stop-*.sh
 │   ├── capture-*.sh
@@ -169,7 +188,8 @@ test/
 | `workloads/` | 压力输入 | exec/file/network/mixed/business 负载,不做安全断言 |
 | `policies/` | 策略输入 | 采集、检测、资源、上行、响应策略样例 |
 | `content/` | 内容输入 | IOC feed、路径上下文、endpoint rulepack |
-| `harness/` | 测试代码 | 启停、采集、断言、专项 e2e |
+| `suites/` | 高层测试入口 | 按 SUT/evaluation scope 组织 local-agent、manager-cloud、control-plane 等 |
+| `harness/` | 执行胶水 | 启停、采集、断言、清理;当前仍包含 legacy 专项 e2e |
 | `tools/recorder/` | 性能采样 | CPU/RSS/EPS/drop/signal timeline |
 | `tools/benchmarks/` | 矩阵评估 | policy x workload x phase 汇总 |
 | `tools/diagnostics/` | 热点诊断 | perf/pprof/strace,用于解释成本 |

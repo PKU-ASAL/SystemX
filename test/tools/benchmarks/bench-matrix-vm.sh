@@ -12,8 +12,23 @@ WORKLOADS="${WORKLOADS:-benign-business exec-storm file-read-storm file-write-st
 SCENARIOS="${SCENARIOS:-apt-fileless-c2 apt-staged-drop benign-ci-noise}"
 INCLUDE_SCENARIOS="${INCLUDE_SCENARIOS:-1}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
+EVALUATION_SCOPE="${EVALUATION_SCOPE:-local}"
 
 mkdir -p "$OUT_DIR"
+
+cat >"$OUT_DIR/manifest.json" <<EOF
+{
+  "suite": "local-agent",
+  "tool": "bench-matrix-vm",
+  "evaluation_scope": "$EVALUATION_SCOPE",
+  "topology": "vm",
+  "run_id": "$RUN_ID",
+  "policies": "$POLICIES",
+  "workloads": "$WORKLOADS",
+  "scenarios": "$SCENARIOS",
+  "include_scenarios": "$INCLUDE_SCENARIOS"
+}
+EOF
 
 run_case() {
   local kind="$1"
@@ -42,6 +57,7 @@ run_case() {
 }
 
 echo "[bench-matrix-vm] output: $OUT_DIR"
+echo "[bench-matrix-vm] evaluation_scope: $EVALUATION_SCOPE"
 echo "[bench-matrix-vm] policies: $POLICIES"
 echo "[bench-matrix-vm] workloads: $WORKLOADS"
 echo "[bench-matrix-vm] scenarios: $SCENARIOS"
@@ -61,6 +77,7 @@ python3 "$HERE/effectiveness_report.py" \
   --bench-matrix-dir "$OUT_DIR" \
   --output-dir "$RESULTS/effectiveness/$RUN_ID" \
   --topology vm \
+  --scope "$EVALUATION_SCOPE" \
   --scenarios $SCENARIOS
 
 echo "[bench-matrix-vm] matrix written to $OUT_DIR/matrix.csv and $OUT_DIR/matrix.json"
