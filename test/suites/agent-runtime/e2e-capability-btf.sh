@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 RESULTS="$ROOT/test/.results"
 BIN="$ROOT/bin"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-agent-capability-bpffs.XXXXXX")"
-PORT_BASE="${PORT_BASE:-$((35000 + RANDOM % 3000))}"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-agent-capability-btf.XXXXXX")"
+PORT_BASE="${PORT_BASE:-$((32000 + RANDOM % 3000))}"
 MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
 GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
@@ -19,20 +19,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[e2e-agent-capability-bpffs] building binaries"
+echo "[e2e-agent-capability-btf] building binaries"
 make -C "$ROOT" build >/dev/null
 
-mkdir -p "$TMP/bundle/bin" "$TMP/install" "$TMP/btf"
+mkdir -p "$TMP/bundle/bin" "$TMP/install"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$TMP/bundle/bin/tetragon"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$TMP/bundle/bin/tetra"
 chmod +x "$TMP/bundle/bin/tetragon" "$TMP/bundle/bin/tetra"
-touch "$TMP/btf/vmlinux"
 TETRAGON_SHA="$(sha256sum "$TMP/bundle/bin/tetragon" | awk '{print $1}')"
 TETRA_SHA="$(sha256sum "$TMP/bundle/bin/tetra" | awk '{print $1}')"
 
 cat > "$TMP/bundle/manifest.json" <<EOF
 {
-  "version": "capability-bpffs",
+  "version": "capability-btf",
   "files": {
     "bin/tetragon": { "sha256": "$TETRAGON_SHA" },
     "bin/tetra": { "sha256": "$TETRA_SHA" }
@@ -46,7 +45,7 @@ EOF
 
 cat > "$TMP/agent.yaml" <<EOF
 agent:
-  id: e2e-agent-capability-bpffs
+  id: e2e-agent-capability-btf
   host_id: e2e-host
   tenant_id: default
   token: $TOKEN
@@ -55,16 +54,20 @@ manager:
   address: 127.0.0.1:$GRPC_PORT
   transport: grpc
 
+control:
+  socket_path: $TMP/agent.sock
+
+content:
+  path: $TMP/content
+
 sensor:
   backend: tetragon
   mode: managed
   bundle_dir: $TMP/bundle
   install_dir: $TMP/install
   policy_path: $TMP/policy.yaml
-  btf_path: $TMP/btf/vmlinux
-  bpffs_path: $TMP/missing-bpffs
+  btf_path: $TMP/missing-vmlinux
   require_btf: true
-  require_bpffs: true
   observe_only: true
   restart: always
   max_restarts: 1
@@ -101,7 +104,7 @@ wait_contains() {
   local deadline=$((SECONDS + 10))
   until "$@" >"$out" 2>"$out.err" && grep -Fq "$needle" "$out"; do
     if (( SECONDS >= deadline )); then
-      echo "[e2e-agent-capability-bpffs][ERROR] timeout waiting for $needle via $cmd_name" >&2
+      echo "[e2e-agent-capability-btf][ERROR] timeout waiting for $needle via $cmd_name" >&2
       echo "--- last response ---" >&2
       cat "$out" >&2 2>/dev/null || true
       echo "--- last error ---" >&2
@@ -123,19 +126,19 @@ set +e
 AGENT_RC=$?
 set -e
 if [[ "$AGENT_RC" -eq 0 ]]; then
-  echo "[e2e-agent-capability-bpffs][ERROR] agent unexpectedly succeeded with missing required bpffs" >&2
+  echo "[e2e-agent-capability-btf][ERROR] agent unexpectedly succeeded with missing required BTF" >&2
   cat "$TMP/agent.log" >&2
   exit 1
 fi
 
-wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-capability-bpffs.health.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability-bpffs --tenant-id default
-wait_contains "agent-health stopped" '"running":false' "$RESULTS/e2e-agent-capability-bpffs.health.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability-bpffs --tenant-id default
-wait_contains "agent-health bpffs error" 'bpffs unavailable' "$RESULTS/e2e-agent-capability-bpffs.health.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability-bpffs --tenant-id default
+wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-capability-btf.health.json" \
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability-btf --tenant-id default
+wait_contains "agent-health stopped" '"running":false' "$RESULTS/e2e-agent-capability-btf.health.json" \
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability-btf --tenant-id default
+wait_contains "agent-health btf error" 'btf unavailable' "$RESULTS/e2e-agent-capability-btf.health.json" \
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-capability-btf --tenant-id default
 
-cp "$TMP/agent.log" "$RESULTS/e2e-agent-capability-bpffs.agent.log"
-cp "$TMP/manager.log" "$RESULTS/e2e-agent-capability-bpffs.manager.log"
+cp "$TMP/agent.log" "$RESULTS/e2e-agent-capability-btf.agent.log"
+cp "$TMP/manager.log" "$RESULTS/e2e-agent-capability-btf.manager.log"
 
-echo "[e2e-agent-capability-bpffs] ok"
+echo "[e2e-agent-capability-btf] ok"

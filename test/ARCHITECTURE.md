@@ -20,6 +20,7 @@ Suites may call harness scripts and tools. Harness scripts should not decide pro
 | Suite | SUT | Evaluation scope | Primary transport | Should not test |
 |---|---|---|---|---|
 | `local-agent` | `sysarmor-agent` + sensor + local spool/WAL + local ctl | `local` | `sysarmorctl --socket` | manager cloud signals, incidents, storage projection |
+| `agent-runtime` | `sysarmor-agent` daemon + fake/managed sensor + packaging/service lifecycle smoke paths | `local` or `full`, per case | agent daemon + `sysarmorctl manager ...` | cloud analytics quality, real Tetragon endpoint benchmark |
 | `manager-cloud` | manager ingest + analytics + store + manager ctl query | `manager` | `AgentDataPlaneService.AppendBatch` + `sysarmorctl manager ...` | local agent CPU/RSS benchmark |
 | `control-plane` | `AgentControlPlaneService.Connect`, mTLS, command/session contract | `control` | bidirectional gRPC | event collection effectiveness |
 | `reliability` | agent spool/WAL, outage, restart, backpressure | `local` or `full`, per case | agent + fake/real manager | detection rule quality |
@@ -77,7 +78,7 @@ Existing legacy result paths under `test/.results/` remain supported while suite
 1. New user-facing test entrypoints go under `test/suites/<suite>/`.
 2. Shared process-control logic goes under `test/harness/`.
 3. Reusable reporting, recorder, benchmark, and diagnostic utilities go under `test/tools/`.
-4. Existing `test/harness/e2e-*.sh` scripts are treated as legacy suite implementations until moved.
+4. Product E2E scripts live in `test/suites/<suite>/`; `test/harness/` should only contain shared glue and topology helpers.
 5. Do not add manager queries to `local-agent` benchmarks unless the suite explicitly changes to `full` scope.
 6. Do not add CPU/RSS benchmarking to manager-cloud functional tests unless the suite explicitly changes to `full` scope.
 

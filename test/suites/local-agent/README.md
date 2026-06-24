@@ -13,6 +13,15 @@ This suite compares endpoint collection and endpoint detection behavior under di
 
 Effectiveness reports are generated with `evaluation_scope=local`. Requirements from `expected.yaml` that need manager analytics, cloud signals, incidents, or graph evidence are carried through as structured `out_of_scope` checks instead of being counted as local failures.
 
+Entrypoints:
+
+```bash
+make -C test test-local-agent
+make -C test bench-local-agent
+make -C test e2e-agent-real-tetragon-owned-container
+make -C test e2e-agent-real-tetragon-owned-vm
+```
+
 Out of scope:
 
 - manager cloud signals;

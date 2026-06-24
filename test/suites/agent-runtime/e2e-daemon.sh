@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 RESULTS="$ROOT/test/.results"
 BIN="$ROOT/bin"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-agent-daemon.XXXXXX")"
@@ -9,6 +9,7 @@ PORT_BASE="${PORT_BASE:-$((20000 + RANDOM % 20000))}"
 MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
 GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+MGR_URL="http://127.0.0.1:$MANAGER_PORT"
 
 mkdir -p "$RESULTS" "$BIN"
 
@@ -36,6 +37,12 @@ agent:
 manager:
   address: 127.0.0.1:$GRPC_PORT
   transport: grpc
+
+control:
+  socket_path: $TMP/agent.sock
+
+content:
+  path: $TMP/content
 
 sensor:
   backend: fake
@@ -102,13 +109,36 @@ wait_contains() {
   done
 }
 
+wait_cmd_contains() {
+  local name="$1"
+  local needle="$2"
+  local out="$3"
+  shift 3
+  local deadline=$((SECONDS + 10))
+  until "$@" >"$out" 2>"$out.err" && grep -Fq "$needle" "$out"; do
+    if (( SECONDS >= deadline )); then
+      echo "[e2e-agent-daemon][ERROR] timeout waiting for $needle via $name" >&2
+      echo "--- last response ---" >&2
+      cat "$out" >&2 2>/dev/null || true
+      cat "$out.err" >&2 2>/dev/null || true
+      echo "--- agent log ---" >&2
+      cat "$TMP/agent.log" >&2 2>/dev/null || true
+      echo "--- manager log ---" >&2
+      cat "$TMP/manager.log" >&2 2>/dev/null || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+}
+
 wait_http "http://127.0.0.1:$MANAGER_PORT/healthz"
 
 "$BIN/sysarmor-agent" run --config "$TMP/agent.yaml" >"$TMP/agent.log" 2>&1 &
 AGENT_PID=$!
 
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-agent-daemon&tenant_id=default" '"agent_id":"e2e-agent-daemon"' "$RESULTS/e2e-agent-daemon.health.json"
-wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/metrics" '"events_ingested":1' "$RESULTS/e2e-agent-daemon.metrics.json"
+wait_cmd_contains "manager sessions" '"last_ack_cursor":"00000000000000000001"' "$RESULTS/e2e-agent-daemon.sessions.json" \
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager sessions list --tenant-id default --agent-id e2e-agent-daemon
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-daemon.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-daemon.manager.log"

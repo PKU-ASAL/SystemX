@@ -4,6 +4,6 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
-bash "$ROOT/harness/e2e-agent-apt-container.sh"
-bash "$ROOT/harness/e2e-agent-staged-container.sh"
-bash "$ROOT/harness/e2e-agent-benign-container.sh"
+bash "$HERE/e2e-scenario-apt-container.sh"
+bash "$HERE/e2e-scenario-staged-container.sh"
+bash "$HERE/e2e-scenario-benign-container.sh"

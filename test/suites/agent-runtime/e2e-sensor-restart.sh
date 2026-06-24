@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 RESULTS="$ROOT/test/.results"
 BIN="$ROOT/bin"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/sysarmor-agent-restart.XXXXXX")"
@@ -69,6 +69,12 @@ agent:
 manager:
   address: 127.0.0.1:$GRPC_PORT
   transport: grpc
+
+control:
+  socket_path: $TMP/agent.sock
+
+content:
+  path: $TMP/content
 
 sensor:
   backend: tetragon

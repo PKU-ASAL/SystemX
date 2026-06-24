@@ -14,8 +14,8 @@ echo "[e2e-agent-reliability-soak] outage drain with $OUTAGE_EVENTS queued batch
 SYSARMOR_OUTAGE_EVENTS="$OUTAGE_EVENTS" bash "$ROOT/test/suites/reliability/e2e-outage-soak.sh"
 
 echo "[e2e-agent-reliability-soak] sensor restart recovers after failure"
-bash "$ROOT/test/harness/e2e-agent-sensor-restart.sh"
-bash "$ROOT/test/harness/e2e-agent-sensor-recover.sh"
+bash "$ROOT/test/suites/agent-runtime/e2e-sensor-restart.sh"
+bash "$ROOT/test/suites/agent-runtime/e2e-sensor-recover.sh"
 
 echo "[e2e-agent-reliability-soak] graceful shutdown drains queued batch"
 bash "$ROOT/test/suites/reliability/e2e-shutdown.sh"

@@ -105,13 +105,24 @@ effectiveness-report:         ## 从 expected.yaml + 已有结果生成 scenario
 
 # ── Suite 入口 ───────────────────────────────────────
 
-.PHONY: test-local-agent bench-local-agent test-manager-cloud test-control-plane test-reliability test-storage diagnostics-vm
+.PHONY: test-local-agent bench-local-agent test-agent-runtime test-manager-cloud test-control-plane test-reliability test-storage diagnostics-vm
 
 test-local-agent:             ## suite: local agent VM real Tetragon endpoint smoke
 	bash suites/local-agent/e2e-real-tetragon-owned-vm.sh
 
 bench-local-agent:            ## suite: local agent policy x workload/scenario benchmark matrix
 	bash suites/local-agent/bench-matrix-vm.sh
+
+test-agent-runtime:           ## suite: local fake-sensor agent runtime health/capability/session smoke
+	bash suites/agent-runtime/e2e-daemon.sh
+	bash suites/agent-runtime/e2e-sensor-restart.sh
+	bash suites/agent-runtime/e2e-sensor-recover.sh
+	bash suites/agent-runtime/e2e-capability.sh
+	bash suites/agent-runtime/e2e-capability-btf.sh
+	bash suites/agent-runtime/e2e-capability-bpffs.sh
+	bash suites/agent-runtime/e2e-parse-health.sh
+	bash suites/agent-runtime/e2e-dropped-health.sh
+	bash suites/agent-runtime/e2e-session.sh
 
 test-manager-cloud:           ## suite: manager ingest/query/cloud signal/incident/policy/response
 	bash suites/manager-cloud/e2e-manager-idempotency.sh
@@ -156,13 +167,13 @@ e2e-agent-mtls:               ## v3: manager gRPC mTLS requires client cert and 
 	bash suites/control-plane/e2e-mtls.sh
 
 e2e-agent-daemon:             ## v2: 本机 fake sensor daemon → health/data-plane → manager 查询
-	bash harness/e2e-agent-daemon.sh
+	bash suites/agent-runtime/e2e-daemon.sh
 
 e2e-agent-sensor-restart:     ## v2: fake tetragon bundle → restart/degraded/tamper → manager 查询
-	bash harness/e2e-agent-sensor-restart.sh
+	bash suites/agent-runtime/e2e-sensor-restart.sh
 
 e2e-agent-sensor-recover:     ## v2: fake tetragon bundle → degrade once → recover to running/ok
-	bash harness/e2e-agent-sensor-recover.sh
+	bash suites/agent-runtime/e2e-sensor-recover.sh
 
 e2e-agent-spool:              ## v2: manager outage → durable spool → recovery drain
 	bash suites/reliability/e2e-spool.sh
@@ -177,19 +188,19 @@ e2e-agent-reliability-soak:   ## v2: longer reliability soak for outage/retry/re
 	bash suites/reliability/e2e-reliability-soak.sh
 
 e2e-agent-capability:         ## v2: startup capability/bundle failure → degraded health
-	bash harness/e2e-agent-capability.sh
+	bash suites/agent-runtime/e2e-capability.sh
 
 e2e-agent-capability-btf:     ## v2: required BTF capability failure → degraded health
-	bash harness/e2e-agent-capability-btf.sh
+	bash suites/agent-runtime/e2e-capability-btf.sh
 
 e2e-agent-capability-bpffs:   ## v2: required bpffs capability failure → degraded health
-	bash harness/e2e-agent-capability-bpffs.sh
+	bash suites/agent-runtime/e2e-capability-bpffs.sh
 
 e2e-agent-parse-health:       ## v2: sensor parse errors → degraded health/tamper signal
-	bash harness/e2e-agent-parse-health.sh
+	bash suites/agent-runtime/e2e-parse-health.sh
 
 e2e-agent-dropped-health:     ## v2: sensor dropped events → degraded health/tamper signal
-	bash harness/e2e-agent-dropped-health.sh
+	bash suites/agent-runtime/e2e-dropped-health.sh
 
 e2e-agent-backpressure:       ## v2: spool max_bytes backpressure/drop → degraded health
 	bash suites/reliability/e2e-backpressure.sh
@@ -336,7 +347,7 @@ e2e-postgres-rarity-projection: ## v3: Postgres backend projects rarity baseline
 e2e-postgres-all: e2e-store-status e2e-query-pagination e2e-postgres-store e2e-postgres-idempotency e2e-postgres-policy-persistence e2e-postgres-manager-api e2e-postgres-agent-projection e2e-postgres-ingest-projection e2e-postgres-event-query e2e-postgres-signal-query e2e-postgres-incident-query e2e-postgres-control-projection e2e-postgres-control-audit-projection e2e-postgres-response-projection e2e-postgres-response-write e2e-postgres-response-query e2e-postgres-policy-projection e2e-postgres-policy-write e2e-postgres-policy-query e2e-postgres-policy-get e2e-postgres-effective-policy-query e2e-postgres-incident-projection e2e-postgres-observability-projection e2e-postgres-agent-session-projection e2e-postgres-rarity-projection ## v3: current Postgres/store foundation gates
 
 e2e-agent-session: ## v3: data append updates agent session cursor state
-	bash harness/e2e-agent-session.sh
+	bash suites/agent-runtime/e2e-session.sh
 
 e2e-agent-control-plane-contract: ## v3: long-lived AgentControlPlaneService.Connect policy/resume/response/evidence contract
 	cd .. && go test ./internal/agent/daemon -run 'Test(ControlChannelKeepsLongLivedContract|AgentRuntimeControlChannelProcessesPendingResponse)'
@@ -344,40 +355,40 @@ e2e-agent-control-plane-contract: ## v3: long-lived AgentControlPlaneService.Con
 e2e-agent-control-plane-all: e2e-agent-session e2e-agent-control-plane-contract ## v3: current AgentControlPlaneService.Connect foundation gates
 
 e2e-agent-daemon-container:   ## v2: container topology fake daemon → manager 查询
-	bash harness/e2e-agent-daemon-container.sh
+	bash suites/agent-runtime/e2e-daemon-container.sh
 
 e2e-agent-managed-container:  ## v2: container topology managed fake Tetragon bundle → manager 查询
-	bash harness/e2e-agent-managed-container.sh
+	bash suites/agent-runtime/e2e-managed-container.sh
 
 e2e-agent-managed-recover-container: ## v2: container managed fake Tetragon degraded to recovered smoke
-	bash harness/e2e-agent-managed-recover-container.sh
+	bash suites/agent-runtime/e2e-managed-recover-container.sh
 
 e2e-agent-managed-restart-container: ## v2: container managed fake Tetragon restart/tamper smoke
-	bash harness/e2e-agent-managed-restart-container.sh
+	bash suites/agent-runtime/e2e-managed-restart-container.sh
 
 e2e-agent-systemd-vm:         ## v2: VM systemd agent daemon → health/restart smoke
-	bash harness/e2e-agent-systemd-vm.sh
+	bash suites/agent-runtime/e2e-systemd-vm.sh
 
 e2e-agent-managed-vm:         ## v2: VM systemd managed fake Tetragon bundle → manager 查询
-	bash harness/e2e-agent-managed-vm.sh
+	bash suites/agent-runtime/e2e-managed-vm.sh
 
 e2e-agent-managed-recover-vm: ## v2: VM systemd managed fake Tetragon degraded to recovered smoke
-	bash harness/e2e-agent-managed-recover-vm.sh
+	bash suites/agent-runtime/e2e-managed-recover-vm.sh
 
 e2e-agent-real-tetragon-owned-vm:   ## v3 endpoint: VM systemd agent-owned real Tetragon -> local ctl events/signals
-	bash harness/e2e-agent-real-tetragon-owned-vm.sh
+	bash suites/local-agent/e2e-real-tetragon-owned-vm.sh
 
 e2e-agent-real-tetragon-owned-container: ## v2: container agent-owned real Tetragon process → detection smoke
-	bash harness/e2e-agent-real-tetragon-owned-container.sh
+	bash suites/local-agent/e2e-real-tetragon-owned-container.sh
 
 e2e-agent-apt-container:      ## v2: container apt-fileless-c2 via agent-managed Tetra subscription
-	bash harness/e2e-agent-apt-container.sh
+	bash suites/manager-cloud/e2e-scenario-apt-container.sh
 
 e2e-agent-staged-container:   ## v2: container apt-staged-drop via agent-managed Tetra subscription
-	bash harness/e2e-agent-staged-container.sh
+	bash suites/manager-cloud/e2e-scenario-staged-container.sh
 
 e2e-agent-benign-container:   ## v2: container benign-ci-noise via agent-managed Tetra subscription
-	bash harness/e2e-agent-benign-container.sh
+	bash suites/manager-cloud/e2e-scenario-benign-container.sh
 
 e2e-agent-detection-container-all: e2e-agent-apt-container e2e-agent-staged-container e2e-agent-benign-container ## v2: all container managed detection smokes
 
