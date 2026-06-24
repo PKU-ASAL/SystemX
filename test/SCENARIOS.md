@@ -285,14 +285,17 @@ Current assertion layers:
 
 | Layer | What It Checks | Main Entrypoint |
 |---|---|---|
-| L1 Events | raw/normalized event visibility | `capture-*.sh`, `assert.py`, `assert-vm-local.sh` |
-| L2 Endpoint signals | local endpoint rules and event refs | `assert-vm-local.sh`, `e2e-agent-*.sh` |
-| L3 Cloud signals | manager/analytics rule output | `assert.py`, manager e2e scripts |
-| L4 Incidents | convergence, evidence, lifecycle state | `e2e-incident-*.sh`, graph/evidence e2e |
+| L1 Events | raw/normalized event visibility | `harness/capture-*.sh`, `tools/assertions/assert.py`, `tools/assertions/assert-vm-local.sh` |
+| L2 Endpoint signals | local endpoint rules and event refs | `tools/assertions/assert-vm-local.sh`, `suites/local-agent/`, `suites/agent-runtime/` |
+| L3 Cloud signals | manager/analytics rule output | `tools/assertions/assert.py`, `suites/manager-cloud/` |
+| L4 Incidents | convergence, evidence, lifecycle state | `suites/manager-cloud/e2e-incident*.sh`, graph/evidence e2e |
 | Negative | absence of terminal signals or incidents | scenario expected files |
 | Control | counterfactual behavior when a capability is disabled | `control_assertions` |
 
-`harness/assert.py` is the generic historical assertion entrypoint. Some newer and more reliable checks live in focused `harness/e2e-*.sh` scripts, especially for local VM agent paths, graph/evidence, response, agent session, and AgentControlPlaneService.Connect behavior.
+`tools/assertions/assert.py` is the generic historical assertion entrypoint.
+Focused product checks live in `test/suites/<suite>/`, especially for local VM
+agent paths, graph/evidence, response, agent session, and
+`AgentControlPlaneService.Connect` behavior.
 
 ## Event And Signal Output
 

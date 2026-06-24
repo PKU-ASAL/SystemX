@@ -12,7 +12,7 @@ try:
 except ImportError:
     sys.exit("need pyyaml: pip install pyyaml")
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 TEST_ROOT = os.path.join(ROOT, "test")
 VM_ENV = os.path.join(TEST_ROOT, "env", "vm")
 LOCAL_CTL = os.path.join(ROOT, "bin", "sysarmorctl")

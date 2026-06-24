@@ -16,7 +16,7 @@
 - `harness/` 提供怎么跑的通用能力,例如启动拓扑、等待服务、执行场景、采集日志和清理环境;
 - `tools/` 放 recorder、report、benchmark、diagnostic 这类可复用工具。
 
-当前迁移是渐进式的:新的高层入口在 `suites/`,旧的 `harness/e2e-*.sh` 仍保留作为 legacy suite implementation。
+当前稳定边界是:产品 E2E 入口在 `suites/`,可复用断言/报告/benchmark/fixture 在 `tools/`,通用执行胶水在 `harness/`。
 
 效果评估会显式写出 `evaluation_scope`。例如 `local-agent` benchmark 只给本地 event、endpoint signal 和本地 negative 断言计分;同一份 `expected.yaml` 里的 cloud signal、incident、graph evidence 会进入 `out_of_scope`,不被当作本地失败。
 
@@ -44,7 +44,7 @@ sysarmor-agent run --config ...
   -> normalize + endpoint detection engine
   -> durable spool WAL
   -> sysarmorctl --socket /var/run/sysarmor/agent.sock
-  -> harness/assert-vm-local.sh
+  -> tools/assertions/assert-vm-local.sh
 ```
 
 容器拓扑和部分平台兼容测试仍保留 manager/data-plane 路径:
@@ -54,7 +54,7 @@ sysarmor-agent
   -> durable spool + data batch dispatcher
   -> sysarmor-manager AgentDataPlaneService AppendBatch(DataBatch) / analytics / store
   -> sysarmorctl manager ... JSON query
-  -> harness/assert.py
+  -> tools/assertions/assert.py
 ```
 
 Data append has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-append` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.

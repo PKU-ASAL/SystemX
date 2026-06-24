@@ -44,29 +44,29 @@ capture:                      ## 跑场景 + tetragon 抓事件
 
 assert:                       ## 通过 sysarmorctl 执行契约断言
 ifeq ($(TOPO),vm)
-	bash harness/assert-vm-local.sh $(SCENARIO)
+	bash tools/assertions/assert-vm-local.sh $(SCENARIO)
 else
-	python3 harness/assert.py --scenario $(SCENARIO) \
+	python3 tools/assertions/assert.py --scenario $(SCENARIO) \
 		--topology $(TOPO) \
 		--expected scenarios/$(TOPO)/$(SCENARIO)/expected.yaml
 endif
 
 report:                       ## 汇总报告矩阵
-	python3 harness/report.py
+	python3 tools/reports/report.py
 
 # ── 性能 / Benchmark / 诊断 ──────────────────────────
 
 perf:                         ## 采集 getevents 性能基线
-	bash harness/perf-getevents.sh $(TOPO) $(DUR)
+	bash tools/benchmarks/perf-getevents.sh $(TOPO) $(DUR)
 
 perf-resource:                ## legacy: 短窗口 EDR 资源占用时间序列
-	bash harness/perf-resource.sh $(TOPO) $(DUR) $(SCENARIO)
+	bash tools/benchmarks/perf-resource.sh $(TOPO) $(DUR) $(SCENARIO)
 
 perf-resource-container:      ## 采集 container EDR idle 资源占用
-	bash harness/perf-resource.sh container $(DUR) edr-idle
+	bash tools/benchmarks/perf-resource.sh container $(DUR) edr-idle
 
 perf-resource-vm:             ## 采集 VM EDR idle 资源占用
-	bash harness/perf-resource.sh vm $(DUR) edr-idle
+	bash tools/benchmarks/perf-resource.sh vm $(DUR) edr-idle
 
 perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 container/VM EDR idle 资源占用
 

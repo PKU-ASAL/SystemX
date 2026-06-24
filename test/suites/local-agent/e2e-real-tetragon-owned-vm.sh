@@ -305,7 +305,7 @@ vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent heal
 if [[ "$CAPTURE_PERF" == "1" ]]; then
   vagrant ssh node-a -c "deadline=\$((SECONDS + 60)); until sudo test -f /tmp/sysarmor-perf-resource.done; do if (( SECONDS >= deadline )); then sudo cat /tmp/sysarmor-vm-perf-sampler.log 2>/dev/null || true; exit 1; fi; sleep 1; done; sudo cat /tmp/sysarmor-perf-resource.csv" \
     > "$RESULTS/perf-resource.vm.$SCENARIO.csv" 2>>"$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.err"
-  python3 "$HERE/local_perf_report.py" "$SCENARIO" \
+  python3 "$ROOT/tools/benchmarks/local_perf_report.py" "$SCENARIO" \
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json" \
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json" \
     "$RESULTS/perf-resource.vm.$SCENARIO.csv" \
@@ -336,7 +336,7 @@ if ! grep -Fq "\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-real-tetragon-own
   cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" >&2 2>/dev/null || true
   exit 1
 fi
-python3 "$ROOT/harness/local_signal_report.py" "$SCENARIO" \
+python3 "$ROOT/tools/reports/local_signal_report.py" "$SCENARIO" \
   "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" \
   "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" \
   "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-summary.json" \

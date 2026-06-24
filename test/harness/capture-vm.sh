@@ -172,7 +172,7 @@ if ! grep -Fq "\"scenario\":\"$S\"" "$RESULTS/vm.$S.events.ndjson"; then
   exit 1
 fi
 
-python3 "$HERE/local_signal_report.py" "$S" \
+python3 "$ROOT/tools/reports/local_signal_report.py" "$S" \
   "$RESULTS/vm.$S.events.ndjson" \
   "$RESULTS/vm.$S.signals.ndjson" \
   "$RESULTS/vm.$S.local.json" \

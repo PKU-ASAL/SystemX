@@ -159,7 +159,7 @@ if [[ "$STREAM_EVENTS" -le 0 ]]; then
 fi
 
 echo "[capture-container] 生成 Phase1 replay events 并上传 manager"
-python3 "$ROOT/harness/replay_scenario.py" --scenario "$S" --out "$RESULTS/$S.sensor.jsonl"
+python3 "$ROOT/tools/fixtures/replay_scenario.py" --scenario "$S" --out "$RESULTS/$S.sensor.jsonl"
 docker cp "$RESULTS/$S.sensor.jsonl" mgr:/tmp/$S.sensor.jsonl
 docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S" >/dev/null
 docker exec mgr /opt/sysarmor/bin/sysarmor-agent \

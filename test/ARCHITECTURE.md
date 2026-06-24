@@ -77,7 +77,7 @@ Existing legacy result paths under `test/.results/` remain supported while suite
 
 1. New user-facing test entrypoints go under `test/suites/<suite>/`.
 2. Shared process-control logic goes under `test/harness/`.
-3. Reusable reporting, recorder, benchmark, and diagnostic utilities go under `test/tools/`.
+3. Reusable assertion, reporting, fixture, recorder, benchmark, and diagnostic utilities go under `test/tools/`.
 4. Product E2E scripts live in `test/suites/<suite>/`; `test/harness/` should only contain shared glue and topology helpers.
 5. Do not add manager queries to `local-agent` benchmarks unless the suite explicitly changes to `full` scope.
 6. Do not add CPU/RSS benchmarking to manager-cloud functional tests unless the suite explicitly changes to `full` scope.
@@ -93,3 +93,12 @@ Shared shell helpers live under `test/harness/lib/`. They should stay product-ag
 - thin query helpers such as `sa_manager_ctl`.
 
 Suite scripts own business semantics and assertions. The harness library should not know whether a signal, incident, or policy result is correct.
+
+## Tool Directories
+
+- `test/tools/assertions/`: reusable expected.yaml and local capture assertion helpers.
+- `test/tools/benchmarks/`: benchmark runners, perf samplers, and benchmark report builders.
+- `test/tools/diagnostics/`: diagnostics capture such as perf, pprof, and strace.
+- `test/tools/fixtures/`: synthetic event or scenario fixture generators.
+- `test/tools/recorder/`: long-running recorder utilities.
+- `test/tools/reports/`: reusable result summarizers.
