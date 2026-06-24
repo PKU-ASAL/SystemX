@@ -13,6 +13,14 @@ This suite verifies manager-visible events, cloud signals, incidents, graph/evid
 
 Case scripts in this suite include manager idempotency, agent health query, policy control, response control, incident/graph evidence tests, and container scenario tests for manager-visible security semantics.
 
+Entrypoints:
+
+```bash
+make -C test test-manager-cloud
+make -C test capture TOPO=container SCENARIO=apt-fileless-c2
+make -C test e2e-agent-detection-container-all
+```
+
 Out of scope:
 
 - local agent CPU/RSS benchmark;

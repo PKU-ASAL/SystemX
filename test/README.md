@@ -13,7 +13,7 @@
 `suite` 和 `harness` 是两层概念:
 
 - `suites/` 定义测什么、SUT 是谁、评估边界是什么、哪些指标算分;
-- `harness/` 提供怎么跑的通用能力,例如启动拓扑、等待服务、执行场景、采集日志和清理环境;
+- `harness/` 提供怎么跑的通用能力,例如启动/停止拓扑、等待服务和清理环境;
 - `tools/` 放 recorder、report、benchmark、diagnostic 这类可复用工具。
 
 当前稳定边界是:产品 E2E 入口在 `suites/`,可复用断言/报告/benchmark/fixture 在 `tools/`,通用执行胶水在 `harness/`。
@@ -132,7 +132,9 @@ test/
 │
 ├── suites/                   stable high-level test suites
 │   ├── local-agent/          local endpoint collection/detection/cost
+│   │   └── capture-vm.sh
 │   ├── manager-cloud/        manager ingest/query/cloud signal/incident
+│   │   └── capture-container.sh
 │   ├── control-plane/        AgentControlPlaneService/mTLS/command contract
 │   ├── reliability/          spool/outage/restart/backpressure
 │   └── storage/              Postgres/store projection and query
@@ -162,19 +164,19 @@ test/
 ├── policies/                 collection/detection/resource/telemetry/response samples
 ├── content/                  IOC/context/rulepack content used by policies
 │
-├── harness/                  shared execution glue and legacy e2e scripts
+├── harness/                  shared execution glue
 │   ├── lib/                  shared wait/query/build/cleanup helpers
 │   ├── start-*.sh
 │   ├── stop-*.sh
-│   ├── capture-*.sh
-│   ├── assert.py
-│   ├── assert-vm-local.sh
-│   └── e2e-*.sh
+│   └── cleanup.sh
 │
 ├── tools/
+│   ├── assertions/           expected.yaml and local capture assertions
 │   ├── recorder/             long-running timeline sampler
 │   ├── benchmarks/           policy/workload matrix runners and reports
-│   └── diagnostics/          perf/pprof/strace helpers
+│   ├── diagnostics/          perf/pprof/strace helpers
+│   ├── fixtures/             synthetic event/scenario fixture generators
+│   └── reports/              result summarizers
 │
 └── .results/                 generated outputs
 ```
@@ -189,10 +191,13 @@ test/
 | `policies/` | 策略输入 | 采集、检测、资源、上行、响应策略样例 |
 | `content/` | 内容输入 | IOC feed、路径上下文、endpoint rulepack |
 | `suites/` | 高层测试入口 | 按 SUT/evaluation scope 组织 local-agent、manager-cloud、control-plane 等 |
-| `harness/` | 执行胶水 | 启停、采集、断言、清理;当前仍包含 legacy 专项 e2e |
+| `harness/` | 执行胶水 | 启停、等待、清理和通用 shell helper |
+| `tools/assertions/` | 断言工具 | `expected.yaml` 与本地 capture 结果断言 |
 | `tools/recorder/` | 性能采样 | CPU/RSS/EPS/drop/signal timeline |
 | `tools/benchmarks/` | 矩阵评估 | policy x workload x phase 汇总 |
 | `tools/diagnostics/` | 热点诊断 | perf/pprof/strace,用于解释成本 |
+| `tools/fixtures/` | 合成输入 | replay scenario/event fixture 生成 |
+| `tools/reports/` | 报告工具 | summary、matrix、本地 signal 关联报告 |
 | `.results/` | 输出 | event/signal ndjson、summary、matrix、日志 |
 
 ## Scenario Contracts

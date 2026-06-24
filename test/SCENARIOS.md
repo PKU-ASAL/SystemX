@@ -285,7 +285,7 @@ Current assertion layers:
 
 | Layer | What It Checks | Main Entrypoint |
 |---|---|---|
-| L1 Events | raw/normalized event visibility | `harness/capture-*.sh`, `tools/assertions/assert.py`, `tools/assertions/assert-vm-local.sh` |
+| L1 Events | raw/normalized event visibility | `suites/local-agent/capture-vm.sh`, `suites/manager-cloud/capture-container.sh`, `tools/assertions/assert.py`, `tools/assertions/assert-vm-local.sh` |
 | L2 Endpoint signals | local endpoint rules and event refs | `tools/assertions/assert-vm-local.sh`, `suites/local-agent/`, `suites/agent-runtime/` |
 | L3 Cloud signals | manager/analytics rule output | `tools/assertions/assert.py`, `suites/manager-cloud/` |
 | L4 Incidents | convergence, evidence, lifecycle state | `suites/manager-cloud/e2e-incident*.sh`, graph/evidence e2e |

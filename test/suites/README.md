@@ -1,6 +1,6 @@
 # Test Suites
 
-Suites are the stable test entrypoints. A suite defines the system under test, the evaluation scope, and the report contract. It may call legacy harness scripts while the test tree is being migrated.
+Suites are the stable test entrypoints. A suite defines the system under test, the evaluation scope, and the report contract.
 
 | Suite | Purpose | Main entrypoints |
 |---|---|---|

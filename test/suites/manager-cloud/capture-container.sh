@@ -6,7 +6,7 @@
 #   CAPTURE_MODE=managed | replay
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
 RESULTS="$ROOT/.results"
 S="${1:?用法: capture-container.sh <scenario> [duration_s]}"
 DUR="${2:-30}"

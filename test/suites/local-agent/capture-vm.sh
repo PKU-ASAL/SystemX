@@ -6,7 +6,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 ENVDIR="$(cd "$ROOT/env/vm" && pwd)"
 RESULTS="$ROOT/.results"

@@ -2,7 +2,7 @@
 # 用法: make <target>   (从 test/ 目录运行)
 #
 # suites/    = 高层测试套件入口,定义测什么和评估边界
-# harness/   = 通用执行胶水,负责启动/等待/采集/清理
+# harness/   = 通用执行胶水,负责启动/等待/清理
 # tools/     = recorder/report/benchmark/diagnostic 等可复用工具
 # scenarios/ = 安全语义契约
 # workloads/ = 压力输入,不做安全断言
@@ -40,7 +40,13 @@ status-vm:
 .PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
 
 capture:                      ## 跑场景 + tetragon 抓事件
-	bash harness/capture-$(TOPO).sh $(SCENARIO) $(DUR)
+ifeq ($(TOPO),vm)
+	bash suites/local-agent/capture-vm.sh $(SCENARIO) $(DUR)
+else ifeq ($(TOPO),container)
+	bash suites/manager-cloud/capture-container.sh $(SCENARIO) $(DUR)
+else
+	$(error unsupported TOPO=$(TOPO))
+endif
 
 assert:                       ## 通过 sysarmorctl 执行契约断言
 ifeq ($(TOPO),vm)

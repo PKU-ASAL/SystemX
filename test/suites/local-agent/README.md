@@ -18,6 +18,7 @@ Entrypoints:
 ```bash
 make -C test test-local-agent
 make -C test bench-local-agent
+make -C test capture TOPO=vm SCENARIO=apt-staged-drop
 make -C test e2e-agent-real-tetragon-owned-container
 make -C test e2e-agent-real-tetragon-owned-vm
 ```
