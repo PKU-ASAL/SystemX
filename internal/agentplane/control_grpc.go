@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -222,8 +223,12 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 			})
 		}
 		for _, cmd := range st.PendingControlCommands(tenantID, ctx.GetAgentId()) {
-			if frame := controlCommandFrame(cmd, ctx.GetScope()); frame != nil {
-				replies = append(replies, frame)
+			cmdFrame, err := controlCommandFrame(cmd, ctx.GetScope())
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "build control command frame: %v", err)
+			}
+			if cmdFrame != nil {
+				replies = append(replies, cmdFrame)
 				st.MarkControlCommandSent(cmd.CommandID, tenantID, ctx.GetAgentId(), time.Now().UTC())
 			}
 		}
@@ -377,7 +382,7 @@ func evidencePullbackControlFrame(req controlmodel.EvidencePullbackRequest) *con
 	}
 }
 
-func controlCommandFrame(cmd controlmodel.ControlCommand, scope *controlplanev1.Scope) *controlplanev1.ControlFrame {
+func controlCommandFrame(cmd controlmodel.ControlCommand, scope *controlplanev1.Scope) (*controlplanev1.ControlFrame, error) {
 	ctx := &controlplanev1.RequestContext{TenantId: cmd.TenantID, AgentId: cmd.AgentID, RequestId: cmd.CommandID, Scope: scope}
 	frame := &controlplanev1.ControlFrame{
 		Type:            cmd.Type,
@@ -394,7 +399,9 @@ func controlCommandFrame(cmd controlmodel.ControlCommand, scope *controlplanev1.
 			TenantID: cmd.TenantID,
 		}
 		if len(cmd.PayloadJSON) > 0 {
-			_ = json.Unmarshal(cmd.PayloadJSON, &policy)
+			if err := json.Unmarshal(cmd.PayloadJSON, &policy); err != nil {
+				return nil, fmt.Errorf("decode policy update payload for command %s: %w", cmd.CommandID, err)
+			}
 		}
 		frame.PolicyUpdate = currentPolicyFrame(policymodel.Normalize(policy))
 	case controlmodel.ControlCommandTypeContentUpdate:
@@ -404,9 +411,9 @@ func controlCommandFrame(cmd controlmodel.ControlCommand, scope *controlplanev1.
 			AllowUnsigned: true,
 		}
 	default:
-		return nil
+		return nil, nil
 	}
-	return frame
+	return frame, nil
 }
 
 func controlCommandAckFromControl(in *controlplanev1.ControlAck) controlmodel.ControlCommandAck {
