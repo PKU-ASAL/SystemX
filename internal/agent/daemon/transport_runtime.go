@@ -8,6 +8,7 @@ import (
 	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func (r *TransportRuntime) runControlFlow(ctx context.Context) {
@@ -215,14 +216,5 @@ func protoCloneApplyContentRequest(in *controlplanev1.ApplyContentRequest) *cont
 	if in == nil {
 		return &controlplanev1.ApplyContentRequest{}
 	}
-	out := *in
-	if in.Context != nil {
-		ctx := *in.Context
-		if in.Context.Scope != nil {
-			scope := *in.Context.Scope
-			ctx.Scope = &scope
-		}
-		out.Context = &ctx
-	}
-	return &out
+	return proto.Clone(in).(*controlplanev1.ApplyContentRequest)
 }
