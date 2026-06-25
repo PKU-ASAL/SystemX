@@ -5,14 +5,14 @@ DURATION="${DURATION:-30}"
 REPEAT="${REPEAT:-1}"
 COUNT="${COUNT:-60}"
 
-root=/tmp/sysarmor-benign-business
+root=/tmp/sysarmor-business-normal
 mkdir -p "$root/src" "$root/out" "$root/cache"
 
 start_ts="$(date +%s)"
 iter=0
 while :; do
   iter=$((iter + 1))
-  echo "[workload] benign-business iteration=$iter count=$COUNT duration=$DURATION"
+  echo "[workload] business-normal iteration=$iter count=$COUNT duration=$DURATION"
   for n in $(seq 1 "$COUNT"); do
     printf "build-input-%s-%s\n" "$iter" "$n" > "$root/src/input-$n.txt"
     cp "$root/src/input-$n.txt" "$root/cache/cache-$n.txt"

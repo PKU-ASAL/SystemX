@@ -9,12 +9,9 @@
 
 | workload | 目的 |
 |---|---|
-| `exec-storm` | 放大 process exec/fork/exit 路径 |
-| `file-write-storm` | 放大 payload/persistence file write/chmod 路径 |
-| `file-read-storm` | 放大 credential/secret read 路径 |
-| `network-connect-storm` | 放大 socket connect 路径 |
-| `mixed-edr-storm` | 混合 exec/file/network,用于默认 sensor benchmark |
-| `benign-business` | 模拟正常构建/文件/校验业务,评估 EDR 对非攻击业务的基础干扰 |
+| `business-normal` | 正常构建/缓存/校验业务,评估业务干扰和误报 |
+| `host-activity-heavy` | 主机进程和普通文件活动很重,覆盖 exec/read/write |
+| `edr-activity-heavy` | EDR 关注面活动很重,覆盖 exec/file/local-network |
 
 每个 workload 目标结构:
 

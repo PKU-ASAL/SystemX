@@ -1,4 +1,4 @@
-name: benign-business
+name: edr-activity-heavy
 kind: benign
 window: workload
 labels:
@@ -6,4 +6,3 @@ labels:
   signals: []
 policy:
   terminal_signals_allowed: 0
-

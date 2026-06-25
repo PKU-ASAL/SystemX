@@ -1,9 +1,0 @@
-name: network-connect-storm
-kind: benign
-window: workload
-labels:
-  events: []
-  signals: []
-policy:
-  terminal_signals_allowed: 0
-
