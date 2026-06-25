@@ -498,7 +498,7 @@ func TestQueryLocalAgentWatchFilterArgs(t *testing.T) {
 		"--since", "2026-06-19T01:02:03Z",
 		"--until", "2026-06-19T02:02:03Z",
 		"--label", "benchmark_run=run-a",
-		"--label", "workload=benign-business",
+		"--label", "workload=business-normal",
 	}); err != nil {
 		t.Fatalf("event watch error = %v", err)
 	}
@@ -508,7 +508,7 @@ func TestQueryLocalAgentWatchFilterArgs(t *testing.T) {
 	if fake.watchEventReq.GetFilter().GetSinceObservedAt() != "2026-06-19T01:02:03Z" || fake.watchEventReq.GetFilter().GetUntilObservedAt() != "2026-06-19T02:02:03Z" {
 		t.Fatalf("event filter time window = %+v", fake.watchEventReq.GetFilter())
 	}
-	if fake.watchEventReq.GetFilter().GetLabels()["benchmark_run"] != "run-a" || fake.watchEventReq.GetFilter().GetLabels()["workload"] != "benign-business" {
+	if fake.watchEventReq.GetFilter().GetLabels()["benchmark_run"] != "run-a" || fake.watchEventReq.GetFilter().GetLabels()["workload"] != "business-normal" {
 		t.Fatalf("event filter labels = %+v", fake.watchEventReq.GetFilter().GetLabels())
 	}
 

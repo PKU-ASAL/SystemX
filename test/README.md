@@ -229,12 +229,9 @@ DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
 
 | Workload | 用途 |
 |---|---|
-| `exec-storm` | 放大 process exec/fork/exit 路径 |
-| `file-read-storm` | 放大普通 file read 路径 |
-| `file-write-storm` | 放大普通 artifact write/copy 路径 |
-| `network-connect-storm` | 放大 socket connect 路径 |
-| `mixed-edr-storm` | 混合普通 exec/file/local-network,默认 sensor benchmark |
-| `benign-business` | 正常构建/校验/文件活动,评估业务干扰和误报 |
+| `business-normal` | 正常构建/缓存/校验业务,评估业务干扰和误报 |
+| `host-activity-heavy` | 主机进程和普通文件活动很重,覆盖 exec/read/write |
+| `edr-activity-heavy` | EDR 关注面活动很重,覆盖 exec/file/local-network |
 
 ## Policy And Content Inputs
 
@@ -364,30 +361,38 @@ make -C test perf-resource TOPO=vm SCENARIO=idle DUR=30
 
 # VM recorder: wrap any manual workload or E2E
 make -C test recorder-vm-start RUN_ID=my-run
-make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=mixed-edr-storm
+make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=edr-activity-heavy
 make -C test recorder-vm-stop RUN_ID=my-run
 make -C test recorder-vm-report RUN_ID=my-run
 
 # VM collection policy benchmark
-make -C test bench-collection-vm DIAG_SCENARIO=benign-business
-make -C test bench-collection-vm DIAG_SCENARIO=mixed-edr-storm
+make -C test bench-collection-vm DIAG_SCENARIO=business-normal
+make -C test bench-collection-vm DIAG_SCENARIO=edr-activity-heavy
 make -C test bench-collection-vm DIAG_SCENARIO=apt-fileless-c2
 
 # Fixed policy x workload/scenario benchmark matrix, then effectiveness report
 make -C test bench-matrix-vm
 
+# Full policy x workload x scenario matrix
+make -C test bench-matrix-vm
+
+# Optional baseline-only modes
+make -C test bench-matrix-vm MATRIX_MODE=workload
+make -C test bench-matrix-vm MATRIX_MODE=scenario
+make -C test bench-matrix-vm MATRIX_MODE=all
+
 # Build an effectiveness report from existing scenario/benchmark outputs
 make -C test effectiveness-report TOPO=vm RUN_ID=manual
 
 # EDR lifecycle benchmark
-make -C test bench-edr-lifecycle-vm DIAG_SCENARIO=mixed-edr-storm
+make -C test bench-edr-lifecycle-vm DIAG_SCENARIO=edr-activity-heavy
 
 # Run a functional E2E with recorder around it
 make -C test bench-e2e-vm SCENARIO=apt-fileless-c2
 
 # Tetragon hotspot diagnostic, not an official resource conclusion
 make -C test diag-tetragon-vm
-make -C test diag-tetragon-vm-workload DIAG_SCENARIO=mixed-edr-storm
+make -C test diag-tetragon-vm-workload DIAG_SCENARIO=edr-activity-heavy
 
 # Aggregate simple reports and clean generated outputs
 make -C test report
@@ -420,7 +425,7 @@ Useful variables:
 | `TOPO` | `container` | `container` or `vm`. |
 | `SCENARIO` | `apt-fileless-c2` | Scenario name. Common values: `apt-fileless-c2`, `apt-staged-drop`, `benign-ci-noise`. |
 | `DUR` | `30` | Capture or sampling duration in seconds. |
-| `DIAG_SCENARIO` | `mixed-edr-storm` | Workload/scenario used by diagnostic and benchmark targets. |
+| `DIAG_SCENARIO` | `edr-activity-heavy` | Workload/scenario used by diagnostic and benchmark targets. |
 | `EVALUATION_SCOPE` | `full` | Scope used by `effectiveness-report`. |
 | `RUN_ID` | `manual` where applicable | Result directory id for recorder/effectiveness outputs. |
 
@@ -617,17 +622,28 @@ collection-incident-deep
 collection-debug-wide
 
 workloads:
-benign-business
-exec-storm
-file-read-storm
-file-write-storm
-network-connect-storm
-mixed-edr-storm
+business-normal
+host-activity-heavy
+edr-activity-heavy
 
 scenarios:
 apt-fileless-c2
 apt-staged-drop
 benign-ci-noise
+```
+
+默认 `MATRIX_MODE=cross`,直接跑完整三维组合:
+
+```text
+policy x workload x scenario
+```
+
+可选模式:
+
+```text
+MATRIX_MODE=workload  # only policy x workload
+MATRIX_MODE=scenario  # only policy x scenario
+MATRIX_MODE=all       # workload-only + scenario-only + cross
 ```
 
 它会输出:

@@ -44,12 +44,9 @@ It should assert whether expected events, signals, incidents, evidence, and resp
 
 Workload is a pressure source. Examples:
 
-- `exec-storm`;
-- `file-write-storm`;
-- `file-read-storm`;
-- `network-connect-storm`;
-- `mixed-edr-storm`;
-- `benign-business`.
+- `business-normal`;
+- `host-activity-heavy`;
+- `edr-activity-heavy`.
 
 It should be repeatable, configurable, and not depend on unstable external downloads.
 
@@ -80,7 +77,7 @@ The VM recorder is the current performance baseline tool:
 
 ```bash
 make -C test recorder-vm-start RUN_ID=my-run
-make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=mixed-edr-storm
+make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=edr-activity-heavy
 make -C test recorder-vm-stop RUN_ID=my-run
 make -C test recorder-vm-report RUN_ID=my-run
 ```
@@ -114,7 +111,7 @@ Benchmark composes policy, sensor, and workload:
 
 ```bash
 make -C test bench-collection-vm \
-  DIAG_SCENARIO=benign-business \
+  DIAG_SCENARIO=business-normal \
   POLICIES='test/policies/collection-minimal-high-signal.json'
 ```
 
@@ -190,7 +187,7 @@ Use these based on change type:
 ```bash
 go test ./internal/agent/... ./internal/endpoint/... ./cmd/sysarmorctl
 make -C test e2e-agent-real-tetragon-owned-vm
-make -C test bench-collection-vm DIAG_SCENARIO=benign-business
+make -C test bench-collection-vm DIAG_SCENARIO=business-normal
 make -C test bench-collection-vm DIAG_SCENARIO=apt-fileless-c2
 ```
 

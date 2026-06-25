@@ -128,7 +128,7 @@ Important fields:
 ```text
 labels["case_type"] = "scenario"
 labels["scenario"] = "apt-staged-drop"
-labels["workload"] = "benign-business"
+labels["workload"] = "business-normal"
 ```
 
 ## Endpoint Detection Entry Point
