@@ -10,7 +10,7 @@
 ```text
 test/scenarios/<topology>/<scenario>/
 ├── attack.sh        scenario input, executed inside node-a
-├── expected.yaml    functional assertion contract for legacy/assertion tests
+├── expected.yaml    functional assertion contract
 └── labels.yaml      benchmark effectiveness ground truth labels
 ```
 
@@ -71,9 +71,9 @@ ioc-c2-port-feed.json
 rulepack-cep-endpoint.json
 ```
 
-### Legacy TracingPolicy Shape
+### Tetragon TracingPolicy Shape
 
-`test/env/resources/syscall-capture.yaml` is still useful for replay/debug/perf-compatible paths. It focuses on network connect and sensitive file read:
+`test/env/resources/syscall-capture.yaml` is useful for replay, diagnostics, and performance-compatible paths. It focuses on network connect and sensitive file read:
 
 ```yaml
 spec:

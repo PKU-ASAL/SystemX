@@ -45,7 +45,7 @@ Platform foundations:
 1. Tighten endpoint contracts.
    - Complete local control API symmetry beyond the current health, policy, content, event, signal, and explain paths.
    - Make Event/Signal ring buffer and cursor behavior explicit.
-   - Keep scenario as legacy/demo only; prefer labels.
+   - Keep workload/scenario as test labels, not product contract fields.
 
 2. Improve collection compiler.
    - Expand Tetragon selector coverage.
@@ -79,7 +79,7 @@ Platform foundations:
    - Provide durable append, ack/resume, downlink, hot state, and identity.
    - Treat mTLS certificate URI SAN as the production agent principal and bind it to tenant_id/agent_id in the manager registry.
    - Keep local Unix socket sysarmorctl as a local operator/debug boundary, not a second production data plane.
-   - Do not keep legacy compatibility interfaces once the new boundary is ready.
+   - Remove old interfaces once the new boundary is ready.
 
 3. Kafka ingest.
    - DataAck after durable append.

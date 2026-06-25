@@ -96,7 +96,6 @@ CREATE TABLE IF NOT EXISTS operator_role_bindings (
 CREATE TABLE IF NOT EXISTS events (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   event_id TEXT NOT NULL,
-  scenario TEXT NOT NULL DEFAULT '',
   event_behavior TEXT NOT NULL DEFAULT '',
   agent_id TEXT NOT NULL DEFAULT '',
   host_id TEXT NOT NULL DEFAULT '',
@@ -109,7 +108,6 @@ CREATE TABLE IF NOT EXISTS signals (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   signal_key TEXT NOT NULL,
   signal_id TEXT NOT NULL DEFAULT '',
-  scenario TEXT NOT NULL DEFAULT '',
   layer TEXT NOT NULL DEFAULT '',
   signal_name TEXT NOT NULL DEFAULT '',
   lineage_id TEXT NOT NULL DEFAULT '',
@@ -123,7 +121,6 @@ CREATE TABLE IF NOT EXISTS incidents (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   incident_key TEXT NOT NULL,
   incident_id TEXT NOT NULL,
-  scenario TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'open',
   severity INTEGER NOT NULL DEFAULT 0,
   observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -166,7 +163,6 @@ CREATE TABLE IF NOT EXISTS evidence_pullbacks (
   request_id TEXT NOT NULL,
   agent_id TEXT NOT NULL DEFAULT '',
   incident_id TEXT NOT NULL DEFAULT '',
-  scenario TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -241,11 +237,12 @@ CREATE INDEX IF NOT EXISTS idx_policy_assignments_scope ON policy_assignments (t
 CREATE INDEX IF NOT EXISTS idx_policy_audit_policy ON policy_audit (tenant_id, policy_id);
 CREATE INDEX IF NOT EXISTS idx_policy_audit_actor ON policy_audit (tenant_id, actor);
 CREATE INDEX IF NOT EXISTS idx_operator_role_bindings_actor ON operator_role_bindings (tenant_id, actor);
-CREATE INDEX IF NOT EXISTS idx_events_scenario ON events (tenant_id, scenario);
+CREATE INDEX IF NOT EXISTS idx_events_labels ON events USING GIN ((data->'labels'));
 CREATE INDEX IF NOT EXISTS idx_events_observed_at ON events (observed_at);
-CREATE INDEX IF NOT EXISTS idx_signals_scenario_layer ON signals (tenant_id, scenario, layer);
+CREATE INDEX IF NOT EXISTS idx_signals_labels_layer ON signals USING GIN ((data->'labels'));
+CREATE INDEX IF NOT EXISTS idx_signals_layer ON signals (tenant_id, layer);
 CREATE INDEX IF NOT EXISTS idx_signals_lineage ON signals (tenant_id, lineage_id);
-CREATE INDEX IF NOT EXISTS idx_incidents_scenario ON incidents (tenant_id, scenario);
+CREATE INDEX IF NOT EXISTS idx_incidents_labels ON incidents USING GIN ((data->'labels'));
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_evidence_incident ON evidence (tenant_id, incident_id);
 CREATE INDEX IF NOT EXISTS idx_response_audit_agent ON response_audit (tenant_id, agent_id);

@@ -536,16 +536,15 @@ func projectEvents(ctx context.Context, db *sql.DB, eventRows []json.RawMessage)
 			continue
 		}
 		_, err := db.ExecContext(ctx, `
-INSERT INTO events (tenant_id, event_id, scenario, event_behavior, agent_id, host_id, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO events (tenant_id, event_id, event_behavior, agent_id, host_id, data)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (tenant_id, event_id) DO UPDATE SET
-  scenario = EXCLUDED.scenario,
   event_behavior = EXCLUDED.event_behavior,
   agent_id = EXCLUDED.agent_id,
   host_id = EXCLUDED.host_id,
   observed_at = now(),
   data = EXCLUDED.data
-`, "default", event.GetId(), "", event.GetBehavior(), event.GetAgentId(), event.GetHostId(), []byte(raw))
+`, "default", event.GetId(), event.GetBehavior(), event.GetAgentId(), event.GetHostId(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project event: %w", err)
 		}
@@ -564,18 +563,17 @@ func projectSignals(ctx context.Context, db *sql.DB, signalRows []json.RawMessag
 			continue
 		}
 		_, err := db.ExecContext(ctx, `
-INSERT INTO signals (tenant_id, signal_key, signal_id, scenario, layer, signal_name, lineage_id, terminal, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO signals (tenant_id, signal_key, signal_id, layer, signal_name, lineage_id, terminal, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (tenant_id, signal_key) DO UPDATE SET
   signal_id = EXCLUDED.signal_id,
-  scenario = EXCLUDED.scenario,
   layer = EXCLUDED.layer,
   signal_name = EXCLUDED.signal_name,
   lineage_id = EXCLUDED.lineage_id,
   terminal = EXCLUDED.terminal,
   observed_at = now(),
   data = EXCLUDED.data
-`, "default", signalKey, signal.GetId(), "", store.SignalLayerName(signal.GetWhere()), signal.GetName(), signal.GetLineageId(), signal.GetTerminal(), []byte(raw))
+`, "default", signalKey, signal.GetId(), store.SignalLayerName(signal.GetWhere()), signal.GetName(), signal.GetLineageId(), signal.GetTerminal(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project signal: %w", err)
 		}
@@ -718,28 +716,26 @@ func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []contr
 		updatedAt := req.UpdatedAt
 		if createdAt.IsZero() || updatedAt.IsZero() {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, scenario, status, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, status, data)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (tenant_id, request_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
   incident_id = EXCLUDED.incident_id,
-  scenario = EXCLUDED.scenario,
   status = EXCLUDED.status,
   updated_at = now(),
   data = EXCLUDED.data
-`, tenantID, req.RequestID, req.AgentID, req.IncidentID, "", status, data)
+`, tenantID, req.RequestID, req.AgentID, req.IncidentID, status, data)
 		} else {
 			_, err = db.ExecContext(ctx, `
-INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, scenario, status, created_at, updated_at, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, status, created_at, updated_at, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (tenant_id, request_id) DO UPDATE SET
   agent_id = EXCLUDED.agent_id,
   incident_id = EXCLUDED.incident_id,
-  scenario = EXCLUDED.scenario,
   status = EXCLUDED.status,
   updated_at = EXCLUDED.updated_at,
   data = EXCLUDED.data
-`, tenantID, req.RequestID, req.AgentID, req.IncidentID, "", status, createdAt, updatedAt, data)
+`, tenantID, req.RequestID, req.AgentID, req.IncidentID, status, createdAt, updatedAt, data)
 		}
 		if err != nil {
 			return fmt.Errorf("project evidence pullback: %w", err)
@@ -1087,16 +1083,15 @@ func projectIncidents(ctx context.Context, db *sql.DB, incidentRows []json.RawMe
 			status = "open"
 		}
 		_, err := db.ExecContext(ctx, `
-INSERT INTO incidents (tenant_id, incident_key, incident_id, scenario, status, severity, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO incidents (tenant_id, incident_key, incident_id, status, severity, data)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (tenant_id, incident_key) DO UPDATE SET
   incident_id = EXCLUDED.incident_id,
-  scenario = EXCLUDED.scenario,
   status = EXCLUDED.status,
   severity = EXCLUDED.severity,
   updated_at = now(),
   data = EXCLUDED.data
-`, "default", incidentKey, inc.GetId(), "", status, inc.GetSeverity(), []byte(raw))
+`, "default", incidentKey, inc.GetId(), status, inc.GetSeverity(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project incident: %w", err)
 		}

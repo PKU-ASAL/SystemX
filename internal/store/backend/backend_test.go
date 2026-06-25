@@ -1507,24 +1507,24 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			fakeState.snapshot = []byte(data)
 		}
 	}
-	if strings.Contains(s.query, "INSERT INTO events") && len(args) >= 7 {
-		switch data := args[6].Value.(type) {
+	if strings.Contains(s.query, "INSERT INTO events") && len(args) >= 6 {
+		switch data := args[5].Value.(type) {
 		case []byte:
 			upsertFakeEventRow(append([]byte(nil), data...))
 		case string:
 			upsertFakeEventRow([]byte(data))
 		}
 	}
-	if strings.Contains(s.query, "INSERT INTO signals") && len(args) >= 9 {
-		switch data := args[8].Value.(type) {
+	if strings.Contains(s.query, "INSERT INTO signals") && len(args) >= 8 {
+		switch data := args[7].Value.(type) {
 		case []byte:
 			upsertFakeSignalRow(append([]byte(nil), data...))
 		case string:
 			upsertFakeSignalRow([]byte(data))
 		}
 	}
-	if strings.Contains(s.query, "INSERT INTO incidents") && len(args) >= 7 {
-		switch data := args[6].Value.(type) {
+	if strings.Contains(s.query, "INSERT INTO incidents") && len(args) >= 6 {
+		switch data := args[5].Value.(type) {
 		case []byte:
 			fakeState.incidentRows = append(fakeState.incidentRows, append([]byte(nil), data...))
 		case string:

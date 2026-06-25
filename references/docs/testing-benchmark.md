@@ -194,4 +194,4 @@ make -C test bench-collection-vm DIAG_SCENARIO=benign-business
 make -C test bench-collection-vm DIAG_SCENARIO=apt-fileless-c2
 ```
 
-Cloud/platform paths still have broader legacy gates, but endpoint refinement work should prefer the local agent + VM real sensor path.
+Cloud/platform paths have broader functional gates, but endpoint refinement work should prefer the local agent + VM real sensor path.

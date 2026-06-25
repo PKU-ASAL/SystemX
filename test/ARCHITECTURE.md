@@ -69,7 +69,7 @@ test/.results/<suite>/<run-id>/
 - start/end time;
 - relevant config or policy hashes.
 
-Existing legacy result paths under `test/.results/` remain supported while suites are migrated.
+New suite outputs must use the structured layout above.
 
 ## Migration Rules
 
