@@ -11,8 +11,12 @@ OUT_DIR="$RESULTS/bench-collection-vm/$RUN_ID"
 AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/var/run/sysarmor/agent.sock}"
 AGENT_ID="${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}"
 TENANT_ID="${SYSARMOR_BENCH_TENANT_ID:-default}"
-WORKLOAD="${DIAG_SCENARIO:-${SYSARMOR_BENCH_WORKLOAD:-mixed-edr-storm}}"
-CASE_TYPE="${SYSARMOR_BENCH_CASE_TYPE:-workload}"
+if [[ -v SYSARMOR_BENCH_WORKLOAD ]]; then
+  WORKLOAD="$SYSARMOR_BENCH_WORKLOAD"
+else
+  WORKLOAD="${DIAG_SCENARIO:-edr-activity-heavy}"
+fi
+SCENARIO="${SYSARMOR_BENCH_SCENARIO:-}"
 POLICIES_RAW="${POLICIES:-test/policies/collection-minimal-high-signal.json test/policies/collection-edr-balanced.json test/policies/collection-incident-deep.json test/policies/collection-debug-wide.json}"
 CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-test/content}"
 DETECTION_POLICY="${SYSARMOR_BENCH_DETECTION_POLICY:-test/policies/detection-cep-endpoint.json}"
@@ -21,6 +25,7 @@ BASELINE_SECONDS="${SYSARMOR_BENCH_BASELINE_SECONDS:-5}"
 SETTLE_SECONDS="${SYSARMOR_BENCH_SETTLE_SECONDS:-8}"
 STEADY_SECONDS="${SYSARMOR_BENCH_STEADY_SECONDS:-8}"
 WORKLOAD_SECONDS="${SYSARMOR_BENCH_WORKLOAD_SECONDS:-12}"
+WORKLOAD_WARMUP_SECONDS="${SYSARMOR_BENCH_WORKLOAD_WARMUP_SECONDS:-2}"
 WORKLOAD_REPEAT="${SYSARMOR_BENCH_WORKLOAD_REPEAT:-1}"
 WORKLOAD_C2="${SYSARMOR_DIAG_WORKLOAD_C2:-10.66.0.99}"
 
@@ -43,60 +48,61 @@ wait_agent_socket() {
 set_agent_labels() {
   local bench_run="$1"
   local policy_name="$2"
-  local case_name="$3"
-  local case_type="$4"
+  local workload_name="${3:-}"
+  local scenario_name="${4:-}"
   local labels_json
+  local labels_b64
   labels_json="$(python3 -c '
 import json,sys
-bench_run, case_name, policy_name, case_type = sys.argv[1:5]
-labels = {"benchmark_run": bench_run, "case_type": case_type, "policy_profile": policy_name}
-if case_type == "scenario":
-    labels["scenario"] = case_name
-else:
-    labels["workload"] = case_name
+bench_run, workload_name, policy_name, scenario_name = sys.argv[1:5]
+labels = {"benchmark_run": bench_run, "policy_profile": policy_name}
+if workload_name:
+    labels["workload"] = workload_name
+if scenario_name:
+    labels["scenario"] = scenario_name
 print(json.dumps(labels))
-' "$bench_run" "$case_name" "$policy_name" "$case_type")"
-  vagrant ssh node-a -c "sudo SYSARMOR_LABELS_JSON='$labels_json' python3 -c '
+' "$bench_run" "$workload_name" "$policy_name" "$scenario_name")"
+  labels_b64="$(printf '%s' "$labels_json" | base64 -w0)"
+  vagrant ssh node-a -c "sudo SYSARMOR_LABELS_B64='$labels_b64' python3 - <<'PY'
+import base64
 import json
 import os
 from pathlib import Path
-p = Path(\"/etc/sysarmor/agent.yaml\")
+p = Path('/etc/sysarmor/agent.yaml')
 lines = p.read_text().splitlines()
-labels = json.loads(os.environ[\"SYSARMOR_LABELS_JSON\"])
+labels = json.loads(base64.b64decode(os.environ['SYSARMOR_LABELS_B64']).decode())
 out = []
 managed_prefixes = (
-    "scenario:",
-    "label.benchmark_run:",
-    "label.case_type:",
-    "label.workload:",
-    "label.scenario:",
-    "label.policy_profile:",
+    'scenario:',
+    'label.benchmark_run:',
+    'label.workload:',
+    'label.scenario:',
+    'label.policy_profile:',
 )
 for line in lines:
     stripped = line.strip()
     if stripped.startswith(managed_prefixes):
         continue
     out.append(line)
-next_section = next((i for i, line in enumerate(out) if line and not line.startswith(\" \") and line.strip().endswith(\":\") and line.strip() != \"agent:\"), len(out))
+next_section = next((i for i, line in enumerate(out) if line and not line.startswith(' ') and line.strip().endswith(':') and line.strip() != 'agent:'), len(out))
 try:
-    agent_idx = next(i for i, line in enumerate(out) if line.strip() == \"agent:\")
+    agent_idx = next(i for i, line in enumerate(out) if line.strip() == 'agent:')
 except StopIteration:
-    out.insert(0, \"agent:\")
+    out.insert(0, 'agent:')
     agent_idx = 0
     next_section = 1
 insert = [
-    \"  label.benchmark_run: \" + labels[\"benchmark_run\"],
-    \"  label.case_type: \" + labels[\"case_type\"],
-    \"  label.policy_profile: \" + labels[\"policy_profile\"],
+    '  label.benchmark_run: ' + labels['benchmark_run'],
+    '  label.policy_profile: ' + labels['policy_profile'],
 ]
-if \"workload\" in labels:
-    insert.append(\"  label.workload: \" + labels[\"workload\"])
-if \"scenario\" in labels:
-    insert.append(\"  label.scenario: \" + labels[\"scenario\"])
-next_section = next((i for i in range(agent_idx + 1, len(out)) if out[i] and not out[i].startswith(\" \") and out[i].strip().endswith(\":\")), len(out))
+if 'workload' in labels:
+    insert.append('  label.workload: ' + labels['workload'])
+if 'scenario' in labels:
+    insert.append('  label.scenario: ' + labels['scenario'])
+next_section = next((i for i in range(agent_idx + 1, len(out)) if out[i] and not out[i].startswith(' ') and out[i].strip().endswith(':')), len(out))
 out[next_section:next_section] = insert
-p.write_text(\"\\n\".join(out) + \"\\n\")
-'
+p.write_text('\n'.join(out) + '\n')
+PY
 sudo systemctl restart sysarmor-agent" >/dev/null
   wait_agent_socket
 }
@@ -128,17 +134,66 @@ mark() {
 
 run_workload() {
   local policy_out="$1"
+  local workload_name="${2:-$WORKLOAD}"
   cd "$ENVDIR"
-  if [[ -f "$ROOT/workloads/vm/$WORKLOAD/run.sh" ]]; then
-    vagrant upload "$ROOT/workloads/vm/$WORKLOAD/run.sh" /tmp/sysarmor-workload-run.sh node-a >/dev/null
+  if [[ -f "$ROOT/workloads/vm/$workload_name/run.sh" ]]; then
+    vagrant upload "$ROOT/workloads/vm/$workload_name/run.sh" /tmp/sysarmor-workload-run.sh node-a >/dev/null
     vagrant ssh node-a -c "sudo bash -c 'DURATION=$WORKLOAD_SECONDS REPEAT=$WORKLOAD_REPEAT C2=$WORKLOAD_C2 bash /tmp/sysarmor-workload-run.sh'" \
       > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
-  elif [[ -f "$ROOT/scenarios/vm/$WORKLOAD/attack.sh" ]]; then
-    vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /vagrant/test/scenarios/vm/$WORKLOAD/attack.sh'" \
+  elif [[ -f "$ROOT/scenarios/vm/$workload_name/attack.sh" ]]; then
+    vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /vagrant/test/scenarios/vm/$workload_name/attack.sh'" \
       > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
   else
-    echo "[bench-collection-vm][ERROR] workload not found: $WORKLOAD" >&2
+    echo "[bench-collection-vm][ERROR] workload not found: $workload_name" >&2
     exit 1
+  fi
+}
+
+start_workload_background() {
+  local policy_out="$1"
+  local workload_name="$2"
+  WORKLOAD_PID=""
+  cd "$ENVDIR"
+  if [[ ! -f "$ROOT/workloads/vm/$workload_name/run.sh" ]]; then
+    echo "[bench-collection-vm][ERROR] workload not found: $workload_name" >&2
+    exit 1
+  fi
+  vagrant upload "$ROOT/workloads/vm/$workload_name/run.sh" /tmp/sysarmor-workload-run.sh node-a >/dev/null
+  vagrant ssh node-a -c "sudo bash -c 'DURATION=$WORKLOAD_SECONDS REPEAT=0 C2=$WORKLOAD_C2 bash /tmp/sysarmor-workload-run.sh'" \
+    > "$policy_out/workload.out" 2>"$policy_out/workload.err" &
+  WORKLOAD_PID=$!
+}
+
+run_scenario() {
+  local policy_out="$1"
+  local scenario_name="$2"
+  cd "$ENVDIR"
+  if [[ ! -f "$ROOT/scenarios/vm/$scenario_name/attack.sh" ]]; then
+    echo "[bench-collection-vm][ERROR] scenario not found: $scenario_name" >&2
+    exit 1
+  fi
+  vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /vagrant/test/scenarios/vm/$scenario_name/attack.sh'" \
+    > "$policy_out/scenario.out" 2>"$policy_out/scenario.err" || true
+}
+
+run_case_activity() {
+  local policy_out="$1"
+  local workload_name="${2:-}"
+  local scenario_name="${3:-}"
+  local workload_pid=""
+
+  if [[ -n "$workload_name" ]]; then
+    start_workload_background "$policy_out" "$workload_name"
+    workload_pid="$WORKLOAD_PID"
+    sleep "$WORKLOAD_WARMUP_SECONDS"
+  fi
+
+  if [[ -n "$scenario_name" ]]; then
+    run_scenario "$policy_out" "$scenario_name"
+  fi
+
+  if [[ -n "$workload_pid" ]]; then
+    wait "$workload_pid" || true
   fi
 }
 
@@ -196,15 +251,23 @@ for policy in $POLICIES_RAW; do
   policy_out="$OUT_DIR/$name"
   rec_run_id="bench-collection-vm/$RUN_ID/$name"
   rec_dir="$RESULTS/recordings/$rec_run_id"
-  if [[ "$CASE_TYPE" == "scenario" ]]; then
-    rec_labels="benchmark_run=$RUN_ID,case_type=scenario,scenario=$WORKLOAD,policy_profile=$name"
-  else
-    rec_labels="benchmark_run=$RUN_ID,case_type=workload,workload=$WORKLOAD,policy_profile=$name"
+  case_workload="$WORKLOAD"
+  case_scenario="$SCENARIO"
+  if [[ -z "$case_workload" && -z "$case_scenario" ]]; then
+    echo "[bench-collection-vm][ERROR] at least one of SYSARMOR_BENCH_WORKLOAD or SYSARMOR_BENCH_SCENARIO is required" >&2
+    exit 1
+  fi
+  rec_labels="benchmark_run=$RUN_ID,policy_profile=$name"
+  if [[ -n "$case_workload" ]]; then
+    rec_labels="$rec_labels,workload=$case_workload"
+  fi
+  if [[ -n "$case_scenario" ]]; then
+    rec_labels="$rec_labels,scenario=$case_scenario"
   fi
   mkdir -p "$policy_out"
 
-  echo "[bench-collection-vm] recording policy=$name workload=$WORKLOAD"
-  set_agent_labels "$RUN_ID" "$name" "$WORKLOAD" "$CASE_TYPE"
+  echo "[bench-collection-vm] recording policy=$name workload=${case_workload:-none} scenario=${case_scenario:-none}"
+  set_agent_labels "$RUN_ID" "$name" "$case_workload" "$case_scenario"
   apply_content_and_detection "$policy_out"
   SYSARMOR_RECORDER_DURATION=3600 recorder "$rec_run_id" "$rec_labels" start
   mark "$rec_run_id" baseline_start "$name"
@@ -231,10 +294,15 @@ for policy in $POLICIES_RAW; do
   sleep "$SETTLE_SECONDS"
   mark "$rec_run_id" steady_start "$name"
   sleep "$STEADY_SECONDS"
-  mark "$rec_run_id" workload_start "$WORKLOAD"
-  run_workload "$policy_out"
-  sleep "$WORKLOAD_SECONDS"
-  mark "$rec_run_id" workload_done "$WORKLOAD"
+  mark "$rec_run_id" workload_start "${case_workload:-none}"
+  if [[ -n "$case_scenario" ]]; then
+    mark "$rec_run_id" scenario_start "$case_scenario"
+  fi
+  run_case_activity "$policy_out" "$case_workload" "$case_scenario"
+  if [[ -n "$case_scenario" ]]; then
+    mark "$rec_run_id" scenario_done "$case_scenario"
+  fi
+  mark "$rec_run_id" workload_done "${case_workload:-none}"
 
   recorder "$rec_run_id" "$rec_labels" stop
   recorder "$rec_run_id" "$rec_labels" report

@@ -20,40 +20,42 @@ def main():
         raise SystemExit("usage: bench_matrix_report.py <bench-matrix-dir>")
     out_dir = Path(sys.argv[1])
     rows = []
-    for kind_dir in (out_dir / "workload", out_dir / "scenario"):
-        if not kind_dir.exists():
+    cases_dir = out_dir / "cases"
+    for case_dir in sorted(p for p in cases_dir.iterdir() if p.is_dir()) if cases_dir.exists() else []:
+        status = load_json(case_dir / "status.json")
+        bench_run_id = status.get("bench_run_id", "")
+        source = out_dir.parents[1] / "bench-collection-vm" / bench_run_id / "matrix.json"
+        matrix_rows = load_json(source)
+        if not isinstance(matrix_rows, list):
+            matrix_rows = []
+        workload = status.get("workload", "")
+        scenario = status.get("scenario", "")
+        if not matrix_rows:
+            rows.append({
+                "name": status.get("name", case_dir.name),
+                "workload": workload,
+                "scenario": scenario,
+                "status": status.get("status", "unknown"),
+                "bench_run_id": bench_run_id,
+                "policy_dir": "",
+            })
             continue
-        for case_dir in sorted(p for p in kind_dir.iterdir() if p.is_dir()):
-            status = load_json(case_dir / "status.json")
-            bench_run_id = status.get("bench_run_id", "")
-            source = out_dir.parents[1] / "bench-collection-vm" / bench_run_id / "matrix.json"
-            matrix_rows = load_json(source)
-            if not isinstance(matrix_rows, list):
-                matrix_rows = []
-            if not matrix_rows:
-                rows.append({
-                    "kind": status.get("kind", kind_dir.name),
-                    "name": status.get("name", case_dir.name),
-                    "status": status.get("status", "unknown"),
-                    "bench_run_id": bench_run_id,
-                    "policy_dir": "",
-                })
+        for row in matrix_rows:
+            if not isinstance(row, dict):
                 continue
-            for row in matrix_rows:
-                if not isinstance(row, dict):
-                    continue
-                merged = {
-                    "kind": status.get("kind", kind_dir.name),
-                    "name": status.get("name", case_dir.name),
-                    "status": status.get("status", "unknown"),
-                    "bench_run_id": bench_run_id,
-                }
-                merged.update(row)
-                rows.append(merged)
+            merged = {
+                "name": status.get("name", case_dir.name),
+                "workload": workload,
+                "scenario": scenario,
+                "status": status.get("status", "unknown"),
+                "bench_run_id": bench_run_id,
+            }
+            merged.update(row)
+            rows.append(merged)
 
     (out_dir / "matrix.json").write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
     fields = []
-    for base in ("kind", "name", "status", "bench_run_id", "policy_dir", "policy_id", "policy_version", "workload"):
+    for base in ("name", "workload", "scenario", "status", "bench_run_id", "policy_dir", "policy_id", "policy_version"):
         if any(base in row for row in rows):
             fields.append(base)
     extra = sorted({key for row in rows for key in row.keys()} - set(fields))

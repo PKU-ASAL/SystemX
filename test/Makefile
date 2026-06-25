@@ -9,7 +9,7 @@
 
 TOPO      ?= container
 SCENARIO  ?= apt-fileless-c2
-DIAG_SCENARIO ?= mixed-edr-storm
+DIAG_SCENARIO ?= edr-activity-heavy
 DUR       ?= 30
 EVALUATION_SCOPE ?= full
 
@@ -110,7 +110,7 @@ bench-e2e-vm:                 ## 用 recorder 包住 VM 功能 E2E,同时产出�
 	SCENARIO=$(SCENARIO) bash tools/benchmarks/bench-e2e-vm.sh
 
 effectiveness-report:         ## 从 labels.yaml + 已有结果生成 event/signal precision/recall 效果报告
-	python3 tools/benchmarks/effectiveness_report.py --bench-matrix-dir .results/bench-matrix-vm/$(or $(RUN_ID),manual) --topology $(TOPO) --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),benign-business exec-storm file-read-storm file-write-storm network-connect-storm mixed-edr-storm) --output-dir .results/effectiveness/$(or $(RUN_ID),manual)
+	python3 tools/benchmarks/effectiveness_report.py --bench-matrix-dir .results/bench-matrix-vm/$(or $(RUN_ID),manual) --topology $(TOPO) --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/effectiveness/$(or $(RUN_ID),manual)
 
 # ── Suite 入口 ───────────────────────────────────────
 
@@ -413,7 +413,7 @@ help:                         ## 显示帮助
 	@echo ""
 	@echo "拓扑:  TOPO=container (默认) | vm"
 	@echo "场景:  SCENARIO=apt-fileless-c2 (默认) | apt-staged-drop | benign-ci-noise"
-	@echo "诊断场景: DIAG_SCENARIO=mixed-edr-storm (默认) | exec-storm | file-write-storm | network-connect-storm | VM attack.sh 场景"
+	@echo "诊断场景: DIAG_SCENARIO=edr-activity-heavy (默认) | business-normal | host-activity-heavy | VM attack.sh 场景"
 	@echo ""
 	@echo "targets:"
 	@echo "  test-local-agent     suite: local agent endpoint smoke"
@@ -436,7 +436,7 @@ help:                         ## 显示帮助
 	@echo "  diag-tetragon-vm  对运行中的 VM Tetragon 采集 strace/perf/pprof 诊断产物"
 	@echo "  diag-tetragon-vm-workload  对运行中的 VM Tetragon 在 DIAG_SCENARIO 负载下采集 perf/pprof"
 	@echo "  bench-collection-vm  对多份 collection policy 跑 VM 真路径资源/eps benchmark matrix"
-	@echo "  bench-matrix-vm  固定跑 VM policy x workloads/scenarios 采集矩阵并生成效果报告"
+	@echo "  bench-matrix-vm  固定跑 VM policy x workload x scenario 矩阵并生成效果报告; MATRIX_MODE=workload|scenario|cross|all"
 	@echo "  bench-edr-lifecycle-vm  采集 VM EDR baseline/start/apply/steady/workload 生命周期曲线"
 	@echo "  bench-e2e-vm  用 recorder 包住 VM 功能 E2E"
 	@echo "  effectiveness-report  从 labels.yaml + 已有结果生成 event/signal precision/recall 效果报告"

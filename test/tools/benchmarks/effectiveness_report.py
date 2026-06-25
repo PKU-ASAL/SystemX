@@ -337,6 +337,14 @@ def label_file(root, kind, topology, name):
     return root / "scenarios" / topology / name / "labels.yaml"
 
 
+def case_kind(workload, scenario):
+    if workload and scenario:
+        return "cross"
+    if workload:
+        return "workload"
+    return "scenario"
+
+
 def case_paths(results, bench_case_dir=None):
     if not bench_case_dir:
         return None, None, None
@@ -465,7 +473,7 @@ def evaluate_case(labels_doc, events, signals, bench_summary):
 
     return {
         "metrics": {
-            "kind": kind,
+            "label_kind": kind,
             "effectiveness_score": effectiveness,
             "event_recall": event_recall,
             "signal_recall": signal_recall,
@@ -505,20 +513,24 @@ def discover_bench_cases(root, results, matrix_dir):
     if not matrix_dir:
         return cases
     matrix_dir = Path(matrix_dir)
-    for kind in ("workload", "scenario"):
-        parent = matrix_dir / kind
-        if not parent.exists():
-            continue
-        for case_dir in sorted(p for p in parent.iterdir() if p.is_dir()):
+    cases_dir = matrix_dir / "cases"
+    if cases_dir.exists():
+        for case_dir in sorted(p for p in cases_dir.iterdir() if p.is_dir()):
             status = load_json(case_dir / "status.json")
             bench_run_id = status.get("bench_run_id", "")
             bench_root = results / "bench-collection-vm" / bench_run_id
             if not bench_root.exists():
                 continue
+            workload = status.get("workload", "")
+            scenario = status.get("scenario", "")
+            kind = case_kind(workload, scenario)
+            name = scenario or workload
             for policy_dir in sorted(p for p in bench_root.iterdir() if p.is_dir()):
                 cases.append({
                     "kind": kind,
-                    "name": case_dir.name,
+                    "name": name,
+                    "workload": workload,
+                    "scenario": scenario,
                     "policy": policy_dir.name,
                     "bench_case_dir": policy_dir,
                 })
@@ -536,11 +548,13 @@ def build_rows(args):
     workload_filter = set(args.workloads or [])
 
     for case in bench_cases:
-        if case["kind"] == "scenario" and scenario_filter and case["name"] not in scenario_filter:
+        if case["kind"] in ("scenario", "cross") and scenario_filter and case.get("scenario") not in scenario_filter:
             continue
-        if case["kind"] == "workload" and workload_filter and case["name"] not in workload_filter:
+        if case["kind"] in ("workload", "cross") and workload_filter and case.get("workload") not in workload_filter:
             continue
-        labels_path = label_file(root, case["kind"], args.topology, case["name"])
+        label_kind = "scenario" if case.get("scenario") else "workload"
+        label_name = case.get("scenario") or case.get("workload") or case["name"]
+        labels_path = label_file(root, label_kind, args.topology, label_name)
         if not labels_path.exists():
             continue
         labels_doc = load_yaml(labels_path)
@@ -556,6 +570,8 @@ def build_rows(args):
         base = {
             "kind": case["kind"],
             "name": case["name"],
+            "workload": case.get("workload", ""),
+            "scenario": case.get("scenario", ""),
             "policy": case["policy"],
             "label_file": str(labels_path),
             "effectiveness_window": window_name,
@@ -578,6 +594,8 @@ def build_rows(args):
             truth_rows.append({
                 "kind": case["kind"],
                 "name": case["name"],
+                "workload": case.get("workload", ""),
+                "scenario": case.get("scenario", ""),
                 "policy": case["policy"],
                 **step,
             })
@@ -654,9 +672,9 @@ def policy_sort_key(policy):
 
 
 def build_attack_signal_matrix(effect_rows):
-    attacks = sorted({r.get("name") for r in effect_rows if r.get("kind") == "malicious" and r.get("name")})
-    policies = sorted({r.get("policy") for r in effect_rows if r.get("kind") == "malicious" and r.get("policy")}, key=policy_sort_key)
-    by_key = {(r.get("policy"), r.get("name")): r for r in effect_rows if r.get("kind") == "malicious"}
+    attacks = sorted({r.get("name") for r in effect_rows if r.get("label_kind") == "malicious" and r.get("name")})
+    policies = sorted({r.get("policy") for r in effect_rows if r.get("label_kind") == "malicious" and r.get("policy")}, key=policy_sort_key)
+    by_key = {(r.get("policy"), r.get("name")): r for r in effect_rows if r.get("label_kind") == "malicious"}
     rows = []
     for policy in policies:
         row = {"policy": policy}
@@ -724,7 +742,10 @@ def main():
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     matrix_fields = [
         "kind",
+        "label_kind",
         "name",
+        "workload",
+        "scenario",
         "policy",
         "effectiveness_score",
         "event_recall",
@@ -754,6 +775,8 @@ def main():
     ]
     truth_fields = [
         "kind",
+        "workload",
+        "scenario",
         "name",
         "policy",
         "label_type",
