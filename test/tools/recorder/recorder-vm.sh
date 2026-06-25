@@ -53,12 +53,22 @@ DONE=\"\$STATE_DIR/done\"
 STOP=\"\$STATE_DIR/stop\"
 HEALTH_JSON=\"\$STATE_DIR/health.json\"
 EVENTS_NDJSON=\"\$STATE_DIR/events.ndjson\"
+EVENTS_ALL_NDJSON=\"\$STATE_DIR/events-all.ndjson\"
 SIGNALS_NDJSON=\"\$STATE_DIR/signals.ndjson\"
+SIGNALS_ALL_NDJSON=\"\$STATE_DIR/signals-all.ndjson\"
+SAMPLE_EVENTS_NDJSON=\"\$STATE_DIR/sample-events.ndjson\"
+SAMPLE_EVENTS_ALL_NDJSON=\"\$STATE_DIR/sample-events-all.ndjson\"
+SAMPLE_SIGNALS_NDJSON=\"\$STATE_DIR/sample-signals.ndjson\"
+SAMPLE_SIGNALS_ALL_NDJSON=\"\$STATE_DIR/sample-signals-all.ndjson\"
 CURSOR_EVENTS_NDJSON=\"\$STATE_DIR/cursor-events.ndjson\"
 CURSOR_SIGNALS_NDJSON=\"\$STATE_DIR/cursor-signals.ndjson\"
-rm -f \"\$OUT\" \"\$DONE\" \"\$STOP\"
+EVENT_WATCH_ERR=\"\$STATE_DIR/event-watch.err\"
+EVENT_ALL_WATCH_ERR=\"\$STATE_DIR/event-all-watch.err\"
+SIGNAL_WATCH_ERR=\"\$STATE_DIR/signal-watch.err\"
+SIGNAL_ALL_WATCH_ERR=\"\$STATE_DIR/signal-all-watch.err\"
+rm -f \"\$OUT\" \"\$DONE\" \"\$STOP\" \"\$EVENTS_NDJSON\" \"\$EVENTS_ALL_NDJSON\" \"\$SIGNALS_NDJSON\" \"\$SIGNALS_ALL_NDJSON\"
 WATCH_LIMIT=\"\${SYSARMOR_RECORDER_WATCH_LIMIT:-20000}\"
-echo 'ts,elapsed_s,agent_cpu_pct,agent_rss_mb,sensor_cpu_pct,sensor_rss_mb,edr_cpu_pct,edr_rss_mb,events_seen,events_scoped,signals_scoped,dropped_events,parse_errors,agent_active,sensor_running,policy_id,policy_version,event_cursor,signal_cursor' > \"\$OUT\"
+echo 'ts,elapsed_s,agent_cpu_pct,agent_rss_mb,sensor_cpu_pct,sensor_rss_mb,edr_cpu_pct,edr_rss_mb,events_seen,events_scoped,events_seen_since_cursor,signals_scoped,signals_seen,dropped_events,parse_errors,agent_active,sensor_running,policy_id,policy_version,event_cursor,signal_cursor' > \"\$OUT\"
 CLK_TCK=\"\$(getconf CLK_TCK 2>/dev/null || echo 100)\"
 num_json() {
   local key=\"\$1\"
@@ -122,6 +132,15 @@ for line in lines:
 print(max_seq)
 PY
 }
+line_count() {
+  local file=\"\$1\"
+  awk 'NF {n++} END {print n+0}' \"\$file\" 2>/dev/null || echo 0
+}
+append_nonempty() {
+  local src=\"\$1\"
+  local dst=\"\$2\"
+  awk 'NF' \"\$src\" >>\"\$dst\" 2>/dev/null || true
+}
 label_args() {
   local raw=\"\$1\"
   local old_ifs=\"\$IFS\"
@@ -136,8 +155,8 @@ label_args() {
 }
 LABEL_ARGS=()
 label_args \"\$LABELS\"
-sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_EVENTS_NDJSON\" 2>/dev/null || true
-sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_SIGNALS_NDJSON\" 2>/dev/null || true
+sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" || true
+sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" || true
 EVENT_CURSOR=\"\$(max_sequence \"\$CURSOR_EVENTS_NDJSON\")\"
 SIGNAL_CURSOR=\"\$(max_sequence \"\$CURSOR_SIGNALS_NDJSON\")\"
 pid_list() {
@@ -206,16 +225,28 @@ while [ \"\$elapsed\" -le \"\$DUR\" ]; do
   agent_active=\"\$(systemctl is-active sysarmor-agent 2>/dev/null || true)\"
   if pidof tetragon >/dev/null 2>&1 || pidof sysarmor-sensor >/dev/null 2>&1; then sensor_running=1; else sensor_running=0; fi
   sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || true
-  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$EVENTS_NDJSON\" 2>/dev/null || true
-  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SIGNALS_NDJSON\" 2>/dev/null || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SAMPLE_EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" >\"\$SAMPLE_EVENTS_ALL_NDJSON\" 2>\"\$EVENT_ALL_WATCH_ERR\" || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SAMPLE_SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" >\"\$SAMPLE_SIGNALS_ALL_NDJSON\" 2>\"\$SIGNAL_ALL_WATCH_ERR\" || true
   events=\"\$(num_json sensor.eventsSeen \"\$HEALTH_JSON\")\"
-  events_scoped=\"\$(wc -l <\"\$EVENTS_NDJSON\" 2>/dev/null || echo 0)\"
-  signals_scoped=\"\$(wc -l <\"\$SIGNALS_NDJSON\" 2>/dev/null || echo 0)\"
+  events_scoped=\"\$(line_count \"\$SAMPLE_EVENTS_NDJSON\")\"
+  events_all=\"\$(line_count \"\$SAMPLE_EVENTS_ALL_NDJSON\")\"
+  signals_scoped=\"\$(line_count \"\$SAMPLE_SIGNALS_NDJSON\")\"
+  signals_all=\"\$(line_count \"\$SAMPLE_SIGNALS_ALL_NDJSON\")\"
+  append_nonempty \"\$SAMPLE_EVENTS_NDJSON\" \"\$EVENTS_NDJSON\"
+  append_nonempty \"\$SAMPLE_EVENTS_ALL_NDJSON\" \"\$EVENTS_ALL_NDJSON\"
+  append_nonempty \"\$SAMPLE_SIGNALS_NDJSON\" \"\$SIGNALS_NDJSON\"
+  append_nonempty \"\$SAMPLE_SIGNALS_ALL_NDJSON\" \"\$SIGNALS_ALL_NDJSON\"
+  next_event_cursor=\"\$(max_sequence \"\$SAMPLE_EVENTS_ALL_NDJSON\")\"
+  next_signal_cursor=\"\$(max_sequence \"\$SAMPLE_SIGNALS_ALL_NDJSON\")\"
+  if [ \"\${next_event_cursor:-0}\" -gt \"\$EVENT_CURSOR\" ]; then EVENT_CURSOR=\"\$next_event_cursor\"; fi
+  if [ \"\${next_signal_cursor:-0}\" -gt \"\$SIGNAL_CURSOR\" ]; then SIGNAL_CURSOR=\"\$next_signal_cursor\"; fi
   dropped=\"\$(num_json sensor.eventsDropped \"\$HEALTH_JSON\")\"
   parse_errors=\"\$(num_json sensor.parseErrors \"\$HEALTH_JSON\")\"
   policy_id=\"\$(str_json policyId \"\$HEALTH_JSON\")\"
   policy_version=\"\$(str_json policyVersion \"\$HEALTH_JSON\")\"
-  echo \"\$ts,\$elapsed,\$agent_cpu,\$agent_rss,\$sensor_cpu,\$sensor_rss,\$edr_cpu,\$edr_rss,\$events,\$events_scoped,\$signals_scoped,\$dropped,\$parse_errors,\$agent_active,\$sensor_running,\$policy_id,\$policy_version,\$EVENT_CURSOR,\$SIGNAL_CURSOR\" >> \"\$OUT\"
+  echo \"\$ts,\$elapsed,\$agent_cpu,\$agent_rss,\$sensor_cpu,\$sensor_rss,\$edr_cpu,\$edr_rss,\$events,\$events_scoped,\$events_all,\$signals_scoped,\$signals_all,\$dropped,\$parse_errors,\$agent_active,\$sensor_running,\$policy_id,\$policy_version,\$EVENT_CURSOR,\$SIGNAL_CURSOR\" >> \"\$OUT\"
   [ \"\$elapsed\" -ge \"\$DUR\" ] && break
   sleep 1
   elapsed=\$((elapsed + 1))
@@ -236,8 +267,20 @@ stop_remote_sampler() {
     > "$OUT_DIR/recorder.log" 2>/dev/null || true
   vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/events.ndjson 2>/dev/null || true" \
     > "$OUT_DIR/events.ndjson" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/events-all.ndjson 2>/dev/null || true" \
+    > "$OUT_DIR/events-all.ndjson" 2>/dev/null || true
   vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/signals.ndjson 2>/dev/null || true" \
     > "$OUT_DIR/signals.ndjson" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/signals-all.ndjson 2>/dev/null || true" \
+    > "$OUT_DIR/signals-all.ndjson" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/event-watch.err 2>/dev/null || true" \
+    > "$OUT_DIR/event-watch.err" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/event-all-watch.err 2>/dev/null || true" \
+    > "$OUT_DIR/event-all-watch.err" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/signal-watch.err 2>/dev/null || true" \
+    > "$OUT_DIR/signal-watch.err" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo cat /run/sysarmor/recorder/signal-all-watch.err 2>/dev/null || true" \
+    > "$OUT_DIR/signal-all-watch.err" 2>/dev/null || true
 }
 
 case "$CMD" in

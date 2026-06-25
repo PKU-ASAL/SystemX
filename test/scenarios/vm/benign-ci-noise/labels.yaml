@@ -1,0 +1,16 @@
+name: benign-ci-noise
+kind: benign
+window: workload
+labels:
+  events: []
+  signals: []
+policy:
+  terminal_signals_allowed: 0
+  forbidden_signal_names:
+    - download_by_lolbin
+    - payload_dropped
+    - payload_lifecycle
+    - suspicious_exec_connect
+    - reverse_shell_pattern
+    - sensitive_cred_read
+    - web_runtime_spawns_shell

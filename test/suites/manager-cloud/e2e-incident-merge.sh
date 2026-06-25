@@ -48,7 +48,7 @@ cat > "$TMP/target.json" <<JSON
         "globalRarity": 1,
         "lineageId": "lin-merge-target",
         "terminal": true,
-        "scenario": "incident-merge-target",
+        "labels": {"scenario": "incident-merge-target"},
         "entities": [
           {"kind": "process", "key": "process:p-target", "role": "subject"},
           {"kind": "socket", "key": "socket:10.66.0.10:443", "role": "object"}
@@ -80,7 +80,7 @@ cat > "$TMP/source.json" <<JSON
         "globalRarity": 1,
         "lineageId": "lin-merge-source",
         "terminal": true,
-        "scenario": "incident-merge-source",
+        "labels": {"scenario": "incident-merge-source"},
         "entities": [
           {"kind": "process", "key": "process:p-source", "role": "subject"},
           {"kind": "socket", "key": "socket:10.66.0.20:443", "role": "object"}
@@ -96,9 +96,9 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/source.json" > "$RESULTS/e2e-incident-merge.source-data_plane.json"
 
 wait_contains "target incident" '"id":"inc-00000000000000000001"' "$RESULTS/e2e-incident-merge.target.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario incident-merge-target
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --label scenario=incident-merge-target
 wait_contains "source incident" '"id":"inc-00000000000000000002"' "$RESULTS/e2e-incident-merge.source.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario incident-merge-source
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --label scenario=incident-merge-source
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident merge \
   --target-incident-id inc-00000000000000000001 \

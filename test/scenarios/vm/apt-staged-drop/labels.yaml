@@ -1,0 +1,69 @@
+name: apt-staged-drop
+kind: malicious
+window: workload
+labels:
+  events:
+    - id: helper_download
+      required: false
+      behavior: network.connect
+      match:
+        socket: "10.66.0.99:8080"
+        process: "*curl*"
+    - id: helper_write
+      required: false
+      behavior: file.write
+      match:
+        path: "/var/lib/app/plugins/helper"
+    - id: helper_chmod
+      required: false
+      behavior: file.chmod
+      match:
+        path: "/var/lib/app/plugins/helper"
+    - id: helper_exec
+      required: true
+      behavior: process.exec
+      match:
+        process: "/var/lib/app/plugins/helper"
+    - id: helper_c2
+      required: true
+      behavior: network.connect
+      match:
+        socket: "10.66.0.99:443"
+  signals:
+    - id: download_by_lolbin
+      required: false
+      name: download_by_lolbin
+      entities:
+        - "socket:10.66.0.99:8080"
+      link_events:
+        - helper_download
+    - id: payload_dropped
+      required: false
+      name: payload_dropped
+      terminal: false
+      entities:
+        - "file:/var/lib/app/plugins/helper"
+      link_events:
+        - helper_write
+    - id: suspicious_exec_connect
+      required: true
+      name: suspicious_exec_connect
+      terminal: false
+      entities:
+        - "file:/var/lib/app/plugins/helper"
+        - "socket:10.66.0.99:443"
+      link_events:
+        - helper_exec
+        - helper_c2
+    - id: payload_lifecycle
+      required: true
+      name: payload_lifecycle
+      terminal: false
+      entities:
+        - "file:/var/lib/app/plugins/helper"
+        - "socket:10.66.0.99:443"
+      link_events:
+        - helper_exec
+        - helper_c2
+policy:
+  terminal_signals_allowed: 0

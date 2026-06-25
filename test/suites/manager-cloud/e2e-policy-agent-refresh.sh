@@ -35,7 +35,7 @@ wait_payload_count() {
   local out="$2"
   local deadline=$((SECONDS + 10))
   while true; do
-    "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario "$SCENARIO" --layer endpoint > "$out"
+    "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario="$SCENARIO" --layer endpoint > "$out"
     local got
     got="$({ grep -o 'payload_dropped' "$out" || true; } | wc -l | tr -d ' ')"
     if [[ "$got" == "$want" ]]; then

@@ -35,7 +35,8 @@ message ConvergeTrace {
 
 message Incident {
   string id = 1;
-  string scenario = 2;
+  reserved 2;
+  reserved "scenario";
   string summary = 3;
   uint32 severity = 4;
   repeated string mitre = 5;
@@ -47,4 +48,5 @@ message Incident {
   string status = 11;
   string status_reason = 12;
   string status_actor = 13;
+  map<string, string> labels = 14;
 }

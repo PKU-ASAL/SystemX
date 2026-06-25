@@ -45,19 +45,19 @@ type ManagerStore interface {
 	AddSignal(*signalv1.Signal) bool
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
-	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
+	AttachIncidentEvidence(string, store.LabelSelector, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
 	CancelControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
-	DeleteScenario(string)
+	DeleteByLabels(store.LabelSelector)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	EnsureDefaultPolicy(string)
 	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
 	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
-	GetIncident(string, string) (*incidentv1.Incident, bool)
+	GetIncident(string, store.LabelSelector) (*incidentv1.Incident, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
 	GetSignal(string) (*signalv1.Signal, bool)
 	Info() store.Info
@@ -66,16 +66,16 @@ type ManagerStore interface {
 	BindAgentIdentity(store.AgentIdentity) error
 	ListAssignments(string, string) []policymodel.Assignment
 	ListControlCommands(string, string, string) []controlmodel.ControlCommand
-	ListEvents(string, string) []*eventv1.CanonicalEvent
+	ListEvents(store.LabelSelector, string) []*eventv1.CanonicalEvent
 	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
-	ListIncidents(string) []*incidentv1.Incident
+	ListIncidents(store.LabelSelector) []*incidentv1.Incident
 	ListAgentSessions(string, string) []store.AgentSession
 	ListPolicies(string) []policymodel.Policy
 	ListPolicyAudits(string, string) []policymodel.AuditRecord
 	ListOperatorRoleBindings(string) []store.OperatorRoleBinding
 	ListResponses(string, string) []responsemodel.AuditRecord
 	ListRules(string) []policymodel.RuleContent
-	ListSignals(string, string, bool) []*signalv1.Signal
+	ListSignals(store.LabelSelector, string, bool) []*signalv1.Signal
 	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
 	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)
@@ -93,7 +93,7 @@ type ManagerStore interface {
 	RetryControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	ExpireControlCommand(string, string, string, string) (controlmodel.ControlCommand, bool)
 	Save() error
-	UpdateIncidentStatus(string, string, string, string, string) (*incidentv1.Incident, bool)
+	UpdateIncidentStatus(string, store.LabelSelector, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
 	UpsertOperatorRoleBinding(store.OperatorRoleBinding) store.OperatorRoleBinding
 	UpsertPolicy(policymodel.Policy) policymodel.Policy
@@ -143,28 +143,28 @@ type responseApprovalRequest struct {
 }
 
 type incidentLifecycleRequest struct {
-	IncidentID string `json:"incident_id"`
-	Scenario   string `json:"scenario"`
-	Status     string `json:"status"`
-	Reason     string `json:"reason,omitempty"`
-	Actor      string `json:"actor,omitempty"`
+	IncidentID string            `json:"incident_id"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	Status     string            `json:"status"`
+	Reason     string            `json:"reason,omitempty"`
+	Actor      string            `json:"actor,omitempty"`
 }
 
 type incidentEvidenceAttachRequest struct {
-	IncidentID string          `json:"incident_id"`
-	Scenario   string          `json:"scenario"`
-	Evidence   json.RawMessage `json:"evidence"`
+	IncidentID string            `json:"incident_id"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	Evidence   json.RawMessage   `json:"evidence"`
 }
 
 type evidencePullbackRequest struct {
-	RequestID  string `json:"request_id"`
-	TenantID   string `json:"tenant_id"`
-	AgentID    string `json:"agent_id"`
-	IncidentID string `json:"incident_id,omitempty"`
-	Scenario   string `json:"scenario,omitempty"`
-	Target     string `json:"target,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	Actor      string `json:"actor,omitempty"`
+	RequestID  string            `json:"request_id"`
+	TenantID   string            `json:"tenant_id"`
+	AgentID    string            `json:"agent_id"`
+	IncidentID string            `json:"incident_id,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	Target     string            `json:"target,omitempty"`
+	Reason     string            `json:"reason,omitempty"`
+	Actor      string            `json:"actor,omitempty"`
 }
 
 type controlCommandRequest struct {
@@ -307,13 +307,13 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperator(w, r, "admin") {
 		return
 	}
-	scenario := r.URL.Query().Get("scenario")
-	s.store.DeleteScenario(scenario)
+	labels := parseLabelSelector(r.URL.Query()["label"])
+	s.store.DeleteByLabels(labels)
 	if err := s.store.Save(); err != nil {
 		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "scenario": scenario})
+	writeJSON(w, map[string]any{"ok": true, "labels": labels})
 }
 
 func (s *Server) AppendDataBatch(batch *dataplanev1.DataBatch) (DataAppendResult, error) {
@@ -645,7 +645,7 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 			TenantID:   req.TenantID,
 			AgentID:    req.AgentID,
 			IncidentID: req.IncidentID,
-			Scenario:   req.Scenario,
+			Labels:     cloneStringMap(req.Labels),
 			Target:     req.Target,
 			Reason:     req.Reason,
 			Actor:      s.actorFromRequest(r, req.Actor),
@@ -831,18 +831,18 @@ func contentMetadataFromPayload(payload json.RawMessage) (string, string, string
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	writeEventList(w, pageSlice(s.store.ListEvents(q.Get("scenario"), q.Get("behavior")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+	writeEventList(w, pageSlice(s.store.ListEvents(parseLabelSelector(q["label"]), q.Get("behavior")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	signals := s.store.ListSignals(q.Get("scenario"), q.Get("layer"), q.Get("terminal") == "true")
+	signals := s.store.ListSignals(parseLabelSelector(q["label"]), q.Get("layer"), q.Get("terminal") == "true")
 	writeSignalList(w, pageSlice(signals, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	incidents := s.store.ListIncidents(q.Get("scenario"))
+	incidents := s.store.ListIncidents(parseLabelSelector(q["label"]))
 	writeIncidentList(w, pageSlice(incidents, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
@@ -859,7 +859,7 @@ func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	inc, ok := s.store.GetIncident(q.Get("incident_id"), q.Get("scenario"))
+	inc, ok := s.store.GetIncident(q.Get("incident_id"), parseLabelSelector(q["label"]))
 	if !ok {
 		http.Error(w, "incident not found", http.StatusNotFound)
 		return
@@ -889,8 +889,9 @@ func (s *Server) attachIncidentEvidence(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("decode incident evidence: %v", err), http.StatusBadRequest)
 		return
 	}
-	if req.IncidentID == "" && req.Scenario == "" {
-		http.Error(w, "incident_id or scenario is required", http.StatusBadRequest)
+	labels := store.LabelSelector(req.Labels)
+	if req.IncidentID == "" && len(labels) == 0 {
+		http.Error(w, "incident_id or labels is required", http.StatusBadRequest)
 		return
 	}
 	if len(req.Evidence) == 0 {
@@ -902,7 +903,7 @@ func (s *Server) attachIncidentEvidence(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("decode evidence: %v", err), http.StatusBadRequest)
 		return
 	}
-	inc, ok := s.store.AttachIncidentEvidence(req.IncidentID, req.Scenario, evidence)
+	inc, ok := s.store.AttachIncidentEvidence(req.IncidentID, labels, evidence)
 	if !ok {
 		http.Error(w, "incident not found", http.StatusNotFound)
 		return
@@ -927,11 +928,12 @@ func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("decode incident lifecycle: %v", err), http.StatusBadRequest)
 		return
 	}
-	if req.IncidentID == "" && req.Scenario == "" {
-		http.Error(w, "incident_id or scenario is required", http.StatusBadRequest)
+	labels := store.LabelSelector(req.Labels)
+	if req.IncidentID == "" && len(labels) == 0 {
+		http.Error(w, "incident_id or labels is required", http.StatusBadRequest)
 		return
 	}
-	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, req.Scenario, req.Status, req.Reason, s.actorFromRequest(r, req.Actor))
+	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, labels, req.Status, req.Reason, s.actorFromRequest(r, req.Actor))
 	if !ok {
 		http.Error(w, "incident not found or status invalid", http.StatusNotFound)
 		return
@@ -1298,7 +1300,7 @@ func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
 		TenantID:   req.TenantID,
 		AgentID:    req.AgentID,
 		SignalID:   sig.GetId(),
-		Scenario:   sig.GetScenario(),
+		Labels:     cloneStringMap(sig.GetLabels()),
 		Scope:      req.Scope,
 		Action:     action,
 		Mode:       responsemodel.DefaultMode,
@@ -1483,8 +1485,22 @@ func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
 	}
 	engine := ingest.NewEngine()
 	engine.SetRarityBaseline(s.store.RarityBaselineSnapshot())
-	result := engine.AnalyzeWithPolicy(nil, s.store.ListSignals(q.Get("scenario"), "endpoint", false), policy)
+	result := engine.AnalyzeWithPolicy(nil, s.store.ListSignals(parseLabelSelector(q["label"]), "endpoint", false), policy)
 	writeAnalysisResult(w, result)
+}
+
+func parseLabelSelector(values []string) store.LabelSelector {
+	labels := store.LabelSelector{}
+	for _, raw := range values {
+		key, value, ok := strings.Cut(raw, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !ok || key == "" {
+			continue
+		}
+		labels[key] = value
+	}
+	return labels
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -1515,6 +1531,17 @@ func removeString(in []string, value string) []string {
 		if item != value {
 			out = append(out, item)
 		}
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
 	}
 	return out
 }

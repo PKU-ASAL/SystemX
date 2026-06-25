@@ -137,7 +137,7 @@ AGENT_PID=$!
 
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-sensor-restart&tenant_id=default" '"status":"degraded"' "$RESULTS/e2e-agent-sensor-restart.health.json"
 wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-health?agent_id=e2e-sensor-restart&tenant_id=default" '"restart_count":3' "$RESULTS/e2e-agent-sensor-restart.health.json"
-wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/signals?scenario=agent-health&layer=endpoint&terminal=true" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-sensor-restart.signals.json"
+wait_contains "http://127.0.0.1:$MANAGER_PORT/api/v1/signals?label=scenario=agent-health&layer=endpoint&terminal=true" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-sensor-restart.signals.json"
 
 if [[ "$(cat "$TMP/tetragon.count")" != "2" ]]; then
   echo "[e2e-agent-sensor-restart][ERROR] tetragon restart count file=$(cat "$TMP/tetragon.count" 2>/dev/null || echo missing)" >&2

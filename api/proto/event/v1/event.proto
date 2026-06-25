@@ -30,7 +30,8 @@ message CanonicalEvent {
   uint64 seq = 2;
   string agent_id = 3;
   string host_id = 4;
-  string scenario = 5;
+  reserved 5;
+  reserved "scenario";
   uint64 mono_ns = 6;
   reserved 7;
   ProcessRef subject_proc = 8;

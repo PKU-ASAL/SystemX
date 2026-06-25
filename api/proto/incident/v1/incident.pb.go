@@ -289,7 +289,6 @@ func (x *ConvergeTrace) GetControls() []string {
 type Incident struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Scenario            string                 `protobuf:"bytes,2,opt,name=scenario,proto3" json:"scenario,omitempty"`
 	Summary             string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
 	Severity            uint32                 `protobuf:"varint,4,opt,name=severity,proto3" json:"severity,omitempty"`
 	Mitre               []string               `protobuf:"bytes,5,rep,name=mitre,proto3" json:"mitre,omitempty"`
@@ -301,6 +300,7 @@ type Incident struct {
 	Status              string                 `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
 	StatusReason        string                 `protobuf:"bytes,12,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
 	StatusActor         string                 `protobuf:"bytes,13,opt,name=status_actor,json=statusActor,proto3" json:"status_actor,omitempty"`
+	Labels              map[string]string      `protobuf:"bytes,14,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -338,13 +338,6 @@ func (*Incident) Descriptor() ([]byte, []int) {
 func (x *Incident) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *Incident) GetScenario() string {
-	if x != nil {
-		return x.Scenario
 	}
 	return ""
 }
@@ -426,6 +419,13 @@ func (x *Incident) GetStatusActor() string {
 	return ""
 }
 
+func (x *Incident) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 var File_api_proto_incident_v1_incident_proto protoreflect.FileDescriptor
 
 const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
@@ -449,10 +449,9 @@ const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
 	"\bseed_ids\x18\x02 \x03(\tR\aseedIds\x12\x19\n" +
 	"\bpath_ids\x18\x03 \x03(\tR\apathIds\x12\x14\n" +
 	"\x05score\x18\x04 \x01(\x02R\x05score\x12\x1a\n" +
-	"\bcontrols\x18\x05 \x03(\tR\bcontrols\"\xf5\x03\n" +
+	"\bcontrols\x18\x05 \x03(\tR\bcontrols\"\xe8\x04\n" +
 	"\bIncident\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
-	"\bscenario\x18\x02 \x01(\tR\bscenario\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\asummary\x18\x03 \x01(\tR\asummary\x12\x1a\n" +
 	"\bseverity\x18\x04 \x01(\rR\bseverity\x12\x14\n" +
 	"\x05mitre\x18\x05 \x03(\tR\x05mitre\x12\x1f\n" +
@@ -465,7 +464,11 @@ const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
 	" \x03(\v2\x1a.sysarmor.signal.v1.SignalR\x13contributingSignals\x12\x16\n" +
 	"\x06status\x18\v \x01(\tR\x06status\x12#\n" +
 	"\rstatus_reason\x18\f \x01(\tR\fstatusReason\x12!\n" +
-	"\fstatus_actor\x18\r \x01(\tR\vstatusActorBLZJgithub.com/sysarmor/sysarmor-next-project/api/proto/incident/v1;incidentv1b\x06proto3"
+	"\fstatus_actor\x18\r \x01(\tR\vstatusActor\x12B\n" +
+	"\x06labels\x18\x0e \x03(\v2*.sysarmor.incident.v1.Incident.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x02\x10\x03R\bscenarioBLZJgithub.com/sysarmor/sysarmor-next-project/api/proto/incident/v1;incidentv1b\x06proto3"
 
 var (
 	file_api_proto_incident_v1_incident_proto_rawDescOnce sync.Once
@@ -479,28 +482,30 @@ func file_api_proto_incident_v1_incident_proto_rawDescGZIP() []byte {
 	return file_api_proto_incident_v1_incident_proto_rawDescData
 }
 
-var file_api_proto_incident_v1_incident_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_api_proto_incident_v1_incident_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_api_proto_incident_v1_incident_proto_goTypes = []any{
 	(*GraphNode)(nil),        // 0: sysarmor.incident.v1.GraphNode
 	(*GraphEdge)(nil),        // 1: sysarmor.incident.v1.GraphEdge
 	(*EvidenceSubgraph)(nil), // 2: sysarmor.incident.v1.EvidenceSubgraph
 	(*ConvergeTrace)(nil),    // 3: sysarmor.incident.v1.ConvergeTrace
 	(*Incident)(nil),         // 4: sysarmor.incident.v1.Incident
-	(*v1.EntityRef)(nil),     // 5: sysarmor.signal.v1.EntityRef
-	(*v1.Signal)(nil),        // 6: sysarmor.signal.v1.Signal
+	nil,                      // 5: sysarmor.incident.v1.Incident.LabelsEntry
+	(*v1.EntityRef)(nil),     // 6: sysarmor.signal.v1.EntityRef
+	(*v1.Signal)(nil),        // 7: sysarmor.signal.v1.Signal
 }
 var file_api_proto_incident_v1_incident_proto_depIdxs = []int32{
-	5, // 0: sysarmor.incident.v1.GraphNode.entities:type_name -> sysarmor.signal.v1.EntityRef
+	6, // 0: sysarmor.incident.v1.GraphNode.entities:type_name -> sysarmor.signal.v1.EntityRef
 	0, // 1: sysarmor.incident.v1.EvidenceSubgraph.nodes:type_name -> sysarmor.incident.v1.GraphNode
 	1, // 2: sysarmor.incident.v1.EvidenceSubgraph.edges:type_name -> sysarmor.incident.v1.GraphEdge
 	2, // 3: sysarmor.incident.v1.Incident.evidence:type_name -> sysarmor.incident.v1.EvidenceSubgraph
 	3, // 4: sysarmor.incident.v1.Incident.converge:type_name -> sysarmor.incident.v1.ConvergeTrace
-	6, // 5: sysarmor.incident.v1.Incident.contributing_signals:type_name -> sysarmor.signal.v1.Signal
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	7, // 5: sysarmor.incident.v1.Incident.contributing_signals:type_name -> sysarmor.signal.v1.Signal
+	5, // 6: sysarmor.incident.v1.Incident.labels:type_name -> sysarmor.incident.v1.Incident.LabelsEntry
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_incident_v1_incident_proto_init() }
@@ -514,7 +519,7 @@ func file_api_proto_incident_v1_incident_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_incident_v1_incident_proto_rawDesc), len(file_api_proto_incident_v1_incident_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

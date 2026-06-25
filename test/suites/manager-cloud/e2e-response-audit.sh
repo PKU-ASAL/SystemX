@@ -45,7 +45,7 @@ cat > "$TMP/batch.json" <<JSON
         "globalRarity": 1,
         "lineageId": "lin-response-audit",
         "terminal": true,
-        "scenario": "response-audit",
+        "labels": {"scenario": "response-audit"},
         "responseIntent": {
           "responseIntent": "collect",
           "recommendedAction": "collect",
@@ -65,7 +65,7 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-response-audit.data_plane.json"
 
 sa_wait_contains "signal intent" '"response_intent":{"response_intent":"collect","recommended_action":"collect","confidence":80,"reason":"terminal reverse shell pattern"}' "$RESULTS/e2e-response-audit.signals.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario response-audit --terminal
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario=response-audit --terminal
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager response decide \
   --tenant-id default \

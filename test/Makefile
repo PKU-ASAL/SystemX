@@ -37,7 +37,7 @@ status-vm:
 
 # ── 场景采集 + 断言 ──────────────────────────────────
 
-.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
+.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all sync-vm-agent recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
 
 capture:                      ## 跑场景 + tetragon 抓事件
 ifeq ($(TOPO),vm)
@@ -76,6 +76,9 @@ perf-resource-vm:             ## 采集 VM EDR idle 资源占用
 
 perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 container/VM EDR idle 资源占用
 
+sync-vm-agent:                ## VM: 上传当前 bin/sysarmor-agent + bin/sysarmorctl 并验证 local control socket
+	bash tools/vm/sync-agent.sh
+
 recorder-vm-start:            ## 启动 VM 长期 performance recorder
 	RUN_ID=$(or $(RUN_ID),manual) bash tools/recorder/recorder-vm.sh start
 
@@ -106,8 +109,8 @@ bench-edr-lifecycle-vm:       ## 采集 VM EDR baseline/start/apply/steady/workl
 bench-e2e-vm:                 ## 用 recorder 包住 VM 功能 E2E,同时产出功能结果和性能曲线
 	SCENARIO=$(SCENARIO) bash tools/benchmarks/bench-e2e-vm.sh
 
-effectiveness-report:         ## 从 expected.yaml + 已有结果生成 scenario 效果指标报告
-	python3 tools/benchmarks/effectiveness_report.py --topology $(TOPO) --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --output-dir .results/effectiveness/$(or $(RUN_ID),manual)
+effectiveness-report:         ## 从 labels.yaml + 已有结果生成 event/signal precision/recall 效果报告
+	python3 tools/benchmarks/effectiveness_report.py --bench-matrix-dir .results/bench-matrix-vm/$(or $(RUN_ID),manual) --topology $(TOPO) --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),benign-business exec-storm file-read-storm file-write-storm network-connect-storm mixed-edr-storm) --output-dir .results/effectiveness/$(or $(RUN_ID),manual)
 
 # ── Suite 入口 ───────────────────────────────────────
 
@@ -436,7 +439,7 @@ help:                         ## 显示帮助
 	@echo "  bench-matrix-vm  固定跑 VM policy x workloads/scenarios 采集矩阵并生成效果报告"
 	@echo "  bench-edr-lifecycle-vm  采集 VM EDR baseline/start/apply/steady/workload 生命周期曲线"
 	@echo "  bench-e2e-vm  用 recorder 包住 VM 功能 E2E"
-	@echo "  effectiveness-report  从 expected.yaml + 已有结果生成 scenario 效果指标报告"
+	@echo "  effectiveness-report  从 labels.yaml + 已有结果生成 event/signal precision/recall 效果报告"
 	@echo "  report      汇总报告"
 	@echo "  e2e         up + capture + assert"
 	@echo "  e2e-manager-idempotency  v2 repeated DataBatch does not amplify manager ingest"

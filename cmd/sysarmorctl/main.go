@@ -107,6 +107,7 @@ func usage() {
   sysarmorctl [--manager-url URL] manager control-commands list --agent AGENT
   sysarmorctl [--manager-url URL] manager control-commands create content --agent AGENT --file content.json
   sysarmorctl [--manager-url URL] manager control-commands cancel --command-id ID --agent AGENT
+  sysarmorctl [--manager-url URL] manager evidence pullbacks --create --agent-id AGENT --incident-id ID --label key=value
   sysarmorctl [--manager-url URL] manager roles list [--actor ACTOR]
   sysarmorctl [--manager-url URL] manager roles upsert --actor ACTOR --roles policy_admin,control_admin
 
@@ -824,6 +825,7 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 	case "evidence-pullbacks":
 		q := url.Values{}
 		req := map[string]any{}
+		labels := map[string]string{}
 		create := false
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
@@ -851,10 +853,10 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 				if i < len(args) {
 					req["incident_id"] = args[i]
 				}
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					req["scenario"] = args[i]
+					addLabelMap(labels, args[i])
 				}
 			case "--target":
 				i++
@@ -872,6 +874,9 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 					req["actor"] = args[i]
 				}
 			}
+		}
+		if len(labels) > 0 {
+			req["labels"] = labels
 		}
 		if create {
 			return httpPostJSON(base+"/api/v1/evidence-pullbacks", req)
@@ -1144,10 +1149,10 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					q.Set("scenario", args[i])
+					addLabelQuery(q, args[i])
 				}
 			case "--behavior":
 				i++
@@ -1171,10 +1176,10 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					q.Set("scenario", args[i])
+					addLabelQuery(q, args[i])
 				}
 			case "--layer":
 				i++
@@ -1200,10 +1205,10 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					q.Set("scenario", args[i])
+					addLabelQuery(q, args[i])
 				}
 			case "--limit":
 				i++
@@ -1222,10 +1227,10 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					q.Set("scenario", args[i])
+					addLabelQuery(q, args[i])
 				}
 			case "--incident-id":
 				i++
@@ -1257,14 +1262,15 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		return httpGet(base + "/api/v1/incident-evidence?" + q.Encode())
 	case "incident-evidence-attach":
 		req := map[string]any{}
+		labels := map[string]string{}
 		node := map[string]string{}
 		edge := map[string]string{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					req["scenario"] = args[i]
+					addLabelMap(labels, args[i])
 				}
 			case "--incident-id":
 				i++
@@ -1315,16 +1321,20 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		if len(edge) > 0 {
 			evidence["edges"] = []map[string]string{edge}
 		}
+		if len(labels) > 0 {
+			req["labels"] = labels
+		}
 		req["evidence"] = evidence
 		return httpPostJSON(base+"/api/v1/incident-evidence", req)
 	case "incident-lifecycle":
-		req := map[string]string{}
+		req := map[string]any{}
+		labels := map[string]string{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					req["scenario"] = args[i]
+					addLabelMap(labels, args[i])
 				}
 			case "--incident-id":
 				i++
@@ -1348,6 +1358,9 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 				}
 			}
 		}
+		if len(labels) > 0 {
+			req["labels"] = labels
+		}
 		return httpPostJSON(base+"/api/v1/incident-lifecycle", req)
 	case "incident-merge":
 		req := map[string]string{}
@@ -1370,10 +1383,10 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
-			case "--scenario":
+			case "--label":
 				i++
 				if i < len(args) {
-					q.Set("scenario", args[i])
+					addLabelQuery(q, args[i])
 				}
 			case "--disable":
 				i++
@@ -1778,6 +1791,26 @@ func httpGet(url string) ([]byte, error) {
 		return nil, fmt.Errorf("GET %s: %s: %s", url, resp.Status, string(body))
 	}
 	return body, nil
+}
+
+func addLabelQuery(q url.Values, raw string) {
+	key, value, ok := strings.Cut(raw, "=")
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if !ok || key == "" {
+		return
+	}
+	q.Add("label", key+"="+value)
+}
+
+func addLabelMap(labels map[string]string, raw string) {
+	key, value, ok := strings.Cut(raw, "=")
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if !ok || key == "" {
+		return
+	}
+	labels[key] = value
 }
 
 func httpPostJSON(url string, body any) ([]byte, error) {

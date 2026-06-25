@@ -8,6 +8,7 @@
 - `fixtures/`: synthetic event or scenario fixture generators.
 - `recorder/`: long-running VM performance recorder.
 - `reports/`: result summarizers and local effectiveness report helpers.
+- `vm/`: VM maintenance helpers such as syncing current agent/ctl binaries before benchmarks.
 
 Tools should stay reusable and product-agnostic where possible. Suite-specific
 pass/fail semantics belong in `test/suites/<suite>/`; process lifecycle glue

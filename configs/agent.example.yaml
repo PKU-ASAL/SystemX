@@ -3,7 +3,7 @@ agent:
   host_id: node-a
   tenant_id: default
   token: dev-token
-  scenario: "" # optional test/development label for manager scenario queries
+  label.env: dev # optional metadata; tests can add label.workload or label.scenario
 
 manager:
   address: http://10.66.0.10:9443

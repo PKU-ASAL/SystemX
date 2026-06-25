@@ -64,7 +64,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 	})
 	appendBatch(t, srv, batch)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/signals?scenario=apt-fileless-c2&layer=cloud", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/signals?label=scenario=apt-fileless-c2&layer=cloud", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -74,7 +74,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 		t.Fatalf("cloud signals missing web_shell_chain: %s", rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/incidents?scenario=apt-fileless-c2", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/incidents?label=scenario=apt-fileless-c2", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -84,7 +84,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 		t.Fatalf("incident missing converge method: %s", rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/incident-evidence?scenario=apt-fileless-c2", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/incident-evidence?label=scenario=apt-fileless-c2", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -95,13 +95,13 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 			t.Fatalf("incident evidence missing %s: %s", want, rec.Body.String())
 		}
 	}
-	rec = get(t, handler, "/api/v1/incident-evidence?scenario=apt-fileless-c2&path_from=process:p-bash&path_to=socket:10.66.0.99:443")
+	rec = get(t, handler, "/api/v1/incident-evidence?label=scenario=apt-fileless-c2&path_from=process:p-bash&path_to=socket:10.66.0.99:443")
 	for _, want := range []string{`"id":"process:p-bash"`, `"id":"socket:10.66.0.99:443"`, `"kind":"connect"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("incident path missing %s: %s", want, rec.Body.String())
 		}
 	}
-	rec = get(t, handler, "/api/v1/incident-evidence?scenario=apt-fileless-c2&seed=process:p-bash&hops=1")
+	rec = get(t, handler, "/api/v1/incident-evidence?label=scenario=apt-fileless-c2&seed=process:p-bash&hops=1")
 	if !strings.Contains(rec.Body.String(), `"id":"socket:10.66.0.99:443"`) {
 		t.Fatalf("incident k-hop missing socket node: %s", rec.Body.String())
 	}
@@ -139,9 +139,9 @@ func TestStoreStatusAPI(t *testing.T) {
 
 func TestIncidentLifecycleAPIUpdatesStatus(t *testing.T) {
 	st := &store.Store{}
-	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "test incident"})
+	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Labels: labelsForScenario("scenario-a"), Summary: "test incident"})
 	handler := NewServer(st).Handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/incident-lifecycle", strings.NewReader(`{"scenario":"scenario-a","status":"closed","reason":"triaged","actor":"analyst"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incident-lifecycle", strings.NewReader(`{"labels":{"scenario":"scenario-a"},"status":"closed","reason":"triaged","actor":"analyst"}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -152,7 +152,7 @@ func TestIncidentLifecycleAPIUpdatesStatus(t *testing.T) {
 			t.Fatalf("lifecycle response missing %s: %s", want, rec.Body.String())
 		}
 	}
-	rec = get(t, handler, "/api/v1/incidents?scenario=scenario-a")
+	rec = get(t, handler, "/api/v1/incidents?label=scenario=scenario-a")
 	if !strings.Contains(rec.Body.String(), `"status":"closed"`) {
 		t.Fatalf("incident status not queryable: %s", rec.Body.String())
 	}
@@ -162,7 +162,7 @@ func TestIncidentMergeAPI(t *testing.T) {
 	st := &store.Store{}
 	st.AddIncident(&incidentv1.Incident{
 		Id:         "inc-a",
-		Scenario:   "scenario-a",
+		Labels:     labelsForScenario("scenario-a"),
 		Summary:    "target",
 		LineageIds: []string{"lin-a"},
 		Evidence:   &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-a", Kind: "process"}}},
@@ -170,7 +170,7 @@ func TestIncidentMergeAPI(t *testing.T) {
 	})
 	st.AddIncident(&incidentv1.Incident{
 		Id:         "inc-b",
-		Scenario:   "scenario-b",
+		Labels:     labelsForScenario("scenario-b"),
 		Summary:    "source",
 		LineageIds: []string{"lin-b"},
 		Evidence:   &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-b", Kind: "process"}}},
@@ -219,24 +219,24 @@ func TestDataBatchAppendRecordsSessionCursor(t *testing.T) {
 
 func TestQueryPagination(t *testing.T) {
 	st := &store.Store{}
-	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-1", Scenario: "page", Behavior: "process.exec"})
-	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-2", Scenario: "page", Behavior: "file.open"})
-	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-3", Scenario: "page", Behavior: "network.connect"})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-1", Labels: labelsForScenario("page"), Behavior: "process.exec"})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-2", Labels: labelsForScenario("page"), Behavior: "file.open"})
+	st.AddEvent(&eventv1.CanonicalEvent{Id: "ev-3", Labels: labelsForScenario("page"), Behavior: "network.connect"})
 	st.AddSignal(endpointSignalForScenario("page", "sig-1", "lin-1", false, processEntity("p1")))
 	st.AddSignal(endpointSignalForScenario("page", "sig-2", "lin-2", false, processEntity("p2")))
-	st.AddIncident(&incidentv1.Incident{Id: "inc-1", Scenario: "page", Summary: "one"})
-	st.AddIncident(&incidentv1.Incident{Id: "inc-2", Scenario: "page", Summary: "two"})
+	st.AddIncident(&incidentv1.Incident{Id: "inc-1", Labels: labelsForScenario("page"), Summary: "one"})
+	st.AddIncident(&incidentv1.Incident{Id: "inc-2", Labels: labelsForScenario("page"), Summary: "two"})
 	handler := NewServer(st).Handler()
 
-	rec := get(t, handler, "/api/v1/events?scenario=page&limit=1&offset=1")
+	rec := get(t, handler, "/api/v1/events?label=scenario=page&limit=1&offset=1")
 	if strings.Contains(rec.Body.String(), `"id":"ev-1"`) || !strings.Contains(rec.Body.String(), `"id":"ev-2"`) || strings.Contains(rec.Body.String(), `"id":"ev-3"`) {
 		t.Fatalf("events page mismatch: %s", rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/signals?scenario=page&limit=1&offset=1")
+	rec = get(t, handler, "/api/v1/signals?label=scenario=page&limit=1&offset=1")
 	if strings.Contains(rec.Body.String(), `"name":"sig-1"`) || !strings.Contains(rec.Body.String(), `"name":"sig-2"`) {
 		t.Fatalf("signals page mismatch: %s", rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/incidents?scenario=page&limit=1&offset=1")
+	rec = get(t, handler, "/api/v1/incidents?label=scenario=page&limit=1&offset=1")
 	if strings.Contains(rec.Body.String(), `"id":"inc-1"`) || !strings.Contains(rec.Body.String(), `"id":"inc-2"`) {
 		t.Fatalf("incidents page mismatch: %s", rec.Body.String())
 	}
@@ -248,7 +248,7 @@ func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	handler := srv.Handler()
 	batch := httpDataBatch("00000000000000000007", "agent-a", "host-a", []*eventv1.CanonicalEvent{{
 		Id:       "ev-retry",
-		Scenario: "apt-fileless-c2",
+		Labels:   labelsForScenario("apt-fileless-c2"),
 		Behavior: "process.exec",
 	}}, []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-retry", false, processEntity("p-web")),
@@ -264,19 +264,19 @@ func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 		t.Fatalf("retry ack = %#v, want duplicate idempotent retry", second)
 	}
 
-	rec := get(t, handler, "/api/v1/events?scenario=apt-fileless-c2")
+	rec := get(t, handler, "/api/v1/events?label=scenario=apt-fileless-c2")
 	if got := strings.Count(rec.Body.String(), `"id":"ev-retry"`); got != 1 {
 		t.Fatalf("event count = %d, want 1: %s", got, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/signals?scenario=apt-fileless-c2&layer=endpoint")
+	rec = get(t, handler, "/api/v1/signals?label=scenario=apt-fileless-c2&layer=endpoint")
 	if got := strings.Count(rec.Body.String(), `"where":"SIGNAL_WHERE_ENDPOINT"`); got != 3 {
 		t.Fatalf("endpoint signal count = %d, want 3: %s", got, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/signals?scenario=apt-fileless-c2&layer=cloud")
+	rec = get(t, handler, "/api/v1/signals?label=scenario=apt-fileless-c2&layer=cloud")
 	if got := strings.Count(rec.Body.String(), `"where":"SIGNAL_WHERE_CLOUD"`); got != 2 {
 		t.Fatalf("cloud signal count = %d, want 2: %s", got, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/incidents?scenario=apt-fileless-c2")
+	rec = get(t, handler, "/api/v1/incidents?label=scenario=apt-fileless-c2")
 	if got := strings.Count(rec.Body.String(), `"id":"inc-`); got != 1 {
 		t.Fatalf("incident count = %d, want 1: %s", got, rec.Body.String())
 	}
@@ -305,7 +305,7 @@ func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) 
 		Where:        signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		BaseRisk:     50,
 		GlobalRarity: 1,
-		Scenario:     "rarity-append",
+		Labels:       labelsForScenario("rarity-append"),
 		Entities: []*signalv1.EntityRef{{
 			Kind: "container",
 			Key:  "checkout-api",
@@ -345,11 +345,11 @@ func TestUploadRequiresAgentIdentity(t *testing.T) {
 func TestUploadRequiresDurableTelemetryAppend(t *testing.T) {
 	st, _ := store.Open("")
 	srv := NewServer(st).WithProducer(failingProducer{err: errors.New("kafka unavailable")})
-	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-kafka", "agent-kafka", "host-kafka", []*eventv1.CanonicalEvent{{Id: "ev-kafka", Scenario: "kafka-gate"}}, nil), "grpc")
+	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-kafka", "agent-kafka", "host-kafka", []*eventv1.CanonicalEvent{{Id: "ev-kafka", Labels: labelsForScenario("kafka-gate")}}, nil), "grpc")
 	if err == nil || !strings.Contains(err.Error(), "append raw data batch") {
 		t.Fatalf("AppendDataBatchWithTransport error = %v, want append failure", err)
 	}
-	if got := st.ListEvents("kafka-gate", ""); len(got) != 0 {
+	if got := st.ListEvents(store.LabelSelector{"scenario": "kafka-gate"}, ""); len(got) != 0 {
 		t.Fatalf("events were stored before durable append: %+v", got)
 	}
 }
@@ -358,7 +358,7 @@ func TestDataPlaneAppendOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testin
 	st, _ := store.Open("")
 	producer := &recordingProducer{}
 	srv := NewServer(st).WithProducer(producer)
-	result, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-data-plane-only", "agent-data-plane-only", "host-data-plane-only", []*eventv1.CanonicalEvent{{Id: "ev-data-plane-only", Scenario: "data-plane-only"}}, []*signalv1.Signal{endpointSignalForScenario("data-plane-only", "payload_dropped", "lin-data-plane-only", false)}), "grpc")
+	result, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-data-plane-only", "agent-data-plane-only", "host-data-plane-only", []*eventv1.CanonicalEvent{{Id: "ev-data-plane-only", Labels: labelsForScenario("data-plane-only")}}, []*signalv1.Signal{endpointSignalForScenario("data-plane-only", "payload_dropped", "lin-data-plane-only", false)}), "grpc")
 	if err != nil {
 		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
 	}
@@ -368,10 +368,10 @@ func TestDataPlaneAppendOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testin
 	if len(producer.messages) != 1 || producer.messages[0].Topic != "sysarmor.agent.databatch.raw" {
 		t.Fatalf("producer messages = %+v, want one raw data batch append", producer.messages)
 	}
-	if got := st.ListEvents("data-plane-only", ""); len(got) != 0 {
+	if got := st.ListEvents(store.LabelSelector{"scenario": "data-plane-only"}, ""); len(got) != 0 {
 		t.Fatalf("data-plane stored events before worker processing: %+v", got)
 	}
-	if got := st.ListSignals("data-plane-only", "endpoint", false); len(got) != 0 {
+	if got := st.ListSignals(store.LabelSelector{"scenario": "data-plane-only"}, "endpoint", false); len(got) != 0 {
 		t.Fatalf("data-plane stored signals before worker processing: %+v", got)
 	}
 	sessions := st.ListAgentSessions("default", "agent-data-plane-only")
@@ -384,7 +384,7 @@ func TestUploadIndexesSecurityDocuments(t *testing.T) {
 	st, _ := store.Open("")
 	indexer := &recordingIndexer{}
 	srv := NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, indexer))
-	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-index", "agent-index", "host-index", []*eventv1.CanonicalEvent{{Id: "ev-index", Scenario: "apt-fileless-c2", Behavior: "process.exec"}}, []*signalv1.Signal{
+	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-index", "agent-index", "host-index", []*eventv1.CanonicalEvent{{Id: "ev-index", Labels: labelsForScenario("apt-fileless-c2"), Behavior: "process.exec"}}, []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-index", false, processEntity("p-web")),
 		endpointSignal("payload_dropped", "lin-index", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-index", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
@@ -409,7 +409,7 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 	handler := srv.Handler()
 	batch := httpDataBatch("", "agent-a", "host-a", []*eventv1.CanonicalEvent{{
 		Id:       "ev-1",
-		Scenario: "apt-staged-drop",
+		Labels:   labelsForScenario("apt-staged-drop"),
 		Behavior: "process.exec",
 		SubjectProc: &eventv1.ProcessRef{
 			StableId: "p1",
@@ -427,23 +427,23 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 		t.Fatalf("agents response missing agent-a: %s", rec.Body.String())
 	}
 
-	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop&behavior=process.exec")
+	rec = get(t, handler, "/api/v1/events?label=scenario=apt-staged-drop&behavior=process.exec")
 	if !strings.Contains(rec.Body.String(), "ev-1") {
 		t.Fatalf("events response missing ev-1: %s", rec.Body.String())
 	}
 
-	rec = get(t, handler, "/api/v1/recompute?scenario=apt-staged-drop&disable=cloud.cross_lineage")
+	rec = get(t, handler, "/api/v1/recompute?label=scenario=apt-staged-drop&disable=cloud.cross_lineage")
 	if strings.Contains(rec.Body.String(), `"inc-`) {
 		t.Fatalf("disabled cross-lineage recompute should not incident: %s", rec.Body.String())
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/reset?scenario=apt-staged-drop", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/reset?label=scenario=apt-staged-drop", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("reset status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/events?scenario=apt-staged-drop")
+	rec = get(t, handler, "/api/v1/events?label=scenario=apt-staged-drop")
 	if rec.Body.String() != "[]\n" {
 		t.Fatalf("events after reset = %s, want empty list", rec.Body.String())
 	}
@@ -554,7 +554,7 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	appendBatch(t, srv, httpDataBatch("", "", "", nil, []*signalv1.Signal{
 		endpointSignalForScenario(scenario, "payload_dropped", "lin-drop", false, payload),
 	}))
-	rec := get(t, handler, "/api/v1/incidents?scenario="+scenario)
+	rec := get(t, handler, "/api/v1/incidents?label=scenario="+scenario)
 	if strings.Contains(rec.Body.String(), `"inc-`) {
 		t.Fatalf("first split batch should not create incident: %s", rec.Body.String())
 	}
@@ -563,12 +563,12 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 		endpointSignalForScenario(scenario, "suspicious_exec_connect", "lin-connect", false, payload, socketEntity("10.66.0.99:443")),
 	}))
 
-	rec = get(t, handler, "/api/v1/signals?scenario="+scenario+"&layer=cloud")
+	rec = get(t, handler, "/api/v1/signals?label=scenario="+scenario+"&layer=cloud")
 	if got := strings.Count(rec.Body.String(), "dropped_payload_executed_and_connects"); got != 1 {
 		t.Fatalf("cloud signal count = %d, want 1: %s", got, rec.Body.String())
 	}
 
-	rec = get(t, handler, "/api/v1/incidents?scenario="+scenario)
+	rec = get(t, handler, "/api/v1/incidents?label=scenario="+scenario)
 	body := rec.Body.String()
 	if got := strings.Count(body, `"inc-`); got != 1 {
 		t.Fatalf("incident count = %d, want 1: %s", got, body)
@@ -579,12 +579,12 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 		}
 	}
 
-	appendBatch(t, srv, httpDataBatch("", "", "", []*eventv1.CanonicalEvent{{Id: "noise-1", Scenario: scenario, Behavior: "process.exec"}}, nil))
-	rec = get(t, handler, "/api/v1/signals?scenario="+scenario+"&layer=cloud")
+	appendBatch(t, srv, httpDataBatch("", "", "", []*eventv1.CanonicalEvent{{Id: "noise-1", Labels: labelsForScenario(scenario), Behavior: "process.exec"}}, nil))
+	rec = get(t, handler, "/api/v1/signals?label=scenario="+scenario+"&layer=cloud")
 	if got := strings.Count(rec.Body.String(), "dropped_payload_executed_and_connects"); got != 1 {
 		t.Fatalf("cloud signal duplicated after recompute, count = %d: %s", got, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/incidents?scenario="+scenario)
+	rec = get(t, handler, "/api/v1/incidents?label=scenario="+scenario)
 	if got := strings.Count(rec.Body.String(), `"inc-`); got != 1 {
 		t.Fatalf("incident duplicated after recompute, count = %d: %s", got, rec.Body.String())
 	}
@@ -643,11 +643,11 @@ func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 		endpointSignalForScenario("apt-staged-drop-policy", "payload_dropped", "lin-drop", false, fileEntity("/var/lib/app/plugins/helper")),
 		endpointSignalForScenario("apt-staged-drop-policy", "suspicious_exec_connect", "lin-connect", false, fileEntity("/var/lib/app/plugins/helper"), socketEntity("10.66.0.99:443")),
 	}))
-	rec = get(t, handler, "/api/v1/signals?scenario=apt-staged-drop-policy&layer=cloud")
+	rec = get(t, handler, "/api/v1/signals?label=scenario=apt-staged-drop-policy&layer=cloud")
 	if strings.Contains(rec.Body.String(), "dropped_payload_executed_and_connects") {
 		t.Fatalf("disabled cloud rule still emitted signal: %s", rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/incidents?scenario=apt-staged-drop-policy")
+	rec = get(t, handler, "/api/v1/incidents?label=scenario=apt-staged-drop-policy")
 	if strings.Contains(rec.Body.String(), `"inc-`) {
 		t.Fatalf("disabled cloud rule still created incident: %s", rec.Body.String())
 	}
@@ -1198,8 +1198,12 @@ func endpointSignalForScenario(scenario, name, lineage string, terminal bool, en
 		LineageId:    lineage,
 		Terminal:     terminal,
 		Entities:     entities,
-		Scenario:     scenario,
+		Labels:       labelsForScenario(scenario),
 	}
+}
+
+func labelsForScenario(scenario string) map[string]string {
+	return map[string]string{"scenario": scenario}
 }
 
 func processEntity(key string) *signalv1.EntityRef {

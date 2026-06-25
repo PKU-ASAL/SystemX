@@ -32,9 +32,9 @@ type Store struct {
 	path                string
 	backendInfo         *Info
 	saveState           func(State) error
-	listEvents          func(scenario, behavior string) ([]*eventv1.CanonicalEvent, error)
-	listSignals         func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error)
-	listIncidents       func(scenario string) ([]*incidentv1.Incident, error)
+	listEvents          func(LabelSelector, string) ([]*eventv1.CanonicalEvent, error)
+	listSignals         func(LabelSelector, string, bool) ([]*signalv1.Signal, error)
+	listIncidents       func(LabelSelector) ([]*incidentv1.Incident, error)
 	listResponses       func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
 	listControlCommands func(tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
 	listPolicies        func(tenantID string) ([]policymodel.Policy, error)
@@ -63,6 +63,12 @@ type Store struct {
 	OperatorRoles       []OperatorRoleBinding
 	Metrics             Metrics
 	RarityBaseline      rarity.Baseline
+}
+
+type LabelSelector map[string]string
+
+func LabelsMatch(labels map[string]string, selector LabelSelector) bool {
+	return labelSelectorMatches(labels, selector)
 }
 
 type Info struct {
@@ -221,9 +227,9 @@ func (s *Store) ConfigureBackend(info Info, saveState func(State) error) {
 }
 
 func (s *Store) ConfigureQueryHooks(
-	listEvents func(string, string) ([]*eventv1.CanonicalEvent, error),
-	listSignals func(string, string, bool) ([]*signalv1.Signal, error),
-	listIncidents func(string) ([]*incidentv1.Incident, error),
+	listEvents func(LabelSelector, string) ([]*eventv1.CanonicalEvent, error),
+	listSignals func(LabelSelector, string, bool) ([]*signalv1.Signal, error),
+	listIncidents func(LabelSelector) ([]*incidentv1.Incident, error),
 	listResponses func(string, string) ([]responsemodel.AuditRecord, error),
 	listControlCommands func(string, string, string) ([]controlmodel.ControlCommand, error),
 	listPolicies func(string) ([]policymodel.Policy, error),
@@ -1375,15 +1381,12 @@ func upsertControlCommandSnapshot(commands []controlmodel.ControlCommand, cmd co
 	return append(commands, cmd)
 }
 
-func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
-	if scenario == "" {
-		return
-	}
+func (s *Store) ReplaceDerivedForLabels(labels LabelSelector, cloudSignals []*signalv1.Signal, incidents []*incidentv1.Incident) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	signals := s.Signals[:0]
 	for _, sig := range s.Signals {
-		if sig.GetScenario() == scenario && layerName(sig.GetWhere()) == "cloud" {
+		if labelSelectorMatches(sig.GetLabels(), labels) && layerName(sig.GetWhere()) == "cloud" {
 			continue
 		}
 		signals = append(signals, sig)
@@ -1392,7 +1395,7 @@ func (s *Store) ReplaceDerivedForScenario(scenario string, cloudSignals []*signa
 	keptIncidents := s.Incidents[:0]
 	statusByKey := map[string]*incidentv1.Incident{}
 	for _, inc := range s.Incidents {
-		if inc.GetScenario() == scenario {
+		if labelSelectorMatches(inc.GetLabels(), labels) {
 			if key := incidentKey(inc); key != "" && inc.GetStatus() != "" {
 				statusByKey[key] = inc
 			}
@@ -1673,12 +1676,12 @@ func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealt
 	return found, ok
 }
 
-func (s *Store) ListEvents(scenario, behavior string) []*eventv1.CanonicalEvent {
+func (s *Store) ListEvents(labels LabelSelector, behavior string) []*eventv1.CanonicalEvent {
 	s.mu.RLock()
 	listEvents := s.listEvents
 	s.mu.RUnlock()
 	if listEvents != nil {
-		events, err := listEvents(scenario, behavior)
+		events, err := listEvents(labels, behavior)
 		if err == nil && len(events) > 0 {
 			return events
 		}
@@ -1687,7 +1690,7 @@ func (s *Store) ListEvents(scenario, behavior string) []*eventv1.CanonicalEvent 
 	defer s.mu.RUnlock()
 	out := make([]*eventv1.CanonicalEvent, 0, len(s.Events))
 	for _, ev := range s.Events {
-		if scenario != "" && ev.GetScenario() != scenario {
+		if !labelSelectorMatches(ev.GetLabels(), labels) {
 			continue
 		}
 		if behavior != "" && ev.GetBehavior() != behavior {
@@ -1698,12 +1701,12 @@ func (s *Store) ListEvents(scenario, behavior string) []*eventv1.CanonicalEvent 
 	return out
 }
 
-func (s *Store) ListSignals(scenario, layer string, terminalOnly bool) []*signalv1.Signal {
+func (s *Store) ListSignals(labels LabelSelector, layer string, terminalOnly bool) []*signalv1.Signal {
 	s.mu.RLock()
 	listSignals := s.listSignals
 	s.mu.RUnlock()
 	if listSignals != nil {
-		signals, err := listSignals(scenario, layer, terminalOnly)
+		signals, err := listSignals(labels, layer, terminalOnly)
 		if err == nil && len(signals) > 0 {
 			return signals
 		}
@@ -1712,7 +1715,7 @@ func (s *Store) ListSignals(scenario, layer string, terminalOnly bool) []*signal
 	defer s.mu.RUnlock()
 	out := make([]*signalv1.Signal, 0, len(s.Signals))
 	for _, sig := range s.Signals {
-		if scenario != "" && sig.GetScenario() != scenario {
+		if !labelSelectorMatches(sig.GetLabels(), labels) {
 			continue
 		}
 		if terminalOnly && !sig.GetTerminal() {
@@ -1740,12 +1743,12 @@ func (s *Store) GetSignal(id string) (*signalv1.Signal, bool) {
 	return nil, false
 }
 
-func (s *Store) ListIncidents(scenario string) []*incidentv1.Incident {
+func (s *Store) ListIncidents(labels LabelSelector) []*incidentv1.Incident {
 	s.mu.RLock()
 	listIncidents := s.listIncidents
 	s.mu.RUnlock()
 	if listIncidents != nil {
-		incidents, err := listIncidents(scenario)
+		incidents, err := listIncidents(labels)
 		if err == nil && len(incidents) > 0 {
 			return incidents
 		}
@@ -1754,7 +1757,7 @@ func (s *Store) ListIncidents(scenario string) []*incidentv1.Incident {
 	defer s.mu.RUnlock()
 	out := make([]*incidentv1.Incident, 0, len(s.Incidents))
 	for _, inc := range s.Incidents {
-		if scenario != "" && inc.GetScenario() != scenario {
+		if !labelSelectorMatches(inc.GetLabels(), labels) {
 			continue
 		}
 		out = append(out, inc)
@@ -1762,14 +1765,14 @@ func (s *Store) ListIncidents(scenario string) []*incidentv1.Incident {
 	return out
 }
 
-func (s *Store) GetIncident(id, scenario string) (*incidentv1.Incident, bool) {
+func (s *Store) GetIncident(id string, labels LabelSelector) (*incidentv1.Incident, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, inc := range s.Incidents {
 		if id != "" && inc.GetId() != id {
 			continue
 		}
-		if scenario != "" && inc.GetScenario() != scenario {
+		if !labelSelectorMatches(inc.GetLabels(), labels) {
 			continue
 		}
 		return inc, true
@@ -1777,8 +1780,8 @@ func (s *Store) GetIncident(id, scenario string) (*incidentv1.Incident, bool) {
 	return nil, false
 }
 
-func (s *Store) UpdateIncidentStatus(id, scenario, status, reason, actor string) (*incidentv1.Incident, bool) {
-	if id == "" && scenario == "" {
+func (s *Store) UpdateIncidentStatus(id string, labels LabelSelector, status, reason, actor string) (*incidentv1.Incident, bool) {
+	if id == "" && len(labels) == 0 {
 		return nil, false
 	}
 	s.mu.Lock()
@@ -1787,7 +1790,7 @@ func (s *Store) UpdateIncidentStatus(id, scenario, status, reason, actor string)
 		if id != "" && inc.GetId() != id {
 			continue
 		}
-		if scenario != "" && inc.GetScenario() != scenario {
+		if !labelSelectorMatches(inc.GetLabels(), labels) {
 			continue
 		}
 		switch status {
@@ -1805,8 +1808,8 @@ func (s *Store) UpdateIncidentStatus(id, scenario, status, reason, actor string)
 	return nil, false
 }
 
-func (s *Store) AttachIncidentEvidence(id, scenario string, evidence *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool) {
-	if (id == "" && scenario == "") || evidence == nil {
+func (s *Store) AttachIncidentEvidence(id string, labels LabelSelector, evidence *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool) {
+	if (id == "" && len(labels) == 0) || evidence == nil {
 		return nil, false
 	}
 	s.mu.Lock()
@@ -1815,7 +1818,7 @@ func (s *Store) AttachIncidentEvidence(id, scenario string, evidence *incidentv1
 		if id != "" && inc.GetId() != id {
 			continue
 		}
-		if scenario != "" && inc.GetScenario() != scenario {
+		if !labelSelectorMatches(inc.GetLabels(), labels) {
 			continue
 		}
 		inc.Evidence = mergeEvidence(inc.GetEvidence(), evidence)
@@ -1863,10 +1866,10 @@ func (s *Store) MetricsSnapshot() Metrics {
 	return s.Metrics
 }
 
-func (s *Store) DeleteScenario(scenario string) {
+func (s *Store) DeleteByLabels(labels LabelSelector) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if scenario == "" {
+	if len(labels) == 0 {
 		s.Agents = nil
 		s.Events = nil
 		s.Signals = nil
@@ -1878,21 +1881,21 @@ func (s *Store) DeleteScenario(scenario string) {
 	}
 	events := s.Events[:0]
 	for _, ev := range s.Events {
-		if ev.GetScenario() != scenario {
+		if !labelSelectorMatches(ev.GetLabels(), labels) {
 			events = append(events, ev)
 		}
 	}
 	s.Events = events
 	signals := s.Signals[:0]
 	for _, sig := range s.Signals {
-		if sig.GetScenario() != scenario {
+		if !labelSelectorMatches(sig.GetLabels(), labels) {
 			signals = append(signals, sig)
 		}
 	}
 	s.Signals = signals
 	incidents := s.Incidents[:0]
 	for _, inc := range s.Incidents {
-		if inc.GetScenario() != scenario {
+		if !labelSelectorMatches(inc.GetLabels(), labels) {
 			incidents = append(incidents, inc)
 		}
 	}
@@ -2034,7 +2037,7 @@ func signalKey(sig *signalv1.Signal) string {
 		return ""
 	}
 	parts := []string{
-		sig.GetScenario(),
+		labelKey(sig.GetLabels()),
 		layerName(sig.GetWhere()),
 		sig.GetName(),
 		sig.GetLineageId(),
@@ -2057,7 +2060,7 @@ func incidentKey(inc *incidentv1.Incident) string {
 		return ""
 	}
 	parts := []string{
-		inc.GetScenario(),
+		labelKey(inc.GetLabels()),
 		inc.GetSummary(),
 		inc.GetConverge().GetMethod(),
 	}
@@ -2201,6 +2204,37 @@ func sortedEntities(in []*signalv1.EntityRef) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func labelSelectorMatches(labels map[string]string, selector LabelSelector) bool {
+	if len(selector) == 0 {
+		return true
+	}
+	for key, want := range selector {
+		if key == "" {
+			continue
+		}
+		if labels[key] != want {
+			return false
+		}
+	}
+	return true
+}
+
+func labelKey(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+labels[key])
+	}
+	return strings.Join(parts, "\x00")
 }
 
 func stableKey(parts ...string) string {

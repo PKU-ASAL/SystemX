@@ -47,8 +47,8 @@ if data.get("missing_event_refs"):
     raise SystemExit(f"missing event refs: {data['missing_event_refs']}")
 PY
 
-if ! grep -Fq "\"scenario\":\"$SCENARIO\"" "$EVENTS"; then
-  echo "[assert-vm-local][ERROR] local events do not contain scenario=$SCENARIO" >&2
+if ! grep -Fq "\"labels\":{\"scenario\":\"$SCENARIO\"" "$EVENTS"; then
+  echo "[assert-vm-local][ERROR] local events do not contain label scenario=$SCENARIO" >&2
   exit 1
 fi
 if [[ -n "$SIGNAL_RULE" ]] && ! grep -Fq "\"name\":\"$SIGNAL_RULE\"" "$SIGNALS"; then

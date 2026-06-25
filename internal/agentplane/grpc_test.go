@@ -71,7 +71,7 @@ func TestDataPlaneAppendBatch(t *testing.T) {
 	if ack.GetPartial() {
 		t.Fatalf("ack partial = true, want false until partial append is explicitly supported")
 	}
-	if got := st.ListIncidents("apt-fileless-c2"); len(got) != 1 {
+	if got := st.ListIncidents(store.LabelSelector{"scenario": "apt-fileless-c2"}); len(got) != 1 {
 		t.Fatalf("incidents = %d, want 1", len(got))
 	}
 }
@@ -1001,7 +1001,7 @@ func endpointSignal(name, lineage string, terminal bool, entities ...*signalv1.E
 		GlobalRarity: 1,
 		LineageId:    lineage,
 		Terminal:     terminal,
-		Scenario:     "apt-fileless-c2",
+		Labels:       map[string]string{"scenario": "apt-fileless-c2"},
 		Entities:     entities,
 	}
 }

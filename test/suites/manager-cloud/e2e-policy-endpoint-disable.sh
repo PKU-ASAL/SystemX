@@ -124,9 +124,9 @@ wait_contains "agent assigned policy" 'policy=no-payload-drop version=2 mode=obs
   grep -F 'policy=no-payload-drop version=2 mode=observe' "$TMP/agent.log"
 
 wait_contains "uploaded event" "$SCENARIO" "$RESULTS/e2e-policy-endpoint-disable.events.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager events list --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager events list --label scenario="$SCENARIO"
 
-"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario "$SCENARIO" --layer endpoint > "$RESULTS/e2e-policy-endpoint-disable.signals.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario="$SCENARIO" --layer endpoint > "$RESULTS/e2e-policy-endpoint-disable.signals.json"
 if grep -Fq 'payload_dropped' "$RESULTS/e2e-policy-endpoint-disable.signals.json"; then
   echo "[e2e-policy-endpoint-disable][ERROR] disabled endpoint rule still emitted signal" >&2
   cat "$RESULTS/e2e-policy-endpoint-disable.signals.json" >&2

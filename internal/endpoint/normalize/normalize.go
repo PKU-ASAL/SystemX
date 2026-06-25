@@ -87,7 +87,6 @@ func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent
 		MonoNs:       ev.GetMonoNs(),
 		OccurredAtNs: ev.GetMonoNs(),
 		Behavior:     eventBehavior(ev),
-		Scenario:     "",
 		SubjectProc: &eventv1.ProcessRef{
 			StableId:    stableID,
 			Pid:         ev.GetProc().GetPid(),

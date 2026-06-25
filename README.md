@@ -94,8 +94,8 @@ Container manager:
 
 ```bash
 docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 status --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --scenario apt-fileless-c2 --layer endpoint --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --scenario apt-fileless-c2 --json
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --label scenario=apt-fileless-c2 --layer endpoint --json
+docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --label scenario=apt-fileless-c2 --json
 docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 metrics --json
 ```
 
@@ -104,14 +104,14 @@ VM manager:
 ```bash
 cd test/env/vm
 vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 status --json"
-vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 incidents --scenario apt-staged-drop --json"
+vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 incidents --label scenario=apt-staged-drop --json"
 ```
 
 Control recompute checks do not mutate the store:
 
 ```bash
-sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario apt-staged-drop --disable cloud.cross_lineage --json
-sysarmorctl --mgr 127.0.0.1:9443 recompute --scenario benign-ci-noise --mode additive_threshold --json
+sysarmorctl --mgr 127.0.0.1:9443 recompute --label scenario=apt-staged-drop --disable cloud.cross_lineage --json
+sysarmorctl --mgr 127.0.0.1:9443 recompute --label scenario=benign-ci-noise --mode additive_threshold --json
 ```
 
 Endpoint policy explain and WAL health:

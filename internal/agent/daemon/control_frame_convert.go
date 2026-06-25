@@ -59,7 +59,7 @@ func responseCommandFromControl(in *controlplanev1.ResponseCommand) (responsemod
 		PolicyID:          in.GetPolicyId(),
 		PolicyVersion:     in.GetPolicyVersion(),
 		SignalID:          in.GetSignalId(),
-		Scenario:          in.GetScenario(),
+		Labels:            cloneControlLabels(in.GetLabels()),
 		Scope:             responsemodel.Scope{Type: in.GetScope().GetType(), Selector: in.GetScope().GetSelector()},
 		Action:            in.GetAction(),
 		Mode:              in.GetMode(),
@@ -90,7 +90,7 @@ func evidencePullbackFromControl(in *controlplanev1.EvidencePullbackRequest) (co
 		TenantID:   in.GetTenantId(),
 		AgentID:    in.GetAgentId(),
 		IncidentID: in.GetIncidentId(),
-		Scenario:   in.GetScenario(),
+		Labels:     cloneControlLabels(in.GetLabels()),
 		Target:     in.GetTarget(),
 		Reason:     in.GetReason(),
 		Status:     in.GetStatus(),
@@ -102,4 +102,15 @@ func normalizeGRPCAddress(manager string) string {
 	manager = strings.TrimPrefix(manager, "http://")
 	manager = strings.TrimPrefix(manager, "https://")
 	return strings.TrimRight(manager, "/")
+}
+
+func cloneControlLabels(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

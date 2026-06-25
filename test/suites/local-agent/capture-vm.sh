@@ -87,7 +87,7 @@ agent:
   host_id: vm-node-a
   tenant_id: default
   token: $TOKEN
-  scenario: $S
+  label.scenario: $S
 
 manager:
   transport: local
@@ -166,8 +166,8 @@ fi
 
 vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-node-a --tenant-id default --timeout 20s" \
   > "$RESULTS/vm.$S.events.ndjson" 2>"$RESULTS/vm.$S.events.ndjson.err"
-if ! grep -Fq "\"scenario\":\"$S\"" "$RESULTS/vm.$S.events.ndjson"; then
-  echo "[capture-vm][ERROR] local events do not contain scenario=$S" >&2
+if ! grep -Fq "\"labels\":{\"scenario\":\"$S\"" "$RESULTS/vm.$S.events.ndjson"; then
+  echo "[capture-vm][ERROR] local events do not contain label scenario=$S" >&2
   cat "$RESULTS/vm.$S.events.ndjson" >&2 2>/dev/null || true
   exit 1
 fi

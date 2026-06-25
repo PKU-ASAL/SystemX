@@ -90,7 +90,7 @@ until_observed_at
 labels
 ```
 
-`scenario` remains a legacy/demo field. Production filtering and benchmark scoping should use labels.
+There is no top-level `scenario` field in endpoint events, signals, or incidents. Test and benchmark dimensions such as workload and scenario are carried as labels, for example `labels["workload"]` and `labels["scenario"]`.
 
 ## sysarmorctl Model
 

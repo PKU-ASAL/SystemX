@@ -13,34 +13,34 @@ import (
 	"time"
 )
 
-func TestListSignalsFiltersScenarioLayerAndTerminal(t *testing.T) {
+func TestListSignalsFiltersLabelsLayerAndTerminal(t *testing.T) {
 	st := &Store{}
 	st.AddSignal(&signalv1.Signal{
 		Id:       "s1",
 		Name:     "reverse_shell_pattern",
-		Scenario: "apt-fileless-c2",
+		Labels:   scenarioMap("apt-fileless-c2"),
 		Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		Terminal: true,
 	})
 	st.AddSignal(&signalv1.Signal{
-		Id:       "s2",
-		Name:     "web_shell_chain",
-		Scenario: "apt-fileless-c2",
-		Where:    signalv1.SignalWhere_SIGNAL_WHERE_CLOUD,
+		Id:     "s2",
+		Name:   "web_shell_chain",
+		Labels: scenarioMap("apt-fileless-c2"),
+		Where:  signalv1.SignalWhere_SIGNAL_WHERE_CLOUD,
 	})
 	st.AddSignal(&signalv1.Signal{
-		Id:       "s3",
-		Name:     "payload_dropped",
-		Scenario: "apt-staged-drop",
-		Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+		Id:     "s3",
+		Name:   "payload_dropped",
+		Labels: scenarioMap("apt-staged-drop"),
+		Where:  signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 	})
 
-	got := st.ListSignals("apt-fileless-c2", "endpoint", true)
+	got := st.ListSignals(scenarioLabels("apt-fileless-c2"), "endpoint", true)
 	if len(got) != 1 || got[0].GetId() != "s1" {
 		t.Fatalf("expected terminal endpoint signal s1, got %#v", got)
 	}
 
-	got = st.ListSignals("apt-fileless-c2", "cloud", false)
+	got = st.ListSignals(scenarioLabels("apt-fileless-c2"), "cloud", false)
 	if len(got) != 1 || got[0].GetId() != "s2" {
 		t.Fatalf("expected cloud signal s2, got %#v", got)
 	}
@@ -68,7 +68,7 @@ func TestMetricsSnapshotAndReset(t *testing.T) {
 		t.Fatalf("average latency = %f, want 8", got.AverageConvergenceLatency)
 	}
 
-	st.DeleteScenario("")
+	st.DeleteByLabels(nil)
 	if got := st.MetricsSnapshot(); got.DataBatchesAppended != 0 {
 		t.Fatalf("metrics after full reset = %#v, want zero", got)
 	}
@@ -283,12 +283,12 @@ func TestCompleteEvidencePullbackUpdatesStatus(t *testing.T) {
 	}
 }
 
-func TestListIncidentsFiltersScenario(t *testing.T) {
+func TestListIncidentsFiltersLabels(t *testing.T) {
 	st := &Store{}
-	st.AddIncident(&incidentv1.Incident{Id: "i1", Scenario: "apt-fileless-c2"})
-	st.AddIncident(&incidentv1.Incident{Id: "i2", Scenario: "benign-ci-noise"})
+	st.AddIncident(&incidentv1.Incident{Id: "i1", Labels: scenarioMap("apt-fileless-c2")})
+	st.AddIncident(&incidentv1.Incident{Id: "i2", Labels: scenarioMap("benign-ci-noise")})
 
-	got := st.ListIncidents("apt-fileless-c2")
+	got := st.ListIncidents(scenarioLabels("apt-fileless-c2"))
 	if len(got) != 1 || got[0].GetId() != "i1" {
 		t.Fatalf("expected incident i1, got %#v", got)
 	}
@@ -314,28 +314,28 @@ func TestIncidentLifecycleStatusPersistsAcrossUpsert(t *testing.T) {
 	st := &Store{}
 	inc := &incidentv1.Incident{
 		Id:                  "inc-a",
-		Scenario:            "a",
+		Labels:              scenarioMap("a"),
 		Summary:             "same story",
 		LineageIds:          []string{"lin-a"},
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
 		ContributingSignals: []*signalv1.Signal{testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash")},
 	}
 	st.AddIncident(inc)
-	if got := st.ListIncidents("a")[0].GetStatus(); got != "open" {
+	if got := st.ListIncidents(scenarioLabels("a"))[0].GetStatus(); got != "open" {
 		t.Fatalf("default status = %q, want open", got)
 	}
-	if _, ok := st.UpdateIncidentStatus("", "a", "suppressed", "known test", "tester"); !ok {
+	if _, ok := st.UpdateIncidentStatus("", scenarioLabels("a"), "suppressed", "known test", "tester"); !ok {
 		t.Fatal("UpdateIncidentStatus ok = false")
 	}
 	st.AddIncident(&incidentv1.Incident{
 		Id:                  "inc-b",
-		Scenario:            "a",
+		Labels:              scenarioMap("a"),
 		Summary:             "same story",
 		LineageIds:          []string{"lin-a"},
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
 		ContributingSignals: inc.GetContributingSignals(),
 	})
-	got := st.ListIncidents("a")[0]
+	got := st.ListIncidents(scenarioLabels("a"))[0]
 	if got.GetStatus() != "suppressed" || got.GetStatusReason() != "known test" || got.GetStatusActor() != "tester" {
 		t.Fatalf("status after upsert = %q/%q/%q", got.GetStatus(), got.GetStatusReason(), got.GetStatusActor())
 	}
@@ -346,7 +346,7 @@ func TestIncidentEvidenceAttachPersistsAcrossUpsert(t *testing.T) {
 	sig := testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash")
 	inc := &incidentv1.Incident{
 		Id:                  "inc-a",
-		Scenario:            "a",
+		Labels:              scenarioMap("a"),
 		Summary:             "same story",
 		LineageIds:          []string{"lin-a"},
 		Evidence:            &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-bash", Kind: "process"}}},
@@ -354,7 +354,7 @@ func TestIncidentEvidenceAttachPersistsAcrossUpsert(t *testing.T) {
 		ContributingSignals: []*signalv1.Signal{sig},
 	}
 	st.AddIncident(inc)
-	if _, ok := st.AttachIncidentEvidence("", "a", &incidentv1.EvidenceSubgraph{
+	if _, ok := st.AttachIncidentEvidence("", scenarioLabels("a"), &incidentv1.EvidenceSubgraph{
 		Nodes: []*incidentv1.GraphNode{
 			{Id: "user:root", Kind: "user", Label: "root"},
 			{Id: "process:p-bash", Kind: "process"},
@@ -365,14 +365,14 @@ func TestIncidentEvidenceAttachPersistsAcrossUpsert(t *testing.T) {
 	}
 	st.AddIncident(&incidentv1.Incident{
 		Id:                  "inc-b",
-		Scenario:            "a",
+		Labels:              scenarioMap("a"),
 		Summary:             "same story",
 		LineageIds:          []string{"lin-a"},
 		Evidence:            &incidentv1.EvidenceSubgraph{Nodes: []*incidentv1.GraphNode{{Id: "process:p-bash", Kind: "process"}}},
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
 		ContributingSignals: []*signalv1.Signal{sig},
 	})
-	got := st.ListIncidents("a")[0].GetEvidence()
+	got := st.ListIncidents(scenarioLabels("a"))[0].GetEvidence()
 	if len(got.GetNodes()) != 2 {
 		t.Fatalf("nodes after attach/upsert = %d, want 2: %+v", len(got.GetNodes()), got.GetNodes())
 	}
@@ -385,7 +385,7 @@ func TestMergeIncidentsCombinesEvidenceAndRemovesSource(t *testing.T) {
 	st := &Store{}
 	st.AddIncident(&incidentv1.Incident{
 		Id:         "inc-a",
-		Scenario:   "a",
+		Labels:     scenarioMap("a"),
 		Summary:    "target",
 		Severity:   40,
 		Mitre:      []string{"T1059"},
@@ -399,7 +399,7 @@ func TestMergeIncidentsCombinesEvidenceAndRemovesSource(t *testing.T) {
 	})
 	st.AddIncident(&incidentv1.Incident{
 		Id:         "inc-b",
-		Scenario:   "b",
+		Labels:     scenarioMap("b"),
 		Summary:    "source",
 		Severity:   80,
 		Mitre:      []string{"T1105"},
@@ -432,7 +432,7 @@ func TestMergeIncidentsCombinesEvidenceAndRemovesSource(t *testing.T) {
 	if len(merged.GetContributingSignals()) != 2 {
 		t.Fatalf("contributing signals = %d, want 2", len(merged.GetContributingSignals()))
 	}
-	if got := st.ListIncidents(""); len(got) != 1 || got[0].GetId() != "inc-a" {
+	if got := st.ListIncidents(nil); len(got) != 1 || got[0].GetId() != "inc-a" {
 		t.Fatalf("incidents after merge = %+v", got)
 	}
 }
@@ -445,7 +445,7 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	if inserted := st.AddEvent(testEvent("ev-1", "a")); inserted {
 		t.Fatal("duplicate AddEvent inserted = true")
 	}
-	if got := st.ListEvents("a", ""); len(got) != 1 {
+	if got := st.ListEvents(scenarioLabels("a"), ""); len(got) != 1 {
 		t.Fatalf("events after duplicate upsert = %d, want 1", len(got))
 	}
 
@@ -458,13 +458,13 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	}
 	st.AddSignal(testSignal("sig-c", "a", signalv1.SignalWhere_SIGNAL_WHERE_CLOUD, "payload_dropped", "lin-a", "file:/tmp/x"))
 	st.AddSignal(testSignal("sig-d", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/y"))
-	if got := st.ListSignals("a", "", false); len(got) != 3 {
+	if got := st.ListSignals(scenarioLabels("a"), "", false); len(got) != 3 {
 		t.Fatalf("signals after semantic duplicate upsert = %d, want 3", len(got))
 	}
 
 	inc := &incidentv1.Incident{
 		Id:                  "inc-a",
-		Scenario:            "a",
+		Labels:              scenarioMap("a"),
 		Summary:             "same story",
 		LineageIds:          []string{"lin-a", "lin-b"},
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
@@ -475,7 +475,7 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	}
 	if inserted := st.AddIncident(&incidentv1.Incident{
 		Id:                  "inc-b",
-		Scenario:            "a",
+		Labels:              scenarioMap("a"),
 		Summary:             "same story",
 		LineageIds:          []string{"lin-b", "lin-a"},
 		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
@@ -483,7 +483,7 @@ func TestUpsertsDuplicateEventsSignalsAndIncidents(t *testing.T) {
 	}); inserted {
 		t.Fatal("duplicate AddIncident inserted = true")
 	}
-	if got := st.ListIncidents("a"); len(got) != 1 {
+	if got := st.ListIncidents(scenarioLabels("a")); len(got) != 1 {
 		t.Fatalf("incidents after semantic duplicate upsert = %d, want 1", len(got))
 	}
 }
@@ -580,7 +580,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.AddAgent(AgentIdentity{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Version: "test"})
 	st.AddEvent(testEvent("ev-a", "scenario-a"))
 	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
-	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Scenario: "scenario-a", Summary: "incident-a", Status: "open"})
+	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Labels: scenarioMap("scenario-a"), Summary: "incident-a", Status: "open"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
 	st.RecordDataBatchAppend(AgentIdentity{AgentID: "agent-a", TenantID: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.UpsertOperatorRoleBinding(OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin", "policy_admin", "responder"}})
@@ -604,13 +604,13 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	if got := reloaded.ListAgents(); len(got) != 1 || got[0].AgentID != "agent-a" {
 		t.Fatalf("agents after import = %+v", got)
 	}
-	if got := reloaded.ListEvents("scenario-a", ""); len(got) != 1 || got[0].GetId() != "ev-a" {
+	if got := reloaded.ListEvents(scenarioLabels("scenario-a"), ""); len(got) != 1 || got[0].GetId() != "ev-a" {
 		t.Fatalf("events after import = %+v", got)
 	}
-	if got := reloaded.ListSignals("scenario-a", "endpoint", false); len(got) != 1 || got[0].GetId() != "sig-a" {
+	if got := reloaded.ListSignals(scenarioLabels("scenario-a"), "endpoint", false); len(got) != 1 || got[0].GetId() != "sig-a" {
 		t.Fatalf("signals after import = %+v", got)
 	}
-	if got := reloaded.ListIncidents("scenario-a"); len(got) != 1 || got[0].GetId() != "inc-a" {
+	if got := reloaded.ListIncidents(scenarioLabels("scenario-a")); len(got) != 1 || got[0].GetId() != "inc-a" {
 		t.Fatalf("incidents after import = %+v", got)
 	}
 	if _, ok := reloaded.GetAgentHealth("default", "agent-a"); !ok {
@@ -669,25 +669,25 @@ func TestAgentSessionLifecycle(t *testing.T) {
 	}
 }
 
-func TestDeleteScenario(t *testing.T) {
+func TestDeleteByLabels(t *testing.T) {
 	st := &Store{}
-	st.AddSignal(&signalv1.Signal{Id: "s1", Scenario: "a"})
-	st.AddSignal(&signalv1.Signal{Id: "s2", Scenario: "b"})
-	st.AddIncident(&incidentv1.Incident{Id: "i1", Scenario: "a"})
-	st.AddIncident(&incidentv1.Incident{Id: "i2", Scenario: "b"})
+	st.AddSignal(&signalv1.Signal{Id: "s1", Labels: scenarioMap("a")})
+	st.AddSignal(&signalv1.Signal{Id: "s2", Labels: scenarioMap("b")})
+	st.AddIncident(&incidentv1.Incident{Id: "i1", Labels: scenarioMap("a")})
+	st.AddIncident(&incidentv1.Incident{Id: "i2", Labels: scenarioMap("b")})
 
-	st.DeleteScenario("a")
+	st.DeleteByLabels(scenarioLabels("a"))
 
-	if got := st.ListSignals("a", "", false); len(got) != 0 {
+	if got := st.ListSignals(scenarioLabels("a"), "", false); len(got) != 0 {
 		t.Fatalf("signals for deleted scenario = %d, want 0", len(got))
 	}
-	if got := st.ListIncidents("a"); len(got) != 0 {
+	if got := st.ListIncidents(scenarioLabels("a")); len(got) != 0 {
 		t.Fatalf("incidents for deleted scenario = %d, want 0", len(got))
 	}
-	if got := st.ListSignals("b", "", false); len(got) != 1 {
+	if got := st.ListSignals(scenarioLabels("b"), "", false); len(got) != 1 {
 		t.Fatalf("signals for other scenario = %d, want 1", len(got))
 	}
-	if got := st.ListIncidents("b"); len(got) != 1 {
+	if got := st.ListIncidents(scenarioLabels("b")); len(got) != 1 {
 		t.Fatalf("incidents for other scenario = %d, want 1", len(got))
 	}
 }
@@ -786,17 +786,25 @@ func TestPolicyAuditPersistsAcrossStateExport(t *testing.T) {
 }
 
 func testEvent(id, scenario string) *eventv1.CanonicalEvent {
-	return &eventv1.CanonicalEvent{Id: id, Scenario: scenario}
+	return &eventv1.CanonicalEvent{Id: id, Labels: scenarioMap(scenario)}
 }
 
 func testSignal(id, scenario string, where signalv1.SignalWhere, name, lineage, entity string) *signalv1.Signal {
 	return &signalv1.Signal{
 		Id:        id,
-		Scenario:  scenario,
+		Labels:    scenarioMap(scenario),
 		Where:     where,
 		Name:      name,
 		LineageId: lineage,
 		Entities:  []*signalv1.EntityRef{{Kind: "file", Key: entity, Role: "object"}},
 		EventRefs: []string{"ev-1"},
 	}
+}
+
+func scenarioLabels(scenario string) LabelSelector {
+	return LabelSelector{"scenario": scenario}
+}
+
+func scenarioMap(scenario string) map[string]string {
+	return map[string]string{"scenario": scenario}
 }

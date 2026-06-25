@@ -145,7 +145,7 @@ wait_contains "agent-health parse counter" '"parse_errors":' "$RESULTS/e2e-agent
 wait_contains "agent-health last error" 'unrecognized tetragon event' "$RESULTS/e2e-agent-parse-health.health.json" \
   "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-parse-health --tenant-id default
 wait_contains "tamper signal" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-parse-health.signals.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario agent-health --layer endpoint --terminal true
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario=agent-health --layer endpoint --terminal true
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-parse-health.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-parse-health.manager.log"

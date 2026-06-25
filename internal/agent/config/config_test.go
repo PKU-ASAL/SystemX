@@ -89,7 +89,7 @@ agent:
   host_id: node-a
   tenant_id: default
   token: dev-token
-  scenario: apt-fileless-c2-managed
+  label.scenario: apt-fileless-c2-managed
   label.env: test
   label.deployment: endpoint-refinement
 
@@ -150,10 +150,7 @@ resource:
 	if cfg.Manager.TLSCA != "/etc/sysarmor/pki/ca.pem" || cfg.Manager.TLSCert == "" || cfg.Manager.TLSKey == "" || cfg.Manager.TLSServerName != "manager.sysarmor.local" || cfg.Manager.TLSInsecure {
 		t.Fatalf("manager TLS config = %+v", cfg.Manager)
 	}
-	if cfg.Agent.Scenario != "apt-fileless-c2-managed" {
-		t.Fatalf("scenario = %q", cfg.Agent.Scenario)
-	}
-	if cfg.Agent.Labels["env"] != "test" || cfg.Agent.Labels["deployment"] != "endpoint-refinement" {
+	if cfg.Agent.Labels["env"] != "test" || cfg.Agent.Labels["deployment"] != "endpoint-refinement" || cfg.Agent.Labels["scenario"] != "apt-fileless-c2-managed" {
 		t.Fatalf("agent labels = %+v", cfg.Agent.Labels)
 	}
 	if cfg.Sensor.Scope.Type != "container" || cfg.Sensor.Scope.Selector != "abc123" {

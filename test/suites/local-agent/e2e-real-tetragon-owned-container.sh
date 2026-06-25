@@ -108,7 +108,7 @@ health:
   interval: 500ms
 EOF"
 
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$SCENARIO" >/dev/null
+docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
 docker exec "$OWNED_CONTAINER" sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
 wait_contains() {
@@ -168,7 +168,7 @@ wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESUL
 wait_contains "agent-owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-container.ps.txt" \
   docker exec "$OWNED_CONTAINER" sh -c "ps -ef | grep tetragon | grep -v grep"
 deadline=$((SECONDS + 30))
-until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --label scenario="$SCENARIO" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
   if (( SECONDS >= deadline )); then
     echo "[e2e-agent-real-tetragon-owned-container][ERROR] owned Tetra subscription did not become ready" >&2
     docker exec "$OWNED_CONTAINER" cat "$WORK/agent.log" >&2 2>/dev/null || true
@@ -176,18 +176,18 @@ until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.
   fi
   sleep 1
 done
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$SCENARIO" >/dev/null
+docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
 
 echo "[e2e-agent-real-tetragon-owned-container] running apt-staged-drop attack"
 C2="$C2" GAP="$GAP" bash "$ROOT/scenarios/container/apt-staged-drop/attack.sh"
 sleep "$DUR"
 
-wait_contains "scenario events" "\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-real-tetragon-owned-container.events.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --scenario "$SCENARIO"
+wait_contains "scenario events" "\"labels\":{\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-real-tetragon-owned-container.events.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --label scenario="$SCENARIO"
 wait_contains "cloud cross-lineage signal" 'dropped_payload_executed_and_connects' "$RESULTS/e2e-agent-real-tetragon-owned-container.cloud-signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario "$SCENARIO" --layer cloud
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --label scenario="$SCENARIO" --layer cloud
 wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-agent-real-tetragon-owned-container.incidents.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list --scenario "$SCENARIO"
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list --label scenario="$SCENARIO"
 
 PID_BEFORE="$(docker exec "$OWNED_CONTAINER" sh -c "cat '$WORK/agent.pid'" 2>/dev/null | tr -d '\r' | tail -1)"
 if [[ -z "$PID_BEFORE" ]]; then

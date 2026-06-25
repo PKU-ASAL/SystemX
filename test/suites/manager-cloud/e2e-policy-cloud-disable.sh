@@ -90,7 +90,7 @@ cat > "$TMP/batch.json" <<EOF
         "baseRisk": 50,
         "globalRarity": 1,
         "lineageId": "lin-drop",
-        "scenario": "$SCENARIO",
+        "labels": {"scenario": "$SCENARIO"},
         "entities": [{"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"}]
       }
     },
@@ -102,7 +102,7 @@ cat > "$TMP/batch.json" <<EOF
         "baseRisk": 50,
         "globalRarity": 1,
         "lineageId": "lin-connect",
-        "scenario": "$SCENARIO",
+        "labels": {"scenario": "$SCENARIO"},
         "entities": [
           {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"},
           {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
@@ -115,14 +115,14 @@ EOF
 
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-policy-cloud-disable.ack.json"
 
-"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario "$SCENARIO" --layer cloud > "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario="$SCENARIO" --layer cloud > "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"
 if grep -Fq 'dropped_payload_executed_and_connects' "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json"; then
   echo "[e2e-policy-cloud-disable][ERROR] disabled cloud rule still emitted signal" >&2
   cat "$RESULTS/e2e-policy-cloud-disable.cloud-signals.json" >&2
   exit 1
 fi
 
-"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO" > "$RESULTS/e2e-policy-cloud-disable.incidents.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --label scenario="$SCENARIO" > "$RESULTS/e2e-policy-cloud-disable.incidents.json"
 if grep -Fq '"inc-' "$RESULTS/e2e-policy-cloud-disable.incidents.json"; then
   echo "[e2e-policy-cloud-disable][ERROR] disabled cloud rule still created incident" >&2
   cat "$RESULTS/e2e-policy-cloud-disable.incidents.json" >&2

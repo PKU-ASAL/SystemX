@@ -42,6 +42,14 @@ def marker_detail(summary, marker_name):
     return ""
 
 
+def count_diagnostics(summary, key):
+    diagnostics = summary.get("diagnostics", {})
+    values = diagnostics.get(key, [])
+    if isinstance(values, list):
+        return len(values)
+    return 0
+
+
 def apply_report(path):
     data = load_json(path)
     policy_id = data.get("policyId") or data.get("policy_id") or ""
@@ -96,6 +104,14 @@ def build_row(policy_dir):
         "generated_policy_hash": policy_hash,
         "resolved_refs": resolved_refs,
         "workload": marker_detail(summary, "workload_start"),
+        "scoped_events_total": int(number(summary.get("scoped_events_total"))),
+        "events_seen_since_cursor_total": int(number(summary.get("events_seen_since_cursor_total"))),
+        "scoped_signals_total": int(number(summary.get("scoped_signals_total"))),
+        "signals_seen_total": int(number(summary.get("signals_seen_total"))),
+        "event_watch_error_lines": count_diagnostics(summary, "event_watch_errors"),
+        "event_all_watch_error_lines": count_diagnostics(summary, "event_all_watch_errors"),
+        "signal_watch_error_lines": count_diagnostics(summary, "signal_watch_errors"),
+        "signal_all_watch_error_lines": count_diagnostics(summary, "signal_all_watch_errors"),
     }
     for name in ("baseline", "policy_apply", "settle", "steady", "workload"):
         row.update(phase_fields(name, phase(summary, name)))
@@ -120,6 +136,14 @@ def main():
         "generated_policy_hash",
         "resolved_refs",
         "workload",
+        "scoped_events_total",
+        "events_seen_since_cursor_total",
+        "scoped_signals_total",
+        "signals_seen_total",
+        "event_watch_error_lines",
+        "event_all_watch_error_lines",
+        "signal_watch_error_lines",
+        "signal_all_watch_error_lines",
     ]
     for name in ("baseline", "policy_apply", "settle", "steady", "workload"):
         fields.extend(phase_fields(name, {}).keys())

@@ -25,7 +25,7 @@ type StreamOptions struct {
 	AgentID       string
 	HostID        string
 	TenantID      string
-	Scenario      string
+	Labels        map[string]string
 	Version       string
 	BatchSize     int
 	FlushInterval time.Duration
@@ -98,7 +98,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchAppender, opts Stream
 			if len(scanned.data) == 0 {
 				continue
 			}
-			events, signals, err := decodeLine(scanned.data, norm, detector, opts.Scenario, opts.RawRing)
+			events, signals, err := decodeLine(scanned.data, norm, detector, opts.Labels, opts.RawRing)
 			if err != nil {
 				return stats, fmt.Errorf("line %d: %w", line, err)
 			}
@@ -145,6 +145,7 @@ func newBatch(opts StreamOptions) *dataplanev1.DataBatch {
 		HostId:            opts.HostID,
 		TenantId:          tenantID,
 		CreatedAtUnixNano: time.Now().UTC().UnixNano(),
+		Labels:            cloneLabels(opts.Labels),
 	}}
 }
 
@@ -177,24 +178,28 @@ func appendFrames(batch *dataplanev1.DataBatch, events []*eventv1.CanonicalEvent
 	}
 }
 
-func decodeLine(data []byte, norm *normalize.Normalizer, detector *detection.Engine, scenario string, rawRing *ringbuffer.Buffer) ([]*eventv1.CanonicalEvent, []*signalv1.Signal, error) {
+func decodeLine(data []byte, norm *normalize.Normalizer, detector *detection.Engine, labels map[string]string, rawRing *ringbuffer.Buffer) ([]*eventv1.CanonicalEvent, []*signalv1.Signal, error) {
 	if sig, ok := decodeSignal(data); ok {
-		if sig.Scenario == "" {
-			sig.Scenario = scenario
-		}
+		sig.Labels = mergeLabels(sig.GetLabels(), labels)
 		return nil, []*signalv1.Signal{sig}, nil
 	}
 	if ev, ok := decodeEvent(data); ok {
-		if ev.Scenario == "" {
-			ev.Scenario = scenario
+		ev.Labels = mergeLabels(ev.GetLabels(), labels)
+		signals := detector.Process(ev)
+		for _, sig := range signals {
+			sig.Labels = mergeLabels(sig.GetLabels(), labels)
 		}
-		return []*eventv1.CanonicalEvent{ev}, detector.Process(ev), nil
+		return []*eventv1.CanonicalEvent{ev}, signals, nil
 	}
 	if sev, ok := decodeSensorEvent(data); ok {
 		sev.RawRef = rawRing.Remember(sev.GetRawRef(), data)
 		ev := norm.Normalize(sev)
-		ev.Scenario = scenario
-		return []*eventv1.CanonicalEvent{ev}, detector.Process(ev), nil
+		ev.Labels = mergeLabels(ev.GetLabels(), labels)
+		signals := detector.Process(ev)
+		for _, sig := range signals {
+			sig.Labels = mergeLabels(sig.GetLabels(), labels)
+		}
+		return []*eventv1.CanonicalEvent{ev}, signals, nil
 	}
 	if sevs, ok := tetragon.ParseLine(data); ok {
 		rawRef := rawRing.Put(data)
@@ -207,11 +212,49 @@ func decodeLine(data []byte, norm *normalize.Normalizer, detector *detection.Eng
 				rawRing.Remember(sev.GetRawRef(), data)
 			}
 			ev := norm.Normalize(sev)
-			ev.Scenario = scenario
+			ev.Labels = mergeLabels(ev.GetLabels(), labels)
 			events = append(events, ev)
-			signals = append(signals, detector.Process(ev)...)
+			detected := detector.Process(ev)
+			for _, sig := range detected {
+				sig.Labels = mergeLabels(sig.GetLabels(), labels)
+			}
+			signals = append(signals, detected...)
 		}
 		return events, signals, nil
 	}
 	return nil, nil, fmt.Errorf("not Signal, CanonicalEvent, SensorEvent nor Tetragon event")
+}
+
+func cloneLabels(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func mergeLabels(base, extra map[string]string) map[string]string {
+	out := cloneLabels(base)
+	if out == nil {
+		out = map[string]string{}
+	}
+	for key, value := range extra {
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

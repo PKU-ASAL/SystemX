@@ -38,10 +38,10 @@ func TestWorkerConsumesKafkaUploadAndProcessesAfterCommit(t *testing.T) {
 		Header: &dataplanev1.BatchHeader{BatchId: "batch-worker", TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
 		Signals: []*dataplanev1.SignalFrame{{
 			Signal: &signalv1.Signal{
-				Id:       "sig-worker",
-				Name:     "payload_dropped",
-				Scenario: "worker-scenario",
-				Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
+				Id:     "sig-worker",
+				Name:   "payload_dropped",
+				Labels: map[string]string{"scenario": "worker-scenario"},
+				Where:  signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 			},
 		}},
 	})
@@ -57,7 +57,7 @@ func TestWorkerConsumesKafkaUploadAndProcessesAfterCommit(t *testing.T) {
 	if consumer.committed != 1 {
 		t.Fatalf("committed = %d, want 1", consumer.committed)
 	}
-	if got := st.ListSignals("worker-scenario", "endpoint", false); len(got) != 1 {
+	if got := st.ListSignals(store.LabelSelector{"scenario": "worker-scenario"}, "endpoint", false); len(got) != 1 {
 		t.Fatalf("signals = %d, want 1", len(got))
 	}
 }

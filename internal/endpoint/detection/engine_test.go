@@ -213,6 +213,28 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 	}
 }
 
+func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-ip-feed": {
+				Ref:    "ioc:c2-ip-feed",
+				Values: []string{"10.66.0.99"},
+			},
+			"ioc:c2-port-feed": {
+				Ref:    "ioc:c2-port-feed",
+				Values: []string{"443", "8443"},
+			},
+		},
+	})
+	engine.Process(writeEvent("drop", "lin-a", "payload-proc", "/usr/bin/curl", "/var/lib/app/plugins/helper"))
+	for _, sig := range engine.Process(connectEventWithParent("download", "lin-a", "curl-proc", "payload-proc", "/usr/bin/curl", "10.66.0.99:8080")) {
+		if sig.GetName() == "suspicious_exec_connect" || sig.GetName() == "payload_lifecycle" || sig.GetName() == "reverse_shell_pattern" {
+			t.Fatalf("download port emitted control-channel signal: %+v", sig)
+		}
+	}
+}
+
 func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 	enabled := true
 	policy := &policymodel.DetectionPolicy{

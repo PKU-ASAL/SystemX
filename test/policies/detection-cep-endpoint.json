@@ -13,6 +13,24 @@
     {
       "ref": "ctx:credential-path-prefixes",
       "version": "builtin"
+    },
+    {
+      "ref": "ctx:payload-path-prefixes",
+      "version": "builtin"
+    },
+    {
+      "ref": "ctx:persistence-path-prefixes",
+      "version": "builtin"
+    }
+  ],
+  "ioc_refs": [
+    {
+      "ref": "ioc:c2-ip-feed",
+      "version": "builtin"
+    },
+    {
+      "ref": "ioc:c2-port-feed",
+      "version": "builtin"
     }
   ]
 }

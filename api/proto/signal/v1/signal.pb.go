@@ -348,7 +348,6 @@ type Signal struct {
 	SignalRefs     []string               `protobuf:"bytes,10,rep,name=signal_refs,json=signalRefs,proto3" json:"signal_refs,omitempty"`
 	Terminal       bool                   `protobuf:"varint,11,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	Evidence       *EvidenceBundle        `protobuf:"bytes,12,opt,name=evidence,proto3" json:"evidence,omitempty"`
-	Scenario       string                 `protobuf:"bytes,13,opt,name=scenario,proto3" json:"scenario,omitempty"`
 	CrossLineage   bool                   `protobuf:"varint,14,opt,name=cross_lineage,json=crossLineage,proto3" json:"cross_lineage,omitempty"`
 	ResponseIntent *ResponseIntent        `protobuf:"bytes,15,opt,name=response_intent,json=responseIntent,proto3" json:"response_intent,omitempty"`
 	RuleId         string                 `protobuf:"bytes,16,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
@@ -478,13 +477,6 @@ func (x *Signal) GetEvidence() *EvidenceBundle {
 	return nil
 }
 
-func (x *Signal) GetScenario() string {
-	if x != nil {
-		return x.Scenario
-	}
-	return ""
-}
-
 func (x *Signal) GetCrossLineage() bool {
 	if x != nil {
 		return x.CrossLineage
@@ -589,7 +581,7 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"ContentRef\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
-	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xf2\a\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xe6\a\n" +
 	"\x06Signal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x125\n" +
@@ -606,8 +598,7 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	" \x03(\tR\n" +
 	"signalRefs\x12\x1a\n" +
 	"\bterminal\x18\v \x01(\bR\bterminal\x12>\n" +
-	"\bevidence\x18\f \x01(\v2\".sysarmor.signal.v1.EvidenceBundleR\bevidence\x12\x1a\n" +
-	"\bscenario\x18\r \x01(\tR\bscenario\x12#\n" +
+	"\bevidence\x18\f \x01(\v2\".sysarmor.signal.v1.EvidenceBundleR\bevidence\x12#\n" +
 	"\rcross_lineage\x18\x0e \x01(\bR\fcrossLineage\x12K\n" +
 	"\x0fresponse_intent\x18\x0f \x01(\v2\".sysarmor.signal.v1.ResponseIntentR\x0eresponseIntent\x12\x17\n" +
 	"\arule_id\x18\x10 \x01(\tR\x06ruleId\x12!\n" +
@@ -624,7 +615,7 @@ const file_api_proto_signal_v1_signal_proto_rawDesc = "" +
 	"\x06labels\x18\x18 \x03(\v2&.sysarmor.signal.v1.Signal.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*^\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\r\x10\x0eR\bscenario*^\n" +
 	"\vSignalWhere\x12\x1c\n" +
 	"\x18SIGNAL_WHERE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SIGNAL_WHERE_ENDPOINT\x10\x01\x12\x16\n" +

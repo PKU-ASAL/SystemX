@@ -7,12 +7,13 @@ RESULTS="$ROOT/.results"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUT_DIR="$RESULTS/bench-matrix-vm/$RUN_ID"
 
-POLICIES="${POLICIES:-test/policies/collection-minimal-high-signal.json test/policies/collection-edr-balanced.json test/policies/collection-incident-deep.json test/policies/collection-debug-wide.json}"
-WORKLOADS="${WORKLOADS:-benign-business exec-storm file-read-storm file-write-storm network-connect-storm mixed-edr-storm}"
-SCENARIOS="${SCENARIOS:-apt-fileless-c2 apt-staged-drop benign-ci-noise}"
+POLICIES="${POLICIES-test/policies/collection-minimal-high-signal.json test/policies/collection-edr-balanced.json test/policies/collection-incident-deep.json test/policies/collection-debug-wide.json}"
+WORKLOADS="${WORKLOADS-benign-business exec-storm file-read-storm file-write-storm network-connect-storm mixed-edr-storm}"
+SCENARIOS="${SCENARIOS-apt-fileless-c2 apt-staged-drop benign-ci-noise}"
 INCLUDE_SCENARIOS="${INCLUDE_SCENARIOS:-1}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
 EVALUATION_SCOPE="${EVALUATION_SCOPE:-local}"
+SYNC_VM_AGENT="${SYSARMOR_BENCH_SYNC_VM_AGENT:-1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -40,6 +41,7 @@ run_case() {
   echo "[bench-matrix-vm] $kind=$name"
   if SYSARMOR_BENCH_RUN_ID="$case_run_id" \
       POLICIES="$POLICIES" \
+      SYSARMOR_BENCH_CASE_TYPE="$kind" \
       DIAG_SCENARIO="$name" \
       bash "$HERE/bench-collection-vm.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
     printf '{"kind":"%s","name":"%s","status":"ok","bench_run_id":"%s"}\n' \
@@ -62,6 +64,12 @@ echo "[bench-matrix-vm] policies: $POLICIES"
 echo "[bench-matrix-vm] workloads: $WORKLOADS"
 echo "[bench-matrix-vm] scenarios: $SCENARIOS"
 
+if [[ "$SYNC_VM_AGENT" == "1" ]]; then
+  bash "$ROOT/tools/vm/sync-agent.sh"
+else
+  echo "[bench-matrix-vm] VM agent sync disabled"
+fi
+
 for workload in $WORKLOADS; do
   run_case workload "$workload"
 done
@@ -78,7 +86,8 @@ python3 "$HERE/effectiveness_report.py" \
   --output-dir "$RESULTS/effectiveness/$RUN_ID" \
   --topology vm \
   --scope "$EVALUATION_SCOPE" \
-  --scenarios $SCENARIOS
+  --scenarios $SCENARIOS \
+  --workloads $WORKLOADS
 
 echo "[bench-matrix-vm] matrix written to $OUT_DIR/matrix.csv and $OUT_DIR/matrix.json"
 echo "[bench-matrix-vm] effectiveness written to $RESULTS/effectiveness/$RUN_ID"

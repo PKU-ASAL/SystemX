@@ -80,7 +80,7 @@ wait "$AGENT_PID" || true
 AGENT_PID=""
 
 sa_wait_url_contains "$MGR_URL/api/v1/metrics" '"events_ingested":1' "$RESULTS/e2e-agent-shutdown.metrics.json"
-sa_wait_url_contains "$MGR_URL/api/v1/events?scenario=" '"agent_id":"e2e-agent-shutdown"' "$RESULTS/e2e-agent-shutdown.events.json"
+sa_wait_url_contains "$MGR_URL/api/v1/events?" '"agent_id":"e2e-agent-shutdown"' "$RESULTS/e2e-agent-shutdown.events.json"
 sa_wait_url_contains "$MGR_URL/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"status":"degraded"' "$RESULTS/e2e-agent-shutdown.health.final.json"
 sa_wait_url_contains "$MGR_URL/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"running":false' "$RESULTS/e2e-agent-shutdown.health.final.json"
 sa_wait_url_contains "$MGR_URL/api/v1/agent-health?agent_id=e2e-agent-shutdown&tenant_id=default" '"queued_batches":0' "$RESULTS/e2e-agent-shutdown.health.final.json"

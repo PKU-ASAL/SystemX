@@ -2,15 +2,16 @@
 
 `scenarios/` 定义功能场景的输入和期望输出。它和 `workloads/` 的边界很重要:
 
-- `scenarios/` 是安全/功能契约,带攻击或良性语义,必须断言 Event、Signal、Incident、Evidence 或负向条件;
-- `workloads/` 是压力源,用于性能评估,不直接声明安全结论。
+- `scenarios/` 是安全/功能契约,带攻击或良性语义;`expected.yaml` 用于功能断言,`labels.yaml` 用于效果评估;
+- `workloads/` 是压力源,用于性能评估;良性 workload 可用 `labels.yaml` 声明不得产生 signal/terminal 的效果标签。
 
 每个场景目录通常包含:
 
 ```text
 test/scenarios/<topology>/<scenario>/
 ├── attack.sh        scenario input, executed inside node-a
-└── expected.yaml    expected output contract
+├── expected.yaml    functional assertion contract for legacy/assertion tests
+└── labels.yaml      benchmark effectiveness ground truth labels
 ```
 
 容器拓扑通常通过 `docker exec node-a ...` 触发。VM 拓扑通常通过 `vagrant ssh node-a ...` 触发。两种拓扑应尽量产出结构一致的 Event/Signal/Incident。
@@ -199,34 +200,32 @@ Shape:
 ```text
 CI/build loop x N:
   bash build.sh
-    -> curl 10.66.0.99:8080 dependencies
-    -> compile
-    -> write artifact
+    -> read local cache
+    -> copy/build artifact under /tmp/sysarmor-ci-*
+    -> run shell/find/true utility commands
 ```
 
 Security meaning:
 
-- behavior intentionally resembles attack building blocks: curl, file writes, process churn;
-- repeated benign structure should reduce rarity and avoid incident creation;
+- behavior is fully benign and local: no C2/IoC, no payload path, no credential read;
+- repeated benign structure should avoid attack signal and incident creation;
 - useful as false-positive and business-noise baseline.
 
 Expected contract:
 
 ```text
 events:
-  may include repeated curl/connect and file activity
+  may include repeated local exec and file activity
 
 endpoint_signals:
-  no terminal attack signal expected
+  attack signals must be absent
 
 incident:
   count=0
 
-control_assertions:
-  switching converge.mode=additive_threshold may produce incident>=1
 ```
 
-This scenario is the main guard against a naive additive scoring model.
+This scenario is the main guard against treating ordinary business noise as attack evidence.
 
 ### lifecycle-smoke
 
@@ -250,6 +249,49 @@ lifecycle:
 ```
 
 This scenario is not a security detection test. It is a path-health smoke test.
+
+
+## Labels YAML For Effectiveness
+
+`labels.yaml` 是 benchmark effectiveness 的 ground truth。它不描述测试流程,只描述 workload 窗口里真实应覆盖的 event/signal 标签。Evaluator 会把 observed events/signals 归一化成 canonical entities,再计算 precision/recall。
+
+```yaml
+name: apt-staged-drop
+kind: malicious
+window: workload
+labels:
+  events:
+    - id: helper_write
+      required: true
+      behavior: file.write
+      match:
+        path: /var/lib/app/plugins/helper
+  signals:
+    - id: payload_dropped
+      required: true
+      name: payload_dropped
+      terminal: false
+      entities:
+        - file:/var/lib/app/plugins/helper
+      link_events:
+        - helper_write
+policy:
+  terminal_signals_allowed: 0
+```
+
+主表指标保持简洁:
+
+| Metric | Meaning |
+|---|---|
+| `event_recall` | required event labels matched by observed events |
+| `signal_recall` | required signal labels matched by observed signals |
+| `terminal_recall` | required terminal signal labels matched |
+| `signal_precision` | observed signals that map to signal labels |
+| `event_noise_ratio` | observed events not mapped to event labels |
+| `signal_event_link_rate` | matched signals whose event refs resolve to matched event labels |
+| `false_positive_signals` | observed signals not mapped to any signal label |
+
+`truth_steps.csv` 展开每个 label 的命中明细,用于解释 matrix 分数。
 
 ## Expected YAML Contract
 
@@ -319,21 +361,39 @@ test/.results/recordings/<run-id>/
 ├── timeline.csv
 ├── markers.ndjson
 ├── events.ndjson
+├── events-all.ndjson
 ├── signals.ndjson
+├── signals-all.ndjson
+├── event-watch.err
+├── event-all-watch.err
+├── signal-watch.err
+├── signal-all-watch.err
 └── summary.json
 
 test/.results/bench-collection-vm/<run-id>/
 ├── matrix.csv
 ├── matrix.json
+├── detection-apply.json
 └── <policy-name>/
     ├── summary.json
     ├── timeline.csv
     ├── events.ndjson
+    ├── events-all.ndjson
     ├── signals.ndjson
+    ├── signals-all.ndjson
+    ├── event-watch.err
+    ├── event-all-watch.err
+    ├── signal-watch.err
+    ├── signal-all-watch.err
+    ├── detection-apply.json
     ├── collection-apply.json
     ├── workload.out
     └── workload.err
 ```
+
+`events.ndjson` and `signals.ndjson` are cumulative recorder outputs scoped by benchmark labels. `events-all.ndjson` and `signals-all.ndjson` are cumulative outputs from the same watchers without label filters. If scoped frames are empty but `*-all.ndjson` is not, the issue is usually label/window scoping. If both are empty, inspect `detection-apply.json`, `summary.json.diagnostics`, and the watch stderr files before treating the scenario as a detection miss.
+
+Effectiveness reports evaluate only the workload window bounded by `workload_start` and `workload_done`. Full recorder totals are preserved separately as `observed_events_total` and `observed_signals_total`, so policy apply or VM login noise can be audited without being counted as scenario evidence.
 
 Common raw Tetragon event shapes:
 
@@ -438,34 +498,12 @@ These assertions are useful because they prove a feature is necessary, not just 
 
 ## Effectiveness And Efficiency
 
-Scenario results currently provide pass/fail functional evidence. Benchmarks provide phase-level efficiency metrics. The next useful step is to merge them into a scenario effectiveness matrix:
-
-```text
-required_event_hit_rate
-event_recall_by_kind
-signal_hit_rate
-terminal_signal_latency_ms
-incident_hit_rate
-incident_latency_ms
-false_positive_count
-drop_rate
-parse_error_rate
-cost_per_1k_events_cpu
-```
-
-That matrix should use:
-
-- scenario contracts from `expected.yaml`;
-- scoped event/signal frames from recorder output;
-- phase markers from `markers.ndjson`;
-- resource counters from `timeline.csv`;
-- benchmark rows from `matrix.csv`.
-
-This keeps scenario semantics, workload pressure, and resource cost comparable without mixing their implementation code.
+Functional tests still use `expected.yaml` for pass/fail assertions. Benchmark effectiveness uses `labels.yaml` as ground truth and computes event/signal precision-recall from recorder outputs. Performance metrics continue to come from recorder phase summaries.
 
 Current entrypoint:
 
 ```bash
+make -C test sync-vm-agent
 make -C test effectiveness-report TOPO=vm RUN_ID=manual
 ```
 
@@ -475,10 +513,12 @@ When used after `make -C test bench-matrix-vm`, the report is written to:
 test/.results/effectiveness/<run-id>/
 ├── summary.json
 ├── matrix.csv
+├── matrix.json
+├── truth_steps.csv
 ├── policy_comparison.csv
 └── policy_comparison.json
 ```
 
-`summary.json` keeps per-check details derived from `expected.yaml`. `matrix.csv` keeps one row per scenario/policy with required hit rate, event hit rate, signal hit rate, observed counts, drop/parse-error rates, CPU cost per 1k events, and historical assert pass/fail counts when available.
+`matrix.csv` keeps one row per workload/scenario/policy with `event_recall`, `signal_recall`, `signal_precision`, false-positive counts, observed counts, drop/parse-error rates, and CPU cost per 1k events. `truth_steps.csv` keeps one row per label so misses are easy to inspect.
 
-`policy_comparison.csv` aggregates scenario effectiveness and workload resource cost per policy. It is the main table for comparing collection profiles as product options.
+`policy_comparison.csv` aggregates labels-based effectiveness and workload resource cost per policy. It is the main table for comparing collection profiles as product options.

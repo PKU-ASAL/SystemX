@@ -39,29 +39,29 @@ type Intent struct {
 }
 
 type Command struct {
-	ResponseID        string     `json:"response_id"`
-	TenantID          string     `json:"tenant_id"`
-	AgentID           string     `json:"agent_id"`
-	PolicyID          string     `json:"policy_id,omitempty"`
-	PolicyVersion     uint64     `json:"policy_version,omitempty"`
-	SignalID          string     `json:"signal_id,omitempty"`
-	Scenario          string     `json:"scenario,omitempty"`
-	Scope             Scope      `json:"scope,omitempty"`
-	Action            string     `json:"action"`
-	Mode              string     `json:"mode"`
-	Target            string     `json:"target,omitempty"`
-	Reason            string     `json:"reason,omitempty"`
-	Status            string     `json:"status"`
-	Actor             string     `json:"actor,omitempty"`
-	ApprovalRequired  bool       `json:"approval_required,omitempty"`
-	ApprovalStatus    string     `json:"approval_status,omitempty"`
-	ApprovalThreshold uint32     `json:"approval_threshold,omitempty"`
-	ApprovalRoles     []string   `json:"approval_roles,omitempty"`
-	Approvals         []Approval `json:"approvals,omitempty"`
-	ApprovedBy        string     `json:"approved_by,omitempty"`
-	ApprovedAt        time.Time  `json:"approved_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at,omitempty"`
-	UpdatedAt         time.Time  `json:"updated_at,omitempty"`
+	ResponseID        string            `json:"response_id"`
+	TenantID          string            `json:"tenant_id"`
+	AgentID           string            `json:"agent_id"`
+	PolicyID          string            `json:"policy_id,omitempty"`
+	PolicyVersion     uint64            `json:"policy_version,omitempty"`
+	SignalID          string            `json:"signal_id,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	Scope             Scope             `json:"scope,omitempty"`
+	Action            string            `json:"action"`
+	Mode              string            `json:"mode"`
+	Target            string            `json:"target,omitempty"`
+	Reason            string            `json:"reason,omitempty"`
+	Status            string            `json:"status"`
+	Actor             string            `json:"actor,omitempty"`
+	ApprovalRequired  bool              `json:"approval_required,omitempty"`
+	ApprovalStatus    string            `json:"approval_status,omitempty"`
+	ApprovalThreshold uint32            `json:"approval_threshold,omitempty"`
+	ApprovalRoles     []string          `json:"approval_roles,omitempty"`
+	Approvals         []Approval        `json:"approvals,omitempty"`
+	ApprovedBy        string            `json:"approved_by,omitempty"`
+	ApprovedAt        time.Time         `json:"approved_at,omitempty"`
+	CreatedAt         time.Time         `json:"created_at,omitempty"`
+	UpdatedAt         time.Time         `json:"updated_at,omitempty"`
 }
 
 type Approval struct {

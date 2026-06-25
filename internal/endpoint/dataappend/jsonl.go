@@ -16,15 +16,15 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-func ReadProtoJSONL(r io.Reader, agentID, hostID, scenario string) (*dataplanev1.DataBatch, error) {
-	return ReadProtoJSONLWithRing(r, agentID, hostID, scenario, ringbuffer.New(4096))
+func ReadProtoJSONL(r io.Reader, agentID, hostID string, labels map[string]string) (*dataplanev1.DataBatch, error) {
+	return ReadProtoJSONLWithRing(r, agentID, hostID, labels, ringbuffer.New(4096))
 }
 
-func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRing *ringbuffer.Buffer) (*dataplanev1.DataBatch, error) {
+func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID string, labels map[string]string, rawRing *ringbuffer.Buffer) (*dataplanev1.DataBatch, error) {
 	if rawRing == nil {
 		rawRing = ringbuffer.New(4096)
 	}
-	batch := newBatch(StreamOptions{AgentID: agentID, HostID: hostID, TenantID: "default", Scenario: scenario})
+	batch := newBatch(StreamOptions{AgentID: agentID, HostID: hostID, TenantID: "default", Labels: labels})
 	norm := normalize.New(agentID, hostID, nil)
 	detector, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	scanner := bufio.NewScanner(r)
@@ -36,7 +36,7 @@ func ReadProtoJSONLWithRing(r io.Reader, agentID, hostID, scenario string, rawRi
 			continue
 		}
 		rawData := append([]byte(nil), data...)
-		events, signals, err := decodeLine(rawData, norm, detector, scenario, rawRing)
+		events, signals, err := decodeLine(rawData, norm, detector, labels, rawRing)
 		if err != nil {
 			return nil, fmt.Errorf("line %d is neither Signal, CanonicalEvent, SensorEvent nor Tetragon event", line)
 		}

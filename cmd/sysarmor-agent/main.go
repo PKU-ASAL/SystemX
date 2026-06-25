@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,7 +39,7 @@ func main() {
 	agentID := flag.String("agent-id", "agent-dev", "agent identifier")
 	hostID := flag.String("host-id", "host-dev", "host identifier")
 	tenantID := flag.String("tenant-id", "default", "tenant identifier")
-	scenario := flag.String("scenario", "", "scenario label for replayed events")
+	labels := labelFlags{}
 	tlsCA := flag.String("tls-ca", "", "CA bundle used to verify manager gRPC")
 	tlsCert := flag.String("tls-cert", "", "agent client certificate for mTLS")
 	tlsKey := flag.String("tls-key", "", "agent client private key for mTLS")
@@ -48,6 +49,7 @@ func main() {
 	stream := flag.String("stream-jsonl", "", "stream SensorEvent/Tetragon JSONL from this file, or '-' for stdin")
 	batchSize := flag.Int("batch-size", 128, "stream data batch size")
 	flushInterval := flag.Duration("flush-interval", time.Second, "stream append flush interval")
+	flag.Var(&labels, "label", "label for replayed data, key=value; repeatable")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -56,7 +58,7 @@ func main() {
 	}
 
 	if *input != "" {
-		if err := appendJSONL(*manager, *transport, *agentID, *hostID, *tenantID, *scenario, *input, cliTLS(*tlsCA, *tlsCert, *tlsKey, *tlsServerName, *tlsInsecure)); err != nil {
+		if err := appendJSONL(*manager, *transport, *agentID, *hostID, *tenantID, labels.Map(), *input, cliTLS(*tlsCA, *tlsCert, *tlsKey, *tlsServerName, *tlsInsecure)); err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmor-agent: %v\n", err)
 			os.Exit(1)
 		}
@@ -64,7 +66,7 @@ func main() {
 	}
 
 	if *stream != "" {
-		stats, err := streamJSONL(*manager, *transport, *agentID, *hostID, *tenantID, *scenario, *stream, *batchSize, *flushInterval, cliTLS(*tlsCA, *tlsCert, *tlsKey, *tlsServerName, *tlsInsecure))
+		stats, err := streamJSONL(*manager, *transport, *agentID, *hostID, *tenantID, labels.Map(), *stream, *batchSize, *flushInterval, cliTLS(*tlsCA, *tlsCert, *tlsKey, *tlsServerName, *tlsInsecure))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmor-agent: %v\n", err)
 			os.Exit(1)
@@ -102,13 +104,45 @@ func runDaemonCommand(args []string) error {
 	return runner.Run(ctx, daemon.Options{Out: os.Stdout})
 }
 
-func appendJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, tlsCfg tlsconfig.ClientConfig) error {
+type labelFlags map[string]string
+
+func (f *labelFlags) String() string {
+	if f == nil || len(*f) == 0 {
+		return ""
+	}
+	return fmt.Sprint(map[string]string(*f))
+}
+
+func (f *labelFlags) Set(value string) error {
+	key, val, ok := strings.Cut(value, "=")
+	if !ok || strings.TrimSpace(key) == "" {
+		return fmt.Errorf("label must be key=value")
+	}
+	if *f == nil {
+		*f = map[string]string{}
+	}
+	(*f)[strings.TrimSpace(key)] = val
+	return nil
+}
+
+func (f labelFlags) Map() map[string]string {
+	if len(f) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(f))
+	for key, value := range f {
+		out[key] = value
+	}
+	return out
+}
+
+func appendJSONL(manager, transport, agentID, hostID, tenantID string, labels map[string]string, input string, tlsCfg tlsconfig.ClientConfig) error {
 	f, err := os.Open(input)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	batch, err := dataappend.ReadProtoJSONL(f, agentID, hostID, scenario)
+	batch, err := dataappend.ReadProtoJSONL(f, agentID, hostID, labels)
 	if err != nil {
 		return err
 	}
@@ -130,7 +164,7 @@ func appendJSONL(manager, transport, agentID, hostID, tenantID, scenario, input 
 	return err
 }
 
-func streamJSONL(manager, transport, agentID, hostID, tenantID, scenario, input string, batchSize int, flushInterval time.Duration, tlsCfg tlsconfig.ClientConfig) (dataappend.StreamStats, error) {
+func streamJSONL(manager, transport, agentID, hostID, tenantID string, labels map[string]string, input string, batchSize int, flushInterval time.Duration, tlsCfg tlsconfig.ClientConfig) (dataappend.StreamStats, error) {
 	r := os.Stdin
 	if input != "-" {
 		f, err := os.Open(input)
@@ -148,7 +182,7 @@ func streamJSONL(manager, transport, agentID, hostID, tenantID, scenario, input 
 		AgentID:       agentID,
 		HostID:        hostID,
 		TenantID:      tenantID,
-		Scenario:      scenario,
+		Labels:        labels,
 		Version:       version,
 		BatchSize:     batchSize,
 		FlushInterval: flushInterval,

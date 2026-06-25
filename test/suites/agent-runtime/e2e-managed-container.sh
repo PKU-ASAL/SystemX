@@ -123,10 +123,10 @@ wait_contains "agent-health policy" '"policy_loaded":true' "$RESULTS/e2e-agent-m
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed --tenant-id default
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-managed-container.metrics.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics
-wait_contains "scenario events" '"scenario":"container-managed"' "$RESULTS/e2e-agent-managed-container.events.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --scenario container-managed
-wait_contains "scenario signals" '"scenario":"container-managed"' "$RESULTS/e2e-agent-managed-container.signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario container-managed --layer endpoint
+wait_contains "scenario events" '"labels":{"scenario":"container-managed"' "$RESULTS/e2e-agent-managed-container.events.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --label scenario=container-managed
+wait_contains "scenario signals" '"labels":{"scenario":"container-managed"' "$RESULTS/e2e-agent-managed-container.signals.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --label scenario=container-managed --layer endpoint
 
 if [[ "$(docker exec mgr cat "$WORK/tetragon.count" 2>/dev/null | tr -d '\r')" != "1" ]]; then
   echo "[e2e-agent-managed-container][ERROR] tetragon process did not start exactly once" >&2

@@ -10,14 +10,14 @@ import (
 
 func TestBuilderCreatesIncidentWithEvidenceAndStatus(t *testing.T) {
 	builder := NewBuilder()
-	inc := builder.Build("scenario-a", []*signalv1.Signal{
+	inc := builder.Build([]*signalv1.Signal{
 		{
 			Name:         "reverse_shell_pattern",
 			BaseRisk:     80,
 			GlobalRarity: 1,
 			LineageId:    "lin-a",
 			Terminal:     true,
-			Scenario:     "scenario-a",
+			Labels:       map[string]string{"case_type": "scenario", "scenario": "scenario-a"},
 			Entities: []*signalv1.EntityRef{
 				{Kind: "process", Key: "process:p-bash", Role: "subject"},
 				{Kind: "socket", Key: "socket:10.66.0.99:443", Role: "object"},
@@ -36,19 +36,21 @@ func TestBuilderCreatesIncidentWithEvidenceAndStatus(t *testing.T) {
 	if len(inc.GetTerminals()) != 1 || inc.GetTerminals()[0] != "process:p-bash" {
 		t.Fatalf("terminals = %v", inc.GetTerminals())
 	}
+	if inc.GetLabels()["scenario"] != "scenario-a" {
+		t.Fatalf("labels = %#v", inc.GetLabels())
+	}
 }
 
 func TestBuilderCanUseWorkloadBaselineScorer(t *testing.T) {
 	builder := &Builder{Scorer: rarity.WorkloadBaselineScorer{Baseline: rarity.Baseline{WorkloadCounts: map[string]map[string]uint64{
 		"container:checkout-api": {"reverse_shell_pattern": 3},
 	}}}}
-	inc := builder.Build("scenario-a", []*signalv1.Signal{
+	inc := builder.Build([]*signalv1.Signal{
 		{
 			Name:         "reverse_shell_pattern",
 			BaseRisk:     80,
 			GlobalRarity: 1,
 			Terminal:     true,
-			Scenario:     "scenario-a",
 			Entities: []*signalv1.EntityRef{
 				{Kind: "container", Key: "checkout-api"},
 				{Kind: "process", Key: "process:p-bash", Role: "subject"},

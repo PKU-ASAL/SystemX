@@ -164,6 +164,7 @@ func TestEvidencePullbackCommand(t *testing.T) {
 		"--tenant-id", "default",
 		"--agent-id", "agent-a",
 		"--incident-id", "inc-a",
+		"--label", "scenario=apt-fileless-c2",
 		"--target", "process:p1",
 		"--reason", "collect process tree",
 	}); err != nil {
@@ -183,6 +184,10 @@ func TestEvidencePullbackCommand(t *testing.T) {
 		if gotBody[key] != want {
 			t.Fatalf("body[%s] = %v, want %s", key, gotBody[key], want)
 		}
+	}
+	labels, ok := gotBody["labels"].(map[string]any)
+	if !ok || labels["scenario"] != "apt-fileless-c2" {
+		t.Fatalf("body labels = %#v, want scenario label", gotBody["labels"])
 	}
 
 	if _, err := query(server.URL, []string{"manager", "evidence", "pullbacks", "--tenant-id", "default", "--agent-id", "agent-a"}); err != nil {

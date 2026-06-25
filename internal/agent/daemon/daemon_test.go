@@ -89,14 +89,14 @@ func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeSpoolsConfiguredScenario(t *testing.T) {
+func TestAgentRuntimeSpoolsConfiguredLabels(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "daemon-scenario"},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "daemon-scenario"}},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
 		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
@@ -108,13 +108,13 @@ func TestAgentRuntimeSpoolsConfiguredScenario(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	batch := runDaemonUntilSpoolBatch(t, runner, cfg.Spool.Path, nil)
-	if got := batch.GetEvents()[0].GetEvent().GetScenario(); got != "daemon-scenario" {
-		t.Fatalf("event scenario = %q", got)
+	if got := batch.GetEvents()[0].GetEvent().GetLabels()["scenario"]; got != "daemon-scenario" {
+		t.Fatalf("event label scenario = %q", got)
 	}
 	for _, sig := range batch.GetSignals() {
 		signal := sig.GetSignal()
-		if got := signal.GetScenario(); got != "daemon-scenario" {
-			t.Fatalf("signal %s scenario = %q", signal.GetName(), got)
+		if got := signal.GetLabels()["scenario"]; got != "daemon-scenario" {
+			t.Fatalf("signal %s label scenario = %q", signal.GetName(), got)
 		}
 	}
 }
@@ -126,7 +126,7 @@ func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Scenario: "refresh-scenario"},
+		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "refresh-scenario"}},
 	}
 	runner := &AgentRuntime{Config: cfg}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))

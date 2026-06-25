@@ -147,8 +147,11 @@ func workloadKey(sig *signalv1.Signal) string {
 			}
 		}
 	}
-	if sig.GetScenario() != "" {
-		return "scenario:" + sig.GetScenario()
+	if sig.GetLabels()["workload"] != "" {
+		return "workload:" + sig.GetLabels()["workload"]
+	}
+	if sig.GetLabels()["scenario"] != "" {
+		return "scenario:" + sig.GetLabels()["scenario"]
 	}
 	return "global"
 }

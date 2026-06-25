@@ -31,7 +31,7 @@ func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
 	stats, err := StreamJSONL(context.Background(), strings.NewReader(input), rec, StreamOptions{
 		AgentID:       "agent-a",
 		HostID:        "host-a",
-		Scenario:      "scenario-a",
+		Labels:        map[string]string{"scenario": "scenario-a"},
 		Version:       "test",
 		BatchSize:     2,
 		FlushInterval: time.Hour,
@@ -69,7 +69,7 @@ func TestStreamJSONLStoresTetragonRawLineBehindRef(t *testing.T) {
 	stats, err := StreamJSONL(context.Background(), strings.NewReader(input), rec, StreamOptions{
 		AgentID:       "agent-a",
 		HostID:        "host-a",
-		Scenario:      "scenario-a",
+		Labels:        map[string]string{"scenario": "scenario-a"},
 		Version:       "test",
 		BatchSize:     10,
 		FlushInterval: time.Hour,

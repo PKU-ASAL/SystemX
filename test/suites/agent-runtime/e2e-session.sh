@@ -67,7 +67,7 @@ for batch in agent-session-batch-1 agent-session-batch-2; do
         "agentId": "agent-session-agent",
         "hostId": "agent-session-host",
         "tenantId": "default",
-        "scenario": "agent-session",
+        "labels": {"scenario": "agent-session"},
         "behavior": "process.exec"
       }
     }

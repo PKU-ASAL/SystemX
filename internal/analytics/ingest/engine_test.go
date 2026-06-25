@@ -101,7 +101,7 @@ func endpoint(name, lineage string, terminal bool, entities ...*signalv1.EntityR
 		LineageId:    lineage,
 		Terminal:     terminal,
 		Entities:     entities,
-		Scenario:     "scenario-a",
+		Labels:       map[string]string{"scenario": "scenario-a"},
 	}
 }
 

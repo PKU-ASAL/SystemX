@@ -12,8 +12,11 @@ AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/var/run/sysarmor/agent.sock}"
 AGENT_ID="${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}"
 TENANT_ID="${SYSARMOR_BENCH_TENANT_ID:-default}"
 WORKLOAD="${DIAG_SCENARIO:-${SYSARMOR_BENCH_WORKLOAD:-mixed-edr-storm}}"
+CASE_TYPE="${SYSARMOR_BENCH_CASE_TYPE:-workload}"
 POLICIES_RAW="${POLICIES:-test/policies/collection-minimal-high-signal.json test/policies/collection-edr-balanced.json test/policies/collection-incident-deep.json test/policies/collection-debug-wide.json}"
 CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-test/content}"
+DETECTION_POLICY="${SYSARMOR_BENCH_DETECTION_POLICY:-test/policies/detection-cep-endpoint.json}"
+APPLY_DETECTION="${SYSARMOR_BENCH_APPLY_DETECTION:-1}"
 BASELINE_SECONDS="${SYSARMOR_BENCH_BASELINE_SECONDS:-5}"
 SETTLE_SECONDS="${SYSARMOR_BENCH_SETTLE_SECONDS:-8}"
 STEADY_SECONDS="${SYSARMOR_BENCH_STEADY_SECONDS:-8}"
@@ -40,9 +43,19 @@ wait_agent_socket() {
 set_agent_labels() {
   local bench_run="$1"
   local policy_name="$2"
-  local workload="$3"
+  local case_name="$3"
+  local case_type="$4"
   local labels_json
-  labels_json="$(python3 -c 'import json,sys; print(json.dumps({"benchmark_run":sys.argv[1],"workload":sys.argv[2],"policy_profile":sys.argv[3]}))' "$bench_run" "$workload" "$policy_name")"
+  labels_json="$(python3 -c '
+import json,sys
+bench_run, case_name, policy_name, case_type = sys.argv[1:5]
+labels = {"benchmark_run": bench_run, "case_type": case_type, "policy_profile": policy_name}
+if case_type == "scenario":
+    labels["scenario"] = case_name
+else:
+    labels["workload"] = case_name
+print(json.dumps(labels))
+' "$bench_run" "$case_name" "$policy_name" "$case_type")"
   vagrant ssh node-a -c "sudo SYSARMOR_LABELS_JSON='$labels_json' python3 -c '
 import json
 import os
@@ -51,9 +64,17 @@ p = Path(\"/etc/sysarmor/agent.yaml\")
 lines = p.read_text().splitlines()
 labels = json.loads(os.environ[\"SYSARMOR_LABELS_JSON\"])
 out = []
+managed_prefixes = (
+    "scenario:",
+    "label.benchmark_run:",
+    "label.case_type:",
+    "label.workload:",
+    "label.scenario:",
+    "label.policy_profile:",
+)
 for line in lines:
     stripped = line.strip()
-    if stripped.startswith(\"label.benchmark_run:\") or stripped.startswith(\"label.workload:\") or stripped.startswith(\"label.policy_profile:\"):
+    if stripped.startswith(managed_prefixes):
         continue
     out.append(line)
 next_section = next((i for i, line in enumerate(out) if line and not line.startswith(\" \") and line.strip().endswith(\":\") and line.strip() != \"agent:\"), len(out))
@@ -65,9 +86,13 @@ except StopIteration:
     next_section = 1
 insert = [
     \"  label.benchmark_run: \" + labels[\"benchmark_run\"],
-    \"  label.workload: \" + labels[\"workload\"],
+    \"  label.case_type: \" + labels[\"case_type\"],
     \"  label.policy_profile: \" + labels[\"policy_profile\"],
 ]
+if \"workload\" in labels:
+    insert.append(\"  label.workload: \" + labels[\"workload\"])
+if \"scenario\" in labels:
+    insert.append(\"  label.scenario: \" + labels[\"scenario\"])
 next_section = next((i for i in range(agent_idx + 1, len(out)) if out[i] and not out[i].startswith(\" \") and out[i].strip().endswith(\":\")), len(out))
 out[next_section:next_section] = insert
 p.write_text(\"\\n\".join(out) + \"\\n\")
@@ -122,17 +147,45 @@ wait_agent_socket
 
 echo "[bench-collection-vm] uploading content packs and policies"
 vagrant upload "$REPO/$CONTENT_DIR" /tmp/sysarmor-bench-content node-a >/dev/null
+if [[ "$APPLY_DETECTION" == "1" && ! -f "$REPO/$DETECTION_POLICY" ]]; then
+  echo "[bench-collection-vm][ERROR] detection policy not found: $DETECTION_POLICY" >&2
+  exit 1
+fi
+if [[ "$APPLY_DETECTION" == "1" ]]; then
+  vagrant upload "$REPO/$DETECTION_POLICY" /tmp/sysarmor-bench-detection.policy node-a >/dev/null
+fi
 
-for content in "$REPO/$CONTENT_DIR"/*.json; do
-  name="$(basename "$content")"
-  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
-    > "$OUT_DIR/content.$name.apply.json" \
-    2>"$OUT_DIR/content.$name.apply.err" || {
-      echo "[bench-collection-vm][ERROR] content apply failed: $name" >&2
-      cat "$OUT_DIR/content.$name.apply.err" >&2 2>/dev/null || true
+apply_content_and_detection() {
+  local policy_out="$1"
+  for content in "$REPO/$CONTENT_DIR"/*.json; do
+    name="$(basename "$content")"
+    vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
+      > "$policy_out/content.$name.apply.json" \
+      2>"$policy_out/content.$name.apply.err" || {
+        echo "[bench-collection-vm][ERROR] content apply failed: $name" >&2
+        cat "$policy_out/content.$name.apply.err" >&2 2>/dev/null || true
+        exit 1
+      }
+  done
+
+  if [[ "$APPLY_DETECTION" == "1" ]]; then
+    echo "[bench-collection-vm] applying detection policy: $DETECTION_POLICY"
+    vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply --type detection --file /tmp/sysarmor-bench-detection.policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
+      > "$policy_out/detection-apply.json" \
+      2>"$policy_out/detection-apply.err" || {
+        echo "[bench-collection-vm][ERROR] detection policy apply failed: $DETECTION_POLICY" >&2
+        cat "$policy_out/detection-apply.err" >&2 2>/dev/null || true
+        exit 1
+      }
+    if grep -Fq '"status":"rejected"' "$policy_out/detection-apply.json"; then
+      echo "[bench-collection-vm][ERROR] detection policy rejected: $DETECTION_POLICY" >&2
+      cat "$policy_out/detection-apply.json" >&2 2>/dev/null || true
       exit 1
-    }
-done
+    fi
+  else
+    echo "[bench-collection-vm] detection policy apply disabled"
+  fi
+}
 
 for policy in $POLICIES_RAW; do
   if [[ ! -f "$REPO/$policy" ]]; then
@@ -143,11 +196,16 @@ for policy in $POLICIES_RAW; do
   policy_out="$OUT_DIR/$name"
   rec_run_id="bench-collection-vm/$RUN_ID/$name"
   rec_dir="$RESULTS/recordings/$rec_run_id"
-  rec_labels="benchmark_run=$RUN_ID,workload=$WORKLOAD,policy_profile=$name"
+  if [[ "$CASE_TYPE" == "scenario" ]]; then
+    rec_labels="benchmark_run=$RUN_ID,case_type=scenario,scenario=$WORKLOAD,policy_profile=$name"
+  else
+    rec_labels="benchmark_run=$RUN_ID,case_type=workload,workload=$WORKLOAD,policy_profile=$name"
+  fi
   mkdir -p "$policy_out"
 
   echo "[bench-collection-vm] recording policy=$name workload=$WORKLOAD"
-  set_agent_labels "$RUN_ID" "$name" "$WORKLOAD"
+  set_agent_labels "$RUN_ID" "$name" "$WORKLOAD" "$CASE_TYPE"
+  apply_content_and_detection "$policy_out"
   SYSARMOR_RECORDER_DURATION=3600 recorder "$rec_run_id" "$rec_labels" start
   mark "$rec_run_id" baseline_start "$name"
   sleep "$BASELINE_SECONDS"
@@ -185,7 +243,13 @@ for policy in $POLICIES_RAW; do
   cp "$rec_dir/markers.ndjson" "$policy_out/markers.ndjson"
   cp "$rec_dir/summary.json" "$policy_out/summary.json"
   cp "$rec_dir/events.ndjson" "$policy_out/events.ndjson" 2>/dev/null || true
+  cp "$rec_dir/events-all.ndjson" "$policy_out/events-all.ndjson" 2>/dev/null || true
   cp "$rec_dir/signals.ndjson" "$policy_out/signals.ndjson" 2>/dev/null || true
+  cp "$rec_dir/signals-all.ndjson" "$policy_out/signals-all.ndjson" 2>/dev/null || true
+  cp "$rec_dir/event-watch.err" "$policy_out/event-watch.err" 2>/dev/null || true
+  cp "$rec_dir/event-all-watch.err" "$policy_out/event-all-watch.err" 2>/dev/null || true
+  cp "$rec_dir/signal-watch.err" "$policy_out/signal-watch.err" 2>/dev/null || true
+  cp "$rec_dir/signal-all-watch.err" "$policy_out/signal-all-watch.err" 2>/dev/null || true
 done
 
 python3 "$HERE/bench_collection_report.py" "$OUT_DIR"

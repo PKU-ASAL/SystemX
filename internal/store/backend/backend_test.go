@@ -440,7 +440,7 @@ func TestOpenPostgresProjectsRuleAndPullbackTables(t *testing.T) {
 		TenantID:   "default",
 		AgentID:    "agent-pullback-pg",
 		IncidentID: "inc-pullback-pg",
-		Scenario:   "pg-pullback",
+		Labels:     map[string]string{"scenario": "pg-pullback"},
 		Target:     "process:p1",
 		Status:     controlmodel.EvidencePullbackStatusPending,
 		CreatedAt:  time.Unix(200, 0).UTC(),
@@ -564,14 +564,14 @@ func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 	}
 	result.Store.AddEvent(&eventv1.CanonicalEvent{
 		Id:       "ev-table-pg",
-		Scenario: "pg-ingest",
+		Labels:   pgLabels("pg-ingest"),
 		Behavior: "network.connect",
 		AgentId:  "agent-ingest-pg",
 		HostId:   "host-ingest-pg",
 	})
 	result.Store.AddSignal(&signalv1.Signal{
 		Id:        "sig-table-pg",
-		Scenario:  "pg-ingest",
+		Labels:    pgLabels("pg-ingest"),
 		Name:      "reverse_shell_pattern",
 		Where:     signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		LineageId: "lin-table-pg",
@@ -619,7 +619,7 @@ func TestOpenPostgresQueriesEventsFromTablePath(t *testing.T) {
 	}
 	raw, err := protojson.Marshal(&eventv1.CanonicalEvent{
 		Id:       "ev-query-table-pg",
-		Scenario: "pg-query-table",
+		Labels:   pgLabels("pg-query-table"),
 		Behavior: "process.exec",
 		AgentId:  "agent-query-table-pg",
 	})
@@ -627,8 +627,8 @@ func TestOpenPostgresQueriesEventsFromTablePath(t *testing.T) {
 		t.Fatalf("marshal event: %v", err)
 	}
 	fakeSetEventRows(raw)
-	events := result.Store.ListEvents("pg-query-table", "process.exec")
-	if len(events) != 1 || events[0].GetId() != "ev-query-table-pg" || events[0].GetScenario() != "pg-query-table" {
+	events := result.Store.ListEvents(pgSelector("pg-query-table"), "process.exec")
+	if len(events) != 1 || events[0].GetId() != "ev-query-table-pg" || events[0].GetLabels()["scenario"] != "pg-query-table" {
 		t.Fatalf("events from postgres table = %+v", events)
 	}
 	if !strings.Contains(fakeLastQuery(), "SELECT data FROM events") {
@@ -649,7 +649,7 @@ func TestOpenPostgresQueriesSignalsFromTablePath(t *testing.T) {
 	}
 	raw, err := protojson.Marshal(&signalv1.Signal{
 		Id:       "sig-query-table-pg",
-		Scenario: "pg-query-table",
+		Labels:   pgLabels("pg-query-table"),
 		Name:     "reverse_shell_pattern",
 		Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		Terminal: true,
@@ -658,7 +658,7 @@ func TestOpenPostgresQueriesSignalsFromTablePath(t *testing.T) {
 		t.Fatalf("marshal signal: %v", err)
 	}
 	fakeSetSignalRows(raw)
-	signals := result.Store.ListSignals("pg-query-table", "endpoint", true)
+	signals := result.Store.ListSignals(pgSelector("pg-query-table"), "endpoint", true)
 	if len(signals) != 1 || signals[0].GetId() != "sig-query-table-pg" || !signals[0].GetTerminal() {
 		t.Fatalf("signals from postgres table = %+v", signals)
 	}
@@ -679,16 +679,16 @@ func TestOpenPostgresQueriesIncidentsFromTablePath(t *testing.T) {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
 	raw, err := protojson.Marshal(&incidentv1.Incident{
-		Id:       "inc-query-table-pg",
-		Scenario: "pg-query-table",
-		Status:   "suppressed",
-		Summary:  "incident from table path",
+		Id:      "inc-query-table-pg",
+		Labels:  pgLabels("pg-query-table"),
+		Status:  "suppressed",
+		Summary: "incident from table path",
 	})
 	if err != nil {
 		t.Fatalf("marshal incident: %v", err)
 	}
 	fakeSetIncidentRows(raw)
-	incidents := result.Store.ListIncidents("pg-query-table")
+	incidents := result.Store.ListIncidents(pgSelector("pg-query-table"))
 	if len(incidents) != 1 || incidents[0].GetId() != "inc-query-table-pg" || incidents[0].GetStatus() != "suppressed" {
 		t.Fatalf("incidents from postgres table = %+v", incidents)
 	}
@@ -871,7 +871,7 @@ func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	}
 	result.Store.AddIncident(&incidentv1.Incident{
 		Id:       "inc-table-pg",
-		Scenario: "pg-incident",
+		Labels:   pgLabels("pg-incident"),
 		Summary:  "projected incident",
 		Status:   "open",
 		Severity: 70,
@@ -896,7 +896,6 @@ func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 	for _, want := range []string{
 		"INSERT INTO incidents",
 		"inc-table-pg",
-		"pg-incident",
 		"open",
 		"70",
 		"INSERT INTO evidence",
@@ -923,12 +922,12 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
 	result.Store.AddIncident(&incidentv1.Incident{
-		Id:       "inc-event-pg",
-		Scenario: "pg-incident-event",
-		Summary:  "projected incident events",
+		Id:      "inc-event-pg",
+		Labels:  pgLabels("pg-incident-event"),
+		Summary: "projected incident events",
 		ContributingSignals: []*signalv1.Signal{{
 			Id:        "sig-event-ref-pg",
-			Scenario:  "pg-incident-event",
+			Labels:    pgLabels("pg-incident-event"),
 			Name:      "reverse_shell_pattern",
 			Where:     signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 			LineageId: "lin-event-pg",
@@ -1043,8 +1042,8 @@ func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	event := &eventv1.CanonicalEvent{Id: "ev-pg-idempotent", Scenario: "pg-idempotent", Behavior: "process.exec"}
-	signal := &signalv1.Signal{Id: "sig-pg-idempotent", Scenario: "pg-idempotent", Name: "reverse_shell_pattern", Where: signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT}
+	event := &eventv1.CanonicalEvent{Id: "ev-pg-idempotent", Labels: pgLabels("pg-idempotent"), Behavior: "process.exec"}
+	signal := &signalv1.Signal{Id: "sig-pg-idempotent", Labels: pgLabels("pg-idempotent"), Name: "reverse_shell_pattern", Where: signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT}
 	if !result.Store.AddEvent(event) || result.Store.AddEvent(event) {
 		t.Fatal("event idempotency failed before save")
 	}
@@ -1073,10 +1072,10 @@ func TestOpenPostgresPreservesIdempotentIngestAcrossReopen(t *testing.T) {
 			t.Fatalf("Save() duplicate signal error = %v", err)
 		}
 	}
-	if got := reopened.Store.ListEvents("pg-idempotent", ""); len(got) != 1 || got[0].GetId() != event.GetId() {
+	if got := reopened.Store.ListEvents(pgSelector("pg-idempotent"), ""); len(got) != 1 || got[0].GetId() != event.GetId() {
 		t.Fatalf("events after duplicate replay = %+v", got)
 	}
-	if got := reopened.Store.ListSignals("pg-idempotent", "endpoint", false); len(got) != 1 || got[0].GetId() != signal.GetId() {
+	if got := reopened.Store.ListSignals(pgSelector("pg-idempotent"), "endpoint", false); len(got) != 1 || got[0].GetId() != signal.GetId() {
 		t.Fatalf("signals after duplicate replay = %+v", got)
 	}
 }
@@ -1118,8 +1117,8 @@ func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
 		AssignmentID:  assignment.AssignmentID,
 		Actor:         "tester",
 	})
-	result.Store.AddIncident(&incidentv1.Incident{Id: "inc-pg", Scenario: "pg-policy", Summary: "persisted incident"})
-	if _, ok := result.Store.UpdateIncidentStatus("inc-pg", "", "suppressed", "known test", "tester"); !ok {
+	result.Store.AddIncident(&incidentv1.Incident{Id: "inc-pg", Labels: pgLabels("pg-policy"), Summary: "persisted incident"})
+	if _, ok := result.Store.UpdateIncidentStatus("inc-pg", nil, "suppressed", "known test", "tester"); !ok {
 		t.Fatal("UpdateIncidentStatus() ok = false")
 	}
 	if err := result.Store.Save(); err != nil {
@@ -1142,7 +1141,7 @@ func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
 	if len(audits) != 1 || audits[0].Actor != "tester" || audits[0].AssignmentID != assignment.AssignmentID {
 		t.Fatalf("policy audits after reopen = %+v", audits)
 	}
-	incidents := reopened.Store.ListIncidents("pg-policy")
+	incidents := reopened.Store.ListIncidents(pgSelector("pg-policy"))
 	if len(incidents) != 1 || incidents[0].GetStatus() != "suppressed" || incidents[0].GetStatusActor() != "tester" {
 		t.Fatalf("incidents after reopen = %+v", incidents)
 	}
@@ -1164,7 +1163,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	batch := backendDataBatch("pg-api-batch-1", "agent-pg-api", "host-pg-api",
 		[]*eventv1.CanonicalEvent{{
 			Id:       "ev-pg-api",
-			Scenario: "pg-api",
+			Labels:   pgLabels("pg-api"),
 			Behavior: "process.exec",
 			AgentId:  "agent-pg-api",
 			HostId:   "host-pg-api",
@@ -1175,9 +1174,9 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 			postgresEndpointSignal("sig-pg-c2", "pg-api", "reverse_shell_pattern", "lin-pg", true, postgresProcess("process:p-bash"), postgresSocket("10.66.0.99:443")),
 		})
 	acceptDataBatch(t, server, batch)
-	assertGetContains(t, handler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
-	assertGetContains(t, handler, "/api/v1/signals?scenario=pg-api&layer=endpoint", `"id":"sig-pg-c2"`)
-	assertGetContains(t, handler, "/api/v1/incidents?scenario=pg-api", `"scenario":"pg-api"`)
+	assertGetContains(t, handler, "/api/v1/events?label=scenario=pg-api", `"id":"ev-pg-api"`)
+	assertGetContains(t, handler, "/api/v1/signals?label=scenario=pg-api&layer=endpoint", `"id":"sig-pg-c2"`)
+	assertGetContains(t, handler, "/api/v1/incidents?label=scenario=pg-api", `"labels":{"scenario":"pg-api"}`)
 
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "pg-api-policy"
@@ -1192,7 +1191,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	}, http.StatusOK)
 	assertGetContains(t, handler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
 	postJSON(t, handler, "/api/v1/incident-lifecycle", map[string]any{
-		"scenario": "pg-api", "status": "suppressed", "reason": "postgres api persistence", "actor": "analyst",
+		"labels": map[string]string{"scenario": "pg-api"}, "status": "suppressed", "reason": "postgres api persistence", "actor": "analyst",
 	}, http.StatusOK)
 
 	reopened, err := Open(context.Background(), Options{
@@ -1204,8 +1203,8 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
 	reopenedHandler := managerapi.NewServer(reopened.Store).Handler()
-	assertGetContains(t, reopenedHandler, "/api/v1/events?scenario=pg-api", `"id":"ev-pg-api"`)
-	assertGetContains(t, reopenedHandler, "/api/v1/incidents?scenario=pg-api", `"status":"suppressed"`)
+	assertGetContains(t, reopenedHandler, "/api/v1/events?label=scenario=pg-api", `"id":"ev-pg-api"`)
+	assertGetContains(t, reopenedHandler, "/api/v1/incidents?label=scenario=pg-api", `"status":"suppressed"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/policy-audit?tenant_id=default&policy_id=pg-api-policy", `"actor":"operator"`)
 }
@@ -1289,8 +1288,16 @@ func postgresEndpointSignal(id, scenario, name, lineage string, terminal bool, e
 		LineageId:    lineage,
 		Terminal:     terminal,
 		Entities:     entities,
-		Scenario:     scenario,
+		Labels:       pgLabels(scenario),
 	}
+}
+
+func pgSelector(scenario string) store.LabelSelector {
+	return store.LabelSelector{"scenario": scenario}
+}
+
+func pgLabels(scenario string) map[string]string {
+	return map[string]string{"scenario": scenario}
 }
 
 func postgresProcess(key string) *signalv1.EntityRef {

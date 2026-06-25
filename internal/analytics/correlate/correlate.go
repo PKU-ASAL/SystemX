@@ -8,15 +8,12 @@ import (
 )
 
 type View struct {
-	ByName   map[string][]*signalv1.Signal
-	Scenario string
+	ByName map[string][]*signalv1.Signal
+	Labels map[string]string
 }
 
 func Build(events []*eventv1.CanonicalEvent, signals []*signalv1.Signal, policy *policyv1.DetectionPolicy) View {
-	view := View{ByName: map[string][]*signalv1.Signal{}, Scenario: firstScenario(signals)}
-	if view.Scenario == "" {
-		view.Scenario = firstEventScenario(events)
-	}
+	view := View{ByName: map[string][]*signalv1.Signal{}, Labels: commonLabels(events, signals)}
 	for _, sig := range signals {
 		if !EndpointRuleEnabled(policy, sig.GetName()) {
 			continue
@@ -61,20 +58,40 @@ func EndpointRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
 	return false
 }
 
-func firstScenario(signals []*signalv1.Signal) string {
-	for _, sig := range signals {
-		if sig.GetScenario() != "" {
-			return sig.GetScenario()
+func commonLabels(events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) map[string]string {
+	var common map[string]string
+	seen := false
+	merge := func(labels map[string]string) {
+		if len(labels) == 0 {
+			return
+		}
+		if !seen {
+			common = cloneLabels(labels)
+			seen = true
+			return
+		}
+		for key, value := range common {
+			if labels[key] != value {
+				delete(common, key)
+			}
 		}
 	}
-	return ""
+	for _, ev := range events {
+		merge(ev.GetLabels())
+	}
+	for _, sig := range signals {
+		merge(sig.GetLabels())
+	}
+	return common
 }
 
-func firstEventScenario(events []*eventv1.CanonicalEvent) string {
-	for _, ev := range events {
-		if ev.GetScenario() != "" {
-			return ev.GetScenario()
-		}
+func cloneLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
 	}
-	return ""
+	out := make(map[string]string, len(labels))
+	for key, value := range labels {
+		out[key] = value
+	}
+	return out
 }

@@ -150,9 +150,9 @@ wait_contains "agent-health last error" 'dropped events' "$RESULTS/e2e-agent-dro
 wait_contains "agent-health scope" '"scope":{"type":"container","selector":"e2e-dropped-scope"}' "$RESULTS/e2e-agent-dropped-health.health.json" \
   "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager health get --agent-id e2e-agent-dropped-health --tenant-id default
 wait_contains "tamper signal" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-dropped-health.signals.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario agent-health --layer endpoint --terminal true
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario=agent-health --layer endpoint --terminal true
 wait_contains "tamper signal scope entity" 'scope:container:e2e-dropped-scope' "$RESULTS/e2e-agent-dropped-health.signals.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --scenario agent-health --layer endpoint --terminal true
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager signals list --label scenario=agent-health --layer endpoint --terminal true
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-dropped-health.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-dropped-health.manager.log"

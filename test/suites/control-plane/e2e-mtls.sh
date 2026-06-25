@@ -53,7 +53,7 @@ cat > "$TMP/batch-good.json" <<JSON
   "events": [
     {
       "sequence": 1,
-      "event": {"id": "ev-mtls-good", "agentId": "$AGENT_ID", "hostId": "$HOST_ID", "tenantId": "$TENANT_ID", "scenario": "mtls", "behavior": "process.exec"}
+      "event": {"id": "ev-mtls-good", "agentId": "$AGENT_ID", "hostId": "$HOST_ID", "tenantId": "$TENANT_ID", "labels": {"scenario": "mtls"}, "behavior": "process.exec"}
     }
   ]
 }
@@ -81,7 +81,7 @@ cat > "$TMP/batch-wrong-agent.json" <<JSON
   "events": [
     {
       "sequence": 1,
-      "event": {"id": "ev-mtls-forged", "agentId": "agent-forged", "hostId": "$HOST_ID", "tenantId": "$TENANT_ID", "scenario": "mtls", "behavior": "process.exec"}
+      "event": {"id": "ev-mtls-forged", "agentId": "agent-forged", "hostId": "$HOST_ID", "tenantId": "$TENANT_ID", "labels": {"scenario": "mtls"}, "behavior": "process.exec"}
     }
   ]
 }

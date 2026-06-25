@@ -44,7 +44,7 @@ agent:
   host_id: container-node-a
   tenant_id: default
   token: $TOKEN
-  scenario: $S
+  label.scenario: $S
 
 manager:
   address: http://10.66.0.10:9443
@@ -77,7 +77,7 @@ data_plane:
 health:
   interval: 500ms
 EOF"
-  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S" >/dev/null
+  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S" >/dev/null
   docker exec tetragon sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
   cleanup_agent() {
     docker exec tetragon sh -c "if [ -f '$WORK/agent.pid' ]; then kill \"\$(cat '$WORK/agent.pid')\" 2>/dev/null || true; fi" >/dev/null 2>&1 || true
@@ -91,7 +91,7 @@ EOF"
   fi
   docker exec node-a /bin/true >/dev/null 2>&1 || true
   deadline=$((SECONDS + 30))
-  until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
+  until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --label scenario="$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" -gt 0 ]]; do
     if (( SECONDS >= deadline )); then
       echo "[capture-container][ERROR] agent-managed Tetra subscription did not become ready"
       docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
@@ -99,15 +99,15 @@ EOF"
     fi
     sleep 1
   done
-  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S" >/dev/null
+  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S" >/dev/null
   run_attack
   sleep "$DUR"
   cleanup_agent
   docker exec tetragon cat "$WORK/agent.log" > "$RESULTS/$S.container.agent.log" 2>/dev/null || true
-  EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-  INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager incidents list --scenario "$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
+  EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --label scenario="$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --label scenario="$S" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --label scenario="$S" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager incidents list --label scenario="$S" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
   python3 - "$RESULTS/container.$S.managed.json" "$S" "$EVENTS" "$ENDPOINT_SIGNALS" "$CLOUD_SIGNALS" "$INCIDENTS" <<'PY'
 import json, sys
 path, scenario = sys.argv[1], sys.argv[2]
@@ -132,8 +132,8 @@ echo "[capture-container] v1 replay/stream 调试路径: $S（窗口 ${DUR}s）"
 POLICY="$ROOT/env/resources/syscall-capture.yaml"
 docker cp "$POLICY" tetragon:/tmp/p.yaml 2>/dev/null || true
 docker exec tetragon tetra tracingpolicy add /tmp/p.yaml 2>/dev/null | tail -1 || true
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S-stream" >/dev/null
-docker exec -e NODE_A_DOCKER="$NODE_A_DOCKER" tetragon sh -c "rm -f /tmp/cap-$S.json; timeout $DUR tetra getevents -o json 2>/dev/null | grep -F '\"docker\":\"'\$NODE_A_DOCKER | tee /tmp/cap-$S.json | /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --agent-id container-node-a-stream --host-id container-node-a --scenario $S-stream --stream-jsonl - --batch-size 256 --flush-interval 1s" &
+docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S-stream" >/dev/null
+docker exec -e NODE_A_DOCKER="$NODE_A_DOCKER" tetragon sh -c "rm -f /tmp/cap-$S.json; timeout $DUR tetra getevents -o json 2>/dev/null | grep -F '\"docker\":\"'\$NODE_A_DOCKER | tee /tmp/cap-$S.json | /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --agent-id container-node-a-stream --host-id container-node-a --label scenario=$S-stream --stream-jsonl - --batch-size 256 --flush-interval 1s" &
 CAP=$!
 sleep 3
 run_attack
@@ -143,10 +143,10 @@ wait $CAP 2>/dev/null || true
 docker exec tetragon cat /tmp/cap-$S.json > "$RESULTS/$S.container.tetragon.jsonl"
 echo "[capture-container] 落盘: $RESULTS/$S.container.tetragon.jsonl ($(wc -l < "$RESULTS/$S.container.tetragon.jsonl") 行)"
 
-STREAM_EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --scenario "$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-STREAM_ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S-stream" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-STREAM_CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --scenario "$S-stream" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
-STREAM_INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager incidents list --scenario "$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
+STREAM_EVENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager events list --label scenario="$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+STREAM_ENDPOINT_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --label scenario="$S-stream" --layer endpoint --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+STREAM_CLOUD_SIGNALS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager signals list --label scenario="$S-stream" --layer cloud --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+STREAM_INCIDENTS="$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 manager incidents list --label scenario="$S-stream" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("incidents", [])))')"
 python3 - "$RESULTS/container.$S.stream.json" "$S" "$STREAM_EVENTS" "$STREAM_ENDPOINT_SIGNALS" "$STREAM_CLOUD_SIGNALS" "$STREAM_INCIDENTS" <<'PY'
 import json, sys
 path, scenario = sys.argv[1], sys.argv[2]
@@ -161,10 +161,10 @@ fi
 echo "[capture-container] 生成 Phase1 replay events 并上传 manager"
 python3 "$ROOT/tools/fixtures/replay_scenario.py" --scenario "$S" --out "$RESULTS/$S.sensor.jsonl"
 docker cp "$RESULTS/$S.sensor.jsonl" mgr:/tmp/$S.sensor.jsonl
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?scenario=$S" >/dev/null
+docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S" >/dev/null
 docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
   --manager http://127.0.0.1:9443 \
   --agent-id container-node-a \
   --host-id container-node-a \
-  --scenario "$S" \
+  --label scenario="$S" \
   --input-jsonl /tmp/$S.sensor.jsonl

@@ -9,7 +9,7 @@ This document defines how tests under `test/` are organized. The goal is to keep
 | Suite | A product-facing test objective. It answers what is being tested and what counts as success. | SUT boundary, evaluation scope, pass/fail rules, reports |
 | Harness | Shared execution glue. It answers how to start, wait, query, collect, and clean up. | Topology lifecycle, process control, log/result collection |
 | Tool | Reusable helper used by one or more suites. | Recorder, report generators, diagnostics, fixtures |
-| Scenario | Security semantics contract. | Attack/benign script plus `expected.yaml` |
+| Scenario | Security semantics contract. | Attack/benign script plus `expected.yaml` assertions and `labels.yaml` effectiveness labels |
 | Workload | Pressure source. | Repeatable exec/file/network/business activity, no security assertions |
 | Policy | Test variable. | Collection/detection/response/resource profiles |
 
@@ -44,9 +44,7 @@ Suites may call harness scripts and tools. Harness scripts should not decide pro
 
 `full` evaluates both local and manager facts and should only be used by suites that intentionally exercise both planes.
 
-Every benchmark-style output should state its `evaluation_scope`. Requirements outside the selected scope should be reported as `out_of_scope`, not silently counted as pass or fail.
-
-For example, `local-agent` benchmark reports use `evaluation_scope=local`: event, endpoint signal, and local negative assertions are scored; cloud signal and incident assertions from the same `expected.yaml` are preserved in the structured report as `out_of_scope`.
+Every benchmark-style output should state its `evaluation_scope`. Benchmark effectiveness uses `labels.yaml` ground truth and computes event/signal precision-recall for the selected plane. Functional assertion tests may still use `expected.yaml` for pass/fail checks.
 
 ## Result Layout
 

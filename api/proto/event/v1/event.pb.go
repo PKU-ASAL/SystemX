@@ -231,7 +231,6 @@ type CanonicalEvent struct {
 	Seq            uint64                 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	AgentId        string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	HostId         string                 `protobuf:"bytes,4,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
-	Scenario       string                 `protobuf:"bytes,5,opt,name=scenario,proto3" json:"scenario,omitempty"`
 	MonoNs         uint64                 `protobuf:"varint,6,opt,name=mono_ns,json=monoNs,proto3" json:"mono_ns,omitempty"`
 	SubjectProc    *ProcessRef            `protobuf:"bytes,8,opt,name=subject_proc,json=subjectProc,proto3" json:"subject_proc,omitempty"`
 	Object         *ObjectRef             `protobuf:"bytes,9,opt,name=object,proto3" json:"object,omitempty"`
@@ -305,13 +304,6 @@ func (x *CanonicalEvent) GetAgentId() string {
 func (x *CanonicalEvent) GetHostId() string {
 	if x != nil {
 		return x.HostId
-	}
-	return ""
-}
-
-func (x *CanonicalEvent) GetScenario() string {
-	if x != nil {
-		return x.Scenario
 	}
 	return ""
 }
@@ -442,13 +434,12 @@ const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\x15target_proc_stable_id\x18\x04 \x01(\tR\x12targetProcStableId\">\n" +
 	"\fRuntimeScope\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
-	"\bselector\x18\x02 \x01(\tR\bselector\"\xfe\x05\n" +
+	"\bselector\x18\x02 \x01(\tR\bselector\"\xf2\x05\n" +
 	"\x0eCanonicalEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x19\n" +
 	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x17\n" +
-	"\ahost_id\x18\x04 \x01(\tR\x06hostId\x12\x1a\n" +
-	"\bscenario\x18\x05 \x01(\tR\bscenario\x12\x17\n" +
+	"\ahost_id\x18\x04 \x01(\tR\x06hostId\x12\x17\n" +
 	"\amono_ns\x18\x06 \x01(\x04R\x06monoNs\x12@\n" +
 	"\fsubject_proc\x18\b \x01(\v2\x1d.sysarmor.event.v1.ProcessRefR\vsubjectProc\x124\n" +
 	"\x06object\x18\t \x01(\v2\x1c.sysarmor.event.v1.ObjectRefR\x06object\x12(\n" +
@@ -468,7 +459,7 @@ const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\x06labels\x18\x15 \x03(\v2-.sysarmor.event.v1.CanonicalEvent.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\a\x10\bBFZDgithub.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1b\x06proto3"
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\bscenarioBFZDgithub.com/sysarmor/sysarmor-next-project/api/proto/event/v1;eventv1b\x06proto3"
 
 var (
 	file_api_proto_event_v1_event_proto_rawDescOnce sync.Once

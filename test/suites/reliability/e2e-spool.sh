@@ -87,7 +87,7 @@ fi
 
 sa_wait_url_contains "$MGR_URL/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"queued_batches":0' "$RESULTS/e2e-agent-spool.health.recovered.json"
 sa_wait_url_contains "$MGR_URL/api/v1/agent-health?agent_id=e2e-agent-spool&tenant_id=default" '"remaining_batches":0' "$RESULTS/e2e-agent-spool.health.data_plane.json"
-sa_wait_url_contains "$MGR_URL/api/v1/events?scenario=" '"agent_id":"e2e-agent-spool"' "$RESULTS/e2e-agent-spool.events.json"
+sa_wait_url_contains "$MGR_URL/api/v1/events?" '"agent_id":"e2e-agent-spool"' "$RESULTS/e2e-agent-spool.events.json"
 
 cp "$TMP/agent.log" "$RESULTS/e2e-agent-spool.agent.log"
 cp "$TMP/manager.log" "$RESULTS/e2e-agent-spool.manager.log"

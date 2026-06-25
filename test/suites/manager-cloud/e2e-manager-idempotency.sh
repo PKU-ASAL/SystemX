@@ -42,7 +42,7 @@ cat > "$TMP/batch.json" <<'JSON'
         "agentId": "e2e-manager-idempotency",
         "hostId": "e2e-host",
         "tenantId": "default",
-        "scenario": "apt-fileless-c2",
+        "labels": {"scenario": "apt-fileless-c2"},
         "behavior": "process.exec",
         "lineageId": "lin-idem"
       }
@@ -58,7 +58,7 @@ cat > "$TMP/batch.json" <<'JSON'
         "baseRisk": 50,
         "globalRarity": 1,
         "lineageId": "lin-idem",
-        "scenario": "apt-fileless-c2",
+        "labels": {"scenario": "apt-fileless-c2"},
         "entities": [{"kind": "process", "key": "p-web", "role": "subject"}]
       }
     },
@@ -71,7 +71,7 @@ cat > "$TMP/batch.json" <<'JSON'
         "baseRisk": 50,
         "globalRarity": 1,
         "lineageId": "lin-idem",
-        "scenario": "apt-fileless-c2",
+        "labels": {"scenario": "apt-fileless-c2"},
         "entities": [{"kind": "file", "key": "file:/dev/shm/x.sh", "role": "object"}]
       }
     },
@@ -85,7 +85,7 @@ cat > "$TMP/batch.json" <<'JSON'
         "globalRarity": 1,
         "lineageId": "lin-idem",
         "terminal": true,
-        "scenario": "apt-fileless-c2",
+        "labels": {"scenario": "apt-fileless-c2"},
         "entities": [
           {"kind": "process", "key": "p-bash", "role": "subject"},
           {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
@@ -101,10 +101,10 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-manager-idempotency.ack.second.json"
 
 curl -sf "$MGR_URL/api/v1/metrics" > "$RESULTS/e2e-manager-idempotency.metrics.json"
-curl -sf "$MGR_URL/api/v1/events?scenario=apt-fileless-c2" > "$RESULTS/e2e-manager-idempotency.events.json"
-curl -sf "$MGR_URL/api/v1/signals?scenario=apt-fileless-c2&layer=endpoint" > "$RESULTS/e2e-manager-idempotency.endpoint-signals.json"
-curl -sf "$MGR_URL/api/v1/signals?scenario=apt-fileless-c2&layer=cloud" > "$RESULTS/e2e-manager-idempotency.cloud-signals.json"
-curl -sf "$MGR_URL/api/v1/incidents?scenario=apt-fileless-c2" > "$RESULTS/e2e-manager-idempotency.incidents.json"
+curl -sf "$MGR_URL/api/v1/events?label=scenario=apt-fileless-c2" > "$RESULTS/e2e-manager-idempotency.events.json"
+curl -sf "$MGR_URL/api/v1/signals?label=scenario=apt-fileless-c2&layer=endpoint" > "$RESULTS/e2e-manager-idempotency.endpoint-signals.json"
+curl -sf "$MGR_URL/api/v1/signals?label=scenario=apt-fileless-c2&layer=cloud" > "$RESULTS/e2e-manager-idempotency.cloud-signals.json"
+curl -sf "$MGR_URL/api/v1/incidents?label=scenario=apt-fileless-c2" > "$RESULTS/e2e-manager-idempotency.incidents.json"
 
 python3 - "$RESULTS" <<'PY'
 import json

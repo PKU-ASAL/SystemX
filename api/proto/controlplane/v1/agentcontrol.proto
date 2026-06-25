@@ -256,13 +256,15 @@ message ResponseScope {
 }
 
 message ResponseCommand {
+  reserved 7;
+  reserved "scenario";
+
   string response_id = 1;
   string tenant_id = 2;
   string agent_id = 3;
   string policy_id = 4;
   uint64 policy_version = 5;
   string signal_id = 6;
-  string scenario = 7;
   ResponseScope scope = 8;
   string action = 9;
   string mode = 10;
@@ -274,6 +276,7 @@ message ResponseCommand {
   string approval_status = 16;
   uint32 approval_threshold = 17;
   repeated string approval_roles = 18;
+  map<string, string> labels = 19;
   string raw_json = 30;
 }
 
@@ -290,15 +293,18 @@ message ResponseAck {
 }
 
 message EvidencePullbackRequest {
+  reserved 5;
+  reserved "scenario";
+
   string request_id = 1;
   string tenant_id = 2;
   string agent_id = 3;
   string incident_id = 4;
-  string scenario = 5;
   string target = 6;
   string reason = 7;
   string status = 8;
   string actor = 9;
+  map<string, string> labels = 10;
   string raw_json = 30;
 }
 

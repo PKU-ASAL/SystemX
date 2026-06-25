@@ -102,7 +102,7 @@ SA_WAIT_TIMEOUT=15 sa_wait_url_contains "$MGR_URL/api/v1/agent-health?agent_id=e
 
 SA_WAIT_TIMEOUT=15 sa_wait_no_glob "$TMP/spool/*.batch.json" "spool drain"
 
-curl -sf "$MGR_URL/api/v1/events?scenario=" > "$RESULTS/e2e-agent-outage-soak.events.json"
+curl -sf "$MGR_URL/api/v1/events?" > "$RESULTS/e2e-agent-outage-soak.events.json"
 python3 - "$RESULTS/e2e-agent-outage-soak.events.json" "$EVENTS" <<'PY'
 import json
 import sys

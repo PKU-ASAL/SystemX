@@ -110,7 +110,7 @@ func Signal(health agenthealth.AgentHealth, reason, id string) *signalv1.Signal 
 			Entities: entities,
 			Summary:  summary,
 		},
-		Scenario: "agent-health",
+		Labels: map[string]string{"signal_class": "agent-health"},
 	}
 }
 

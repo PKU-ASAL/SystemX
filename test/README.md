@@ -18,7 +18,7 @@
 
 当前稳定边界是:产品 E2E 入口在 `suites/`,可复用断言/报告/benchmark/fixture 在 `tools/`,通用执行胶水在 `harness/`。
 
-效果评估会显式写出 `evaluation_scope`。例如 `local-agent` benchmark 只给本地 event、endpoint signal 和本地 negative 断言计分;同一份 `expected.yaml` 里的 cloud signal、incident、graph evidence 会进入 `out_of_scope`,不被当作本地失败。
+效果评估分两条线:功能断言继续使用 `expected.yaml`; benchmark effectiveness 使用 `labels.yaml` 作为 ground truth,将 workload 窗口内 observed events/signals 与标签匹配,输出 event/signal precision/recall。
 
 ## Topology
 
@@ -102,7 +102,7 @@ Common manager query examples:
 ```bash
 sysarmorctl --manager-url http://127.0.0.1:9443 --json manager agents list
 sysarmorctl --manager-url http://127.0.0.1:9443 --json manager health get --agent-id agent-a --tenant-id default
-sysarmorctl --manager-url http://127.0.0.1:9443 --json manager signals list --scenario apt-fileless-c2 --layer endpoint
+sysarmorctl --manager-url http://127.0.0.1:9443 --json manager signals list --label scenario=apt-fileless-c2 --layer endpoint
 sysarmorctl --manager-url http://127.0.0.1:9443 --json manager control-commands cancel --command-id ctrl-a --agent agent-a --reason "bad rollout"
 sysarmorctl --manager-url http://127.0.0.1:9443 --json manager roles upsert --actor alice --roles policy_admin,control_admin
 ```
@@ -153,13 +153,17 @@ test/
 ├── scenarios/                functional/security scenarios
 │   ├── container/<scenario>/
 │   │   ├── attack.sh
-│   │   └── expected.yaml
+│   │   ├── expected.yaml
+│   │   └── labels.yaml
 │   └── vm/<scenario>/
 │       ├── attack.sh
-│       └── expected.yaml
+│       ├── expected.yaml
+│       └── labels.yaml
 │
 ├── workloads/                repeatable pressure sources, no security assertions
-│   └── vm/<workload>/run.sh
+│   └── vm/<workload>/
+│       ├── run.sh
+│       └── labels.yaml
 │
 ├── policies/                 collection/detection/resource/telemetry/response samples
 ├── content/                  IOC/context/rulepack content used by policies
@@ -186,8 +190,8 @@ test/
 | 目录 | 角色 | 说明 |
 |---|---|---|
 | `env/` | 环境输入 | Docker/Vagrant 拓扑、镜像、provision、共享资源 |
-| `scenarios/` | 功能输入 | 攻击/良性场景脚本 + `expected.yaml` 契约 |
-| `workloads/` | 压力输入 | exec/file/network/mixed/business 负载,不做安全断言 |
+| `scenarios/` | 功能输入 | 攻击/良性场景脚本 + `expected.yaml` 功能断言 + `labels.yaml` 效果标签 |
+| `workloads/` | 压力输入 | exec/file/network/mixed/business 负载 + benign `labels.yaml` |
 | `policies/` | 策略输入 | 采集、检测、资源、上行、响应策略样例 |
 | `content/` | 内容输入 | IOC feed、路径上下文、endpoint rulepack |
 | `suites/` | 高层测试入口 | 按 SUT/evaluation scope 组织 local-agent、manager-cloud、control-plane 等 |
@@ -208,7 +212,7 @@ test/
 |---|---|---|
 | `apt-fileless-c2` | 单 lineage 内形成完整攻击链 | endpoint terminal signal, incident=1 |
 | `apt-staged-drop` | 跨 lineage 分阶段落盘和执行 | endpoint 不应单独 terminal, cloud incident=1 |
-| `benign-ci-noise` | 良性 CI 行为与攻击相似但不应成案 | incident=0 |
+| `benign-ci-noise` | 本地 CI/cache/artifact 噪声,不触碰 IoC/攻击路径/敏感凭据 | incident=0, attack signal=0 |
 | `lifecycle-smoke` | agent 生命周期和基础事件可见性 | agent registered, events visible |
 
 详见 `SCENARIOS.md`。
@@ -226,10 +230,10 @@ DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
 | Workload | 用途 |
 |---|---|
 | `exec-storm` | 放大 process exec/fork/exit 路径 |
-| `file-read-storm` | 放大 credential/secret read 路径 |
-| `file-write-storm` | 放大 payload/persistence write/chmod 路径 |
+| `file-read-storm` | 放大普通 file read 路径 |
+| `file-write-storm` | 放大普通 artifact write/copy 路径 |
 | `network-connect-storm` | 放大 socket connect 路径 |
-| `mixed-edr-storm` | 混合 exec/file/network,默认 sensor benchmark |
+| `mixed-edr-storm` | 混合普通 exec/file/local-network,默认 sensor benchmark |
 | `benign-business` | 正常构建/校验/文件活动,评估业务干扰和误报 |
 
 ## Policy And Content Inputs
@@ -552,6 +556,7 @@ Useful variables:
 | `perf-resource-container` | Container idle EDR resource sampling. |
 | `perf-resource-vm` | VM idle EDR resource sampling. |
 | `perf-resource-all` | Container and VM idle EDR resource sampling. |
+| `sync-vm-agent` | Upload current `bin/sysarmor-agent` and `bin/sysarmorctl` into the VM and verify the local socket. |
 | `recorder-vm-start` | Start VM long-running performance recorder. |
 | `recorder-vm-mark` | Add a recorder marker with `PHASE=<name>` and optional `DETAIL=...`. |
 | `recorder-vm-stop` | Stop VM recorder and pull timeline. |
@@ -562,7 +567,7 @@ Useful variables:
 | `bench-matrix-vm` | Run fixed VM policy x workload/scenario matrix and effectiveness report. |
 | `bench-edr-lifecycle-vm` | Capture VM EDR baseline/start/apply/steady/workload lifecycle curve. |
 | `bench-e2e-vm` | Wrap a VM functional E2E with recorder. |
-| `effectiveness-report` | Build scenario effectiveness report from `expected.yaml` and existing outputs. |
+| `effectiveness-report` | Build event/signal precision-recall effectiveness report from `labels.yaml` and benchmark outputs. |
 
 ## Evaluation Model
 
@@ -579,16 +584,16 @@ Useful variables:
 | steady-state cost | `steady` phase |
 | workload cost | `workload` phase |
 
-效果评估当前主要由 scenario `expected.yaml` 和专项 e2e 断言完成。后续建议把效果指标也矩阵化:
+效果评估使用 `labels.yaml` 作为 ground truth。每个 scenario/workload 声明真实应覆盖的 event label 和 signal label; evaluator 将 workload 窗口内 observed events/signals 归一化为 canonical entities 后计算:
 
 ```text
-required_event_hit_rate
-event_recall_by_kind
-signal_hit_rate
-terminal_signal_latency_ms
-incident_hit_rate
-incident_latency_ms
-false_positive_count
+event_recall
+signal_recall
+terminal_recall
+signal_precision
+event_noise_ratio
+signal_event_link_rate
+false_positive_signals
 drop_rate
 parse_error_rate
 cost_per_1k_events_cpu
@@ -597,6 +602,7 @@ cost_per_1k_events_cpu
 当前可用入口:
 
 ```bash
+make -C test sync-vm-agent
 make -C test bench-matrix-vm
 make -C test effectiveness-report TOPO=vm RUN_ID=manual
 ```
@@ -631,21 +637,27 @@ test/.results/bench-matrix-vm/<run-id>/matrix.csv
 test/.results/bench-matrix-vm/<run-id>/matrix.json
 test/.results/effectiveness/<run-id>/summary.json
 test/.results/effectiveness/<run-id>/matrix.csv
+test/.results/effectiveness/<run-id>/matrix.json
+test/.results/effectiveness/<run-id>/truth_steps.csv
 test/.results/effectiveness/<run-id>/policy_comparison.csv
 test/.results/effectiveness/<run-id>/policy_comparison.json
 ```
+
+`bench-matrix-vm` 默认先执行 VM agent sync,避免 VM 内旧版 `sysarmor-agent` / `sysarmorctl` 或旧配置影响测试结果。可用 `SYSARMOR_BENCH_SYNC_VM_AGENT=0` 关闭。`bench-collection-vm` 默认在 collection policy 前加载 `test/policies/detection-cep-endpoint.json`,可用 `SYSARMOR_BENCH_DETECTION_POLICY=<path>` 替换,或用 `SYSARMOR_BENCH_APPLY_DETECTION=0` 只测采集。
 
 这样可以把 policy 档位、业务工作负载和攻击场景放到同一张 matrix 中比较:采得准不准、全不全、快不快、贵不贵。
 
 `policy_comparison.csv` 的综合分模型:
 
 ```text
-overall_score = 0.6 * effectiveness_score
-              + 0.3 * resource_score
-              + 0.1 * stability_score
+overall_score = 0.65 * effectiveness_score
+              + 0.25 * resource_score
+              + 0.10 * stability_score
 
 resource_score = 0.75 * inverse_cpu_score
                + 0.25 * inverse_rss_score
 ```
 
-其中 `effectiveness_score` 来自 `expected.yaml` 的结构化命中结果,`resource_score` 来自 workload 阶段的 EDR CPU/RSS,`stability_score` 在 drop 和 parse error 都为 0 时为 1。
+其中 `effectiveness_score` 来自 `labels.yaml` 的 event/signal precision-recall 结果,`resource_score` 来自 workload 阶段的 EDR CPU/RSS,`stability_score` 在 drop 和 parse error 都为 0 时为 1。
+
+`effectiveness-report` 对 benchmark recorder 输出使用 `workload_start` 到 `workload_done` 窗口。`observed_events_total` / `observed_signals_total` 保留整段 recorder 累计帧数量,`observed_events` / `observed_signals` 是进入效果评估的 workload 窗口数量。这样 policy apply、Vagrant SSH、motd 等运行噪声不会被算作攻击场景命中。

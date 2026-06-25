@@ -48,7 +48,7 @@ cat > "$TMP/batch.json" <<JSON
         "baseRisk": 50,
         "globalRarity": 1,
         "lineageId": "lin-attach",
-        "scenario": "$SCENARIO",
+        "labels": {"scenario": "$SCENARIO"},
         "entities": [{"kind": "process", "key": "process:p-web", "role": "subject"}]
       }
     },
@@ -62,7 +62,7 @@ cat > "$TMP/batch.json" <<JSON
         "globalRarity": 1,
         "lineageId": "lin-attach",
         "terminal": true,
-        "scenario": "$SCENARIO",
+        "labels": {"scenario": "$SCENARIO"},
         "entities": [
           {"kind": "process", "key": "process:p-bash", "role": "subject"},
           {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
@@ -76,10 +76,10 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-incident-attach-evidence.data_plane.json"
 
 wait_contains "incident" '"status":"open"' "$RESULTS/e2e-incident-attach-evidence.incidents.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --label scenario="$SCENARIO"
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence attach \
-  --scenario "$SCENARIO" \
+  --label scenario="$SCENARIO" \
   --node-id "user:root" \
   --node-kind user \
   --node-label root \
@@ -88,7 +88,7 @@ wait_contains "incident" '"status":"open"' "$RESULTS/e2e-incident-attach-evidenc
   --edge-kind ran_as > "$RESULTS/e2e-incident-attach-evidence.attach.json"
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence \
-  --scenario "$SCENARIO" > "$RESULTS/e2e-incident-attach-evidence.evidence.json"
+  --label scenario="$SCENARIO" > "$RESULTS/e2e-incident-attach-evidence.evidence.json"
 
 for want in '"id":"user:root"' '"kind":"user"' '"from":"process:p-bash"' '"to":"user:root"' '"kind":"ran_as"'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-incident-attach-evidence.evidence.json"; then

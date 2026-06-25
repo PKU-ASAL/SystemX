@@ -119,7 +119,7 @@ wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-
 wait_contains "agent-health restart count" '"restart_count":3' "$RESULTS/e2e-agent-managed-restart-container.health.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-restart --tenant-id default
 wait_contains "tamper signal" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-managed-restart-container.signals.json" \
-  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --scenario agent-health --layer endpoint --terminal true
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --label scenario=agent-health --layer endpoint --terminal true
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-managed-restart-container.metrics.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics
 

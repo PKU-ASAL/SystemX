@@ -48,7 +48,7 @@ cat > "$TMP/batch.json" <<JSON
         "baseRisk": 45,
         "globalRarity": 1,
         "lineageId": "lin-drop",
-        "scenario": "$SCENARIO",
+        "labels": {"scenario": "$SCENARIO"},
         "entities": [{"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"}]
       }
     },
@@ -61,7 +61,7 @@ cat > "$TMP/batch.json" <<JSON
         "baseRisk": 65,
         "globalRarity": 1,
         "lineageId": "lin-connect",
-        "scenario": "$SCENARIO",
+        "labels": {"scenario": "$SCENARIO"},
         "entities": [
           {"kind": "file", "key": "file:/var/lib/app/plugins/helper", "role": "object"},
           {"kind": "socket", "key": "socket:10.66.0.99:443", "role": "object"}
@@ -75,9 +75,9 @@ JSON
 "$BIN/sysarmor-databatch-append" --manager "127.0.0.1:$GRPC_PORT" --token "$TOKEN" --input "$TMP/batch.json" > "$RESULTS/e2e-graph-evidence.data_plane.json"
 
 wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-graph-evidence.incidents.json" \
-  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --scenario "$SCENARIO"
+  "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incidents list --label scenario="$SCENARIO"
 
-"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence --scenario "$SCENARIO" > "$RESULTS/e2e-graph-evidence.evidence.json"
+"$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence --label scenario="$SCENARIO" > "$RESULTS/e2e-graph-evidence.evidence.json"
 for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:443"' '"from":"file:/var/lib/app/plugins/helper"' '"to":"socket:10.66.0.99:443"' '"kind":"connect"'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-graph-evidence.evidence.json"; then
     echo "[e2e-graph-evidence][ERROR] evidence missing $want" >&2
@@ -87,7 +87,7 @@ for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:4
 done
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence \
-  --scenario "$SCENARIO" \
+  --label scenario="$SCENARIO" \
   --path-from "file:/var/lib/app/plugins/helper" \
   --path-to "socket:10.66.0.99:443" > "$RESULTS/e2e-graph-evidence.path.json"
 for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:443"' '"kind":"connect"'; do
@@ -99,7 +99,7 @@ for want in '"id":"file:/var/lib/app/plugins/helper"' '"id":"socket:10.66.0.99:4
 done
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager incident evidence \
-  --scenario "$SCENARIO" \
+  --label scenario="$SCENARIO" \
   --seed "file:/var/lib/app/plugins/helper" \
   --hops 1 > "$RESULTS/e2e-graph-evidence.khop.json"
 if ! grep -Fq '"id":"socket:10.66.0.99:443"' "$RESULTS/e2e-graph-evidence.khop.json"; then

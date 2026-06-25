@@ -688,9 +688,6 @@ func parseTrustKeys(raw string) map[string]ed25519.PublicKey {
 
 func (r *AgentRuntime) runtimeLabels(scopeType, scopeSelector, sensorRuntime string) map[string]string {
 	labels := cloneStringMap(r.Config.Agent.Labels)
-	if r.Config.Agent.Scenario != "" {
-		labels["scenario"] = r.Config.Agent.Scenario
-	}
 	if sensorRuntime != "" {
 		labels["sensor_runtime"] = sensorRuntime
 	}
@@ -792,9 +789,6 @@ func (r *AgentRuntime) newDataBatch(now time.Time) *dataplanev1.DataBatch {
 	}
 	for key, value := range r.policyLabels() {
 		labels[key] = value
-	}
-	if r.Config.Agent.Scenario != "" {
-		labels["scenario"] = r.Config.Agent.Scenario
 	}
 	if len(labels) == 0 {
 		labels = nil

@@ -50,7 +50,8 @@ message Signal {
   repeated string signal_refs = 10;
   bool terminal = 11;
   EvidenceBundle evidence = 12;
-  string scenario = 13;
+  reserved 13;
+  reserved "scenario";
   bool cross_lineage = 14;
   ResponseIntent response_intent = 15;
   string rule_id = 16;

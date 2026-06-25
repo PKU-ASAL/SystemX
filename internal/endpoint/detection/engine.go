@@ -522,7 +522,6 @@ func (e *Engine) signal(ev *eventv1.CanonicalEvent, rule effectiveRule, refs []s
 		Entities:     entities,
 		EventRefs:    refs,
 		Terminal:     terminal,
-		Scenario:     ev.GetScenario(),
 		Labels:       cloneLabels(ev.GetLabels()),
 		ContextRefs:  e.signalContentRefs(rule.spec.ContextRefs, e.refs.ContextRefs),
 		IocRefs:      e.signalContentRefs(rule.spec.IOCRefs, e.refs.IOCRefs),
@@ -1207,13 +1206,21 @@ func (i IOCSnapshot) isC2Socket(socket string) bool {
 	if !ok {
 		return false
 	}
-	for _, candidate := range i.C2Addrs {
-		if addr == candidate {
-			return true
-		}
-	}
+	portMatched := false
 	for _, candidate := range i.C2Ports {
 		if port == candidate {
+			portMatched = true
+			break
+		}
+	}
+	if !portMatched {
+		return false
+	}
+	if len(i.C2Addrs) == 0 {
+		return true
+	}
+	for _, candidate := range i.C2Addrs {
+		if addr == candidate {
 			return true
 		}
 	}

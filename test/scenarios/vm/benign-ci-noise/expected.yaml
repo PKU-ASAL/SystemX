@@ -1,11 +1,7 @@
-# benign-ci-noise 契约（核心误报基准：罕见度 ≠ 裸加）
+# benign-ci-noise 契约：完全良性 CI 噪声，不应产生攻击 signal/incident。
 endpoint_signals:
-  # 会命中与攻击相同的 Signal 名，但 local_rarity 随重复迅速趋 0
-  may_contain: [download_by_lolbin, payload_dropped, sensitive_cred_read]
+  must_absent: [download_by_lolbin, payload_dropped, sensitive_cred_read, reverse_shell_pattern, payload_lifecycle]
 incident:
   count: 0                            # ★ 核心负向断言：不得误报
-control_assertions:
-  - switch: "converge.mode=additive_threshold"   # ★ 切裸加
-    then_incident_count_min: 1                    # 裸加会误报 → 固化反模式结论
 negative:
   endpoint_terminal_count: 0

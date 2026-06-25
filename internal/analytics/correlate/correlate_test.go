@@ -8,13 +8,14 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 )
 
-func TestBuildFiltersEndpointRulesAndFindsScenario(t *testing.T) {
-	view := Build([]*eventv1.CanonicalEvent{{Scenario: "event-scenario"}}, []*signalv1.Signal{
-		{Name: "payload_dropped", Scenario: "signal-scenario", Entities: []*signalv1.EntityRef{{Kind: "file", Key: "/tmp/x", Role: "object"}}},
-		{Name: "reverse_shell_pattern", Terminal: true},
+func TestBuildFiltersEndpointRulesAndFindsCommonLabels(t *testing.T) {
+	labels := map[string]string{"case_type": "scenario", "scenario": "apt-staged-drop"}
+	view := Build([]*eventv1.CanonicalEvent{{Labels: labels}}, []*signalv1.Signal{
+		{Name: "payload_dropped", Labels: labels, Entities: []*signalv1.EntityRef{{Kind: "file", Key: "/tmp/x", Role: "object"}}},
+		{Name: "reverse_shell_pattern", Terminal: true, Labels: labels},
 	}, &policyv1.DetectionPolicy{EndpointRules: []string{"reverse_shell_pattern"}})
-	if view.Scenario != "signal-scenario" {
-		t.Fatalf("scenario = %q", view.Scenario)
+	if view.Labels["scenario"] != "apt-staged-drop" || view.Labels["case_type"] != "scenario" {
+		t.Fatalf("labels = %#v", view.Labels)
 	}
 	if view.Has("payload_dropped") {
 		t.Fatal("disabled rule is present")

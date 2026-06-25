@@ -29,16 +29,8 @@ func (r *EndpointRuntime) ProcessEvent(ev contract.EventEnvelope) (*dataplanev1.
 		ev.SensorEvent.RawRef = ev.RawRef
 	}
 	canonical := r.normalizer.Normalize(ev.SensorEvent)
-	if canonical.Scenario == "" {
-		canonical.Scenario = r.runner.Config.Agent.Scenario
-	}
 	canonical.Labels = mergeLabels(canonical.GetLabels(), r.runner.policyLabels())
 	signals := r.runner.currentDetection().Process(canonical)
-	for _, sig := range signals {
-		if sig.Scenario == "" {
-			sig.Scenario = r.runner.Config.Agent.Scenario
-		}
-	}
 	return r.runner.dataBatchForEvent(canonical, signals), nil
 }
 

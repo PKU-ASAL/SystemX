@@ -46,7 +46,7 @@ type Backend interface {
 type ControlStore interface {
 	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
 	AddAgent(store.AgentIdentity)
-	AttachIncidentEvidence(string, string, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
+	AttachIncidentEvidence(string, store.LabelSelector, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)

@@ -29,7 +29,6 @@ type AgentConfig struct {
 	HostID   string
 	TenantID string
 	Token    string
-	Scenario string
 	Labels   map[string]string
 }
 
@@ -336,8 +335,6 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Agent.TenantID = value
 		case "token":
 			cfg.Agent.Token = value
-		case "scenario":
-			cfg.Agent.Scenario = value
 		default:
 			if labelKey, ok := strings.CutPrefix(key, "label."); ok {
 				labelKey = strings.TrimSpace(labelKey)

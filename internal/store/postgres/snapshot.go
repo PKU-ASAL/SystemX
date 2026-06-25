@@ -39,14 +39,14 @@ func OpenTableStore(ctx context.Context, db *sql.DB, migration MigrationResult) 
 		return saveTables(context.Background(), db, state)
 	})
 	st.ConfigureQueryHooks(
-		func(scenario, kind string) ([]*eventv1.CanonicalEvent, error) {
-			return queryEvents(context.Background(), db, scenario, kind)
+		func(labels store.LabelSelector, kind string) ([]*eventv1.CanonicalEvent, error) {
+			return queryEvents(context.Background(), db, labels, kind)
 		},
-		func(scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
-			return querySignals(context.Background(), db, scenario, layer, terminalOnly)
+		func(labels store.LabelSelector, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
+			return querySignals(context.Background(), db, labels, layer, terminalOnly)
 		},
-		func(scenario string) ([]*incidentv1.Incident, error) {
-			return queryIncidents(context.Background(), db, scenario)
+		func(labels store.LabelSelector) ([]*incidentv1.Incident, error) {
+			return queryIncidents(context.Background(), db, labels)
 		},
 		func(tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
 			return queryResponses(context.Background(), db, tenantID, agentID)
@@ -139,13 +139,12 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	return nil
 }
 
-func queryEvents(ctx context.Context, db *sql.DB, scenario, behavior string) ([]*eventv1.CanonicalEvent, error) {
+func queryEvents(ctx context.Context, db *sql.DB, labels store.LabelSelector, behavior string) ([]*eventv1.CanonicalEvent, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM events
-WHERE ($1 = '' OR scenario = $1)
-  AND ($2 = '' OR event_behavior = $2)
+WHERE ($1 = '' OR event_behavior = $1)
 ORDER BY observed_at ASC, event_id ASC
-`, scenario, behavior)
+`, behavior)
 	if err != nil {
 		return nil, fmt.Errorf("query postgres events: %w", err)
 	}
@@ -160,6 +159,9 @@ ORDER BY observed_at ASC, event_id ASC
 		if err := protojson.Unmarshal(raw, event); err != nil {
 			return nil, fmt.Errorf("decode postgres event: %w", err)
 		}
+		if !store.LabelsMatch(event.GetLabels(), labels) {
+			continue
+		}
 		out = append(out, event)
 	}
 	if err := rows.Err(); err != nil {
@@ -168,14 +170,13 @@ ORDER BY observed_at ASC, event_id ASC
 	return out, nil
 }
 
-func querySignals(ctx context.Context, db *sql.DB, scenario, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
+func querySignals(ctx context.Context, db *sql.DB, labels store.LabelSelector, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM signals
-WHERE ($1 = '' OR scenario = $1)
-  AND ($2 = '' OR layer = $2)
-  AND ($3 = false OR terminal = true)
+WHERE ($1 = '' OR layer = $1)
+  AND ($2 = false OR terminal = true)
 ORDER BY observed_at ASC, signal_key ASC
-`, scenario, layer, terminalOnly)
+`, layer, terminalOnly)
 	if err != nil {
 		return nil, fmt.Errorf("query postgres signals: %w", err)
 	}
@@ -190,6 +191,9 @@ ORDER BY observed_at ASC, signal_key ASC
 		if err := protojson.Unmarshal(raw, signal); err != nil {
 			return nil, fmt.Errorf("decode postgres signal: %w", err)
 		}
+		if !store.LabelsMatch(signal.GetLabels(), labels) {
+			continue
+		}
 		out = append(out, signal)
 	}
 	if err := rows.Err(); err != nil {
@@ -198,12 +202,11 @@ ORDER BY observed_at ASC, signal_key ASC
 	return out, nil
 }
 
-func queryIncidents(ctx context.Context, db *sql.DB, scenario string) ([]*incidentv1.Incident, error) {
+func queryIncidents(ctx context.Context, db *sql.DB, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM incidents
-WHERE ($1 = '' OR scenario = $1)
 ORDER BY updated_at ASC, incident_id ASC
-`, scenario)
+`)
 	if err != nil {
 		return nil, fmt.Errorf("query postgres incidents: %w", err)
 	}
@@ -217,6 +220,9 @@ ORDER BY updated_at ASC, incident_id ASC
 		incident := &incidentv1.Incident{}
 		if err := protojson.Unmarshal(raw, incident); err != nil {
 			return nil, fmt.Errorf("decode postgres incident: %w", err)
+		}
+		if !store.LabelsMatch(incident.GetLabels(), labels) {
+			continue
 		}
 		out = append(out, incident)
 	}
@@ -539,7 +545,7 @@ ON CONFLICT (tenant_id, event_id) DO UPDATE SET
   host_id = EXCLUDED.host_id,
   observed_at = now(),
   data = EXCLUDED.data
-`, "default", event.GetId(), event.GetScenario(), event.GetBehavior(), event.GetAgentId(), event.GetHostId(), []byte(raw))
+`, "default", event.GetId(), "", event.GetBehavior(), event.GetAgentId(), event.GetHostId(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project event: %w", err)
 		}
@@ -569,7 +575,7 @@ ON CONFLICT (tenant_id, signal_key) DO UPDATE SET
   terminal = EXCLUDED.terminal,
   observed_at = now(),
   data = EXCLUDED.data
-`, "default", signalKey, signal.GetId(), signal.GetScenario(), store.SignalLayerName(signal.GetWhere()), signal.GetName(), signal.GetLineageId(), signal.GetTerminal(), []byte(raw))
+`, "default", signalKey, signal.GetId(), "", store.SignalLayerName(signal.GetWhere()), signal.GetName(), signal.GetLineageId(), signal.GetTerminal(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project signal: %w", err)
 		}
@@ -721,7 +727,7 @@ ON CONFLICT (tenant_id, request_id) DO UPDATE SET
   status = EXCLUDED.status,
   updated_at = now(),
   data = EXCLUDED.data
-`, tenantID, req.RequestID, req.AgentID, req.IncidentID, req.Scenario, status, data)
+`, tenantID, req.RequestID, req.AgentID, req.IncidentID, "", status, data)
 		} else {
 			_, err = db.ExecContext(ctx, `
 INSERT INTO evidence_pullbacks (tenant_id, request_id, agent_id, incident_id, scenario, status, created_at, updated_at, data)
@@ -733,7 +739,7 @@ ON CONFLICT (tenant_id, request_id) DO UPDATE SET
   status = EXCLUDED.status,
   updated_at = EXCLUDED.updated_at,
   data = EXCLUDED.data
-`, tenantID, req.RequestID, req.AgentID, req.IncidentID, req.Scenario, status, createdAt, updatedAt, data)
+`, tenantID, req.RequestID, req.AgentID, req.IncidentID, "", status, createdAt, updatedAt, data)
 		}
 		if err != nil {
 			return fmt.Errorf("project evidence pullback: %w", err)
@@ -1090,7 +1096,7 @@ ON CONFLICT (tenant_id, incident_key) DO UPDATE SET
   severity = EXCLUDED.severity,
   updated_at = now(),
   data = EXCLUDED.data
-`, "default", incidentKey, inc.GetId(), inc.GetScenario(), status, inc.GetSeverity(), []byte(raw))
+`, "default", incidentKey, inc.GetId(), "", status, inc.GetSeverity(), []byte(raw))
 		if err != nil {
 			return fmt.Errorf("project incident: %w", err)
 		}

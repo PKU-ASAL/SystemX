@@ -3,6 +3,7 @@ package ingestworker
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	}
 	agent := store.AgentIdentityFromDataBatch(batch)
 	p.store.AddAgent(agent)
-	touchedScenarios := map[string]store.AgentIdentity{}
+	touchedScopes := map[string]touchedScope{}
 	acceptedEvents := 0
 	acceptedSignals := 0
 	acceptedSignalList := []*signalv1.Signal{}
@@ -54,9 +55,7 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 		inserted := p.store.AddEvent(ev)
 		if inserted {
 			acceptedEvents++
-		}
-		if inserted && ev.GetScenario() != "" {
-			touchedScenarios[ev.GetScenario()] = agent
+			rememberTouchedScope(touchedScopes, ev.GetLabels(), agent)
 		}
 	}
 	for _, frame := range batch.GetSignals() {
@@ -65,33 +64,67 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 		if inserted {
 			acceptedSignals++
 			acceptedSignalList = append(acceptedSignalList, sig)
-		}
-		if inserted && sig.GetScenario() != "" {
-			touchedScenarios[sig.GetScenario()] = agent
+			rememberTouchedScope(touchedScopes, sig.GetLabels(), agent)
 		}
 	}
 	start := time.Now()
 	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
-	cloudSignals, incidents := p.recomputeTouchedScenarios(touchedScenarios)
+	cloudSignals, incidents := p.recomputeTouchedScopes(touchedScopes)
 	convergenceLatency := time.Since(start)
 	p.store.RecordDataBatchIngest(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	p.store.ObserveRaritySignals(acceptedSignalList)
-	p.indexSecurityData(ctx, batch, touchedScenarios)
+	p.indexSecurityData(ctx, batch, touchedScopes)
 	if err := p.store.Save(); err != nil {
 		return Result{}, err
 	}
 	return Result{AcceptedEvents: acceptedEvents, AcceptedSignals: acceptedSignals, CloudSignals: cloudSignals, Incidents: incidents}, nil
 }
 
-func (p *Processor) recomputeTouchedScenarios(touchedScenarios map[string]store.AgentIdentity) (int, int) {
+type touchedScope struct {
+	labels store.LabelSelector
+	agent  store.AgentIdentity
+}
+
+func rememberTouchedScope(scopes map[string]touchedScope, labels map[string]string, agent store.AgentIdentity) {
+	selector := analysisSelector(labels)
+	if len(selector) == 0 {
+		return
+	}
+	scopes[labelSelectorKey(selector)] = touchedScope{labels: selector, agent: agent}
+}
+
+func analysisSelector(labels map[string]string) store.LabelSelector {
+	selector := store.LabelSelector{}
+	for _, key := range []string{"case_type", "scenario", "workload"} {
+		if value := strings.TrimSpace(labels[key]); value != "" {
+			selector[key] = value
+		}
+	}
+	return selector
+}
+
+func labelSelectorKey(labels store.LabelSelector) string {
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+labels[key])
+	}
+	return strings.Join(parts, ",")
+}
+
+func (p *Processor) recomputeTouchedScopes(touchedScopes map[string]touchedScope) (int, int) {
 	totalCloud := 0
 	totalIncidents := 0
-	for scenario, agent := range touchedScenarios {
-		events := p.store.ListEvents(scenario, "")
-		endpointSignals := p.store.ListSignals(scenario, "endpoint", false)
-		policy := p.effectiveDetectionPolicyForAgent(agent)
+	for _, scope := range touchedScopes {
+		events := p.store.ListEvents(scope.labels, "")
+		endpointSignals := p.store.ListSignals(scope.labels, "endpoint", false)
+		policy := p.effectiveDetectionPolicyForAgent(scope.agent)
 		analysis := p.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
-		p.store.ReplaceDerivedForScenario(scenario, analysis.CloudSignals, analysis.Incidents)
+		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, analysis.Incidents)
 		totalCloud += len(analysis.CloudSignals)
 		totalIncidents += len(analysis.Incidents)
 	}
@@ -112,7 +145,7 @@ func (p *Processor) effectiveDetectionPolicyForAgent(agent store.AgentIdentity) 
 	return policy.DetectionPolicy()
 }
 
-func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.DataBatch, touchedScenarios map[string]store.AgentIdentity) {
+func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.DataBatch, touchedScopes map[string]touchedScope) {
 	for _, frame := range batch.GetEvents() {
 		ev := frame.GetEvent()
 		if ev.GetId() == "" {
@@ -134,8 +167,8 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 			_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw})
 		}
 	}
-	for scenario := range touchedScenarios {
-		for _, inc := range p.store.ListIncidents(scenario) {
+	for _, scope := range touchedScopes {
+		for _, inc := range p.store.ListIncidents(scope.labels) {
 			if inc.GetId() == "" {
 				continue
 			}
@@ -161,7 +194,7 @@ func SignalDocumentID(sig *signalv1.Signal) string {
 	if sig.GetId() != "" {
 		return sig.GetId()
 	}
-	parts := []string{sig.GetScenario(), sig.GetName(), sig.GetLineageId()}
+	parts := []string{labelSelectorKey(analysisSelector(sig.GetLabels())), sig.GetName(), sig.GetLineageId()}
 	for i, part := range parts {
 		parts[i] = strings.TrimSpace(part)
 	}

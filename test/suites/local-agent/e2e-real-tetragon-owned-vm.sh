@@ -331,8 +331,8 @@ if ! grep -Fq '"where":"SIGNAL_WHERE_ENDPOINT"' "$RESULTS/e2e-agent-real-tetrago
 fi
 vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-owned-tetragon --tenant-id default --timeout 20s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson.err"
-if ! grep -Fq "\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson"; then
-  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local events do not contain scenario=$SCENARIO" >&2
+if ! grep -Fq "\"labels\":{\"scenario\":\"$SCENARIO\"" "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson"; then
+  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local events do not contain label scenario=$SCENARIO" >&2
   cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" >&2 2>/dev/null || true
   exit 1
 fi

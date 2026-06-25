@@ -64,7 +64,7 @@ def assert_incident(exp, mgr, topology, scenario, r):
     inc = exp.get("incident")
     if not inc:
         return
-    data = _query(mgr, topology, "manager", "incidents", "list", "--scenario", scenario)
+    data = _query(mgr, topology, "manager", "incidents", "list", "--label", f"scenario={scenario}")
     if "count" in inc:
         r.check(f"incident.count=={inc['count']}",
                 None if data is None else len(data.get("incidents", [])) == inc["count"])
@@ -83,11 +83,14 @@ def assert_signals(exp, mgr, topology, scenario, r):
         spec = exp.get(layer)
         if not spec:
             continue
-        data = _query(mgr, topology, "manager", "signals", "list", "--scenario", scenario, "--layer", layer.split("_")[0])
+        data = _query(mgr, topology, "manager", "signals", "list", "--label", f"scenario={scenario}", "--layer", layer.split("_")[0])
         names = [] if data is None else [s.get("name") for s in data]
         for want in spec.get("must_contain", []):
             nm = want["name"] if isinstance(want, dict) else want
             r.check(f"{layer}.must_contain[{nm}]", None if data is None else nm in names)
+        for want in spec.get("must_absent", []):
+            nm = want["name"] if isinstance(want, dict) else want
+            r.check(f"{layer}.must_absent[{nm}]", None if data is None else nm not in names)
         if spec.get("must_have_entities"):
             r.check(f"{layer}.must_have_entities(D4)",
                     None if data is None else all(s.get("entities") for s in data))
@@ -96,18 +99,18 @@ def assert_signals(exp, mgr, topology, scenario, r):
 def assert_negative(exp, mgr, topology, scenario, r):
     neg = exp.get("negative", {})
     if "endpoint_terminal_count" in neg:
-        data = _query(mgr, topology, "manager", "signals", "list", "--scenario", scenario, "--terminal")
+        data = _query(mgr, topology, "manager", "signals", "list", "--label", f"scenario={scenario}", "--terminal")
         r.check(f"negative.endpoint_terminal_count=={neg['endpoint_terminal_count']}",
                 None if data is None else len(data) == neg["endpoint_terminal_count"])
     if neg.get("endpoint_terminal_required"):
-        data = _query(mgr, topology, "manager", "signals", "list", "--scenario", scenario, "--terminal")
+        data = _query(mgr, topology, "manager", "signals", "list", "--label", f"scenario={scenario}", "--terminal")
         r.check("negative.endpoint_terminal_required",
                 None if data is None else len(data) >= 1)
 
 
 def assert_controls(exp, mgr, topology, scenario, r):
     for ctl in exp.get("control_assertions", []):
-        args = ["manager", "recompute", "--scenario", scenario]
+        args = ["manager", "recompute", "--label", f"scenario={scenario}"]
         label = ctl.get("disable") or ctl.get("switch")
         if ctl.get("disable"):
             args.extend(["--disable", ctl["disable"]])
@@ -135,7 +138,7 @@ def assert_lifecycle(exp, mgr, topology, scenario, r):
                 None if agents is None else any(a.get("agent_id") for a in agents))
     visible = spec.get("events_visible")
     if visible:
-        events = _query(mgr, topology, "manager", "events", "list", "--scenario", scenario, "--behavior", visible.get("behavior", ""))
+        events = _query(mgr, topology, "manager", "events", "list", "--label", f"scenario={scenario}", "--behavior", visible.get("behavior", ""))
         r.check("lifecycle.events_visible", None if events is None else len(events) >= 1)
         if visible.get("require_stable_id"):
             r.check("lifecycle.events_visible.stable_id",
@@ -165,11 +168,11 @@ def main():
     exp = yaml.safe_load(open(a.expected))
     print(f"[assert] topology={a.topology} scenario={a.scenario} dry_run={DRY}")
     r = Result()
-    assert_signals(exp, a.mgr, a.topology, a.scenario, r)
-    assert_incident(exp, a.mgr, a.topology, a.scenario, r)
-    assert_negative(exp, a.mgr, a.topology, a.scenario, r)
-    assert_controls(exp, a.mgr, a.topology, a.scenario, r)
-    assert_lifecycle(exp, a.mgr, a.topology, a.scenario, r)
+    assert_signals(exp, a.manager_url, a.topology, a.scenario, r)
+    assert_incident(exp, a.manager_url, a.topology, a.scenario, r)
+    assert_negative(exp, a.manager_url, a.topology, a.scenario, r)
+    assert_controls(exp, a.manager_url, a.topology, a.scenario, r)
+    assert_lifecycle(exp, a.manager_url, a.topology, a.scenario, r)
     print(f"[assert] {a.topology}/{a.scenario}: pass={r.passed} fail={r.failed} skip={r.skipped}")
     # 把结果落到 .results 供 report.py 汇总
     os.makedirs(".results", exist_ok=True)

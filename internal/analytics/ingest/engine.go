@@ -46,19 +46,19 @@ func (e *Engine) AnalyzeWithPolicy(events []*eventv1.CanonicalEvent, signals []*
 	}
 
 	if cloudRuleEnabled(policy, "dropped_payload_executed_and_connects") && view.Has("payload_dropped") && (view.HasTerminal("reverse_shell_pattern") || (crossLineageEnabled && view.Has("suspicious_exec_connect"))) {
-		cs := e.cloudSignal("dropped_payload_executed_and_connects", view.Scenario, 80, view.CollectEntities("payload_dropped", "reverse_shell_pattern", "suspicious_exec_connect")...)
+		cs := e.cloudSignal("dropped_payload_executed_and_connects", view.Labels, 80, view.CollectEntities("payload_dropped", "reverse_shell_pattern", "suspicious_exec_connect")...)
 		cs.CrossLineage = view.Has("suspicious_exec_connect") && !view.HasTerminal("reverse_shell_pattern")
 		result.CloudSignals = append(result.CloudSignals, cs)
 	}
 	if cloudRuleEnabled(policy, "web_shell_chain") && view.Has("web_runtime_spawns_shell") && view.HasTerminal("reverse_shell_pattern") {
-		result.CloudSignals = append(result.CloudSignals, e.cloudSignal("web_shell_chain", view.Scenario, 85, view.CollectEntities("web_runtime_spawns_shell", "reverse_shell_pattern")...))
+		result.CloudSignals = append(result.CloudSignals, e.cloudSignal("web_shell_chain", view.Labels, 85, view.CollectEntities("web_runtime_spawns_shell", "reverse_shell_pattern")...))
 	}
 
 	allSignals := append([]*signalv1.Signal{}, signals...)
 	allSignals = append(allSignals, result.CloudSignals...)
 	decision := converge.Decide(view.ByName, result.CloudSignals, policy)
 	if decision.Incident {
-		result.Incidents = append(result.Incidents, e.incidents.Build(view.Scenario, allSignals, decision))
+		result.Incidents = append(result.Incidents, e.incidents.Build(allSignals, decision))
 	}
 	return result
 }
@@ -75,7 +75,7 @@ func cloudRuleEnabled(policy *policyv1.DetectionPolicy, name string) bool {
 	return false
 }
 
-func (e *Engine) cloudSignal(name, scenario string, risk uint32, entities ...*signalv1.EntityRef) *signalv1.Signal {
+func (e *Engine) cloudSignal(name string, labels map[string]string, risk uint32, entities ...*signalv1.EntityRef) *signalv1.Signal {
 	e.nextSignalID++
 	return &signalv1.Signal{
 		Id:           fmt.Sprintf("cloud-sig-%020d", e.nextSignalID),
@@ -85,6 +85,17 @@ func (e *Engine) cloudSignal(name, scenario string, risk uint32, entities ...*si
 		LocalRarity:  1,
 		GlobalRarity: 1,
 		Entities:     entity.Unique(entities),
-		Scenario:     scenario,
+		Labels:       cloneLabels(labels),
 	}
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(labels))
+	for key, value := range labels {
+		out[key] = value
+	}
+	return out
 }

@@ -282,7 +282,7 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 			if err := protojson.Unmarshal(result.Evidence, evidence); err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "decode evidence pullback evidence: %v", err)
 			}
-			if _, ok := st.AttachIncidentEvidence(req.IncidentID, req.Scenario, evidence); !ok {
+			if _, ok := st.AttachIncidentEvidence(req.IncidentID, store.LabelSelector(req.Labels), evidence); !ok {
 				return nil, status.Error(codes.NotFound, "incident for evidence pullback not found")
 			}
 		}
@@ -345,7 +345,7 @@ func responseCommandControlFrame(cmd responsemodel.Command) *controlplanev1.Resp
 		PolicyId:          cmd.PolicyID,
 		PolicyVersion:     cmd.PolicyVersion,
 		SignalId:          cmd.SignalID,
-		Scenario:          cmd.Scenario,
+		Labels:            cloneLabels(cmd.Labels),
 		Scope:             &controlplanev1.ResponseScope{Type: cmd.Scope.Type, Selector: cmd.Scope.Selector},
 		Action:            cmd.Action,
 		Mode:              cmd.Mode,
@@ -368,7 +368,7 @@ func evidencePullbackControlFrame(req controlmodel.EvidencePullbackRequest) *con
 		TenantId:   req.TenantID,
 		AgentId:    req.AgentID,
 		IncidentId: req.IncidentID,
-		Scenario:   req.Scenario,
+		Labels:     cloneLabels(req.Labels),
 		Target:     req.Target,
 		Reason:     req.Reason,
 		Status:     req.Status,
@@ -614,4 +614,15 @@ func parseControlTime(value string) time.Time {
 	}
 	t, _ := time.Parse(time.RFC3339Nano, value)
 	return t
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(labels))
+	for k, v := range labels {
+		out[k] = v
+	}
+	return out
 }

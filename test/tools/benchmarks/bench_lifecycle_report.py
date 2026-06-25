@@ -52,6 +52,20 @@ def load_ndjson(path):
     return rows
 
 
+def read_text(path):
+    p = Path(path)
+    if not p.exists():
+        return ""
+    return p.read_text(errors="replace").strip()
+
+
+def tail_lines(value, limit=20):
+    lines = [line for line in value.splitlines() if line.strip()]
+    if len(lines) <= limit:
+        return lines
+    return lines[-limit:]
+
+
 def frame_time(frame):
     ts = parse_time(frame.get("observedAt") or frame.get("observed_at"))
     if ts:
@@ -182,7 +196,9 @@ def main():
     timeline = out_dir / "timeline.csv"
     markers = load_markers(out_dir / "markers.ndjson")
     event_frames = load_ndjson(out_dir / "events.ndjson")
+    event_all_frames = load_ndjson(out_dir / "events-all.ndjson")
     signal_frames = load_ndjson(out_dir / "signals.ndjson")
+    signal_all_frames = load_ndjson(out_dir / "signals-all.ndjson")
     rows = []
     if timeline.exists():
         with timeline.open(newline="") as f:
@@ -201,7 +217,15 @@ def main():
         "phases": phases,
         "overall": summarize(rows),
         "scoped_events_total": len(event_frames),
+        "events_seen_since_cursor_total": len(event_all_frames),
         "scoped_signals_total": len(signal_frames),
+        "signals_seen_total": len(signal_all_frames),
+        "diagnostics": {
+            "event_watch_errors": tail_lines(read_text(out_dir / "event-watch.err")),
+            "event_all_watch_errors": tail_lines(read_text(out_dir / "event-all-watch.err")),
+            "signal_watch_errors": tail_lines(read_text(out_dir / "signal-watch.err")),
+            "signal_all_watch_errors": tail_lines(read_text(out_dir / "signal-all-watch.err")),
+        },
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
 
