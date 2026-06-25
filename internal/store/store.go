@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -28,25 +29,12 @@ import (
 const FileStoreStateVersion = 1
 
 type Store struct {
-	mu                  sync.RWMutex
-	path                string
-	backendInfo         *Info
-	saveState           func(State) error
-	listEvents          func(LabelSelector, string) ([]*eventv1.CanonicalEvent, error)
-	listSignals         func(LabelSelector, string, bool) ([]*signalv1.Signal, error)
-	listIncidents       func(LabelSelector) ([]*incidentv1.Incident, error)
-	listResponses       func(tenantID, agentID string) ([]responsemodel.AuditRecord, error)
-	listControlCommands func(tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
-	listPolicies        func(tenantID string) ([]policymodel.Policy, error)
-	listAssignments     func(tenantID, agentID string) ([]policymodel.Assignment, error)
-	listPolicyAudits    func(tenantID, policyID string) ([]policymodel.AuditRecord, error)
-	getPolicy           func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
-	effectivePolicy     func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
-	writeResponse       func(responsemodel.Command, *responsemodel.Ack) error
-	writePolicy         func(policymodel.Policy) error
-	writeAssignment     func(policymodel.Assignment) error
-	writePolicyAudit    func(policymodel.AuditRecord) error
-	Agents              []AgentIdentity
+	mu          sync.RWMutex
+	path        string
+	backendInfo *Info
+	backend     Backend
+	baseCtx     context.Context
+	Agents      []AgentIdentity
 	Events              []*eventv1.CanonicalEvent
 	Signals             []*signalv1.Signal
 	Incidents           []*incidentv1.Incident
@@ -137,7 +125,7 @@ type State struct {
 }
 
 func Open(path string) (*Store, error) {
-	s := &Store{path: path, Health: map[string]agenthealth.AgentHealth{}}
+	s := &Store{path: path, baseCtx: context.Background(), Health: map[string]agenthealth.AgentHealth{}}
 	if path == "" {
 		return s, nil
 	}
@@ -219,51 +207,32 @@ func (s *Store) ImportState(state State) error {
 	return nil
 }
 
-func (s *Store) ConfigureBackend(info Info, saveState func(State) error) {
+// AttachBackend binds a durable persistence Backend to the store. The supplied
+// context becomes the base context for all backend operations, so backend work
+// is cancelled when this context is done (e.g. on server shutdown). Passing a
+// nil context falls back to context.Background().
+func (s *Store) AttachBackend(ctx context.Context, backend Backend, info Info) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.backendInfo = &info
-	s.saveState = saveState
+	s.backend = backend
+	s.baseCtx = ctx
 }
 
-func (s *Store) ConfigureQueryHooks(
-	listEvents func(LabelSelector, string) ([]*eventv1.CanonicalEvent, error),
-	listSignals func(LabelSelector, string, bool) ([]*signalv1.Signal, error),
-	listIncidents func(LabelSelector) ([]*incidentv1.Incident, error),
-	listResponses func(string, string) ([]responsemodel.AuditRecord, error),
-	listControlCommands func(string, string, string) ([]controlmodel.ControlCommand, error),
-	listPolicies func(string) ([]policymodel.Policy, error),
-	listAssignments func(string, string) ([]policymodel.Assignment, error),
-	listPolicyAudits func(string, string) ([]policymodel.AuditRecord, error),
-	getPolicy func(string, string, uint64) (policymodel.Policy, bool, error),
-	effectivePolicy func(string, string, string, string) (policymodel.Policy, bool, error),
-) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.listEvents = listEvents
-	s.listSignals = listSignals
-	s.listIncidents = listIncidents
-	s.listResponses = listResponses
-	s.listControlCommands = listControlCommands
-	s.listPolicies = listPolicies
-	s.listAssignments = listAssignments
-	s.listPolicyAudits = listPolicyAudits
-	s.getPolicy = getPolicy
-	s.effectivePolicy = effectivePolicy
+func (s *Store) backendCtx() (Backend, context.Context) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.backend, ctxOrBackground(s.baseCtx)
 }
 
-func (s *Store) ConfigureWriteHooks(
-	writeResponse func(responsemodel.Command, *responsemodel.Ack) error,
-	writePolicy func(policymodel.Policy) error,
-	writeAssignment func(policymodel.Assignment) error,
-	writePolicyAudit func(policymodel.AuditRecord) error,
-) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.writeResponse = writeResponse
-	s.writePolicy = writePolicy
-	s.writeAssignment = writeAssignment
-	s.writePolicyAudit = writePolicyAudit
+func ctxOrBackground(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
 }
 
 func (s *Store) Info() Info {
@@ -484,19 +453,19 @@ func (s *Store) UpsertPolicy(policy policymodel.Policy) policymodel.Policy {
 			}
 			policy.CreatedAt = existing.CreatedAt
 			s.Policies[i] = policy
-			writePolicy := s.writePolicy
+			backend, ctx := s.backend, s.baseCtx
 			s.mu.Unlock()
-			if writePolicy != nil {
-				_ = writePolicy(policy)
+			if backend != nil {
+				_ = backend.WritePolicy(ctxOrBackground(ctx), policy)
 			}
 			return policy
 		}
 	}
 	s.Policies = append(s.Policies, policy)
-	writePolicy := s.writePolicy
+	backend, ctx := s.backend, s.baseCtx
 	s.mu.Unlock()
-	if writePolicy != nil {
-		_ = writePolicy(policy)
+	if backend != nil {
+		_ = backend.WritePolicy(ctxOrBackground(ctx), policy)
 	}
 	return policy
 }
@@ -517,21 +486,17 @@ func (s *Store) RecordPolicyAudit(record policymodel.AuditRecord) policymodel.Au
 	}
 	s.mu.Lock()
 	s.PolicyAudits = append(s.PolicyAudits, record)
-	writePolicyAudit := s.writePolicyAudit
+	backend, ctx := s.backend, s.baseCtx
 	s.mu.Unlock()
-	if writePolicyAudit != nil {
-		_ = writePolicyAudit(record)
+	if backend != nil {
+		_ = backend.WritePolicyAudit(ctxOrBackground(ctx), record)
 	}
 	return record
 }
 
 func (s *Store) ListPolicyAudits(tenantID, policyID string) []policymodel.AuditRecord {
-	s.mu.RLock()
-	listPolicyAudits := s.listPolicyAudits
-	s.mu.RUnlock()
-	if listPolicyAudits != nil {
-		audits, err := listPolicyAudits(tenantID, policyID)
-		if err == nil && len(audits) > 0 {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if audits, err := backend.ListPolicyAudits(ctx, tenantID, policyID); err == nil {
 			return audits
 		}
 	}
@@ -554,12 +519,8 @@ func (s *Store) ListPolicyAudits(tenantID, policyID string) []policymodel.AuditR
 }
 
 func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
-	s.mu.RLock()
-	listPolicies := s.listPolicies
-	s.mu.RUnlock()
-	if listPolicies != nil {
-		policies, err := listPolicies(tenantID)
-		if err == nil && len(policies) > 0 {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if policies, err := backend.ListPolicies(ctx, tenantID); err == nil {
 			return policies
 		}
 	}
@@ -585,12 +546,8 @@ func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
 }
 
 func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymodel.Policy, bool) {
-	s.mu.RLock()
-	getPolicy := s.getPolicy
-	s.mu.RUnlock()
-	if getPolicy != nil {
-		policy, ok, err := getPolicy(tenantID, policyID, version)
-		if err == nil && ok {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if policy, ok, err := backend.GetPolicy(ctx, tenantID, policyID, version); err == nil && ok {
 			return policy, true
 		}
 	}
@@ -637,10 +594,10 @@ func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, publish
 		policy.Published = published
 		policy.UpdatedAt = time.Now().UTC()
 		s.Policies[i] = policy
-		writePolicy := s.writePolicy
+		backend, ctx := s.backend, s.baseCtx
 		s.mu.Unlock()
-		if writePolicy != nil {
-			_ = writePolicy(policy)
+		if backend != nil {
+			_ = backend.WritePolicy(ctxOrBackground(ctx), policy)
 		}
 		return policy, true
 	}
@@ -699,40 +656,36 @@ func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Ass
 		if existing.AssignmentID == assignment.AssignmentID {
 			assignment.CreatedAt = existing.CreatedAt
 			s.Assignments[i] = assignment
-			writeAssignment := s.writeAssignment
+			backend, ctx := s.backend, s.baseCtx
 			s.mu.Unlock()
-			if writeAssignment != nil {
-				_ = writeAssignment(assignment)
+			if backend != nil {
+				_ = backend.WriteAssignment(ctxOrBackground(ctx), assignment)
 			}
 			return assignment, true
 		}
 		if sameAssignmentTarget(existing, assignment) {
 			assignment.CreatedAt = existing.CreatedAt
 			s.Assignments[i] = assignment
-			writeAssignment := s.writeAssignment
+			backend, ctx := s.backend, s.baseCtx
 			s.mu.Unlock()
-			if writeAssignment != nil {
-				_ = writeAssignment(assignment)
+			if backend != nil {
+				_ = backend.WriteAssignment(ctxOrBackground(ctx), assignment)
 			}
 			return assignment, true
 		}
 	}
 	s.Assignments = append(s.Assignments, assignment)
-	writeAssignment := s.writeAssignment
+	backend, ctx := s.backend, s.baseCtx
 	s.mu.Unlock()
-	if writeAssignment != nil {
-		_ = writeAssignment(assignment)
+	if backend != nil {
+		_ = backend.WriteAssignment(ctxOrBackground(ctx), assignment)
 	}
 	return assignment, true
 }
 
 func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignment {
-	s.mu.RLock()
-	listAssignments := s.listAssignments
-	s.mu.RUnlock()
-	if listAssignments != nil {
-		assignments, err := listAssignments(tenantID, agentID)
-		if err == nil && len(assignments) > 0 {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if assignments, err := backend.ListAssignments(ctx, tenantID, agentID); err == nil {
 			return assignments
 		}
 	}
@@ -758,12 +711,8 @@ func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignme
 }
 
 func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool) {
-	s.mu.RLock()
-	effectivePolicy := s.effectivePolicy
-	s.mu.RUnlock()
-	if effectivePolicy != nil {
-		policy, ok, err := effectivePolicy(tenantID, agentID, scopeType, scopeSelector)
-		if err == nil && ok {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if policy, ok, err := backend.EffectivePolicy(ctx, tenantID, agentID, scopeType, scopeSelector); err == nil && ok {
 			return policy, true
 		}
 	}
@@ -801,30 +750,26 @@ func (s *Store) CreateResponse(cmd responsemodel.Command) responsemodel.Command 
 		if existing.ResponseID == cmd.ResponseID {
 			cmd.CreatedAt = existing.CreatedAt
 			s.Responses[i] = cmd
-			writeResponse := s.writeResponse
+			backend, ctx := s.backend, s.baseCtx
 			s.mu.Unlock()
-			if writeResponse != nil {
-				_ = writeResponse(cmd, nil)
+			if backend != nil {
+				_ = backend.WriteResponse(ctxOrBackground(ctx), cmd, nil)
 			}
 			return cmd
 		}
 	}
 	s.Responses = append(s.Responses, cmd)
-	writeResponse := s.writeResponse
+	backend, ctx := s.backend, s.baseCtx
 	s.mu.Unlock()
-	if writeResponse != nil {
-		_ = writeResponse(cmd, nil)
+	if backend != nil {
+		_ = backend.WriteResponse(ctxOrBackground(ctx), cmd, nil)
 	}
 	return cmd
 }
 
 func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRecord {
-	s.mu.RLock()
-	listResponses := s.listResponses
-	s.mu.RUnlock()
-	if listResponses != nil {
-		records, err := listResponses(tenantID, agentID)
-		if err == nil && len(records) > 0 {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if records, err := backend.ListResponses(ctx, tenantID, agentID); err == nil {
 			return records
 		}
 	}
@@ -937,10 +882,10 @@ func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved b
 			}
 		}
 		s.Responses[i] = cmd
-		writeResponse := s.writeResponse
+		backend, ctx := s.backend, s.baseCtx
 		s.mu.Unlock()
-		if writeResponse != nil {
-			_ = writeResponse(cmd, nil)
+		if backend != nil {
+			_ = backend.WriteResponse(ctxOrBackground(ctx), cmd, nil)
 		}
 		return cmd, true
 	}
@@ -975,19 +920,19 @@ func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool)
 	for i, existing := range s.ResponseAcks {
 		if existing.ResponseID == ack.ResponseID {
 			s.ResponseAcks[i] = ack
-			writeResponse := s.writeResponse
+			backend, ctx := s.backend, s.baseCtx
 			s.mu.Unlock()
-			if writeResponse != nil {
-				_ = writeResponse(command, &ack)
+			if backend != nil {
+				_ = backend.WriteResponse(ctxOrBackground(ctx), command, &ack)
 			}
 			return command, true
 		}
 	}
 	s.ResponseAcks = append(s.ResponseAcks, ack)
-	writeResponse := s.writeResponse
+	backend, ctx := s.backend, s.baseCtx
 	s.mu.Unlock()
-	if writeResponse != nil {
-		_ = writeResponse(command, &ack)
+	if backend != nil {
+		_ = backend.WriteResponse(ctxOrBackground(ctx), command, &ack)
 	}
 	return command, true
 }
@@ -1114,12 +1059,8 @@ func (s *Store) CreateControlCommand(cmd controlmodel.ControlCommand) controlmod
 }
 
 func (s *Store) ListControlCommands(tenantID, agentID, commandType string) []controlmodel.ControlCommand {
-	s.mu.RLock()
-	listControlCommands := s.listControlCommands
-	s.mu.RUnlock()
-	if listControlCommands != nil {
-		commands, err := listControlCommands(tenantID, agentID, commandType)
-		if err == nil && len(commands) > 0 {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if commands, err := backend.ListControlCommands(ctx, tenantID, agentID, commandType); err == nil {
 			return commands
 		}
 	}
@@ -1676,16 +1617,10 @@ func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealt
 	return found, ok
 }
 
+// ListEvents reads from the in-process working set only. Telemetry is not
+// persisted in the relational backend; durable event retention/search lives in
+// the index tier (OpenSearch).
 func (s *Store) ListEvents(labels LabelSelector, behavior string) []*eventv1.CanonicalEvent {
-	s.mu.RLock()
-	listEvents := s.listEvents
-	s.mu.RUnlock()
-	if listEvents != nil {
-		events, err := listEvents(labels, behavior)
-		if err == nil && len(events) > 0 {
-			return events
-		}
-	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*eventv1.CanonicalEvent, 0, len(s.Events))
@@ -1701,16 +1636,10 @@ func (s *Store) ListEvents(labels LabelSelector, behavior string) []*eventv1.Can
 	return out
 }
 
+// ListSignals reads from the in-process working set only. Like events, signals
+// are telemetry and are not persisted in the relational backend; durable
+// retention/search lives in the index tier (OpenSearch).
 func (s *Store) ListSignals(labels LabelSelector, layer string, terminalOnly bool) []*signalv1.Signal {
-	s.mu.RLock()
-	listSignals := s.listSignals
-	s.mu.RUnlock()
-	if listSignals != nil {
-		signals, err := listSignals(labels, layer, terminalOnly)
-		if err == nil && len(signals) > 0 {
-			return signals
-		}
-	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*signalv1.Signal, 0, len(s.Signals))
@@ -1744,12 +1673,8 @@ func (s *Store) GetSignal(id string) (*signalv1.Signal, bool) {
 }
 
 func (s *Store) ListIncidents(labels LabelSelector) []*incidentv1.Incident {
-	s.mu.RLock()
-	listIncidents := s.listIncidents
-	s.mu.RUnlock()
-	if listIncidents != nil {
-		incidents, err := listIncidents(labels)
-		if err == nil && len(incidents) > 0 {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if incidents, err := backend.ListIncidents(ctx, labels); err == nil {
 			return incidents
 		}
 	}
@@ -1906,13 +1831,14 @@ func (s *Store) Save() error {
 	s.mu.RLock()
 	state, err := s.exportStateLocked()
 	path := s.path
-	saveState := s.saveState
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
 	s.mu.RUnlock()
 	if err != nil {
 		return err
 	}
-	if saveState != nil {
-		return saveState(state)
+	if backend != nil {
+		return backend.SaveState(ctx, state)
 	}
 	if path == "" {
 		return nil
@@ -1921,10 +1847,38 @@ func (s *Store) Save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	return writeFileAtomic(path, data)
+}
+
+// writeFileAtomic writes data to a temporary file in the destination directory
+// and renames it into place, so a crash mid-write cannot leave a partially
+// written or corrupt state file.
+func writeFileAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp, err := os.CreateTemp(dir, ".store-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 func (s *Store) ExportState() (State, error) {

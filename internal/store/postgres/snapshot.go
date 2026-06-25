@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	"strings"
+	"time"
+
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
@@ -16,10 +17,28 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
 	"google.golang.org/protobuf/encoding/protojson"
-	"strings"
 )
 
 const snapshotStateKey = "default"
+
+// opTimeout bounds each backend database operation so a single query or
+// projection cannot block indefinitely.
+const opTimeout = 30 * time.Second
+
+// sqlExecutor is satisfied by both *sql.DB and *sql.Tx, so projection and query
+// helpers can run either directly or inside the state-projection transaction.
+type sqlExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// tableBackend is the postgres implementation of store.Backend. It persists
+// low-volume relational platform state only; high-volume telemetry (events and
+// signals) is intentionally not projected here and lives in the index tier.
+type tableBackend struct {
+	db *sql.DB
+}
 
 func OpenTableStore(ctx context.Context, db *sql.DB, migration MigrationResult) (*store.Store, error) {
 	if db == nil {
@@ -35,174 +54,163 @@ func OpenTableStore(ctx context.Context, db *sql.DB, migration MigrationResult) 
 		MigrationVersion: migration.Version,
 		PostgresSchema:   migrations.PostgresVersion,
 	}
-	st.ConfigureBackend(info, func(state store.State) error {
-		return saveTables(context.Background(), db, state)
-	})
-	st.ConfigureQueryHooks(
-		func(labels store.LabelSelector, kind string) ([]*eventv1.CanonicalEvent, error) {
-			return queryEvents(context.Background(), db, labels, kind)
-		},
-		func(labels store.LabelSelector, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
-			return querySignals(context.Background(), db, labels, layer, terminalOnly)
-		},
-		func(labels store.LabelSelector) ([]*incidentv1.Incident, error) {
-			return queryIncidents(context.Background(), db, labels)
-		},
-		func(tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
-			return queryResponses(context.Background(), db, tenantID, agentID)
-		},
-		func(tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
-			return queryControlCommands(context.Background(), db, tenantID, agentID, commandType)
-		},
-		func(tenantID string) ([]policymodel.Policy, error) {
-			return queryPolicies(context.Background(), db, tenantID)
-		},
-		func(tenantID, agentID string) ([]policymodel.Assignment, error) {
-			return queryPolicyAssignments(context.Background(), db, tenantID, agentID)
-		},
-		func(tenantID, policyID string) ([]policymodel.AuditRecord, error) {
-			return queryPolicyAudits(context.Background(), db, tenantID, policyID)
-		},
-		func(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
-			return queryPolicy(context.Background(), db, tenantID, policyID, version)
-		},
-		func(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
-			return queryEffectivePolicy(context.Background(), db, tenantID, agentID, scopeType, scopeSelector)
-		},
-	)
-	st.ConfigureWriteHooks(
-		func(cmd responsemodel.Command, ack *responsemodel.Ack) error {
-			return upsertResponseAudit(context.Background(), db, cmd, ack)
-		},
-		func(policy policymodel.Policy) error {
-			return upsertPolicy(context.Background(), db, policy)
-		},
-		func(assignment policymodel.Assignment) error {
-			return upsertPolicyAssignment(context.Background(), db, assignment)
-		},
-		func(audit policymodel.AuditRecord) error {
-			return upsertPolicyAudit(context.Background(), db, audit)
-		},
-	)
+	st.AttachBackend(ctx, &tableBackend{db: db}, info)
 	return st, nil
 }
 
+// withTimeout derives a bounded operation context from the store-supplied base
+// context, so backend work is cancelled both on base-context cancellation
+// (e.g. server shutdown) and after opTimeout.
+func withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, opTimeout)
+}
+
+func (b *tableBackend) SaveState(ctx context.Context, state store.State) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return saveTables(ctx, b.db, state)
+}
+
+func (b *tableBackend) ListIncidents(ctx context.Context, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryIncidents(ctx, b.db, labels)
+}
+
+func (b *tableBackend) ListResponses(ctx context.Context, tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryResponses(ctx, b.db, tenantID, agentID)
+}
+
+func (b *tableBackend) ListControlCommands(ctx context.Context, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryControlCommands(ctx, b.db, tenantID, agentID, commandType)
+}
+
+func (b *tableBackend) ListPolicies(ctx context.Context, tenantID string) ([]policymodel.Policy, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryPolicies(ctx, b.db, tenantID)
+}
+
+func (b *tableBackend) ListAssignments(ctx context.Context, tenantID, agentID string) ([]policymodel.Assignment, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryPolicyAssignments(ctx, b.db, tenantID, agentID)
+}
+
+func (b *tableBackend) ListPolicyAudits(ctx context.Context, tenantID, policyID string) ([]policymodel.AuditRecord, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryPolicyAudits(ctx, b.db, tenantID, policyID)
+}
+
+func (b *tableBackend) GetPolicy(ctx context.Context, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryPolicy(ctx, b.db, tenantID, policyID, version)
+}
+
+func (b *tableBackend) EffectivePolicy(ctx context.Context, tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryEffectivePolicy(ctx, b.db, tenantID, agentID, scopeType, scopeSelector)
+}
+
+func (b *tableBackend) WriteResponse(ctx context.Context, cmd responsemodel.Command, ack *responsemodel.Ack) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return upsertResponseAudit(ctx, b.db, cmd, ack)
+}
+
+func (b *tableBackend) WritePolicy(ctx context.Context, policy policymodel.Policy) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return upsertPolicy(ctx, b.db, policy)
+}
+
+func (b *tableBackend) WriteAssignment(ctx context.Context, assignment policymodel.Assignment) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return upsertPolicyAssignment(ctx, b.db, assignment)
+}
+
+func (b *tableBackend) WritePolicyAudit(ctx context.Context, audit policymodel.AuditRecord) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return upsertPolicyAudit(ctx, b.db, audit)
+}
+
+// saveTables projects the full platform-state snapshot in a single transaction
+// so a partially applied projection cannot leave the store inconsistent.
+// Telemetry (events, signals) is deliberately excluded: it belongs in the index
+// tier, not the relational state store.
 func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
-	if err := projectAgents(ctx, db, state.Agents); err != nil {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin state projection tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := projectAgents(ctx, tx, state.Agents); err != nil {
 		return err
 	}
-	if err := projectAgentHealth(ctx, db, state.Health); err != nil {
+	if err := projectAgentHealth(ctx, tx, state.Health); err != nil {
 		return err
 	}
-	if err := projectEvents(ctx, db, state.Events); err != nil {
+	if err := projectRules(ctx, tx, state.Rules); err != nil {
 		return err
 	}
-	if err := projectSignals(ctx, db, state.Signals); err != nil {
+	if err := projectResponseAudit(ctx, tx, state.Responses, state.ResponseAcks); err != nil {
 		return err
 	}
-	if err := projectRules(ctx, db, state.Rules); err != nil {
+	if err := projectPolicies(ctx, tx, state.Policies); err != nil {
 		return err
 	}
-	if err := projectResponseAudit(ctx, db, state.Responses, state.ResponseAcks); err != nil {
+	if err := projectPolicyAssignments(ctx, tx, state.Assignments); err != nil {
 		return err
 	}
-	if err := projectPolicies(ctx, db, state.Policies); err != nil {
+	if err := projectPolicyAudits(ctx, tx, state.PolicyAudits); err != nil {
 		return err
 	}
-	if err := projectPolicyAssignments(ctx, db, state.Assignments); err != nil {
+	if err := projectOperatorRoleBindings(ctx, tx, state.OperatorRoles); err != nil {
 		return err
 	}
-	if err := projectPolicyAudits(ctx, db, state.PolicyAudits); err != nil {
+	if err := projectIncidents(ctx, tx, state.Incidents); err != nil {
 		return err
 	}
-	if err := projectOperatorRoleBindings(ctx, db, state.OperatorRoles); err != nil {
+	if err := projectEvidencePullbacks(ctx, tx, state.Pullbacks); err != nil {
 		return err
 	}
-	if err := projectIncidents(ctx, db, state.Incidents); err != nil {
+	if err := projectControlCommands(ctx, tx, state.ControlCommands); err != nil {
 		return err
 	}
-	if err := projectEvidencePullbacks(ctx, db, state.Pullbacks); err != nil {
+	if err := projectAgentSessions(ctx, tx, state.AgentSessions); err != nil {
 		return err
 	}
-	if err := projectControlCommands(ctx, db, state.ControlCommands); err != nil {
+	if err := projectRarityBaseline(ctx, tx, state.RarityBaseline); err != nil {
 		return err
 	}
-	if err := projectAgentSessions(ctx, db, state.AgentSessions); err != nil {
+	if err := projectMetrics(ctx, tx, state.Metrics); err != nil {
 		return err
 	}
-	if err := projectRarityBaseline(ctx, db, state.RarityBaseline); err != nil {
-		return err
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit state projection tx: %w", err)
 	}
-	if err := projectMetrics(ctx, db, state.Metrics); err != nil {
-		return err
-	}
+	committed = true
 	return nil
 }
 
-func queryEvents(ctx context.Context, db *sql.DB, labels store.LabelSelector, behavior string) ([]*eventv1.CanonicalEvent, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT data FROM events
-WHERE ($1 = '' OR event_behavior = $1)
-ORDER BY observed_at ASC, event_id ASC
-`, behavior)
-	if err != nil {
-		return nil, fmt.Errorf("query postgres events: %w", err)
-	}
-	defer rows.Close()
-	out := []*eventv1.CanonicalEvent{}
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return nil, fmt.Errorf("scan postgres event: %w", err)
-		}
-		event := &eventv1.CanonicalEvent{}
-		if err := protojson.Unmarshal(raw, event); err != nil {
-			return nil, fmt.Errorf("decode postgres event: %w", err)
-		}
-		if !store.LabelsMatch(event.GetLabels(), labels) {
-			continue
-		}
-		out = append(out, event)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate postgres events: %w", err)
-	}
-	return out, nil
-}
-
-func querySignals(ctx context.Context, db *sql.DB, labels store.LabelSelector, layer string, terminalOnly bool) ([]*signalv1.Signal, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT data FROM signals
-WHERE ($1 = '' OR layer = $1)
-  AND ($2 = false OR terminal = true)
-ORDER BY observed_at ASC, signal_key ASC
-`, layer, terminalOnly)
-	if err != nil {
-		return nil, fmt.Errorf("query postgres signals: %w", err)
-	}
-	defer rows.Close()
-	out := []*signalv1.Signal{}
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return nil, fmt.Errorf("scan postgres signal: %w", err)
-		}
-		signal := &signalv1.Signal{}
-		if err := protojson.Unmarshal(raw, signal); err != nil {
-			return nil, fmt.Errorf("decode postgres signal: %w", err)
-		}
-		if !store.LabelsMatch(signal.GetLabels(), labels) {
-			continue
-		}
-		out = append(out, signal)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate postgres signals: %w", err)
-	}
-	return out, nil
-}
-
-func queryIncidents(ctx context.Context, db *sql.DB, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
+func queryIncidents(ctx context.Context, db sqlExecutor, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM incidents
 ORDER BY updated_at ASC, incident_id ASC
@@ -232,7 +240,7 @@ ORDER BY updated_at ASC, incident_id ASC
 	return out, nil
 }
 
-func queryResponses(ctx context.Context, db *sql.DB, tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
+func queryResponses(ctx context.Context, db sqlExecutor, tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT command, ack FROM response_audit
 WHERE ($1 = '' OR tenant_id = $1)
@@ -270,7 +278,7 @@ ORDER BY updated_at ASC, response_id ASC
 	return out, nil
 }
 
-func queryControlCommands(ctx context.Context, db *sql.DB, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
+func queryControlCommands(ctx context.Context, db sqlExecutor, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM control_commands
 WHERE ($1 = '' OR tenant_id = $1)
@@ -300,7 +308,7 @@ ORDER BY created_at ASC, command_id ASC
 	return out, nil
 }
 
-func queryPolicies(ctx context.Context, db *sql.DB, tenantID string) ([]policymodel.Policy, error) {
+func queryPolicies(ctx context.Context, db sqlExecutor, tenantID string) ([]policymodel.Policy, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM policies
 WHERE ($1 = '' OR tenant_id = $1)
@@ -328,7 +336,7 @@ ORDER BY tenant_id ASC, policy_id ASC, version ASC
 	return out, nil
 }
 
-func queryPolicy(ctx context.Context, db *sql.DB, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+func queryPolicy(ctx context.Context, db sqlExecutor, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
 	if policyID == "" {
 		return policymodel.Policy{}, false, nil
 	}
@@ -361,7 +369,7 @@ LIMIT 1
 	return policy, true, nil
 }
 
-func queryPublishedPolicy(ctx context.Context, db *sql.DB, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+func queryPublishedPolicy(ctx context.Context, db sqlExecutor, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
 	if policyID == "" {
 		return policymodel.Policy{}, false, nil
 	}
@@ -395,7 +403,7 @@ ORDER BY version DESC
 	return policymodel.Policy{}, false, nil
 }
 
-func queryEffectivePolicy(ctx context.Context, db *sql.DB, tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
+func queryEffectivePolicy(ctx context.Context, db sqlExecutor, tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
 	assignments, err := queryPolicyAssignments(ctx, db, tenantID, "")
 	if err != nil {
 		return policymodel.Policy{}, false, err
@@ -424,7 +432,7 @@ func queryEffectivePolicy(ctx context.Context, db *sql.DB, tenantID, agentID, sc
 	return policymodel.DefaultPolicy(tenantID), true, nil
 }
 
-func queryPolicyAssignments(ctx context.Context, db *sql.DB, tenantID, agentID string) ([]policymodel.Assignment, error) {
+func queryPolicyAssignments(ctx context.Context, db sqlExecutor, tenantID, agentID string) ([]policymodel.Assignment, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM policy_assignments
 WHERE ($1 = '' OR tenant_id = $1)
@@ -453,7 +461,7 @@ ORDER BY tenant_id ASC, assignment_id ASC
 	return out, nil
 }
 
-func projectAgents(ctx context.Context, db *sql.DB, agentRows []json.RawMessage) error {
+func projectAgents(ctx context.Context, db sqlExecutor, agentRows []json.RawMessage) error {
 	for _, raw := range agentRows {
 		var agent store.AgentIdentity
 		if err := json.Unmarshal(raw, &agent); err != nil {
@@ -479,7 +487,7 @@ ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
 	return nil
 }
 
-func projectAgentHealth(ctx context.Context, db *sql.DB, healthRows []json.RawMessage) error {
+func projectAgentHealth(ctx context.Context, db sqlExecutor, healthRows []json.RawMessage) error {
 	for _, raw := range healthRows {
 		var health agenthealth.AgentHealth
 		if err := json.Unmarshal(raw, &health); err != nil {
@@ -526,62 +534,7 @@ ON CONFLICT (tenant_id, agent_id) DO UPDATE SET
 	return nil
 }
 
-func projectEvents(ctx context.Context, db *sql.DB, eventRows []json.RawMessage) error {
-	for _, raw := range eventRows {
-		var event eventv1.CanonicalEvent
-		if err := protojson.Unmarshal(raw, &event); err != nil {
-			return fmt.Errorf("decode event projection: %w", err)
-		}
-		if event.GetId() == "" {
-			continue
-		}
-		_, err := db.ExecContext(ctx, `
-INSERT INTO events (tenant_id, event_id, event_behavior, agent_id, host_id, data)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (tenant_id, event_id) DO UPDATE SET
-  event_behavior = EXCLUDED.event_behavior,
-  agent_id = EXCLUDED.agent_id,
-  host_id = EXCLUDED.host_id,
-  observed_at = now(),
-  data = EXCLUDED.data
-`, "default", event.GetId(), event.GetBehavior(), event.GetAgentId(), event.GetHostId(), []byte(raw))
-		if err != nil {
-			return fmt.Errorf("project event: %w", err)
-		}
-	}
-	return nil
-}
-
-func projectSignals(ctx context.Context, db *sql.DB, signalRows []json.RawMessage) error {
-	for _, raw := range signalRows {
-		var signal signalv1.Signal
-		if err := protojson.Unmarshal(raw, &signal); err != nil {
-			return fmt.Errorf("decode signal projection: %w", err)
-		}
-		signalKey := store.SignalProjectionKey(&signal)
-		if signalKey == "" {
-			continue
-		}
-		_, err := db.ExecContext(ctx, `
-INSERT INTO signals (tenant_id, signal_key, signal_id, layer, signal_name, lineage_id, terminal, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (tenant_id, signal_key) DO UPDATE SET
-  signal_id = EXCLUDED.signal_id,
-  layer = EXCLUDED.layer,
-  signal_name = EXCLUDED.signal_name,
-  lineage_id = EXCLUDED.lineage_id,
-  terminal = EXCLUDED.terminal,
-  observed_at = now(),
-  data = EXCLUDED.data
-`, "default", signalKey, signal.GetId(), store.SignalLayerName(signal.GetWhere()), signal.GetName(), signal.GetLineageId(), signal.GetTerminal(), []byte(raw))
-		if err != nil {
-			return fmt.Errorf("project signal: %w", err)
-		}
-	}
-	return nil
-}
-
-func projectRules(ctx context.Context, db *sql.DB, rules []policymodel.RuleContent) error {
+func projectRules(ctx context.Context, db sqlExecutor, rules []policymodel.RuleContent) error {
 	for _, rule := range rules {
 		if rule.RuleID == "" || rule.Version == 0 {
 			continue
@@ -608,7 +561,7 @@ ON CONFLICT (tenant_id, rule_id, version) DO UPDATE SET
 	return nil
 }
 
-func projectResponseAudit(ctx context.Context, db *sql.DB, commands []responsemodel.Command, acks []responsemodel.Ack) error {
+func projectResponseAudit(ctx context.Context, db sqlExecutor, commands []responsemodel.Command, acks []responsemodel.Ack) error {
 	ackByResponseID := map[string]responsemodel.Ack{}
 	for _, ack := range acks {
 		if ack.ResponseID != "" {
@@ -627,7 +580,7 @@ func projectResponseAudit(ctx context.Context, db *sql.DB, commands []responsemo
 	return nil
 }
 
-func queryPolicyAudits(ctx context.Context, db *sql.DB, tenantID, policyID string) ([]policymodel.AuditRecord, error) {
+func queryPolicyAudits(ctx context.Context, db sqlExecutor, tenantID, policyID string) ([]policymodel.AuditRecord, error) {
 	if tenantID == "" {
 		tenantID = "default"
 	}
@@ -658,7 +611,7 @@ ORDER BY created_at ASC, audit_id ASC
 	return out, nil
 }
 
-func upsertResponseAudit(ctx context.Context, db *sql.DB, cmd responsemodel.Command, ack *responsemodel.Ack) error {
+func upsertResponseAudit(ctx context.Context, db sqlExecutor, cmd responsemodel.Command, ack *responsemodel.Ack) error {
 	if cmd.ResponseID == "" {
 		return nil
 	}
@@ -695,7 +648,7 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
 	return nil
 }
 
-func projectEvidencePullbacks(ctx context.Context, db *sql.DB, pullbacks []controlmodel.EvidencePullbackRequest) error {
+func projectEvidencePullbacks(ctx context.Context, db sqlExecutor, pullbacks []controlmodel.EvidencePullbackRequest) error {
 	for _, req := range pullbacks {
 		if req.RequestID == "" {
 			continue
@@ -744,7 +697,7 @@ ON CONFLICT (tenant_id, request_id) DO UPDATE SET
 	return nil
 }
 
-func projectControlCommands(ctx context.Context, db *sql.DB, commands []controlmodel.ControlCommand) error {
+func projectControlCommands(ctx context.Context, db sqlExecutor, commands []controlmodel.ControlCommand) error {
 	for _, cmd := range commands {
 		if cmd.CommandID == "" {
 			continue
@@ -866,7 +819,7 @@ func joinTextArray(values []string) string {
 	return strings.Join(out, "\x1f")
 }
 
-func projectPolicies(ctx context.Context, db *sql.DB, policies []policymodel.Policy) error {
+func projectPolicies(ctx context.Context, db sqlExecutor, policies []policymodel.Policy) error {
 	for _, policy := range policies {
 		if err := upsertPolicy(ctx, db, policy); err != nil {
 			return err
@@ -875,7 +828,7 @@ func projectPolicies(ctx context.Context, db *sql.DB, policies []policymodel.Pol
 	return nil
 }
 
-func upsertPolicy(ctx context.Context, db *sql.DB, policy policymodel.Policy) error {
+func upsertPolicy(ctx context.Context, db sqlExecutor, policy policymodel.Policy) error {
 	if policy.PolicyID == "" || policy.Version == 0 {
 		return nil
 	}
@@ -915,7 +868,7 @@ ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
 	return nil
 }
 
-func projectPolicyAssignments(ctx context.Context, db *sql.DB, assignments []policymodel.Assignment) error {
+func projectPolicyAssignments(ctx context.Context, db sqlExecutor, assignments []policymodel.Assignment) error {
 	for _, assignment := range assignments {
 		if err := upsertPolicyAssignment(ctx, db, assignment); err != nil {
 			return err
@@ -924,7 +877,7 @@ func projectPolicyAssignments(ctx context.Context, db *sql.DB, assignments []pol
 	return nil
 }
 
-func upsertPolicyAssignment(ctx context.Context, db *sql.DB, assignment policymodel.Assignment) error {
+func upsertPolicyAssignment(ctx context.Context, db sqlExecutor, assignment policymodel.Assignment) error {
 	if assignment.AssignmentID == "" || assignment.PolicyID == "" {
 		return nil
 	}
@@ -971,7 +924,7 @@ ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
 	return nil
 }
 
-func projectPolicyAudits(ctx context.Context, db *sql.DB, audits []policymodel.AuditRecord) error {
+func projectPolicyAudits(ctx context.Context, db sqlExecutor, audits []policymodel.AuditRecord) error {
 	for _, audit := range audits {
 		if err := upsertPolicyAudit(ctx, db, audit); err != nil {
 			return err
@@ -980,7 +933,7 @@ func projectPolicyAudits(ctx context.Context, db *sql.DB, audits []policymodel.A
 	return nil
 }
 
-func upsertPolicyAudit(ctx context.Context, db *sql.DB, audit policymodel.AuditRecord) error {
+func upsertPolicyAudit(ctx context.Context, db sqlExecutor, audit policymodel.AuditRecord) error {
 	if audit.AuditID == "" {
 		return nil
 	}
@@ -1028,7 +981,7 @@ ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
 	return nil
 }
 
-func projectOperatorRoleBindings(ctx context.Context, db *sql.DB, bindings []store.OperatorRoleBinding) error {
+func projectOperatorRoleBindings(ctx context.Context, db sqlExecutor, bindings []store.OperatorRoleBinding) error {
 	for _, binding := range bindings {
 		if binding.Actor == "" {
 			continue
@@ -1065,7 +1018,7 @@ ON CONFLICT (tenant_id, actor) DO UPDATE SET
 	return nil
 }
 
-func projectIncidents(ctx context.Context, db *sql.DB, incidentRows []json.RawMessage) error {
+func projectIncidents(ctx context.Context, db sqlExecutor, incidentRows []json.RawMessage) error {
 	for _, raw := range incidentRows {
 		var inc incidentv1.Incident
 		if err := protojson.Unmarshal(raw, &inc); err != nil {
@@ -1105,7 +1058,7 @@ ON CONFLICT (tenant_id, incident_key) DO UPDATE SET
 	return nil
 }
 
-func projectIncidentEvents(ctx context.Context, db *sql.DB, incidentID string, inc *incidentv1.Incident) error {
+func projectIncidentEvents(ctx context.Context, db sqlExecutor, incidentID string, inc *incidentv1.Incident) error {
 	if incidentID == "" || inc == nil {
 		return nil
 	}
@@ -1125,7 +1078,7 @@ func projectIncidentEvents(ctx context.Context, db *sql.DB, incidentID string, i
 	return nil
 }
 
-func upsertIncidentEvent(ctx context.Context, db *sql.DB, incidentID, eventID string, seen map[string]bool) error {
+func upsertIncidentEvent(ctx context.Context, db sqlExecutor, incidentID, eventID string, seen map[string]bool) error {
 	eventID = strings.TrimSpace(eventID)
 	if eventID == "" || seen[eventID] {
 		return nil
@@ -1142,7 +1095,7 @@ ON CONFLICT (tenant_id, incident_id, event_id) DO NOTHING
 	return nil
 }
 
-func projectIncidentEvidence(ctx context.Context, db *sql.DB, incidentID string, evidence *incidentv1.EvidenceSubgraph) error {
+func projectIncidentEvidence(ctx context.Context, db sqlExecutor, incidentID string, evidence *incidentv1.EvidenceSubgraph) error {
 	if incidentID == "" || evidence == nil {
 		return nil
 	}
@@ -1184,7 +1137,7 @@ func projectIncidentEvidence(ctx context.Context, db *sql.DB, incidentID string,
 	return nil
 }
 
-func upsertEvidence(ctx context.Context, db *sql.DB, incidentID, evidenceID, kind string, data []byte) error {
+func upsertEvidence(ctx context.Context, db sqlExecutor, incidentID, evidenceID, kind string, data []byte) error {
 	_, err := db.ExecContext(ctx, `
 INSERT INTO evidence (tenant_id, incident_id, evidence_id, evidence_kind, data)
 VALUES ($1, $2, $3, $4, $5)
@@ -1224,7 +1177,7 @@ func edgeEvidenceID(edge *incidentv1.GraphEdge) string {
 	return "edge:" + edge.GetFrom() + ":" + edge.GetKind() + ":" + edge.GetTo()
 }
 
-func projectMetrics(ctx context.Context, db *sql.DB, metrics store.Metrics) error {
+func projectMetrics(ctx context.Context, db sqlExecutor, metrics store.Metrics) error {
 	data, err := json.Marshal(metrics)
 	if err != nil {
 		return fmt.Errorf("encode metrics projection: %w", err)
@@ -1242,7 +1195,7 @@ ON CONFLICT (tenant_id, metric_key) DO UPDATE SET
 	return nil
 }
 
-func projectRarityBaseline(ctx context.Context, db *sql.DB, baseline rarity.Baseline) error {
+func projectRarityBaseline(ctx context.Context, db sqlExecutor, baseline rarity.Baseline) error {
 	for workload, signals := range baseline.WorkloadCounts {
 		workload = strings.TrimSpace(workload)
 		if workload == "" {
@@ -1278,7 +1231,7 @@ ON CONFLICT (tenant_id, workload_key, signal_name) DO UPDATE SET
 	return nil
 }
 
-func projectAgentSessions(ctx context.Context, db *sql.DB, sessions []store.AgentSession) error {
+func projectAgentSessions(ctx context.Context, db sqlExecutor, sessions []store.AgentSession) error {
 	for _, session := range sessions {
 		if session.SessionID == "" || session.AgentID == "" {
 			continue

@@ -20,6 +20,11 @@ type Options struct {
 	Path           string
 	PostgresDriver string
 	PostgresDSN    string
+	// BaseContext is the long-lived context bound to backend operations (e.g. a
+	// server-lifetime context). It is intentionally separate from the context
+	// passed to Open, which is only used for startup work such as migrations and
+	// may carry a short startup timeout. When nil, context.Background() is used.
+	BaseContext context.Context
 }
 
 type Result struct {
@@ -65,7 +70,11 @@ func Open(ctx context.Context, opts Options) (Result, error) {
 			_ = db.Close()
 			return Result{}, err
 		}
-		st, err := postgres.OpenTableStore(ctx, db, migration)
+		baseCtx := opts.BaseContext
+		if baseCtx == nil {
+			baseCtx = context.Background()
+		}
+		st, err := postgres.OpenTableStore(baseCtx, db, migration)
 		if err != nil {
 			_ = db.Close()
 			return Result{}, err

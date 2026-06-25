@@ -551,7 +551,10 @@ func TestOpenPostgresProjectsAndQueriesControlCommands(t *testing.T) {
 	}
 }
 
-func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
+// Telemetry (events and signals) is intentionally not projected into the
+// relational backend; it lives in the index tier and the in-process working
+// set. Save must persist platform state without touching event/signal tables.
+func TestOpenPostgresDoesNotProjectEventSignalTables(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -562,6 +565,7 @@ func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
+	result.Store.AddAgent(store.AgentIdentity{TenantID: "default", AgentID: "agent-ingest-pg", HostID: "host-ingest-pg"})
 	result.Store.AddEvent(&eventv1.CanonicalEvent{
 		Id:       "ev-table-pg",
 		Labels:   pgLabels("pg-ingest"),
@@ -576,37 +580,22 @@ func TestOpenPostgresProjectsEventSignalTables(t *testing.T) {
 		Where:     signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		LineageId: "lin-table-pg",
 		Terminal:  true,
-		Entities: []*signalv1.EntityRef{{
-			Kind: "socket",
-			Key:  "socket:10.88.0.5:443",
-			Role: "object",
-		}},
 	})
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	execLog := fakeExecLog()
-	for _, want := range []string{
-		"INSERT INTO events",
-		"ev-table-pg",
-		"pg-ingest",
-		"network.connect",
-		"agent-ingest-pg",
-		"host-ingest-pg",
-		"INSERT INTO signals",
-		"sig-table-pg",
-		"endpoint",
-		"reverse_shell_pattern",
-		"lin-table-pg",
-		"true",
-	} {
-		if !strings.Contains(execLog, want) {
-			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+	if !strings.Contains(execLog, "INSERT INTO agents") {
+		t.Fatalf("postgres exec log missing platform-state projection (agents):\n%s", execLog)
+	}
+	for _, forbidden := range []string{"INSERT INTO events", "INSERT INTO signals"} {
+		if strings.Contains(execLog, forbidden) {
+			t.Fatalf("postgres exec log unexpectedly projected telemetry %q:\n%s", forbidden, execLog)
 		}
 	}
 }
 
-func TestOpenPostgresQueriesEventsFromTablePath(t *testing.T) {
+func TestOpenPostgresServesEventsFromMemory(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -617,26 +606,22 @@ func TestOpenPostgresQueriesEventsFromTablePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	raw, err := protojson.Marshal(&eventv1.CanonicalEvent{
+	result.Store.AddEvent(&eventv1.CanonicalEvent{
 		Id:       "ev-query-table-pg",
 		Labels:   pgLabels("pg-query-table"),
 		Behavior: "process.exec",
 		AgentId:  "agent-query-table-pg",
 	})
-	if err != nil {
-		t.Fatalf("marshal event: %v", err)
-	}
-	fakeSetEventRows(raw)
 	events := result.Store.ListEvents(pgSelector("pg-query-table"), "process.exec")
 	if len(events) != 1 || events[0].GetId() != "ev-query-table-pg" || events[0].GetLabels()["scenario"] != "pg-query-table" {
-		t.Fatalf("events from postgres table = %+v", events)
+		t.Fatalf("events from memory working set = %+v", events)
 	}
-	if !strings.Contains(fakeLastQuery(), "SELECT data FROM events") {
-		t.Fatalf("ListEvents did not query events table: %s", fakeLastQuery())
+	if strings.Contains(fakeLastQuery(), "SELECT data FROM events") {
+		t.Fatalf("ListEvents should serve telemetry from memory, not query postgres: %s", fakeLastQuery())
 	}
 }
 
-func TestOpenPostgresQueriesSignalsFromTablePath(t *testing.T) {
+func TestOpenPostgresServesSignalsFromMemory(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -647,23 +632,19 @@ func TestOpenPostgresQueriesSignalsFromTablePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	raw, err := protojson.Marshal(&signalv1.Signal{
+	result.Store.AddSignal(&signalv1.Signal{
 		Id:       "sig-query-table-pg",
 		Labels:   pgLabels("pg-query-table"),
 		Name:     "reverse_shell_pattern",
 		Where:    signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT,
 		Terminal: true,
 	})
-	if err != nil {
-		t.Fatalf("marshal signal: %v", err)
-	}
-	fakeSetSignalRows(raw)
 	signals := result.Store.ListSignals(pgSelector("pg-query-table"), "endpoint", true)
 	if len(signals) != 1 || signals[0].GetId() != "sig-query-table-pg" || !signals[0].GetTerminal() {
-		t.Fatalf("signals from postgres table = %+v", signals)
+		t.Fatalf("signals from memory working set = %+v", signals)
 	}
-	if !strings.Contains(fakeLastQuery(), "SELECT data FROM signals") {
-		t.Fatalf("ListSignals did not query signals table: %s", fakeLastQuery())
+	if strings.Contains(fakeLastQuery(), "SELECT data FROM signals") {
+		t.Fatalf("ListSignals should serve telemetry from memory, not query postgres: %s", fakeLastQuery())
 	}
 }
 
@@ -1203,7 +1184,9 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
 	reopenedHandler := managerapi.NewServer(reopened.Store).Handler()
-	assertGetContains(t, reopenedHandler, "/api/v1/events?label=scenario=pg-api", `"id":"ev-pg-api"`)
+	// Telemetry (events/signals) is not persisted in the relational backend, so
+	// it does not survive a reopen; platform state (incidents, policies, audits)
+	// must.
 	assertGetContains(t, reopenedHandler, "/api/v1/incidents?label=scenario=pg-api", `"status":"suppressed"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/policy-audit?tenant_id=default&policy_id=pg-api-policy", `"actor":"operator"`)
