@@ -24,26 +24,39 @@ Collection Policy is behavior-first:
 ```json
 {
   "policy_id": "edr-balanced-linux",
-  "version": 1,
+  "version": 2,
   "scope_type": "host",
   "scope_selector": "",
   "observe_only": true,
   "behaviors": [
     {
+      "id": "network.connect",
+      "enabled": true,
+      "selectors": {
+        "process": {
+          "binary_prefixes": ["/usr/bin/curl", "/usr/bin/wget", "/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash"]
+        },
+        "socket": {
+          "families": ["AF_INET", "AF_INET6"],
+          "addr_refs": ["ioc:c2-ip-feed"],
+          "port_refs": ["ioc:c2-port-feed"]
+        }
+      }
+    },
+    {
       "id": "file.write",
       "enabled": true,
       "selectors": {
         "file": {
-          "prefix_refs": ["ctx:payload-path-prefixes"]
-        },
-        "process": {
-          "binary_prefixes": ["/bin/sh", "/usr/bin/curl", "/dev/shm/"]
+          "prefix_refs": ["ctx:payload-path-prefixes", "ctx:persistence-path-prefixes"]
         }
       }
     }
   ]
 }
 ```
+
+The example is intentionally selective: `edr-balanced` should keep shell/interpreter binaries in `network.connect` selectors where event frequency is lower, but should not broadly collect shell/interpreter `process.exec`. Shell `process.exec` can dominate CPU because normal system and benchmark tooling use bash/sh frequently.
 
 Supported behavior families:
 
@@ -54,9 +67,9 @@ Supported behavior families:
 - `file.read`;
 - `file.write`;
 - `file.chmod`;
-- `file.unlink`;
-- `network.connect`;
-- later: module, capability, namespace, mount, ptrace, and container/K8s events.
+- `network.connect`.
+
+Later behavior families may include unlink, module, capability, namespace, mount, ptrace, and container/K8s events.
 
 Selectors are scoped to behavior. They may include:
 
@@ -127,11 +140,11 @@ Push down when possible:
 - path exact/prefix;
 - binary exact/prefix;
 - socket family/address/port;
-- namespace/cgroup/workload filters;
 - return value filters where backend supports them.
 
 Keep in agent or cloud:
 
+- namespace/cgroup/workload filters when the backend cannot push them down;
 - binary hash;
 - domain/URL;
 - signer/certificate;
@@ -260,4 +273,6 @@ Recommended collection presets:
 - `edr-balanced`: default long-running EDR surface;
 - `incident-deep`: short investigation window.
 
-Balanced defaults should not treat all of `/tmp` or `/var/tmp` as malicious. Prefer concrete high-risk paths such as `/dev/shm/`, explicit attack/test prefixes, persistence paths, plugin directories, and active IOC/context packages.
+These are the supported default collection presets. `collection-debug-wide` is not part of the default policy set.
+
+Balanced defaults should not treat all of `/tmp` or `/var/tmp` as malicious. Prefer concrete high-risk paths such as `/dev/shm/`, explicit attack/test prefixes, persistence paths, plugin directories, and active IOC/context packages. Balanced should also avoid broad shell/interpreter `process.exec`; keep shell/interpreter matching on lower-frequency `network.connect` or in short-lived `incident-deep` windows.

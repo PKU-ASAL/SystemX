@@ -48,7 +48,9 @@ Workload is a pressure source. Examples:
 - `host-activity-heavy`;
 - `edr-activity-heavy`.
 
-It should be repeatable, configurable, and not depend on unstable external downloads.
+`business-normal` is the default workload for the slim matrix. Heavier workloads such as `host-activity-heavy` and `edr-activity-heavy` are stress/cost extensions and should be enabled explicitly with `WORKLOADS=...`.
+
+Workloads should be repeatable, configurable, and not depend on unstable external downloads. Benign workloads must not touch C2 IoCs, payload paths, persistence paths, or sensitive credential paths unless the scenario is explicitly testing false positive controls.
 
 ## Labels And Watch Filters
 
@@ -77,7 +79,7 @@ The VM recorder is the current performance baseline tool:
 
 ```bash
 make -C test recorder-vm-start RUN_ID=my-run
-make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=edr-activity-heavy
+make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=business-normal
 make -C test recorder-vm-stop RUN_ID=my-run
 make -C test recorder-vm-report RUN_ID=my-run
 ```
@@ -107,13 +109,37 @@ test/.results/recordings/<run-id>/
 
 ## Benchmark
 
-Benchmark composes policy, sensor, and workload:
+`bench-collection-vm` composes one case across the selected policy set:
 
 ```bash
 make -C test bench-collection-vm \
-  DIAG_SCENARIO=business-normal \
+  SYSARMOR_BENCH_WORKLOAD=business-normal \
   POLICIES='test/policies/collection-minimal-high-signal.json'
 ```
+
+`bench-matrix-vm` is the default endpoint effectiveness/performance gate. Its slim default runs:
+
+```text
+3 collection policies x 3 scenarios x 1 background workload = 9 cases
+```
+
+Default policy set:
+
+- `test/policies/collection-minimal-high-signal.json`;
+- `test/policies/collection-edr-balanced.json`;
+- `test/policies/collection-incident-deep.json`.
+
+Default workload:
+
+- `business-normal`.
+
+Default scenarios:
+
+- `apt-fileless-c2`;
+- `apt-staged-drop`;
+- `benign-ci-noise`.
+
+`collection-debug-wide` is no longer part of the supported default matrix. If a broad debug policy is needed for a one-off investigation, create it outside the default benchmark set and keep it out of long-running EDR comparisons.
 
 Each case should:
 
@@ -143,6 +169,18 @@ test/.results/bench-collection-vm/<run-id>/
     workload.out
     workload.err
 ```
+
+Matrix runs also write:
+
+```text
+test/.results/bench-matrix-vm/<run-id>/matrix.csv
+test/.results/bench-matrix-vm/<run-id>/matrix.json
+test/.results/effectiveness/<run-id>/matrix.csv
+test/.results/effectiveness/<run-id>/policy_comparison.csv
+test/.results/effectiveness/<run-id>/attack_signal_matrix.csv
+```
+
+The attack signal matrix aggregates malicious signal precision/recall/F1 across matching workload/scenario rows instead of relying on last-write-wins per policy/attack.
 
 ## Resource Metrics
 
@@ -187,8 +225,9 @@ Use these based on change type:
 ```bash
 go test ./internal/agent/... ./internal/endpoint/... ./cmd/sysarmorctl
 make -C test e2e-agent-real-tetragon-owned-vm
-make -C test bench-collection-vm DIAG_SCENARIO=business-normal
-make -C test bench-collection-vm DIAG_SCENARIO=apt-fileless-c2
+make -C test bench-matrix-vm
 ```
+
+For focused iteration, run `bench-collection-vm` with explicit `SYSARMOR_BENCH_WORKLOAD` and/or `SYSARMOR_BENCH_SCENARIO`. For final endpoint refinement, prefer the slim `bench-matrix-vm` gate because it checks effectiveness, resource cost, drops, parse errors, and benign false positives in one pass.
 
 Cloud/platform paths have broader functional gates, but endpoint refinement work should prefer the local agent + VM real sensor path.

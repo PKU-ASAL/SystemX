@@ -11,7 +11,7 @@ The current phase is endpoint refinement:
 - own Tetragon lifecycle from the agent distribution;
 - compile SysArmor Collection Policy into backend policy;
 - produce real Events and Signals from a real VM sensor path;
-- benchmark collection policies against workload and attack scenarios.
+- benchmark the three default collection policies against slim workload/scenario matrices.
 
 ## Completed Or Partially Working
 
@@ -50,12 +50,13 @@ Platform foundations:
 2. Improve collection compiler.
    - Expand Tetragon selector coverage.
    - Keep collection behavior objective and sensor-neutral.
-   - Continue reducing default collection noise.
+   - Keep `edr-balanced` selective enough for stable CPU: avoid broad shell/interpreter `process.exec`, prefer C2/path-limited `network.connect` and file selectors, and reserve fork/exit/broad exec for `incident-deep`.
 
 3. Improve detection content runtime.
    - Stabilize RuleSet/RulePack structure.
    - Finish dependency checks from detection requirements to collection policy.
    - Support expression and short sequence rules without becoming a full cloud graph engine.
+   - Expand representative endpoint rules in loosely coupled families: persistence writes, interpreter-driven C2, credential access, lateral movement, and terminal-anchored lifecycle correlation.
 
 4. Response/enforce loop.
    - Keep observe-only by default.
@@ -65,6 +66,7 @@ Platform foundations:
 5. Benchmark and diagnostics.
    - Keep recorder as the official performance timeline.
    - Use NDJSON scoped event/signal frames for exact phase counts.
+   - Keep the default VM matrix slim: three default policies, three representative scenarios, and `business-normal` as the single background workload.
    - Use diagnostics only to explain cost.
    - Add container recorder and future native sensor matrix.
 

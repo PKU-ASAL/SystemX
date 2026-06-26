@@ -210,5 +210,7 @@ Known gaps to keep visible:
 
 - real enforce is still limited and should remain observe-only until policy, audit, and backend support are complete;
 - Tetragon policy apply can cause short CPU spikes and needs lifecycle-aware benchmarking;
+- live Tetragon policy replacement can still produce timing-sensitive visibility gaps and should be validated with the slim VM matrix after collection-policy changes;
+- `edr-balanced` must keep high-frequency hooks selective. Shell/interpreter matching belongs in lower-frequency `network.connect` selectors or short-lived deep windows, not broad always-on `process.exec`;
 - native thin sensor path is not implemented yet;
 - richer detection rule validation and signature/rotation workflows should continue to mature.

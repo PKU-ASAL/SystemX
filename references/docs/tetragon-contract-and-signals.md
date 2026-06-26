@@ -206,14 +206,15 @@ subject process basename is shell-like, such as bash or sh
 socket matches configured C2 socket policy
 ```
 
-Endpoint state can raise the signal to terminal when the same lineage previously saw web runtime shell behavior or a downloader signal.
+`reverse_shell_pattern` is a terminal endpoint signal when the current event matches a shell-like process connecting to a configured C2 socket. It does not require a same-lineage downloader or web-runtime precursor. Those precursor refs are useful evidence when available, but they are not required to mark the reverse shell itself as terminal.
 
 Output:
 
 ```text
 Signal.name = reverse_shell_pattern
 Signal.entities = process + socket
-Signal.terminal = true when local lineage context is strong enough
+Signal.terminal = true
+Signal.evidence = current network event plus any available precursor refs
 ```
 
 ### suspicious_exec_connect
