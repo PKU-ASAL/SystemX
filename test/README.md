@@ -297,7 +297,6 @@ Collection benchmark 输出:
 ```text
 test/.results/bench-collection-vm/<run-id>/
 ├── matrix.csv
-├── matrix.json
 ├── content.<name>.apply.json
 └── <policy-name>/
     ├── timeline.csv
@@ -646,30 +645,12 @@ MATRIX_MODE=all       # workload-only + scenario-only + cross
 
 ```text
 test/.results/bench-matrix-vm/<run-id>/matrix.csv
-test/.results/bench-matrix-vm/<run-id>/matrix.json
-test/.results/effectiveness/<run-id>/summary.json
 test/.results/effectiveness/<run-id>/matrix.csv
-test/.results/effectiveness/<run-id>/matrix.json
 test/.results/effectiveness/<run-id>/truth_steps.csv
-test/.results/effectiveness/<run-id>/policy_comparison.csv
-test/.results/effectiveness/<run-id>/policy_comparison.json
 ```
 
 `bench-matrix-vm` 默认先执行 VM agent sync,避免 VM 内旧版 `sysarmor-agent` / `sysarmorctl` 或旧配置影响测试结果。可用 `SYSARMOR_BENCH_SYNC_VM_AGENT=0` 关闭。`bench-collection-vm` 默认在 collection policy 前加载 `test/policies/detection-cep-endpoint.json`,可用 `SYSARMOR_BENCH_DETECTION_POLICY=<path>` 替换,或用 `SYSARMOR_BENCH_APPLY_DETECTION=0` 只测采集。
 
 这样可以把 policy 档位、业务工作负载和攻击场景放到同一张 matrix 中比较:采得准不准、全不全、快不快、贵不贵。
-
-`policy_comparison.csv` 的综合分模型:
-
-```text
-overall_score = 0.65 * effectiveness_score
-              + 0.25 * resource_score
-              + 0.10 * stability_score
-
-resource_score = 0.75 * inverse_cpu_score
-               + 0.25 * inverse_rss_score
-```
-
-其中 `effectiveness_score` 来自 `labels.yaml` 的 event/signal precision-recall 结果,`resource_score` 来自 workload 阶段的 EDR CPU/RSS,`stability_score` 在 drop 和 parse error 都为 0 时为 1。
 
 `effectiveness-report` 对 benchmark recorder 输出使用 `workload_start` 到 `workload_done` 窗口。`observed_events_total` / `observed_signals_total` 保留整段 recorder 累计帧数量,`observed_events` / `observed_signals` 是进入效果评估的 workload 窗口数量。这样 policy apply、Vagrant SSH、motd 等运行噪声不会被算作攻击场景命中。

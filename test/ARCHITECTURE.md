@@ -55,7 +55,6 @@ test/.results/<suite>/<run-id>/
   manifest.json
   summary.json
   matrix.csv
-  matrix.json
   artifacts/
 ```
 

@@ -127,9 +127,10 @@ def main():
     for child in sorted(out_dir.iterdir()):
         if child.is_dir() and (child / "collection-apply.json").exists():
             rows.append(build_row(child))
-    matrix_json = out_dir / "matrix.json"
+    deprecated_matrix_json = out_dir / "matrix.json"
+    if deprecated_matrix_json.exists():
+        deprecated_matrix_json.unlink()
     matrix_csv = out_dir / "matrix.csv"
-    matrix_json.write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
     fields = [
         "policy_dir",
         "policy_id",

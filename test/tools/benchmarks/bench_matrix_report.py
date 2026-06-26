@@ -15,6 +15,14 @@ def load_json(path):
         return {}
 
 
+def load_csv(path):
+    p = Path(path)
+    if not p.exists() or p.stat().st_size == 0:
+        return []
+    with p.open(newline="") as f:
+        return list(csv.DictReader(f))
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: bench_matrix_report.py <bench-matrix-dir>")
@@ -24,10 +32,8 @@ def main():
     for case_dir in sorted(p for p in cases_dir.iterdir() if p.is_dir()) if cases_dir.exists() else []:
         status = load_json(case_dir / "status.json")
         bench_run_id = status.get("bench_run_id", "")
-        source = out_dir.parents[1] / "bench-collection-vm" / bench_run_id / "matrix.json"
-        matrix_rows = load_json(source)
-        if not isinstance(matrix_rows, list):
-            matrix_rows = []
+        source = out_dir.parents[1] / "bench-collection-vm" / bench_run_id / "matrix.csv"
+        matrix_rows = load_csv(source)
         workload = status.get("workload", "")
         scenario = status.get("scenario", "")
         if not matrix_rows:
@@ -53,7 +59,9 @@ def main():
             merged.update(row)
             rows.append(merged)
 
-    (out_dir / "matrix.json").write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
+    deprecated_matrix_json = out_dir / "matrix.json"
+    if deprecated_matrix_json.exists():
+        deprecated_matrix_json.unlink()
     fields = []
     for base in ("name", "workload", "scenario", "status", "bench_run_id", "policy_dir", "policy_id", "policy_version"):
         if any(base in row for row in rows):

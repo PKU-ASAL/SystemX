@@ -158,7 +158,6 @@ Important output:
 ```text
 test/.results/bench-collection-vm/<run-id>/
   matrix.csv
-  matrix.json
   <policy>/
     timeline.csv
     markers.ndjson
@@ -174,13 +173,9 @@ Matrix runs also write:
 
 ```text
 test/.results/bench-matrix-vm/<run-id>/matrix.csv
-test/.results/bench-matrix-vm/<run-id>/matrix.json
 test/.results/effectiveness/<run-id>/matrix.csv
-test/.results/effectiveness/<run-id>/policy_comparison.csv
-test/.results/effectiveness/<run-id>/attack_signal_matrix.csv
+test/.results/effectiveness/<run-id>/truth_steps.csv
 ```
-
-The attack signal matrix aggregates malicious signal precision/recall/F1 across matching workload/scenario rows instead of relying on last-write-wins per policy/attack.
 
 ## Resource Metrics
 

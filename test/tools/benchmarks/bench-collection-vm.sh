@@ -322,4 +322,4 @@ done
 
 python3 "$HERE/bench_collection_report.py" "$OUT_DIR"
 
-echo "[bench-collection-vm] matrix written to $OUT_DIR/matrix.csv and $OUT_DIR/matrix.json"
+echo "[bench-collection-vm] matrix written to $OUT_DIR/matrix.csv"

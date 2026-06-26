@@ -120,5 +120,5 @@ python3 "$HERE/effectiveness_report.py" \
   --scenarios $SCENARIOS \
   --workloads $WORKLOADS
 
-echo "[bench-matrix-vm] matrix written to $OUT_DIR/matrix.csv and $OUT_DIR/matrix.json"
+echo "[bench-matrix-vm] matrix written to $OUT_DIR/matrix.csv"
 echo "[bench-matrix-vm] effectiveness written to $RESULTS/effectiveness/$RUN_ID"

@@ -4,7 +4,6 @@ import csv
 import fnmatch
 import json
 import os
-import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,10 +51,6 @@ def number(value, default=0.0):
         return float(value)
     except (TypeError, ValueError):
         return default
-
-
-def present(value):
-    return value not in ("", None)
 
 
 def parse_time(value):
@@ -553,16 +548,6 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
     }
 
 
-def read_bench_rows(bench_matrix_dir):
-    if not bench_matrix_dir:
-        return []
-    path = Path(bench_matrix_dir) / "matrix.csv"
-    if not path.exists():
-        return []
-    with path.open(newline="") as f:
-        return list(csv.DictReader(f))
-
-
 def discover_bench_cases(root, results, matrix_dir):
     cases = []
     if not matrix_dir:
@@ -598,7 +583,6 @@ def build_rows(args):
     bench_cases = discover_bench_cases(root, results, args.bench_matrix_dir)
     rows = []
     truth_rows = []
-    details = {}
     scenario_filter = set(args.scenarios or [])
     workload_filter = set(args.workloads or [])
 
@@ -641,13 +625,6 @@ def build_rows(args):
         }
         row = {**base, **metrics}
         rows.append(row)
-        key = f"{case['kind']}:{case['name']}:{case['policy']}"
-        details[key] = {
-            **base,
-            "labels": labels_doc,
-            "metrics": metrics,
-            "truth_steps": evaluation["truth_steps"],
-        }
         for step in evaluation["truth_steps"]:
             truth_rows.append({
                 "kind": case["kind"],
@@ -657,111 +634,7 @@ def build_rows(args):
                 "policy": case["policy"],
                 **step,
             })
-    return rows, truth_rows, details
-
-
-def minmax_score(value, values, reverse=False):
-    nums = [number(v) for v in values if present(v)]
-    if not nums:
-        return 0.0
-    lo, hi = min(nums), max(nums)
-    if hi == lo:
-        return 1.0
-    base = (number(value) - lo) / (hi - lo)
-    if reverse:
-        base = 1.0 - base
-    return round(base, 4)
-
-
-def average_field(rows, field):
-    vals = [number(r.get(field)) for r in rows if present(r.get(field))]
-    return statistics.mean(vals) if vals else None
-
-
-def build_policy_comparison(effect_rows, bench_rows):
-    policies = sorted({r.get("policy") for r in effect_rows if r.get("policy")} | {r.get("policy_dir") for r in bench_rows if r.get("policy_dir")})
-    workload_rows = [r for r in bench_rows if r.get("kind") == "workload"]
-    cpu_values = [r.get("workload_edr_cpu_avg_pct") for r in workload_rows]
-    rss_values = [r.get("workload_edr_rss_avg_mb") for r in workload_rows]
-    comparison = []
-    for policy in policies:
-        erows = [r for r in effect_rows if r.get("policy") == policy]
-        brows = [r for r in workload_rows if r.get("policy_dir") == policy]
-        eff = average_field(erows, "effectiveness_score") or 0.0
-        event_recall = average_field(erows, "event_recall")
-        signal_recall = average_field(erows, "signal_recall")
-        signal_precision = average_field(erows, "signal_precision")
-        signal_f1 = average_field(erows, "signal_f1")
-        cpu = statistics.mean([number(r.get("workload_edr_cpu_avg_pct")) for r in brows]) if brows else 0.0
-        rss = statistics.mean([number(r.get("workload_edr_rss_avg_mb")) for r in brows]) if brows else 0.0
-        drops = sum(number(r.get("workload_dropped_events_delta")) for r in brows)
-        parse_errors = sum(number(r.get("workload_parse_errors_delta")) for r in brows)
-        cpu_score = minmax_score(cpu, cpu_values, reverse=True)
-        rss_score = minmax_score(rss, rss_values, reverse=True)
-        resource_score = round((cpu_score * 0.75) + (rss_score * 0.25), 4)
-        stability_score = 1.0 if drops == 0 and parse_errors == 0 else 0.0
-        overall = round(eff * 0.65 + resource_score * 0.25 + stability_score * 0.10, 4)
-        comparison.append({
-            "policy": policy,
-            "overall_score": overall,
-            "effectiveness_score": round(eff, 4),
-            "event_recall": round(event_recall, 4) if event_recall is not None else "",
-            "signal_recall": round(signal_recall, 4) if signal_recall is not None else "",
-            "signal_precision": round(signal_precision, 4) if signal_precision is not None else "",
-            "signal_f1": round(signal_f1, 4) if signal_f1 is not None else "",
-            "resource_score": resource_score,
-            "stability_score": stability_score,
-            "workload_edr_cpu_avg_pct": round(cpu, 4),
-            "workload_edr_rss_avg_mb": round(rss, 4),
-            "dropped_events_total": int(drops),
-            "parse_errors_total": int(parse_errors),
-        })
-    return sorted(comparison, key=lambda r: r["overall_score"], reverse=True)
-
-
-def policy_sort_key(policy):
-    order = {
-        "collection-minimal-high-signal": 0,
-        "collection-edr-balanced": 1,
-        "collection-incident-deep": 2,
-    }
-    return (order.get(policy, 99), policy)
-
-
-def build_attack_signal_matrix(effect_rows):
-    attacks = sorted({r.get("name") for r in effect_rows if r.get("label_kind") == "malicious" and r.get("name")})
-    policies = sorted({r.get("policy") for r in effect_rows if r.get("label_kind") == "malicious" and r.get("policy")}, key=policy_sort_key)
-    by_key = {}
-    for r in effect_rows:
-        if r.get("label_kind") != "malicious":
-            continue
-        by_key.setdefault((r.get("policy"), r.get("name")), []).append(r)
-    rows = []
-    for policy in policies:
-        row = {"policy": policy}
-        for attack in attacks:
-            items = by_key.get((policy, attack)) or []
-            precisions = [number(r.get("signal_precision")) for r in items if present(r.get("signal_precision"))]
-            recalls = [number(r.get("signal_recall")) for r in items if present(r.get("signal_recall"))]
-            f1s = [number(r.get("signal_f1")) for r in items if present(r.get("signal_f1"))]
-            if not precisions or not recalls or not f1s:
-                row[attack] = ""
-            else:
-                avg_p = statistics.mean(precisions)
-                avg_r = statistics.mean(recalls)
-                avg_f1 = statistics.mean(f1s)
-                row[attack] = f"P={avg_p:.2f} R={avg_r:.2f} F1={avg_f1:.2f}"
-        rows.append(row)
-    return attacks, rows
-
-
-def write_attack_signal_matrix_md(path, attacks, rows):
-    lines = []
-    lines.append("| policy | " + " | ".join(attacks) + " |")
-    lines.append("|---|" + "|".join(["---"] * len(attacks)) + "|")
-    for row in rows:
-        lines.append("| " + row["policy"] + " | " + " | ".join(row.get(attack, "") for attack in attacks) + " |")
-    path.write_text("\n".join(lines) + "\n")
+    return rows, truth_rows
 
 
 def write_csv(path, rows, fields):
@@ -770,6 +643,20 @@ def write_csv(path, rows, fields):
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def remove_deprecated_outputs(out_dir):
+    for name in (
+        "summary.json",
+        "matrix.json",
+        "policy_comparison.csv",
+        "policy_comparison.json",
+        "attack_signal_matrix.csv",
+        "attack_signal_matrix.md",
+    ):
+        path = out_dir / name
+        if path.exists():
+            path.unlink()
 
 
 def main():
@@ -785,25 +672,8 @@ def main():
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows, truth_rows, details = build_rows(args)
-    bench_rows = read_bench_rows(args.bench_matrix_dir)
-    comparison = build_policy_comparison(rows, bench_rows)
-    attack_signal_fields, attack_signal_rows = build_attack_signal_matrix(rows)
-    summary = {
-        "topology": args.topology,
-        "evaluation_model": "labels.yaml supervised event/signal matching",
-        "score_model": {
-            "malicious_effectiveness": "0.45*event_recall + 0.40*signal_recall + 0.10*terminal_recall + 0.05*signal_precision",
-            "benign_effectiveness": "0.70*signal_precision + 0.30*terminal_policy_score",
-            "overall_score": "0.65*effectiveness_score + 0.25*resource_score + 0.10*stability_score",
-        },
-        "rows": rows,
-        "truth_steps": truth_rows,
-        "policy_comparison": comparison,
-        "attack_signal_matrix": attack_signal_rows,
-        "details": details,
-    }
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    remove_deprecated_outputs(out_dir)
+    rows, truth_rows = build_rows(args)
     matrix_fields = [
         "kind",
         "label_kind",
@@ -853,28 +723,8 @@ def main():
         "matched_ids",
         "match_quality",
     ]
-    comparison_fields = [
-        "policy",
-        "overall_score",
-        "effectiveness_score",
-        "event_recall",
-        "signal_recall",
-        "signal_precision",
-        "signal_f1",
-        "resource_score",
-        "stability_score",
-        "workload_edr_cpu_avg_pct",
-        "workload_edr_rss_avg_mb",
-        "dropped_events_total",
-        "parse_errors_total",
-    ]
     write_csv(out_dir / "matrix.csv", rows, matrix_fields)
     write_csv(out_dir / "truth_steps.csv", truth_rows, truth_fields)
-    write_csv(out_dir / "policy_comparison.csv", comparison, comparison_fields)
-    write_csv(out_dir / "attack_signal_matrix.csv", attack_signal_rows, ["policy", *attack_signal_fields])
-    write_attack_signal_matrix_md(out_dir / "attack_signal_matrix.md", attack_signal_fields, attack_signal_rows)
-    (out_dir / "matrix.json").write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
-    (out_dir / "policy_comparison.json").write_text(json.dumps(comparison, indent=2, sort_keys=True) + "\n")
 
 
 if __name__ == "__main__":

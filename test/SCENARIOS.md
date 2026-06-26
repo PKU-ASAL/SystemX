@@ -371,7 +371,6 @@ test/.results/recordings/<run-id>/
 
 test/.results/bench-collection-vm/<run-id>/
 ├── matrix.csv
-├── matrix.json
 ├── detection-apply.json
 └── <policy-name>/
     ├── summary.json
@@ -510,14 +509,8 @@ When used after `make -C test bench-matrix-vm`, the report is written to:
 
 ```text
 test/.results/effectiveness/<run-id>/
-├── summary.json
 ├── matrix.csv
-├── matrix.json
-├── truth_steps.csv
-├── policy_comparison.csv
-└── policy_comparison.json
+└── truth_steps.csv
 ```
 
 `matrix.csv` keeps one row per workload/scenario/policy with `event_recall`, `signal_recall`, `signal_precision`, false-positive counts, observed counts, drop/parse-error rates, and CPU cost per 1k events. `truth_steps.csv` keeps one row per label so misses are easy to inspect.
-
-`policy_comparison.csv` aggregates labels-based effectiveness and workload resource cost per policy. It is the main table for comparing collection profiles as product options.

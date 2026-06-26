@@ -2,24 +2,9 @@
 
 本文记录 slim VM matrix 运行 `20260625T171849Z` 的结果，并分析 MVP 阶段检测效果不足、CPU 占用偏高的原因。本文已按修复后的 effectiveness report 重新生成，修复点包括 recorder scoped/all cursor 竞态，以及 signal 引用事件缺失时的 report 补偿逻辑。
 
-## 1. Render Issue Resolution
+本文的 CPU 数据来自 `test/.results/bench-matrix-vm/20260625T171849Z/matrix.csv`，effectiveness 数据来自修复后的 `effectiveness_report.py` 重新计算结果。报告产物已简化为原始 case artifacts、`matrix.csv` 和 `truth_steps.csv`。
 
-之前终端输出使用 `<json-render>` 生成可视化面板，出现了类似：
-
-```text
-missing: t2
-missing: t3
-missing: s1
-missing: s2
-missing: s3
-missing: s4
-```
-
-这不是 benchmark 数据错误，而是终端富渲染 JSON spec 未正确解析子元素引用导致的 UI 渲染问题。为避免结果展示依赖交互终端渲染，本文改为固定 Markdown 表格输出，便于版本化、审阅和后续对比。
-
-另一个需要注意的报告层问题是：`policy_comparison.csv` 当前只从 `kind == workload` 的行计算资源分数；本次 slim matrix 是 cross-only，因此该文件里的 `workload_edr_cpu_avg_pct` 为 0，不可用于性能判断。本文的 CPU 数据来自 `test/.results/bench-matrix-vm/20260625T171849Z/matrix.csv`，effectiveness 数据来自修复后的 `effectiveness_report.py` 重新计算结果。
-
-## 2. Test Scope
+## 1. Test Scope
 
 运行配置：
 
@@ -35,7 +20,7 @@ missing: s4
 | Dropped events | 0 |
 | Parse errors | 0 |
 
-## 3. Performance Summary
+## 2. Performance Summary
 
 | Scenario | Policy | Events | Signals | Steady CPU | Workload CPU | Drops |
 |---|---|---:|---:|---:|---:|---:|
@@ -55,7 +40,7 @@ missing: s4
 - `balanced` 检测效果最好，但 CPU 未达到个位数目标；
 - `deep` 事件量和 CPU 都高，且本次检测效果反而不稳定，说明它目前更像调试/调查档，不适合常开，也不能直接假设“采更多就检得更准”。
 
-## 4. Effectiveness Summary
+## 3. Effectiveness Summary
 
 | Scenario | Policy | Effectiveness | Event Recall | Signal Recall | Signal F1 | Signal Precision | Observed Signals |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -77,9 +62,9 @@ Attack signal matrix:
 | balanced | P=1.00 R=1.00 F1=1.00 | P=0.67 R=1.00 F1=0.80 |
 | deep | P=1.00 R=0.00 F1=0.00 | P=0.67 R=0.00 F1=0.00 |
 
-## 5. Signal Details
+## 4. Signal Details
 
-### 5.1 `apt-fileless-c2`
+### 4.1 `apt-fileless-c2`
 
 | Policy | Signals |
 |---|---|
@@ -95,7 +80,7 @@ Balanced 已经能完整命中 fileless C2 的主干 signal，包括 terminal re
 - `payload_write` 由 `events-all.ndjson` 中的 `vm-owned-tetragon-00000000000000002072` 补回；
 - `reverse_c2` 的 signal ref 指向 `vm-owned-tetragon-00000000000000002074`，该事件在 recorder 输出中仍缺失，因此被标记为 `event_missing_from_recorder`，不再误算为 detection/label miss。
 
-### 5.2 `apt-staged-drop`
+### 4.2 `apt-staged-drop`
 
 | Policy | Signals |
 |---|---|
@@ -105,7 +90,7 @@ Balanced 已经能完整命中 fileless C2 的主干 signal，包括 terminal re
 
 Balanced 是本次唯一同时满足 event recall 和 signal recall 的策略。Deep 采到了信号但没有匹配 ground truth，原因是它在 download socket `10.66.0.99:8080` 上触发了 `suspicious_exec_connect`，而 ground truth 期望的是 control socket `10.66.0.99:443`。
 
-### 5.3 `benign-ci-noise`
+### 4.3 `benign-ci-noise`
 
 | Policy | False Positive Signals |
 |---|---|
@@ -115,9 +100,9 @@ Balanced 是本次唯一同时满足 event recall 和 signal recall 的策略。
 
 这些 false positives 不是 `benign-ci-noise` 脚本本身产生的。事件中出现了 VM 内后台 `curl` 访问 `10.66.0.99:8080/deps.tar` 和 POST 到 C2 HTTP server，说明测试环境存在污染源。benign 场景原则上不应该触碰 C2、payload path、persistence path 或 credential path。
 
-## 6. Why MVP Detection Was Not Good Enough
+## 5. Why MVP Detection Was Not Good Enough
 
-### 6.1 规则覆盖仍然是窄链路 MVP
+### 5.1 规则覆盖仍然是窄链路 MVP
 
 当前规则主要验证：
 
@@ -136,7 +121,7 @@ download -> payload drop -> exec/connect -> C2
 
 因此，只用 `apt-fileless-c2` 和 `apt-staged-drop` 两个场景不能证明规则能覆盖大部分攻击路径，只能证明当前 MVP 主干在特定条件下可工作。
 
-### 6.2 IoC 模型把 download port 和 control port 混在一起
+### 5.2 IoC 模型把 download port 和 control port 混在一起
 
 当前 `ioc:c2-port-feed` 包含：
 
@@ -157,7 +142,7 @@ download -> payload drop -> exec/connect -> C2
 - download 规则只使用 download/control 的宽口径；
 - reverse shell、payload C2、lifecycle terminal 只使用 control port。
 
-### 6.3 Event stream 和 Signal stream 的评估窗口问题已定位并修复
+### 5.3 Event stream 和 Signal stream 的评估窗口问题已定位并修复
 
 旧报告中 `apt-fileless-c2` balanced 的 signal recall 为 1.0，但 event recall 为 0。这不是 policy 或 label 的真实失败，而是 recorder/report 的假阴性。
 
@@ -175,7 +160,7 @@ download -> payload drop -> exec/connect -> C2
 - 如果 signal ref 指向的事件仍没有被 recorder 保存，truth step 会标记 `event_missing_from_recorder`，用于区分 recorder 缺证和 detection miss；
 - `apt-fileless-c2 + business-normal + balanced` 重新计算后为 `event_recall=1.00`、`signal_recall=1.00`、`signal_event_link_rate=1.00`。
 
-### 6.4 Deep 不是“更多采集 = 更好检测”
+### 5.4 Deep 不是“更多采集 = 更好检测”
 
 Deep 采集了更多 `process.exec`、`process.exit`、`file.read`，但本次没有带来更高 recall。原因：
 
@@ -186,7 +171,7 @@ Deep 采集了更多 `process.exec`、`process.exit`、`file.read`，但本次�
 
 Deep 应定位为短时调查窗口，而不是默认检测效果基线。
 
-### 6.5 Benign 环境被 C2 下载污染
+### 5.5 Benign 环境被 C2 下载污染
 
 `benign-ci-noise` 本应是本地 CI 噪声，但结果中出现多次：
 
@@ -196,9 +181,9 @@ Deep 应定位为短时调查窗口，而不是默认检测效果基线。
 
 这导致三档策略都产生 `download_by_lolbin` false positive。该污染会显著拉低 benign effectiveness，使我们无法客观判断规则误报率。
 
-## 7. Why CPU Was High
+## 6. Why CPU Was High
 
-### 7.1 Balanced broad shell `process.exec` 是主因
+### 6.1 Balanced broad shell `process.exec` 是主因
 
 Balanced 当前在 `process.exec` 中包含 `/bin/sh`、`/bin/bash`、`/usr/bin/sh`、`/usr/bin/bash`。VM、SSH、recorder、benchmark harness 和系统脚本大量使用 shell，导致：
 
@@ -214,7 +199,7 @@ Balanced 当前在 `process.exec` 中包含 `/bin/sh`、`/bin/bash`、`/usr/bin/
 - 保留这些 binary 在 `network.connect` 中，因为 connect 频率远低于 exec，仍可抓 reverse shell；
 - 若需要 shell exec 上下文，交给 `incident-deep` 或 terminal 触发后的 enhanced collection window。
 
-### 7.2 Credential `file.read` 事件比预期多
+### 6.2 Credential `file.read` 事件比预期多
 
 Balanced 中新增了 credential path `file.read`。本次 event behavior summary 显示 balanced 在不同 case 中有数百到上千 `file.read` 事件。这说明：
 
@@ -228,7 +213,7 @@ Balanced 中新增了 credential path `file.read`。本次 event behavior summar
 - collection 层可先只采更高风险路径，如 `/etc/shadow`、`/root/.ssh/`、`/run/secrets/`；
 - `/etc/passwd` 可降级到 deep 或 context-only。
 
-### 7.3 Deep 启用 fork/exit/broad exec/read 带来预期高成本
+### 6.3 Deep 启用 fork/exit/broad exec/read 带来预期高成本
 
 Deep steady/workload CPU 稳定在约 35% 到 42%。这是符合其 broad collection 设计的，不应作为常开档。
 
@@ -238,7 +223,7 @@ Deep steady/workload CPU 稳定在约 35% 到 42%。这是符合其 broad collec
 - 必须有时间窗和自动回退；
 - deep benchmark 不参与 balanced 常开 CPU 目标。
 
-### 7.4 Policy apply/settle 阶段 spike 明显
+### 6.4 Policy apply/settle 阶段 spike 明显
 
 矩阵中 policy apply 和 settle 阶段 CPU 明显高于 steady。Tetragon live policy apply 本身会带来 reload 和 kprobe 更新成本。
 
@@ -248,14 +233,12 @@ Deep steady/workload CPU 稳定在约 35% 到 42%。这是符合其 broad collec
 - policy apply spike 不计入 steady-state SLO；
 - 但 live replacement 的可见性 timing gap 需要继续修复。
 
-## 8. Prioritized Fix Plan
+## 7. Prioritized Fix Plan
 
 ### P0: 修复 benchmark/report 可信度
 
 1. 清理 VM 中 benign 场景期间访问 C2 HTTP server 的后台 curl 源；
 2. 已修复 event watcher 与 signal watcher 的窗口/sequence 不一致导致的假阴性；
-3. 修复 `policy_comparison.csv` 在 cross-only matrix 下 CPU 为 0 的汇总逻辑；
-4. 输出完整 Markdown matrix report，避免依赖 `<json-render>`。
 
 ### P1: 压 balanced CPU
 
@@ -279,7 +262,7 @@ Deep steady/workload CPU 稳定在约 35% 到 42%。这是符合其 broad collec
 4. `lateral_movement_attempt`;
 5. terminal-anchored `payload_lifecycle` aggregator。
 
-## 9. Bottom Line
+## 8. Bottom Line
 
 本次 MVP matrix 证明了：
 
