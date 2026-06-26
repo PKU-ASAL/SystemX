@@ -57,7 +57,6 @@ Important collection profiles:
 | `collection-minimal-high-signal.json` | low-cost high-confidence surface |
 | `collection-edr-balanced.json` | default long-running EDR surface |
 | `collection-incident-deep.json` | short-lived investigation surface |
-| `collection-debug-wide.json` | broad debug/capability surface |
 
 Important content packs:
 

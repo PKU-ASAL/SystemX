@@ -666,7 +666,6 @@ def policy_sort_key(policy):
         "collection-minimal-high-signal": 0,
         "collection-edr-balanced": 1,
         "collection-incident-deep": 2,
-        "collection-debug-wide": 3,
     }
     return (order.get(policy, 99), policy)
 
@@ -674,19 +673,26 @@ def policy_sort_key(policy):
 def build_attack_signal_matrix(effect_rows):
     attacks = sorted({r.get("name") for r in effect_rows if r.get("label_kind") == "malicious" and r.get("name")})
     policies = sorted({r.get("policy") for r in effect_rows if r.get("label_kind") == "malicious" and r.get("policy")}, key=policy_sort_key)
-    by_key = {(r.get("policy"), r.get("name")): r for r in effect_rows if r.get("label_kind") == "malicious"}
+    by_key = {}
+    for r in effect_rows:
+        if r.get("label_kind") != "malicious":
+            continue
+        by_key.setdefault((r.get("policy"), r.get("name")), []).append(r)
     rows = []
     for policy in policies:
         row = {"policy": policy}
         for attack in attacks:
-            item = by_key.get((policy, attack)) or {}
-            precision = item.get("signal_precision")
-            recall = item.get("signal_recall")
-            f1 = item.get("signal_f1")
-            if precision == "" or recall == "" or f1 == "":
+            items = by_key.get((policy, attack)) or []
+            precisions = [number(r.get("signal_precision")) for r in items if present(r.get("signal_precision"))]
+            recalls = [number(r.get("signal_recall")) for r in items if present(r.get("signal_recall"))]
+            f1s = [number(r.get("signal_f1")) for r in items if present(r.get("signal_f1"))]
+            if not precisions or not recalls or not f1s:
                 row[attack] = ""
             else:
-                row[attack] = f"P={number(precision):.2f} R={number(recall):.2f} F1={number(f1):.2f}"
+                avg_p = statistics.mean(precisions)
+                avg_r = statistics.mean(recalls)
+                avg_f1 = statistics.mean(f1s)
+                row[attack] = f"P={avg_p:.2f} R={avg_r:.2f} F1={avg_f1:.2f}"
         rows.append(row)
     return attacks, rows
 

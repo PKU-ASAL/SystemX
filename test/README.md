@@ -242,7 +242,6 @@ DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
 | `collection-minimal-high-signal.json` | 最小常开面,低成本高置信 |
 | `collection-edr-balanced.json` | 长期运行 EDR baseline |
 | `collection-incident-deep.json` | 调查窗口/高风险窗口增强采集 |
-| `collection-debug-wide.json` | 调试和能力边界探索,高可见性高成本 |
 
 辅助策略:
 
@@ -619,12 +618,9 @@ policies:
 collection-minimal-high-signal
 collection-edr-balanced
 collection-incident-deep
-collection-debug-wide
 
 workloads:
 business-normal
-host-activity-heavy
-edr-activity-heavy
 
 scenarios:
 apt-fileless-c2

@@ -3,9 +3,9 @@ set -euo pipefail
 
 DURATION="${DURATION:-30}"
 REPEAT="${REPEAT:-1}"
-COUNT="${COUNT:-60}"
+COUNT="${COUNT:-20}"
 
-root=/tmp/sysarmor-business-normal
+root=/var/tmp/sysarmor-workload
 mkdir -p "$root/src" "$root/out" "$root/cache"
 
 start_ts="$(date +%s)"
@@ -20,6 +20,10 @@ while :; do
     cat "$root/out/artifact-$n.sha256" >/dev/null
     /bin/true
   done
+  if (( iter % 3 == 0 )); then
+    date > "$root/out/rotation.log"
+    cat /etc/hostname >> "$root/out/rotation.log" 2>/dev/null || true
+  fi
   if [ "$REPEAT" != "0" ] && [ "$iter" -ge "$REPEAT" ]; then
     break
   fi
@@ -27,4 +31,5 @@ while :; do
   if [ "$DURATION" != "0" ] && [ $((now - start_ts)) -ge "$DURATION" ]; then
     break
   fi
+  sleep 1
 done

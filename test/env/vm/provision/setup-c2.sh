@@ -15,6 +15,6 @@ cp -r "$PAYLOAD_DIR"/. "$WORK"/ 2>/dev/null || true
 if [[ -x "$WORK/gen-deps.sh" ]]; then bash "$WORK/gen-deps.sh" "$WORK"; fi
 
 ( cd "$WORK" && nohup python3 -m http.server 8080 >/var/log/c2-http.log 2>&1 & )
-nohup bash -c 'while true; do nc -lvn 443 >>/var/log/c2-443.log 2>&1; done' >/dev/null 2>&1 &
+nohup bash -c 'while true; do nc -lkvn 443 >>/var/log/c2-443.log 2>&1; done' >/dev/null 2>&1 &
 
 echo "[c2] http :8080 serving $WORK ; listener :443 up"
