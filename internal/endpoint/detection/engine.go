@@ -412,7 +412,9 @@ func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageSta
 	}
 	var out []*signalv1.Signal
 	if rule, ok := e.rule("suspicious_exec_connect"); ok {
-		out = append(out, e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketEntity(ev)))
+		sigRefs := appendRefs(nil, st.payloadExecRefs...)
+		sigRefs = appendUnique(sigRefs, ev.GetId())
+		out = append(out, e.signal(ev, rule, sigRefs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketEntity(ev)))
 	}
 	refs := appendRefs(nil, st.downloadRefs...)
 	refs = appendRefs(refs, st.payloadRefs...)

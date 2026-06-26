@@ -44,6 +44,11 @@ labels:
         - "file:/dev/shm/x.sh"
       link_events:
         - payload_write
+    - id: payload_dropped_beacon
+      required: false
+      name: payload_dropped
+      entities:
+        - "file:/dev/shm/.beacon"
     - id: payload_lifecycle
       required: false
       name: payload_lifecycle
@@ -57,6 +62,7 @@ labels:
     - id: reverse_shell_pattern
       required: true
       name: reverse_shell_pattern
+      terminal: true
       entities:
         - "socket:10.66.0.99:443"
       link_events:

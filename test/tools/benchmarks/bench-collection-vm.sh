@@ -22,8 +22,9 @@ CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-test/content}"
 DETECTION_POLICY="${SYSARMOR_BENCH_DETECTION_POLICY:-test/policies/detection-cep-endpoint.json}"
 APPLY_DETECTION="${SYSARMOR_BENCH_APPLY_DETECTION:-1}"
 BASELINE_SECONDS="${SYSARMOR_BENCH_BASELINE_SECONDS:-3}"
-SETTLE_SECONDS="${SYSARMOR_BENCH_SETTLE_SECONDS:-4}"
+SETTLE_SECONDS="${SYSARMOR_BENCH_SETTLE_SECONDS:-8}"
 STEADY_SECONDS="${SYSARMOR_BENCH_STEADY_SECONDS:-4}"
+POLICY_SETTLE_SECONDS="${SYSARMOR_BENCH_POLICY_SETTLE_SECONDS:-10}"
 WORKLOAD_SECONDS="${SYSARMOR_BENCH_WORKLOAD_SECONDS:-10}"
 WORKLOAD_WARMUP_SECONDS="${SYSARMOR_BENCH_WORKLOAD_WARMUP_SECONDS:-2}"
 WORKLOAD_REPEAT="${SYSARMOR_BENCH_WORKLOAD_REPEAT:-1}"
@@ -141,7 +142,8 @@ run_workload() {
     vagrant ssh node-a -c "sudo bash -c 'DURATION=$WORKLOAD_SECONDS REPEAT=$WORKLOAD_REPEAT C2=$WORKLOAD_C2 bash /tmp/sysarmor-workload-run.sh'" \
       > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
   elif [[ -f "$ROOT/scenarios/vm/$workload_name/attack.sh" ]]; then
-    vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /vagrant/test/scenarios/vm/$workload_name/attack.sh'" \
+    vagrant upload "$ROOT/scenarios/vm/$workload_name/attack.sh" /tmp/sysarmor-scenario-attack.sh node-a >/dev/null
+    vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /tmp/sysarmor-scenario-attack.sh'" \
       > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
   else
     echo "[bench-collection-vm][ERROR] workload not found: $workload_name" >&2
@@ -172,7 +174,8 @@ run_scenario() {
     echo "[bench-collection-vm][ERROR] scenario not found: $scenario_name" >&2
     exit 1
   fi
-  vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /vagrant/test/scenarios/vm/$scenario_name/attack.sh'" \
+  vagrant upload "$ROOT/scenarios/vm/$scenario_name/attack.sh" /tmp/sysarmor-scenario-attack.sh node-a >/dev/null
+  vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /tmp/sysarmor-scenario-attack.sh'" \
     > "$policy_out/scenario.out" 2>"$policy_out/scenario.err" || true
 }
 
@@ -289,6 +292,9 @@ for policy in $POLICIES_RAW; do
     cat "$policy_out/collection-apply.json" >&2 2>/dev/null || true
     exit 1
   fi
+
+  echo "[bench-collection-vm] waiting ${POLICY_SETTLE_SECONDS}s for sensor BPF reload"
+  sleep "$POLICY_SETTLE_SECONDS"
 
   mark "$rec_run_id" settle_start "$name"
   sleep "$SETTLE_SECONDS"

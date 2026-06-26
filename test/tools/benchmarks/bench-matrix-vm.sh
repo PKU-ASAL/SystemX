@@ -70,6 +70,8 @@ echo "[bench-matrix-vm] matrix_mode: $MATRIX_MODE"
 
 if [[ "$SYNC_VM_AGENT" == "1" ]]; then
   bash "$ROOT/tools/vm/sync-agent.sh"
+  cd "$ROOT/env/vm" && vagrant rsync node-a >/dev/null 2>&1 || true
+  cd "$HERE"
 else
   echo "[bench-matrix-vm] VM agent sync disabled"
 fi
