@@ -158,7 +158,9 @@ label_args \"\$LABELS\"
 sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" || true
 sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" || true
 EVENT_CURSOR=\"\$(max_sequence \"\$CURSOR_EVENTS_NDJSON\")\"
+EVENT_ALL_CURSOR=\"\$EVENT_CURSOR\"
 SIGNAL_CURSOR=\"\$(max_sequence \"\$CURSOR_SIGNALS_NDJSON\")\"
+SIGNAL_ALL_CURSOR=\"\$SIGNAL_CURSOR\"
 pid_list() {
   local names=\"\$1\"
   for name in \$names; do
@@ -225,10 +227,10 @@ while [ \"\$elapsed\" -le \"\$DUR\" ]; do
   agent_active=\"\$(systemctl is-active sysarmor-agent 2>/dev/null || true)\"
   if pidof tetragon >/dev/null 2>&1 || pidof sysarmor-sensor >/dev/null 2>&1; then sensor_running=1; else sensor_running=0; fi
   sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_ALL_CURSOR\" >\"\$SAMPLE_EVENTS_ALL_NDJSON\" 2>\"\$EVENT_ALL_WATCH_ERR\" || true
   sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SAMPLE_EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" || true
-  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$EVENT_CURSOR\" >\"\$SAMPLE_EVENTS_ALL_NDJSON\" 2>\"\$EVENT_ALL_WATCH_ERR\" || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_ALL_CURSOR\" >\"\$SAMPLE_SIGNALS_ALL_NDJSON\" 2>\"\$SIGNAL_ALL_WATCH_ERR\" || true
   sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" \"\${LABEL_ARGS[@]}\" >\"\$SAMPLE_SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" || true
-  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s --after-seq \"\$SIGNAL_CURSOR\" >\"\$SAMPLE_SIGNALS_ALL_NDJSON\" 2>\"\$SIGNAL_ALL_WATCH_ERR\" || true
   events=\"\$(num_json sensor.eventsSeen \"\$HEALTH_JSON\")\"
   events_scoped=\"\$(line_count \"\$SAMPLE_EVENTS_NDJSON\")\"
   events_all=\"\$(line_count \"\$SAMPLE_EVENTS_ALL_NDJSON\")\"
@@ -238,9 +240,13 @@ while [ \"\$elapsed\" -le \"\$DUR\" ]; do
   append_nonempty \"\$SAMPLE_EVENTS_ALL_NDJSON\" \"\$EVENTS_ALL_NDJSON\"
   append_nonempty \"\$SAMPLE_SIGNALS_NDJSON\" \"\$SIGNALS_NDJSON\"
   append_nonempty \"\$SAMPLE_SIGNALS_ALL_NDJSON\" \"\$SIGNALS_ALL_NDJSON\"
-  next_event_cursor=\"\$(max_sequence \"\$SAMPLE_EVENTS_ALL_NDJSON\")\"
-  next_signal_cursor=\"\$(max_sequence \"\$SAMPLE_SIGNALS_ALL_NDJSON\")\"
+  next_event_all_cursor=\"\$(max_sequence \"\$SAMPLE_EVENTS_ALL_NDJSON\")\"
+  next_event_cursor=\"\$(max_sequence \"\$SAMPLE_EVENTS_NDJSON\")\"
+  next_signal_all_cursor=\"\$(max_sequence \"\$SAMPLE_SIGNALS_ALL_NDJSON\")\"
+  next_signal_cursor=\"\$(max_sequence \"\$SAMPLE_SIGNALS_NDJSON\")\"
+  if [ \"\${next_event_all_cursor:-0}\" -gt \"\$EVENT_ALL_CURSOR\" ]; then EVENT_ALL_CURSOR=\"\$next_event_all_cursor\"; fi
   if [ \"\${next_event_cursor:-0}\" -gt \"\$EVENT_CURSOR\" ]; then EVENT_CURSOR=\"\$next_event_cursor\"; fi
+  if [ \"\${next_signal_all_cursor:-0}\" -gt \"\$SIGNAL_ALL_CURSOR\" ]; then SIGNAL_ALL_CURSOR=\"\$next_signal_all_cursor\"; fi
   if [ \"\${next_signal_cursor:-0}\" -gt \"\$SIGNAL_CURSOR\" ]; then SIGNAL_CURSOR=\"\$next_signal_cursor\"; fi
   dropped=\"\$(num_json sensor.eventsDropped \"\$HEALTH_JSON\")\"
   parse_errors=\"\$(num_json sensor.parseErrors \"\$HEALTH_JSON\")\"

@@ -254,6 +254,51 @@ def canonical_signal(row):
     }
 
 
+def referenced_event_ids(signals):
+    refs = set()
+    for signal in signals:
+        refs.update(canonical_signal(signal)["event_refs"])
+    refs.discard("")
+    return refs
+
+
+def supplemental_referenced_events(events, auxiliary_events, signals):
+    refs = referenced_event_ids(signals)
+    if not refs:
+        return []
+    seen = {canonical_event(row)["id"] for row in events}
+    seen.discard("")
+    supplemental = []
+    for row in auxiliary_events:
+        eid = canonical_event(row)["id"]
+        if eid and eid in refs and eid not in seen:
+            supplemental.append(row)
+            seen.add(eid)
+    return supplemental
+
+
+def inferred_missing_event_refs(event_labels, signal_labels, observed_signals, observed_event_ids):
+    event_label_ids = {str(label.get("id") or "") for label in event_labels}
+    event_label_ids.discard("")
+    missing_by_label = {}
+    for label in signal_labels:
+        link_ids = [str(x) for x in label.get("link_events") or [] if str(x) in event_label_ids]
+        if not link_ids:
+            continue
+        hits = [sig for sig in observed_signals if signal_label_matches(label, sig)]
+        missing_refs = {
+            ref
+            for sig in hits
+            for ref in sig["event_refs"]
+            if ref and ref not in observed_event_ids
+        }
+        if not missing_refs:
+            continue
+        for link_id in link_ids:
+            missing_by_label.setdefault(link_id, set()).update(missing_refs)
+    return missing_by_label
+
+
 def matches_pattern(value, pattern):
     if pattern in ("", None):
         return True
@@ -347,24 +392,29 @@ def case_kind(workload, scenario):
 
 def case_paths(results, bench_case_dir=None):
     if not bench_case_dir:
-        return None, None, None
+        return None, None, None, None
     events_path = bench_case_dir / "events.ndjson"
+    events_all_path = bench_case_dir / "events-all.ndjson"
     signals_path = bench_case_dir / "signals.ndjson"
     incidents_path = next(iter(sorted(bench_case_dir.glob("*incident*.json"))), None)
     return (
         events_path if events_path.exists() else None,
+        events_all_path if events_all_path.exists() else None,
         signals_path if signals_path.exists() else None,
         incidents_path if incidents_path and incidents_path.exists() else None,
     )
 
 
-def evaluate_case(labels_doc, events, signals, bench_summary):
+def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=None):
     event_labels = labels_doc.get("labels", {}).get("events") or []
     signal_labels = labels_doc.get("labels", {}).get("signals") or []
     policy = labels_doc.get("policy") or {}
     kind = labels_doc.get("kind") or "unknown"
-    observed_events = [canonical_event(row) for row in events]
+    supplemental_events = supplemental_referenced_events(events, auxiliary_events or [], signals)
+    observed_events = [canonical_event(row) for row in (events + supplemental_events)]
     observed_signals = [canonical_signal(row) for row in signals]
+    observed_event_ids = {ev["id"] for ev in observed_events if ev["id"]}
+    missing_event_refs = inferred_missing_event_refs(event_labels, signal_labels, observed_signals, observed_event_ids)
     forbidden_signal_names = set(labels_doc.get("policy", {}).get("forbidden_signal_names") or [
         "download_by_lolbin",
         "payload_dropped",
@@ -381,6 +431,7 @@ def evaluate_case(labels_doc, events, signals, bench_summary):
     for label in event_labels:
         hits = [ev for ev in observed_events if event_label_matches(label, ev)]
         label_id = str(label.get("id") or "")
+        missing_refs = sorted(missing_event_refs.get(label_id) or [])
         event_matches[label_id] = hits
         for ev in hits:
             if ev["id"]:
@@ -389,10 +440,10 @@ def evaluate_case(labels_doc, events, signals, bench_summary):
             "label_type": "event",
             "label_id": label_id,
             "required": bool(label.get("required", True)),
-            "matched": bool(hits),
-            "matched_count": len(hits),
-            "matched_ids": " ".join(ev["id"] for ev in hits if ev["id"]),
-            "match_quality": "",
+            "matched": bool(hits or missing_refs),
+            "matched_count": len(hits) + len(missing_refs),
+            "matched_ids": " ".join([*(ev["id"] for ev in hits if ev["id"]), *(f"missing:{ref}" for ref in missing_refs)]),
+            "match_quality": "event_missing_from_recorder" if missing_refs and not hits else ("partial_event_missing_from_recorder" if missing_refs else ""),
         })
 
     signal_label_rows = []
@@ -406,7 +457,10 @@ def evaluate_case(labels_doc, events, signals, bench_summary):
         link_hit = 0
         for link_id in link_ids:
             expected_event_ids = {ev["id"] for ev in event_matches.get(link_id, []) if ev["id"]}
-            if expected_event_ids and any(expected_event_ids.intersection(set(sig["event_refs"])) for sig in hits):
+            missing_expected_event_ids = set(missing_event_refs.get(link_id) or [])
+            if (expected_event_ids or missing_expected_event_ids) and any(
+                (expected_event_ids | missing_expected_event_ids).intersection(set(sig["event_refs"])) for sig in hits
+            ):
                 link_hit += 1
         if hits:
             linked_signal_count += 1 if link_total == 0 or link_hit > 0 else 0
@@ -486,6 +540,7 @@ def evaluate_case(labels_doc, events, signals, bench_summary):
             "terminal_false_positive_signals": terminal_fp,
             "observed_events": len(observed_events),
             "observed_signals": len(observed_signals),
+            "supplemental_referenced_events": len(supplemental_events),
             "matched_event_labels": event_hit,
             "required_event_labels": len(required_events),
             "matched_signal_labels": signal_hit,
@@ -558,14 +613,16 @@ def build_rows(args):
         if not labels_path.exists():
             continue
         labels_doc = load_yaml(labels_path)
-        events_path, signals_path, incidents_path = case_paths(results, case["bench_case_dir"])
+        events_path, events_all_path, signals_path, incidents_path = case_paths(results, case["bench_case_dir"])
         all_events = load_ndjson(events_path) if events_path else []
+        auxiliary_events = load_ndjson(events_all_path) if events_all_path else []
         all_signals = load_ndjson(signals_path) if signals_path else []
         bench_summary = load_json(case["bench_case_dir"] / "summary.json")
         window_start, window_end, window_name = effectiveness_window(bench_summary)
         events = filter_frames_by_window(all_events, window_start, window_end)
+        auxiliary_events = filter_frames_by_window(auxiliary_events, window_start, window_end)
         signals = filter_frames_by_window(all_signals, window_start, window_end)
-        evaluation = evaluate_case(labels_doc, events, signals, bench_summary)
+        evaluation = evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events)
         metrics = evaluation["metrics"]
         base = {
             "kind": case["kind"],
@@ -578,6 +635,7 @@ def build_rows(args):
             "observed_events_total": len(all_events),
             "observed_signals_total": len(all_signals),
             "events_path": str(events_path) if events_path else "",
+            "events_all_path": str(events_all_path) if events_all_path else "",
             "signals_path": str(signals_path) if signals_path else "",
             "incidents_path": str(incidents_path) if incidents_path else "",
         }
@@ -765,6 +823,7 @@ def main():
         "terminal_false_positive_signals",
         "observed_events",
         "observed_events_total",
+        "supplemental_referenced_events",
         "observed_signals",
         "observed_signals_total",
         "matched_event_labels",
@@ -777,6 +836,7 @@ def main():
         "effectiveness_window",
         "label_file",
         "events_path",
+        "events_all_path",
         "signals_path",
     ]
     truth_fields = [
