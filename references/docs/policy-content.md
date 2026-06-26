@@ -258,7 +258,6 @@ Recommended collection presets:
 
 - `minimal-high-signal`: very small always-on high-risk surface;
 - `edr-balanced`: default long-running EDR surface;
-- `incident-deep`: short investigation window;
-- `debug-wide`: capability and cost upper-bound testing only.
+- `incident-deep`: short investigation window.
 
 Balanced defaults should not treat all of `/tmp` or `/var/tmp` as malicious. Prefer concrete high-risk paths such as `/dev/shm/`, explicit attack/test prefixes, persistence paths, plugin directories, and active IOC/context packages.
