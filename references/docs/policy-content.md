@@ -39,7 +39,7 @@ Collection Policy is behavior-first:
         "socket": {
           "families": ["AF_INET", "AF_INET6"],
           "addr_refs": ["ioc:c2-ip-feed"],
-          "port_refs": ["ioc:c2-port-feed"]
+          "port_refs": ["ioc:c2-download-port-feed", "ioc:c2-control-port-feed"]
         }
       }
     },

@@ -54,8 +54,9 @@ type ContextSnapshot struct {
 }
 
 type IOCSnapshot struct {
-	C2Ports []string
-	C2Addrs []string
+	C2DownloadPorts []string
+	C2ControlPorts  []string
+	C2Addrs         []string
 }
 
 type ContentSnapshot struct {
@@ -380,13 +381,16 @@ func (e *Engine) detectDownloadByLOLBin(ev *eventv1.CanonicalEvent, st *lineageS
 	if bin != "curl" && bin != "wget" {
 		return nil
 	}
+	if !e.ioc.isDownloadSocket(ev.GetObject().GetSocketAddr()) {
+		return nil
+	}
 	st.downloadRefs = appendUnique(st.downloadRefs, ev.GetId())
 	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), socketEntity(ev))}
 }
 
 func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
 	rule, ok := e.rule("reverse_shell_pattern")
-	if !ok || !isShell(binaryBase(ev)) || !e.ioc.isC2Socket(ev.GetObject().GetSocketAddr()) {
+	if !ok || !isShell(binaryBase(ev)) || !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
 		return nil
 	}
 	refs := []string{ev.GetId()}
@@ -397,7 +401,7 @@ func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState
 }
 
 func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	if !e.ioc.isC2Socket(ev.GetObject().GetSocketAddr()) {
+	if !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
 		return nil
 	}
 	proc := ev.GetSubjectProc()
@@ -1006,11 +1010,11 @@ func builtinRules() []RuleSpec {
 	collect := &policymodel.ResponseIntentRef{Action: "collect_evidence", Confidence: 80, Reason: "terminal endpoint signal"}
 	return []RuleSpec{
 		{RuleID: "web_runtime_spawns_shell", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String()}},
-		{RuleID: "download_by_lolbin", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorNetworkConnect.String()}},
+		{RuleID: "download_by_lolbin", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-download-port-feed"}},
 		{RuleID: "payload_dropped", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
-		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-port-feed"}, ResponseIntent: collect},
-		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}},
-		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
+		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
+		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
+		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
 		{RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileRead.String()}, ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"}},
 	}
 }
@@ -1181,7 +1185,10 @@ func resolveContext(refs []policymodel.ContentRef, content ContentSnapshot) Cont
 }
 
 func resolveIOC(refs []policymodel.ContentRef, content ContentSnapshot) IOCSnapshot {
-	out := IOCSnapshot{C2Ports: []string{"443", "8443"}}
+	out := IOCSnapshot{
+		C2DownloadPorts: []string{"8080"},
+		C2ControlPorts:  []string{"443", "8443"},
+	}
 	for _, ref := range refs {
 		item, ok := content.IOCRefs[ref.Ref]
 		if !ok {
@@ -1189,7 +1196,11 @@ func resolveIOC(refs []policymodel.ContentRef, content ContentSnapshot) IOCSnaps
 		}
 		switch ref.Ref {
 		case "ioc:c2-port-feed":
-			out.C2Ports = append([]string(nil), item.Values...)
+			out.C2ControlPorts = append([]string(nil), item.Values...)
+		case "ioc:c2-download-port-feed":
+			out.C2DownloadPorts = append([]string(nil), item.Values...)
+		case "ioc:c2-control-port-feed":
+			out.C2ControlPorts = append([]string(nil), item.Values...)
 		case "ioc:c2-ip-feed":
 			out.C2Addrs = append([]string(nil), item.Values...)
 		}
@@ -1197,13 +1208,21 @@ func resolveIOC(refs []policymodel.ContentRef, content ContentSnapshot) IOCSnaps
 	return out
 }
 
-func (i IOCSnapshot) isC2Socket(socket string) bool {
+func (i IOCSnapshot) isDownloadSocket(socket string) bool {
+	return i.socketMatches(socket, i.C2DownloadPorts)
+}
+
+func (i IOCSnapshot) isControlSocket(socket string) bool {
+	return i.socketMatches(socket, i.C2ControlPorts)
+}
+
+func (i IOCSnapshot) socketMatches(socket string, ports []string) bool {
 	addr, port, ok := strings.Cut(socket, ":")
 	if !ok {
 		return false
 	}
 	portMatched := false
-	for _, candidate := range i.C2Ports {
+	for _, candidate := range ports {
 		if port == candidate {
 			portMatched = true
 			break

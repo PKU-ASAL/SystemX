@@ -16,7 +16,7 @@ func TestStorePersistsLoadsAndSnapshotsValueSets(t *testing.T) {
 	raw := `{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"v1"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"v1"},
 		"spec":{"value_type":"port","values":["9443","443","9443"]}
 	}`
 	if _, err := store.Apply(raw, true, false); err != nil {
@@ -27,7 +27,7 @@ func TestStorePersistsLoadsAndSnapshotsValueSets(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := loaded.Snapshot()
-	set := snapshot.IOCPacks["ioc:c2-port-feed"]
+	set := snapshot.IOCPacks["ioc:c2-control-port-feed"]
 	if set.Version != "v1" || len(set.Values) != 2 || set.Values[0] != "443" || set.Values[1] != "9443" {
 		t.Fatalf("set = %+v", set)
 	}
@@ -71,7 +71,7 @@ func TestStoreAppliesPatch(t *testing.T) {
 	base := `{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"v1"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"v1"},
 		"spec":{"value_type":"port","values":["443"]}
 	}`
 	if _, err := store.Apply(base, true, false); err != nil {
@@ -80,13 +80,13 @@ func TestStoreAppliesPatch(t *testing.T) {
 	patch := `{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"v2"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"v2"},
 		"spec":{"base_version":"v1","value_type":"port","merge_strategy":"patch","ops":[{"op":"add","value":"9443"},{"op":"remove","value":"443"}]}
 	}`
 	if _, err := store.Apply(patch, true, false); err != nil {
 		t.Fatal(err)
 	}
-	set := store.Snapshot().IOCPacks["ioc:c2-port-feed"]
+	set := store.Snapshot().IOCPacks["ioc:c2-control-port-feed"]
 	if set.Version != "v2" || len(set.Values) != 1 || set.Values[0] != "9443" {
 		t.Fatalf("patched set = %+v", set)
 	}
@@ -98,7 +98,7 @@ func TestStoreParsesRulePack(t *testing.T) {
 		"api_version":"sysarmor.content/v1",
 		"kind":"rulepack",
 		"metadata":{"id":"rulepack:test","version":"v1"},
-		"spec":{"rulesets":[{"id":"ruleset:test","version":"v1","rules":[{"rule_id":"reverse_shell_pattern","version":7,"severity":"critical","runtime":{"type":"builtin","entrypoint":"builtin.reverse_shell_pattern"},"requires":{"events":[{"behavior":"network.connect","fields":["socket.port"]}],"ioc":{"optional":["ioc:c2-port-feed"]}},"output":{"response_intent":{"action":"collect_evidence","confidence":91}}}]}]}
+		"spec":{"rulesets":[{"id":"ruleset:test","version":"v1","rules":[{"rule_id":"reverse_shell_pattern","version":7,"severity":"critical","runtime":{"type":"builtin","entrypoint":"builtin.reverse_shell_pattern"},"requires":{"events":[{"behavior":"network.connect","fields":["socket.port"]}],"ioc":{"optional":["ioc:c2-control-port-feed"]}},"output":{"response_intent":{"action":"collect_evidence","confidence":91}}}]}]}
 	}`
 	if _, err := store.Apply(raw, true, false); err != nil {
 		t.Fatal(err)

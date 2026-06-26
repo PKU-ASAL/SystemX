@@ -47,8 +47,9 @@ func TestEdrBalancedPolicyResolvesContentRefs(t *testing.T) {
 			"ctx:persistence-path-prefixes": {Ref: "ctx:persistence-path-prefixes", Version: "2026.06.18.1", ValueType: "path_prefix", Values: []string{"/etc/cron", "/etc/systemd/system"}},
 		},
 		IOCPacks: map[string]CollectionValueSet{
-			"ioc:c2-ip-feed":   {Ref: "ioc:c2-ip-feed", Version: "2026.06.18.1", ValueType: "ip", Values: []string{"10.66.0.99", "203.0.113.10"}},
-			"ioc:c2-port-feed": {Ref: "ioc:c2-port-feed", Version: "2026.06.18.1", ValueType: "port", Values: []string{"443", "8080", "8443"}},
+			"ioc:c2-ip-feed":            {Ref: "ioc:c2-ip-feed", Version: "2026.06.18.1", ValueType: "ip", Values: []string{"10.66.0.99", "203.0.113.10"}},
+			"ioc:c2-download-port-feed": {Ref: "ioc:c2-download-port-feed", Version: "2026.06.18.1", ValueType: "port", Values: []string{"8080"}},
+			"ioc:c2-control-port-feed":  {Ref: "ioc:c2-control-port-feed", Version: "2026.06.18.1", ValueType: "port", Values: []string{"443", "8443"}},
 		},
 	})
 	if err != nil {
@@ -61,7 +62,7 @@ func TestEdrBalancedPolicyResolvesContentRefs(t *testing.T) {
 	if len(intent.Behaviors) != 5 {
 		t.Fatalf("behaviors = %v", intent.Behaviors)
 	}
-	if len(report.ResolvedRefs) != 7 {
+	if len(report.ResolvedRefs) != 8 {
 		t.Fatalf("resolved refs = %+v", report.ResolvedRefs)
 	}
 }
@@ -82,7 +83,7 @@ func TestParseCollectionPolicyJSONBehaviorsAndFilters(t *testing.T) {
 				"id":"network.connect",
 				"selectors":{
 					"process":{"binary_prefixes":["/var/lib/app/plugins"]},
-					"socket":{"families":["AF_INET"],"addrs":["10.66.0.99"],"addr_refs":["ioc:c2-ip-feed"],"ports":["443","8080"],"port_refs":["ioc:c2-port-feed"]}
+					"socket":{"families":["AF_INET"],"addrs":["10.66.0.99"],"addr_refs":["ioc:c2-ip-feed"],"ports":["443","8080"],"port_refs":["ioc:c2-control-port-feed"]}
 				}
 			},
 			{
@@ -134,7 +135,7 @@ func TestParseCollectionPolicyJSONBehaviorsAndFilters(t *testing.T) {
 func TestExpandCollectionPolicyRefs(t *testing.T) {
 	policy, err := ParseCollectionPolicyJSON([]byte(`{
 		"behaviors":[
-			{"id":"network.connect","selectors":{"socket":{"addr_refs":["ioc:c2-ip-feed"],"port_refs":["ioc:c2-port-feed"]}}},
+			{"id":"network.connect","selectors":{"socket":{"addr_refs":["ioc:c2-ip-feed"],"port_refs":["ioc:c2-control-port-feed"]}}},
 			{"id":"file.write","selectors":{"file":{"prefix_refs":["ctx:payload-path-prefixes"]}}}
 		]
 	}`), true)
@@ -146,8 +147,8 @@ func TestExpandCollectionPolicyRefs(t *testing.T) {
 			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "2026.06.18.1", Digest: "ctx-digest", ValueType: "path_prefix", Values: []string{"/dev/shm/", "/var/tmp/.sysarmor-attack/"}},
 		},
 		IOCPacks: map[string]CollectionValueSet{
-			"ioc:c2-ip-feed":   {Ref: "ioc:c2-ip-feed", Version: "2026.06.18.1", Digest: "ip-digest", ValueType: "ip", Values: []string{"203.0.113.10"}},
-			"ioc:c2-port-feed": {Ref: "ioc:c2-port-feed", Version: "2026.06.18.1", Digest: "port-digest", ValueType: "port", Values: []string{"443", "8443"}},
+			"ioc:c2-ip-feed":           {Ref: "ioc:c2-ip-feed", Version: "2026.06.18.1", Digest: "ip-digest", ValueType: "ip", Values: []string{"203.0.113.10"}},
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "2026.06.18.1", Digest: "port-digest", ValueType: "port", Values: []string{"443", "8443"}},
 		},
 	})
 	if err != nil {

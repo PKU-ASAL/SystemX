@@ -296,7 +296,7 @@ func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
 		contentJSON: `{
 			"api_version":"sysarmor.content/v1",
 			"kind":"iocpack",
-			"metadata":{"id":"ioc:c2-port-feed","version":"control-9443"},
+			"metadata":{"id":"ioc:c2-control-port-feed","version":"control-9443"},
 			"spec":{"value_type":"port","values":["9443"]}
 		}`,
 	}
@@ -308,10 +308,10 @@ func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
 	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunControlChannel() error = %v", err)
 	}
-	if ack.GetStatus() != "applied" || ack.GetPolicyId() != "ioc:c2-port-feed" {
+	if ack.GetStatus() != "applied" || ack.GetPolicyId() != "ioc:c2-control-port-feed" {
 		t.Fatalf("content ack = %+v", ack)
 	}
-	if record, ok := runner.contentStore().Get("ioc:c2-port-feed"); !ok || record.Version != "control-9443" {
+	if record, ok := runner.contentStore().Get("ioc:c2-control-port-feed"); !ok || record.Version != "control-9443" {
 		t.Fatalf("content record = %+v ok=%t", record, ok)
 	}
 

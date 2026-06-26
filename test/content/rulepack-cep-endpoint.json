@@ -27,7 +27,7 @@
                 }
               ],
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-port-feed"]
+                "optional": ["ioc:c2-ip-feed", "ioc:c2-download-port-feed"]
               }
             }
           },
@@ -75,7 +75,7 @@
                 }
               ],
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-port-feed"]
+                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
               }
             },
             "output": {
@@ -109,7 +109,7 @@
                 "optional": ["ctx:payload-path-prefixes"]
               },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-port-feed"]
+                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
               }
             }
           },
@@ -140,7 +140,7 @@
                 "optional": ["ctx:payload-path-prefixes"]
               },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-port-feed"]
+                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
               }
             }
           }

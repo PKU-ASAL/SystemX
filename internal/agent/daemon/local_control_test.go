@@ -307,7 +307,7 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 		`{
 			"api_version":"sysarmor.content/v1",
 			"kind":"iocpack",
-			"metadata":{"id":"ioc:c2-port-feed","version":"2026.06.18.1"},
+			"metadata":{"id":"ioc:c2-control-port-feed","version":"2026.06.18.1"},
 			"spec":{"value_type":"port","values":["443"]}
 		}`,
 	} {
@@ -326,7 +326,7 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 			"policy_id":"collection-a",
 			"version":3,
 			"behaviors":[
-				{"id":"network.connect","selectors":{"socket":{"families":["AF_INET"],"addr_refs":["ioc:c2-ip-feed"],"port_refs":["ioc:c2-port-feed"]}}},
+				{"id":"network.connect","selectors":{"socket":{"families":["AF_INET"],"addr_refs":["ioc:c2-ip-feed"],"port_refs":["ioc:c2-control-port-feed"]}}},
 				{"id":"file.write","selectors":{"file":{"prefix_refs":["ctx:payload-path-prefixes"]}}}
 			],
 			"observe_only":true
@@ -510,7 +510,7 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	contentJSON := `{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"local-9443"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"local-9443"},
 		"spec":{"value_type":"port","values":["9443"]}
 	}`
 	if _, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
@@ -533,7 +533,7 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	}
 	var gotVersion string
 	for _, ref := range frame.GetSignal().GetIocRefs() {
-		if ref.GetRef() == "ioc:c2-port-feed" {
+		if ref.GetRef() == "ioc:c2-control-port-feed" {
 			gotVersion = ref.GetVersion()
 		}
 	}
@@ -573,7 +573,7 @@ func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 	good := `{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"good-9443"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"good-9443"},
 		"spec":{"value_type":"port","values":["9443"]}
 	}`
 	goodAck, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{

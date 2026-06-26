@@ -179,7 +179,8 @@ func DefaultDetectionPolicy() *DetectionPolicy {
 			},
 		},
 		IOCRefs: []ContentRef{
-			{Ref: "ioc:c2-port-feed", Version: "builtin"},
+			{Ref: "ioc:c2-download-port-feed", Version: "builtin"},
+			{Ref: "ioc:c2-control-port-feed", Version: "builtin"},
 		},
 	}
 }

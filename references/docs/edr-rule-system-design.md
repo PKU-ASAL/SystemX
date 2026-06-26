@@ -46,7 +46,7 @@ web/runtime 执行 shell
 ### 2.2 规则表达差距
 
 1. **IoC 依赖较重**  
-   `reverse_shell_pattern`、`suspicious_exec_connect`、`payload_lifecycle` 主要依赖 `ioc:c2-ip-feed` / `ioc:c2-port-feed`。未知 C2 或内网 C2 覆盖不足。
+   `reverse_shell_pattern`、`suspicious_exec_connect`、`payload_lifecycle` 主要依赖 `ioc:c2-ip-feed` / `ioc:c2-control-port-feed`。未知 C2 或内网 C2 覆盖不足。
 
 2. **解释器覆盖不足**  
    当前 shell 识别以 sh/bash 为主，python/perl/ruby/node/php/nc/socat/openssl 等无文件执行和反弹通道覆盖不足。

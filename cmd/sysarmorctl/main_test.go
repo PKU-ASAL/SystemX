@@ -637,7 +637,7 @@ func TestContentDiffBuildsPatch(t *testing.T) {
 	if err := os.WriteFile(oldPath, []byte(`{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"v1"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"v1"},
 		"spec":{"value_type":"port","values":["443","8443"]}
 	}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -645,7 +645,7 @@ func TestContentDiffBuildsPatch(t *testing.T) {
 	if err := os.WriteFile(newPath, []byte(`{
 		"api_version":"sysarmor.content/v1",
 		"kind":"iocpack",
-		"metadata":{"id":"ioc:c2-port-feed","version":"v2"},
+		"metadata":{"id":"ioc:c2-control-port-feed","version":"v2"},
 		"spec":{"value_type":"port","values":["9443","8443"]}
 	}`), 0o644); err != nil {
 		t.Fatal(err)

@@ -58,8 +58,8 @@ def benign_ci_noise():
         base = 400 + i * 10
         rows.extend([
             ev("process.exec", base, 0, "/bin/bash", argv=["/bin/bash", "/usr/local/bin/build.sh"], idx=base),
-            ev("network.connect", base + 1, base, "/usr/bin/curl", {"dst": "10.66.0.99:8080"}, ["/usr/bin/curl"], idx=base + 1),
-            ev("file.write", base + 1, base, "/usr/bin/curl", {"path": f"/tmp/ci-artifact-{i}"}, ["/usr/bin/curl"], idx=base + 2),
+            ev("process.exec", base + 1, base, "/usr/bin/sha256sum", argv=["/usr/bin/sha256sum", f"/tmp/ci-artifact-{i}"], idx=base + 1),
+            ev("file.write", base + 1, base, "/usr/bin/sha256sum", {"path": f"/tmp/ci-artifact-{i}"}, ["/usr/bin/sha256sum"], idx=base + 2),
         ])
     return rows
 

@@ -29,7 +29,11 @@
       "version": "builtin"
     },
     {
-      "ref": "ioc:c2-port-feed",
+      "ref": "ioc:c2-download-port-feed",
+      "version": "builtin"
+    },
+    {
+      "ref": "ioc:c2-control-port-feed",
       "version": "builtin"
     }
   ]

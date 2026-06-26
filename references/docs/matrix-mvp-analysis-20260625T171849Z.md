@@ -121,25 +121,25 @@ download -> payload drop -> exec/connect -> C2
 
 因此，只用 `apt-fileless-c2` 和 `apt-staged-drop` 两个场景不能证明规则能覆盖大部分攻击路径，只能证明当前 MVP 主干在特定条件下可工作。
 
-### 5.2 IoC 模型把 download port 和 control port 混在一起
+### 5.2 IoC 模型已拆分 download port 和 control port
 
-当前 `ioc:c2-port-feed` 包含：
+旧模型把 download server `8080` 和 control channel `443` 都放在同一个 C2 port feed 中：
 
 ```text
 443, 8443, 8080
 ```
 
-这让 download server `8080` 和 control channel `443` 都被视作 C2 socket。结果是：
+这会导致：
 
 - `download_by_lolbin` 用 8080 是合理的；
 - `reverse_shell_pattern` / `suspicious_exec_connect` 用 8080 就容易误判；
 - deep 在 `apt-staged-drop` 中把 download socket 上的事件解释成 `suspicious_exec_connect`，导致 ground truth 不匹配。
 
-建议拆分：
+现已拆分为：
 
 - `ioc:c2-download-port-feed`: 8080 等 payload hosting port；
 - `ioc:c2-control-port-feed`: 443/8443 等 command/control port；
-- download 规则只使用 download/control 的宽口径；
+- `download_by_lolbin` 只匹配 download port；
 - reverse shell、payload C2、lifecycle terminal 只使用 control port。
 
 ### 5.3 Event stream 和 Signal stream 的评估窗口问题已定位并修复
@@ -179,7 +179,7 @@ Deep 应定位为短时调查窗口，而不是默认检测效果基线。
 /usr/bin/curl -> 10.66.0.99:8080/deps.tar
 ```
 
-这导致三档策略都产生 `download_by_lolbin` false positive。该污染会显著拉低 benign effectiveness，使我们无法客观判断规则误报率。
+这导致三档策略都产生 `download_by_lolbin` false positive。该污染会显著拉低 benign effectiveness，使我们无法客观判断规则误报率。当前 replay fixture 已改为本地构建事件，不再合成到 C2 download port 的 benign curl 流量。
 
 ## 6. Why CPU Was High
 
@@ -249,8 +249,8 @@ Deep steady/workload CPU 稳定在约 35% 到 42%。这是符合其 broad collec
 
 ### P2: 修复 C2 端口语义
 
-1. 拆分 download port 和 control port refs；
-2. `download_by_lolbin` 可匹配 8080；
+1. 已拆分 download port 和 control port refs；
+2. `download_by_lolbin` 只匹配 download port；
 3. `reverse_shell_pattern`、`suspicious_exec_connect`、`payload_lifecycle` 只匹配 control port；
 4. 更新 labels 和 effectiveness report 的 entities 期望。
 

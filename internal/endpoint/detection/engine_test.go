@@ -145,7 +145,7 @@ func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
 			continue
 		}
 		for _, ref := range sig.GetIocRefs() {
-			gotIOC = gotIOC || ref.GetRef() == "ioc:c2-port-feed"
+			gotIOC = gotIOC || ref.GetRef() == "ioc:c2-control-port-feed"
 		}
 	}
 	if !gotContext || !gotIOC {
@@ -186,8 +186,8 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 	policy := policymodel.DefaultDetectionPolicy()
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
 		IOCRefs: map[string]ContentRef{
-			"ioc:c2-port-feed": {
-				Ref:     "ioc:c2-port-feed",
+			"ioc:c2-control-port-feed": {
+				Ref:     "ioc:c2-control-port-feed",
 				Version: "local-test",
 				Digest:  "digest-a",
 				Values:  []string{"9443"},
@@ -203,7 +203,7 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 			continue
 		}
 		for _, ref := range sig.GetIocRefs() {
-			if ref.GetRef() == "ioc:c2-port-feed" {
+			if ref.GetRef() == "ioc:c2-control-port-feed" {
 				gotVersion = ref.GetVersion()
 			}
 		}
@@ -221,8 +221,8 @@ func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
 				Ref:    "ioc:c2-ip-feed",
 				Values: []string{"10.66.0.99"},
 			},
-			"ioc:c2-port-feed": {
-				Ref:    "ioc:c2-port-feed",
+			"ioc:c2-control-port-feed": {
+				Ref:    "ioc:c2-control-port-feed",
 				Values: []string{"443", "8443"},
 			},
 		},
@@ -235,6 +235,16 @@ func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
 	}
 }
 
+func TestDownloadByLOLBinRequiresDownloadSocket(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	if got := countSignals(engine.Process(connectEventWithParent("download", "lin-a", "curl-proc", "parent", "/usr/bin/curl", "10.66.0.99:8080")), "download_by_lolbin"); got != 1 {
+		t.Fatalf("download_by_lolbin on download port = %d, want 1", got)
+	}
+	if got := countSignals(engine.Process(connectEventWithParent("benign", "lin-b", "curl-proc", "parent", "/usr/bin/curl", "198.51.100.25:80")), "download_by_lolbin"); got != 0 {
+		t.Fatalf("download_by_lolbin on benign port = %d, want 0", got)
+	}
+}
+
 func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 	enabled := true
 	policy := &policymodel.DetectionPolicy{
@@ -242,7 +252,7 @@ func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 		Version:  1,
 		Mode:     "observe",
 		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:test", Version: "v1", Enabled: &enabled}},
-		IOCRefs:  []policymodel.ContentRef{{Ref: "ioc:c2-port-feed", Version: "builtin"}},
+		IOCRefs:  []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "builtin"}},
 	}
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
 		Rules: []RuleSpec{{
@@ -252,7 +262,7 @@ func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 			Severity:          "critical",
 			Runtime:           "builtin.reverse_shell_pattern",
 			RequiredBehaviors: []string{"network.connect"},
-			IOCRefs:           []string{"ioc:c2-port-feed"},
+			IOCRefs:           []string{"ioc:c2-control-port-feed"},
 		}},
 	})
 	for _, sig := range engine.Process(connectEventWithParent("e1", "lin-a", "p1", "parent", "/bin/bash", "10.66.0.99:443")) {

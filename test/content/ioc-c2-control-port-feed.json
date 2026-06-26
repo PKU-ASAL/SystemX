@@ -1,0 +1,15 @@
+{
+  "api_version": "sysarmor.content/v1",
+  "kind": "iocpack",
+  "metadata": {
+    "id": "ioc:c2-control-port-feed",
+    "version": "2026.06.18.1"
+  },
+  "spec": {
+    "value_type": "port",
+    "values": [
+      "443",
+      "8443"
+    ]
+  }
+}
