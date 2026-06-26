@@ -221,6 +221,9 @@ func CompileReport(intent contract.CollectionIntent) contract.CollectionCompileR
 		report.PushedDownSelectors = append(report.PushedDownSelectors, pushedDownSelectorsForFilter(filter)...)
 		report.AgentSideSelectors = append(report.AgentSideSelectors, scopeSelectorReports(intent, behavior)...)
 		report.UnsupportedSelectors = append(report.UnsupportedSelectors, unsupportedSelectorsForFilter(filter)...)
+		if !hasPushdownSelectors(behavior, filter) {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("behavior %s has no pushdown selectors; kernel BPF filter will pass all events of this type, resulting in high event volume", behavior))
+		}
 	}
 	if len(report.AgentSideSelectors) > 0 {
 		report.Warnings = append(report.Warnings, "some selectors are enforced agent-side after Tetragon emission; behavior is correct but event volume can be higher")
@@ -244,6 +247,19 @@ func hookForBehavior(behavior string) string {
 		return "security_file_permission"
 	default:
 		return ""
+	}
+}
+
+func hasPushdownSelectors(behavior string, filter contract.CollectionBehaviorFilter) bool {
+	switch eventmodel.NormalizeBehavior(behavior) {
+	case eventmodel.BehaviorProcessExec, eventmodel.BehaviorProcessFork:
+		return len(filter.BinaryPrefixes) > 0
+	case eventmodel.BehaviorNetworkConnect:
+		return len(filter.BinaryPrefixes) > 0 || len(filter.SocketAddrs) > 0 || len(filter.SocketPorts) > 0
+	case eventmodel.BehaviorFileOpen, eventmodel.BehaviorFileRead, eventmodel.BehaviorFileWrite, eventmodel.BehaviorFileChmod:
+		return len(filter.BinaryPrefixes) > 0 || len(filter.FilePrefixes) > 0
+	default:
+		return true
 	}
 }
 

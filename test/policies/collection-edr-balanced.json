@@ -1,6 +1,6 @@
 {
   "policy_id": "edr-balanced-linux",
-  "version": 1,
+  "version": 2,
   "behaviors": [
     {
       "id": "process.exec",
@@ -15,13 +15,7 @@
             "/bin/sh",
             "/bin/bash",
             "/usr/bin/sh",
-            "/usr/bin/bash",
-            "/usr/bin/curl",
-            "/usr/bin/wget",
-            "/usr/bin/python",
-            "/usr/bin/perl",
-            "/usr/bin/nc",
-            "/usr/bin/socat"
+            "/usr/bin/bash"
           ]
         }
       }
@@ -36,16 +30,14 @@
             "/dev/shm/",
             "/var/tmp/",
             "/var/lib/app/plugins/",
+            "/usr/bin/curl",
+            "/usr/bin/wget",
+            "/usr/bin/nc",
+            "/usr/bin/socat",
             "/bin/sh",
             "/bin/bash",
             "/usr/bin/sh",
-            "/usr/bin/bash",
-            "/usr/bin/curl",
-            "/usr/bin/wget",
-            "/usr/bin/python",
-            "/usr/bin/perl",
-            "/usr/bin/nc",
-            "/usr/bin/socat"
+            "/usr/bin/bash"
           ]
         },
         "socket": {
@@ -56,27 +48,18 @@
       }
     },
     {
+      "id": "file.read",
+      "enabled": true,
+      "selectors": {
+        "file": {
+          "prefix_refs": ["ctx:credential-path-prefixes"]
+        }
+      }
+    },
+    {
       "id": "file.write",
       "enabled": true,
       "selectors": {
-        "process": {
-          "binary_prefixes": [
-            "/tmp/",
-            "/dev/shm/",
-            "/var/tmp/",
-            "/var/lib/app/plugins/",
-            "/bin/sh",
-            "/bin/bash",
-            "/usr/bin/sh",
-            "/usr/bin/bash",
-            "/usr/bin/curl",
-            "/usr/bin/wget",
-            "/usr/bin/python",
-            "/usr/bin/perl",
-            "/usr/bin/chmod",
-            "/usr/bin/tee"
-          ]
-        },
         "file": {
           "prefix_refs": ["ctx:payload-path-prefixes", "ctx:persistence-path-prefixes"]
         }
@@ -86,24 +69,6 @@
       "id": "file.chmod",
       "enabled": true,
       "selectors": {
-        "process": {
-          "binary_prefixes": [
-            "/tmp/",
-            "/dev/shm/",
-            "/var/tmp/",
-            "/var/lib/app/plugins/",
-            "/bin/sh",
-            "/bin/bash",
-            "/usr/bin/sh",
-            "/usr/bin/bash",
-            "/usr/bin/curl",
-            "/usr/bin/wget",
-            "/usr/bin/python",
-            "/usr/bin/perl",
-            "/usr/bin/chmod",
-            "/usr/bin/tee"
-          ]
-        },
         "file": {
           "prefix_refs": ["ctx:payload-path-prefixes", "ctx:persistence-path-prefixes"]
         }

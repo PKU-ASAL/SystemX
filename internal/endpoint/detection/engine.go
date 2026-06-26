@@ -390,14 +390,10 @@ func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState
 		return nil
 	}
 	refs := []string{ev.GetId()}
-	terminal := false
-	if len(st.webShellExecRefs) > 0 || (len(st.downloadRefs) > 0 && !st.stagedPayloadSeen) {
-		refs = appendRefs(refs, st.webShellExecRefs...)
-		refs = appendRefs(refs, st.downloadRefs...)
-		terminal = true
-	}
+	refs = appendRefs(refs, st.webShellExecRefs...)
+	refs = appendRefs(refs, st.downloadRefs...)
 	st.reverseShellSeen = true
-	return []*signalv1.Signal{e.signal(ev, rule, refs, terminal, processEntity(ev), socketEntity(ev))}
+	return []*signalv1.Signal{e.signal(ev, rule, refs, true, processEntity(ev), socketEntity(ev))}
 }
 
 func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {

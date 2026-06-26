@@ -58,10 +58,10 @@ func TestEdrBalancedPolicyResolvesContentRefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectionPolicyIntent() error = %v", err)
 	}
-	if len(intent.Behaviors) != 4 {
+	if len(intent.Behaviors) != 5 {
 		t.Fatalf("behaviors = %v", intent.Behaviors)
 	}
-	if len(report.ResolvedRefs) != 6 {
+	if len(report.ResolvedRefs) != 7 {
 		t.Fatalf("resolved refs = %+v", report.ResolvedRefs)
 	}
 }

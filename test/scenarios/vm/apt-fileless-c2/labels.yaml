@@ -57,7 +57,6 @@ labels:
     - id: reverse_shell_pattern
       required: true
       name: reverse_shell_pattern
-      terminal: true
       entities:
         - "socket:10.66.0.99:443"
       link_events:

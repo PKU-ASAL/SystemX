@@ -1,13 +1,13 @@
 {
   "policy_id": "incident-deep-linux",
-  "version": 1,
+  "version": 2,
   "behaviors": [
     {
       "id": "process.exec",
       "enabled": true,
       "selectors": {
         "process": {
-          "binary_prefixes": ["/bin/", "/usr/bin/", "/usr/local/bin/", "/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
+          "binary_prefixes": ["/bin/", "/usr/bin/", "/usr/local/bin/", "/sbin/", "/usr/sbin/", "/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
         }
       }
     },

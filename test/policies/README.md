@@ -24,7 +24,6 @@
 | collection-minimal-high-signal.json | 最小常开面,只保留高置信 exec、IOC 外联、payload/persistence 写入 |
 | collection-edr-balanced.json | 长期运行的 EDR baseline,只常开高价值行为:可疑 exec、IOC 外联、payload/persistence 写入 |
 | collection-incident-deep.json | 调查窗口/高风险触发策略,短时间打开 fork/exit/credential read 等高可见性采集面 |
-| collection-debug-wide.json | 临时调试/能力验证档,扩大 process/network/file 覆盖面,用于定位 selector 和成本边界 |
 | detection.yaml | 检测规则 + 收敛参数 (rarity_structural, top_k=8, cms_width=4096) |
 | detection-additive.yaml | 对照档:把收敛切为 additive_threshold (反模式,仅 benign-ci-noise 对照实验用) |
 | resource.yaml | 端侧资源上限 (RSS 512MB, lineage TTL 1min, ringbuffer 64MiB...) |
@@ -37,7 +36,7 @@
 - collection.yaml → agent 编译出 TracingPolicy 下发给 tetragon
 - collection-edr-balanced.json → agent local manager 路径可配合 `test/content/context-*.json` 和 `test/content/ioc-*.json` 展开 refs,作为长期运行默认面
 - collection-incident-deep.json → 由本地 manager / sysarmorctl 在告警、调查或高风险窗口中动态 apply,窗口结束后回到 balanced
-- collection-minimal-high-signal.json / collection-debug-wide.json → 用于 `bench-collection-vm` 默认矩阵,分别代表低成本常开下界和高可见性调试上界
+- collection-minimal-high-signal.json → 用于 `bench-collection-vm` 默认矩阵,代表低成本常开下界
 - detection.yaml → agent 检测引擎加载收敛参数和规则引用
 - detection-additive.yaml → 对照实验:替换 detection.yaml 的 converge.mode
 - resource.yaml → agent 运行时守资源上限,超则降级
