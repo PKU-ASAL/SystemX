@@ -37,7 +37,7 @@ status-vm:
 
 # ── 场景采集 + 断言 ──────────────────────────────────
 
-.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all sync-vm-agent recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
+.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all sync-vm-agent recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-rule-engine bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
 
 capture:                      ## 跑场景 + tetragon 抓事件
 ifeq ($(TOPO),vm)
@@ -75,6 +75,9 @@ perf-resource-vm:             ## 采集 VM EDR idle 资源占用
 	bash tools/benchmarks/perf-resource.sh vm $(DUR) edr-idle
 
 perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 container/VM EDR idle 资源占用
+
+bench-rule-engine:            ## 本地 Go microbench: endpoint detection rule engine + matcher
+	bash tools/benchmarks/bench-rule-engine.sh
 
 sync-vm-agent:                ## VM: 上传当前 bin/sysarmor-agent + bin/sysarmorctl 并验证 local control socket
 	bash tools/vm/sync-agent.sh

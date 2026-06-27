@@ -13,3 +13,13 @@
 Tools should stay reusable and product-agnostic where possible. Suite-specific
 pass/fail semantics belong in `test/suites/<suite>/`; process lifecycle glue
 belongs in `test/harness/`.
+
+Rule-engine microbenchmarks are local Go benchmarks and do not require a test
+topology:
+
+```bash
+make -C test bench-rule-engine
+BENCHTIME=1s COUNT=3 make -C test bench-rule-engine
+```
+
+Outputs are written to `test/.results/rule-engine/<run_id>/`.

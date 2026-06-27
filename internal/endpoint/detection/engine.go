@@ -31,6 +31,7 @@ type Engine struct {
 	ctx         ContextSnapshot
 	ioc         IOCSnapshot
 	refs        ContentSnapshot
+	compiled    compiledRuntime
 }
 
 type EngineLimits struct {
@@ -39,12 +40,20 @@ type EngineLimits struct {
 }
 
 type Metrics struct {
-	ActiveCEPGroups  uint64
-	EvictedCEPGroups uint64
-	ExpiredCEPGroups uint64
-	DroppedEventRefs uint64
-	CEPEvalErrors    uint64
-	EmittedSignals   uint64
+	EventsProcessed     uint64
+	EventsByBehavior    map[string]uint64
+	CEPRulesScanned     uint64
+	CEPRulesEvaluated   uint64
+	ConditionsEvaluated uint64
+	ConditionsMatched   uint64
+	FieldReads          uint64
+	ProcessNanosTotal   uint64
+	ActiveCEPGroups     uint64
+	EvictedCEPGroups    uint64
+	ExpiredCEPGroups    uint64
+	DroppedEventRefs    uint64
+	CEPEvalErrors       uint64
+	EmittedSignals      uint64
 }
 
 type ContextSnapshot struct {
@@ -207,7 +216,8 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		refs:        content,
 	}
 	report := ApplyReport{Status: "applied", Message: "detection policy applied"}
-	for _, rule := range resolveRules(normalized, content) {
+	rules := resolveRules(normalized, content)
+	for _, rule := range rules {
 		engine.rules[rule.spec.RuleID] = rule
 		report.RuleIDs = append(report.RuleIDs, rule.spec.RuleID)
 	}
@@ -218,6 +228,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		report.Warnings = append(report.Warnings, errs...)
 		return engine, report
 	}
+	engine.compiled = compileRuntime(rules, content)
 	report.Coverage = CheckCoverageWithContent(normalized, collection, content)
 	report.Warnings = append(report.Warnings, report.Coverage.Warnings...)
 	if len(report.Warnings) > 0 {
@@ -272,6 +283,9 @@ func (e *Engine) Metrics() Metrics {
 		return Metrics{}
 	}
 	metrics := e.metrics
+	if len(metrics.EventsByBehavior) > 0 {
+		metrics.EventsByBehavior = cloneMetricsMap(metrics.EventsByBehavior)
+	}
 	var active uint64
 	for _, ruleState := range e.cep {
 		active += uint64(len(ruleState.Groups))
@@ -284,10 +298,18 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 	if e == nil || ev == nil || ev.GetSubjectProc() == nil {
 		return nil
 	}
+	start := time.Now()
+	view := newEventView(ev)
+	behavior := view.behavior
+	e.metrics.EventsProcessed++
+	if e.metrics.EventsByBehavior == nil {
+		e.metrics.EventsByBehavior = make(map[string]uint64)
+	}
+	e.metrics.EventsByBehavior[behavior]++
 	state := e.lineage(ev.GetLineageId())
 	state.remember(ev)
 	var out []*signalv1.Signal
-	switch eventBehavior(ev) {
+	switch behavior {
 	case eventmodel.BehaviorProcessExec.String():
 		out = append(out, e.detectWebRuntimeShell(ev, state)...)
 		out = append(out, e.detectPayloadExec(ev, state)...)
@@ -300,9 +322,18 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 	case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
 		out = append(out, e.detectPayloadDrop(ev, state)...)
 	}
-	out = append(out, e.detectCEPRules(ev)...)
+	out = append(out, e.detectCEPRules(view)...)
 	out = compact(out)
 	e.metrics.EmittedSignals += uint64(len(out))
+	e.metrics.ProcessNanosTotal += uint64(time.Since(start).Nanoseconds())
+	return out
+}
+
+func cloneMetricsMap(in map[string]uint64) map[string]uint64 {
+	out := make(map[string]uint64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
 	return out
 }
 
@@ -587,19 +618,21 @@ func (e *Engine) signalContentRefs(refs []string, resolved map[string]ContentRef
 	return out
 }
 
-func (e *Engine) detectCEPRules(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
+func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 	var out []*signalv1.Signal
-	for _, rule := range e.rules {
-		if !rule.enabled || !rule.isCEP() {
+	for _, rule := range e.compiled.rulesForBehavior(view.behavior) {
+		e.metrics.CEPRulesScanned++
+		if !rule.rule.enabled {
 			continue
 		}
-		switch rule.runtimeType() {
-		case "expr":
-			if e.matchConditions(ev, rule.spec.Expr.Conditions, nil) {
-				out = append(out, e.signal(ev, rule, []string{ev.GetId()}, false, eventEntities(ev)...))
+		e.metrics.CEPRulesEvaluated++
+		switch rule.kind {
+		case compiledRuleExpr:
+			if e.matchCompiledConditions(view, rule.expr.conditions, nil) {
+				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, false, eventEntities(view.ev)...))
 			}
-		case "sequence":
-			if sig := e.detectSequenceRule(ev, rule); sig != nil {
+		case compiledRuleSequence:
+			if sig := e.detectSequenceRule(view, rule); sig != nil {
 				out = append(out, sig)
 			}
 		}
@@ -628,18 +661,18 @@ func (r effectiveRule) runtimeType() string {
 	}
 }
 
-func (e *Engine) detectSequenceRule(ev *eventv1.CanonicalEvent, rule effectiveRule) *signalv1.Signal {
-	seq := rule.spec.Sequence
-	if len(seq.Steps) == 0 {
+func (e *Engine) detectSequenceRule(view eventView, rule compiledRule) *signalv1.Signal {
+	seq := rule.sequence
+	if len(seq.steps) == 0 {
 		return nil
 	}
-	ruleState := e.cep[rule.spec.RuleID]
+	ruleState := e.cep[rule.rule.spec.RuleID]
 	if ruleState == nil {
 		ruleState = &cepRuleState{Groups: make(map[string]*cepGroupState)}
-		e.cep[rule.spec.RuleID] = ruleState
+		e.cep[rule.rule.spec.RuleID] = ruleState
 	}
-	groupKey := e.sequenceGroupKey(ev, seq.By)
-	now := eventTime(ev)
+	groupKey := e.compiledSequenceGroupKey(view, seq.by)
+	now := view.eventTime()
 	st := ruleState.Groups[groupKey]
 	if st != nil && st.ExpiresAt > 0 && now > st.ExpiresAt {
 		delete(ruleState.Groups, groupKey)
@@ -651,15 +684,15 @@ func (e *Engine) detectSequenceRule(ev *eventv1.CanonicalEvent, rule effectiveRu
 		st = &cepGroupState{Values: make(map[string]map[string]string)}
 		ruleState.Groups[groupKey] = st
 	}
-	if st.StepIndex >= len(seq.Steps) {
+	if st.StepIndex >= len(seq.steps) {
 		st.StepIndex = 0
 		st.Refs = nil
 		st.Values = make(map[string]map[string]string)
 	}
-	step := seq.Steps[st.StepIndex]
-	if !e.matchStep(ev, step, st) {
-		first := seq.Steps[0]
-		if st.StepIndex > 0 && e.matchStep(ev, first, &cepGroupState{Values: make(map[string]map[string]string)}) {
+	step := seq.steps[st.StepIndex]
+	if !e.matchCompiledStep(view, step, st) {
+		first := seq.steps[0]
+		if st.StepIndex > 0 && e.matchCompiledStep(view, first, &cepGroupState{Values: make(map[string]map[string]string)}) {
 			st.StepIndex = 0
 			st.Refs = nil
 			st.Values = make(map[string]map[string]string)
@@ -668,7 +701,7 @@ func (e *Engine) detectSequenceRule(ev *eventv1.CanonicalEvent, rule effectiveRu
 			return nil
 		}
 	}
-	st.Refs = appendUnique(st.Refs, ev.GetId())
+	st.Refs = appendUnique(st.Refs, view.eventID)
 	if len(st.Refs) > e.limits.MaxCEPRefs {
 		e.metrics.DroppedEventRefs += uint64(len(st.Refs) - e.limits.MaxCEPRefs)
 		st.Refs = st.Refs[len(st.Refs)-e.limits.MaxCEPRefs:]
@@ -676,17 +709,17 @@ func (e *Engine) detectSequenceRule(ev *eventv1.CanonicalEvent, rule effectiveRu
 	if st.Values == nil {
 		st.Values = make(map[string]map[string]string)
 	}
-	st.Values[step.ID] = eventFieldMap(ev)
-	if st.StepIndex == 0 && seq.Within > 0 {
-		st.ExpiresAt = now + uint64(seq.Within.Nanoseconds())
+	st.Values[step.id] = eventFieldMapFromView(view)
+	if st.StepIndex == 0 && seq.within > 0 {
+		st.ExpiresAt = now + uint64(seq.within.Nanoseconds())
 	}
 	st.StepIndex++
-	if st.StepIndex < len(seq.Steps) {
+	if st.StepIndex < len(seq.steps) {
 		return nil
 	}
 	refs := appendRefs(nil, st.Refs...)
 	delete(ruleState.Groups, groupKey)
-	return e.signal(ev, rule, refs, true, eventEntities(ev)...)
+	return e.signal(view.ev, rule.rule, refs, true, eventEntities(view.ev)...)
 }
 
 func (e *Engine) evictCEPGroups(ruleState *cepRuleState, now uint64) {
@@ -725,7 +758,9 @@ func (e *Engine) matchConditions(ev *eventv1.CanonicalEvent, conditions []Condit
 }
 
 func (e *Engine) matchCondition(ev *eventv1.CanonicalEvent, cond ConditionSpec, st *cepGroupState) bool {
+	e.metrics.ConditionsEvaluated++
 	actual := eventField(ev, cond.Field)
+	e.metrics.FieldReads++
 	values := append([]string(nil), cond.Values...)
 	if cond.Value != "" {
 		values = append(values, cond.Value)
@@ -739,51 +774,58 @@ func (e *Engine) matchCondition(ev *eventv1.CanonicalEvent, cond ConditionSpec, 
 	}
 	switch op {
 	case "eq", "equals":
-		return containsString(values, actual)
+		return e.recordConditionResult(containsString(values, actual))
 	case "neq", "not_eq":
-		return !containsString(values, actual)
+		return e.recordConditionResult(!containsString(values, actual))
 	case "contains":
 		for _, value := range values {
 			if value != "" && strings.Contains(actual, value) {
-				return true
+				return e.recordConditionResult(true)
 			}
 		}
-		return false
+		return e.recordConditionResult(false)
 	case "prefix", "has_prefix":
 		for _, value := range values {
 			if value != "" && strings.HasPrefix(actual, value) {
-				return true
+				return e.recordConditionResult(true)
 			}
 		}
-		return false
+		return e.recordConditionResult(false)
 	case "suffix", "has_suffix":
 		for _, value := range values {
 			if value != "" && strings.HasSuffix(actual, value) {
-				return true
+				return e.recordConditionResult(true)
 			}
 		}
-		return false
+		return e.recordConditionResult(false)
 	case "in":
-		return containsString(values, actual)
+		return e.recordConditionResult(containsString(values, actual))
 	case "not_in":
-		return !containsString(values, actual)
+		return e.recordConditionResult(!containsString(values, actual))
 	case "same_as":
 		if st == nil || cond.Step == "" {
-			return false
+			return e.recordConditionResult(false)
 		}
 		stepValues := st.Values[cond.Step]
 		if stepValues == nil {
-			return false
+			return e.recordConditionResult(false)
 		}
 		stepField := firstNonEmpty(cond.StepField, cond.Field)
-		return actual != "" && actual == stepValues[stepField]
+		return e.recordConditionResult(actual != "" && actual == stepValues[stepField])
 	case "exists":
-		return actual != ""
+		return e.recordConditionResult(actual != "")
 	case "gt", "gte", "lt", "lte":
-		return compareNumber(actual, firstValue(values), op)
+		return e.recordConditionResult(compareNumber(actual, firstValue(values), op))
 	default:
-		return false
+		return e.recordConditionResult(false)
 	}
+}
+
+func (e *Engine) recordConditionResult(matched bool) bool {
+	if matched {
+		e.metrics.ConditionsMatched++
+	}
+	return matched
 }
 
 func (e *Engine) contentValues(ref string) []string {
