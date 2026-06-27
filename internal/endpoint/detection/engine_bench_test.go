@@ -72,6 +72,24 @@ func BenchmarkEngineProcessContentPrefixCount(b *testing.B) {
 	}
 }
 
+func BenchmarkEngineProcessSequenceHeavy(b *testing.B) {
+	for _, rules := range []int{4, 16, 64, 256} {
+		b.Run(fmt.Sprintf("rules_%d_next_step_noise", rules), func(b *testing.B) {
+			engine, _ := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, benchmarkSequenceContent(rules))
+			events := benchmarkNetworkEvents(256)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				engine.Process(events[i%len(events)])
+			}
+			metrics := engine.Metrics()
+			b.ReportMetric(float64(metrics.CEPRulesScanned)/float64(b.N), "cep_scans/op")
+			b.ReportMetric(float64(metrics.CEPRulesEvaluated)/float64(b.N), "cep_eval/op")
+			b.ReportMetric(float64(metrics.ConditionsEvaluated)/float64(b.N), "conds/op")
+		})
+	}
+}
+
 func benchmarkCEPContent(ruleCount int) ContentSnapshot {
 	rules := make([]RuleSpec, 0, ruleCount)
 	behaviors := []string{"process.exec", "file.write", "file.read", "network.connect"}
@@ -97,6 +115,31 @@ func benchmarkCEPContent(ruleCount int) ContentSnapshot {
 			Expr: ExprSpec{Conditions: []ConditionSpec{
 				{Field: field, Op: "eq", Value: value},
 			}},
+		})
+	}
+	return ContentSnapshot{Rules: rules}
+}
+
+func benchmarkSequenceContent(ruleCount int) ContentSnapshot {
+	rules := make([]RuleSpec, 0, ruleCount)
+	for i := 0; i < ruleCount; i++ {
+		rules = append(rules, RuleSpec{
+			RuleID:      fmt.Sprintf("bench_sequence_%03d", i),
+			Version:     1,
+			RuleSetRef:  "ruleset:cep",
+			Severity:    "low",
+			RuntimeType: "sequence",
+			Sequence: SequenceSpec{
+				Within: 60 * 1_000_000_000,
+				By:     []string{"lineage_id"},
+				Steps: []StepSpec{
+					{ID: "drop", Behavior: "file.write", Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: fmt.Sprintf("/tmp/bench-%03d/", i)}}},
+					{ID: "chmod", Behavior: "file.chmod", Conditions: []ConditionSpec{{Field: "file.path", Op: "same_as", Step: "drop"}}},
+					{ID: "exec", Behavior: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary", Op: "same_as", Step: "drop", StepField: "file.path"}}},
+					{ID: "connect", Behavior: "network.connect", Conditions: []ConditionSpec{{Field: "socket.port", Op: "in", Values: []string{"443"}}}},
+				},
+			},
+			RequiredBehaviors: []string{"file.write", "file.chmod", "process.exec", "network.connect"},
 		})
 	}
 	return ContentSnapshot{Rules: rules}
@@ -128,6 +171,14 @@ func benchmarkFileReadEvents(n int) []*eventv1.CanonicalEvent {
 		ev := openEvent(fmt.Sprintf("read-%d", i), fmt.Sprintf("lin-%d", i%32), fmt.Sprintf("p-%d", i), "/bin/cat", fmt.Sprintf("/bench/path/%04d/secret", i%128))
 		ev.Behavior = "file.read"
 		events = append(events, ev)
+	}
+	return events
+}
+
+func benchmarkNetworkEvents(n int) []*eventv1.CanonicalEvent {
+	events := make([]*eventv1.CanonicalEvent, 0, n)
+	for i := 0; i < n; i++ {
+		events = append(events, connectEventWithParent(fmt.Sprintf("net-%d", i), fmt.Sprintf("lin-%d", i%32), fmt.Sprintf("p-%d", i), "parent", "/usr/bin/curl", "198.51.100.10:443"))
 	}
 	return events
 }

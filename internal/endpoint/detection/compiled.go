@@ -17,7 +17,8 @@ type compiledRuntime struct {
 }
 
 type compiledSequenceRuntime struct {
-	byNextBehavior   map[string][]compiledSequenceCandidate
+	firstByBehavior  map[string][]compiledSequenceCandidate
+	nextByBehavior   map[string][]compiledSequenceCandidate
 	behaviorAgnostic []compiledSequenceCandidate
 }
 
@@ -49,6 +50,7 @@ type compiledStep struct {
 	id         string
 	behavior   string
 	conditions []compiledCondition
+	saveFields []fieldID
 }
 
 type compiledSequenceCandidate struct {
@@ -152,7 +154,10 @@ func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRunt
 }
 
 func compileSequenceRuntime(rules []effectiveRule, content ContentSnapshot) compiledSequenceRuntime {
-	rt := compiledSequenceRuntime{byNextBehavior: map[string][]compiledSequenceCandidate{}}
+	rt := compiledSequenceRuntime{
+		firstByBehavior: map[string][]compiledSequenceCandidate{},
+		nextByBehavior:  map[string][]compiledSequenceCandidate{},
+	}
 	for _, rule := range rules {
 		if !rule.enabled || rule.runtimeType() != "sequence" {
 			continue
@@ -165,7 +170,7 @@ func compileSequenceRuntime(rules []effectiveRule, content ContentSnapshot) comp
 		if first.behavior == "" {
 			rt.behaviorAgnostic = append(rt.behaviorAgnostic, compiledSequenceCandidate{rule: compiled, firstStep: true})
 		} else {
-			rt.byNextBehavior[first.behavior] = append(rt.byNextBehavior[first.behavior], compiledSequenceCandidate{rule: compiled, firstStep: true})
+			rt.firstByBehavior[first.behavior] = append(rt.firstByBehavior[first.behavior], compiledSequenceCandidate{rule: compiled, firstStep: true})
 		}
 		for i := 1; i < len(compiled.sequence.steps); i++ {
 			step := compiled.sequence.steps[i]
@@ -173,7 +178,7 @@ func compileSequenceRuntime(rules []effectiveRule, content ContentSnapshot) comp
 			if step.behavior == "" {
 				rt.behaviorAgnostic = append(rt.behaviorAgnostic, candidate)
 			} else {
-				rt.byNextBehavior[step.behavior] = append(rt.byNextBehavior[step.behavior], candidate)
+				rt.nextByBehavior[step.behavior] = append(rt.nextByBehavior[step.behavior], candidate)
 			}
 		}
 	}
@@ -197,6 +202,7 @@ func compileRule(rule effectiveRule, content ContentSnapshot) compiledRule {
 				conditions: compileConditions(step.Conditions, content),
 			})
 		}
+		steps = attachSequenceSaveFields(steps)
 		return compiledRule{
 			rule: rule,
 			kind: compiledRuleSequence,
@@ -209,6 +215,40 @@ func compileRule(rule effectiveRule, content ContentSnapshot) compiledRule {
 	default:
 		return compiledRule{}
 	}
+}
+
+func attachSequenceSaveFields(steps []compiledStep) []compiledStep {
+	stepIndex := make(map[string]int, len(steps))
+	for i, step := range steps {
+		if step.id != "" {
+			stepIndex[step.id] = i
+		}
+	}
+	seen := make([]map[fieldID]bool, len(steps))
+	for i := range seen {
+		seen[i] = map[fieldID]bool{}
+	}
+	for _, step := range steps {
+		for _, cond := range step.conditions {
+			if cond.op != opSameAs || cond.step == "" {
+				continue
+			}
+			idx, ok := stepIndex[cond.step]
+			if !ok {
+				continue
+			}
+			seen[idx][cond.stepField] = true
+		}
+	}
+	for i := range steps {
+		for field := range seen[i] {
+			steps[i].saveFields = append(steps[i].saveFields, field)
+		}
+		sort.Slice(steps[i].saveFields, func(a, b int) bool {
+			return steps[i].saveFields[a] < steps[i].saveFields[b]
+		})
+	}
+	return steps
 }
 
 func (r compiledRule) behaviors() []string {
@@ -247,12 +287,23 @@ func (rt compiledRuntime) rulesForBehavior(behavior string) []compiledRule {
 	return out
 }
 
-func (rt compiledSequenceRuntime) candidatesForBehavior(behavior string) []compiledSequenceCandidate {
-	if len(rt.behaviorAgnostic) == 0 {
-		return rt.byNextBehavior[behavior]
+func (rt compiledSequenceRuntime) candidatesForBehavior(behavior string, active map[string]map[string]int) []compiledSequenceCandidate {
+	candidates := rt.firstByBehavior[behavior]
+	if len(rt.nextByBehavior[behavior]) > 0 {
+		activeRules := active[behavior]
+		if len(activeRules) > 0 {
+			for _, candidate := range rt.nextByBehavior[behavior] {
+				if activeRules[candidate.rule.rule.spec.RuleID] > 0 {
+					candidates = append(candidates, candidate)
+				}
+			}
+		}
 	}
-	out := make([]compiledSequenceCandidate, 0, len(rt.behaviorAgnostic)+len(rt.byNextBehavior[behavior]))
-	out = append(out, rt.byNextBehavior[behavior]...)
+	if len(rt.behaviorAgnostic) == 0 {
+		return candidates
+	}
+	out := make([]compiledSequenceCandidate, 0, len(rt.behaviorAgnostic)+len(candidates))
+	out = append(out, candidates...)
 	out = append(out, rt.behaviorAgnostic...)
 	return out
 }
@@ -579,11 +630,9 @@ func (e *Engine) compiledSequenceGroupKey(view eventView, fields []fieldID) stri
 	return strings.Join(parts, "|")
 }
 
-func eventFieldMapFromView(view eventView) map[string]string {
-	fields := []fieldID{
-		fieldEventID, fieldBehavior, fieldLineageID, fieldProcessStableID, fieldProcessBinary,
-		fieldProcessArgv, fieldProcessUID, fieldParentStableID, fieldFilePath, fieldSocketAddr,
-		fieldSocketPort, fieldScopeType, fieldScopeSelector, fieldContainerID, fieldCgroup,
+func eventFieldMapFromView(view eventView, fields []fieldID) map[string]string {
+	if len(fields) == 0 {
+		return nil
 	}
 	out := make(map[string]string, len(fields))
 	for _, field := range fields {

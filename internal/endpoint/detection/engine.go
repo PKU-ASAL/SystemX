@@ -25,6 +25,7 @@ type Engine struct {
 	rules       map[string]effectiveRule
 	state       map[string]*lineageState
 	cep         map[string]*cepRuleState
+	cepActive   map[string]map[string]int
 	suppression map[string]time.Time
 	limits      EngineLimits
 	metrics     Metrics
@@ -144,10 +145,11 @@ type cepRuleState struct {
 }
 
 type cepGroupState struct {
-	StepIndex int
-	Refs      []string
-	Values    map[string]map[string]string
-	ExpiresAt uint64
+	StepIndex       int
+	Refs            []string
+	Values          map[string]map[string]string
+	ExpiresAt       uint64
+	WaitingBehavior string
 }
 
 type lineageState struct {
@@ -210,6 +212,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		rules:       make(map[string]effectiveRule),
 		state:       make(map[string]*lineageState),
 		cep:         make(map[string]*cepRuleState),
+		cepActive:   make(map[string]map[string]int),
 		suppression: make(map[string]time.Time),
 		limits:      limits,
 		ctx:         resolveContext(normalized.ContextRefs, content),
@@ -635,7 +638,7 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 			}
 		}
 	}
-	for _, candidate := range e.sequence.candidatesForBehavior(view.behavior) {
+	for _, candidate := range e.sequence.candidatesForBehavior(view.behavior, e.cepActive) {
 		e.metrics.CEPRulesScanned++
 		if !candidate.rule.rule.enabled {
 			continue
@@ -688,6 +691,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 	now := view.eventTime()
 	st := ruleState.Groups[groupKey]
 	if st != nil && st.ExpiresAt > 0 && now > st.ExpiresAt {
+		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		delete(ruleState.Groups, groupKey)
 		e.metrics.ExpiredCEPGroups++
 		st = nil
@@ -700,19 +704,23 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		if !e.matchCompiledStep(view, seq.steps[0], &cepGroupState{Values: make(map[string]map[string]string)}) {
 			return nil
 		}
+		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		st.StepIndex = 0
 		st.Refs = nil
 		st.Values = make(map[string]map[string]string)
+		st.WaitingBehavior = ""
 	}
 	if st == nil {
-		e.evictCEPGroups(ruleState, now)
+		e.evictCEPGroups(rule.rule.spec.RuleID, ruleState, now)
 		st = &cepGroupState{Values: make(map[string]map[string]string)}
 		ruleState.Groups[groupKey] = st
 	}
 	if st.StepIndex >= len(seq.steps) {
+		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		st.StepIndex = 0
 		st.Refs = nil
 		st.Values = make(map[string]map[string]string)
+		st.WaitingBehavior = ""
 	}
 	step := seq.steps[st.StepIndex]
 	if !e.matchCompiledStep(view, step, st) {
@@ -726,31 +734,66 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 	if st.Values == nil {
 		st.Values = make(map[string]map[string]string)
 	}
-	st.Values[step.id] = eventFieldMapFromView(view)
+	if saved := eventFieldMapFromView(view, step.saveFields); len(saved) > 0 {
+		st.Values[step.id] = saved
+	}
 	if st.StepIndex == 0 && seq.within > 0 {
 		st.ExpiresAt = now + uint64(seq.within.Nanoseconds())
 	}
 	st.StepIndex++
 	if st.StepIndex < len(seq.steps) {
+		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
+		st.WaitingBehavior = seq.steps[st.StepIndex].behavior
+		e.activateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		return nil
 	}
 	refs := appendRefs(nil, st.Refs...)
+	e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 	delete(ruleState.Groups, groupKey)
 	return e.signal(view.ev, rule.rule, refs, true, eventEntities(view.ev)...)
 }
 
-func (e *Engine) evictCEPGroups(ruleState *cepRuleState, now uint64) {
+func (e *Engine) activateSequenceWait(ruleID, behavior string) {
+	if ruleID == "" {
+		return
+	}
+	if e.cepActive == nil {
+		e.cepActive = make(map[string]map[string]int)
+	}
+	if e.cepActive[behavior] == nil {
+		e.cepActive[behavior] = make(map[string]int)
+	}
+	e.cepActive[behavior][ruleID]++
+}
+
+func (e *Engine) deactivateSequenceWait(ruleID, behavior string) {
+	if ruleID == "" || e.cepActive == nil || e.cepActive[behavior] == nil {
+		return
+	}
+	if e.cepActive[behavior][ruleID] <= 1 {
+		delete(e.cepActive[behavior], ruleID)
+		if len(e.cepActive[behavior]) == 0 {
+			delete(e.cepActive, behavior)
+		}
+		return
+	}
+	e.cepActive[behavior][ruleID]--
+}
+
+func (e *Engine) evictCEPGroups(ruleID string, ruleState *cepRuleState, now uint64) {
 	if ruleState == nil || len(ruleState.Groups) < e.limits.MaxCEPGroups {
 		return
 	}
 	for key, group := range ruleState.Groups {
 		if group.ExpiresAt > 0 && now > group.ExpiresAt {
+			e.deactivateSequenceWait(ruleID, group.WaitingBehavior)
 			delete(ruleState.Groups, key)
 			e.metrics.ExpiredCEPGroups++
 		}
 	}
 	for len(ruleState.Groups) >= e.limits.MaxCEPGroups {
 		for key := range ruleState.Groups {
+			e.deactivateSequenceWait(ruleID, ruleState.Groups[key].WaitingBehavior)
 			delete(ruleState.Groups, key)
 			e.metrics.EvictedCEPGroups++
 			break

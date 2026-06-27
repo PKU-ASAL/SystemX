@@ -77,7 +77,7 @@ perf-resource-vm:             ## 采集 VM EDR idle 资源占用
 perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 container/VM EDR idle 资源占用
 
 bench-rule-engine:            ## 本地 Go microbench: endpoint detection rule engine + matcher
-	bash tools/benchmarks/bench-rule-engine.sh
+	bash suites/module-benchmarks/bench-rule-engine.sh
 
 sync-vm-agent:                ## VM: 上传当前 bin/sysarmor-agent + bin/sysarmorctl 并验证 local control socket
 	bash tools/vm/sync-agent.sh

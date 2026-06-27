@@ -137,6 +137,7 @@ test/
 │   │   └── capture-container.sh
 │   ├── control-plane/        AgentControlPlaneService/mTLS/command contract
 │   ├── reliability/          spool/outage/restart/backpressure
+│   ├── module-benchmarks/    local Go package microbenchmarks
 │   └── storage/              Postgres/store projection and query
 │
 ├── env/                      topology and shared environment input

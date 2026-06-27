@@ -25,6 +25,7 @@ Suites may call harness scripts and tools. Harness scripts should not decide pro
 | `control-plane` | `AgentControlPlaneService.Connect`, mTLS, command/session contract | `control` | bidirectional gRPC | event collection effectiveness |
 | `reliability` | agent spool/WAL, outage, restart, backpressure | `local` or `full`, per case | agent + fake/real manager | detection rule quality |
 | `storage` | Postgres/store projection and query paths | `storage` | Go tests / manager API tests | runtime agent behavior |
+| `module-benchmarks` | local Go packages and implementation modules | `module` | Go benchmarks | product E2E, topology lifecycle |
 | `diagnostics` | perf/pprof/strace/debug capture | `diagnostic` | host/VM tools | product pass/fail contract |
 
 ## Evaluation Scopes
@@ -43,6 +44,10 @@ Suites may call harness scripts and tools. Harness scripts should not decide pro
 - incidents, graph/evidence, rarity, and manager query APIs.
 
 `full` evaluates both local and manager facts and should only be used by suites that intentionally exercise both planes.
+
+`module` evaluates a local implementation unit without a running SysArmor
+topology. It is appropriate for Go microbenchmarks such as rule-engine matching,
+matcher algorithms, parsers, and other package-level performance checks.
 
 Every benchmark-style output should state its `evaluation_scope`. Benchmark effectiveness uses `labels.yaml` ground truth and computes event/signal precision-recall for the selected plane. Functional assertion tests may still use `expected.yaml` for pass/fail checks.
 
@@ -78,6 +83,8 @@ New suite outputs must use the structured layout above.
 4. Product E2E scripts live in `test/suites/<suite>/`; `test/harness/` should only contain shared glue and topology helpers.
 5. Do not add manager queries to `local-agent` benchmarks unless the suite explicitly changes to `full` scope.
 6. Do not add CPU/RSS benchmarking to manager-cloud functional tests unless the suite explicitly changes to `full` scope.
+7. Product matrix benchmarks should stay under `local-agent` or benchmark tools;
+   package-level microbenchmarks should use `module-benchmarks`.
 
 ## Harness Library
 
