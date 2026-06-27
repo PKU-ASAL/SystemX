@@ -1,14 +1,14 @@
 # SysArmor Scenario Contracts
 
-`scenarios/` 定义功能场景的输入和期望输出。它和 `workloads/` 的边界很重要:
+`data/scenarios/` 定义功能场景的输入和期望输出。它和 `data/workloads/` 的边界很重要:
 
-- `scenarios/` 是安全/功能契约,带攻击或良性语义;`expected.yaml` 用于功能断言,`labels.yaml` 用于效果评估;
-- `workloads/` 是压力源,用于性能评估;良性 workload 可用 `labels.yaml` 声明不得产生 signal/terminal 的效果标签。
+- `data/scenarios/` 是安全/功能契约,带攻击或良性语义;`expected.yaml` 用于功能断言,`labels.yaml` 用于效果评估;
+- `data/workloads/` 是压力源,用于性能评估;良性 workload 可用 `labels.yaml` 声明不得产生 signal/terminal 的效果标签。
 
 每个场景目录通常包含:
 
 ```text
-test/scenarios/<topology>/<scenario>/
+test/data/scenarios/<topology>/<scenario>/
 ├── attack.sh        scenario input, executed inside node-a
 ├── expected.yaml    functional assertion contract
 └── labels.yaml      benchmark effectiveness ground truth labels
@@ -39,16 +39,16 @@ benign-ci-noise  -> 负向基线:相似良性行为不应误报
 
 | Input | Location | Role |
 |---|---|---|
-| container compose | `test/env/container/compose.yaml` | attacker/node-a/mgr/tetragon Docker topology |
-| VM topology | `test/env/vm/Vagrantfile` | attacker/node-a VM topology |
-| container images | `test/env/container/images/` | attacker C2, node-a workload host, mgr image |
-| VM provision | `test/env/vm/provision/` | C2 setup, credentials setup |
-| tracing policy | `test/env/resources/syscall-capture.yaml` | replay/debug/perf compatible Tetragon policy |
-| fake token | `test/env/resources/registry-token` | benign/credential test material |
+| container compose | `test/environments/container/compose.yaml` | attacker/node-a/mgr/tetragon Docker topology |
+| VM topology | `test/environments/vm/Vagrantfile` | attacker/node-a VM topology |
+| container images | `test/environments/container/images/` | attacker C2, node-a workload host, mgr image |
+| VM provision | `test/environments/vm/provision/` | C2 setup, credentials setup |
+| tracing policy | `test/environments/resources/syscall-capture.yaml` | replay/debug/perf compatible Tetragon policy |
+| fake token | `test/environments/resources/registry-token` | benign/credential test material |
 
 ### Policy And Content
 
-Scenario assertions may use local generated policies, collection policy files from `test/policies/`, and content packs from `test/content/`.
+Scenario assertions may use local generated policies, collection policy files from `test/data/policies/`, and content packs from `test/data/content/`.
 
 Important collection profiles:
 
@@ -72,7 +72,7 @@ rulepack-cep-endpoint.json
 
 ### Tetragon TracingPolicy Shape
 
-`test/env/resources/syscall-capture.yaml` is useful for replay, diagnostics, and performance-compatible paths. It focuses on network connect and sensitive file read:
+`test/environments/resources/syscall-capture.yaml` is useful for replay, diagnostics, and performance-compatible paths. It focuses on network connect and sensitive file read:
 
 ```yaml
 spec:
@@ -326,15 +326,15 @@ Current assertion layers:
 
 | Layer | What It Checks | Main Entrypoint |
 |---|---|---|
-| L1 Events | raw/normalized event visibility | `suites/local-agent/capture-vm.sh`, `suites/manager-cloud/capture-container.sh`, `tools/assertions/assert.py`, `tools/assertions/assert-vm-local.sh` |
-| L2 Endpoint signals | local endpoint rules and event refs | `tools/assertions/assert-vm-local.sh`, `suites/local-agent/`, `suites/agent-runtime/` |
-| L3 Cloud signals | manager/analytics rule output | `tools/assertions/assert.py`, `suites/manager-cloud/` |
-| L4 Incidents | convergence, evidence, lifecycle state | `suites/manager-cloud/e2e-incident*.sh`, graph/evidence e2e |
+| L1 Events | raw/normalized event visibility | `e2e/local-agent/capture-vm.sh`, `e2e/manager-cloud/capture-container.sh`, `shared/assertions/assert.py`, `shared/assertions/assert-vm-local.sh` |
+| L2 Endpoint signals | local endpoint rules and event refs | `shared/assertions/assert-vm-local.sh`, `e2e/local-agent/`, `e2e/agent-runtime/` |
+| L3 Cloud signals | manager/analytics rule output | `shared/assertions/assert.py`, `e2e/manager-cloud/` |
+| L4 Incidents | convergence, evidence, lifecycle state | `e2e/manager-cloud/e2e-incident*.sh`, graph/evidence e2e |
 | Negative | absence of terminal signals or incidents | scenario expected files |
 | Control | counterfactual behavior when a capability is disabled | `control_assertions` |
 
-`tools/assertions/assert.py` is the generic historical assertion entrypoint.
-Focused product checks live in `test/suites/<suite>/`, especially for local VM
+`shared/assertions/assert.py` is the generic historical assertion entrypoint.
+Focused product checks live in `test/e2e/<suite>/`, especially for local VM
 agent paths, graph/evidence, response, agent session, and
 `AgentControlPlaneService.Connect` behavior.
 

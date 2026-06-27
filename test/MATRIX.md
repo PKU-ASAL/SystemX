@@ -26,7 +26,7 @@ By default `MATRIX_MODE=cross`, which runs `policy(3) x scenario(3)` with `busin
 
 Effectiveness labels live beside the case:
 
-- `test/scenarios/vm/<scenario>/labels.yaml`
-- `test/workloads/vm/<workload>/labels.yaml`
+- `test/data/scenarios/vm/<scenario>/labels.yaml`
+- `test/data/workloads/vm/<workload>/labels.yaml`
 
 For malicious scenarios, labels describe required event and signal entities. For benign cases, labels normally contain no positive event/signal truth and instead define forbidden attack signals under `policy.forbidden_signal_names`.

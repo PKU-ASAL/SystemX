@@ -20,15 +20,23 @@ Functional E2E, benchmark, and diagnostic logic should stay separate.
 
 ```text
 test/
-  env/                 topology setup for VM/container
-  scenarios/           security scenarios with expected behavior
-  workloads/           performance workloads without security assertions
-  policies/            collection/detection/resource policy samples
-  harness/             functional E2E orchestration
-  tools/
-    recorder/          long-running low-disturbance timeline sampler
-    benchmarks/        matrix runners and reports
-    diagnostics/       perf/pprof/strace helpers
+  environments/           topology setup for VM/container
+  e2e/                   product E2E suites
+  benchmarks/
+    matrix/              policy/workload/scenario matrix runners
+    perf/                short-window performance samplers
+    modules/             local package microbenchmarks
+  data/
+    scenarios/           security scenarios with expected behavior
+    workloads/           performance workloads without security assertions
+    policies/            collection/detection/resource policy samples
+    content/             IOC/context/rulepack content
+  shared/
+    harness/             functional E2E orchestration
+    assertions/          reusable assertions
+    recorder/            long-running low-disturbance timeline sampler
+    diagnostics/         perf/pprof/strace helpers
+    reports/             report generators
   .results/            generated outputs
 ```
 
@@ -114,7 +122,7 @@ test/.results/recordings/<run-id>/
 ```bash
 make -C test bench-collection-vm \
   SYSARMOR_BENCH_WORKLOAD=business-normal \
-  POLICIES='test/policies/collection-minimal-high-signal.json'
+  POLICIES='test/data/policies/collection-minimal-high-signal.json'
 ```
 
 `bench-matrix-vm` is the default endpoint effectiveness/performance gate. Its slim default runs:
@@ -125,9 +133,9 @@ make -C test bench-collection-vm \
 
 Default policy set:
 
-- `test/policies/collection-minimal-high-signal.json`;
-- `test/policies/collection-edr-balanced.json`;
-- `test/policies/collection-incident-deep.json`.
+- `test/data/policies/collection-minimal-high-signal.json`;
+- `test/data/policies/collection-edr-balanced.json`;
+- `test/data/policies/collection-incident-deep.json`.
 
 Default workload:
 

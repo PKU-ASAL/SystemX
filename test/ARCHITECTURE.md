@@ -25,7 +25,7 @@ Suites may call harness scripts and tools. Harness scripts should not decide pro
 | `control-plane` | `AgentControlPlaneService.Connect`, mTLS, command/session contract | `control` | bidirectional gRPC | event collection effectiveness |
 | `reliability` | agent spool/WAL, outage, restart, backpressure | `local` or `full`, per case | agent + fake/real manager | detection rule quality |
 | `storage` | Postgres/store projection and query paths | `storage` | Go tests / manager API tests | runtime agent behavior |
-| `module-benchmarks` | local Go packages and implementation modules | `module` | Go benchmarks | product E2E, topology lifecycle |
+| `benchmarks/modules/rule-engine` | local Go packages and implementation modules | `module` | Go benchmarks | product E2E, topology lifecycle |
 | `diagnostics` | perf/pprof/strace/debug capture | `diagnostic` | host/VM tools | product pass/fail contract |
 
 ## Evaluation Scopes
@@ -77,18 +77,18 @@ New suite outputs must use the structured layout above.
 
 ## Migration Rules
 
-1. New user-facing test entrypoints go under `test/suites/<suite>/`.
-2. Shared process-control logic goes under `test/harness/`.
-3. Reusable assertion, reporting, fixture, recorder, benchmark, and diagnostic utilities go under `test/tools/`.
-4. Product E2E scripts live in `test/suites/<suite>/`; `test/harness/` should only contain shared glue and topology helpers.
+1. New user-facing test entrypoints go under `test/e2e/<suite>/`.
+2. Shared process-control logic goes under `test/shared/harness/`.
+3. Reusable assertion, reporting, fixture, recorder, benchmark, and diagnostic utilities go under `test/shared/`.
+4. Product E2E scripts live in `test/e2e/<suite>/`; `test/shared/harness/` should only contain shared glue and topology helpers.
 5. Do not add manager queries to `local-agent` benchmarks unless the suite explicitly changes to `full` scope.
 6. Do not add CPU/RSS benchmarking to manager-cloud functional tests unless the suite explicitly changes to `full` scope.
 7. Product matrix benchmarks should stay under `local-agent` or benchmark tools;
-   package-level microbenchmarks should use `module-benchmarks`.
+   package-level microbenchmarks should use `benchmarks/modules/rule-engine`.
 
 ## Harness Library
 
-Shared shell helpers live under `test/harness/lib/`. They should stay product-agnostic:
+Shared shell helpers live under `test/shared/harness/lib/`. They should stay product-agnostic:
 
 - path/bootstrap helpers such as `sa_init_repo_paths`;
 - temporary directory and random port helpers;
@@ -100,9 +100,9 @@ Suite scripts own business semantics and assertions. The harness library should 
 
 ## Tool Directories
 
-- `test/tools/assertions/`: reusable expected.yaml and local capture assertion helpers.
-- `test/tools/benchmarks/`: benchmark runners, perf samplers, and benchmark report builders.
-- `test/tools/diagnostics/`: diagnostics capture such as perf, pprof, and strace.
-- `test/tools/fixtures/`: synthetic event or scenario fixture generators.
-- `test/tools/recorder/`: long-running recorder utilities.
-- `test/tools/reports/`: reusable result summarizers.
+- `test/shared/assertions/`: reusable expected.yaml and local capture assertion helpers.
+- `test/benchmarks/`: benchmark runners, perf samplers, and benchmark report builders.
+- `test/shared/diagnostics/`: diagnostics capture such as perf, pprof, and strace.
+- `test/shared/fixtures/`: synthetic event or scenario fixture generators.
+- `test/shared/recorder/`: long-running recorder utilities.
+- `test/shared/reports/`: reusable result summarizers.

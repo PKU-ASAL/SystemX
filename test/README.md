@@ -10,13 +10,16 @@
 
 设计原则见 `references/docs/testing-benchmark.md` 和 `test/ARCHITECTURE.md`:功能 E2E、workload、recorder、benchmark、diagnostic 分开维护,不要把性能采样、synthetic workload 或 perf/pprof 逻辑塞进功能断言脚本。
 
-`suite` 和 `harness` 是两层概念:
+测试目录按测试类型分区:
 
-- `suites/` 定义测什么、SUT 是谁、评估边界是什么、哪些指标算分;
-- `harness/` 提供怎么跑的通用能力,例如启动/停止拓扑、等待服务和清理环境;
-- `tools/` 放 recorder、report、benchmark、diagnostic 这类可复用工具。
+- `e2e/` 定义测什么、SUT 是谁、评估边界是什么、哪些指标算分;
+- `benchmarks/` 放矩阵评估、perf 采样和模块 microbench;
+- `data/` 放 scenario、workload、policy、content 这类测试输入;
+- `environments/` 放 Docker/Vagrant 拓扑和共享环境资源;
+- `shared/harness/` 提供怎么跑的通用能力,例如启动/停止拓扑、等待服务和清理环境;
+- `shared/` 放 assertion、recorder、report、diagnostic、fixture 等跨测试复用工具。
 
-当前稳定边界是:产品 E2E 入口在 `suites/`,可复用断言/报告/benchmark/fixture 在 `tools/`,通用执行胶水在 `harness/`。
+当前稳定边界是:产品 E2E 入口在 `e2e/`,性能入口在 `benchmarks/`,通用执行胶水在 `shared/harness/`,其余复用工具在 `shared/`。
 
 效果评估分两条线:功能断言继续使用 `expected.yaml`; benchmark effectiveness 使用 `labels.yaml` 作为 ground truth,将 workload 窗口内 observed events/signals 与标签匹配,输出 event/signal precision/recall。
 
@@ -44,7 +47,7 @@ sysarmor-agent run --config ...
   -> normalize + endpoint detection engine
   -> durable spool WAL
   -> sysarmorctl --socket /var/run/sysarmor/agent.sock
-  -> tools/assertions/assert-vm-local.sh
+  -> shared/assertions/assert-vm-local.sh
 ```
 
 容器拓扑和部分平台兼容测试仍保留 manager/data-plane 路径:
@@ -54,7 +57,7 @@ sysarmor-agent
   -> durable spool + data batch dispatcher
   -> sysarmor-manager AgentDataPlaneService AppendBatch(DataBatch) / analytics / store
   -> sysarmorctl manager ... JSON query
-  -> tools/assertions/assert.py
+  -> shared/assertions/assert.py
 ```
 
 Data append has a single transport: gRPC `AgentDataPlaneService.AppendBatch(DataBatch)`. Test fixtures use `sysarmor-databatch-append` to submit DataBatch payloads through the same data-plane service; HTTP remains only for manager query/control APIs.
@@ -128,19 +131,24 @@ test/
 ├── Makefile                  test entrypoints
 ├── README.md                 this document
 ├── SCENARIOS.md              scenario input/output contracts
-├── ARCHITECTURE.md           suite/harness/tool boundaries
+├── ARCHITECTURE.md           test-type boundaries
 │
-├── suites/                   stable high-level test suites
+├── e2e/                      stable high-level product suites
 │   ├── local-agent/          local endpoint collection/detection/cost
 │   │   └── capture-vm.sh
 │   ├── manager-cloud/        manager ingest/query/cloud signal/incident
 │   │   └── capture-container.sh
 │   ├── control-plane/        AgentControlPlaneService/mTLS/command contract
 │   ├── reliability/          spool/outage/restart/backpressure
-│   ├── module-benchmarks/    local Go package microbenchmarks
 │   └── storage/              Postgres/store projection and query
 │
-├── env/                      topology and shared environment input
+├── benchmarks/
+│   ├── matrix/               policy/workload/scenario matrix runners
+│   ├── perf/                 short-window perf/resource samplers
+│   └── modules/
+│       └── rule-engine/      local Go package microbenchmarks
+│
+├── environments/                      topology and shared environment input
 │   ├── container/
 │   │   ├── compose.yaml
 │   │   └── images/
@@ -151,7 +159,7 @@ test/
 │       ├── syscall-capture.yaml
 │       └── registry-token
 │
-├── scenarios/                functional/security scenarios
+├── data/scenarios/                functional/security scenarios
 │   ├── container/<scenario>/
 │   │   ├── attack.sh
 │   │   ├── expected.yaml
@@ -161,27 +169,28 @@ test/
 │       ├── expected.yaml
 │       └── labels.yaml
 │
-├── workloads/                repeatable pressure sources, no security assertions
+├── data/workloads/                repeatable pressure sources, no security assertions
 │   └── vm/<workload>/
 │       ├── run.sh
 │       └── labels.yaml
 │
-├── policies/                 collection/detection/resource/telemetry/response samples
-├── content/                  IOC/context/rulepack content used by policies
+├── data/policies/                 collection/detection/resource/telemetry/response samples
+├── data/content/                  IOC/context/rulepack content used by policies
 │
-├── harness/                  shared execution glue
+├── shared/harness/                  shared execution glue
 │   ├── lib/                  shared wait/query/build/cleanup helpers
 │   ├── start-*.sh
 │   ├── stop-*.sh
 │   └── cleanup.sh
 │
-├── tools/
+├── shared/
 │   ├── assertions/           expected.yaml and local capture assertions
-│   ├── recorder/             long-running timeline sampler
-│   ├── benchmarks/           policy/workload matrix runners and reports
 │   ├── diagnostics/          perf/pprof/strace helpers
 │   ├── fixtures/             synthetic event/scenario fixture generators
-│   └── reports/              result summarizers
+│   ├── harness/              shared execution glue
+│   ├── recorder/             long-running timeline sampler
+│   ├── reports/              result summarizers
+│   └── vm/                   VM sync helpers
 │
 └── .results/                 generated outputs
 ```
@@ -190,19 +199,21 @@ test/
 
 | 目录 | 角色 | 说明 |
 |---|---|---|
-| `env/` | 环境输入 | Docker/Vagrant 拓扑、镜像、provision、共享资源 |
-| `scenarios/` | 功能输入 | 攻击/良性场景脚本 + `expected.yaml` 功能断言 + `labels.yaml` 效果标签 |
-| `workloads/` | 压力输入 | exec/file/network/mixed/business 负载 + benign `labels.yaml` |
-| `policies/` | 策略输入 | 采集、检测、资源、上行、响应策略样例 |
-| `content/` | 内容输入 | IOC feed、路径上下文、endpoint rulepack |
-| `suites/` | 高层测试入口 | 按 SUT/evaluation scope 组织 local-agent、manager-cloud、control-plane 等 |
-| `harness/` | 执行胶水 | 启停、等待、清理和通用 shell helper |
-| `tools/assertions/` | 断言工具 | `expected.yaml` 与本地 capture 结果断言 |
-| `tools/recorder/` | 性能采样 | CPU/RSS/EPS/drop/signal timeline |
-| `tools/benchmarks/` | 矩阵评估 | policy x workload x phase 汇总 |
-| `tools/diagnostics/` | 热点诊断 | perf/pprof/strace,用于解释成本 |
-| `tools/fixtures/` | 合成输入 | replay scenario/event fixture 生成 |
-| `tools/reports/` | 报告工具 | summary、matrix、本地 signal 关联报告 |
+| `environments/` | 环境输入 | Docker/Vagrant 拓扑、镜像、provision、共享资源 |
+| `data/scenarios/` | 功能输入 | 攻击/良性场景脚本 + `expected.yaml` 功能断言 + `labels.yaml` 效果标签 |
+| `data/workloads/` | 压力输入 | exec/file/network/mixed/business 负载 + benign `labels.yaml` |
+| `data/policies/` | 策略输入 | 采集、检测、资源、上行、响应策略样例 |
+| `data/content/` | 内容输入 | IOC feed、路径上下文、endpoint rulepack |
+| `e2e/` | 高层测试入口 | 按 SUT/evaluation scope 组织 local-agent、manager-cloud、control-plane 等 |
+| `benchmarks/matrix/` | 矩阵评估 | policy x workload x phase 汇总 |
+| `benchmarks/perf/` | 性能采样 | 短窗口 getevents/resource 采样 |
+| `benchmarks/modules/` | 模块评测 | Go package microbench,当前包含 rule engine |
+| `shared/harness/` | 执行胶水 | 启停、等待、清理和通用 shell helper |
+| `shared/assertions/` | 断言工具 | `expected.yaml` 与本地 capture 结果断言 |
+| `shared/recorder/` | 性能采样 | CPU/RSS/EPS/drop/signal timeline |
+| `shared/diagnostics/` | 热点诊断 | perf/pprof/strace,用于解释成本 |
+| `shared/fixtures/` | 合成输入 | replay scenario/event fixture 生成 |
+| `shared/reports/` | 报告工具 | summary、matrix、本地 signal 关联报告 |
 | `.results/` | 输出 | event/signal ndjson、summary、matrix、日志 |
 
 ## Scenario Contracts
@@ -220,7 +231,7 @@ test/
 
 ## Workloads
 
-`workloads/` 是性能压力输入,不负责安全断言。每个 `run.sh` 接受类似参数:
+`data/workloads/` 是性能压力输入,不负责安全断言。每个 `run.sh` 接受类似参数:
 
 ```bash
 DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
@@ -236,7 +247,7 @@ DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
 
 ## Policy And Content Inputs
 
-`policies/` 中最常用于采集评估的是 collection policy 档位:
+`data/policies/` 中最常用于采集评估的是 collection policy 档位:
 
 | Policy | 用途 |
 |---|---|
@@ -254,7 +265,7 @@ DURATION=60 REPEAT=10 CONCURRENCY=1 ./run.sh
 | `telemetry.yaml` | 上行批处理/重试策略样例 |
 | `response.yaml` | 响应策略样例 |
 
-`content/` 提供这些 policy 引用的 IOC 和上下文:
+`data/content/` 提供这些 policy 引用的 IOC 和上下文:
 
 ```text
 context-credential-path-prefixes.json
@@ -411,7 +422,7 @@ root as `make -C test <target>`.
 | `down` | Stop the selected topology. |
 | `status` | Show selected topology status. |
 | `provision` | VM rsync and provision. |
-| `capture` | Run one scenario capture. `TOPO=container` uses `suites/manager-cloud/capture-container.sh`; `TOPO=vm` uses `suites/local-agent/capture-vm.sh`. |
+| `capture` | Run one scenario capture. `TOPO=container` uses `e2e/manager-cloud/capture-container.sh`; `TOPO=vm` uses `e2e/local-agent/capture-vm.sh`. |
 | `assert` | Assert captured scenario output with `tools/assertions`. |
 | `e2e` | `up + capture + assert`. |
 | `report` | Aggregate simple result matrix. |
@@ -650,7 +661,7 @@ test/.results/effectiveness/<run-id>/matrix.csv
 test/.results/effectiveness/<run-id>/truth_steps.csv
 ```
 
-`bench-matrix-vm` 默认先执行 VM agent sync,避免 VM 内旧版 `sysarmor-agent` / `sysarmorctl` 或旧配置影响测试结果。可用 `SYSARMOR_BENCH_SYNC_VM_AGENT=0` 关闭。`bench-collection-vm` 默认在 collection policy 前加载 `test/policies/detection-cep-endpoint.json`,可用 `SYSARMOR_BENCH_DETECTION_POLICY=<path>` 替换,或用 `SYSARMOR_BENCH_APPLY_DETECTION=0` 只测采集。
+`bench-matrix-vm` 默认先执行 VM agent sync,避免 VM 内旧版 `sysarmor-agent` / `sysarmorctl` 或旧配置影响测试结果。可用 `SYSARMOR_BENCH_SYNC_VM_AGENT=0` 关闭。`bench-collection-vm` 默认在 collection policy 前加载 `test/data/policies/detection-cep-endpoint.json`,可用 `SYSARMOR_BENCH_DETECTION_POLICY=<path>` 替换,或用 `SYSARMOR_BENCH_APPLY_DETECTION=0` 只测采集。
 
 这样可以把 policy 档位、业务工作负载和攻击场景放到同一张 matrix 中比较:采得准不准、全不全、快不快、贵不贵。
 
