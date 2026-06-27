@@ -38,7 +38,7 @@ status-vm:
 
 # ── 场景采集 + 断言 ──────────────────────────────────
 
-.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all sync-vm-agent recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-rule-engine bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
+.PHONY: capture assert perf perf-resource perf-resource-container perf-resource-vm perf-resource-all test-rule-engine test-rule-engine-effectiveness bench-rule-engine test-matcher bench-matcher sync-vm-agent recorder-vm-start recorder-vm-mark recorder-vm-stop recorder-vm-report diag-tetragon-vm diag-tetragon-vm-workload bench-collection-vm bench-matrix-vm bench-edr-lifecycle-vm bench-e2e-vm effectiveness-report report
 
 capture:                      ## 跑场景 + tetragon 抓事件
 ifeq ($(TOPO),vm)
@@ -77,8 +77,20 @@ perf-resource-vm:             ## 采集 VM EDR idle 资源占用
 
 perf-resource-all: perf-resource-container perf-resource-vm ## 聚合采集 container/VM EDR idle 资源占用
 
-bench-rule-engine:            ## 本地 Go microbench: endpoint detection rule engine + matcher
-	bash benchmarks/modules/rule-engine/bench-rule-engine.sh
+test-rule-engine:             ## 本地 Go tests: endpoint detection rule engine semantics
+	cd .. && go test ./internal/endpoint/detection
+
+test-rule-engine-effectiveness: ## 本地 Go tests: rule engine scenario effectiveness cases
+	cd .. && go test ./internal/endpoint/detection -run TestRuleEngineEffectivenessScenarios
+
+bench-rule-engine:            ## 本地 Go microbench: endpoint detection rule engine only
+	cd .. && go test ./internal/endpoint/detection -run '^$$' -bench 'BenchmarkEngineProcess' -benchtime="$(or $(BENCHTIME),200ms)" -count="$(or $(COUNT),1)" -benchmem
+
+test-matcher:                 ## 本地 Go tests: matcher algorithms
+	cd .. && go test ./internal/endpoint/matcher
+
+bench-matcher:                ## 本地 Go microbench: matcher algorithms
+	cd .. && go test ./internal/endpoint/matcher -run '^$$' -bench . -benchtime="$(or $(BENCHTIME),200ms)" -count="$(or $(COUNT),1)" -benchmem
 
 sync-vm-agent:                ## VM: 上传当前 bin/sysarmor-agent + bin/sysarmorctl 并验证 local control socket
 	bash shared/vm/sync-agent.sh

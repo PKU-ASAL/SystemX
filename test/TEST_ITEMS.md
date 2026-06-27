@@ -148,7 +148,11 @@ make -C test <target>
 | `perf-resource-container` | Container idle EDR resource sampling. |
 | `perf-resource-vm` | VM idle EDR resource sampling. |
 | `perf-resource-all` | Container and VM idle EDR resource sampling. |
-| `bench-rule-engine` | Local Go microbenchmarks for endpoint detection and matcher packages. |
+| `test-rule-engine` | Local Go tests for endpoint detection rule engine semantics. |
+| `test-rule-engine-effectiveness` | Local scenario-effectiveness tests for endpoint rule output, covering fileless C2, staged drop, and benign CI noise. |
+| `bench-rule-engine` | Local Go microbenchmarks for endpoint detection rule engine. |
+| `test-matcher` | Local Go tests for matcher algorithms. |
+| `bench-matcher` | Local Go microbenchmarks for matcher algorithms. |
 | `sync-vm-agent` | Upload current agent/ctl binaries into VM and verify local socket. |
 | `recorder-vm-start` | Start VM long-running performance recorder. |
 | `recorder-vm-mark` | Add a recorder marker with `PHASE=<name>` and optional `DETAIL`. |

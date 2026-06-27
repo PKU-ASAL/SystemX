@@ -114,8 +114,12 @@ make -C test e2e-response-all
 make -C test e2e-graph-all
 make -C test e2e-postgres-all
 
-# Rule engine benchmark
+# Rule engine and matcher checks
+make -C test test-rule-engine
+make -C test test-rule-engine-effectiveness
 BENCHTIME=1s COUNT=3 make -C test bench-rule-engine
+make -C test test-matcher
+BENCHTIME=1s COUNT=3 make -C test bench-matcher
 
 # VM performance and effectiveness
 make -C test sync-vm-agent
