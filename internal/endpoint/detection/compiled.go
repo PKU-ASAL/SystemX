@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,11 @@ import (
 type compiledRuntime struct {
 	byBehavior       map[string][]compiledRule
 	behaviorAgnostic []compiledRule
+}
+
+type compiledSequenceRuntime struct {
+	byNextBehavior   map[string][]compiledSequenceCandidate
+	behaviorAgnostic []compiledSequenceCandidate
 }
 
 type compiledRuleKind uint8
@@ -45,6 +51,12 @@ type compiledStep struct {
 	conditions []compiledCondition
 }
 
+type compiledSequenceCandidate struct {
+	rule      compiledRule
+	stepIndex int
+	firstStep bool
+}
+
 type conditionOp uint8
 
 const (
@@ -70,6 +82,7 @@ type compiledCondition struct {
 	matcher   matcher.Matcher
 	step      string
 	stepField fieldID
+	cost      int
 }
 
 type fieldID uint8
@@ -119,7 +132,7 @@ type eventView struct {
 func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRuntime {
 	rt := compiledRuntime{byBehavior: map[string][]compiledRule{}}
 	for _, rule := range rules {
-		if !rule.enabled || !rule.isCEP() {
+		if !rule.enabled || rule.runtimeType() != "expr" {
 			continue
 		}
 		compiled := compileRule(rule, content)
@@ -133,6 +146,35 @@ func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRunt
 		}
 		for _, behavior := range behaviors {
 			rt.byBehavior[behavior] = append(rt.byBehavior[behavior], compiled)
+		}
+	}
+	return rt
+}
+
+func compileSequenceRuntime(rules []effectiveRule, content ContentSnapshot) compiledSequenceRuntime {
+	rt := compiledSequenceRuntime{byNextBehavior: map[string][]compiledSequenceCandidate{}}
+	for _, rule := range rules {
+		if !rule.enabled || rule.runtimeType() != "sequence" {
+			continue
+		}
+		compiled := compileRule(rule, content)
+		if compiled.kind != compiledRuleSequence || len(compiled.sequence.steps) == 0 {
+			continue
+		}
+		first := compiled.sequence.steps[0]
+		if first.behavior == "" {
+			rt.behaviorAgnostic = append(rt.behaviorAgnostic, compiledSequenceCandidate{rule: compiled, firstStep: true})
+		} else {
+			rt.byNextBehavior[first.behavior] = append(rt.byNextBehavior[first.behavior], compiledSequenceCandidate{rule: compiled, firstStep: true})
+		}
+		for i := 1; i < len(compiled.sequence.steps); i++ {
+			step := compiled.sequence.steps[i]
+			candidate := compiledSequenceCandidate{rule: compiled, stepIndex: i}
+			if step.behavior == "" {
+				rt.behaviorAgnostic = append(rt.behaviorAgnostic, candidate)
+			} else {
+				rt.byNextBehavior[step.behavior] = append(rt.byNextBehavior[step.behavior], candidate)
+			}
 		}
 	}
 	return rt
@@ -205,6 +247,16 @@ func (rt compiledRuntime) rulesForBehavior(behavior string) []compiledRule {
 	return out
 }
 
+func (rt compiledSequenceRuntime) candidatesForBehavior(behavior string) []compiledSequenceCandidate {
+	if len(rt.behaviorAgnostic) == 0 {
+		return rt.byNextBehavior[behavior]
+	}
+	out := make([]compiledSequenceCandidate, 0, len(rt.behaviorAgnostic)+len(rt.byNextBehavior[behavior]))
+	out = append(out, rt.byNextBehavior[behavior]...)
+	out = append(out, rt.behaviorAgnostic...)
+	return out
+}
+
 func compileConditions(conditions []ConditionSpec, content ContentSnapshot) []compiledCondition {
 	out := make([]compiledCondition, 0, len(conditions))
 	for _, cond := range conditions {
@@ -216,16 +268,48 @@ func compileConditions(conditions []ConditionSpec, content ContentSnapshot) []co
 			values = append(values, contentValuesFromSnapshot(content, cond.Ref)...)
 		}
 		op := compileOp(cond.Op)
-		out = append(out, compiledCondition{
+		compiled := compiledCondition{
 			field:     compileField(cond.Field),
 			op:        op,
 			values:    normalizeConditionValues(values),
 			matcher:   compileMatcher(op, values),
 			step:      strings.TrimSpace(cond.Step),
 			stepField: compileField(firstNonEmpty(cond.StepField, cond.Field)),
-		})
+		}
+		compiled.cost = conditionCost(compiled)
+		out = append(out, compiled)
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].cost < out[j].cost
+	})
 	return out
+}
+
+func conditionCost(cond compiledCondition) int {
+	cost := 10
+	switch cond.op {
+	case opExists:
+		cost = 1
+	case opEq, opIn, opNeq, opNotIn:
+		cost = 2
+	case opGT, opGTE, opLT, opLTE:
+		cost = 3
+	case opSameAs:
+		cost = 4
+	case opPrefix, opSuffix:
+		cost = 5
+	case opContains:
+		cost = 8
+	default:
+		cost = 20
+	}
+	switch cond.field {
+	case fieldProcessArgv:
+		cost += 4
+	case fieldSocketAddr, fieldSocketPort:
+		cost += 1
+	}
+	return cost
 }
 
 func compileMatcher(op conditionOp, values []string) matcher.Matcher {

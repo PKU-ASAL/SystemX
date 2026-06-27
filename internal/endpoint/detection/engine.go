@@ -32,6 +32,7 @@ type Engine struct {
 	ioc         IOCSnapshot
 	refs        ContentSnapshot
 	compiled    compiledRuntime
+	sequence    compiledSequenceRuntime
 }
 
 type EngineLimits struct {
@@ -229,6 +230,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		return engine, report
 	}
 	engine.compiled = compileRuntime(rules, content)
+	engine.sequence = compileSequenceRuntime(rules, content)
 	report.Coverage = CheckCoverageWithContent(normalized, collection, content)
 	report.Warnings = append(report.Warnings, report.Coverage.Warnings...)
 	if len(report.Warnings) > 0 {
@@ -631,10 +633,16 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 			if e.matchCompiledConditions(view, rule.expr.conditions, nil) {
 				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, false, eventEntities(view.ev)...))
 			}
-		case compiledRuleSequence:
-			if sig := e.detectSequenceRule(view, rule); sig != nil {
-				out = append(out, sig)
-			}
+		}
+	}
+	for _, candidate := range e.sequence.candidatesForBehavior(view.behavior) {
+		e.metrics.CEPRulesScanned++
+		if !candidate.rule.rule.enabled {
+			continue
+		}
+		e.metrics.CEPRulesEvaluated++
+		if sig := e.detectSequenceCandidate(view, candidate); sig != nil {
+			out = append(out, sig)
 		}
 	}
 	return out
@@ -662,6 +670,11 @@ func (r effectiveRule) runtimeType() string {
 }
 
 func (e *Engine) detectSequenceRule(view eventView, rule compiledRule) *signalv1.Signal {
+	return e.detectSequenceCandidate(view, compiledSequenceCandidate{rule: rule, firstStep: true})
+}
+
+func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSequenceCandidate) *signalv1.Signal {
+	rule := candidate.rule
 	seq := rule.sequence
 	if len(seq.steps) == 0 {
 		return nil
@@ -679,6 +692,18 @@ func (e *Engine) detectSequenceRule(view eventView, rule compiledRule) *signalv1
 		e.metrics.ExpiredCEPGroups++
 		st = nil
 	}
+	if !candidate.firstStep {
+		if st == nil || st.StepIndex != candidate.stepIndex {
+			return nil
+		}
+	} else if st != nil && st.StepIndex > 0 {
+		if !e.matchCompiledStep(view, seq.steps[0], &cepGroupState{Values: make(map[string]map[string]string)}) {
+			return nil
+		}
+		st.StepIndex = 0
+		st.Refs = nil
+		st.Values = make(map[string]map[string]string)
+	}
 	if st == nil {
 		e.evictCEPGroups(ruleState, now)
 		st = &cepGroupState{Values: make(map[string]map[string]string)}
@@ -691,15 +716,7 @@ func (e *Engine) detectSequenceRule(view eventView, rule compiledRule) *signalv1
 	}
 	step := seq.steps[st.StepIndex]
 	if !e.matchCompiledStep(view, step, st) {
-		first := seq.steps[0]
-		if st.StepIndex > 0 && e.matchCompiledStep(view, first, &cepGroupState{Values: make(map[string]map[string]string)}) {
-			st.StepIndex = 0
-			st.Refs = nil
-			st.Values = make(map[string]map[string]string)
-			step = first
-		} else {
-			return nil
-		}
+		return nil
 	}
 	st.Refs = appendUnique(st.Refs, view.eventID)
 	if len(st.Refs) > e.limits.MaxCEPRefs {
