@@ -22,6 +22,9 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	if cfg.Sensor.TetraPath == "" || cfg.Sensor.TetragonPath == "" {
 		t.Fatalf("example managed tetragon paths missing: %+v", cfg.Sensor)
 	}
+	if cfg.Runtime.FeatureFlags.MatcherStrategy != "linear" {
+		t.Fatalf("example matcher strategy = %q, want linear", cfg.Runtime.FeatureFlags.MatcherStrategy)
+	}
 }
 
 func TestDefaultManagerTransportIsGRPC(t *testing.T) {
@@ -139,6 +142,10 @@ policy:
 resource:
   max_active_cep_groups: 32
   max_event_refs_per_signal: 8
+
+runtime:
+  feature_flags:
+    matcher_strategy: optimized
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -183,6 +190,48 @@ resource:
 	}
 	if cfg.Resource.MaxActiveCEPGroups != 32 || cfg.Resource.MaxEventRefsPerSignal != 8 {
 		t.Fatalf("resource config = %+v", cfg.Resource)
+	}
+	if cfg.Runtime.FeatureFlags.MatcherStrategy != "optimized" {
+		t.Fatalf("runtime feature flags = %+v", cfg.Runtime.FeatureFlags)
+	}
+}
+
+func TestLoadFileRejectsInvalidRuntimeFeatureFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: grpc
+
+runtime:
+  feature_flags:
+    matcher_strategy: nope
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+
+spool:
+  path: /var/lib/sysarmor/agent/spool
+
+data_plane:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "runtime.feature_flags.matcher_strategy") {
+		t.Fatalf("LoadFile() error = %v, want matcher strategy validation error", err)
 	}
 }
 

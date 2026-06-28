@@ -17,6 +17,10 @@ manager:
 control:
   socket_path: /var/run/sysarmor/agent.sock
 
+runtime:
+  feature_flags:
+    matcher_strategy: linear # linear | optimized; SYSARMOR_TEST_MATCHER_STRATEGY can override in tests
+
 sensor:
   backend: tetragon
   mode: managed

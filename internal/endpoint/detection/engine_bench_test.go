@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
 )
@@ -40,36 +41,46 @@ func BenchmarkEngineProcessCEPRuleCount(b *testing.B) {
 }
 
 func BenchmarkEngineProcessContentPrefixCount(b *testing.B) {
-	for _, prefixes := range []int{4, 16, 64, 256, 1024} {
-		b.Run(fmt.Sprintf("prefixes_%d", prefixes), func(b *testing.B) {
-			content := ContentSnapshot{
-				ContextRefs: map[string]ContentRef{
-					"ctx:bench-prefixes": {Ref: "ctx:bench-prefixes", Version: "v1", Values: benchmarkPrefixes(prefixes)},
-				},
-				Rules: []RuleSpec{{
-					RuleID:            "bench_prefix_file_read",
-					Version:           1,
-					RuleSetRef:        "ruleset:cep",
-					Severity:          "medium",
-					RuntimeType:       "expr",
-					RequiredBehaviors: []string{"file.read"},
-					Expr: ExprSpec{Conditions: []ConditionSpec{
-						{Field: "file.path", Op: "prefix", Ref: "ctx:bench-prefixes"},
-					}},
-				}},
+	for _, strategy := range benchmarkMatcherStrategies() {
+		b.Run(string(strategy), func(b *testing.B) {
+			matcher.SetDefaultStrategy(strategy)
+			b.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
+			for _, prefixes := range []int{4, 16, 64, 256, 1024} {
+				b.Run(fmt.Sprintf("prefixes_%d", prefixes), func(b *testing.B) {
+					content := ContentSnapshot{
+						ContextRefs: map[string]ContentRef{
+							"ctx:bench-prefixes": {Ref: "ctx:bench-prefixes", Version: "v1", Values: benchmarkPrefixes(prefixes)},
+						},
+						Rules: []RuleSpec{{
+							RuleID:            "bench_prefix_file_read",
+							Version:           1,
+							RuleSetRef:        "ruleset:cep",
+							Severity:          "medium",
+							RuntimeType:       "expr",
+							RequiredBehaviors: []string{"file.read"},
+							Expr: ExprSpec{Conditions: []ConditionSpec{
+								{Field: "file.path", Op: "prefix", Ref: "ctx:bench-prefixes"},
+							}},
+						}},
+					}
+					engine, _ := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+					events := benchmarkFileReadEvents(256)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						engine.Process(events[i%len(events)])
+					}
+					metrics := engine.Metrics()
+					b.ReportMetric(float64(metrics.CEPRulesScanned)/float64(b.N), "cep_scans/op")
+					b.ReportMetric(float64(metrics.ConditionsEvaluated)/float64(b.N), "conds/op")
+				})
 			}
-			engine, _ := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
-			events := benchmarkFileReadEvents(256)
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				engine.Process(events[i%len(events)])
-			}
-			metrics := engine.Metrics()
-			b.ReportMetric(float64(metrics.CEPRulesScanned)/float64(b.N), "cep_scans/op")
-			b.ReportMetric(float64(metrics.ConditionsEvaluated)/float64(b.N), "conds/op")
 		})
 	}
+}
+
+func benchmarkMatcherStrategies() []matcher.Strategy {
+	return []matcher.Strategy{matcher.StrategyLinear, matcher.StrategyOptimized}
 }
 
 func BenchmarkEngineProcessSequenceHeavy(b *testing.B) {

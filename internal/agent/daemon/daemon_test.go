@@ -25,6 +25,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -56,6 +57,77 @@ func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, queue *spo
 		t.Fatal(err)
 	}
 	return batchID
+}
+
+func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "")
+	t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "optimized"}},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+	}
+	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if got := matcher.DefaultStrategy(); got != matcher.StrategyOptimized {
+		t.Fatalf("matcher strategy = %q, want optimized", got)
+	}
+	if got := runner.detectionHealth().FeatureFlags.MatcherStrategy; got != "optimized" {
+		t.Fatalf("health matcher strategy = %q, want optimized", got)
+	}
+}
+
+func TestAgentRuntimeMatcherFeatureFlagTestOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "optimized")
+	t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+	}
+	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if got := matcher.DefaultStrategy(); got != matcher.StrategyOptimized {
+		t.Fatalf("matcher strategy = %q, want optimized", got)
+	}
+	if got := runner.detectionHealth().FeatureFlags.MatcherStrategy; got != "optimized" {
+		t.Fatalf("health matcher strategy = %q, want optimized", got)
+	}
+}
+
+func TestAgentRuntimeRejectsInvalidMatcherFeatureFlagOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "auto")
+	t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
+	cfg := config.Config{
+		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
+		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+	}
+	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "matcher_strategy") {
+		t.Fatalf("New() error = %v, want matcher strategy validation error", err)
+	}
 }
 
 func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {

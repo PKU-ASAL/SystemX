@@ -5,6 +5,7 @@ import (
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 )
 
@@ -37,28 +38,34 @@ func TestRuleEngineEffectivenessScenarios(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			engine, report := New(policymodel.DefaultDetectionPolicy())
-			if report.Status != "applied" {
-				t.Fatalf("report = %+v", report)
-			}
-			signals := processAll(engine, tt.events)
-			for _, name := range tt.wantSignals {
-				if countSignals(signals, name) == 0 {
-					t.Fatalf("missing signal %q; got %v", name, signalSummary(signals))
-				}
-			}
-			if tt.wantTerminal != "" && countTerminalSignals(signals, tt.wantTerminal) == 0 {
-				t.Fatalf("missing terminal signal %q; got %v", tt.wantTerminal, signalSummary(signals))
-			}
-			for _, name := range tt.forbidSignals {
-				if countSignals(signals, name) != 0 {
-					t.Fatalf("forbidden signal %q emitted; got %v", name, signalSummary(signals))
-				}
-			}
-			if tt.forbidTerminalAny && countAnyTerminalSignals(signals) != 0 {
-				t.Fatalf("forbidden terminal signal emitted; got %v", signalSummary(signals))
+	for _, strategy := range []matcher.Strategy{matcher.StrategyLinear, matcher.StrategyOptimized} {
+		t.Run(string(strategy), func(t *testing.T) {
+			matcher.SetDefaultStrategy(strategy)
+			t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					engine, report := New(policymodel.DefaultDetectionPolicy())
+					if report.Status != "applied" {
+						t.Fatalf("report = %+v", report)
+					}
+					signals := processAll(engine, tt.events)
+					for _, name := range tt.wantSignals {
+						if countSignals(signals, name) == 0 {
+							t.Fatalf("missing signal %q; got %v", name, signalSummary(signals))
+						}
+					}
+					if tt.wantTerminal != "" && countTerminalSignals(signals, tt.wantTerminal) == 0 {
+						t.Fatalf("missing terminal signal %q; got %v", tt.wantTerminal, signalSummary(signals))
+					}
+					for _, name := range tt.forbidSignals {
+						if countSignals(signals, name) != 0 {
+							t.Fatalf("forbidden signal %q emitted; got %v", name, signalSummary(signals))
+						}
+					}
+					if tt.forbidTerminalAny && countAnyTerminalSignals(signals) != 0 {
+						t.Fatalf("forbidden terminal signal emitted; got %v", signalSummary(signals))
+					}
+				})
 			}
 		})
 	}

@@ -15,6 +15,7 @@ type Config struct {
 	Agent     AgentConfig
 	Manager   ManagerConfig
 	Control   ControlConfig
+	Runtime   RuntimeConfig
 	Sensor    SensorConfig
 	Spool     SpoolConfig
 	DataPlane DataPlaneConfig
@@ -44,6 +45,14 @@ type ManagerConfig struct {
 
 type ControlConfig struct {
 	SocketPath string
+}
+
+type RuntimeConfig struct {
+	FeatureFlags RuntimeFeatureFlags
+}
+
+type RuntimeFeatureFlags struct {
+	MatcherStrategy string
 }
 
 type SensorConfig struct {
@@ -159,6 +168,9 @@ func (c Config) Validate() error {
 	if c.Manager.Transport != "grpc" && c.Manager.Transport != "local" {
 		return fmt.Errorf("manager.transport must be grpc or local")
 	}
+	if !validMatcherStrategy(c.Runtime.FeatureFlags.MatcherStrategy) {
+		return fmt.Errorf("runtime.feature_flags.matcher_strategy must be linear or optimized")
+	}
 	if (c.Manager.TLSCert == "") != (c.Manager.TLSKey == "") {
 		return fmt.Errorf("manager.tls_cert and manager.tls_key must be configured together")
 	}
@@ -263,6 +275,15 @@ func (s SensorConfig) EffectiveScope() (RuntimeScope, error) {
 	return RuntimeScope{Type: normalizedType, Selector: normalizedSelector}, nil
 }
 
+func validMatcherStrategy(strategy string) bool {
+	switch strings.ToLower(strings.TrimSpace(strategy)) {
+	case "", "linear", "optimized":
+		return true
+	default:
+		return false
+	}
+}
+
 func parse(r *os.File) (Config, error) {
 	cfg := defaults()
 	scanner := bufio.NewScanner(r)
@@ -282,6 +303,14 @@ func parse(r *os.File) (Config, error) {
 			return Config{}, fmt.Errorf("line %d: key outside section", lineNo)
 		}
 		trimmed := strings.TrimSpace(raw)
+		if section == "runtime" && strings.HasSuffix(trimmed, ":") {
+			nested := strings.TrimSuffix(trimmed, ":")
+			if nested != "feature_flags" {
+				return Config{}, fmt.Errorf("line %d: unknown config key runtime.%s", lineNo, nested)
+			}
+			section = "runtime.feature_flags"
+			continue
+		}
 		if section == "sensor" && strings.HasSuffix(trimmed, ":") {
 			nested := strings.TrimSuffix(trimmed, ":")
 			if nested != "scope" {
@@ -313,6 +342,7 @@ func defaults() Config {
 	return Config{
 		Manager:   ManagerConfig{Transport: "grpc"},
 		Control:   ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
+		Runtime:   RuntimeConfig{FeatureFlags: RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
 		Spool:     SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
 		DataPlane: DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
@@ -376,6 +406,13 @@ func assign(cfg *Config, section, key, value string) error {
 		switch key {
 		case "socket_path":
 			cfg.Control.SocketPath = value
+		default:
+			return unknown(section, key)
+		}
+	case "runtime.feature_flags":
+		switch key {
+		case "matcher_strategy":
+			cfg.Runtime.FeatureFlags.MatcherStrategy = value
 		default:
 			return unknown(section, key)
 		}

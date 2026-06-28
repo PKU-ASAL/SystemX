@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -73,6 +75,7 @@ type AgentRuntime struct {
 	detection       *detection.Engine
 	collection      contract.CollectionIntent
 	content         *agentcontent.Store
+	featureFlags    agenthealth.RuntimeFeatureFlags
 	detectionStatus agenthealth.DetectionHealth
 	signalSeq       uint64
 }
@@ -82,6 +85,10 @@ type healthReporter interface {
 }
 
 func New(cfg config.Config) (*AgentRuntime, error) {
+	featureFlags, err := applyRuntimeFeatureFlags(cfg)
+	if err != nil {
+		return nil, err
+	}
 	sensor, err := sensorFromConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -90,11 +97,28 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore}, nil
+	return &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags}, nil
 }
 
 func NewAgentRuntime(cfg config.Config) (*AgentRuntime, error) {
 	return New(cfg)
+}
+
+func applyRuntimeFeatureFlags(cfg config.Config) (agenthealth.RuntimeFeatureFlags, error) {
+	strategy := strings.ToLower(strings.TrimSpace(cfg.Runtime.FeatureFlags.MatcherStrategy))
+	if strategy == "" {
+		strategy = string(matcher.StrategyLinear)
+	}
+	if override := strings.TrimSpace(os.Getenv("SYSARMOR_TEST_MATCHER_STRATEGY")); override != "" {
+		strategy = strings.ToLower(override)
+	}
+	switch matcher.Strategy(strategy) {
+	case matcher.StrategyLinear, matcher.StrategyOptimized:
+		matcher.SetDefaultStrategy(matcher.Strategy(strategy))
+	default:
+		return agenthealth.RuntimeFeatureFlags{}, fmt.Errorf("runtime.feature_flags.matcher_strategy: unsupported value %q", strategy)
+	}
+	return agenthealth.RuntimeFeatureFlags{MatcherStrategy: strategy}, nil
 }
 
 func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
@@ -588,6 +612,7 @@ func (r *AgentRuntime) setDetectionStatus(policy policymodel.Policy, report dete
 	status := agenthealth.DetectionHealth{
 		PolicyID:        firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
 		PolicyVersion:   policy.Detection.Version,
+		FeatureFlags:    r.featureFlags,
 		LastApplyStatus: report.Status,
 		UpdatedAt:       time.Now().UTC(),
 		ContentRefs:     detectionContentRefs(snapshot),
@@ -612,7 +637,9 @@ func firstNonEmptyString(values ...string) string {
 func (r *AgentRuntime) detectionHealth() agenthealth.DetectionHealth {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.detectionStatus
+	health := r.detectionStatus
+	health.FeatureFlags = r.featureFlags
+	return health
 }
 
 func (r *AgentRuntime) detectionLimits() detection.EngineLimits {
