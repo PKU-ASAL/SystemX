@@ -7,7 +7,7 @@ RESULTS="$ROOT/.results"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUT_DIR="$RESULTS/bench-matrix-vm/$RUN_ID"
 
-POLICIES="${POLICIES-test/data/policies/collection-minimal-high-signal.json test/data/policies/collection-edr-balanced.json test/data/policies/collection-incident-deep.json}"
+POLICIES="${POLICIES-test/data/policies/collection-minimal.json test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
 WORKLOADS="${WORKLOADS-business-normal}"
 SCENARIOS="${SCENARIOS-apt-fileless-c2 apt-staged-drop benign-ci-noise}"
 MATRIX_MODE="${MATRIX_MODE:-cross}"
@@ -46,7 +46,7 @@ run_case() {
       POLICIES="$POLICIES" \
       SYSARMOR_BENCH_WORKLOAD="$workload" \
       SYSARMOR_BENCH_SCENARIO="$scenario" \
-      bash "$HERE/bench-collection-vm.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
+      bash "$HERE/collection-vm.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
     printf '{"name":"%s","workload":"%s","scenario":"%s","status":"ok","bench_run_id":"%s"}\n' \
       "$case_name" "$workload" "$scenario" "$case_run_id" >"$case_dir/status.json"
   else

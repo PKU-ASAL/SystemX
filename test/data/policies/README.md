@@ -21,9 +21,9 @@
 | 文件 | 控制什么 |
 |---|---|
 | collection.yaml | 采集哪些事件种类 (EXEC/OPEN/CONNECT...),编译出 sensor 的 CollectionIntent |
-| collection-minimal-high-signal.json | 最小常开面,只保留高置信 exec、IOC 外联、payload/persistence 写入 |
-| collection-edr-balanced.json | 长期运行的 EDR baseline,只常开高价值行为:可疑 exec、IOC 外联、payload/persistence 写入 |
-| collection-incident-deep.json | 调查窗口/高风险触发策略,短时间打开 fork/exit/credential read 等高可见性采集面 |
+| collection-minimal.json | 最小常开面,只保留高置信 exec、IOC 外联、payload/persistence 写入 |
+| collection-balanced.json | 长期运行的 EDR baseline,只常开高价值行为:可疑 exec、IOC 外联、payload/persistence 写入 |
+| collection-deep.json | 调查窗口/高风险触发策略,短时间打开 fork/exit/credential read 等高可见性采集面 |
 | detection.yaml | 检测规则 + 收敛参数 (rarity_structural, top_k=8, cms_width=4096) |
 | detection-additive.yaml | 对照档:把收敛切为 additive_threshold (反模式,仅 benign-ci-noise 对照实验用) |
 | resource.yaml | 端侧资源上限 (RSS 512MB, lineage TTL 1min, ringbuffer 64MiB...) |
@@ -34,9 +34,9 @@
 
 完整 policy/rule content 控制面落地后,这些文件应作为 manager 可管理、可分配、可版本化的策略内容:
 - collection.yaml → agent 编译出 TracingPolicy 下发给 tetragon
-- collection-edr-balanced.json → agent local manager 路径可配合 `test/data/content/context-*.json` 和 `test/data/content/ioc-*.json` 展开 refs,作为长期运行默认面
-- collection-incident-deep.json → 由本地 manager / sysarmorctl 在告警、调查或高风险窗口中动态 apply,窗口结束后回到 balanced
-- collection-minimal-high-signal.json → 用于 `bench-collection-vm` 默认矩阵,代表低成本常开下界
+- collection-balanced.json → agent local manager 路径可配合 `test/data/content/context-*.json` 和 `test/data/content/ioc-*.json` 展开 refs,作为长期运行默认面
+- collection-deep.json → 由本地 manager / sysarmorctl 在告警、调查或高风险窗口中动态 apply,窗口结束后回到 balanced
+- collection-minimal.json → 用于 `bench-collection-vm` 默认矩阵,代表低成本常开下界
 - detection.yaml → agent 检测引擎加载收敛参数和规则引用
 - detection-additive.yaml → 对照实验:替换 detection.yaml 的 converge.mode
 - resource.yaml → agent 运行时守资源上限,超则降级

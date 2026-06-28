@@ -1,5 +1,5 @@
 {
-  "policy_id": "incident-deep-linux",
+  "policy_id": "minimal-linux",
   "version": 2,
   "behaviors": [
     {
@@ -7,7 +7,7 @@
       "enabled": true,
       "selectors": {
         "process": {
-          "binary_prefixes": ["/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/", "/usr/bin/curl", "/usr/bin/wget", "/usr/bin/nc", "/usr/bin/socat"]
+          "binary_prefixes": ["/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
         }
       }
     },
@@ -16,21 +16,25 @@
       "enabled": true,
       "selectors": {
         "process": {
-          "binary_prefixes": ["/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/", "/usr/bin/curl", "/usr/bin/wget", "/usr/bin/nc", "/usr/bin/socat", "/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash"]
+          "binary_prefixes": [
+            "/tmp/",
+            "/dev/shm/",
+            "/var/tmp/",
+            "/var/lib/app/plugins/",
+            "/usr/bin/curl",
+            "/usr/bin/wget",
+            "/usr/bin/nc",
+            "/usr/bin/socat",
+            "/bin/sh",
+            "/bin/bash",
+            "/usr/bin/sh",
+            "/usr/bin/bash"
+          ]
         },
         "socket": {
           "families": ["AF_INET", "AF_INET6"],
           "addr_refs": ["ioc:c2-ip-feed"],
           "port_refs": ["ioc:c2-download-port-feed", "ioc:c2-control-port-feed"]
-        }
-      }
-    },
-    {
-      "id": "file.read",
-      "enabled": true,
-      "selectors": {
-        "file": {
-          "prefix_refs": ["ctx:credential-path-prefixes", "ctx:secret-volume-prefixes"]
         }
       }
     },

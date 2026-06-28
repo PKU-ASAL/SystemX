@@ -43,7 +43,7 @@ vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/de
 vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
 vagrant upload "$REPO/test/data/content" /tmp/sysarmor-content.upload node-a >/dev/null
-vagrant upload "$REPO/test/data/policies/collection-edr-balanced.json" /tmp/sysarmor-collection-edr-balanced.json node-a >/dev/null
+vagrant upload "$REPO/test/data/policies/collection-balanced.json" /tmp/sysarmor-collection-balanced.json node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
 TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
@@ -221,7 +221,7 @@ for content_name in \
     > "$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json" \
     2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json.err"
 done
-vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-collection-edr-balanced.json --agent-id vm-owned-tetragon --tenant-id default --timeout 60s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply collection --file /tmp/sysarmor-collection-balanced.json --agent-id vm-owned-tetragon --tenant-id default --timeout 60s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json" \
   2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json.err"
 if ! grep -Fq 'resolved_refs' "$RESULTS/e2e-agent-real-tetragon-owned-vm.collection-apply.json"; then

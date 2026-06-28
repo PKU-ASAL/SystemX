@@ -93,7 +93,7 @@ web/runtime 执行 shell
 
 1. **高价值 terminal**：C2 connect、payload write/chmod、credential read、persistence write；
 2. **少量局部上下文**：payload path exec、shell/interpreter network connect、credential/persistence path file operation；
-3. **调查窗口再打开 deep hopset**：fork/exit/broad exec/open 只在 incident-deep 中短期开启。
+3. **调查窗口再打开 deep hopset**：fork/exit/broad exec/open 只在 deep 中短期开启。
 
 ### 3.3 规则松耦合
 
@@ -316,7 +316,7 @@ web/runtime 执行 shell
 
 ## 5. Policy 分层建议
 
-### 5.1 minimal-high-signal
+### 5.1 minimal
 
 只保留最确定 terminal：
 
@@ -330,7 +330,7 @@ web/runtime 执行 shell
 - process.fork/exit
 - broad file.open/read
 
-### 5.2 edr-balanced
+### 5.2 balanced
 
 目标是常开、CPU 平稳、代表性足够：
 
@@ -342,7 +342,7 @@ web/runtime 执行 shell
 
 关键建议：**从 balanced 的 process.exec 中移除 `/usr/bin/bash` 和 `/usr/bin/sh`，但保留在 network.connect 中**。这样仍能抓反弹 shell，同时避免 shell exec 风暴。
 
-### 5.3 incident-deep
+### 5.3 deep
 
 只在调查窗口打开：
 

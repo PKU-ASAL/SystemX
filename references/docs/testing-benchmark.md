@@ -122,7 +122,7 @@ test/.results/recordings/<run-id>/
 ```bash
 make -C test bench-collection-vm \
   SYSARMOR_BENCH_WORKLOAD=business-normal \
-  POLICIES='test/data/policies/collection-minimal-high-signal.json'
+  POLICIES='test/data/policies/collection-minimal.json'
 ```
 
 `bench-matrix-vm` is the default endpoint effectiveness/performance gate. Its slim default runs:
@@ -133,9 +133,9 @@ make -C test bench-collection-vm \
 
 Default policy set:
 
-- `test/data/policies/collection-minimal-high-signal.json`;
-- `test/data/policies/collection-edr-balanced.json`;
-- `test/data/policies/collection-incident-deep.json`.
+- `test/data/policies/collection-minimal.json`;
+- `test/data/policies/collection-balanced.json`;
+- `test/data/policies/collection-deep.json`.
 
 Default workload:
 

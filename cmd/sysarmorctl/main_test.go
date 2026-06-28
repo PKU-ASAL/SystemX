@@ -294,7 +294,7 @@ func TestManagerNamespacePolicyAssignDownlink(t *testing.T) {
 		"manager", "policies", "assign",
 		"--tenant", "default",
 		"--agent", "agent-a",
-		"--policy-id", "edr-balanced",
+		"--policy-id", "balanced",
 		"--version", "3",
 		"--downlink",
 		"--command-id", "ctrl-policy",
@@ -306,7 +306,7 @@ func TestManagerNamespacePolicyAssignDownlink(t *testing.T) {
 	if gotMethod != http.MethodPost || gotPath != "/api/v1/policy-assignments" {
 		t.Fatalf("assign method/path = %s %s", gotMethod, gotPath)
 	}
-	if gotBody["tenant_id"] != "default" || gotBody["agent_id"] != "agent-a" || gotBody["policy_id"] != "edr-balanced" || gotBody["downlink"] != true || gotBody["command_id"] != "ctrl-policy" {
+	if gotBody["tenant_id"] != "default" || gotBody["agent_id"] != "agent-a" || gotBody["policy_id"] != "balanced" || gotBody["downlink"] != true || gotBody["command_id"] != "ctrl-policy" {
 		t.Fatalf("assign body = %#v", gotBody)
 	}
 	if gotBody["policy_version"] != float64(3) {
@@ -516,11 +516,11 @@ func TestQueryLocalAgentWatchFilterArgs(t *testing.T) {
 		"signal", "watch",
 		"--include-recent",
 		"--limit", "1",
-		"--label", "policy_profile=collection-edr-balanced",
+		"--label", "policy_profile=collection-balanced",
 	}); err != nil {
 		t.Fatalf("signal watch error = %v", err)
 	}
-	if fake.watchSignalReq.GetFilter().GetLabels()["policy_profile"] != "collection-edr-balanced" {
+	if fake.watchSignalReq.GetFilter().GetLabels()["policy_profile"] != "collection-balanced" {
 		t.Fatalf("signal filter labels = %+v", fake.watchSignalReq.GetFilter().GetLabels())
 	}
 }

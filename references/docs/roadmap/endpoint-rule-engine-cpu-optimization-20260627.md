@@ -4,7 +4,7 @@ CEP 规则每个事件都会遍历所有 enabled rule：见 [engine.go (line 590
 条件匹配没有预编译：每次都做 strings.ToLower、拼 values、解析 field、遍历 ref values：见 [engine.go (line 727)](/home/jiandong/workspace/oslab/sysarmor/sysarmor-next-project/internal/endpoint/detection/engine.go:727)。
 event field 是按条件反复动态提取，比如 argv join、socket addr split、scope/file/path 等：见 [engine.go (line 811)](/home/jiandong/workspace/oslab/sysarmor/sysarmor-next-project/internal/endpoint/detection/engine.go:811)。
 sequence rule 每步命中后会构造完整 eventFieldMap，即使后续只用少数字段：见 [engine.go (line 747)](/home/jiandong/workspace/oslab/sysarmor/sysarmor-next-project/internal/endpoint/detection/engine.go:747)。
-policy 差异不一定只有“规则数”。minimal 比 edr-balanced 少了 file.read，而 collection.yaml 还采 process.fork/exit，这会直接增加 normalizer + detection 的事件输入量。
+policy 差异不一定只有“规则数”。minimal 比 balanced 少了 file.read，而 collection.yaml 还采 process.fork/exit，这会直接增加 normalizer + detection 的事件输入量。
 我建议的优化路线
 先做自研引擎的算法优化，不要一上来换第三方引擎。
 当前问题主要是缺少 rule indexing 和 condition precompile。这些改动小、收益直接，而且不会破坏现在的规则语义。
@@ -75,7 +75,7 @@ policies.
 
 Observed behavior:
 
-- `collection-minimal-high-signal` has much lower CPU usage.
+- `collection-minimal` has much lower CPU usage.
 - Other policies show much higher CPU usage.
 - The visible policy difference is partly rule/behavior coverage, so the
   endpoint user-space rule engine is a likely contributor.
@@ -177,8 +177,8 @@ Effect:
 
 The CPU difference is not necessarily only rule count:
 
-- `collection-minimal-high-signal` does not collect `file.read`.
-- `collection-edr-balanced` adds `file.read`.
+- `collection-minimal` does not collect `file.read`.
+- `collection-balanced` adds `file.read`.
 - `collection.yaml` includes broader behaviors such as `process.fork`,
   `process.exit`, and wider `network.connect` capture.
 
@@ -370,10 +370,10 @@ Separate rule-engine CPU from event-volume CPU:
 Policy-specific review:
 
 - Keep `minimal` as the baseline.
-- For `edr-balanced`, quantify the added cost of `file.read`.
+- For `balanced`, quantify the added cost of `file.read`.
 - For broad policies, inspect whether `process.fork`, `process.exit`, and wide
   `network.connect` collection are necessary for endpoint detection or should
-  move behind incident-deep mode.
+  move behind deep mode.
 
 Expected result:
 
@@ -508,7 +508,7 @@ For policy matrix runs:
 - Will rules need regex matching over argv/path, or are exact/prefix/IOC checks
   enough for the next milestone?
 - Should `file.read` be part of default balanced policy, or remain an
-  incident-deep mode behavior?
+  deep mode behavior?
 - What CPU budget should the endpoint agent target under idle, business-normal,
   and activity-heavy workloads?
 

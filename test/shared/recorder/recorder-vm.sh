@@ -310,7 +310,7 @@ case "$CMD" in
     echo "[recorder-vm] stopped RUN_ID=$RUN_ID OUT_DIR=$OUT_DIR"
     ;;
   report)
-    python3 "$HERE/../benchmarks/bench_lifecycle_report.py" "$OUT_DIR"
+    python3 "$ROOT/benchmarks/matrix/bench_lifecycle_report.py" "$OUT_DIR"
     echo "[recorder-vm] report written to $OUT_DIR/summary.json"
     ;;
   *)

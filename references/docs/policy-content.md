@@ -23,7 +23,7 @@ Collection Policy is behavior-first:
 
 ```json
 {
-  "policy_id": "edr-balanced-linux",
+  "policy_id": "balanced-linux",
   "version": 2,
   "scope_type": "host",
   "scope_selector": "",
@@ -56,7 +56,7 @@ Collection Policy is behavior-first:
 }
 ```
 
-The example is intentionally selective: `edr-balanced` should keep shell/interpreter binaries in `network.connect` selectors where event frequency is lower, but should not broadly collect shell/interpreter `process.exec`. Shell `process.exec` can dominate CPU because normal system and benchmark tooling use bash/sh frequently.
+The example is intentionally selective: `balanced` should keep shell/interpreter binaries in `network.connect` selectors where event frequency is lower, but should not broadly collect shell/interpreter `process.exec`. Shell `process.exec` can dominate CPU because normal system and benchmark tooling use bash/sh frequently.
 
 Supported behavior families:
 
@@ -269,10 +269,10 @@ Signals should include:
 
 Recommended collection presets:
 
-- `minimal-high-signal`: very small always-on high-risk surface;
-- `edr-balanced`: default long-running EDR surface;
-- `incident-deep`: short investigation window.
+- `minimal`: very small always-on high-risk surface;
+- `balanced`: default long-running EDR surface;
+- `deep`: short investigation window.
 
 These are the supported default collection presets. `collection-debug-wide` is not part of the default policy set.
 
-Balanced defaults should not treat all of `/tmp` or `/var/tmp` as malicious. Prefer concrete high-risk paths such as `/dev/shm/`, explicit attack/test prefixes, persistence paths, plugin directories, and active IOC/context packages. Balanced should also avoid broad shell/interpreter `process.exec`; keep shell/interpreter matching on lower-frequency `network.connect` or in short-lived `incident-deep` windows.
+Balanced defaults should not treat all of `/tmp` or `/var/tmp` as malicious. Prefer concrete high-risk paths such as `/dev/shm/`, explicit attack/test prefixes, persistence paths, plugin directories, and active IOC/context packages. Balanced should also avoid broad shell/interpreter `process.exec`; keep shell/interpreter matching on lower-frequency `network.connect` or in short-lived `deep` windows.

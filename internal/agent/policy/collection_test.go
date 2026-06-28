@@ -23,7 +23,7 @@ func TestParseCollectionIntent(t *testing.T) {
 }
 
 func TestLoadCollectionIntentFromRepoPolicy(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "test", "policies", "collection.yaml")
+	path := filepath.Join("..", "..", "..", "test", "data", "policies", "collection.yaml")
 	intent, err := LoadCollectionIntent(path, true)
 	if err != nil {
 		t.Fatalf("LoadCollectionIntent() error = %v", err)
@@ -33,8 +33,8 @@ func TestLoadCollectionIntentFromRepoPolicy(t *testing.T) {
 	}
 }
 
-func TestEdrBalancedPolicyResolvesContentRefs(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "test", "policies", "collection-edr-balanced.json")
+func TestBalancedPolicyResolvesContentRefs(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "test", "data", "policies", "collection-balanced.json")
 	policy, err := ParseCollectionPolicyJSON(mustReadFile(t, path), true)
 	if err != nil {
 		t.Fatalf("ParseCollectionPolicyJSON() error = %v", err)

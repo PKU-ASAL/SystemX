@@ -12,7 +12,7 @@
 |---|---|
 | Run ID | `20260625T171849Z` |
 | Matrix mode | `cross` |
-| Policies | `collection-minimal-high-signal`, `collection-edr-balanced`, `collection-incident-deep` |
+| Policies | `collection-minimal`, `collection-balanced`, `collection-deep` |
 | Workload | `business-normal` |
 | Scenarios | `apt-fileless-c2`, `apt-staged-drop`, `benign-ci-noise` |
 | Cases | 9 |
@@ -197,7 +197,7 @@ Balanced 当前在 `process.exec` 中包含 `/bin/sh`、`/bin/bash`、`/usr/bin/
 
 - 从 balanced `process.exec` 移除 `/bin/sh`、`/bin/bash`、`/usr/bin/sh`、`/usr/bin/bash`；
 - 保留这些 binary 在 `network.connect` 中，因为 connect 频率远低于 exec，仍可抓 reverse shell；
-- 若需要 shell exec 上下文，交给 `incident-deep` 或 terminal 触发后的 enhanced collection window。
+- 若需要 shell exec 上下文，交给 `deep` 或 terminal 触发后的 enhanced collection window。
 
 ### 6.2 Credential `file.read` 事件比预期多
 

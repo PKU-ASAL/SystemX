@@ -175,7 +175,7 @@ func DefaultDetectionPolicy() *DetectionPolicy {
 			{
 				RuleID:  "credential_file_read",
 				Enabled: &disabled,
-				Reason:  "credential file reads are collected by incident-deep or triggered policies, not the long-running balanced baseline",
+				Reason:  "credential file reads are collected by deep or triggered policies, not the long-running balanced baseline",
 			},
 		},
 		IOCRefs: []ContentRef{

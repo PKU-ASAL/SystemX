@@ -71,7 +71,7 @@ the workload window.
 
 | Dimension | Label | Examples |
 |---|---|---|
-| policy | `policy_profile` | `minimal-high-signal`, `edr-balanced`, `incident-deep` |
+| policy | `policy_profile` | `minimal`, `balanced`, `deep` |
 | workload | `workload` | `business-normal`, `host-activity-heavy`, `edr-activity-heavy` |
 | scenario | `scenario` | `apt-fileless-c2`, `apt-staged-drop`, `benign-ci-noise` |
 

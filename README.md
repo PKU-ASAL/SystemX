@@ -117,8 +117,8 @@ sysarmorctl --mgr 127.0.0.1:9443 recompute --label scenario=benign-ci-noise --mo
 Endpoint policy explain and WAL health:
 
 ```bash
-sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/data/policies/collection-edr-balanced.json
-sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/data/policies/collection-edr-balanced.json --report-only
+sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/data/policies/collection-balanced.json
+sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/data/policies/collection-balanced.json --report-only
 sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json agent health
 ```
 

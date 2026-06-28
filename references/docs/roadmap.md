@@ -50,7 +50,7 @@ Platform foundations:
 2. Improve collection compiler.
    - Expand Tetragon selector coverage.
    - Keep collection behavior objective and sensor-neutral.
-   - Keep `edr-balanced` selective enough for stable CPU: avoid broad shell/interpreter `process.exec`, prefer C2/path-limited `network.connect` and file selectors, and reserve fork/exit/broad exec for `incident-deep`.
+   - Keep `balanced` selective enough for stable CPU: avoid broad shell/interpreter `process.exec`, prefer C2/path-limited `network.connect` and file selectors, and reserve fork/exit/broad exec for `deep`.
 
 3. Improve detection content runtime.
    - Stabilize RuleSet/RulePack structure.
