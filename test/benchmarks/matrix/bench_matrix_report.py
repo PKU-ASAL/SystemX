@@ -34,11 +34,15 @@ def main():
         bench_run_id = status.get("bench_run_id", "")
         source = out_dir.parents[1] / "bench-collection-vm" / bench_run_id / "matrix.csv"
         matrix_rows = load_csv(source)
+        variant = status.get("variant", "")
+        matcher_strategy = status.get("matcher_strategy", "")
         workload = status.get("workload", "")
         scenario = status.get("scenario", "")
         if not matrix_rows:
             rows.append({
                 "name": status.get("name", case_dir.name),
+                "variant": variant,
+                "matcher_strategy": matcher_strategy,
                 "workload": workload,
                 "scenario": scenario,
                 "status": status.get("status", "unknown"),
@@ -51,6 +55,8 @@ def main():
                 continue
             merged = {
                 "name": status.get("name", case_dir.name),
+                "variant": variant,
+                "matcher_strategy": matcher_strategy,
                 "workload": workload,
                 "scenario": scenario,
                 "status": status.get("status", "unknown"),
@@ -63,7 +69,7 @@ def main():
     if deprecated_matrix_json.exists():
         deprecated_matrix_json.unlink()
     fields = []
-    for base in ("name", "workload", "scenario", "status", "bench_run_id", "policy_dir", "policy_id", "policy_version"):
+    for base in ("name", "variant", "matcher_strategy", "workload", "scenario", "status", "bench_run_id", "policy_dir", "policy_id", "policy_version"):
         if any(base in row for row in rows):
             fields.append(base)
     extra = sorted({key for row in rows for key in row.keys()} - set(fields))

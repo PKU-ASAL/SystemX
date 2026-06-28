@@ -96,9 +96,12 @@ def phase_fields(prefix, data):
 
 def build_row(policy_dir):
     summary = load_json(policy_dir / "summary.json")
+    runtime_flags = load_json(policy_dir / "runtime-feature-flags.json")
     policy_id, policy_version, policy_hash, resolved_refs = apply_report(policy_dir / "collection-apply.json")
     row = {
         "policy_dir": policy_dir.name,
+        "variant": runtime_flags.get("variant", ""),
+        "matcher_strategy": runtime_flags.get("matcher_strategy", ""),
         "policy_id": policy_id,
         "policy_version": policy_version,
         "generated_policy_hash": policy_hash,
@@ -133,6 +136,8 @@ def main():
     matrix_csv = out_dir / "matrix.csv"
     fields = [
         "policy_dir",
+        "variant",
+        "matcher_strategy",
         "policy_id",
         "policy_version",
         "generated_policy_hash",

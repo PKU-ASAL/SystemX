@@ -17,6 +17,8 @@ else
   WORKLOAD="${DIAG_SCENARIO:-edr-activity-heavy}"
 fi
 SCENARIO="${SYSARMOR_BENCH_SCENARIO:-}"
+VARIANT="${SYSARMOR_BENCH_VARIANT:-}"
+MATCHER_STRATEGY="${SYSARMOR_BENCH_MATCHER_STRATEGY:-${SYSARMOR_TEST_MATCHER_STRATEGY:-}}"
 POLICIES_RAW="${POLICIES:-test/data/policies/collection-minimal.json test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
 CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-test/data/content}"
 DETECTION_POLICY="${SYSARMOR_BENCH_DETECTION_POLICY:-test/data/policies/detection-cep-endpoint.json}"
@@ -53,16 +55,20 @@ set_agent_labels() {
   local scenario_name="${4:-}"
   local labels_json
   local labels_b64
-  labels_json="$(python3 -c '
+labels_json="$(python3 -c '
 import json,sys
-bench_run, workload_name, policy_name, scenario_name = sys.argv[1:5]
+bench_run, workload_name, policy_name, scenario_name, variant, matcher_strategy = sys.argv[1:7]
 labels = {"benchmark_run": bench_run, "policy_profile": policy_name}
 if workload_name:
     labels["workload"] = workload_name
 if scenario_name:
     labels["scenario"] = scenario_name
+if variant:
+    labels["variant"] = variant
+if matcher_strategy:
+    labels["matcher_strategy"] = matcher_strategy
 print(json.dumps(labels))
-' "$bench_run" "$workload_name" "$policy_name" "$scenario_name")"
+' "$bench_run" "$workload_name" "$policy_name" "$scenario_name" "$VARIANT" "$MATCHER_STRATEGY")"
   labels_b64="$(printf '%s' "$labels_json" | base64 -w0)"
   vagrant ssh node-a -c "sudo SYSARMOR_LABELS_B64='$labels_b64' python3 - <<'PY'
 import base64
@@ -79,6 +85,8 @@ managed_prefixes = (
     'label.workload:',
     'label.scenario:',
     'label.policy_profile:',
+    'label.variant:',
+    'label.matcher_strategy:',
 )
 for line in lines:
     stripped = line.strip()
@@ -100,8 +108,53 @@ if 'workload' in labels:
     insert.append('  label.workload: ' + labels['workload'])
 if 'scenario' in labels:
     insert.append('  label.scenario: ' + labels['scenario'])
+if 'variant' in labels:
+    insert.append('  label.variant: ' + labels['variant'])
+if 'matcher_strategy' in labels:
+    insert.append('  label.matcher_strategy: ' + labels['matcher_strategy'])
 next_section = next((i for i in range(agent_idx + 1, len(out)) if out[i] and not out[i].startswith(' ') and out[i].strip().endswith(':')), len(out))
 out[next_section:next_section] = insert
+p.write_text('\n'.join(out) + '\n')
+PY
+sudo systemctl restart sysarmor-agent" >/dev/null
+  wait_agent_socket
+}
+
+set_runtime_feature_flags() {
+  local matcher_strategy="${1:-}"
+  if [[ -z "$matcher_strategy" ]]; then
+    return 0
+  fi
+  case "$matcher_strategy" in
+    linear|optimized) ;;
+    *)
+      echo "[bench-collection-vm][ERROR] unsupported matcher strategy: $matcher_strategy" >&2
+      exit 1
+      ;;
+  esac
+  vagrant ssh node-a -c "sudo SYSARMOR_MATCHER_STRATEGY='$matcher_strategy' python3 - <<'PY'
+import os
+from pathlib import Path
+
+p = Path('/etc/sysarmor/agent.yaml')
+strategy = os.environ['SYSARMOR_MATCHER_STRATEGY']
+lines = p.read_text().splitlines()
+out = []
+skip_runtime = False
+for line in lines:
+    is_top = bool(line and not line.startswith(' ') and line.strip().endswith(':'))
+    if is_top:
+        skip_runtime = line.strip() == 'runtime:'
+    if skip_runtime:
+        continue
+    out.append(line)
+insert = [
+    'runtime:',
+    '  feature_flags:',
+    '    matcher_strategy: ' + strategy,
+]
+insert_at = next((i for i, line in enumerate(out) if line.strip() == 'sensor:'), len(out))
+out[insert_at:insert_at] = insert + ['']
 p.write_text('\n'.join(out) + '\n')
 PY
 sudo systemctl restart sysarmor-agent" >/dev/null
@@ -201,7 +254,10 @@ run_case_activity() {
 }
 
 echo "[bench-collection-vm] output: $OUT_DIR"
+echo "[bench-collection-vm] variant: ${VARIANT:-default}"
+echo "[bench-collection-vm] matcher_strategy: ${MATCHER_STRATEGY:-config-default}"
 wait_agent_socket
+set_runtime_feature_flags "$MATCHER_STRATEGY"
 
 echo "[bench-collection-vm] uploading content packs and policies"
 vagrant upload "$REPO/$CONTENT_DIR" /tmp/sysarmor-bench-content node-a >/dev/null
@@ -261,6 +317,12 @@ for policy in $POLICIES_RAW; do
     exit 1
   fi
   rec_labels="benchmark_run=$RUN_ID,policy_profile=$name"
+  if [[ -n "$VARIANT" ]]; then
+    rec_labels="$rec_labels,variant=$VARIANT"
+  fi
+  if [[ -n "$MATCHER_STRATEGY" ]]; then
+    rec_labels="$rec_labels,matcher_strategy=$MATCHER_STRATEGY"
+  fi
   if [[ -n "$case_workload" ]]; then
     rec_labels="$rec_labels,workload=$case_workload"
   fi
@@ -268,6 +330,12 @@ for policy in $POLICIES_RAW; do
     rec_labels="$rec_labels,scenario=$case_scenario"
   fi
   mkdir -p "$policy_out"
+  cat >"$policy_out/runtime-feature-flags.json" <<EOF
+{
+  "variant": "$VARIANT",
+  "matcher_strategy": "$MATCHER_STRATEGY"
+}
+EOF
 
   echo "[bench-collection-vm] recording policy=$name workload=${case_workload:-none} scenario=${case_scenario:-none}"
   set_agent_labels "$RUN_ID" "$name" "$case_workload" "$case_scenario"
