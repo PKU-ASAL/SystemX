@@ -367,11 +367,10 @@ def score_or_default(value, default=1.0):
     return default if value == "" else number(value)
 
 
-def required(labels):
-    return [x for x in labels if bool(x.get("required", True))]
-
-
 def label_file(root, kind, topology, name):
+    data_root = root / "data"
+    if data_root.exists():
+        root = data_root
     if kind == "workload":
         return root / "workloads" / topology / name / "labels.yaml"
     return root / "scenarios" / topology / name / "labels.yaml"
@@ -400,9 +399,54 @@ def case_paths(results, bench_case_dir=None):
     )
 
 
+def objective_ids(labels_doc, name, label_type):
+    objective = (labels_doc.get("objectives") or {}).get(name) or {}
+    key = "required_events" if label_type == "event" else "required_signals"
+    return {str(x) for x in objective.get(key) or [] if str(x)}
+
+
+def objective_metrics(name, event_rows, signal_rows, terminal_signal_ids, signal_precision):
+    event_ids = {row["label_id"] for row in event_rows if name in row["objectives"]}
+    signal_ids = {row["label_id"] for row in signal_rows if name in row["objectives"]}
+    terminal_ids = {label_id for label_id in signal_ids if label_id in terminal_signal_ids}
+    event_hit = sum(1 for row in event_rows if name in row["objectives"] and row["matched"])
+    signal_hit = sum(1 for row in signal_rows if name in row["objectives"] and row["matched"])
+    terminal_hit = sum(1 for row in signal_rows if name in row["objectives"] and row["matched"] and row["label_id"] in terminal_signal_ids)
+    event_recall = ratio(event_hit, len(event_ids))
+    signal_recall = ratio(signal_hit, len(signal_ids))
+    terminal_recall = ratio(terminal_hit, len(terminal_ids))
+    if not event_ids and not signal_ids:
+        score = ""
+    else:
+        score = round(
+            0.45 * score_or_default(event_recall, 1.0)
+            + 0.45 * score_or_default(signal_recall, 1.0)
+            + 0.05 * score_or_default(terminal_recall, 1.0)
+            + 0.05 * score_or_default(signal_precision, 1.0),
+            4,
+        )
+    return {
+        f"{name}_score": score,
+        f"{name}_event_recall": event_recall,
+        f"{name}_signal_recall": signal_recall,
+        f"{name}_terminal_recall": terminal_recall,
+        f"{name}_matched_event_labels": event_hit,
+        f"{name}_required_event_labels": len(event_ids),
+        f"{name}_matched_signal_labels": signal_hit,
+        f"{name}_required_signal_labels": len(signal_ids),
+    }
+
+
 def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=None):
     event_labels = labels_doc.get("labels", {}).get("events") or []
     signal_labels = labels_doc.get("labels", {}).get("signals") or []
+    objectives = labels_doc.get("objectives") or {}
+    if "alert" not in objectives or "evidence" not in objectives:
+        raise ValueError(f"labels {labels_doc.get('name') or '<unknown>'} must define objectives.alert and objectives.evidence")
+    alert_event_ids = objective_ids(labels_doc, "alert", "event")
+    alert_signal_ids = objective_ids(labels_doc, "alert", "signal")
+    evidence_event_ids = objective_ids(labels_doc, "evidence", "event")
+    evidence_signal_ids = objective_ids(labels_doc, "evidence", "signal")
     policy = labels_doc.get("policy") or {}
     kind = labels_doc.get("kind") or "unknown"
     supplemental_events = supplemental_referenced_events(events, auxiliary_events or [], signals)
@@ -426,6 +470,11 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
     for label in event_labels:
         hits = [ev for ev in observed_events if event_label_matches(label, ev)]
         label_id = str(label.get("id") or "")
+        row_objectives = []
+        if label_id in alert_event_ids:
+            row_objectives.append("alert")
+        if label_id in evidence_event_ids:
+            row_objectives.append("evidence")
         missing_refs = sorted(missing_event_refs.get(label_id) or [])
         event_matches[label_id] = hits
         for ev in hits:
@@ -434,7 +483,8 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
         event_label_rows.append({
             "label_type": "event",
             "label_id": label_id,
-            "required": bool(label.get("required", True)),
+            "objectives": " ".join(row_objectives),
+            "required": bool(row_objectives),
             "matched": bool(hits or missing_refs),
             "matched_count": len(hits) + len(missing_refs),
             "matched_ids": " ".join([*(ev["id"] for ev in hits if ev["id"]), *(f"missing:{ref}" for ref in missing_refs)]),
@@ -444,9 +494,15 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
     signal_label_rows = []
     matched_signal_ids = set()
     linked_signal_count = 0
+    terminal_signal_ids = {str(label.get("id") or "") for label in signal_labels if bool(label.get("terminal"))}
     for label in signal_labels:
         hits = [sig for sig in observed_signals if signal_label_matches(label, sig)]
         label_id = str(label.get("id") or "")
+        row_objectives = []
+        if label_id in alert_signal_ids:
+            row_objectives.append("alert")
+        if label_id in evidence_signal_ids:
+            row_objectives.append("evidence")
         link_ids = [str(x) for x in label.get("link_events") or []]
         link_total = len(link_ids)
         link_hit = 0
@@ -466,19 +522,14 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
         signal_label_rows.append({
             "label_type": "signal",
             "label_id": label_id,
-            "required": bool(label.get("required", True)),
+            "objectives": " ".join(row_objectives),
+            "required": bool(row_objectives),
             "matched": bool(hits),
             "matched_count": len(hits),
             "matched_ids": " ".join(sig["id"] for sig in hits if sig["id"]),
             "match_quality": quality,
         })
 
-    required_events = required(event_labels)
-    required_signals = required(signal_labels)
-    required_terminal = [label for label in required_signals if bool(label.get("terminal"))]
-    event_hit = sum(1 for row in event_label_rows if row["required"] and row["matched"])
-    signal_hit = sum(1 for row in signal_label_rows if row["required"] and row["matched"])
-    terminal_hit = sum(1 for row in signal_label_rows if row["required"] and row["matched"] and any(l.get("id") == row["label_id"] and l.get("terminal") for l in signal_labels))
     terminal_observed = [sig for sig in observed_signals if sig["terminal"]]
     terminal_allowed = int(policy.get("terminal_signals_allowed", 999999))
     terminal_fp = max(0, len(terminal_observed) - terminal_allowed)
@@ -488,30 +539,20 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
         false_positive_signals = len([sig for sig in observed_signals if sig["id"] not in matched_signal_ids])
     event_noise = len([ev for ev in observed_events if ev["id"] not in matched_event_ids])
 
-    event_recall = ratio(event_hit, len(required_events))
-    signal_recall = ratio(signal_hit, len(required_signals))
-    terminal_recall = ratio(terminal_hit, len(required_terminal))
     signal_precision = ratio(len(observed_signals) - false_positive_signals, len(observed_signals))
     if signal_precision == "" and not observed_signals:
         signal_precision = 1.0
-    signal_f1 = f1_score(signal_precision, signal_recall)
     event_noise_ratio = ratio(event_noise, len(observed_events))
     if not event_labels:
         event_noise_ratio = ""
     signal_event_link_rate = ratio(linked_signal_count, len([row for row in signal_label_rows if row["matched"]]))
-
+    alert = objective_metrics("alert", event_label_rows, signal_label_rows, terminal_signal_ids, signal_precision)
+    evidence = objective_metrics("evidence", event_label_rows, signal_label_rows, terminal_signal_ids, signal_precision)
     if kind == "benign":
-        terminal_policy_score = 1.0 if terminal_fp == 0 else 0.0
         fp_policy_score = 1.0 if false_positive_signals == 0 else 0.0
-        effectiveness = round(0.7 * fp_policy_score + 0.3 * terminal_policy_score, 4)
-    else:
-        effectiveness = round(
-            0.45 * score_or_default(event_recall, 0.0)
-            + 0.40 * score_or_default(signal_recall, 0.0)
-            + 0.10 * score_or_default(terminal_recall, 0.0)
-            + 0.05 * score_or_default(signal_precision, 1.0),
-            4,
-        )
+        terminal_policy_score = 1.0 if terminal_fp == 0 else 0.0
+        alert["alert_score"] = round(0.7 * fp_policy_score + 0.3 * terminal_policy_score, 4)
+        evidence["evidence_score"] = alert["alert_score"]
 
     workload_phase = (bench_summary or {}).get("phases", {}).get("workload", {})
     drops = int(workload_phase.get("dropped_events_delta") or 0)
@@ -523,11 +564,8 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
     return {
         "metrics": {
             "label_kind": kind,
-            "effectiveness_score": effectiveness,
-            "event_recall": event_recall,
-            "signal_recall": signal_recall,
-            "signal_f1": signal_f1,
-            "terminal_recall": terminal_recall,
+            **alert,
+            **evidence,
             "signal_precision": signal_precision,
             "event_noise_ratio": event_noise_ratio,
             "signal_event_link_rate": signal_event_link_rate,
@@ -536,10 +574,6 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
             "observed_events": len(observed_events),
             "observed_signals": len(observed_signals),
             "supplemental_referenced_events": len(supplemental_events),
-            "matched_event_labels": event_hit,
-            "required_event_labels": len(required_events),
-            "matched_signal_labels": signal_hit,
-            "required_signal_labels": len(required_signals),
             "drop_rate": round(drops / events_delta, 4) if events_delta > 0 else 0.0,
             "parse_error_rate": round(parse_errors / events_delta, 4) if events_delta > 0 else 0.0,
             "cost_per_1k_events_cpu": cost_per_1k,
@@ -681,11 +715,22 @@ def main():
         "workload",
         "scenario",
         "policy",
-        "effectiveness_score",
-        "event_recall",
-        "signal_recall",
-        "signal_f1",
-        "terminal_recall",
+        "alert_score",
+        "alert_event_recall",
+        "alert_signal_recall",
+        "alert_terminal_recall",
+        "alert_matched_event_labels",
+        "alert_required_event_labels",
+        "alert_matched_signal_labels",
+        "alert_required_signal_labels",
+        "evidence_score",
+        "evidence_event_recall",
+        "evidence_signal_recall",
+        "evidence_terminal_recall",
+        "evidence_matched_event_labels",
+        "evidence_required_event_labels",
+        "evidence_matched_signal_labels",
+        "evidence_required_signal_labels",
         "signal_precision",
         "event_noise_ratio",
         "signal_event_link_rate",
@@ -696,10 +741,6 @@ def main():
         "supplemental_referenced_events",
         "observed_signals",
         "observed_signals_total",
-        "matched_event_labels",
-        "required_event_labels",
-        "matched_signal_labels",
-        "required_signal_labels",
         "drop_rate",
         "parse_error_rate",
         "cost_per_1k_events_cpu",
@@ -717,6 +758,7 @@ def main():
         "policy",
         "label_type",
         "label_id",
+        "objectives",
         "required",
         "matched",
         "matched_count",

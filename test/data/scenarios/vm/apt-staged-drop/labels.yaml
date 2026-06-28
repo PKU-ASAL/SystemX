@@ -1,44 +1,54 @@
 name: apt-staged-drop
 kind: malicious
 window: workload
+objectives:
+  alert:
+    required_events:
+      - helper_c2
+    required_signals:
+      - reverse_shell_pattern
+  evidence:
+    required_events:
+      - helper_download
+      - helper_write
+      - helper_exec
+      - helper_c2
+    required_signals:
+      - download_by_lolbin
+      - payload_dropped
+      - suspicious_exec_connect
+      - payload_lifecycle
 labels:
   events:
     - id: helper_download
-      required: false
       behavior: network.connect
       match:
         socket: "10.66.0.99:8080"
         process: "*curl*"
     - id: helper_write
-      required: false
       behavior: file.write
       match:
         path: "/var/lib/app/plugins/helper"
     - id: helper_chmod
-      required: false
       behavior: file.chmod
       match:
         path: "/var/lib/app/plugins/helper"
     - id: helper_exec
-      required: true
       behavior: process.exec
       match:
         process: "/var/lib/app/plugins/helper"
     - id: helper_c2
-      required: true
       behavior: network.connect
       match:
         socket: "10.66.0.99:443"
   signals:
     - id: download_by_lolbin
-      required: false
       name: download_by_lolbin
       entities:
         - "socket:10.66.0.99:8080"
       link_events:
         - helper_download
     - id: payload_dropped
-      required: false
       name: payload_dropped
       terminal: false
       entities:
@@ -46,7 +56,6 @@ labels:
       link_events:
         - helper_write
     - id: suspicious_exec_connect
-      required: true
       name: suspicious_exec_connect
       terminal: false
       entities:
@@ -56,7 +65,6 @@ labels:
         - helper_exec
         - helper_c2
     - id: payload_lifecycle
-      required: true
       name: payload_lifecycle
       terminal: false
       entities:
@@ -66,7 +74,6 @@ labels:
         - helper_exec
         - helper_c2
     - id: reverse_shell_pattern
-      required: false
       name: reverse_shell_pattern
       terminal: true
       entities:

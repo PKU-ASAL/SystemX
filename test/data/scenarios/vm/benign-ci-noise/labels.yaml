@@ -1,6 +1,13 @@
 name: benign-ci-noise
 kind: benign
 window: workload
+objectives:
+  alert:
+    required_events: []
+    required_signals: []
+  evidence:
+    required_events: []
+    required_signals: []
 labels:
   events: []
   signals: []
