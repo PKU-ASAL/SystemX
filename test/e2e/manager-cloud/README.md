@@ -1,28 +1,17 @@
 # Manager Cloud Suite
 
-Scope: `manager`
+Scope: `platform` for API/storage/control semantics, and `topology` when a real
+VM agent path is required.
 
-System under test:
-
-- manager data ingest;
-- cloud analytics;
-- manager store;
-- manager HTTP query/control APIs accessed through `sysarmorctl manager ...`.
-
-This suite verifies manager-visible events, cloud signals, incidents, graph/evidence, policy, response, and query behavior.
-
-Case scripts in this suite include manager idempotency, agent health query, policy control, response control, incident/graph evidence tests, and container scenario tests for manager-visible security semantics.
+This suite owns manager ingest/query, cloud signals, incidents, graph/evidence,
+policy APIs, response APIs, and manager-facing agent health checks.
 
 Entrypoints:
 
 ```bash
-make -C test test-manager-cloud
-make -C test capture TOPO=container SCENARIO=apt-fileless-c2
-make -C test e2e-agent-detection-container-all
+make -C test test-platform
+make -C test test-topology SCENARIO=apt-fileless-c2
 ```
 
-Out of scope:
-
-- local agent CPU/RSS benchmark;
-- local-only spool watch semantics;
-- low-level perf/pprof diagnostics.
+Endpoint resource conclusions are out of scope here; use `bench-endpoint` on
+`vm-endpoint` for that.

@@ -1,95 +1,165 @@
 # Testing And Benchmarking
 
-This document defines the test and benchmark model for SysArmor Next.
+This document defines the SysArmor Next test and benchmark model.
 
-## Test Roles
+## First Principles
 
-The test system answers five questions:
+Tests should answer one clear question at the lightest environment that is still
+realistic.
 
-| Role | Question |
+| Scope | Question | Environment |
+|---|---|---|
+| `unit` | Does the local implementation behave correctly? | none |
+| `endpoint` | Does one endpoint agent/sensor work, and what does it cost? | `vm-endpoint` |
+| `topology` | Does the manager-agent-attacker product path work? | `vm-topology` |
+| `platform` | Do manager APIs, storage, policy, RBAC, and control contracts work? | `container` or local processes |
+
+Endpoint CPU and memory conclusions must come from `vm-endpoint`, because it
+avoids manager/attacker topology noise and starts faster for repeated profiling.
+`vm-topology` remains important for product-path truth, but its resource samples
+are topology observations rather than clean endpoint-cost baselines.
+
+## Environment Contract
+
+| ENV | Shape | Purpose |
+|---|---|---|
+| `container` | compose topology | Fast manager/platform checks |
+| `vm-endpoint` | fresh one VM, `node-a` | Endpoint detection, resource usage, profiling, soak |
+| `vm-topology` | `mgr`, `node-a`, `attacker` | Manager-agent-C2 integration |
+
+## Benchmark Roles
+
+| Role | Purpose |
 |---|---|
-| Scenario | Does a security behavior produce expected events, signals, response, evidence, or incident state? |
-| Workload | Can we generate stable non-security or synthetic pressure? |
-| Recorder | What are CPU, RSS, EPS, drops, and signal counts over time? |
-| Benchmark | How do sensor, policy, and workload combinations compare? |
-| Diagnostic | Why is a sensor or agent expensive under a specific load? |
+| Scenario | Security behavior with expected events/signals/incidents. |
+| Workload | Repeatable benign or synthetic pressure without security assertions. |
+| Recorder | Low-disturbance timeline of CPU, RSS, health, events, drops, and markers. |
+| Benchmark | Compare policy/workload/scenario combinations. |
+| Diagnostic | Explain cost with pprof/perf/strace or backend telemetry. |
 
 Functional E2E, benchmark, and diagnostic logic should stay separate.
 
-## Directory Contract
+## Endpoint Benchmark
 
-```text
-test/
-  environments/           topology setup for VM/container
-  e2e/                   product E2E suites
-  benchmarks/
-    matrix/              policy/workload/scenario matrix runners
-    perf/                short-window performance samplers
-    modules/             local package microbenchmarks
-  data/
-    scenarios/           security scenarios with expected behavior
-    workloads/           performance workloads without security assertions
-    policies/            collection/detection/resource policy samples
-    content/             IOC/context/rulepack content
-  shared/
-    harness/             functional E2E orchestration
-    assertions/          reusable assertions
-    recorder/            long-running low-disturbance timeline sampler
-    diagnostics/         perf/pprof/strace helpers
-    reports/             report generators
-  .results/            generated outputs
+Run:
+
+```bash
+make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
+make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
+make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
 ```
 
-## Scenario Vs Workload
+Useful knobs:
 
-Scenario is a functional contract. Examples:
-
-- `apt-fileless-c2`;
-- `apt-staged-drop`;
-- `benign-ci-noise`.
-
-It should assert whether expected events, signals, incidents, evidence, and responses appear or do not appear.
-
-Workload is a pressure source. Examples:
-
-- `business-normal`;
-- `host-activity-heavy`;
-- `edr-activity-heavy`.
-
-`business-normal` is the default workload for the slim matrix. Heavier workloads such as `host-activity-heavy` and `edr-activity-heavy` are stress/cost extensions and should be enabled explicitly with `WORKLOADS=...`.
-
-Workloads should be repeatable, configurable, and not depend on unstable external downloads. Benign workloads must not touch C2 IoCs, payload paths, persistence paths, or sensitive credential paths unless the scenario is explicitly testing false positive controls.
-
-## Labels And Watch Filters
-
-Tests must not force product architecture to depend on a test-only `scenario` field. Current event/signal watch filtering uses generic labels:
-
-```text
-benchmark_run=...
-workload=...
-policy_profile=...
-sensor_runtime=...
-scope_type=...
+```bash
+SYSARMOR_BENCH_PROFILE=quick|medium|long
+SYSARMOR_BENCH_POLICIES='test/data/policies/collection-minimal.json'
+SYSARMOR_BENCH_WORKLOAD_SECONDS=600
+SYSARMOR_BENCH_WORKLOAD_REPEAT=0
+SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local
+SYSARMOR_BENCH_PROFILE_AGENT=1
+SYSARMOR_BENCH_PROFILE_TYPES='cpu heap allocs goroutine runtime'
+SYSARMOR_BENCH_PROFILE_PHASES='policy_apply workload'
 ```
 
-Watch filters support:
+Output:
 
-- labels;
-- `after_sequence`;
-- `since_observed_at`;
-- `until_observed_at`.
+```text
+test/.results/bench-endpoint/<run-id>/
+  manifest.json
+  matrix.csv
+  <policy>/
+    manifest.json
+    artifacts.json
+    timeline.csv
+    markers.ndjson
+    events.ndjson
+    events.scope.ndjson
+    signals.ndjson
+    signals.scope.ndjson
+    scope-labels.json
+    summary.json
+    raw/
+    raw.tar
+    profiles/
+```
 
-This is useful for tests and production debugging.
+`SYSARMOR_BENCH_PROFILE=quick` is the default developer profile. It uses short
+seconds-scale windows so the runner can be exercised often. It is not a final
+resource conclusion.
+
+`SYSARMOR_BENCH_PROFILE=medium` is the daily detection plus performance profile.
+It is about ten minutes per policy and is intended for questions like: under a
+business workload, does a scenario produce the expected event/signal, and what
+are agent/sensor CPU and RSS during steady, workload, activity, and persistence
+windows?
+
+`SYSARMOR_BENCH_PROFILE=long` is the default profile for endpoint CPU/RSS
+conclusions. It includes long steady, workload, activity/persistence, and overall
+windows to smooth startup spikes and collector jitter. Profiling is disabled by
+default in all profiles because profile collection changes the workload being
+measured; enable it only for diagnostic attribution.
+
+Profile defaults are stored in `test/benchmarks/endpoint/profiles/quick.env`
+`medium.env`, and `long.env`. Override individual windows with
+`SYSARMOR_BENCH_*` variables when a specific experiment needs a different
+duration.
+
+Standard report phases:
+
+| Phase | Meaning |
+|---|---|
+| `startup` | Fresh VM, agent/sensor readiness, content/policy apply, and stabilization. Useful for troubleshooting, not steady resource conclusions. |
+| `steady` | Policy is active, with no benchmark workload and no scenario activity. This is the protected idle cost. |
+| `workload` | Benign background workload only. Activity and persistence windows are excluded from this derived report phase. |
+| `activity` | Scenario execution window when `SYSARMOR_BENCH_SCENARIO` is set. |
+| `persistence` | Observation window after scenario execution, used for signal/alert latency and attribution cost. |
+| `overall` | Full recorder lifecycle for the policy run. |
+
+The raw marker stream may keep lower-level execution markers such as
+`policy_apply_start`, `workload_start`, `scenario_start`, or
+`scenario_observe_start`. Reports normalize those markers into the standard
+phases above.
+
+For credible endpoint resource conclusions, use the `long` profile or longer
+experiment-specific windows:
+
+| Window | Suggested duration |
+|---|---|
+| idle/steady | 10-30 minutes |
+| business workload | 30-60 minutes |
+| heavy workload | 10-30 minutes |
+| soak/leak check | 6-24 hours |
+
+## Topology Benchmark
+
+Run:
+
+```bash
+make -C test bench-topology ENV=vm-topology
+```
+
+`bench-topology` composes workload/scenario cases and writes:
+
+```text
+test/.results/bench-topology/<run-id>/
+  manifest.json
+  matrix.csv
+  cases/
+```
+
+Use this for product-path and effectiveness comparisons. Do not use it as the
+primary endpoint CPU/RSS baseline.
 
 ## Recorder
 
-The VM recorder is the current performance baseline tool:
+Run:
 
 ```bash
-make -C test recorder-vm-start RUN_ID=my-run
-make -C test recorder-vm-mark RUN_ID=my-run PHASE=workload_start DETAIL=business-normal
-make -C test recorder-vm-stop RUN_ID=my-run
-make -C test recorder-vm-report RUN_ID=my-run
+make -C test recorder-start RUN_ID=my-run
+make -C test recorder-mark RUN_ID=my-run PHASE=workload_start DETAIL=business-normal
+make -C test recorder-stop RUN_ID=my-run
+make -C test recorder-report RUN_ID=my-run
 ```
 
 Recorder output:
@@ -101,136 +171,54 @@ test/.results/recordings/<run-id>/
   events.ndjson
   signals.ndjson
   summary.json
+  raw/
+  raw.tar
 ```
 
-`timeline.csv` is for resource and health samples:
+`timeline.csv` tracks:
 
 - agent CPU/RSS;
 - sensor CPU/RSS;
 - total EDR CPU/RSS;
-- sensor global events seen;
-- scoped event/signal counters;
-- drops and parse errors;
-- active policy id/version.
+- event/signal counters;
+- dropped events and parse errors;
+- active policy id/version;
+- marker-aligned phase windows.
 
-`events.ndjson` and `signals.ndjson` are scoped by labels and sequence cursor. Reports count phase event/signal deltas by frame `observedAt` and marker windows.
+The recorder uses `/proc` process sampling for the per-second resource timeline.
+Semantic agent calls such as health/watch are sampled at a lower cadence
+(`SYSARMOR_RECORDER_SEMANTIC_INTERVAL`, default `10s`) and copied into `raw/`.
+For final endpoint resource reports, document sampling interval, observer
+overhead, CPU percentage semantics, workload, policy, and duration.
 
-## Benchmark
-
-`bench-collection-vm` composes one case across the selected policy set:
-
-```bash
-make -C test bench-collection-vm \
-  SYSARMOR_BENCH_WORKLOAD=business-normal \
-  POLICIES='test/data/policies/collection-minimal.json'
-```
-
-`bench-matrix-vm` is the default endpoint effectiveness/performance gate. Its slim default runs:
-
-```text
-3 collection policies x 3 scenarios x 1 background workload = 9 cases
-```
-
-Default policy set:
-
-- `test/data/policies/collection-minimal.json`;
-- `test/data/policies/collection-balanced.json`;
-- `test/data/policies/collection-deep.json`.
-
-Default workload:
-
-- `business-normal`.
-
-Default scenarios:
-
-- `apt-fileless-c2`;
-- `apt-staged-drop`;
-- `benign-ci-noise`.
-
-`collection-debug-wide` is no longer part of the supported default matrix. If a broad debug policy is needed for a one-off investigation, create it outside the default benchmark set and keep it out of long-running EDR comparisons.
-
-Each case should:
-
-1. attach labels;
-2. start recorder;
-3. mark baseline;
-4. apply content;
-5. apply collection policy;
-6. mark settle and steady windows;
-7. run workload or scenario;
-8. stop recorder;
-9. generate summary and matrix.
-
-Important output:
-
-```text
-test/.results/bench-collection-vm/<run-id>/
-  matrix.csv
-  <policy>/
-    timeline.csv
-    markers.ndjson
-    events.ndjson
-    signals.ndjson
-    summary.json
-    collection-apply.json
-    workload.out
-    workload.err
-```
-
-Matrix runs also write:
-
-```text
-test/.results/bench-matrix-vm/<run-id>/matrix.csv
-test/.results/effectiveness/<run-id>/matrix.csv
-test/.results/effectiveness/<run-id>/truth_steps.csv
-```
-
-## Resource Metrics
-
-For VM deployment, report resource use from inside the VM. For containerized deployment, report host/cgroup perspective.
-
-Track:
-
-- baseline without EDR;
-- EDR running idle;
-- EDR during policy apply;
-- EDR during steady state;
-- EDR during workload;
-- drops and parse errors;
-- business workload latency/throughput when available.
-
-Policy apply and sensor reload spikes must be separated from steady-state cost.
+The benchmark copies recorder artifacts into each policy directory and writes
+machine-readable `manifest.json` plus `artifacts.json`. There is intentionally no
+HTML report at this stage; raw data is the contract.
 
 ## Diagnostics
 
 Diagnostics explain cost; they are not official resource conclusions.
 
-Allowed diagnostic tools:
+Useful tools:
 
-- perf top/record/report;
-- pprof where available;
-- strace summary;
-- backend-specific telemetry.
+- Go CPU/heap/alloc/goroutine profiles when available;
+- `perf top`, `perf record`, `perf report`;
+- `strace -c` summaries;
+- sensor/backend telemetry.
 
-Useful pattern:
+Pattern:
 
 ```text
-start diagnostic sampling
-run workload or scenario
-stop diagnostic sampling
-compare with recorder timeline
+start recorder
+mark phase
+start diagnostic window
+run workload
+stop diagnostic window
+stop recorder
+generate report
 ```
 
-## Current Practical Gates
-
-Use these based on change type:
-
-```bash
-go test ./internal/agent/... ./internal/endpoint/... ./cmd/sysarmorctl
-make -C test e2e-agent-real-tetragon-owned-vm
-make -C test bench-matrix-vm
-```
-
-For focused iteration, run `bench-collection-vm` with explicit `SYSARMOR_BENCH_WORKLOAD` and/or `SYSARMOR_BENCH_SCENARIO`. For final endpoint refinement, prefer the slim `bench-matrix-vm` gate because it checks effectiveness, resource cost, drops, parse errors, and benign false positives in one pass.
-
-Cloud/platform paths have broader functional gates, but endpoint refinement work should prefer the local agent + VM real sensor path.
+The long-term target is a report where CPU/RSS timelines are aligned with
+profile windows so each expensive window can be attributed to agent components
+such as sensor read, normalize, detection, spool/WAL, data plane, local control,
+policy apply, and runtime/GC.

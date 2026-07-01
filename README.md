@@ -21,7 +21,7 @@ agent-owned sensor runtime
 - `internal/endpoint`: normalizer, detection engine, ring buffers, upload clients.
 - `internal/analytics`: entity, evidence, correlation, convergence, and incident logic.
 - `internal/store`: platform state store prototypes and Postgres foundations.
-- `test`: container and VM e2e topologies.
+- `test`: unit, endpoint, topology, and platform test scopes.
 
 Core docs:
 
@@ -43,27 +43,30 @@ make test
 
 The build writes static binaries to `bin/`, which is ignored because it is regenerated.
 
-## E2E
+## Test Scopes
 
 Run from `test/`:
 
 ```bash
-make e2e TOPO=container SCENARIO=apt-fileless-c2 DUR=12
-make e2e TOPO=container SCENARIO=apt-staged-drop DUR=12
-make e2e TOPO=container SCENARIO=benign-ci-noise DUR=12
+make test-unit
+make test-endpoint
+make test-topology SCENARIO=apt-fileless-c2
+make test-platform
 
-make e2e TOPO=vm SCENARIO=apt-fileless-c2 DUR=12
-make e2e TOPO=vm SCENARIO=apt-staged-drop DUR=12
-make e2e TOPO=vm SCENARIO=benign-ci-noise DUR=12
-
-make report
+make bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
+make bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
+make bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
+make bench-topology ENV=vm-topology
 ```
 
-Expected result:
+Environment choices:
 
-- `apt-fileless-c2`: endpoint terminal, cloud signals, exactly one incident.
-- `apt-staged-drop`: no endpoint terminal, cross-lineage cloud stitch, exactly one incident.
-- `benign-ci-noise`: no incident in normal convergence mode; additive-threshold control can produce one.
+- `container`: lightweight manager/platform checks.
+- `vm-endpoint`: one fresh endpoint VM per benchmark run; source of truth for agent/sensor CPU and memory conclusions.
+- `vm-topology`: three VMs (`mgr`, `node-a`, `attacker`) for manager-agent-C2 product path checks.
+
+Endpoint benchmark reports use these standard phases: `startup`, `steady`,
+`workload`, `activity`, `persistence`, and `overall`.
 
 `test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored.
 
@@ -99,10 +102,10 @@ docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --l
 docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 metrics --json
 ```
 
-VM manager:
+VM topology manager:
 
 ```bash
-cd test/environments/vm
+cd test/environments/vm-topology
 vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 status --json"
 vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 incidents --label scenario=apt-staged-drop --json"
 ```
@@ -127,5 +130,5 @@ sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json agent health
 ## Notes
 
 - Container e2e runs `sysarmor-manager` in the `mgr` container and streams live Tetragon output through `sysarmor-agent` inside the Tetragon container.
-- VM e2e runs `sysarmor-manager`/`sysarmorctl` inside the `mgr` VM and runs the agent stream on `node-a`.
-- Older e2e paths still exercise manager upload/query flows; endpoint refinement should prefer the local agent control path documented in `references/docs/endpoint-agent.md`.
+- `vm-endpoint` runs only `node-a` and is the preferred environment for endpoint refinement and resource profiling.
+- `vm-topology` runs `sysarmor-manager`/`sysarmorctl` inside the `mgr` VM and the agent on `node-a`.

@@ -387,9 +387,13 @@ def case_kind(workload, scenario):
 def case_paths(results, bench_case_dir=None):
     if not bench_case_dir:
         return None, None, None, None
-    events_path = bench_case_dir / "events.ndjson"
-    events_all_path = bench_case_dir / "events-all.ndjson"
-    signals_path = bench_case_dir / "signals.ndjson"
+    events_scope_path = bench_case_dir / "events.scope.ndjson"
+    events_path = events_scope_path if events_scope_path.exists() else bench_case_dir / "events.ndjson"
+    raw_events_path = bench_case_dir / "events.ndjson"
+    legacy_events_all_path = bench_case_dir / "events-all.ndjson"
+    events_all_path = raw_events_path if events_scope_path.exists() and raw_events_path.exists() else legacy_events_all_path
+    signals_scope_path = bench_case_dir / "signals.scope.ndjson"
+    signals_path = signals_scope_path if signals_scope_path.exists() else bench_case_dir / "signals.ndjson"
     incidents_path = next(iter(sorted(bench_case_dir.glob("*incident*.json"))), None)
     return (
         events_path if events_path.exists() else None,
@@ -554,7 +558,9 @@ def evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events=N
         alert["alert_score"] = round(0.7 * fp_policy_score + 0.3 * terminal_policy_score, 4)
         evidence["evidence_score"] = alert["alert_score"]
 
-    workload_phase = (bench_summary or {}).get("phases", {}).get("workload", {})
+    workload_phase = (bench_summary or {}).get("raw_phases", {}).get("workload", {})
+    if not workload_phase:
+        workload_phase = (bench_summary or {}).get("phases", {}).get("workload", {})
     drops = int(workload_phase.get("dropped_events_delta") or 0)
     parse_errors = int(workload_phase.get("parse_errors_delta") or 0)
     events_delta = int(workload_phase.get("events_delta") or len(observed_events))
@@ -592,7 +598,7 @@ def discover_bench_cases(root, results, matrix_dir):
         for case_dir in sorted(p for p in cases_dir.iterdir() if p.is_dir()):
             status = load_json(case_dir / "status.json")
             bench_run_id = status.get("bench_run_id", "")
-            bench_root = results / "bench-collection-vm" / bench_run_id
+            bench_root = results / "bench-endpoint" / bench_run_id
             if not bench_root.exists():
                 continue
             workload = status.get("workload", "")
@@ -600,6 +606,8 @@ def discover_bench_cases(root, results, matrix_dir):
             kind = case_kind(workload, scenario)
             name = scenario or workload
             for policy_dir in sorted(p for p in bench_root.iterdir() if p.is_dir()):
+                if not (policy_dir / "summary.json").exists():
+                    continue
                 cases.append({
                     "kind": kind,
                     "name": name,

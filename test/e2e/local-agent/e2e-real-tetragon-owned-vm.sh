@@ -4,7 +4,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
-ENVDIR="$(cd "$ROOT/environments/vm" && pwd)"
+VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
+ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 SCENARIO="${SCENARIO:-apt-staged-drop-owned-vm}"
@@ -30,7 +31,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[e2e-agent-real-tetragon-owned-vm] starting VM topology"
-bash "$HERE/start-vm.sh" >/dev/null
+bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV" >/dev/null
 
 cd "$ENVDIR"
 

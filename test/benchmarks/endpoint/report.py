@@ -113,18 +113,16 @@ def build_row(policy_dir):
         "scoped_signals_total": int(number(summary.get("scoped_signals_total"))),
         "signals_seen_total": int(number(summary.get("signals_seen_total"))),
         "event_watch_error_lines": count_diagnostics(summary, "event_watch_errors"),
-        "event_all_watch_error_lines": count_diagnostics(summary, "event_all_watch_errors"),
         "signal_watch_error_lines": count_diagnostics(summary, "signal_watch_errors"),
-        "signal_all_watch_error_lines": count_diagnostics(summary, "signal_all_watch_errors"),
     }
-    for name in ("baseline", "policy_apply", "settle", "steady", "workload"):
+    for name in ("startup", "steady", "workload", "activity", "persistence", "overall"):
         row.update(phase_fields(name, phase(summary, name)))
     return row
 
 
 def main():
     if len(sys.argv) != 2:
-        raise SystemExit("usage: bench_collection_report.py <bench-run-dir>")
+        raise SystemExit("usage: report.py <bench-endpoint-dir>")
     out_dir = Path(sys.argv[1])
     rows = []
     for child in sorted(out_dir.iterdir()):
@@ -149,11 +147,9 @@ def main():
         "scoped_signals_total",
         "signals_seen_total",
         "event_watch_error_lines",
-        "event_all_watch_error_lines",
         "signal_watch_error_lines",
-        "signal_all_watch_error_lines",
     ]
-    for name in ("baseline", "policy_apply", "settle", "steady", "workload"):
+    for name in ("startup", "steady", "workload", "activity", "persistence", "overall"):
         fields.extend(phase_fields(name, {}).keys())
     with matrix_csv.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)

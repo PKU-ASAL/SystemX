@@ -1,29 +1,29 @@
-# Local Agent Suite
+# Endpoint Agent Suite
 
-Scope: `local`
+Scope: `endpoint`.
 
 System under test:
 
 - `sysarmor-agent`;
-- sensor runtime;
+- owned sensor runtime;
 - local agent spool/WAL;
-- local `sysarmorctl --socket` APIs.
+- local `sysarmorctl --socket` APIs;
+- endpoint events and endpoint signals.
 
-This suite compares endpoint collection and endpoint detection behavior under different policies and workloads. It also measures local cost: agent/sensor CPU, RSS, EPS, drops, and parse errors.
-
-Effectiveness reports are generated with `evaluation_scope=local` from `labels.yaml` ground truth. They compare workload-window local events and endpoint signals against labels and report event/signal precision-recall. Manager cloud signals, incidents, and graph/evidence remain out of scope for this suite.
+Use `vm-endpoint` for clean endpoint behavior and resource conclusions.
 
 Entrypoints:
 
 ```bash
-make -C test test-local-agent
-make -C test bench-local-agent
-make -C test capture TOPO=vm SCENARIO=apt-staged-drop
-make -C test e2e-agent-real-tetragon-owned-container
-make -C test e2e-agent-real-tetragon-owned-vm
+make -C test test-endpoint
+make -C test capture-endpoint SCENARIO=apt-staged-drop
+make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
+make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
+make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
 ```
 
-`bench-local-agent` / `bench-matrix-vm` sync the current VM `sysarmor-agent` and `sysarmorctl` by default, then apply endpoint detection content before running the collection policy matrix. Set `SYSARMOR_BENCH_SYNC_VM_AGENT=0` only when intentionally testing the VM's installed version.
+Endpoint benchmark reports use `startup`, `steady`, `workload`, `activity`,
+`persistence`, and `overall` as the standard phase names.
 
 Out of scope:
 

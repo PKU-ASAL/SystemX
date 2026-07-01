@@ -1,0 +1,20 @@
+# apt-fileless-c2-local contract for vm-endpoint.
+events:
+  must_contain:
+    - { kind: EXEC, binary: "*/bash", lineage_inherited: true }
+    - { kind: WRITE, path: "/dev/shm/x.sh" }
+    - { kind: CONNECT, dst: "10.66.0.99:8080" }
+    - { kind: CONNECT, dst: "10.66.0.99:443" }
+    - { kind: OPEN, path: "/var/run/secrets/kubernetes.io/serviceaccount/token" }
+    - { kind: OPEN, path: "/root/.ssh/id_rsa" }
+endpoint_signals:
+  must_have_entities: true
+  must_contain:
+    - { name: download_by_lolbin, entities_keys: ["socket:10.66.0.99:8080"] }
+    - { name: payload_dropped, entities_keys: ["file:/dev/shm/x.sh"] }
+    - { name: reverse_shell_pattern, terminal: true,
+        entities_keys: ["socket:10.66.0.99:443"], has_evidence_bundle: true }
+  may_contain:
+    - { name: sensitive_cred_read }
+negative:
+  endpoint_terminal_required: true

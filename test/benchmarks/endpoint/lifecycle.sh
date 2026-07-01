@@ -4,7 +4,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
-ENVDIR="$(cd "$ROOT/environments/vm" && pwd)"
+VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
+ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUT_DIR="$RESULTS/bench-edr-lifecycle-vm/$RUN_ID"
@@ -20,7 +21,7 @@ BASELINE_SECONDS="${SYSARMOR_BENCH_BASELINE_SECONDS:-8}"
 SETTLE_SECONDS="${SYSARMOR_BENCH_SETTLE_SECONDS:-8}"
 STEADY_SECONDS="${SYSARMOR_BENCH_STEADY_SECONDS:-8}"
 WORKLOAD_SECONDS="${SYSARMOR_BENCH_WORKLOAD_SECONDS:-12}"
-WORKLOAD_REPEAT="${SYSARMOR_BENCH_WORKLOAD_REPEAT:-1}"
+WORKLOAD_REPEAT="${SYSARMOR_BENCH_WORKLOAD_REPEAT:-0}"
 WORKLOAD_C2="${SYSARMOR_DIAG_WORKLOAD_C2:-10.66.0.99}"
 
 mkdir -p "$OUT_DIR"
@@ -54,7 +55,7 @@ run_workload() {
   cd "$ENVDIR"
   if [[ -f "$ROOT/data/workloads/vm/$WORKLOAD/run.sh" ]]; then
     vagrant upload "$ROOT/data/workloads/vm/$WORKLOAD/run.sh" /tmp/sysarmor-workload-run.sh node-a >/dev/null
-    vagrant ssh node-a -c "sudo bash -c 'REPEAT=$WORKLOAD_REPEAT C2=$WORKLOAD_C2 bash /tmp/sysarmor-workload-run.sh'" \
+    vagrant ssh node-a -c "sudo bash -c 'DURATION=$WORKLOAD_SECONDS REPEAT=$WORKLOAD_REPEAT C2=$WORKLOAD_C2 bash /tmp/sysarmor-workload-run.sh'" \
       > "$OUT_DIR/workload.out" 2>"$OUT_DIR/workload.err" || true
   elif [[ -f "$ROOT/data/scenarios/vm/$WORKLOAD/attack.sh" ]]; then
     vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /vagrant/test/data/scenarios/vm/$WORKLOAD/attack.sh'" \
@@ -104,7 +105,6 @@ mark steady_start
 sleep "$STEADY_SECONDS"
 mark workload_start "$WORKLOAD"
 run_workload
-sleep "$WORKLOAD_SECONDS"
 mark workload_done "$WORKLOAD"
 
 recorder stop

@@ -3,7 +3,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-ENVDIR="$(cd "$ROOT/environments/vm" && pwd)"
+VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
+ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 OUT_PREFIX="${SYSARMOR_DIAG_PREFIX:-tetragon-diagnostics-vm}"
 PPROF_ADDRESS="${SYSARMOR_TETRAGON_PPROF_ADDRESS:-127.0.0.1:6060}"

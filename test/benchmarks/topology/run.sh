@@ -4,8 +4,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 RESULTS="$ROOT/.results"
+VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
-OUT_DIR="$RESULTS/bench-matrix-vm/$RUN_ID"
+OUT_DIR="$RESULTS/bench-topology/$RUN_ID"
 
 POLICIES="${POLICIES-test/data/policies/collection-minimal.json test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
 WORKLOADS="${WORKLOADS-business-normal}"
@@ -20,8 +21,8 @@ mkdir -p "$OUT_DIR"
 
 cat >"$OUT_DIR/manifest.json" <<EOF
 {
-  "suite": "local-agent",
-  "tool": "bench-matrix-vm",
+  "suite": "topology",
+  "tool": "bench-topology",
   "evaluation_scope": "$EVALUATION_SCOPE",
   "topology": "vm",
   "run_id": "$RUN_ID",
@@ -49,14 +50,15 @@ run_case() {
   local case_dir="$OUT_DIR/cases/$case_name"
   mkdir -p "$case_dir"
 
-  echo "[bench-matrix-vm] variant=$variant_label matcher_strategy=${matcher_strategy:-config-default} workload=$workload_label scenario=$scenario_label"
+  echo "[bench-topology] variant=$variant_label matcher_strategy=${matcher_strategy:-config-default} workload=$workload_label scenario=$scenario_label"
   if SYSARMOR_BENCH_RUN_ID="$case_run_id" \
       POLICIES="$POLICIES" \
       SYSARMOR_BENCH_VARIANT="$variant" \
       SYSARMOR_BENCH_MATCHER_STRATEGY="$matcher_strategy" \
       SYSARMOR_BENCH_WORKLOAD="$workload" \
       SYSARMOR_BENCH_SCENARIO="$scenario" \
-      bash "$HERE/collection-vm.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
+      SYSARMOR_VM_ENV="$VM_ENV" \
+      bash "$ROOT/benchmarks/endpoint/run.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
     printf '{"name":"%s","variant":"%s","matcher_strategy":"%s","workload":"%s","scenario":"%s","status":"ok","bench_run_id":"%s"}\n' \
       "$case_name" "$variant" "$matcher_strategy" "$workload" "$scenario" "$case_run_id" >"$case_dir/status.json"
   else
@@ -64,27 +66,27 @@ run_case() {
     printf '{"name":"%s","variant":"%s","matcher_strategy":"%s","workload":"%s","scenario":"%s","status":"failed","exit_code":%s,"bench_run_id":"%s"}\n' \
       "$case_name" "$variant" "$matcher_strategy" "$workload" "$scenario" "$rc" "$case_run_id" >"$case_dir/status.json"
     if [[ "$STOP_ON_ERROR" == "1" ]]; then
-      echo "[bench-matrix-vm][ERROR] failed workload=$workload_label scenario=$scenario_label" >&2
+      echo "[bench-topology][ERROR] failed workload=$workload_label scenario=$scenario_label" >&2
       cat "$case_dir/run.err" >&2 2>/dev/null || true
       exit "$rc"
     fi
   fi
 }
 
-echo "[bench-matrix-vm] output: $OUT_DIR"
-echo "[bench-matrix-vm] evaluation_scope: $EVALUATION_SCOPE"
-echo "[bench-matrix-vm] policies: $POLICIES"
-echo "[bench-matrix-vm] workloads: $WORKLOADS"
-echo "[bench-matrix-vm] scenarios: $SCENARIOS"
-echo "[bench-matrix-vm] matcher_variants: ${MATCHER_VARIANTS:-default}"
-echo "[bench-matrix-vm] matrix_mode: $MATRIX_MODE"
+echo "[bench-topology] output: $OUT_DIR"
+echo "[bench-topology] evaluation_scope: $EVALUATION_SCOPE"
+echo "[bench-topology] policies: $POLICIES"
+echo "[bench-topology] workloads: $WORKLOADS"
+echo "[bench-topology] scenarios: $SCENARIOS"
+echo "[bench-topology] matcher_variants: ${MATCHER_VARIANTS:-default}"
+echo "[bench-topology] matrix_mode: $MATRIX_MODE"
 
 if [[ "$SYNC_VM_AGENT" == "1" ]]; then
-  bash "$ROOT/shared/vm/sync-agent.sh"
-  cd "$ROOT/environments/vm" && vagrant rsync node-a >/dev/null 2>&1 || true
+  SYSARMOR_VM_ENV="$VM_ENV" bash "$ROOT/shared/vm/sync-agent.sh"
+  cd "$ROOT/environments/$VM_ENV" && vagrant rsync node-a >/dev/null 2>&1 || true
   cd "$HERE"
 else
-  echo "[bench-matrix-vm] VM agent sync disabled"
+  echo "[bench-topology] VM agent sync disabled"
 fi
 
 run_mode_for_variant() {
@@ -122,7 +124,7 @@ run_mode_for_variant() {
       done
       ;;
     *)
-      echo "[bench-matrix-vm][ERROR] unsupported MATRIX_MODE=$MATRIX_MODE (want workload|scenario|cross|all)" >&2
+      echo "[bench-topology][ERROR] unsupported MATRIX_MODE=$MATRIX_MODE (want workload|scenario|cross|all)" >&2
       exit 1
       ;;
   esac
@@ -133,7 +135,7 @@ if [[ -n "$MATCHER_VARIANTS" ]]; then
     case "$matcher_strategy" in
       linear|optimized) ;;
       *)
-        echo "[bench-matrix-vm][ERROR] unsupported matcher variant: $matcher_strategy" >&2
+        echo "[bench-topology][ERROR] unsupported matcher variant: $matcher_strategy" >&2
         exit 1
         ;;
     esac
@@ -143,7 +145,7 @@ else
   run_mode_for_variant "" ""
 fi
 
-python3 "$HERE/bench_matrix_report.py" "$OUT_DIR"
+python3 "$HERE/report.py" "$OUT_DIR"
 python3 "$HERE/effectiveness_report.py" \
   --bench-matrix-dir "$OUT_DIR" \
   --output-dir "$RESULTS/effectiveness/$RUN_ID" \
@@ -152,5 +154,5 @@ python3 "$HERE/effectiveness_report.py" \
   --scenarios $SCENARIOS \
   --workloads $WORKLOADS
 
-echo "[bench-matrix-vm] matrix written to $OUT_DIR/matrix.csv"
-echo "[bench-matrix-vm] effectiveness written to $RESULTS/effectiveness/$RUN_ID"
+echo "[bench-topology] matrix written to $OUT_DIR/matrix.csv"
+echo "[bench-topology] effectiveness written to $RESULTS/effectiveness/$RUN_ID"

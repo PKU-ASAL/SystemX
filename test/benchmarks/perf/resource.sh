@@ -4,17 +4,17 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-TOPO="${1:-container}"
+ENV_NAME="${1:-${ENV:-container}}"
 DUR="${2:-30}"
 SCENARIO="${3:-idle}"
 INTERVAL="${INTERVAL:-2}"
 RESULTS="$ROOT/.results"
-OUT="$RESULTS/perf-resource.$TOPO.$SCENARIO.csv"
+OUT="$RESULTS/perf-resource.$ENV_NAME.$SCENARIO.csv"
 mkdir -p "$RESULTS"
 
 write_header() {
   if [[ ! -f "$OUT" ]]; then
-    echo "topology,scenario,sample_ts,elapsed_s,edr_cpu_pct,edr_rss_mb,agent_cpu_pct,agent_rss_mb,tetragon_cpu_pct,tetragon_rss_mb,tetra_cpu_pct,tetra_rss_mb,workload_cpu_pct,workload_rss_mb,business_latency_p95_ms,business_throughput_rps,dropped_events,parse_errors,notes" > "$OUT"
+    echo "env,scenario,sample_ts,elapsed_s,edr_cpu_pct,edr_rss_mb,agent_cpu_pct,agent_rss_mb,tetragon_cpu_pct,tetragon_rss_mb,tetra_cpu_pct,tetra_rss_mb,workload_cpu_pct,workload_rss_mb,business_latency_p95_ms,business_throughput_rps,dropped_events,parse_errors,notes" > "$OUT"
   fi
 }
 
@@ -57,7 +57,8 @@ docker_proc_pair() {
 
 vm_proc_pair() {
   local pattern="$1"
-  local envdir="$ROOT/environments/vm"
+  local vm_env="${SYSARMOR_VM_ENV:-$ENV_NAME}"
+  local envdir="$ROOT/environments/$vm_env"
   (cd "$envdir" && vagrant ssh node-a -c "ps -eo comm,pcpu,rss 2>/dev/null | awk -v p='$pattern' '\$1 ~ p { cpu += \$2; rss += \$3 } END { printf \"%.2f,%.1f\", cpu, rss / 1024 }'" 2>/dev/null) || printf '0,0'
 }
 
@@ -78,7 +79,7 @@ sample_container() {
   tetragon="$(docker_proc_pair tetragon '^tetragon$')"
   tetra="$(docker_proc_pair tetragon '^tetra$')"
   total="$(sum_pairs "$agent" "$tetragon" "$tetra")"
-  echo "$TOPO,$SCENARIO,$ts,$elapsed,$total,$agent,$tetragon,$tetra,$workload,0,0,0,0,edr_container_stats=${edr/,/|}" >> "$OUT"
+  echo "$ENV_NAME,$SCENARIO,$ts,$elapsed,$total,$agent,$tetragon,$tetra,$workload,0,0,0,0,edr_container_stats=${edr/,/|}" >> "$OUT"
 }
 
 sample_vm() {
@@ -89,17 +90,17 @@ sample_vm() {
   tetra="$(vm_proc_pair '^tetra$')"
   total="$(sum_pairs "$agent" "$tetragon" "$tetra")"
   workload="$(vm_proc_pair '^(java|bash|curl|python|node|nginx|apache2)$')"
-  echo "$TOPO,$SCENARIO,$ts,$elapsed,$total,$agent,$tetragon,$tetra,$workload,0,0,0,0,vm_process_stats" >> "$OUT"
+  echo "$ENV_NAME,$SCENARIO,$ts,$elapsed,$total,$agent,$tetragon,$tetra,$workload,0,0,0,0,vm_process_stats" >> "$OUT"
 }
 
 write_header
 
 elapsed=0
 while (( elapsed <= DUR )); do
-  case "$TOPO" in
+  case "$ENV_NAME" in
     container) sample_container "$elapsed" ;;
-    vm) sample_vm "$elapsed" ;;
-    *) echo "unknown topology: $TOPO" >&2; exit 2 ;;
+    vm-endpoint|vm-topology) sample_vm "$elapsed" ;;
+    *) echo "unknown ENV: $ENV_NAME" >&2; exit 2 ;;
   esac
   (( elapsed >= DUR )) && break
   sleep "$INTERVAL"
