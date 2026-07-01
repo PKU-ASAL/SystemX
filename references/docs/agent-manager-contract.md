@@ -6,9 +6,9 @@ This document is the stable contract for production agent-manager traffic.
 
 | Plane | Direction | Service | Purpose |
 |---|---|---|---|
-| Data | Agent -> Manager | `AgentDataPlaneService.AppendBatch(DataBatch)` | Append durable event/signal batches from the agent spool/WAL. |
+| Data | Agent -> Manager | `AgentDataPlaneService.AppendBatch(DataBatch)` | Append lightweight event/signal telemetry batches from the agent sender. |
 | Control | Bidirectional | `AgentControlPlaneService.Connect` | Agent health/capability/acks/results and manager policy/content/response/evidence commands. |
-| Local operator | Local only | Unix socket gRPC | `sysarmorctl --socket` debug/operator side channel over local spool/WAL. |
+| Local operator | Local only | Unix socket gRPC | `sysarmorctl --socket` debug/operator side channel over the in-process telemetry bus. |
 
 Production data and control traffic use gRPC with mTLS. Local ctl is not a production cloud data plane.
 
@@ -23,11 +23,11 @@ tools/pki/gen-agent-plane-mtls.sh ./pki default agent-prod-001 sysarmor-manager.
 `sysarmorctl --socket` talks to the local agent over Unix socket gRPC. It is intentionally a local operator/debug side channel:
 
 - it does not send data to the cloud manager;
-- watch/get commands read the same local `AgentSpool` WAL used by the data plane;
+- watch commands subscribe to the same in-process telemetry bus used before batching and sending;
 - local policy/content apply commands affect only the local agent process;
 - cloud-originated debug, response, policy, content, and evidence workflows must use `AgentControlPlaneService.Connect`.
 
-This keeps production agent-manager traffic on one stable data plane and one stable control plane while still allowing local inspection without adding a second event buffer.
+This keeps production agent-manager traffic on one stable data plane and one stable control plane while still allowing local inspection without a durable endpoint WAL.
 
 ## Identity
 
@@ -44,8 +44,8 @@ This keeps production agent-manager traffic on one stable data plane and one sta
 
 | Status | Reason code | Agent action |
 |---|---|---|
-| `STATUS_ACCEPTED` | `accepted` | Commit local WAL cursor and remove batch. |
-| `STATUS_DUPLICATE` | `duplicate` | Treat as already committed and remove batch. |
+| `STATUS_ACCEPTED` | `accepted` | Treat the sent telemetry batch as delivered. |
+| `STATUS_DUPLICATE` | `duplicate` | Treat as already delivered. |
 | `STATUS_RETRYABLE` | `retryable_server_error` | Keep batch and retry after `retry_after_ms` when present. |
 | `STATUS_REJECTED` | `invalid_data_batch` | Terminal payload rejection; drop batch and surface health error. |
 | `STATUS_REJECTED` | `server_error` | Terminal server-side rejection when not retryable. |
@@ -76,7 +76,7 @@ The production agent runner uses a long-lived `AgentControlPlaneService.Connect`
 4. Manager sends `policy_update`, `content_update`, `response_command`, and `evidence_pullback` frames on the same stream.
 5. Agent sends `ack` for `policy_update` and `content_update`, plus `response_ack` and `evidence_pullback_result` for command/result workflows.
 6. On disconnect, agent reconnects with bounded backoff.
-7. On reconnect, agent starts a new stream sequence at `1` and uses manager resume/data cursors for durable state.
+7. On reconnect, agent starts a new stream sequence at `1`; ordinary telemetry is best-effort and durable evidence transport is handled separately when enabled.
 
 `response_command` and `evidence_pullback` use `labels` for workload, scenario, tenant-specific routing, and other extensible attribution. The control-plane contract does not carry a top-level `scenario` field.
 

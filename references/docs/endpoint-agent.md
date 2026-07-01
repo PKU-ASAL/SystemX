@@ -13,7 +13,7 @@ The endpoint agent is the first trusted runtime in the EDR/XDR path. It should:
 - run lightweight endpoint detection;
 - emit local Signals;
 - expose local control APIs for `sysarmorctl`;
-- spool and append data reliably;
+- batch and send lightweight telemetry;
 - validate and execute authorized response commands.
 
 ## Sensor Runtime
@@ -41,12 +41,14 @@ The endpoint agent stays lightweight and single-process, but its code boundaries
 AgentRuntime
   SensorRuntime      owns backend lifecycle and collection pushdown
   EndpointRuntime    normalizes events and runs endpoint detection
-  AgentSpool         durable local WAL for DataBatch records
-  TransportRuntime   flushes data and maintains manager control connection
+  TelemetryBus       feeds local watch subscribers without disk persistence
+  TelemetryBatcher   batches event/signal frames for upload
+  TelemetrySender    sends batches and maintains bounded retry/backoff
+  TransportRuntime   maintains data sender and manager control connection
   LocalRuntime       exposes local sysarmorctl side-channel APIs
 ```
 
-The important rule is that `AgentSpool` is the only local event/signal durability path. Local `sysarmorctl` watch/read commands observe the spool as a side channel; they do not create a second event buffer.
+The important rule is that ordinary event/signal telemetry is best-effort and lightweight. Local `sysarmorctl` watch commands observe the in-process telemetry bus; they do not depend on a durable spool or create a second persistence path.
 
 ## Agent-Owned Tetragon
 
@@ -122,8 +124,8 @@ SensorRuntime
   -> EndpointRuntime
   -> CanonicalEvent + endpoint Signal
   -> DataBatch
-  -> AgentSpool
-  -> TransportRuntime
+  -> TelemetryBus + TelemetryBatcher
+  -> TelemetrySender
   -> AgentDataPlaneService.AppendBatch
 ```
 
@@ -196,7 +198,7 @@ Endpoint runtime must be tunable:
 - collection budget;
 - event rate;
 - local ring sizes;
-- spool size;
+- telemetry bus and batcher sizes;
 - data batch size;
 - retry and backoff;
 - CPU/memory guardrails;

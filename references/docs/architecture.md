@@ -50,7 +50,7 @@ Agent-Facing Plane
   data batch append, control plane connection, agent session, ack/resume, downlink policy/response/evidence requests
 
 Endpoint Core
-  AgentRuntime, EndpointRuntime, AgentSpool, TransportRuntime, LocalRuntime
+  AgentRuntime, EndpointRuntime, TelemetryBus, TelemetryBatcher, TelemetrySender, TransportRuntime, LocalRuntime
 
 Sensor Runtime
   Tetragon or native sensor capability, collection compiler, subscribe, health, enforce
@@ -66,7 +66,7 @@ Layering rules:
 - Collection semantics are behavior-first and sensor-neutral.
 - Response cannot bypass policy authorization.
 - External export is not a replacement for the native agent data/control protocols.
-- The endpoint agent keeps one durable local data path: EndpointRuntime writes DataBatch records to AgentSpool; TransportRuntime and LocalRuntime read that path for append and local observation.
+- The endpoint agent keeps ordinary event/signal telemetry lightweight: EndpointRuntime publishes frames to TelemetryBus for local watch and TelemetryBatcher/TelemetrySender for upload. Durable evidence transport is a separate concern.
 
 ## Core Facts
 

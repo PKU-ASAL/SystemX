@@ -37,7 +37,6 @@ test/
     agent-runtime/     daemon/runtime/restart/capability checks
     manager-cloud/     manager ingest/query/policy/response/incident checks
     control-plane/     gRPC contract and mTLS checks
-    reliability/       spool/outage/shutdown/backpressure checks
     storage/           store and query checks
   benchmarks/
     endpoint/          endpoint benchmark runner and report
@@ -146,6 +145,29 @@ Raw artifacts are intentionally kept for later analysis:
 - `events.ndjson` and `signals.ndjson`: continuous raw event/signal watch streams;
 - `events.scope.ndjson` and `signals.scope.ndjson`: offline label-scoped streams derived from the raw streams;
 - `profiles/*`: raw pprof/runtime outputs for enabled phases.
+
+Agent profiling is diagnostic and is disabled by default. Recorder CPU/RSS is
+the low-disturbance resource measurement; `profiles/*` explains which agent
+code paths consumed CPU or memory during a selected phase. Enable it explicitly:
+
+```bash
+make -C test bench-endpoint \
+  SYSARMOR_BENCH_PROFILE=quick \
+  SYSARMOR_BENCH_WORKLOAD=business-normal \
+  SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local \
+  SYSARMOR_BENCH_PROFILE_AGENT=1 \
+  SYSARMOR_BENCH_PROFILE_TYPES='cpu heap allocs goroutine runtime' \
+  SYSARMOR_BENCH_PROFILE_PHASES='activity persistence'
+```
+
+Default diagnostic phases are `policy_apply activity persistence`. `activity`
+uses `SYSARMOR_BENCH_ACTIVITY_PROFILE_SECONDS` seconds for CPU pprof because the
+agent debug endpoint takes fixed-duration CPU profiles; `persistence` uses the
+scenario observe window. CPU profiles are serialized because the agent only
+allows one debug profile at a time. Profiling runs also emit raw markers such as
+`profile_activity_finish_start` and `profile_activity_finish_done` so profile
+collection overhead is visible in `markers.ndjson` and `summary.json.raw_phases`
+without changing the standard report phases.
 
 ## Topology Benchmark Contract
 

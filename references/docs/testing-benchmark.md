@@ -59,7 +59,8 @@ SYSARMOR_BENCH_WORKLOAD_REPEAT=0
 SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local
 SYSARMOR_BENCH_PROFILE_AGENT=1
 SYSARMOR_BENCH_PROFILE_TYPES='cpu heap allocs goroutine runtime'
-SYSARMOR_BENCH_PROFILE_PHASES='policy_apply workload'
+SYSARMOR_BENCH_PROFILE_PHASES='activity persistence'
+SYSARMOR_BENCH_ACTIVITY_PROFILE_SECONDS=5
 ```
 
 Output:
@@ -130,6 +131,25 @@ experiment-specific windows:
 | business workload | 30-60 minutes |
 | heavy workload | 10-30 minutes |
 | soak/leak check | 6-24 hours |
+
+Agent profiling is a diagnostic layer, not the primary resource measurement.
+The recorder's per-second `/proc` CPU/RSS samples are the low-disturbance
+timeline used for steady/workload/activity/persistence averages. Enable
+`SYSARMOR_BENCH_PROFILE_AGENT=1` only when a phase needs root-cause attribution
+inside the agent.
+
+When profiling is enabled, raw artifacts are written under each policy's
+`profiles/` directory. The default diagnostic phases are `policy_apply activity
+persistence`. `activity` CPU profiling uses
+`SYSARMOR_BENCH_ACTIVITY_PROFILE_SECONDS` because the local agent debug endpoint
+captures fixed-duration CPU profiles. `persistence` uses
+`SYSARMOR_BENCH_SCENARIO_OBSERVE_SECONDS`. CPU profiles are serialized because
+the agent debug endpoint accepts only one active profile at a time; avoid using
+overlapping CPU phases such as `workload activity persistence` in the same
+diagnostic run. Profiling runs also emit raw markers such as
+`profile_activity_finish_start` and `profile_activity_finish_done`, making
+profile collection overhead visible in `markers.ndjson` and
+`summary.json.raw_phases` without changing the standard report phases.
 
 ## Topology Benchmark
 
@@ -220,5 +240,5 @@ generate report
 
 The long-term target is a report where CPU/RSS timelines are aligned with
 profile windows so each expensive window can be attributed to agent components
-such as sensor read, normalize, detection, spool/WAL, data plane, local control,
-policy apply, and runtime/GC.
+such as sensor read, normalize, detection, telemetry bus, telemetry batcher,
+sender, local control, policy apply, and runtime/GC.

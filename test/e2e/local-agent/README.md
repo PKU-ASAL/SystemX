@@ -6,7 +6,7 @@ System under test:
 
 - `sysarmor-agent`;
 - owned sensor runtime;
-- local agent spool/WAL;
+- local agent telemetry bus/watch;
 - local `sysarmorctl --socket` APIs;
 - endpoint events and endpoint signals.
 

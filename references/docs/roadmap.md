@@ -21,12 +21,12 @@ Endpoint:
 - agent-owned Tetragon VM install path;
 - behavior-first collection policy;
 - content package apply for ContextSet / IOCPack / RulePack;
-- WAL-backed event and signal local watch;
+- bus-backed event and signal local watch;
 - labels and WatchFilter;
 - event refs and signal-to-event lookup;
 - lightweight endpoint detection including builtin and CEP-like rules;
 - collection policy explain with ref resolution, selector pushdown/degrade report, and detection coverage;
-- spool/WAL health with backlog, cursor, watcher, backpressure, and data batch drain visibility;
+- telemetry health with bus, batcher, drop, send, and shutdown drain visibility;
 - observe-only response ack loop with explicit would-execute audit semantics;
 - VM recorder and benchmark matrix;
 - resource timeline with CPU/RSS/EPS/drop/signal counts.
