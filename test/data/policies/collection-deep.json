@@ -18,6 +18,8 @@
             "/usr/bin/bash",
             "/usr/bin/curl",
             "/usr/bin/wget",
+            "/usr/bin/chmod",
+            "/bin/chmod",
             "/usr/bin/nc",
             "/usr/bin/socat"
           ]

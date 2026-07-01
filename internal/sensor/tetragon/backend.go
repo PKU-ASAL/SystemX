@@ -219,6 +219,7 @@ func CompileReport(intent contract.CollectionIntent) contract.CollectionCompileR
 		})
 		filter := behaviorFilter(intent, behavior)
 		report.PushedDownSelectors = append(report.PushedDownSelectors, pushedDownSelectorsForFilter(filter)...)
+		report.AgentSideSelectors = append(report.AgentSideSelectors, agentSideSelectorsForFilter(filter)...)
 		report.AgentSideSelectors = append(report.AgentSideSelectors, scopeSelectorReports(intent, behavior)...)
 		report.UnsupportedSelectors = append(report.UnsupportedSelectors, unsupportedSelectorsForFilter(filter)...)
 		if !hasPushdownSelectors(behavior, filter) {
@@ -281,12 +282,6 @@ func pushedDownSelectorsForFilter(filter contract.CollectionBehaviorFilter) []co
 		if len(filter.SocketFamilies) > 0 {
 			add("socket.family", "selectors.matchArgs[index=1,operator=Family]")
 		}
-		if len(filter.SocketAddrs) > 0 {
-			add("socket.addr", "selectors.matchArgs[index=1,operator=SAddr]")
-		}
-		if len(filter.SocketPorts) > 0 {
-			add("socket.port", "selectors.matchArgs[index=1,operator=SPort]")
-		}
 	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String(), eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
 		if len(filter.BinaryPrefixes) > 0 {
 			add("process.binary_prefix", "selectors.matchBinaries[operator=Prefix]")
@@ -315,6 +310,30 @@ func scopeSelectorReports(intent contract.CollectionIntent, behavior string) []c
 		Location: "agent",
 		Reason:   "runtime scope is enforced after Tetragon emission; selector is correct but may collect extra events until backend pushdown is implemented",
 	}}
+}
+
+func agentSideSelectorsForFilter(filter contract.CollectionBehaviorFilter) []contract.CollectionSelectorReport {
+	behavior := eventmodel.NormalizeBehavior(filter.Behavior).String()
+	if behavior != eventmodel.BehaviorNetworkConnect.String() {
+		return nil
+	}
+	var out []contract.CollectionSelectorReport
+	add := func(selector, reason string) {
+		out = append(out, contract.CollectionSelectorReport{
+			Behavior: behavior,
+			Selector: selector,
+			Status:   "agent_side",
+			Location: "agent",
+			Reason:   reason,
+		})
+	}
+	if len(filter.SocketAddrs) > 0 {
+		add("socket.addr", "destination address IOC is enforced after Tetragon emission until sockaddr destination pushdown is verified")
+	}
+	if len(filter.SocketPorts) > 0 {
+		add("socket.port", "destination port IOC is enforced after Tetragon emission until sockaddr destination pushdown is verified")
+	}
+	return out
 }
 
 func unsupportedSelectorsForFilter(filter contract.CollectionBehaviorFilter) []contract.CollectionSelectorReport {
@@ -816,28 +835,6 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 			out.WriteString("        - ")
 			out.WriteString(fmt.Sprintf("%q", family))
 			out.WriteString("\n")
-		}
-		if len(filter.SocketAddrs) > 0 {
-			out.WriteString(`      - index: 1
-        operator: "SAddr"
-        values:
-`)
-			for _, addr := range filter.SocketAddrs {
-				out.WriteString("        - ")
-				out.WriteString(fmt.Sprintf("%q", addr))
-				out.WriteString("\n")
-			}
-		}
-		if len(filter.SocketPorts) > 0 {
-			out.WriteString(`      - index: 1
-        operator: "SPort"
-        values:
-`)
-			for _, port := range filter.SocketPorts {
-				out.WriteString("        - ")
-				out.WriteString(fmt.Sprintf("%q", port))
-				out.WriteString("\n")
-			}
 		}
 	}
 	fileSelectors := filePermissionSelectors(intent)

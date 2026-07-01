@@ -43,6 +43,57 @@ func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
 	}
 }
 
+func TestBuiltinRuleSetTreatsShellScriptArgAsPayloadExec(t *testing.T) {
+	engine, report := New(policymodel.DefaultDetectionPolicy())
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	events := []*eventv1.CanonicalEvent{
+		writeEvent("e1", "lin-a", "curl-stable", "/usr/bin/curl", "/dev/shm/x.sh"),
+		execEvent("e2", "lin-a", "bash-stable", "parent", "/usr/bin/bash", []string{"/usr/bin/bash", "/dev/shm/x.sh"}),
+		connectEventWithParent("e3", "lin-a", "child", "bash-stable", "/usr/bin/bash", "10.66.0.99:443"),
+	}
+	var lifecycleRefs []string
+	for _, ev := range events {
+		for _, sig := range engine.Process(ev) {
+			if sig.GetName() == "payload_lifecycle" {
+				lifecycleRefs = sig.GetEventRefs()
+			}
+		}
+	}
+	for _, want := range []string{"e1", "e2", "e3"} {
+		if !contains(lifecycleRefs, want) {
+			t.Fatalf("payload_lifecycle refs = %v, want %s", lifecycleRefs, want)
+		}
+	}
+}
+
+func TestBuiltinRuleSetPayloadLifecycleToleratesShellReexecParentMismatch(t *testing.T) {
+	engine, report := New(policymodel.DefaultDetectionPolicy())
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	events := []*eventv1.CanonicalEvent{
+		writeEvent("e1", "lin-a", "curl-stable", "/usr/bin/curl", "/dev/shm/x.sh"),
+		writeEvent("e2", "lin-a", "script-shell", "/usr/bin/bash", "/dev/shm/.beacon"),
+		execEvent("e3", "lin-a", "payload-exec", "script-shell", "/usr/bin/bash", []string{"/usr/bin/bash", "/dev/shm/x.sh"}),
+		connectEventWithParent("e4", "lin-a", "connect-shell", "script-shell", "/usr/bin/bash", "10.66.0.99:443"),
+	}
+	var lifecycleRefs []string
+	for _, ev := range events {
+		for _, sig := range engine.Process(ev) {
+			if sig.GetName() == "payload_lifecycle" {
+				lifecycleRefs = sig.GetEventRefs()
+			}
+		}
+	}
+	for _, want := range []string{"e1", "e2", "e3", "e4"} {
+		if !contains(lifecycleRefs, want) {
+			t.Fatalf("payload_lifecycle refs = %v, want %s", lifecycleRefs, want)
+		}
+	}
+}
+
 func TestRuleOverrideDisablesBuiltinRule(t *testing.T) {
 	disabled := false
 	policy := policymodel.DefaultDetectionPolicy()

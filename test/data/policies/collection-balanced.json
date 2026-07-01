@@ -15,7 +15,11 @@
             "/bin/sh",
             "/bin/bash",
             "/usr/bin/sh",
-            "/usr/bin/bash"
+            "/usr/bin/bash",
+            "/usr/bin/curl",
+            "/usr/bin/wget",
+            "/usr/bin/chmod",
+            "/bin/chmod"
           ]
         }
       }

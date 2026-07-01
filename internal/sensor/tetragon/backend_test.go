@@ -605,9 +605,14 @@ func TestBuildTracingPolicyUsesCollectionFilters(t *testing.T) {
 			{Behavior: "file.write", BinaryPrefixes: []string{"/usr/bin"}, FilePrefixes: []string{"/dev/shm", "/var/lib/app/plugins"}},
 		},
 	}))
-	for _, want := range []string{"security_bprm_creds_from_file", `"Prefix"`, `"security_socket_connect"`, "matchBinaries", `"/usr/bin"`, `"/opt/app/bin"`, `"AF_INET"`, `"SAddr"`, `"10.66.0.99"`, `"SPort"`, `"443"`, `"8080"`, `"security_file_permission"`, `"/dev/shm"`, `"/var/lib/app/plugins"`, `"Equal"`, `"2"`} {
+	for _, want := range []string{"security_bprm_creds_from_file", `"Prefix"`, `"security_socket_connect"`, "matchBinaries", `"/usr/bin"`, `"/opt/app/bin"`, `"AF_INET"`, `"security_file_permission"`, `"/dev/shm"`, `"/var/lib/app/plugins"`, `"Equal"`, `"2"`} {
 		if !strings.Contains(data, want) {
 			t.Fatalf("generated policy missing %q:\n%s", want, data)
+		}
+	}
+	for _, unwanted := range []string{`"SAddr"`, `"SPort"`} {
+		if strings.Contains(data, unwanted) {
+			t.Fatalf("generated policy should not push down destination IOC selector %q until verified:\n%s", unwanted, data)
 		}
 	}
 	if strings.Contains(data, "AF_INET6") {
@@ -640,7 +645,7 @@ func TestCompileReportPushesProcessBinarySelectorsForNetworkAndFile(t *testing.T
 	report := CompileReport(contract.CollectionIntent{
 		Behaviors: []string{"network.connect", "file.write"},
 		BehaviorFilters: []contract.CollectionBehaviorFilter{
-			{Behavior: "network.connect", BinaryPrefixes: []string{"/usr/bin"}, SocketFamilies: []string{"AF_INET"}},
+			{Behavior: "network.connect", BinaryPrefixes: []string{"/usr/bin"}, SocketFamilies: []string{"AF_INET"}, SocketAddrs: []string{"10.66.0.99"}, SocketPorts: []string{"443"}},
 			{Behavior: "file.write", BinaryPrefixes: []string{"/usr/bin"}, FilePrefixes: []string{"/dev/shm"}},
 		},
 	})
@@ -649,6 +654,12 @@ func TestCompileReportPushesProcessBinarySelectorsForNetworkAndFile(t *testing.T
 	}
 	if !selectorReportContains(report.PushedDownSelectors, "network.connect", "process.binary_prefix") {
 		t.Fatalf("network binary selector was not pushed down: %+v", report.PushedDownSelectors)
+	}
+	if !selectorReportContains(report.AgentSideSelectors, "network.connect", "socket.addr") {
+		t.Fatalf("network addr selector was not marked agent-side: %+v", report.AgentSideSelectors)
+	}
+	if !selectorReportContains(report.AgentSideSelectors, "network.connect", "socket.port") {
+		t.Fatalf("network port selector was not marked agent-side: %+v", report.AgentSideSelectors)
 	}
 	if !selectorReportContains(report.PushedDownSelectors, "file.write", "process.binary_prefix") {
 		t.Fatalf("file binary selector was not pushed down: %+v", report.PushedDownSelectors)

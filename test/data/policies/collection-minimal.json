@@ -7,7 +7,16 @@
       "enabled": true,
       "selectors": {
         "process": {
-          "binary_prefixes": ["/tmp/", "/dev/shm/", "/var/tmp/", "/var/lib/app/plugins/"]
+            "binary_prefixes": [
+              "/tmp/",
+              "/dev/shm/",
+              "/var/tmp/",
+              "/var/lib/app/plugins/",
+              "/usr/bin/curl",
+              "/usr/bin/wget",
+              "/usr/bin/chmod",
+              "/bin/chmod"
+            ]
         }
       }
     },

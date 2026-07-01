@@ -397,11 +397,15 @@ func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState)
 	if path == "" {
 		return nil
 	}
-	if st.payloads[path] || hasAnyPrefix(path, e.ctx.PayloadPathPrefixes) {
-		st.payloads[path] = true
+	payloadPath := path
+	if !st.payloads[payloadPath] && !hasAnyPrefix(payloadPath, e.ctx.PayloadPathPrefixes) {
+		payloadPath = payloadPathFromArgv(ev.GetSubjectProc().GetArgv(), e.ctx.PayloadPathPrefixes)
+	}
+	if payloadPath != "" && (st.payloads[payloadPath] || hasAnyPrefix(payloadPath, e.ctx.PayloadPathPrefixes)) {
+		st.payloads[payloadPath] = true
 		st.payloadExecStable[ev.GetSubjectProc().GetStableId()] = true
 		st.payloadExecRefs = appendUnique(st.payloadExecRefs, ev.GetId())
-		if hasAnyPrefix(path, []string{"/var/lib/app/plugins/"}) {
+		if hasAnyPrefix(payloadPath, []string{"/var/lib/app/plugins/"}) {
 			st.stagedPayloadSeen = true
 		}
 	}
@@ -442,7 +446,11 @@ func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageSta
 	}
 	proc := ev.GetSubjectProc()
 	argv := strings.Join(proc.GetArgv(), " ")
-	payloadProc := st.payloadExecStable[proc.GetStableId()] || st.payloadExecStable[ev.GetParentStableId()] || strings.Contains(argv, "helper") || hasAnyPrefix(proc.GetBinary(), e.ctx.PayloadPathPrefixes)
+	payloadProc := st.payloadExecStable[proc.GetStableId()] ||
+		st.payloadExecStable[ev.GetParentStableId()] ||
+		(len(st.payloadRefs) > 0 && len(st.payloadExecRefs) > 0) ||
+		strings.Contains(argv, "helper") ||
+		hasAnyPrefix(proc.GetBinary(), e.ctx.PayloadPathPrefixes)
 	if !payloadProc {
 		return nil
 	}
@@ -1401,6 +1409,16 @@ func hasAnyPrefix(value string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+func payloadPathFromArgv(argv []string, prefixes []string) string {
+	for _, arg := range argv {
+		arg = strings.Trim(arg, `"'`)
+		if hasAnyPrefix(arg, prefixes) {
+			return arg
+		}
+	}
+	return ""
 }
 
 func firstPayloadPath(st *lineageState) string {
