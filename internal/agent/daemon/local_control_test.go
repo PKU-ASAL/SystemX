@@ -12,8 +12,7 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -25,14 +24,6 @@ import (
 func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 16384)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{
-		Queue:    queue,
-		Uploader: noopUploader{},
-	}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -61,7 +52,8 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -75,11 +67,11 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	if health.AgentId != "agent-a" || health.Sensor.Backend != "fake" || !health.Sensor.Running {
 		t.Fatalf("health = %+v", health)
 	}
-	if health.GetStreams().GetEventCapacity() != 0 || health.GetStreams().GetEventNextSequence() != 0 {
+	if health.GetStreams().GetEventCapacity() == 0 || health.GetStreams().GetSignalCapacity() == 0 {
 		t.Fatalf("stream health = %+v", health.GetStreams())
 	}
-	if health.GetWal().GetMaxBytes() != 16384 || health.GetWal().GetQueuedBatches() != 0 {
-		t.Fatalf("wal health = %+v", health.GetWal())
+	if health.GetTelemetryBatcher().GetQueuedBatches() != 0 {
+		t.Fatalf("telemetry batcher health = %+v", health.GetTelemetryBatcher())
 	}
 	cap, err := client.Capability(context.Background(), &controlplanev1.CapabilityRequest{})
 	if err != nil {
@@ -115,11 +107,6 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 16384)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
 	runner := &AgentRuntime{
 		Config: config.Config{
@@ -133,7 +120,8 @@ func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -165,11 +153,6 @@ func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -183,7 +166,8 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -227,17 +211,12 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control:   config.ControlConfig{SocketPath: socketPath},
 			Manager:   config.ManagerConfig{Address: "127.0.0.1:9443", Transport: "grpc"},
-			Spool:     config.SpoolConfig{BatchSize: 10, FlushInterval: time.Second},
+			Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 			DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1},
 		},
 		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
@@ -246,7 +225,8 @@ func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -267,8 +247,8 @@ func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
 	if runner.Config.Manager.Transport != "grpc" || runner.Config.Manager.Address != "manager:9443" {
 		t.Fatalf("manager config = %+v", runner.Config.Manager)
 	}
-	if runner.Config.Spool.BatchSize != 64 || runner.Config.Spool.FlushInterval != 2*time.Second {
-		t.Fatalf("spool config = %+v", runner.Config.Spool)
+	if runner.Config.Telemetry.BatchSize != 64 || runner.Config.Telemetry.FlushInterval != 2*time.Second {
+		t.Fatalf("telemetry config = %+v", runner.Config.Telemetry)
 	}
 	if runner.Config.DataPlane.RetryInitial != 500*time.Millisecond || runner.Config.DataPlane.RetryMax != 5*time.Second || runner.Config.DataPlane.RequestTimeout != 3*time.Second || runner.Config.DataPlane.MaxInflight != 2 || runner.Config.DataPlane.Compression != "gzip" || runner.Config.DataPlane.TLSProfile != "mtls-prod" {
 		t.Fatalf("data plane config = %+v", runner.Config.DataPlane)
@@ -278,11 +258,6 @@ func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
 func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
 	runner := &AgentRuntime{
 		Config: config.Config{
@@ -296,7 +271,8 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -380,11 +356,6 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	sensor := &recordingCollectionSensor{healthOnlySensor: healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}}}
 	runner := &AgentRuntime{
 		Config: config.Config{
@@ -398,7 +369,8 @@ func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -434,11 +406,6 @@ func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 func TestLocalControlApplyListGetContent(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -451,7 +418,8 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -494,11 +462,6 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -512,7 +475,8 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -534,7 +498,7 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	}
 
 	norm := normalize.New("agent-a", "host-a", nil)
-	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443"))
+	appendEndpointEventForTest(t, runner, bus, norm, sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443"))
 	signalStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "reverse_shell_pattern", Where: "endpoint"})
 	if err != nil {
 		t.Fatalf("WatchSignals() error = %v", err)
@@ -557,11 +521,6 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -575,7 +534,8 @@ func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -635,11 +595,7 @@ func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 	}
 
 	norm := normalize.New("agent-a", "host-a", nil)
-	batchID := appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/kept.sh", ""))
-	batch, err := queue.LoadDataBatch(batchID)
-	if err != nil {
-		t.Fatalf("LoadDataBatch() error = %v", err)
-	}
+	batch := appendEndpointEventForTest(t, runner, bus, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/kept.sh", ""))
 	if len(batch.GetSignals()) != 1 || batch.GetSignals()[0].GetSignal().GetName() != "payload_dropped" {
 		t.Fatalf("signals after rejected rebuild = %+v, want previous detection engine still active", batch.GetSignals())
 	}
@@ -660,11 +616,6 @@ func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 func TestLocalControlDetectionPolicyRebuildFailureKeepsPreviousPolicy(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -678,7 +629,8 @@ func TestLocalControlDetectionPolicyRebuildFailureKeepsPreviousPolicy(t *testing
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -711,11 +663,7 @@ func TestLocalControlDetectionPolicyRebuildFailureKeepsPreviousPolicy(t *testing
 	if runner.activePolicy().Detection.PolicyID == "bad-runtime-policy" {
 		t.Fatalf("bad detection policy replaced active policy")
 	}
-	batchID := appendEndpointEventForTest(t, runner, queue, normalize.New("agent-a", "host-a", nil), sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/kept-policy.sh", ""))
-	batch, err := queue.LoadDataBatch(batchID)
-	if err != nil {
-		t.Fatalf("LoadDataBatch() error = %v", err)
-	}
+	batch := appendEndpointEventForTest(t, runner, bus, normalize.New("agent-a", "host-a", nil), sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/kept-policy.sh", ""))
 	if len(batch.GetSignals()) != 1 || batch.GetSignals()[0].GetSignal().GetName() != "payload_dropped" {
 		t.Fatalf("signals after rejected policy = %+v, want previous detection policy still active", batch.GetSignals())
 	}
@@ -757,11 +705,6 @@ func containsString(values []string, want string) bool {
 func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -774,7 +717,8 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -782,7 +726,7 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 
 	norm := normalize.NewWithOptions("agent-a", "host-a", nil, normalize.Options{TenantID: "default", ScopeType: "host", Labels: map[string]string{"benchmark_run": "run-a"}})
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
-	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
+	appendEndpointEventForTest(t, runner, bus, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
 
 	client := newUnixControlClient(t, socketPath)
 	eventStream, err := client.WatchEvents(context.Background(), &controlplanev1.WatchEventsRequest{IncludeRecent: true, Limit: 1, Behavior: "file.write"})
@@ -853,11 +797,6 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 16384)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
@@ -870,7 +809,8 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := runner.startLocalControlServer(ctx, rt, queue, worker, time.Now())
+	bus, batcher, sender := newTestTelemetry(runner)
+	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
 	}
@@ -913,7 +853,7 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 		cepSensorEventEnvelope("process.exec", "/dev/shm/cep-x", "", ""),
 		cepSensorEventEnvelope("network.connect", "/dev/shm/cep-x", "", "10.66.0.99:443"),
 	} {
-		appendEndpointEventForTest(t, runner, queue, norm, ev)
+		appendEndpointEventForTest(t, runner, bus, norm, ev)
 	}
 
 	signalStream, err := client.WatchSignals(context.Background(), &controlplanev1.WatchSignalsRequest{IncludeRecent: true, Limit: 1, RuleId: "cep_payload_lifecycle", Where: "endpoint"})
@@ -992,6 +932,28 @@ type noopUploader struct{}
 
 func (noopUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	return &dataplanev1.DataAck{Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
+}
+
+type recordingUploader struct {
+	ch chan *dataplanev1.DataBatch
+}
+
+func newRecordingUploader() *recordingUploader {
+	return &recordingUploader{ch: make(chan *dataplanev1.DataBatch, 16)}
+}
+
+func (u *recordingUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+	if u != nil && batch != nil {
+		u.ch <- batch
+	}
+	return (&noopUploader{}).AppendBatch(batch)
+}
+
+func newTestTelemetry(runner *AgentRuntime) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender) {
+	bus := telemetry.NewBus(1024)
+	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 16)
+	sender := &telemetry.Sender{Appender: noopUploader{}, Batcher: batcher}
+	return bus, batcher, sender
 }
 
 func newUnixControlClient(t *testing.T, socketPath string) controlplanev1.AgentControlPlaneServiceClient {

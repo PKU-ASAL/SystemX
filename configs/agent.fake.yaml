@@ -23,9 +23,7 @@ sensor:
   observe_only: true
   restart: always
 
-spool:
-  path: /tmp/sysarmor-agent-spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 1s
 
@@ -38,7 +36,6 @@ health:
   interval: 10s
 
 content:
-  path: /tmp/sysarmor-agent-content
   trust_keys: ""
 
 resource:

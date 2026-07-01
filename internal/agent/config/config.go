@@ -17,7 +17,7 @@ type Config struct {
 	Control   ControlConfig
 	Runtime   RuntimeConfig
 	Sensor    SensorConfig
-	Spool     SpoolConfig
+	Telemetry TelemetryConfig
 	DataPlane DataPlaneConfig
 	Health    HealthConfig
 	Policy    PolicyConfig
@@ -96,9 +96,7 @@ type RuntimeScope struct {
 	Selector string
 }
 
-type SpoolConfig struct {
-	Path          string
-	MaxBytes      int64
+type TelemetryConfig struct {
 	BatchSize     int
 	FlushInterval time.Duration
 }
@@ -161,7 +159,6 @@ func (c Config) Validate() error {
 	check("sensor.backend", c.Sensor.Backend)
 	check("sensor.mode", c.Sensor.Mode)
 	check("sensor.policy_path", c.Sensor.PolicyPath)
-	check("spool.path", c.Spool.Path)
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
@@ -210,14 +207,11 @@ func (c Config) Validate() error {
 	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
 		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")
 	}
-	if c.Spool.MaxBytes <= 0 {
-		return fmt.Errorf("spool.max_bytes must be positive")
+	if c.Telemetry.BatchSize <= 0 {
+		return fmt.Errorf("telemetry.batch_size must be positive")
 	}
-	if c.Spool.BatchSize <= 0 {
-		return fmt.Errorf("spool.batch_size must be positive")
-	}
-	if c.Spool.FlushInterval <= 0 {
-		return fmt.Errorf("spool.flush_interval must be positive")
+	if c.Telemetry.FlushInterval <= 0 {
+		return fmt.Errorf("telemetry.flush_interval must be positive")
 	}
 	if c.DataPlane.RetryInitial <= 0 || c.DataPlane.RetryMax <= 0 || c.DataPlane.RequestTimeout <= 0 {
 		return fmt.Errorf("data_plane retry/request timeouts must be positive")
@@ -344,7 +338,7 @@ func defaults() Config {
 		Control:   ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
 		Runtime:   RuntimeConfig{FeatureFlags: RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
-		Spool:     SpoolConfig{MaxBytes: 256 * 1024 * 1024, BatchSize: 256, FlushInterval: time.Second},
+		Telemetry: TelemetryConfig{BatchSize: 256, FlushInterval: time.Second},
 		DataPlane: DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
 		Health:    HealthConfig{Interval: 10 * time.Second},
 		Policy:    PolicyConfig{RefreshInterval: 30 * time.Second},
@@ -538,28 +532,20 @@ func assign(cfg *Config, section, key, value string) error {
 		default:
 			return unknown(section, key)
 		}
-	case "spool":
+	case "telemetry":
 		switch key {
-		case "path":
-			cfg.Spool.Path = value
-		case "max_bytes":
-			v, err := strconv.ParseInt(value, 10, 64)
-			if err != nil {
-				return fmt.Errorf("spool.max_bytes: %w", err)
-			}
-			cfg.Spool.MaxBytes = v
 		case "batch_size":
 			v, err := strconv.Atoi(value)
 			if err != nil {
-				return fmt.Errorf("spool.batch_size: %w", err)
+				return fmt.Errorf("telemetry.batch_size: %w", err)
 			}
-			cfg.Spool.BatchSize = v
+			cfg.Telemetry.BatchSize = v
 		case "flush_interval":
 			d, err := time.ParseDuration(value)
 			if err != nil {
-				return fmt.Errorf("spool.flush_interval: %w", err)
+				return fmt.Errorf("telemetry.flush_interval: %w", err)
 			}
-			cfg.Spool.FlushInterval = d
+			cfg.Telemetry.FlushInterval = d
 		default:
 			return unknown(section, key)
 		}

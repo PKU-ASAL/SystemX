@@ -60,7 +60,7 @@ func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 			return err
 		}
 	}
-	health, err := runner.collectHealth(ctx, r.sensor, r.spool.Queue(), r.worker, r.startedAt)
+	health, err := runner.collectHealth(ctx, r.sensor, nil, r.batcher, r.sender, r.startedAt)
 	if err == nil {
 		if err := session.SendHealth(ctx, health); err != nil {
 			return err
@@ -105,7 +105,7 @@ func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 				return err
 			}
 		case <-ticker.C:
-			health, err := runner.collectHealth(ctx, r.sensor, r.spool.Queue(), r.worker, r.startedAt)
+			health, err := runner.collectHealth(ctx, r.sensor, nil, r.batcher, r.sender, r.startedAt)
 			if err != nil {
 				return err
 			}
@@ -148,11 +148,8 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		return nil
 	case "resume":
 		cursor := frame.GetResume().GetResumeCursor()
-		if err := r.spool.AckThrough(cursor); err != nil {
-			return err
-		}
 		if runner.Out != nil {
-			fmt.Fprintf(runner.Out, "agent control resume cursor: %s\n", cursor)
+			fmt.Fprintf(runner.Out, "agent control resume cursor ignored by telemetry data plane: %s\n", cursor)
 		}
 		return nil
 	case "response_command":

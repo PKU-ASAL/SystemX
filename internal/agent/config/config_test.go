@@ -44,9 +44,7 @@ sensor:
   mode: managed
   policy_path: test/policies/collection.yaml
 
-spool:
-  path: /tmp/sysarmor-agent-spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 1s
 
@@ -122,9 +120,7 @@ sensor:
   max_parse_errors: 3
   max_dropped_events: 4
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 1s
 
@@ -182,8 +178,8 @@ runtime:
 	if cfg.Sensor.BTFPath != "/tmp/vmlinux" || cfg.Sensor.BPFFSPath != "/tmp/bpf" || !cfg.Sensor.RequireBTF || !cfg.Sensor.RequireBPFFS {
 		t.Fatalf("capability config = %+v", cfg.Sensor)
 	}
-	if cfg.Spool.BatchSize != 256 {
-		t.Fatalf("batch size = %d", cfg.Spool.BatchSize)
+	if cfg.Telemetry.BatchSize != 256 {
+		t.Fatalf("batch size = %d", cfg.Telemetry.BatchSize)
 	}
 	if cfg.Policy.RefreshInterval != 15*time.Second {
 		t.Fatalf("policy refresh interval = %s", cfg.Policy.RefreshInterval)
@@ -218,8 +214,7 @@ sensor:
   mode: managed
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -255,8 +250,7 @@ sensor:
   scope_type: container
   scope_selector: abc123
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -303,8 +297,7 @@ sensor:
     type: pod
     selector: pod-a
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -346,8 +339,7 @@ sensor:
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: vm
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -382,8 +374,7 @@ sensor:
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: container
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -419,8 +410,7 @@ sensor:
   scope_type: host
   scope_selector: abc123
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -457,8 +447,7 @@ sensor:
   scope_selector: abc123
   container_id_prefix: def456
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
+telemetry:
 
 data_plane:
   retry_initial: 1s
@@ -485,8 +474,7 @@ sensor:
   backend: tetragon
   mode: managed
   policy_path: /tmp/policy.yaml
-spool:
-  path: /tmp/spool
+telemetry:
 `)
 	_, err := LoadFile(path)
 	if err == nil {

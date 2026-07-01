@@ -20,11 +20,11 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
@@ -41,22 +41,28 @@ import (
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
 
-func appendEndpointEventForTest(t testing.TB, runner *AgentRuntime, queue *spool.Queue, norm *normalize.Normalizer, ev contract.EventEnvelope) string {
+func appendEndpointEventForTest(t testing.TB, runner *AgentRuntime, bus *telemetry.Bus, norm *normalize.Normalizer, ev contract.EventEnvelope) *dataplanev1.DataBatch {
 	t.Helper()
-	batchID, err := NewAgentSpool(queue).AppendEndpointEvent(NewEndpointRuntime(runner, norm), ev)
+	batch, err := NewEndpointRuntime(runner, norm).ProcessEvent(ev)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return batchID
+	if bus != nil {
+		bus.PublishBatch(batch)
+	}
+	return batch
 }
 
-func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, queue *spool.Queue, signals []*signalv1.Signal) string {
+func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, bus *telemetry.Bus, signals []*signalv1.Signal) *dataplanev1.DataBatch {
 	t.Helper()
-	batchID, err := NewAgentSpool(queue).AppendEndpointSignals(NewEndpointRuntime(runner, nil), signals)
+	batch, err := NewEndpointRuntime(runner, nil).ProcessSignals(signals)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return batchID
+	if bus != nil {
+		bus.PublishBatch(batch)
+	}
+	return batch
 }
 
 func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
@@ -64,11 +70,11 @@ func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
 	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "")
 	t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "optimized"}},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime:   config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "optimized"}},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 	}
 	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -90,11 +96,11 @@ func TestAgentRuntimeMatcherFeatureFlagTestOverride(t *testing.T) {
 	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "optimized")
 	t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime:   config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 	}
 	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -116,11 +122,11 @@ func TestAgentRuntimeRejectsInvalidMatcherFeatureFlagOverride(t *testing.T) {
 	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "auto")
 	t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
 	cfg := config.Config{
-		Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
-		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
-		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
-		Spool:   config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime:   config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 	}
 	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -130,7 +136,7 @@ func TestAgentRuntimeRejectsInvalidMatcherFeatureFlagOverride(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
+func TestAgentRuntimeUploadsFakeSensorEvent(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -140,7 +146,7 @@ func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
@@ -152,7 +158,7 @@ func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	var out bytes.Buffer
-	runDaemonUntilSpoolBatch(t, runner, cfg.Spool.Path, &out)
+	runDaemonUntilUploadedBatch(t, runner, &out)
 	got := out.String()
 	for _, want := range []string{"agent daemon started", "sensor=fake", "agent daemon event"} {
 		if !strings.Contains(got, want) {
@@ -161,7 +167,7 @@ func TestAgentRuntimeSpoolsFakeSensorEvent(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeSpoolsConfiguredLabels(t *testing.T) {
+func TestAgentRuntimeUploadsConfiguredLabels(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
 	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
@@ -171,7 +177,7 @@ func TestAgentRuntimeSpoolsConfiguredLabels(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "daemon-scenario"}},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
@@ -179,7 +185,7 @@ func TestAgentRuntimeSpoolsConfiguredLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	batch := runDaemonUntilSpoolBatch(t, runner, cfg.Spool.Path, nil)
+	batch := runDaemonUntilUploadedBatch(t, runner, nil)
 	if got := batch.GetEvents()[0].GetEvent().GetLabels()["scenario"]; got != "daemon-scenario" {
 		t.Fatalf("event label scenario = %q", got)
 	}
@@ -191,31 +197,57 @@ func TestAgentRuntimeSpoolsConfiguredLabels(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
-	dir := t.TempDir()
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
+func TestAgentRuntimeShutdownFlushesTelemetryBestEffort(t *testing.T) {
+	runner := &AgentRuntime{
+		Config: config.Config{
+			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
+			Sensor:    config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}},
+			Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Hour},
+			DataPlane: config.DataPlaneConfig{RequestTimeout: 200 * time.Millisecond},
+		},
+		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
+		capability: contract.Capability{Backend: "fake", SupportsHealth: true},
 	}
+	bus := telemetry.NewBus(16)
+	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 4)
+	uploader := newRecordingUploader()
+	sender := &telemetry.Sender{Appender: uploader, Batcher: batcher}
+	ctx, cancelSender := context.WithCancel(context.Background())
+	defer cancelSender()
+	go sender.Run(ctx)
+	batcher.Add(&dataplanev1.DataBatch{Events: []*dataplanev1.EventFrame{{Event: &eventv1.CanonicalEvent{Id: "event-a", AgentId: "agent-a", HostId: "host-a"}}}})
+
+	var out bytes.Buffer
+	runner.Out = &out
+	rt := sensorruntime.New(runner.Sensor)
+	if err := runner.shutdownAndReport(context.Background(), rt, bus, batcher, sender, localHealthReporter{}, time.Now(), cancelSender, func() {}); err != nil {
+		t.Fatalf("shutdownAndReport() error = %v", err)
+	}
+	stats := sender.Stats()
+	if !stats.Drained || stats.SentBatches != 1 || len(uploader.ch) != 1 {
+		t.Fatalf("sender stats = %+v uploaded=%d", stats, len(uploader.ch))
+	}
+	if got := out.String(); !strings.Contains(got, "drained=true") || !strings.Contains(got, "timeout=false") {
+		t.Fatalf("shutdown output = %q", got)
+	}
+}
+
+func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 	cfg := config.Config{
 		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "refresh-scenario"}},
 	}
 	runner := &AgentRuntime{Config: cfg}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
-	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
+	first := appendEndpointEventForTest(t, runner, nil, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
 	updated := policymodel.DefaultPolicy("default")
 	updated.PolicyID = "no-payload-after-refresh"
 	updated.Version = 2
 	disabled := false
 	updated.Detection.RuleOverrides = append(updated.Detection.RuleOverrides, policymodel.RuleOverride{RuleID: "payload_dropped", Enabled: &disabled})
 	runner.applyRuntimePolicy(updated)
-	appendEndpointEventForTest(t, runner, queue, norm, sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/x.sh", ""))
-	batches := loadSpoolBatches(t, filepath.Join(dir, "spool"))
-	if len(batches) != 2 {
-		t.Fatalf("batch count = %d", len(batches))
-	}
-	signalCounts := []int{len(batches[0].GetSignals()), len(batches[1].GetSignals())}
+	second := appendEndpointEventForTest(t, runner, nil, norm, sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/x.sh", ""))
+	signalCounts := []int{len(first.GetSignals()), len(second.GetSignals())}
 	if !containsInt(signalCounts, 1) || !containsInt(signalCounts, 0) {
 		t.Fatalf("signal counts = %v, want one pre-refresh signal and one post-refresh suppressed signal", signalCounts)
 	}
@@ -287,7 +319,6 @@ func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 }
 
 func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
-	dir := t.TempDir()
 	st := &store.Store{}
 	st.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-runner-long",
@@ -308,10 +339,6 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:     config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
@@ -326,12 +353,13 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 			SupportsHealth: true,
 		},
 	}
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	rt := sensorruntime.New(runner.Sensor)
+	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 16)
+	sender := &telemetry.Sender{Appender: noopUploader{}, Batcher: batcher}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- NewTransportRuntime(runner, rt, NewAgentSpool(queue), worker, time.Now().UTC(), "host", "").RunControlChannel(ctx)
+		done <- NewTransportRuntime(runner, rt, batcher, sender, time.Now().UTC(), "host", "").RunControlChannel(ctx)
 	}()
 	deadline := time.After(time.Second)
 	for {
@@ -372,7 +400,7 @@ func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
 			"spec":{"value_type":"port","values":["9443"]}
 		}`,
 	}
-	runner, queue, done, cancel := runTestControlChannel(t, dir, server, "agent-content-update")
+	runner, done, cancel := runTestControlChannel(t, dir, server, "agent-content-update")
 	defer cancel()
 
 	ack := waitForControlAck(t, server, "content-update-1")
@@ -387,11 +415,7 @@ func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
 		t.Fatalf("content record = %+v ok=%t", record, ok)
 	}
 
-	batchID := appendEndpointEventForTest(t, runner, queue, normalize.New("agent-content-update", "host-content-update", nil), sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443"))
-	batch, err := queue.LoadDataBatch(batchID)
-	if err != nil {
-		t.Fatalf("LoadDataBatch() error = %v", err)
-	}
+	batch := appendEndpointEventForTest(t, runner, nil, normalize.New("agent-content-update", "host-content-update", nil), sensorEventEnvelope("network.connect", 100, "/bin/bash", "", "10.66.0.99:9443"))
 	if len(batch.GetSignals()) == 0 {
 		t.Fatalf("signals after content update = none, want detection runtime to use updated content")
 	}
@@ -415,7 +439,7 @@ func TestAgentRuntimeControlChannelRejectsBadContentUpdateWithoutReplacingDetect
 		}`,
 		policy: badRuntimeCandidatePolicy("default"),
 	}
-	runner, queue, done, cancel := runTestControlChannel(t, dir, server, "agent-bad-content-update")
+	runner, done, cancel := runTestControlChannel(t, dir, server, "agent-bad-content-update")
 	defer cancel()
 
 	ack := waitForControlAck(t, server, "content-update-1")
@@ -429,11 +453,7 @@ func TestAgentRuntimeControlChannelRejectsBadContentUpdateWithoutReplacingDetect
 	if _, ok := runner.contentStore().Get("rulepack:bad-runtime"); ok {
 		t.Fatalf("rejected content update was committed")
 	}
-	batchID := appendEndpointEventForTest(t, runner, queue, normalize.New("agent-bad-content-update", "host-bad-content-update", nil), sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/kept-control.sh", ""))
-	batch, err := queue.LoadDataBatch(batchID)
-	if err != nil {
-		t.Fatalf("LoadDataBatch() error = %v", err)
-	}
+	batch := appendEndpointEventForTest(t, runner, nil, normalize.New("agent-bad-content-update", "host-bad-content-update", nil), sensorEventEnvelope("file.write", 101, "/usr/bin/curl", "/dev/shm/kept-control.sh", ""))
 	if len(batch.GetSignals()) != 1 || batch.GetSignals()[0].GetSignal().GetName() != "payload_dropped" {
 		t.Fatalf("signals after rejected content update = %+v, want previous detection engine active", batch.GetSignals())
 	}
@@ -454,7 +474,7 @@ func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "tetragon", Mode: "managed", Version: "test", PolicyPath: policyPath, EventSource: eventPath, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
@@ -482,7 +502,7 @@ func TestAgentRuntimeTetragonRequiresEventSource(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "tetragon", Mode: "managed", PolicyPath: policyPath, EventTransport: "tetra", ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1024, BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
 		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
@@ -498,271 +518,12 @@ func TestAgentRuntimeTetragonRequiresEventSource(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeBackgroundUploadLoopDrainsSpool(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cfg := config.Config{
-		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: 5 * time.Millisecond},
-		DataPlane: config.DataPlaneConfig{RetryInitial: 5 * time.Millisecond, RetryMax: 10 * time.Millisecond, RequestTimeout: time.Second},
-		Health:    config.HealthConfig{Interval: time.Hour},
-	}
-	runner, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runner.Run(ctx, Options{Out: &bytes.Buffer{}})
-	}()
-	deadline := time.After(2 * time.Second)
-	for {
-		matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(matches) == 0 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatalf("spool batches after background drain = %v", matches)
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-	cancel()
-	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("Run() error = %v", err)
-	}
-}
-
-func TestAgentRuntimeGracefulShutdownDrainsSpoolWhenManagerAvailable(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{
-		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
-		DataPlane: config.DataPlaneConfig{RetryInitial: 50 * time.Millisecond, RetryMax: 50 * time.Millisecond, RequestTimeout: time.Second},
-		Health:    config.HealthConfig{Interval: time.Hour},
-	}
-	runner, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
-	var out bytes.Buffer
-	go func() {
-		errCh <- runner.Run(ctx, Options{Out: &out})
-	}()
-
-	deadline := time.After(2 * time.Second)
-	for {
-		matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(matches) == 1 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for spool batch before shutdown")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-
-	cancel()
-	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("Run() error = %v", err)
-	}
-	matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 0 {
-		t.Fatalf("spool batches after shutdown drain = %v", matches)
-	}
-	if !strings.Contains(out.String(), "agent shutdown drain: appended=1 remaining=0") {
-		t.Fatalf("output = %q", out.String())
-	}
-}
-
-func TestDataBatchWorkerRecoversUnackedBatchesAfterRestart(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	spoolPath := filepath.Join(dir, "spool")
-	cfg := config.Config{
-		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: spoolPath, MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: 5 * time.Millisecond},
-		Health:    config.HealthConfig{Interval: time.Hour},
-	}
-	first, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
-	queue, err := spool.OpenWithLimit(spoolPath, cfg.Spool.MaxBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
-	appendEndpointEventForTest(t, first, queue, norm, sensorEventEnvelope("process.exec", 100, "/bin/bash", "", ""))
-	matches, err := filepath.Glob(filepath.Join(spoolPath, "*.batch.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 1 {
-		t.Fatalf("spool batches after first run = %v", matches)
-	}
-
-	oldBatch := loadOnlySpoolBatch(t, spoolPath)
-	oldID := oldBatch.GetEvents()[0].GetEvent().GetId()
-
-	worker, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	up, err := worker.dataBatchWorker(queue)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stats, err := up.DrainOnce(context.Background())
-	if err != nil {
-		t.Fatalf("DrainOnce() error = %v", err)
-	}
-	if stats.AppendedBatches != 1 || stats.RemainingBatches != 0 {
-		t.Fatalf("stats = %+v", stats)
-	}
-	matches, err = filepath.Glob(filepath.Join(spoolPath, "*.batch.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 0 {
-		t.Fatalf("spool batches after recovery drain = %v", matches)
-	}
-	if oldID == "" {
-		t.Fatal("old event id = empty")
-	}
-}
-
-func TestAgentRuntimeReportsSpoolBackpressure(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{
-		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
-		Health:    config.HealthConfig{Interval: time.Hour},
-	}
-	runner, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	runDaemonUntilOutput(t, runner, &out, "agent spool backpressure")
-	if !strings.Contains(out.String(), "agent spool backpressure") {
-		t.Fatalf("output = %q", out.String())
-	}
-	matches, err := filepath.Glob(filepath.Join(cfg.Spool.Path, "*.batch.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 0 {
-		t.Fatalf("spool batches = %v", matches)
-	}
-}
-
-func TestAgentRuntimeMarksHealthDegradedOnSpoolBackpressure(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "collection.yaml")
-	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{
-		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
-		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
-		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 1, BatchSize: 10, FlushInterval: time.Hour},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
-		Health:    config.HealthConfig{Interval: time.Hour},
-	}
-	runner, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rt := sensorruntime.New(runner.Sensor)
-	if _, err := rt.Probe(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.Apply(context.Background(), contract.CollectionIntent{ObserveOnly: true}); err != nil {
-		t.Fatal(err)
-	}
-	queue, err := spool.OpenWithLimit(cfg.Spool.Path, cfg.Spool.MaxBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := queue.AppendDataBatch(&dataplanev1.DataBatch{
-		Header: &dataplanev1.BatchHeader{AgentId: "agent-a", HostId: "host-a", TenantId: "default"},
-		Events: []*dataplanev1.EventFrame{{
-			Event: &eventv1.CanonicalEvent{
-				Id:       "event-a",
-				AgentId:  "agent-a",
-				HostId:   "host-a",
-				Behavior: "process.exec",
-			},
-		}},
-	}); !spool.IsBackpressure(err) {
-		t.Fatalf("Append() error = %v, want backpressure", err)
-	}
-	worker, err := runner.dataBatchWorker(queue)
-	if err != nil {
-		t.Fatal(err)
-	}
-	health, err := runner.collectHealth(context.Background(), rt, queue, worker, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if health.Status != "degraded" || health.Queue.BackpressureCount != 1 || health.Queue.DroppedBatches != 1 || health.Queue.LastError == "" {
-		t.Fatalf("health = %+v", health)
-	}
-}
-
-func TestAgentRuntimeSpoolsTamperSignalFromHealth(t *testing.T) {
-	dir := t.TempDir()
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestAgentRuntimeProcessesTamperSignalFromHealth(t *testing.T) {
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 			Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true, RestartWindow: time.Hour},
-			Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+			Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Hour},
 			DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
 			Health:    config.HealthConfig{Interval: 5 * time.Millisecond},
 		},
@@ -805,8 +566,7 @@ func TestAgentRuntimeSpoolsTamperSignalFromHealth(t *testing.T) {
 	if sig == nil {
 		t.Fatal("tamper Evaluate() = nil")
 	}
-	appendEndpointSignalsForTest(t, runner, queue, []*signalv1.Signal{sig})
-	batch := loadOnlySpoolBatch(t, runner.Config.Spool.Path)
+	batch := appendEndpointSignalsForTest(t, runner, nil, []*signalv1.Signal{sig})
 	sig = batch.GetSignals()[0].GetSignal()
 	if sig.GetName() != tamper.SignalName || !sig.GetTerminal() || sig.GetWhere() != signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT {
 		t.Fatalf("tamper signal = %+v", sig)
@@ -823,7 +583,7 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, MaxParseErrors: 1, RestartWindow: time.Hour},
-		Spool:     config.SpoolConfig{Path: filepath.Join(dir, "spool"), MaxBytes: 4096, BatchSize: 10, FlushInterval: time.Hour},
+		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Hour},
 		DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
@@ -844,15 +604,10 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 	if err := rt.Apply(context.Background(), contract.CollectionIntent{ObserveOnly: true}); err != nil {
 		t.Fatal(err)
 	}
-	queue, err := spool.OpenWithLimit(cfg.Spool.Path, cfg.Spool.MaxBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker, err := runner.dataBatchWorker(queue)
-	if err != nil {
-		t.Fatal(err)
-	}
-	health, err := runner.collectHealth(context.Background(), rt, queue, worker, time.Now())
+	bus := telemetry.NewBus(1024)
+	batcher := telemetry.NewBatcher(runner.newDataBatch, cfg.Telemetry.BatchSize, cfg.Telemetry.FlushInterval, 16)
+	sender := &telemetry.Sender{Appender: noopUploader{}, Batcher: batcher}
+	health, err := runner.collectHealth(context.Background(), rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -991,7 +746,7 @@ func (s *contentUpdateControlServer) Connect(stream controlplanev1.AgentControlP
 	}
 }
 
-func runTestControlChannel(t *testing.T, dir string, server *contentUpdateControlServer, agentID string) (*AgentRuntime, *spool.Queue, <-chan error, context.CancelFunc) {
+func runTestControlChannel(t *testing.T, dir string, server *contentUpdateControlServer, agentID string) (*AgentRuntime, <-chan error, context.CancelFunc) {
 	t.Helper()
 	if server.acks == nil {
 		server.acks = make(chan *controlplanev1.ControlAck, 1)
@@ -1007,10 +762,6 @@ func runTestControlChannel(t *testing.T, dir string, server *contentUpdateContro
 	}()
 	t.Cleanup(grpcServer.Stop)
 
-	queue, err := spool.OpenWithLimit(filepath.Join(dir, "spool"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:     config.AgentConfig{ID: agentID, HostID: "host-" + agentID, TenantID: "default"},
@@ -1026,14 +777,15 @@ func runTestControlChannel(t *testing.T, dir string, server *contentUpdateContro
 		},
 	}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
-	worker := &databatchworker.Worker{Queue: queue, Uploader: noopUploader{}}
 	rt := sensorruntime.New(runner.Sensor)
+	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 16)
+	sender := &telemetry.Sender{Appender: noopUploader{}, Batcher: batcher}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- NewTransportRuntime(runner, rt, NewAgentSpool(queue), worker, time.Now().UTC(), "host", "").RunControlChannel(ctx)
+		done <- NewTransportRuntime(runner, rt, batcher, sender, time.Now().UTC(), "host", "").RunControlChannel(ctx)
 	}()
-	return runner, queue, done, cancel
+	return runner, done, cancel
 }
 
 func waitForControlAck(t *testing.T, server *contentUpdateControlServer, requestID string) *controlplanev1.ControlAck {
@@ -1226,16 +978,12 @@ func sensorEventEnvelope(behavior string, pid uint32, binary, filePath, dst stri
 	}
 }
 
-func assertSpoolBatch(t *testing.T, dir string) {
+func runDaemonUntilUploadedBatch(t *testing.T, runner *AgentRuntime, out *bytes.Buffer) *dataplanev1.DataBatch {
 	t.Helper()
-	batch := loadOnlySpoolBatch(t, dir)
-	if batch.GetHeader().GetAgentId() != "agent-a" {
-		t.Fatalf("spool batch header = %+v", batch.GetHeader())
-	}
-}
-
-func runDaemonUntilSpoolBatch(t *testing.T, runner *AgentRuntime, spoolPath string, out *bytes.Buffer) *dataplanev1.DataBatch {
-	t.Helper()
+	uploader := newRecordingUploader()
+	prev := newLocalBatchAppender
+	newLocalBatchAppender = func() dataappend.BatchAppender { return uploader }
+	t.Cleanup(func() { newLocalBatchAppender = prev })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	errCh := make(chan error, 1)
@@ -1248,24 +996,21 @@ func runDaemonUntilSpoolBatch(t *testing.T, runner *AgentRuntime, spoolPath stri
 	}()
 	deadline := time.After(2 * time.Second)
 	for {
-		batches := loadSpoolBatches(t, spoolPath)
-		if len(batches) > 0 {
+		select {
+		case batch := <-uploader.ch:
 			cancel()
 			if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 				t.Fatalf("Run() error = %v", err)
 			}
-			return batches[0]
-		}
-		select {
+			return batch
 		case err := <-errCh:
 			if err != nil && !errors.Is(err, context.Canceled) {
 				t.Fatalf("Run() error = %v", err)
 			}
-			t.Fatalf("daemon exited before spooling a batch")
+			t.Fatalf("daemon exited before uploading a telemetry batch")
 		case <-deadline:
 			cancel()
-			t.Fatalf("timed out waiting for spool batch")
-		case <-time.After(10 * time.Millisecond):
+			t.Fatalf("timed out waiting for uploaded telemetry batch")
 		}
 	}
 }
@@ -1317,55 +1062,6 @@ func waitForOutput(t *testing.T, out interface{ String() string }, want string) 
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-}
-
-func waitForSpoolBatches(t *testing.T, dir string, want int) {
-	t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		matches, err := filepath.Glob(filepath.Join(dir, "*.batch.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(matches) >= want {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatalf("timed out waiting for %d spool batches; got %v", want, matches)
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-}
-
-func loadOnlySpoolBatch(t *testing.T, dir string) *dataplanev1.DataBatch {
-	t.Helper()
-	batches := loadSpoolBatches(t, dir)
-	if len(batches) != 1 {
-		t.Fatalf("spool batches = %d", len(batches))
-	}
-	return batches[0]
-}
-
-func loadSpoolBatches(t *testing.T, dir string) []*dataplanev1.DataBatch {
-	t.Helper()
-	queue, err := spool.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, err := queue.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var batches []*dataplanev1.DataBatch
-	for _, entry := range entries {
-		batch, err := queue.LoadDataBatch(entry.ID)
-		if err != nil {
-			t.Fatalf("load spool batch %s: %v", entry.ID, err)
-		}
-		batches = append(batches, batch)
-	}
-	return batches
 }
 
 func testDataBatch(batchID, agentID, hostID string) *dataplanev1.DataBatch {

@@ -715,33 +715,34 @@ func (x *SensorHealth) GetLastError() string {
 	return ""
 }
 
-type QueueHealth struct {
+type TelemetryBusHealth struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	QueuedBatches     uint32                 `protobuf:"varint,1,opt,name=queued_batches,json=queuedBatches,proto3" json:"queued_batches,omitempty"`
-	QueuedBytes       int64                  `protobuf:"varint,2,opt,name=queued_bytes,json=queuedBytes,proto3" json:"queued_bytes,omitempty"`
-	MaxBytes          int64                  `protobuf:"varint,3,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
-	BackpressureCount uint64                 `protobuf:"varint,4,opt,name=backpressure_count,json=backpressureCount,proto3" json:"backpressure_count,omitempty"`
-	DroppedBatches    uint64                 `protobuf:"varint,5,opt,name=dropped_batches,json=droppedBatches,proto3" json:"dropped_batches,omitempty"`
-	DroppedBytes      uint64                 `protobuf:"varint,6,opt,name=dropped_bytes,json=droppedBytes,proto3" json:"dropped_bytes,omitempty"`
-	LastError         string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	EventCapacity     uint64                 `protobuf:"varint,1,opt,name=event_capacity,json=eventCapacity,proto3" json:"event_capacity,omitempty"`
+	EventBuffered     uint64                 `protobuf:"varint,2,opt,name=event_buffered,json=eventBuffered,proto3" json:"event_buffered,omitempty"`
+	EventDropped      uint64                 `protobuf:"varint,3,opt,name=event_dropped,json=eventDropped,proto3" json:"event_dropped,omitempty"`
+	EventSubscribers  uint64                 `protobuf:"varint,4,opt,name=event_subscribers,json=eventSubscribers,proto3" json:"event_subscribers,omitempty"`
+	SignalCapacity    uint64                 `protobuf:"varint,5,opt,name=signal_capacity,json=signalCapacity,proto3" json:"signal_capacity,omitempty"`
+	SignalBuffered    uint64                 `protobuf:"varint,6,opt,name=signal_buffered,json=signalBuffered,proto3" json:"signal_buffered,omitempty"`
+	SignalDropped     uint64                 `protobuf:"varint,7,opt,name=signal_dropped,json=signalDropped,proto3" json:"signal_dropped,omitempty"`
+	SignalSubscribers uint64                 `protobuf:"varint,8,opt,name=signal_subscribers,json=signalSubscribers,proto3" json:"signal_subscribers,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
-func (x *QueueHealth) Reset() {
-	*x = QueueHealth{}
+func (x *TelemetryBusHealth) Reset() {
+	*x = TelemetryBusHealth{}
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *QueueHealth) String() string {
+func (x *TelemetryBusHealth) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*QueueHealth) ProtoMessage() {}
+func (*TelemetryBusHealth) ProtoMessage() {}
 
-func (x *QueueHealth) ProtoReflect() protoreflect.Message {
+func (x *TelemetryBusHealth) ProtoReflect() protoreflect.Message {
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -753,85 +754,235 @@ func (x *QueueHealth) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use QueueHealth.ProtoReflect.Descriptor instead.
-func (*QueueHealth) Descriptor() ([]byte, []int) {
+// Deprecated: Use TelemetryBusHealth.ProtoReflect.Descriptor instead.
+func (*TelemetryBusHealth) Descriptor() ([]byte, []int) {
 	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *QueueHealth) GetQueuedBatches() uint32 {
+func (x *TelemetryBusHealth) GetEventCapacity() uint64 {
+	if x != nil {
+		return x.EventCapacity
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetEventBuffered() uint64 {
+	if x != nil {
+		return x.EventBuffered
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetEventDropped() uint64 {
+	if x != nil {
+		return x.EventDropped
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetEventSubscribers() uint64 {
+	if x != nil {
+		return x.EventSubscribers
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetSignalCapacity() uint64 {
+	if x != nil {
+		return x.SignalCapacity
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetSignalBuffered() uint64 {
+	if x != nil {
+		return x.SignalBuffered
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetSignalDropped() uint64 {
+	if x != nil {
+		return x.SignalDropped
+	}
+	return 0
+}
+
+func (x *TelemetryBusHealth) GetSignalSubscribers() uint64 {
+	if x != nil {
+		return x.SignalSubscribers
+	}
+	return 0
+}
+
+type TelemetryBatcherHealth struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	PendingEvents   uint64                 `protobuf:"varint,1,opt,name=pending_events,json=pendingEvents,proto3" json:"pending_events,omitempty"`
+	PendingSignals  uint64                 `protobuf:"varint,2,opt,name=pending_signals,json=pendingSignals,proto3" json:"pending_signals,omitempty"`
+	QueuedBatches   uint64                 `protobuf:"varint,3,opt,name=queued_batches,json=queuedBatches,proto3" json:"queued_batches,omitempty"`
+	QueueCapacity   uint64                 `protobuf:"varint,4,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
+	DroppedBatches  uint64                 `protobuf:"varint,5,opt,name=dropped_batches,json=droppedBatches,proto3" json:"dropped_batches,omitempty"`
+	DroppedEvents   uint64                 `protobuf:"varint,6,opt,name=dropped_events,json=droppedEvents,proto3" json:"dropped_events,omitempty"`
+	DroppedSignals  uint64                 `protobuf:"varint,7,opt,name=dropped_signals,json=droppedSignals,proto3" json:"dropped_signals,omitempty"`
+	FlushedBatches  uint64                 `protobuf:"varint,8,opt,name=flushed_batches,json=flushedBatches,proto3" json:"flushed_batches,omitempty"`
+	FlushedEvents   uint64                 `protobuf:"varint,9,opt,name=flushed_events,json=flushedEvents,proto3" json:"flushed_events,omitempty"`
+	FlushedSignals  uint64                 `protobuf:"varint,10,opt,name=flushed_signals,json=flushedSignals,proto3" json:"flushed_signals,omitempty"`
+	LastFlushReason string                 `protobuf:"bytes,11,opt,name=last_flush_reason,json=lastFlushReason,proto3" json:"last_flush_reason,omitempty"`
+	Closed          bool                   `protobuf:"varint,12,opt,name=closed,proto3" json:"closed,omitempty"`
+	LastError       string                 `protobuf:"bytes,13,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *TelemetryBatcherHealth) Reset() {
+	*x = TelemetryBatcherHealth{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TelemetryBatcherHealth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TelemetryBatcherHealth) ProtoMessage() {}
+
+func (x *TelemetryBatcherHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TelemetryBatcherHealth.ProtoReflect.Descriptor instead.
+func (*TelemetryBatcherHealth) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TelemetryBatcherHealth) GetPendingEvents() uint64 {
+	if x != nil {
+		return x.PendingEvents
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetPendingSignals() uint64 {
+	if x != nil {
+		return x.PendingSignals
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetQueuedBatches() uint64 {
 	if x != nil {
 		return x.QueuedBatches
 	}
 	return 0
 }
 
-func (x *QueueHealth) GetQueuedBytes() int64 {
+func (x *TelemetryBatcherHealth) GetQueueCapacity() uint64 {
 	if x != nil {
-		return x.QueuedBytes
+		return x.QueueCapacity
 	}
 	return 0
 }
 
-func (x *QueueHealth) GetMaxBytes() int64 {
-	if x != nil {
-		return x.MaxBytes
-	}
-	return 0
-}
-
-func (x *QueueHealth) GetBackpressureCount() uint64 {
-	if x != nil {
-		return x.BackpressureCount
-	}
-	return 0
-}
-
-func (x *QueueHealth) GetDroppedBatches() uint64 {
+func (x *TelemetryBatcherHealth) GetDroppedBatches() uint64 {
 	if x != nil {
 		return x.DroppedBatches
 	}
 	return 0
 }
 
-func (x *QueueHealth) GetDroppedBytes() uint64 {
+func (x *TelemetryBatcherHealth) GetDroppedEvents() uint64 {
 	if x != nil {
-		return x.DroppedBytes
+		return x.DroppedEvents
 	}
 	return 0
 }
 
-func (x *QueueHealth) GetLastError() string {
+func (x *TelemetryBatcherHealth) GetDroppedSignals() uint64 {
+	if x != nil {
+		return x.DroppedSignals
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedBatches() uint64 {
+	if x != nil {
+		return x.FlushedBatches
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedEvents() uint64 {
+	if x != nil {
+		return x.FlushedEvents
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedSignals() uint64 {
+	if x != nil {
+		return x.FlushedSignals
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetLastFlushReason() string {
+	if x != nil {
+		return x.LastFlushReason
+	}
+	return ""
+}
+
+func (x *TelemetryBatcherHealth) GetClosed() bool {
+	if x != nil {
+		return x.Closed
+	}
+	return false
+}
+
+func (x *TelemetryBatcherHealth) GetLastError() string {
 	if x != nil {
 		return x.LastError
 	}
 	return ""
 }
 
-type DataPlaneHealth struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	AppendedBatches  uint32                 `protobuf:"varint,1,opt,name=appended_batches,json=appendedBatches,proto3" json:"appended_batches,omitempty"`
-	RemainingBatches uint32                 `protobuf:"varint,2,opt,name=remaining_batches,json=remainingBatches,proto3" json:"remaining_batches,omitempty"`
-	RemainingBytes   int64                  `protobuf:"varint,3,opt,name=remaining_bytes,json=remainingBytes,proto3" json:"remaining_bytes,omitempty"`
-	LastError        string                 `protobuf:"bytes,4,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+type TelemetrySenderHealth struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SentBatches     uint64                 `protobuf:"varint,1,opt,name=sent_batches,json=sentBatches,proto3" json:"sent_batches,omitempty"`
+	SentEvents      uint64                 `protobuf:"varint,2,opt,name=sent_events,json=sentEvents,proto3" json:"sent_events,omitempty"`
+	SentSignals     uint64                 `protobuf:"varint,3,opt,name=sent_signals,json=sentSignals,proto3" json:"sent_signals,omitempty"`
+	RejectedBatches uint64                 `protobuf:"varint,4,opt,name=rejected_batches,json=rejectedBatches,proto3" json:"rejected_batches,omitempty"`
+	RetriedBatches  uint64                 `protobuf:"varint,5,opt,name=retried_batches,json=retriedBatches,proto3" json:"retried_batches,omitempty"`
+	Drained         bool                   `protobuf:"varint,6,opt,name=drained,proto3" json:"drained,omitempty"`
+	LastError       string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
-func (x *DataPlaneHealth) Reset() {
-	*x = DataPlaneHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
+func (x *TelemetrySenderHealth) Reset() {
+	*x = TelemetrySenderHealth{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DataPlaneHealth) String() string {
+func (x *TelemetrySenderHealth) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DataPlaneHealth) ProtoMessage() {}
+func (*TelemetrySenderHealth) ProtoMessage() {}
 
-func (x *DataPlaneHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
+func (x *TelemetrySenderHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -842,33 +993,54 @@ func (x *DataPlaneHealth) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DataPlaneHealth.ProtoReflect.Descriptor instead.
-func (*DataPlaneHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{8}
+// Deprecated: Use TelemetrySenderHealth.ProtoReflect.Descriptor instead.
+func (*TelemetrySenderHealth) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *DataPlaneHealth) GetAppendedBatches() uint32 {
+func (x *TelemetrySenderHealth) GetSentBatches() uint64 {
 	if x != nil {
-		return x.AppendedBatches
+		return x.SentBatches
 	}
 	return 0
 }
 
-func (x *DataPlaneHealth) GetRemainingBatches() uint32 {
+func (x *TelemetrySenderHealth) GetSentEvents() uint64 {
 	if x != nil {
-		return x.RemainingBatches
+		return x.SentEvents
 	}
 	return 0
 }
 
-func (x *DataPlaneHealth) GetRemainingBytes() int64 {
+func (x *TelemetrySenderHealth) GetSentSignals() uint64 {
 	if x != nil {
-		return x.RemainingBytes
+		return x.SentSignals
 	}
 	return 0
 }
 
-func (x *DataPlaneHealth) GetLastError() string {
+func (x *TelemetrySenderHealth) GetRejectedBatches() uint64 {
+	if x != nil {
+		return x.RejectedBatches
+	}
+	return 0
+}
+
+func (x *TelemetrySenderHealth) GetRetriedBatches() uint64 {
+	if x != nil {
+		return x.RetriedBatches
+	}
+	return 0
+}
+
+func (x *TelemetrySenderHealth) GetDrained() bool {
+	if x != nil {
+		return x.Drained
+	}
+	return false
+}
+
+func (x *TelemetrySenderHealth) GetLastError() string {
 	if x != nil {
 		return x.LastError
 	}
@@ -893,7 +1065,7 @@ type DataPlanePolicy struct {
 
 func (x *DataPlanePolicy) Reset() {
 	*x = DataPlanePolicy{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +1077,7 @@ func (x *DataPlanePolicy) String() string {
 func (*DataPlanePolicy) ProtoMessage() {}
 
 func (x *DataPlanePolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +1090,7 @@ func (x *DataPlanePolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DataPlanePolicy.ProtoReflect.Descriptor instead.
 func (*DataPlanePolicy) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{9}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DataPlanePolicy) GetTransport() string {
@@ -1006,7 +1178,7 @@ type CEPHealth struct {
 
 func (x *CEPHealth) Reset() {
 	*x = CEPHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1018,7 +1190,7 @@ func (x *CEPHealth) String() string {
 func (*CEPHealth) ProtoMessage() {}
 
 func (x *CEPHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1031,7 +1203,7 @@ func (x *CEPHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CEPHealth.ProtoReflect.Descriptor instead.
 func (*CEPHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{10}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CEPHealth) GetActiveGroups() uint64 {
@@ -1095,7 +1267,7 @@ type DetectionContentRef struct {
 
 func (x *DetectionContentRef) Reset() {
 	*x = DetectionContentRef{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1107,7 +1279,7 @@ func (x *DetectionContentRef) String() string {
 func (*DetectionContentRef) ProtoMessage() {}
 
 func (x *DetectionContentRef) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1120,7 +1292,7 @@ func (x *DetectionContentRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectionContentRef.ProtoReflect.Descriptor instead.
 func (*DetectionContentRef) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{11}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DetectionContentRef) GetRef() string {
@@ -1165,7 +1337,7 @@ type DetectionRuntimeHealth struct {
 
 func (x *DetectionRuntimeHealth) Reset() {
 	*x = DetectionRuntimeHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1177,7 +1349,7 @@ func (x *DetectionRuntimeHealth) String() string {
 func (*DetectionRuntimeHealth) ProtoMessage() {}
 
 func (x *DetectionRuntimeHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1190,7 +1362,7 @@ func (x *DetectionRuntimeHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectionRuntimeHealth.ProtoReflect.Descriptor instead.
 func (*DetectionRuntimeHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{12}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DetectionRuntimeHealth) GetPolicyId() string {
@@ -1257,7 +1429,7 @@ type LocalStreamHealth struct {
 
 func (x *LocalStreamHealth) Reset() {
 	*x = LocalStreamHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1269,7 +1441,7 @@ func (x *LocalStreamHealth) String() string {
 func (*LocalStreamHealth) ProtoMessage() {}
 
 func (x *LocalStreamHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1282,7 +1454,7 @@ func (x *LocalStreamHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalStreamHealth.ProtoReflect.Descriptor instead.
 func (*LocalStreamHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{13}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LocalStreamHealth) GetEventCapacity() uint64 {
@@ -1383,130 +1555,6 @@ func (x *LocalStreamHealth) GetSignalSubscribers() uint64 {
 	return 0
 }
 
-type WALHealth struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	QueuedBatches     uint32                 `protobuf:"varint,1,opt,name=queued_batches,json=queuedBatches,proto3" json:"queued_batches,omitempty"`
-	QueuedBytes       int64                  `protobuf:"varint,2,opt,name=queued_bytes,json=queuedBytes,proto3" json:"queued_bytes,omitempty"`
-	MaxBytes          int64                  `protobuf:"varint,3,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
-	OldestBatchId     string                 `protobuf:"bytes,4,opt,name=oldest_batch_id,json=oldestBatchId,proto3" json:"oldest_batch_id,omitempty"`
-	NewestBatchId     string                 `protobuf:"bytes,5,opt,name=newest_batch_id,json=newestBatchId,proto3" json:"newest_batch_id,omitempty"`
-	LastAckedBatchId  string                 `protobuf:"bytes,6,opt,name=last_acked_batch_id,json=lastAckedBatchId,proto3" json:"last_acked_batch_id,omitempty"`
-	WatchSubscribers  uint64                 `protobuf:"varint,7,opt,name=watch_subscribers,json=watchSubscribers,proto3" json:"watch_subscribers,omitempty"`
-	BackpressureCount uint64                 `protobuf:"varint,8,opt,name=backpressure_count,json=backpressureCount,proto3" json:"backpressure_count,omitempty"`
-	DroppedBatches    uint64                 `protobuf:"varint,9,opt,name=dropped_batches,json=droppedBatches,proto3" json:"dropped_batches,omitempty"`
-	DroppedBytes      uint64                 `protobuf:"varint,10,opt,name=dropped_bytes,json=droppedBytes,proto3" json:"dropped_bytes,omitempty"`
-	LastError         string                 `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *WALHealth) Reset() {
-	*x = WALHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WALHealth) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WALHealth) ProtoMessage() {}
-
-func (x *WALHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WALHealth.ProtoReflect.Descriptor instead.
-func (*WALHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *WALHealth) GetQueuedBatches() uint32 {
-	if x != nil {
-		return x.QueuedBatches
-	}
-	return 0
-}
-
-func (x *WALHealth) GetQueuedBytes() int64 {
-	if x != nil {
-		return x.QueuedBytes
-	}
-	return 0
-}
-
-func (x *WALHealth) GetMaxBytes() int64 {
-	if x != nil {
-		return x.MaxBytes
-	}
-	return 0
-}
-
-func (x *WALHealth) GetOldestBatchId() string {
-	if x != nil {
-		return x.OldestBatchId
-	}
-	return ""
-}
-
-func (x *WALHealth) GetNewestBatchId() string {
-	if x != nil {
-		return x.NewestBatchId
-	}
-	return ""
-}
-
-func (x *WALHealth) GetLastAckedBatchId() string {
-	if x != nil {
-		return x.LastAckedBatchId
-	}
-	return ""
-}
-
-func (x *WALHealth) GetWatchSubscribers() uint64 {
-	if x != nil {
-		return x.WatchSubscribers
-	}
-	return 0
-}
-
-func (x *WALHealth) GetBackpressureCount() uint64 {
-	if x != nil {
-		return x.BackpressureCount
-	}
-	return 0
-}
-
-func (x *WALHealth) GetDroppedBatches() uint64 {
-	if x != nil {
-		return x.DroppedBatches
-	}
-	return 0
-}
-
-func (x *WALHealth) GetDroppedBytes() uint64 {
-	if x != nil {
-		return x.DroppedBytes
-	}
-	return 0
-}
-
-func (x *WALHealth) GetLastError() string {
-	if x != nil {
-		return x.LastError
-	}
-	return ""
-}
-
 type HealthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
@@ -1552,27 +1600,27 @@ func (x *HealthRequest) GetContext() *RequestContext {
 }
 
 type HealthResponse struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	AgentId       string                  `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	HostId        string                  `protobuf:"bytes,2,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
-	TenantId      string                  `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	Scope         *Scope                  `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
-	Status        string                  `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
-	PolicyId      string                  `protobuf:"bytes,6,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
-	PolicyVersion uint64                  `protobuf:"varint,7,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
-	PolicyMode    string                  `protobuf:"bytes,8,opt,name=policy_mode,json=policyMode,proto3" json:"policy_mode,omitempty"`
-	UptimeSeconds int64                   `protobuf:"varint,9,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
-	Capability    *SensorCapability       `protobuf:"bytes,10,opt,name=capability,proto3" json:"capability,omitempty"`
-	Sensor        *SensorHealth           `protobuf:"bytes,11,opt,name=sensor,proto3" json:"sensor,omitempty"`
-	Queue         *QueueHealth            `protobuf:"bytes,12,opt,name=queue,proto3" json:"queue,omitempty"`
-	DataPlane     *DataPlaneHealth        `protobuf:"bytes,13,opt,name=data_plane,json=dataPlane,proto3" json:"data_plane,omitempty"`
-	ObservedAt    string                  `protobuf:"bytes,14,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	Cep           *CEPHealth              `protobuf:"bytes,15,opt,name=cep,proto3" json:"cep,omitempty"`
-	Streams       *LocalStreamHealth      `protobuf:"bytes,16,opt,name=streams,proto3" json:"streams,omitempty"`
-	Wal           *WALHealth              `protobuf:"bytes,17,opt,name=wal,proto3" json:"wal,omitempty"`
-	Detection     *DetectionRuntimeHealth `protobuf:"bytes,18,opt,name=detection,proto3" json:"detection,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState  `protogen:"open.v1"`
+	AgentId          string                  `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	HostId           string                  `protobuf:"bytes,2,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
+	TenantId         string                  `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Scope            *Scope                  `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
+	Status           string                  `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	PolicyId         string                  `protobuf:"bytes,6,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	PolicyVersion    uint64                  `protobuf:"varint,7,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	PolicyMode       string                  `protobuf:"bytes,8,opt,name=policy_mode,json=policyMode,proto3" json:"policy_mode,omitempty"`
+	UptimeSeconds    int64                   `protobuf:"varint,9,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	Capability       *SensorCapability       `protobuf:"bytes,10,opt,name=capability,proto3" json:"capability,omitempty"`
+	Sensor           *SensorHealth           `protobuf:"bytes,11,opt,name=sensor,proto3" json:"sensor,omitempty"`
+	TelemetryBus     *TelemetryBusHealth     `protobuf:"bytes,12,opt,name=telemetry_bus,json=telemetryBus,proto3" json:"telemetry_bus,omitempty"`
+	TelemetrySender  *TelemetrySenderHealth  `protobuf:"bytes,13,opt,name=telemetry_sender,json=telemetrySender,proto3" json:"telemetry_sender,omitempty"`
+	ObservedAt       string                  `protobuf:"bytes,14,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Cep              *CEPHealth              `protobuf:"bytes,15,opt,name=cep,proto3" json:"cep,omitempty"`
+	Streams          *LocalStreamHealth      `protobuf:"bytes,16,opt,name=streams,proto3" json:"streams,omitempty"`
+	TelemetryBatcher *TelemetryBatcherHealth `protobuf:"bytes,17,opt,name=telemetry_batcher,json=telemetryBatcher,proto3" json:"telemetry_batcher,omitempty"`
+	Detection        *DetectionRuntimeHealth `protobuf:"bytes,18,opt,name=detection,proto3" json:"detection,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *HealthResponse) Reset() {
@@ -1682,16 +1730,16 @@ func (x *HealthResponse) GetSensor() *SensorHealth {
 	return nil
 }
 
-func (x *HealthResponse) GetQueue() *QueueHealth {
+func (x *HealthResponse) GetTelemetryBus() *TelemetryBusHealth {
 	if x != nil {
-		return x.Queue
+		return x.TelemetryBus
 	}
 	return nil
 }
 
-func (x *HealthResponse) GetDataPlane() *DataPlaneHealth {
+func (x *HealthResponse) GetTelemetrySender() *TelemetrySenderHealth {
 	if x != nil {
-		return x.DataPlane
+		return x.TelemetrySender
 	}
 	return nil
 }
@@ -1717,9 +1765,9 @@ func (x *HealthResponse) GetStreams() *LocalStreamHealth {
 	return nil
 }
 
-func (x *HealthResponse) GetWal() *WALHealth {
+func (x *HealthResponse) GetTelemetryBatcher() *TelemetryBatcherHealth {
 	if x != nil {
-		return x.Wal
+		return x.TelemetryBatcher
 	}
 	return nil
 }
@@ -4006,22 +4054,42 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	" \x01(\tR\vlastEventAt\x12(\n" +
 	"\x10last_exit_reason\x18\v \x01(\tR\x0elastExitReason\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\f \x01(\tR\tlastError\"\x90\x02\n" +
-	"\vQueueHealth\x12%\n" +
-	"\x0equeued_batches\x18\x01 \x01(\rR\rqueuedBatches\x12!\n" +
-	"\fqueued_bytes\x18\x02 \x01(\x03R\vqueuedBytes\x12\x1b\n" +
-	"\tmax_bytes\x18\x03 \x01(\x03R\bmaxBytes\x12-\n" +
-	"\x12backpressure_count\x18\x04 \x01(\x04R\x11backpressureCount\x12'\n" +
-	"\x0fdropped_batches\x18\x05 \x01(\x04R\x0edroppedBatches\x12#\n" +
-	"\rdropped_bytes\x18\x06 \x01(\x04R\fdroppedBytes\x12\x1d\n" +
+	"last_error\x18\f \x01(\tR\tlastError\"\xdc\x02\n" +
+	"\x12TelemetryBusHealth\x12%\n" +
+	"\x0eevent_capacity\x18\x01 \x01(\x04R\reventCapacity\x12%\n" +
+	"\x0eevent_buffered\x18\x02 \x01(\x04R\reventBuffered\x12#\n" +
+	"\revent_dropped\x18\x03 \x01(\x04R\feventDropped\x12+\n" +
+	"\x11event_subscribers\x18\x04 \x01(\x04R\x10eventSubscribers\x12'\n" +
+	"\x0fsignal_capacity\x18\x05 \x01(\x04R\x0esignalCapacity\x12'\n" +
+	"\x0fsignal_buffered\x18\x06 \x01(\x04R\x0esignalBuffered\x12%\n" +
+	"\x0esignal_dropped\x18\a \x01(\x04R\rsignalDropped\x12-\n" +
+	"\x12signal_subscribers\x18\b \x01(\x04R\x11signalSubscribers\"\x8b\x04\n" +
+	"\x16TelemetryBatcherHealth\x12%\n" +
+	"\x0epending_events\x18\x01 \x01(\x04R\rpendingEvents\x12'\n" +
+	"\x0fpending_signals\x18\x02 \x01(\x04R\x0ependingSignals\x12%\n" +
+	"\x0equeued_batches\x18\x03 \x01(\x04R\rqueuedBatches\x12%\n" +
+	"\x0equeue_capacity\x18\x04 \x01(\x04R\rqueueCapacity\x12'\n" +
+	"\x0fdropped_batches\x18\x05 \x01(\x04R\x0edroppedBatches\x12%\n" +
+	"\x0edropped_events\x18\x06 \x01(\x04R\rdroppedEvents\x12'\n" +
+	"\x0fdropped_signals\x18\a \x01(\x04R\x0edroppedSignals\x12'\n" +
+	"\x0fflushed_batches\x18\b \x01(\x04R\x0eflushedBatches\x12%\n" +
+	"\x0eflushed_events\x18\t \x01(\x04R\rflushedEvents\x12'\n" +
+	"\x0fflushed_signals\x18\n" +
+	" \x01(\x04R\x0eflushedSignals\x12*\n" +
+	"\x11last_flush_reason\x18\v \x01(\tR\x0flastFlushReason\x12\x16\n" +
+	"\x06closed\x18\f \x01(\bR\x06closed\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\a \x01(\tR\tlastError\"\xb1\x01\n" +
-	"\x0fDataPlaneHealth\x12)\n" +
-	"\x10appended_batches\x18\x01 \x01(\rR\x0fappendedBatches\x12+\n" +
-	"\x11remaining_batches\x18\x02 \x01(\rR\x10remainingBatches\x12'\n" +
-	"\x0fremaining_bytes\x18\x03 \x01(\x03R\x0eremainingBytes\x12\x1d\n" +
+	"last_error\x18\r \x01(\tR\tlastError\"\x8b\x02\n" +
+	"\x15TelemetrySenderHealth\x12!\n" +
+	"\fsent_batches\x18\x01 \x01(\x04R\vsentBatches\x12\x1f\n" +
+	"\vsent_events\x18\x02 \x01(\x04R\n" +
+	"sentEvents\x12!\n" +
+	"\fsent_signals\x18\x03 \x01(\x04R\vsentSignals\x12)\n" +
+	"\x10rejected_batches\x18\x04 \x01(\x04R\x0frejectedBatches\x12'\n" +
+	"\x0fretried_batches\x18\x05 \x01(\x04R\x0eretriedBatches\x12\x18\n" +
+	"\adrained\x18\x06 \x01(\bR\adrained\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\x04 \x01(\tR\tlastError\"\xe2\x02\n" +
+	"last_error\x18\a \x01(\tR\tlastError\"\xe2\x02\n" +
 	"\x0fDataPlanePolicy\x12\x1c\n" +
 	"\ttransport\x18\x01 \x01(\tR\ttransport\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12\x1d\n" +
@@ -4073,23 +4141,9 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x16signal_oldest_sequence\x18\v \x01(\x04R\x14signalOldestSequence\x124\n" +
 	"\x16signal_newest_sequence\x18\f \x01(\x04R\x14signalNewestSequence\x12%\n" +
 	"\x0esignal_evicted\x18\r \x01(\x04R\rsignalEvicted\x12-\n" +
-	"\x12signal_subscribers\x18\x0e \x01(\x04R\x11signalSubscribers\"\xba\x03\n" +
-	"\tWALHealth\x12%\n" +
-	"\x0equeued_batches\x18\x01 \x01(\rR\rqueuedBatches\x12!\n" +
-	"\fqueued_bytes\x18\x02 \x01(\x03R\vqueuedBytes\x12\x1b\n" +
-	"\tmax_bytes\x18\x03 \x01(\x03R\bmaxBytes\x12&\n" +
-	"\x0foldest_batch_id\x18\x04 \x01(\tR\roldestBatchId\x12&\n" +
-	"\x0fnewest_batch_id\x18\x05 \x01(\tR\rnewestBatchId\x12-\n" +
-	"\x13last_acked_batch_id\x18\x06 \x01(\tR\x10lastAckedBatchId\x12+\n" +
-	"\x11watch_subscribers\x18\a \x01(\x04R\x10watchSubscribers\x12-\n" +
-	"\x12backpressure_count\x18\b \x01(\x04R\x11backpressureCount\x12'\n" +
-	"\x0fdropped_batches\x18\t \x01(\x04R\x0edroppedBatches\x12#\n" +
-	"\rdropped_bytes\x18\n" +
-	" \x01(\x04R\fdroppedBytes\x12\x1d\n" +
-	"\n" +
-	"last_error\x18\v \x01(\tR\tlastError\"S\n" +
+	"\x12signal_subscribers\x18\x0e \x01(\x04R\x11signalSubscribers\"S\n" +
 	"\rHealthRequest\x12B\n" +
-	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\xf5\x06\n" +
+	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\xc5\a\n" +
 	"\x0eHealthResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12\x1b\n" +
@@ -4105,15 +4159,14 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"capability\x18\n" +
 	" \x01(\v2*.sysarmor.controlplane.v1.SensorCapabilityR\n" +
 	"capability\x12>\n" +
-	"\x06sensor\x18\v \x01(\v2&.sysarmor.controlplane.v1.SensorHealthR\x06sensor\x12;\n" +
-	"\x05queue\x18\f \x01(\v2%.sysarmor.controlplane.v1.QueueHealthR\x05queue\x12H\n" +
-	"\n" +
-	"data_plane\x18\r \x01(\v2).sysarmor.controlplane.v1.DataPlaneHealthR\tdataPlane\x12\x1f\n" +
+	"\x06sensor\x18\v \x01(\v2&.sysarmor.controlplane.v1.SensorHealthR\x06sensor\x12Q\n" +
+	"\rtelemetry_bus\x18\f \x01(\v2,.sysarmor.controlplane.v1.TelemetryBusHealthR\ftelemetryBus\x12Z\n" +
+	"\x10telemetry_sender\x18\r \x01(\v2/.sysarmor.controlplane.v1.TelemetrySenderHealthR\x0ftelemetrySender\x12\x1f\n" +
 	"\vobserved_at\x18\x0e \x01(\tR\n" +
 	"observedAt\x125\n" +
 	"\x03cep\x18\x0f \x01(\v2#.sysarmor.controlplane.v1.CEPHealthR\x03cep\x12E\n" +
-	"\astreams\x18\x10 \x01(\v2+.sysarmor.controlplane.v1.LocalStreamHealthR\astreams\x125\n" +
-	"\x03wal\x18\x11 \x01(\v2#.sysarmor.controlplane.v1.WALHealthR\x03wal\x12N\n" +
+	"\astreams\x18\x10 \x01(\v2+.sysarmor.controlplane.v1.LocalStreamHealthR\astreams\x12]\n" +
+	"\x11telemetry_batcher\x18\x11 \x01(\v20.sysarmor.controlplane.v1.TelemetryBatcherHealthR\x10telemetryBatcher\x12N\n" +
 	"\tdetection\x18\x12 \x01(\v20.sysarmor.controlplane.v1.DetectionRuntimeHealthR\tdetection\"W\n" +
 	"\x11CapabilityRequest\x12B\n" +
 	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\xcb\x03\n" +
@@ -4362,14 +4415,14 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_goTypes = []any{
 	(*SensorCapability)(nil),             // 4: sysarmor.controlplane.v1.SensorCapability
 	(*CollectionBehaviorCapability)(nil), // 5: sysarmor.controlplane.v1.CollectionBehaviorCapability
 	(*SensorHealth)(nil),                 // 6: sysarmor.controlplane.v1.SensorHealth
-	(*QueueHealth)(nil),                  // 7: sysarmor.controlplane.v1.QueueHealth
-	(*DataPlaneHealth)(nil),              // 8: sysarmor.controlplane.v1.DataPlaneHealth
-	(*DataPlanePolicy)(nil),              // 9: sysarmor.controlplane.v1.DataPlanePolicy
-	(*CEPHealth)(nil),                    // 10: sysarmor.controlplane.v1.CEPHealth
-	(*DetectionContentRef)(nil),          // 11: sysarmor.controlplane.v1.DetectionContentRef
-	(*DetectionRuntimeHealth)(nil),       // 12: sysarmor.controlplane.v1.DetectionRuntimeHealth
-	(*LocalStreamHealth)(nil),            // 13: sysarmor.controlplane.v1.LocalStreamHealth
-	(*WALHealth)(nil),                    // 14: sysarmor.controlplane.v1.WALHealth
+	(*TelemetryBusHealth)(nil),           // 7: sysarmor.controlplane.v1.TelemetryBusHealth
+	(*TelemetryBatcherHealth)(nil),       // 8: sysarmor.controlplane.v1.TelemetryBatcherHealth
+	(*TelemetrySenderHealth)(nil),        // 9: sysarmor.controlplane.v1.TelemetrySenderHealth
+	(*DataPlanePolicy)(nil),              // 10: sysarmor.controlplane.v1.DataPlanePolicy
+	(*CEPHealth)(nil),                    // 11: sysarmor.controlplane.v1.CEPHealth
+	(*DetectionContentRef)(nil),          // 12: sysarmor.controlplane.v1.DetectionContentRef
+	(*DetectionRuntimeHealth)(nil),       // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth
+	(*LocalStreamHealth)(nil),            // 14: sysarmor.controlplane.v1.LocalStreamHealth
 	(*HealthRequest)(nil),                // 15: sysarmor.controlplane.v1.HealthRequest
 	(*HealthResponse)(nil),               // 16: sysarmor.controlplane.v1.HealthResponse
 	(*CapabilityRequest)(nil),            // 17: sysarmor.controlplane.v1.CapabilityRequest
@@ -4420,17 +4473,17 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	26, // 10: sysarmor.controlplane.v1.ControlFrame.evidence_result:type_name -> sysarmor.controlplane.v1.EvidencePullbackResult
 	1,  // 11: sysarmor.controlplane.v1.ControlFrame.error:type_name -> sysarmor.controlplane.v1.ControlError
 	2,  // 12: sysarmor.controlplane.v1.RequestContext.scope:type_name -> sysarmor.controlplane.v1.Scope
-	11, // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth.content_refs:type_name -> sysarmor.controlplane.v1.DetectionContentRef
+	12, // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth.content_refs:type_name -> sysarmor.controlplane.v1.DetectionContentRef
 	3,  // 14: sysarmor.controlplane.v1.HealthRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	2,  // 15: sysarmor.controlplane.v1.HealthResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
 	4,  // 16: sysarmor.controlplane.v1.HealthResponse.capability:type_name -> sysarmor.controlplane.v1.SensorCapability
 	6,  // 17: sysarmor.controlplane.v1.HealthResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorHealth
-	7,  // 18: sysarmor.controlplane.v1.HealthResponse.queue:type_name -> sysarmor.controlplane.v1.QueueHealth
-	8,  // 19: sysarmor.controlplane.v1.HealthResponse.data_plane:type_name -> sysarmor.controlplane.v1.DataPlaneHealth
-	10, // 20: sysarmor.controlplane.v1.HealthResponse.cep:type_name -> sysarmor.controlplane.v1.CEPHealth
-	13, // 21: sysarmor.controlplane.v1.HealthResponse.streams:type_name -> sysarmor.controlplane.v1.LocalStreamHealth
-	14, // 22: sysarmor.controlplane.v1.HealthResponse.wal:type_name -> sysarmor.controlplane.v1.WALHealth
-	12, // 23: sysarmor.controlplane.v1.HealthResponse.detection:type_name -> sysarmor.controlplane.v1.DetectionRuntimeHealth
+	7,  // 18: sysarmor.controlplane.v1.HealthResponse.telemetry_bus:type_name -> sysarmor.controlplane.v1.TelemetryBusHealth
+	9,  // 19: sysarmor.controlplane.v1.HealthResponse.telemetry_sender:type_name -> sysarmor.controlplane.v1.TelemetrySenderHealth
+	11, // 20: sysarmor.controlplane.v1.HealthResponse.cep:type_name -> sysarmor.controlplane.v1.CEPHealth
+	14, // 21: sysarmor.controlplane.v1.HealthResponse.streams:type_name -> sysarmor.controlplane.v1.LocalStreamHealth
+	8,  // 22: sysarmor.controlplane.v1.HealthResponse.telemetry_batcher:type_name -> sysarmor.controlplane.v1.TelemetryBatcherHealth
+	13, // 23: sysarmor.controlplane.v1.HealthResponse.detection:type_name -> sysarmor.controlplane.v1.DetectionRuntimeHealth
 	3,  // 24: sysarmor.controlplane.v1.CapabilityRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	2,  // 25: sysarmor.controlplane.v1.CapabilityResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
 	4,  // 26: sysarmor.controlplane.v1.CapabilityResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorCapability
@@ -4441,7 +4494,7 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	45, // 31: sysarmor.controlplane.v1.ResponseCommand.labels:type_name -> sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
 	46, // 32: sysarmor.controlplane.v1.EvidencePullbackRequest.labels:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
 	3,  // 33: sysarmor.controlplane.v1.ApplyPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	9,  // 34: sysarmor.controlplane.v1.ApplyPolicyRequest.data_plane:type_name -> sysarmor.controlplane.v1.DataPlanePolicy
+	10, // 34: sysarmor.controlplane.v1.ApplyPolicyRequest.data_plane:type_name -> sysarmor.controlplane.v1.DataPlanePolicy
 	3,  // 35: sysarmor.controlplane.v1.ApplyContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	3,  // 36: sysarmor.controlplane.v1.ListContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	29, // 37: sysarmor.controlplane.v1.ListContentResponse.records:type_name -> sysarmor.controlplane.v1.ContentRecord

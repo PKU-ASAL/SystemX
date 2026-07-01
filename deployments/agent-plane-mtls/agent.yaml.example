@@ -17,9 +17,7 @@ sensor:
   mode: "managed"
   policy_path: "/etc/sysarmor/collection.json"
   observe_only: true
-spool:
-  path: "/var/lib/sysarmor/agent/spool"
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 1s
 data_plane:
@@ -32,7 +30,6 @@ data_plane:
 health:
   interval: 10s
 content:
-  path: "/var/lib/sysarmor/agent/content"
 resource:
   max_active_cep_groups: 4096
   max_event_refs_per_signal: 128

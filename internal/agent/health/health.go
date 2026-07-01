@@ -3,24 +3,24 @@ package health
 import "time"
 
 type AgentHealth struct {
-	AgentID       string            `json:"agent_id"`
-	HostID        string            `json:"host_id"`
-	TenantID      string            `json:"tenant_id"`
-	Scope         RuntimeScope      `json:"scope"`
-	Status        string            `json:"status"`
-	PolicyID      string            `json:"policy_id,omitempty"`
-	PolicyVersion uint64            `json:"policy_version,omitempty"`
-	PolicyMode    string            `json:"policy_mode,omitempty"`
-	UptimeSeconds int64             `json:"uptime_seconds"`
-	Capability    SensorCapability  `json:"sensor_capability,omitempty"`
-	Sensor        SensorHealth      `json:"sensor_health"`
-	Queue         QueueHealth       `json:"queue_health"`
-	WAL           WALHealth         `json:"wal_health"`
-	DataPlane     DataPlaneHealth   `json:"data_plane_health"`
-	Detection     DetectionHealth   `json:"detection_health"`
-	CEP           CEPHealth         `json:"cep_health"`
-	Streams       LocalStreamHealth `json:"stream_health"`
-	ObservedAt    time.Time         `json:"observed_at"`
+	AgentID          string                 `json:"agent_id"`
+	HostID           string                 `json:"host_id"`
+	TenantID         string                 `json:"tenant_id"`
+	Scope            RuntimeScope           `json:"scope"`
+	Status           string                 `json:"status"`
+	PolicyID         string                 `json:"policy_id,omitempty"`
+	PolicyVersion    uint64                 `json:"policy_version,omitempty"`
+	PolicyMode       string                 `json:"policy_mode,omitempty"`
+	UptimeSeconds    int64                  `json:"uptime_seconds"`
+	Capability       SensorCapability       `json:"sensor_capability,omitempty"`
+	Sensor           SensorHealth           `json:"sensor_health"`
+	TelemetryBus     TelemetryBusHealth     `json:"telemetry_bus_health"`
+	TelemetryBatcher TelemetryBatcherHealth `json:"telemetry_batcher_health"`
+	TelemetrySender  TelemetrySenderHealth  `json:"telemetry_sender_health"`
+	Detection        DetectionHealth        `json:"detection_health"`
+	CEP              CEPHealth              `json:"cep_health"`
+	Streams          LocalStreamHealth      `json:"stream_health"`
+	ObservedAt       time.Time              `json:"observed_at"`
 }
 
 type DetectionHealth struct {
@@ -87,35 +87,41 @@ type CollectionBehaviorCapability struct {
 	UnsupportedSelectors []string `json:"unsupported_selectors,omitempty"`
 }
 
-type QueueHealth struct {
-	QueuedBatches     int    `json:"queued_batches"`
-	QueuedBytes       int64  `json:"queued_bytes"`
-	MaxBytes          int64  `json:"max_bytes"`
-	BackpressureCount uint64 `json:"backpressure_count"`
-	DroppedBatches    uint64 `json:"dropped_batches"`
-	DroppedBytes      uint64 `json:"dropped_bytes"`
-	LastError         string `json:"last_error,omitempty"`
+type TelemetryBusHealth struct {
+	EventCapacity     uint64 `json:"event_capacity"`
+	EventBuffered     uint64 `json:"event_buffered"`
+	EventDropped      uint64 `json:"event_dropped"`
+	EventSubscribers  uint64 `json:"event_subscribers"`
+	SignalCapacity    uint64 `json:"signal_capacity"`
+	SignalBuffered    uint64 `json:"signal_buffered"`
+	SignalDropped     uint64 `json:"signal_dropped"`
+	SignalSubscribers uint64 `json:"signal_subscribers"`
 }
 
-type WALHealth struct {
-	QueuedBatches     int    `json:"queued_batches"`
-	QueuedBytes       int64  `json:"queued_bytes"`
-	MaxBytes          int64  `json:"max_bytes"`
-	OldestBatchID     string `json:"oldest_batch_id,omitempty"`
-	NewestBatchID     string `json:"newest_batch_id,omitempty"`
-	LastAckedBatchID  string `json:"last_acked_batch_id,omitempty"`
-	WatchSubscribers  uint64 `json:"watch_subscribers"`
-	BackpressureCount uint64 `json:"backpressure_count"`
-	DroppedBatches    uint64 `json:"dropped_batches"`
-	DroppedBytes      uint64 `json:"dropped_bytes"`
-	LastError         string `json:"last_error,omitempty"`
+type TelemetryBatcherHealth struct {
+	PendingEvents   uint64 `json:"pending_events"`
+	PendingSignals  uint64 `json:"pending_signals"`
+	QueuedBatches   uint64 `json:"queued_batches"`
+	QueueCapacity   uint64 `json:"queue_capacity"`
+	DroppedBatches  uint64 `json:"dropped_batches"`
+	DroppedEvents   uint64 `json:"dropped_events"`
+	DroppedSignals  uint64 `json:"dropped_signals"`
+	FlushedBatches  uint64 `json:"flushed_batches"`
+	FlushedEvents   uint64 `json:"flushed_events"`
+	FlushedSignals  uint64 `json:"flushed_signals"`
+	LastFlushReason string `json:"last_flush_reason,omitempty"`
+	Closed          bool   `json:"closed"`
+	LastError       string `json:"last_error,omitempty"`
 }
 
-type DataPlaneHealth struct {
-	AppendedBatches  int    `json:"appended_batches"`
-	RemainingBatches int    `json:"remaining_batches"`
-	RemainingBytes   int64  `json:"remaining_bytes"`
-	LastError        string `json:"last_error,omitempty"`
+type TelemetrySenderHealth struct {
+	SentBatches     uint64 `json:"sent_batches"`
+	SentEvents      uint64 `json:"sent_events"`
+	SentSignals     uint64 `json:"sent_signals"`
+	RejectedBatches uint64 `json:"rejected_batches"`
+	RetriedBatches  uint64 `json:"retried_batches"`
+	Drained         bool   `json:"drained"`
+	LastError       string `json:"last_error,omitempty"`
 }
 
 type CEPHealth struct {

@@ -16,14 +16,14 @@ import (
 	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -32,7 +32,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, startedAt time.Time) (func(), error) {
+func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, source any, rest ...any) (func(), error) {
+	bus, batcher, sender, startedAt := r.localControlTelemetryArgs(source, rest...)
 	socketPath := r.Config.Control.SocketPath
 	if socketPath == "" {
 		return func() {}, nil
@@ -55,8 +56,9 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &localControlServer{
 		runner:    r,
 		runtime:   rt,
-		queue:     queue,
-		worker:    worker,
+		bus:       bus,
+		batcher:   batcher,
+		sender:    sender,
 		startedAt: startedAt,
 	})
 	done := make(chan struct{})
@@ -77,18 +79,54 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 	}, nil
 }
 
+func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender, time.Time) {
+	if bus, ok := source.(*telemetry.Bus); ok {
+		var batcher *telemetry.Batcher
+		var sender *telemetry.Sender
+		var startedAt time.Time
+		if len(rest) > 0 {
+			batcher, _ = rest[0].(*telemetry.Batcher)
+		}
+		if len(rest) > 1 {
+			sender, _ = rest[1].(*telemetry.Sender)
+		}
+		if len(rest) > 2 {
+			startedAt, _ = rest[2].(time.Time)
+		}
+		if batcher == nil {
+			batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64)
+		}
+		if sender == nil {
+			sender = &telemetry.Sender{Appender: localBatchAppender{}, Batcher: batcher}
+		}
+		if sender.Batcher == nil {
+			sender.Batcher = batcher
+		}
+		if startedAt.IsZero() {
+			startedAt = time.Now().UTC()
+		}
+		return bus, batcher, sender, startedAt
+	}
+	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
+	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64)
+	sender := &telemetry.Sender{Appender: localBatchAppender{}, Batcher: batcher}
+	startedAt := time.Now().UTC()
+	return bus, batcher, sender, startedAt
+}
+
 type localControlServer struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
 	runner    *AgentRuntime
 	runtime   sensorruntime.Runtime
-	queue     *spool.Queue
-	worker    *databatchworker.Worker
+	bus       *telemetry.Bus
+	batcher   *telemetry.Batcher
+	sender    *telemetry.Sender
 	startedAt time.Time
 	profileMu sync.Mutex
 }
 
 func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
-	health, err := s.runner.collectHealth(ctx, s.runtime, s.queue, s.worker, s.startedAt)
+	health, err := s.runner.collectHealth(ctx, s.runtime, s.bus, s.batcher, s.sender, s.startedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +485,7 @@ func (s *localControlServer) GetEvent(ctx context.Context, req *controlplanev1.G
 	}
 	frame, ok := s.eventFrameByID(eventID)
 	if !ok {
-		return nil, fmt.Errorf("event %q not found in spool WAL", eventID)
+		return nil, fmt.Errorf("event %q not found in telemetry buffer", eventID)
 	}
 	return &controlplanev1.EventGetResponse{Frame: frame}, nil
 }
@@ -547,20 +585,29 @@ func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest,
 		return nil
 	}
 	if req.GetSnapshotOnly() {
-		for _, entry := range s.snapshotEntries(req.GetFilter(), req.GetIncludeRecent()) {
-			if err := s.sendEventEntry(entry.ID, send); err != nil {
+		if req.GetIncludeRecent() {
+			for _, frame := range s.bus.SnapshotEvents() {
+				if err := send(controlEventFrame(s.runner.Config, frame)); err != nil {
+					return err
+				}
+				if req.GetLimit() > 0 && sent >= req.GetLimit() {
+					return nil
+				}
+			}
+		}
+		return nil
+	}
+	if req.GetIncludeRecent() {
+		for _, frame := range s.bus.SnapshotEvents() {
+			if err := send(controlEventFrame(s.runner.Config, frame)); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
 				return nil
 			}
 		}
-		return nil
 	}
-	entries, err := s.queue.Watch(stream.Context(), s.watchAfterBatchID(req.GetFilter(), req.GetIncludeRecent()))
-	if err != nil {
-		return err
-	}
+	entries := s.bus.WatchEvents(stream.Context())
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -569,7 +616,7 @@ func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest,
 			if !ok {
 				return nil
 			}
-			if err := s.sendEventEntry(entry.ID, send); err != nil {
+			if err := send(controlEventFrame(s.runner.Config, entry)); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
@@ -595,20 +642,29 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 		return nil
 	}
 	if req.GetSnapshotOnly() {
-		for _, entry := range s.snapshotEntries(req.GetFilter(), req.GetIncludeRecent()) {
-			if err := s.sendSignalEntry(entry.ID, send); err != nil {
+		if req.GetIncludeRecent() {
+			for _, frame := range s.bus.SnapshotSignals() {
+				if err := send(controlSignalFrame(s.runner.Config, frame)); err != nil {
+					return err
+				}
+				if req.GetLimit() > 0 && sent >= req.GetLimit() {
+					return nil
+				}
+			}
+		}
+		return nil
+	}
+	if req.GetIncludeRecent() {
+		for _, frame := range s.bus.SnapshotSignals() {
+			if err := send(controlSignalFrame(s.runner.Config, frame)); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
 				return nil
 			}
 		}
-		return nil
 	}
-	entries, err := s.queue.Watch(stream.Context(), s.watchAfterBatchID(req.GetFilter(), req.GetIncludeRecent()))
-	if err != nil {
-		return err
-	}
+	entries := s.bus.WatchSignals(stream.Context())
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -617,7 +673,7 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 			if !ok {
 				return nil
 			}
-			if err := s.sendSignalEntry(entry.ID, send); err != nil {
+			if err := send(controlSignalFrame(s.runner.Config, entry)); err != nil {
 				return err
 			}
 			if req.GetLimit() > 0 && sent >= req.GetLimit() {
@@ -627,100 +683,44 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 	}
 }
 
-func (s *localControlServer) snapshotEntries(filter *controlplanev1.WatchFilter, includeRecent bool) []spool.Entry {
-	if !includeRecent {
-		return nil
-	}
-	entries, err := s.queue.SnapshotAfter(s.watchAfterBatchID(filter, true))
-	if err != nil {
-		return nil
-	}
-	return entries
-}
-
-func (s *localControlServer) sendEventEntry(id string, send func(*controlplanev1.EventFrame) error) error {
-	batch, err := s.queue.LoadDataBatch(id)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	header := batch.GetHeader()
-	for _, frame := range batch.GetEvents() {
-		out := &controlplanev1.EventFrame{
-			TenantId:   header.GetTenantId(),
-			AgentId:    header.GetAgentId(),
-			Sequence:   frame.GetSequence(),
-			ObservedAt: frame.GetObservedAt(),
-			Event:      frame.GetEvent(),
-		}
-		if err := send(out); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *localControlServer) sendSignalEntry(id string, send func(*controlplanev1.SignalFrame) error) error {
-	batch, err := s.queue.LoadDataBatch(id)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	header := batch.GetHeader()
-	for _, frame := range batch.GetSignals() {
-		out := &controlplanev1.SignalFrame{
-			TenantId:   header.GetTenantId(),
-			AgentId:    header.GetAgentId(),
-			Sequence:   frame.GetSequence(),
-			ObservedAt: frame.GetObservedAt(),
-			Signal:     frame.GetSignal(),
-		}
-		if err := send(out); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *localControlServer) eventFrameByID(eventID string) (*controlplanev1.EventFrame, bool) {
-	entries, err := s.queue.SnapshotAfter("")
-	if err != nil {
-		return nil, false
-	}
-	for _, entry := range entries {
-		var found *controlplanev1.EventFrame
-		err := s.sendEventEntry(entry.ID, func(frame *controlplanev1.EventFrame) error {
-			if frame.GetEvent().GetId() == eventID {
-				found = frame
-			}
-			return nil
-		})
-		if err != nil {
-			continue
-		}
-		if found != nil {
-			return found, true
+	for _, frame := range s.bus.SnapshotEvents() {
+		out := controlEventFrame(s.runner.Config, frame)
+		if out.GetEvent().GetId() == eventID {
+			return out, true
 		}
 	}
 	return nil, false
 }
 
 func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {
-	if filter != nil && strings.TrimSpace(filter.GetAfterBatchId()) != "" {
-		return strings.TrimSpace(filter.GetAfterBatchId())
+	return ""
+}
+
+func controlEventFrame(cfg config.Config, frame *dataplanev1.EventFrame) *controlplanev1.EventFrame {
+	if frame == nil {
+		return &controlplanev1.EventFrame{TenantId: cfg.Agent.TenantID, AgentId: cfg.Agent.ID}
 	}
-	if includeRecent {
-		return ""
+	return &controlplanev1.EventFrame{
+		TenantId:   cfg.Agent.TenantID,
+		AgentId:    cfg.Agent.ID,
+		Sequence:   frame.GetSequence(),
+		ObservedAt: frame.GetObservedAt(),
+		Event:      frame.GetEvent(),
 	}
-	entries, err := s.queue.SnapshotAfter("")
-	if err != nil || len(entries) == 0 {
-		return ""
+}
+
+func controlSignalFrame(cfg config.Config, frame *dataplanev1.SignalFrame) *controlplanev1.SignalFrame {
+	if frame == nil {
+		return &controlplanev1.SignalFrame{TenantId: cfg.Agent.TenantID, AgentId: cfg.Agent.ID}
 	}
-	return entries[len(entries)-1].ID
+	return &controlplanev1.SignalFrame{
+		TenantId:   cfg.Agent.TenantID,
+		AgentId:    cfg.Agent.ID,
+		Sequence:   frame.GetSequence(),
+		ObservedAt: frame.GetObservedAt(),
+		Signal:     frame.GetSignal(),
+	}
 }
 
 func (s *localControlServer) validateContext(ctx *controlplanev1.RequestContext) error {
@@ -822,10 +822,10 @@ func (r *AgentRuntime) applyDataPlaneConfig(dataPlane policymodel.DataPlanePolic
 		r.Config.Manager.Address = endpoint
 	}
 	if dataPlane.BatchSize > 0 {
-		r.Config.Spool.BatchSize = dataPlane.BatchSize
+		r.Config.Telemetry.BatchSize = dataPlane.BatchSize
 	}
 	if d := parseOptionalDuration(dataPlane.FlushInterval); d > 0 {
-		r.Config.Spool.FlushInterval = d
+		r.Config.Telemetry.FlushInterval = d
 	}
 	if d := parseOptionalDuration(dataPlane.RetryInitial); d > 0 {
 		r.Config.DataPlane.RetryInitial = d
@@ -1193,33 +1193,39 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 			LastExitReason: health.Sensor.LastExitReason,
 			LastError:      health.Sensor.LastError,
 		},
-		Queue: &controlplanev1.QueueHealth{
-			QueuedBatches:     uint32(health.Queue.QueuedBatches),
-			QueuedBytes:       health.Queue.QueuedBytes,
-			MaxBytes:          health.Queue.MaxBytes,
-			BackpressureCount: health.Queue.BackpressureCount,
-			DroppedBatches:    health.Queue.DroppedBatches,
-			DroppedBytes:      health.Queue.DroppedBytes,
-			LastError:         health.Queue.LastError,
+		TelemetryBus: &controlplanev1.TelemetryBusHealth{
+			EventCapacity:     health.TelemetryBus.EventCapacity,
+			EventBuffered:     health.TelemetryBus.EventBuffered,
+			EventDropped:      health.TelemetryBus.EventDropped,
+			EventSubscribers:  health.TelemetryBus.EventSubscribers,
+			SignalCapacity:    health.TelemetryBus.SignalCapacity,
+			SignalBuffered:    health.TelemetryBus.SignalBuffered,
+			SignalDropped:     health.TelemetryBus.SignalDropped,
+			SignalSubscribers: health.TelemetryBus.SignalSubscribers,
 		},
-		Wal: &controlplanev1.WALHealth{
-			QueuedBatches:     uint32(health.WAL.QueuedBatches),
-			QueuedBytes:       health.WAL.QueuedBytes,
-			MaxBytes:          health.WAL.MaxBytes,
-			OldestBatchId:     health.WAL.OldestBatchID,
-			NewestBatchId:     health.WAL.NewestBatchID,
-			LastAckedBatchId:  health.WAL.LastAckedBatchID,
-			WatchSubscribers:  health.WAL.WatchSubscribers,
-			BackpressureCount: health.WAL.BackpressureCount,
-			DroppedBatches:    health.WAL.DroppedBatches,
-			DroppedBytes:      health.WAL.DroppedBytes,
-			LastError:         health.WAL.LastError,
+		TelemetryBatcher: &controlplanev1.TelemetryBatcherHealth{
+			PendingEvents:   health.TelemetryBatcher.PendingEvents,
+			PendingSignals:  health.TelemetryBatcher.PendingSignals,
+			QueuedBatches:   health.TelemetryBatcher.QueuedBatches,
+			QueueCapacity:   health.TelemetryBatcher.QueueCapacity,
+			DroppedBatches:  health.TelemetryBatcher.DroppedBatches,
+			DroppedEvents:   health.TelemetryBatcher.DroppedEvents,
+			DroppedSignals:  health.TelemetryBatcher.DroppedSignals,
+			FlushedBatches:  health.TelemetryBatcher.FlushedBatches,
+			FlushedEvents:   health.TelemetryBatcher.FlushedEvents,
+			FlushedSignals:  health.TelemetryBatcher.FlushedSignals,
+			LastFlushReason: health.TelemetryBatcher.LastFlushReason,
+			Closed:          health.TelemetryBatcher.Closed,
+			LastError:       health.TelemetryBatcher.LastError,
 		},
-		DataPlane: &controlplanev1.DataPlaneHealth{
-			AppendedBatches:  uint32(health.DataPlane.AppendedBatches),
-			RemainingBatches: uint32(health.DataPlane.RemainingBatches),
-			RemainingBytes:   health.DataPlane.RemainingBytes,
-			LastError:        health.DataPlane.LastError,
+		TelemetrySender: &controlplanev1.TelemetrySenderHealth{
+			SentBatches:     health.TelemetrySender.SentBatches,
+			SentEvents:      health.TelemetrySender.SentEvents,
+			SentSignals:     health.TelemetrySender.SentSignals,
+			RejectedBatches: health.TelemetrySender.RejectedBatches,
+			RetriedBatches:  health.TelemetrySender.RetriedBatches,
+			Drained:         health.TelemetrySender.Drained,
+			LastError:       health.TelemetrySender.LastError,
 		},
 		Detection: &controlplanev1.DetectionRuntimeHealth{
 			PolicyId:        health.Detection.PolicyID,

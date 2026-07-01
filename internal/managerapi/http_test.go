@@ -453,17 +453,17 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
 	health := agenthealth.AgentHealth{
-		AgentID:       "agent-a",
-		HostID:        "host-a",
-		TenantID:      "default",
-		Scope:         agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
-		Status:        "ok",
-		UptimeSeconds: 12,
-		ObservedAt:    time.Now().UTC(),
-		Capability:    agenthealth.SensorCapability{Backend: "fake", Version: "dev", SupportsExec: true, SupportsHealth: true, KernelRelease: "test-kernel", BTFAvailable: true, BPFFSAvailable: true},
-		Sensor:        agenthealth.SensorHealth{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3},
-		Queue:         agenthealth.QueueHealth{QueuedBatches: 1, QueuedBytes: 256},
-		DataPlane:     agenthealth.DataPlaneHealth{RemainingBatches: 1},
+		AgentID:          "agent-a",
+		HostID:           "host-a",
+		TenantID:         "default",
+		Scope:            agenthealth.RuntimeScope{Type: "container", Selector: "abc123"},
+		Status:           "ok",
+		UptimeSeconds:    12,
+		ObservedAt:       time.Now().UTC(),
+		Capability:       agenthealth.SensorCapability{Backend: "fake", Version: "dev", SupportsExec: true, SupportsHealth: true, KernelRelease: "test-kernel", BTFAvailable: true, BPFFSAvailable: true},
+		Sensor:           agenthealth.SensorHealth{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3},
+		TelemetryBatcher: agenthealth.TelemetryBatcherHealth{QueuedBatches: 1, QueueCapacity: 8},
+		TelemetrySender:  agenthealth.TelemetrySenderHealth{SentBatches: 2},
 	}
 	data, err := json.Marshal(health)
 	if err != nil {
@@ -476,7 +476,7 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 		t.Fatalf("health status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = get(t, handler, "/api/v1/agent-health?agent_id=agent-a&tenant_id=default")
-	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability"`, `"kernel_release":"test-kernel"`, `"sensor_health"`, `"queue_health"`, `"data_plane_health"`} {
+	for _, want := range []string{`"agent_id":"agent-a"`, `"scope":{"type":"container","selector":"abc123"}`, `"sensor_capability"`, `"kernel_release":"test-kernel"`, `"sensor_health"`, `"telemetry_batcher_health"`, `"telemetry_sender_health"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("health response missing %s: %s", want, rec.Body.String())
 		}

@@ -20,11 +20,10 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/databatchworker"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/spool"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
@@ -48,6 +47,10 @@ func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) erro
 }
 
 type localBatchAppender struct{}
+
+var newLocalBatchAppender = func() dataappend.BatchAppender {
+	return localBatchAppender{}
+}
 
 func (localBatchAppender) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if batch == nil {
@@ -78,6 +81,7 @@ type AgentRuntime struct {
 	featureFlags    agenthealth.RuntimeFeatureFlags
 	detectionStatus agenthealth.DetectionHealth
 	signalSeq       uint64
+	telemetrySeq    uint64
 }
 
 type healthReporter interface {
@@ -159,16 +163,19 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("subscribe", err)
 	}
-	queue, err := spool.OpenWithLimit(r.Config.Spool.Path, r.Config.Spool.MaxBytes)
-	if err != nil {
-		return failStartup("spool", err)
-	}
-	agentSpool := NewAgentSpool(queue)
-	worker, err := r.dataBatchWorker(queue)
+	appender, err := r.batchAppender()
 	if err != nil {
 		return failStartup("data_plane", err)
 	}
-	stopLocalControl, err := r.startLocalControlServer(ctx, rt, queue, worker, startedAt)
+	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
+	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, r.Config.DataPlane.MaxInflight*64)
+	sender := &telemetry.Sender{
+		Appender:     appender,
+		Batcher:      batcher,
+		RetryInitial: r.Config.DataPlane.RetryInitial,
+		RetryMax:     r.Config.DataPlane.RetryMax,
+	}
+	stopLocalControl, err := r.startLocalControlServer(ctx, rt, bus, batcher, sender, startedAt)
 	if err != nil {
 		return failStartup("local_control", err)
 	}
@@ -183,7 +190,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
 	})
 	endpointRuntime := NewEndpointRuntime(r, norm)
-	transportRuntime := NewTransportRuntime(r, rt, agentSpool, worker, startedAt, scopeType, scopeSelector)
+	transportRuntime := NewTransportRuntime(r, rt, batcher, sender, startedAt, scopeType, scopeSelector)
 	go transportRuntime.RunDataFlow(dataPlaneCtx)
 	go transportRuntime.RunControlFlow(dataPlaneCtx)
 	r.applyRuntimePolicy(effectivePolicy)
@@ -208,36 +215,30 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	for {
 		select {
 		case <-ctx.Done():
-			drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelDataPlane, stopRuntime)
+			drainErr := r.shutdownAndReport(context.Background(), rt, bus, batcher, sender, reporter, startedAt, cancelDataPlane, stopRuntime)
 			if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 				return drainErr
 			}
 			return ctx.Err()
 		case ev, ok := <-events:
 			if !ok {
-				drainErr := r.shutdownAndReport(context.Background(), rt, queue, worker, reporter, startedAt, cancelDataPlane, stopRuntime)
+				drainErr := r.shutdownAndReport(context.Background(), rt, bus, batcher, sender, reporter, startedAt, cancelDataPlane, stopRuntime)
 				if drainErr != nil && !errors.Is(drainErr, context.DeadlineExceeded) && !errors.Is(drainErr, context.Canceled) {
 					return drainErr
 				}
 				return nil
 			}
-			var batchID string
-			batchID, err := agentSpool.AppendEndpointEvent(endpointRuntime, ev)
-			if err == nil && r.Out != nil {
-				fmt.Fprintf(r.Out, "agent daemon event: behavior=%s raw_ref=%s spool_batch=%s\n", ev.SensorEvent.GetBehavior(), ev.RawRef, batchID)
-			}
-			if err != nil && !spool.IsBackpressure(err) {
+			batch, err := endpointRuntime.ProcessEvent(ev)
+			if err != nil {
 				return err
 			}
-			if err != nil && spool.IsBackpressure(err) && r.Out != nil {
-				stats, statErr := queue.Stats()
-				if statErr != nil {
-					return statErr
-				}
-				fmt.Fprintf(r.Out, "agent spool backpressure: dropped_batches=%d dropped_bytes=%d last_error=%q\n", stats.DroppedBatches, stats.DroppedBytes, stats.LastError)
+			bus.PublishBatch(batch)
+			batcher.Add(batch)
+			if r.Out != nil {
+				fmt.Fprintf(r.Out, "agent daemon event: behavior=%s raw_ref=%s telemetry_events=%d telemetry_signals=%d\n", ev.SensorEvent.GetBehavior(), ev.RawRef, len(batch.GetEvents()), len(batch.GetSignals()))
 			}
 		case <-ticker.C:
-			health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
+			health, err := r.collectHealth(ctx, rt, bus, batcher, sender, startedAt)
 			if err != nil {
 				return err
 			}
@@ -247,13 +248,14 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
 				NoEventGracePeriod: tamperNoEventGracePeriod(r.Config.Sensor.RestartWindow, r.Config.Health.Interval),
 			}); sig != nil {
-				var batchID string
-				batchID, err = agentSpool.AppendEndpointSignals(endpointRuntime, []*signalv1.Signal{sig})
-				if err != nil && !spool.IsBackpressure(err) {
+				batch, err := endpointRuntime.ProcessSignals([]*signalv1.Signal{sig})
+				if err != nil {
 					return err
 				}
+				bus.PublishBatch(batch)
+				batcher.Add(batch)
 				if r.Out != nil {
-					fmt.Fprintf(r.Out, "agent tamper signal: name=%s reason=%q spool_batch=%s\n", sig.GetName(), sig.GetEvidence().GetSummary(), batchID)
+					fmt.Fprintf(r.Out, "agent tamper signal: name=%s reason=%q\n", sig.GetName(), sig.GetEvidence().GetSummary())
 				}
 			}
 			if !longControl {
@@ -262,8 +264,8 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				}
 			}
 			if r.Out != nil {
-				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d queued_bytes=%d dropped_batches=%d last_spool_error=%q last_data_plane_error=%q\n",
-					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.Queue.QueuedBatches, health.Queue.QueuedBytes, health.Queue.DroppedBatches, health.Queue.LastError, health.DataPlane.LastError)
+				fmt.Fprintf(r.Out, "agent health: sensor=%s running=%t policy_loaded=%t events_seen=%d queued_batches=%d dropped_batches=%d last_batcher_error=%q last_data_plane_error=%q\n",
+					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.TelemetryBatcher.QueuedBatches, health.TelemetryBatcher.DroppedBatches, health.TelemetryBatcher.LastError, health.TelemetrySender.LastError)
 			}
 		}
 	}
@@ -280,28 +282,32 @@ func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.
 	return grace
 }
 
-func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, reporter healthReporter, startedAt time.Time, cancelDataPlane func(), stopRuntime func()) error {
-	cancelDataPlane()
+func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, bus *telemetry.Bus, batcher *telemetry.Batcher, sender *telemetry.Sender, reporter healthReporter, startedAt time.Time, cancelDataPlane func(), stopRuntime func()) error {
 	stopRuntime()
-	var drainErr error
-	var stats databatchworker.Stats
-	drainCtx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout(r.Config))
-	stats, drainErr = worker.DrainOnce(drainCtx)
-	cancel()
+	grace := shutdownDrainTimeout(r.Config)
+	shutdownStarted := time.Now()
+	batcher.CloseAndFlush("shutdown")
+	drained := waitForSenderDrained(sender, grace)
+	timedOut := !drained
+	cancelDataPlane()
+	elapsed := time.Since(shutdownStarted)
+	batcherStats := batcher.Stats()
+	stats := sender.Stats()
 	if r.Out != nil {
-		fmt.Fprintf(r.Out, "agent shutdown drain: appended=%d remaining=%d last_error=%q\n", stats.AppendedBatches, stats.RemainingBatches, stats.LastError)
+		fmt.Fprintf(r.Out, "agent shutdown telemetry: grace=%s elapsed=%s flushed_batches=%d queued_batches=%d sent_batches=%d sent_events=%d sent_signals=%d drained=%t timeout=%t last_batcher_error=%q last_sender_error=%q\n",
+			grace, elapsed.Round(time.Millisecond), batcherStats.FlushedBatches, batcherStats.QueuedBatches, stats.SentBatches, stats.SentEvents, stats.SentSignals, drained, timedOut, batcherStats.LastError, stats.LastError)
 	}
-	finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, queue, worker, startedAt)
+	finalHealth, healthErr := r.collectShutdownHealth(ctx, rt, bus, batcher, sender, startedAt)
 	if healthErr == nil {
 		if err := reporter.Report(context.Background(), finalHealth); err != nil && r.Out != nil {
 			fmt.Fprintf(r.Out, "agent final health report error: %v\n", err)
 		}
 		if r.Out != nil {
 			fmt.Fprintf(r.Out, "agent final health: sensor=%s running=%t policy_loaded=%t status=%s queued_batches=%d last_data_plane_error=%q\n",
-				finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.Queue.QueuedBatches, finalHealth.DataPlane.LastError)
+				finalHealth.Sensor.Backend, finalHealth.Sensor.Running, finalHealth.Sensor.PolicyLoaded, finalHealth.Status, finalHealth.TelemetryBatcher.QueuedBatches, finalHealth.TelemetrySender.LastError)
 		}
 	}
-	return drainErr
+	return nil
 }
 
 func (r *AgentRuntime) reportStartupFailure(reporter healthReporter, startedAt time.Time, stage string, startupErr error) {
@@ -326,9 +332,10 @@ func (r *AgentRuntime) reportStartupFailure(reporter healthReporter, startedAt t
 			PolicyLoaded: false,
 			LastError:    fmt.Sprintf("%s: %v", stage, startupErr),
 		},
-		Capability: r.runtimeCapability(),
-		Queue:      agenthealth.QueueHealth{},
-		DataPlane:  agenthealth.DataPlaneHealth{},
+		Capability:       r.runtimeCapability(),
+		TelemetryBus:     agenthealth.TelemetryBusHealth{},
+		TelemetryBatcher: agenthealth.TelemetryBatcherHealth{},
+		TelemetrySender:  agenthealth.TelemetrySenderHealth{},
 	}
 	if err := reporter.Report(context.Background(), health); err != nil && r.Out != nil {
 		fmt.Fprintf(r.Out, "agent startup health report error: %v\n", err)
@@ -342,8 +349,8 @@ func (r *AgentRuntime) healthReporter() healthReporter {
 	return localHealthReporter{}
 }
 
-func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
-	health, err := r.collectHealth(ctx, rt, queue, worker, startedAt)
+func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorruntime.Runtime, bus *telemetry.Bus, batcher *telemetry.Batcher, sender *telemetry.Sender, startedAt time.Time) (agenthealth.AgentHealth, error) {
+	health, err := r.collectHealth(ctx, rt, bus, batcher, sender, startedAt)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
 	}
@@ -356,34 +363,50 @@ func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorrunti
 }
 
 func shutdownDrainTimeout(cfg config.Config) time.Duration {
-	timeout := cfg.DataPlane.RequestTimeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-	if cfg.DataPlane.RetryInitial > timeout {
-		timeout = cfg.DataPlane.RetryInitial
+	timeout := 5 * time.Second
+	if cfg.DataPlane.RequestTimeout > 0 && cfg.DataPlane.RequestTimeout < timeout {
+		timeout = cfg.DataPlane.RequestTimeout
 	}
 	return timeout
 }
 
-func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runtime, queue *spool.Queue, worker *databatchworker.Worker, startedAt time.Time) (agenthealth.AgentHealth, error) {
+func waitForSenderDrained(sender *telemetry.Sender, timeout time.Duration) bool {
+	if sender == nil {
+		return true
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if sender.Stats().Drained {
+			return true
+		}
+		select {
+		case <-deadline.C:
+			return sender.Stats().Drained
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runtime, source any, rest ...any) (agenthealth.AgentHealth, error) {
+	bus, batcher, sender, startedAt := r.healthTelemetryArgs(source, rest...)
 	sensor, err := rt.Health(ctx)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
 	}
-	queueStats, err := queue.Stats()
-	if err != nil {
-		return agenthealth.AgentHealth{}, err
-	}
-	dataPlaneStats, err := worker.Stats()
-	if err != nil {
-		return agenthealth.AgentHealth{}, err
-	}
+	busStats := bus.Stats()
+	batcherStats := batcher.Stats()
+	senderStats := sender.Stats()
 	status := "ok"
-	if !sensor.Running || sensor.LastError != "" || queueStats.LastError != "" || dataPlaneStats.LastError != "" {
+	if !sensor.Running || sensor.LastError != "" || batcherStats.LastError != "" || senderStats.LastError != "" {
 		status = "degraded"
 	}
-	if queueStats.BackpressureCount > 0 || queueStats.DroppedBatches > 0 || queueStats.DroppedBytes > 0 {
+	if batcherStats.DroppedBatches > 0 || busStats.EventDropped > 0 || busStats.SignalDropped > 0 {
 		status = "degraded"
 	}
 	if r.Config.Sensor.MaxParseErrors > 0 && sensor.ParseErrors > r.Config.Sensor.MaxParseErrors {
@@ -424,33 +447,39 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 			LastError:      sensor.LastError,
 		},
 		Capability: r.runtimeCapability(),
-		Queue: agenthealth.QueueHealth{
-			QueuedBatches:     queueStats.QueuedBatches,
-			QueuedBytes:       queueStats.QueuedBytes,
-			MaxBytes:          queueStats.MaxBytes,
-			BackpressureCount: queueStats.BackpressureCount,
-			DroppedBatches:    queueStats.DroppedBatches,
-			DroppedBytes:      queueStats.DroppedBytes,
-			LastError:         queueStats.LastError,
+		TelemetryBus: agenthealth.TelemetryBusHealth{
+			EventCapacity:     busStats.EventCapacity,
+			EventBuffered:     busStats.EventBuffered,
+			EventDropped:      busStats.EventDropped,
+			EventSubscribers:  busStats.EventSubscribers,
+			SignalCapacity:    busStats.SignalCapacity,
+			SignalBuffered:    busStats.SignalBuffered,
+			SignalDropped:     busStats.SignalDropped,
+			SignalSubscribers: busStats.SignalSubscribers,
 		},
-		WAL: agenthealth.WALHealth{
-			QueuedBatches:     queueStats.QueuedBatches,
-			QueuedBytes:       queueStats.QueuedBytes,
-			MaxBytes:          queueStats.MaxBytes,
-			OldestBatchID:     queueStats.OldestBatchID,
-			NewestBatchID:     queueStats.NewestBatchID,
-			LastAckedBatchID:  queueStats.LastAckedBatchID,
-			WatchSubscribers:  queueStats.WatchSubscribers,
-			BackpressureCount: queueStats.BackpressureCount,
-			DroppedBatches:    queueStats.DroppedBatches,
-			DroppedBytes:      queueStats.DroppedBytes,
-			LastError:         queueStats.LastError,
+		TelemetryBatcher: agenthealth.TelemetryBatcherHealth{
+			PendingEvents:   batcherStats.PendingEvents,
+			PendingSignals:  batcherStats.PendingSignals,
+			QueuedBatches:   batcherStats.QueuedBatches,
+			QueueCapacity:   batcherStats.QueueCapacity,
+			DroppedBatches:  batcherStats.DroppedBatches,
+			DroppedEvents:   batcherStats.DroppedEvents,
+			DroppedSignals:  batcherStats.DroppedSignals,
+			FlushedBatches:  batcherStats.FlushedBatches,
+			FlushedEvents:   batcherStats.FlushedEvents,
+			FlushedSignals:  batcherStats.FlushedSignals,
+			LastFlushReason: batcherStats.LastFlushReason,
+			Closed:          batcherStats.Closed,
+			LastError:       batcherStats.LastError,
 		},
-		DataPlane: agenthealth.DataPlaneHealth{
-			AppendedBatches:  dataPlaneStats.AppendedBatches,
-			RemainingBatches: dataPlaneStats.RemainingBatches,
-			RemainingBytes:   dataPlaneStats.RemainingBytes,
-			LastError:        dataPlaneStats.LastError,
+		TelemetrySender: agenthealth.TelemetrySenderHealth{
+			SentBatches:     senderStats.SentBatches,
+			SentEvents:      senderStats.SentEvents,
+			SentSignals:     senderStats.SentSignals,
+			RejectedBatches: senderStats.RejectedBatches,
+			RetriedBatches:  senderStats.RetriedBatches,
+			Drained:         senderStats.Drained,
+			LastError:       senderStats.LastError,
 		},
 		Detection: r.detectionHealth(),
 		CEP: agenthealth.CEPHealth{
@@ -462,7 +491,57 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 			EmittedSignals:   cepMetrics.EmittedSignals,
 			Degraded:         cepDegraded,
 		},
+		Streams: agenthealth.LocalStreamHealth{
+			EventCapacity:        busStats.EventCapacity,
+			EventBuffered:        busStats.EventBuffered,
+			EventNextSequence:    busStats.EventNextSequence,
+			EventOldestSequence:  busStats.EventOldestSequence,
+			EventNewestSequence:  busStats.EventNewestSequence,
+			EventEvicted:         busStats.EventDropped,
+			EventSubscribers:     busStats.EventSubscribers,
+			SignalCapacity:       busStats.SignalCapacity,
+			SignalBuffered:       busStats.SignalBuffered,
+			SignalNextSequence:   busStats.SignalNextSequence,
+			SignalOldestSequence: busStats.SignalOldestSequence,
+			SignalNewestSequence: busStats.SignalNewestSequence,
+			SignalEvicted:        busStats.SignalDropped,
+			SignalSubscribers:    busStats.SignalSubscribers,
+		},
 	}, nil
+}
+
+func (r *AgentRuntime) healthTelemetryArgs(source any, rest ...any) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender, time.Time) {
+	bus, _ := source.(*telemetry.Bus)
+	var batcher *telemetry.Batcher
+	var sender *telemetry.Sender
+	var startedAt time.Time
+	if bus != nil {
+		if len(rest) > 0 {
+			batcher, _ = rest[0].(*telemetry.Batcher)
+		}
+		if len(rest) > 1 {
+			sender, _ = rest[1].(*telemetry.Sender)
+		}
+		if len(rest) > 2 {
+			startedAt, _ = rest[2].(time.Time)
+		}
+	}
+	if bus == nil {
+		bus = telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
+	}
+	if batcher == nil {
+		batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64)
+	}
+	if sender == nil {
+		sender = &telemetry.Sender{Appender: localBatchAppender{}, Batcher: batcher}
+	}
+	if sender.Batcher == nil {
+		sender.Batcher = batcher
+	}
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	return bus, batcher, sender, startedAt
 }
 
 func (r *AgentRuntime) runtimeCapability() agenthealth.SensorCapability {
@@ -656,17 +735,8 @@ func samePolicyRuntime(a, b policymodel.Policy) bool {
 		reflect.DeepEqual(a.Detection, b.Detection)
 }
 
-func (r *AgentRuntime) dataBatchWorker(queue *spool.Queue) (*databatchworker.Worker, error) {
-	up, err := newBatchAppender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
-	if err != nil {
-		return nil, err
-	}
-	worker := &databatchworker.Worker{
-		Queue:    queue,
-		Uploader: up,
-		Backoff:  databatchworker.Backoff{Initial: r.Config.DataPlane.RetryInitial, Max: r.Config.DataPlane.RetryMax},
-	}
-	return worker, nil
+func (r *AgentRuntime) batchAppender() (dataappend.BatchAppender, error) {
+	return newBatchAppender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 }
 
 func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
@@ -684,7 +754,7 @@ func newBatchAppender(manager, transport string, timeout time.Duration, token st
 	case "grpc":
 		return dataappend.NewGRPCAppenderWithTLS(manager, timeout, token, tlsCfg), nil
 	case "local":
-		return localBatchAppender{}, nil
+		return newLocalBatchAppender(), nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}
