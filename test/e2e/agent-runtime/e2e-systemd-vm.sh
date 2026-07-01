@@ -28,7 +28,7 @@ echo "[e2e-agent-systemd-vm] installing agent binary, config, and systemd unit"
 vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
 vagrant upload "$REPO/deployments/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
 
-vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /var/lib/sysarmor/agent/spool /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service" >/dev/null
+vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /var/lib/sysarmor/agent/telemetry /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service" >/dev/null
 
 vagrant ssh node-a -c "sudo tee /etc/sysarmor/policies/sysarmor-fake.yaml >/dev/null <<'EOF'
 {"behaviors":["process.exec"],"observe_only":true}
@@ -53,9 +53,7 @@ sensor:
   max_restarts: 1
   restart_window: 1h
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 100ms
 

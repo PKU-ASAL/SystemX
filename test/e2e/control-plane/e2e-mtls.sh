@@ -176,9 +176,7 @@ sensor:
   policy_path: "$TMP/collection.json"
   fake_startup_events: 1
   observe_only: true
-spool:
-  path: "$TMP/spool"
-  max_bytes: 1048576
+telemetry:
   batch_size: 8
   flush_interval: 200ms
 data_plane:
@@ -188,7 +186,6 @@ data_plane:
 health:
   interval: 200ms
 content:
-  path: "$TMP/content"
 YAML
 
 "$BIN/sysarmor-agent" run --config "$TMP/agent.yaml" >"$TMP/agent.log" 2>&1 &

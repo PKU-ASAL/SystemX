@@ -119,8 +119,8 @@ sensor:
   event_queue_size: $TETRAGON_EVENT_QUEUE_SIZE
   rb_queue_size: $TETRAGON_RB_QUEUE_SIZE
 
-spool:
-  path: /var/lib/sysarmor/agent/spool-owned-tetragon
+telemetry:
+  path: /var/lib/sysarmor/agent/telemetry-owned-tetragon
   max_bytes: 268435456
   batch_size: 256
   flush_interval: 200ms

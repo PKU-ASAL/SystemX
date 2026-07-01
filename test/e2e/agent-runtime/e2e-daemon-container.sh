@@ -17,7 +17,7 @@ echo "[e2e-agent-daemon-container] starting container topology"
 bash "$HERE/start-container.sh" >/dev/null
 
 echo "[e2e-agent-daemon-container] preparing daemon config in mgr container"
-docker exec mgr sh -c 'mkdir -p /tmp/sysarmor-agent-container/spool'
+docker exec mgr sh -c 'mkdir -p /tmp/sysarmor-agent-container'
 docker exec mgr sh -c 'cat > /tmp/sysarmor-agent-container/policy.yaml <<EOF
 {"behaviors":["process.exec"],"observe_only":true}
 EOF
@@ -41,9 +41,7 @@ sensor:
   max_restarts: 1
   restart_window: 1h
 
-spool:
-  path: /tmp/sysarmor-agent-container/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 100ms
 

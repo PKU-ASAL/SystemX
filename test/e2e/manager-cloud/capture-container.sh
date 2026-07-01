@@ -34,7 +34,7 @@ if [[ "$CAPTURE_MODE" == "managed" ]]; then
   TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
   TETRA_PATH="$(docker exec tetragon sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
   docker exec tetragon sh -c "tetra tracingpolicy delete sysarmor-syscall-capture 2>/dev/null || true; tetra tracingpolicy delete sysarmor-runtime-collection 2>/dev/null || true"
-  docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
+  docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p"
   docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
 {"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
 EOF
@@ -63,9 +63,7 @@ sensor:
   max_restarts: 1
   restart_window: 1h
 
-spool:
-  path: $WORK/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 200ms
 

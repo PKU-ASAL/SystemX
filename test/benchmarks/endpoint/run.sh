@@ -51,7 +51,8 @@ COOLDOWN_SECONDS="${SYSARMOR_BENCH_COOLDOWN_SECONDS:-5}"
 WORKLOAD_C2="${SYSARMOR_DIAG_WORKLOAD_C2:-10.66.0.99}"
 PROFILE_ENABLED="${SYSARMOR_BENCH_PROFILE_AGENT:-${SYSARMOR_BENCH_PROFILE_AGENT_CPU:-0}}"
 PROFILE_TYPES="${SYSARMOR_BENCH_PROFILE_TYPES:-cpu heap allocs goroutine runtime}"
-PROFILE_PHASES="${SYSARMOR_BENCH_PROFILE_PHASES:-policy_apply workload}"
+PROFILE_PHASES="${SYSARMOR_BENCH_PROFILE_PHASES:-policy_apply activity persistence}"
+ACTIVITY_PROFILE_SECONDS="${SYSARMOR_BENCH_ACTIVITY_PROFILE_SECONDS:-5}"
 RECORDER_SEMANTIC_INTERVAL="${SYSARMOR_RECORDER_SEMANTIC_INTERVAL:-10}"
 RECORDER_DURATION_SECONDS="${SYSARMOR_BENCH_RECORDER_DURATION_SECONDS:-$((HOST_BASELINE_SECONDS + AGENT_IDLE_SECONDS + SENSOR_IDLE_SECONDS + BASELINE_SECONDS + POLICY_SETTLE_SECONDS + SETTLE_SECONDS + STEADY_SECONDS + WORKLOAD_WARMUP_SECONDS + WORKLOAD_SECONDS + SCENARIO_OBSERVE_SECONDS + COOLDOWN_SECONDS + 300))}"
 SYNC_VM_AGENT="${SYSARMOR_BENCH_SYNC_VM_AGENT:-1}"
@@ -88,7 +89,9 @@ cat >"$OUT_DIR/manifest.json" <<EOF
   "sync_vm_agent": "$SYNC_VM_AGENT",
   "profile_enabled": "$PROFILE_ENABLED",
   "profile_types": "$PROFILE_TYPES",
-  "profile_phases": "$PROFILE_PHASES"
+  "profile_phases": "$PROFILE_PHASES",
+  "activity_profile_seconds": $ACTIVITY_PROFILE_SECONDS,
+  "profile_semantics": "diagnostic agent pprof/runtime capture; disabled by default and not used for low-disturbance CPU/RSS conclusions; CPU profiles are serialized because the agent debug profile endpoint is mutually exclusive"
 }
 EOF
 
@@ -259,22 +262,48 @@ profile_ext() {
   esac
 }
 
+declare -A PROFILE_PIDS=()
+PROFILE_CPU_ACTIVE_PHASE=""
+
+profile_type_enabled() {
+  local profile_type="$1"
+  [[ " $PROFILE_TYPES " == *" $profile_type "* ]]
+}
+
+profile_has_nested_phase() {
+  profile_phase_enabled activity || profile_phase_enabled persistence
+}
+
+profile_cpu_should_start() {
+  local phase="$1"
+  profile_type_enabled cpu || return 1
+  if [[ "$phase" == "workload" && -n "$SCENARIO" ]] && profile_has_nested_phase; then
+    echo "[bench-endpoint][WARN] skipping workload cpu profile because activity/persistence profiling is enabled; recorder CPU/RSS still covers workload" >&2
+    return 1
+  fi
+  if [[ -n "$PROFILE_CPU_ACTIVE_PHASE" ]]; then
+    echo "[bench-endpoint][WARN] skipping $phase cpu profile because $PROFILE_CPU_ACTIVE_PHASE cpu profile is still running" >&2
+    return 1
+  fi
+  return 0
+}
+
 start_agent_profile_window() {
   local policy_out="$1"
   local phase="$2"
   local seconds="$3"
-  PROFILE_PID=""
   if ! profile_phase_enabled "$phase"; then
     return 0
   fi
   mkdir -p "$policy_out/profiles"
   printf '{"phase":"%s","profile_types":"%s","window_seconds":%s,"started_at":"%s"}\n' \
     "$phase" "$PROFILE_TYPES" "$seconds" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$policy_out/profiles/$phase.window.json"
-  if [[ " $PROFILE_TYPES " == *" cpu "* ]]; then
+  if profile_cpu_should_start "$phase"; then
     echo "[bench-endpoint] profiling agent cpu phase=$phase seconds=$seconds"
     vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json debug profile cpu --seconds '$seconds' --label '$phase' --output '/tmp/sysarmor-agent-$phase.cpu.pb.gz' --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout '$((seconds + 10))s'" \
       > "$policy_out/profiles/$phase.cpu.profile.json" 2>"$policy_out/profiles/$phase.cpu.profile.err" &
-    PROFILE_PID=$!
+    PROFILE_PIDS["$phase"]=$!
+    PROFILE_CPU_ACTIVE_PHASE="$phase"
   fi
 }
 
@@ -303,28 +332,37 @@ capture_instant_profile() {
 finish_agent_profile_window() {
   local policy_out="$1"
   local phase="$2"
+  local rec_run_id="${3:-}"
   if ! profile_phase_enabled "$phase"; then
     return 0
   fi
-  if [[ -z "${PROFILE_PID:-}" ]]; then
+  if [[ -n "$rec_run_id" ]]; then
+    mark "$rec_run_id" "profile_${phase}_finish_start" "$phase"
+  fi
+  if [[ -z "${PROFILE_PIDS[$phase]:-}" ]]; then
     :
   else
-    wait "$PROFILE_PID" || {
+    wait "${PROFILE_PIDS[$phase]}" || {
       echo "[bench-endpoint][WARN] agent cpu profile failed for phase=$phase" >&2
-      PROFILE_PID=""
     }
     vagrant ssh node-a -c "sudo cat '/tmp/sysarmor-agent-$phase.cpu.pb.gz' 2>/dev/null || true" > "$policy_out/profiles/$phase.cpu.pb.gz" 2>/dev/null || true
     vagrant ssh node-a -c "sudo rm -f '/tmp/sysarmor-agent-$phase.cpu.pb.gz'" >/dev/null 2>&1 || true
     if [[ -s "$policy_out/profiles/$phase.cpu.pb.gz" ]] && command -v go >/dev/null 2>&1; then
       go tool pprof -top "$policy_out/profiles/$phase.cpu.pb.gz" > "$policy_out/profiles/$phase.cpu.top.txt" 2>"$policy_out/profiles/$phase.cpu.top.err" || true
     fi
+    unset 'PROFILE_PIDS[$phase]'
+    if [[ "$PROFILE_CPU_ACTIVE_PHASE" == "$phase" ]]; then
+      PROFILE_CPU_ACTIVE_PHASE=""
+    fi
   fi
-  PROFILE_PID=""
   for profile_type in $PROFILE_TYPES; do
     [[ "$profile_type" == "cpu" ]] && continue
     capture_instant_profile "$policy_out" "$phase" "$profile_type"
   done
   printf '{"phase":"%s","finished_at":"%s"}\n' "$phase" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$policy_out/profiles/$phase.window.json"
+  if [[ -n "$rec_run_id" ]]; then
+    mark "$rec_run_id" "profile_${phase}_finish_done" "$phase"
+  fi
 }
 
 run_workload() {
@@ -387,18 +425,24 @@ run_case_activity() {
   fi
 
   if [[ -n "$scenario_name" ]]; then
+    start_agent_profile_window "$policy_out" activity "$ACTIVITY_PROFILE_SECONDS"
     if [[ -n "$rec_run_id" ]]; then
       mark "$rec_run_id" scenario_start "$scenario_name"
     fi
     run_scenario "$policy_out" "$scenario_name"
     if [[ -n "$rec_run_id" ]]; then
       mark "$rec_run_id" scenario_done "$scenario_name"
+    fi
+    finish_agent_profile_window "$policy_out" activity "$rec_run_id"
+    if [[ -n "$rec_run_id" ]]; then
       mark "$rec_run_id" scenario_observe_start "$scenario_name"
     fi
+    start_agent_profile_window "$policy_out" persistence "$SCENARIO_OBSERVE_SECONDS"
     sleep "$SCENARIO_OBSERVE_SECONDS"
     if [[ -n "$rec_run_id" ]]; then
       mark "$rec_run_id" scenario_observe_done "$scenario_name"
     fi
+    finish_agent_profile_window "$policy_out" persistence "$rec_run_id"
   fi
 
   if [[ -n "$workload_pid" ]]; then
@@ -539,7 +583,9 @@ for policy in $POLICIES_RAW; do
   "profiling": {
     "enabled": "$PROFILE_ENABLED",
     "types": "$PROFILE_TYPES",
-    "phases": "$PROFILE_PHASES"
+    "phases": "$PROFILE_PHASES",
+    "activity_profile_seconds": $ACTIVITY_PROFILE_SECONDS,
+    "semantics": "diagnostic agent pprof/runtime capture; disabled by default and not used for low-disturbance CPU/RSS conclusions; CPU profiles are serialized because the agent debug profile endpoint is mutually exclusive"
   },
   "sync_vm_agent": "$SYNC_VM_AGENT",
   "vm_lifecycle": "fresh",
@@ -572,7 +618,7 @@ EOF
   "scope-labels.json": "labels used to derive *.scope.ndjson from the raw streams",
   "raw/": "raw low-frequency health semantic snapshots",
   "raw.tar": "archive of raw semantic snapshots pulled from the VM",
-  "profiles/": "optional raw pprof/runtime diagnostic artifacts when profiling is enabled"
+  "profiles/": "optional raw pprof/runtime diagnostic artifacts when profiling is enabled; CPU profiles are serialized and intended for root-cause attribution, not for low-disturbance resource conclusions"
 }
 EOF
   cat >"$policy_out/runtime-feature-flags.json" <<EOF
@@ -617,7 +663,7 @@ EOF
 
   echo "[bench-endpoint] waiting ${POLICY_SETTLE_SECONDS}s for sensor BPF reload"
   sleep "$POLICY_SETTLE_SECONDS"
-  finish_agent_profile_window "$policy_out" policy_apply
+  finish_agent_profile_window "$policy_out" policy_apply "$rec_run_id"
 
   mark "$rec_run_id" settle_start "$name"
   sleep "$SETTLE_SECONDS"
@@ -627,7 +673,7 @@ EOF
   start_agent_profile_window "$policy_out" workload "$((WORKLOAD_SECONDS + WORKLOAD_WARMUP_SECONDS + 5))"
   run_case_activity "$policy_out" "$case_workload" "$case_scenario" "$rec_run_id"
   mark "$rec_run_id" workload_done "${case_workload:-none}"
-  finish_agent_profile_window "$policy_out" workload
+  finish_agent_profile_window "$policy_out" workload "$rec_run_id"
   mark "$rec_run_id" cooldown_start "$name"
   sleep "$COOLDOWN_SECONDS"
   mark "$rec_run_id" cooldown_done "$name"

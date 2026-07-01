@@ -87,9 +87,7 @@ sensor:
   max_restarts: 3
   restart_window: 8s
 
-spool:
-  path: /var/lib/sysarmor/agent/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 100ms
 
@@ -116,7 +114,7 @@ vagrant upload "$TMP/bundle/manifest.json" /tmp/sysarmor-recover-manifest.json n
 vagrant upload "$TMP/policy.yaml" /tmp/sysarmor-managed-recover-vm-policy.yaml node-a >/dev/null
 vagrant upload "$TMP/agent.yaml" /tmp/sysarmor-managed-recover-vm-agent.yaml node-a >/dev/null
 
-vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /opt/sysarmor/bundles/tetragon-vm-recover /opt/sysarmor/sensors/tetragon/vm-managed-recover /opt/sysarmor/sensors/tetragon/current /var/lib/sysarmor/agent/spool /tmp/sysarmor-managed-recover-vm-tetragon-count; sudo mkdir -p /opt/sysarmor/bundles/tetragon-vm-recover/bin /etc/sysarmor/policies /var/lib/sysarmor/agent/spool /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service; sudo install -m 0755 /tmp/sysarmor-recover-tetragon /opt/sysarmor/bundles/tetragon-vm-recover/bin/tetragon; sudo install -m 0755 /tmp/sysarmor-recover-tetra /opt/sysarmor/bundles/tetragon-vm-recover/bin/tetra; sudo install -m 0644 /tmp/sysarmor-recover-manifest.json /opt/sysarmor/bundles/tetragon-vm-recover/manifest.json; sudo install -m 0644 /tmp/sysarmor-managed-recover-vm-policy.yaml /etc/sysarmor/policies/sysarmor-managed-recover-vm.yaml; sudo install -m 0644 /tmp/sysarmor-managed-recover-vm-agent.yaml /etc/sysarmor/agent.yaml; sudo systemctl daemon-reload; sudo systemctl enable sysarmor-agent >/dev/null" >/dev/null
+vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /opt/sysarmor/bundles/tetragon-vm-recover /opt/sysarmor/sensors/tetragon/vm-managed-recover /opt/sysarmor/sensors/tetragon/current /var/lib/sysarmor/agent/telemetry /tmp/sysarmor-managed-recover-vm-tetragon-count; sudo mkdir -p /opt/sysarmor/bundles/tetragon-vm-recover/bin /etc/sysarmor/policies /var/lib/sysarmor/agent/telemetry /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service; sudo install -m 0755 /tmp/sysarmor-recover-tetragon /opt/sysarmor/bundles/tetragon-vm-recover/bin/tetragon; sudo install -m 0755 /tmp/sysarmor-recover-tetra /opt/sysarmor/bundles/tetragon-vm-recover/bin/tetra; sudo install -m 0644 /tmp/sysarmor-recover-manifest.json /opt/sysarmor/bundles/tetragon-vm-recover/manifest.json; sudo install -m 0644 /tmp/sysarmor-managed-recover-vm-policy.yaml /etc/sysarmor/policies/sysarmor-managed-recover-vm.yaml; sudo install -m 0644 /tmp/sysarmor-managed-recover-vm-agent.yaml /etc/sysarmor/agent.yaml; sudo systemctl daemon-reload; sudo systemctl enable sysarmor-agent >/dev/null" >/dev/null
 
 vagrant ssh mgr -c "curl -sf -X POST 'http://127.0.0.1:9443/api/v1/reset'" >/dev/null
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null

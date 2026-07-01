@@ -25,7 +25,7 @@ NODE_A_DOCKER="$(docker inspect node-a --format '{{.Id}}' | cut -c1-16)"
 echo "[e2e-agent-benign-container] node-a docker prefix=$NODE_A_DOCKER"
 
 echo "[e2e-agent-benign-container] preparing agent daemon config in tetragon container"
-docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
+docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p"
 TETRA_PATH="$(docker exec tetragon sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
 docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
 {"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
@@ -55,9 +55,7 @@ sensor:
   max_restarts: 1
   restart_window: 1h
 
-spool:
-  path: $WORK/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 200ms
 

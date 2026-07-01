@@ -78,7 +78,6 @@ vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; s
 vagrant ssh node-a -c "sudo bash -c '
   set -euo pipefail
   rm -rf \"$WORK\"
-  mkdir -p \"$WORK/spool\"
   cat > \"$WORK/policy.yaml\" <<\"EOF\"
 {"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
 EOF
@@ -109,9 +108,7 @@ sensor:
   max_restarts: 3
   restart_window: 500ms
 
-spool:
-  path: $WORK/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 200ms
 

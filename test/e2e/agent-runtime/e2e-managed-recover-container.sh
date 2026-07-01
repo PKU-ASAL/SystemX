@@ -18,7 +18,7 @@ echo "[e2e-agent-managed-recover-container] starting container topology"
 bash "$HERE/start-container.sh" >/dev/null
 
 echo "[e2e-agent-managed-recover-container] preparing recovering fake Tetragon bundle in mgr container"
-docker exec mgr sh -c "rm -rf '$WORK'; mkdir -p '$WORK/bundle/bin' '$WORK/install' '$WORK/spool'"
+docker exec mgr sh -c "rm -rf '$WORK'; mkdir -p '$WORK/bundle/bin' '$WORK/install'"
 docker exec mgr sh -c "cat > '$WORK/bundle/bin/tetragon' <<'EOF'
 #!/usr/bin/env sh
 COUNT=\"\${SYSARMOR_TETRAGON_COUNT:-/tmp/sysarmor-managed-recover-tetragon-count}\"
@@ -79,9 +79,7 @@ sensor:
   max_restarts: 3
   restart_window: 200ms
 
-spool:
-  path: $WORK/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 100ms
 

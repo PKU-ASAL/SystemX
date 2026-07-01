@@ -74,7 +74,6 @@ control:
   socket_path: $TMP/agent.sock
 
 content:
-  path: $TMP/content
 
 sensor:
   backend: tetragon
@@ -87,9 +86,7 @@ sensor:
   max_restarts: 2
   restart_window: 50ms
 
-spool:
-  path: $TMP/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 100ms
 

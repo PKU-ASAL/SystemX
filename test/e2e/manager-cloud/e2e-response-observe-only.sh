@@ -48,9 +48,7 @@ sensor:
   mode: managed
   policy_path: $TMP/collection.yaml
   observe_only: true
-spool:
-  path: $TMP/spool
-  max_bytes: 1048576
+telemetry:
   batch_size: 10
   flush_interval: 1s
 data_plane:

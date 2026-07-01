@@ -117,9 +117,7 @@ sensor:
   event_queue_size: $TETRAGON_EVENT_QUEUE_SIZE
   rb_queue_size: $TETRAGON_RB_QUEUE_SIZE
 
-spool:
-  path: /var/lib/sysarmor/agent/spool-owned-tetragon
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 200ms
 
@@ -134,7 +132,7 @@ EOF
 sudo systemctl stop sysarmor-agent 2>/dev/null || true
 sudo systemctl disable sysarmor-agent 2>/dev/null || true
 sudo systemctl reset-failed sysarmor-agent 2>/dev/null || true
-sudo rm -rf /var/lib/sysarmor/agent/spool-owned-tetragon '$TETRAGON_BUNDLE_DIR' '$TETRAGON_INSTALL_DIR/tetragon'
+sudo rm -rf /var/lib/sysarmor/agent/telemetry-owned-tetragon '$TETRAGON_BUNDLE_DIR' '$TETRAGON_INSTALL_DIR/tetragon'
 sudo systemctl daemon-reload
 sudo install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl" >/dev/null
 

@@ -48,7 +48,7 @@ docker run -d \
   -c 'tail -f /dev/null' >/dev/null
 
 echo "[e2e-agent-real-tetragon-owned-container] preparing agent daemon config in owned container"
-docker exec "$OWNED_CONTAINER" sh -c "rm -rf '$WORK'; mkdir -p '$WORK/spool'"
+docker exec "$OWNED_CONTAINER" sh -c "rm -rf '$WORK'; mkdir -p"
 TETRA_PATH="$(docker exec "$OWNED_CONTAINER" sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
 TETRAGON_PATH="$(docker exec "$OWNED_CONTAINER" sh -c 'command -v tetragon' | tr -d '\r' | tail -1)"
 if [[ -z "$TETRA_PATH" || -z "$TETRAGON_PATH" ]]; then
@@ -93,9 +93,7 @@ sensor:
   max_restarts: 3
   restart_window: 500ms
 
-spool:
-  path: $WORK/spool
-  max_bytes: 268435456
+telemetry:
   batch_size: 256
   flush_interval: 200ms
 
