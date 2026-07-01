@@ -592,6 +592,45 @@ func TestQueryLocalAgentEventGetOverUnixSocket(t *testing.T) {
 	}
 }
 
+func TestQueryLocalAgentDebugProfileWritesOutput(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "agent.sock")
+	lis, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fake := &fakeAgentControlServer{}
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
+	go func() {
+		_ = server.Serve(lis)
+	}()
+	defer server.Stop()
+
+	outPath := filepath.Join(dir, "agent.cpu.pb.gz")
+	body, err := queryLocalAgent(socketPath, []string{"debug", "profile", "cpu", "--seconds", "1", "--label", "workload", "--output", outPath})
+	if err != nil {
+		t.Fatalf("debug profile error = %v", err)
+	}
+	if fake.debugProfileReq == nil || fake.debugProfileReq.GetProfileType() != "cpu" || fake.debugProfileReq.GetSeconds() != 1 || fake.debugProfileReq.GetLabel() != "workload" {
+		t.Fatalf("debug profile request = %+v", fake.debugProfileReq)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read profile output: %v", err)
+	}
+	if string(data) != "fake-profile" {
+		t.Fatalf("profile output = %q", string(data))
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode body: %v body=%s", err, string(body))
+	}
+	if got["profile"] != nil || got["profileType"] != "cpu" || got["label"] != "workload" {
+		t.Fatalf("body = %s", string(body))
+	}
+}
+
 func TestQueryLocalAgentContentCommands(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
@@ -687,6 +726,40 @@ func TestQueryLocalAgentWatchReturnsPartialFramesOnTimeout(t *testing.T) {
 	}
 }
 
+func TestStreamingWatchWritesFramesBeforeTimeout(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	lis, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &blockingAgentControlServer{})
+	go func() {
+		_ = server.Serve(lis)
+	}()
+	defer server.Stop()
+
+	oldStdout := os.Stdout
+	readFile, writeFile, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writeFile
+	err = streamLocalAgent(socketPath, []string{"signal", "watch", "--timeout", "10ms"})
+	_ = writeFile.Close()
+	os.Stdout = oldStdout
+	if err != nil {
+		t.Fatalf("stream signal watch error = %v", err)
+	}
+	body, err := io.ReadAll(readFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := nonEmptyLines(string(body)); len(lines) != 1 {
+		t.Fatalf("stream signal body = %s", string(body))
+	}
+}
+
 func nonEmptyLines(s string) []string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
@@ -699,11 +772,12 @@ func nonEmptyLines(s string) []string {
 
 type fakeAgentControlServer struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
-	applyReq       *controlplanev1.ApplyPolicyRequest
-	contentReq     *controlplanev1.ApplyContentRequest
-	getEventReq    *controlplanev1.GetEventRequest
-	watchEventReq  *controlplanev1.WatchEventsRequest
-	watchSignalReq *controlplanev1.WatchSignalsRequest
+	applyReq        *controlplanev1.ApplyPolicyRequest
+	contentReq      *controlplanev1.ApplyContentRequest
+	getEventReq     *controlplanev1.GetEventRequest
+	debugProfileReq *controlplanev1.DebugProfileRequest
+	watchEventReq   *controlplanev1.WatchEventsRequest
+	watchSignalReq  *controlplanev1.WatchSignalsRequest
 }
 
 func (fakeAgentControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
@@ -764,6 +838,18 @@ func (s *fakeAgentControlServer) GetEvent(ctx context.Context, req *controlplane
 			Behavior: "process.exec",
 		},
 	}}, nil
+}
+
+func (s *fakeAgentControlServer) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
+	s.debugProfileReq = req
+	return &controlplanev1.DebugProfileResponse{
+		ProfileType: req.GetProfileType(),
+		Seconds:     req.GetSeconds(),
+		StartedAt:   "2026-06-29T00:00:00Z",
+		FinishedAt:  "2026-06-29T00:00:01Z",
+		Profile:     []byte("fake-profile"),
+		Label:       req.GetLabel(),
+	}, nil
 }
 
 func (s *fakeAgentControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {

@@ -17,6 +17,7 @@ service AgentControlPlaneService {
   rpc ListContent(ListContentRequest) returns (ListContentResponse);
   rpc GetContent(GetContentRequest) returns (ContentGetResponse);
   rpc GetEvent(GetEventRequest) returns (EventGetResponse);
+  rpc DebugProfile(DebugProfileRequest) returns (DebugProfileResponse);
   rpc WatchEvents(WatchEventsRequest) returns (stream EventFrame);
   rpc WatchSignals(WatchSignalsRequest) returns (stream SignalFrame);
 }
@@ -407,6 +408,22 @@ message GetEventRequest {
 
 message EventGetResponse {
   EventFrame frame = 1;
+}
+
+message DebugProfileRequest {
+  RequestContext context = 1;
+  string profile_type = 2;
+  uint32 seconds = 3;
+  string label = 4;
+}
+
+message DebugProfileResponse {
+  string profile_type = 1;
+  uint32 seconds = 2;
+  string started_at = 3;
+  string finished_at = 4;
+  bytes profile = 5;
+  string label = 6;
 }
 
 message EventFrame {

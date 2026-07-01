@@ -3535,6 +3535,158 @@ func (x *EventGetResponse) GetFrame() *EventFrame {
 	return nil
 }
 
+type DebugProfileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	ProfileType   string                 `protobuf:"bytes,2,opt,name=profile_type,json=profileType,proto3" json:"profile_type,omitempty"`
+	Seconds       uint32                 `protobuf:"varint,3,opt,name=seconds,proto3" json:"seconds,omitempty"`
+	Label         string                 `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DebugProfileRequest) Reset() {
+	*x = DebugProfileRequest{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DebugProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DebugProfileRequest) ProtoMessage() {}
+
+func (x *DebugProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DebugProfileRequest.ProtoReflect.Descriptor instead.
+func (*DebugProfileRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *DebugProfileRequest) GetContext() *RequestContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+func (x *DebugProfileRequest) GetProfileType() string {
+	if x != nil {
+		return x.ProfileType
+	}
+	return ""
+}
+
+func (x *DebugProfileRequest) GetSeconds() uint32 {
+	if x != nil {
+		return x.Seconds
+	}
+	return 0
+}
+
+func (x *DebugProfileRequest) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+type DebugProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProfileType   string                 `protobuf:"bytes,1,opt,name=profile_type,json=profileType,proto3" json:"profile_type,omitempty"`
+	Seconds       uint32                 `protobuf:"varint,2,opt,name=seconds,proto3" json:"seconds,omitempty"`
+	StartedAt     string                 `protobuf:"bytes,3,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt    string                 `protobuf:"bytes,4,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	Profile       []byte                 `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	Label         string                 `protobuf:"bytes,6,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DebugProfileResponse) Reset() {
+	*x = DebugProfileResponse{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DebugProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DebugProfileResponse) ProtoMessage() {}
+
+func (x *DebugProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DebugProfileResponse.ProtoReflect.Descriptor instead.
+func (*DebugProfileResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *DebugProfileResponse) GetProfileType() string {
+	if x != nil {
+		return x.ProfileType
+	}
+	return ""
+}
+
+func (x *DebugProfileResponse) GetSeconds() uint32 {
+	if x != nil {
+		return x.Seconds
+	}
+	return 0
+}
+
+func (x *DebugProfileResponse) GetStartedAt() string {
+	if x != nil {
+		return x.StartedAt
+	}
+	return ""
+}
+
+func (x *DebugProfileResponse) GetFinishedAt() string {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return ""
+}
+
+func (x *DebugProfileResponse) GetProfile() []byte {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+func (x *DebugProfileResponse) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
 type EventFrame struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
@@ -3548,7 +3700,7 @@ type EventFrame struct {
 
 func (x *EventFrame) Reset() {
 	*x = EventFrame{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3560,7 +3712,7 @@ func (x *EventFrame) String() string {
 func (*EventFrame) ProtoMessage() {}
 
 func (x *EventFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3573,7 +3725,7 @@ func (x *EventFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventFrame.ProtoReflect.Descriptor instead.
 func (*EventFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{40}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *EventFrame) GetTenantId() string {
@@ -3626,7 +3778,7 @@ type WatchSignalsRequest struct {
 
 func (x *WatchSignalsRequest) Reset() {
 	*x = WatchSignalsRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3638,7 +3790,7 @@ func (x *WatchSignalsRequest) String() string {
 func (*WatchSignalsRequest) ProtoMessage() {}
 
 func (x *WatchSignalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3651,7 +3803,7 @@ func (x *WatchSignalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSignalsRequest.ProtoReflect.Descriptor instead.
 func (*WatchSignalsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{41}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *WatchSignalsRequest) GetContext() *RequestContext {
@@ -3716,7 +3868,7 @@ type SignalFrame struct {
 
 func (x *SignalFrame) Reset() {
 	*x = SignalFrame{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3728,7 +3880,7 @@ func (x *SignalFrame) String() string {
 func (*SignalFrame) ProtoMessage() {}
 
 func (x *SignalFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3741,7 +3893,7 @@ func (x *SignalFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalFrame.ProtoReflect.Descriptor instead.
 func (*SignalFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{42}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SignalFrame) GetTenantId() string {
@@ -4135,7 +4287,21 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\"N\n" +
 	"\x10EventGetResponse\x12:\n" +
-	"\x05frame\x18\x01 \x01(\v2$.sysarmor.controlplane.v1.EventFrameR\x05frame\"\xba\x01\n" +
+	"\x05frame\x18\x01 \x01(\v2$.sysarmor.controlplane.v1.EventFrameR\x05frame\"\xac\x01\n" +
+	"\x13DebugProfileRequest\x12B\n" +
+	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\x12!\n" +
+	"\fprofile_type\x18\x02 \x01(\tR\vprofileType\x12\x18\n" +
+	"\aseconds\x18\x03 \x01(\rR\aseconds\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\"\xc3\x01\n" +
+	"\x14DebugProfileResponse\x12!\n" +
+	"\fprofile_type\x18\x01 \x01(\tR\vprofileType\x12\x18\n" +
+	"\aseconds\x18\x02 \x01(\rR\aseconds\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\x03 \x01(\tR\tstartedAt\x12\x1f\n" +
+	"\vfinished_at\x18\x04 \x01(\tR\n" +
+	"finishedAt\x12\x18\n" +
+	"\aprofile\x18\x05 \x01(\fR\aprofile\x12\x14\n" +
+	"\x05label\x18\x06 \x01(\tR\x05label\"\xba\x01\n" +
 	"\n" +
 	"EventFrame\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
@@ -4158,7 +4324,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\bsequence\x18\x03 \x01(\x04R\bsequence\x12\x1f\n" +
 	"\vobserved_at\x18\x04 \x01(\tR\n" +
 	"observedAt\x122\n" +
-	"\x06signal\x18\x05 \x01(\v2\x1a.sysarmor.signal.v1.SignalR\x06signal2\xfe\b\n" +
+	"\x06signal\x18\x05 \x01(\v2\x1a.sysarmor.signal.v1.SignalR\x06signal2\xed\t\n" +
 	"\x18AgentControlPlaneService\x12]\n" +
 	"\aConnect\x12&.sysarmor.controlplane.v1.ControlFrame\x1a&.sysarmor.controlplane.v1.ControlFrame(\x010\x01\x12[\n" +
 	"\x06Health\x12'.sysarmor.controlplane.v1.HealthRequest\x1a(.sysarmor.controlplane.v1.HealthResponse\x12g\n" +
@@ -4170,7 +4336,8 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\vListContent\x12,.sysarmor.controlplane.v1.ListContentRequest\x1a-.sysarmor.controlplane.v1.ListContentResponse\x12g\n" +
 	"\n" +
 	"GetContent\x12+.sysarmor.controlplane.v1.GetContentRequest\x1a,.sysarmor.controlplane.v1.ContentGetResponse\x12a\n" +
-	"\bGetEvent\x12).sysarmor.controlplane.v1.GetEventRequest\x1a*.sysarmor.controlplane.v1.EventGetResponse\x12c\n" +
+	"\bGetEvent\x12).sysarmor.controlplane.v1.GetEventRequest\x1a*.sysarmor.controlplane.v1.EventGetResponse\x12m\n" +
+	"\fDebugProfile\x12-.sysarmor.controlplane.v1.DebugProfileRequest\x1a..sysarmor.controlplane.v1.DebugProfileResponse\x12c\n" +
 	"\vWatchEvents\x12,.sysarmor.controlplane.v1.WatchEventsRequest\x1a$.sysarmor.controlplane.v1.EventFrame0\x01\x12f\n" +
 	"\fWatchSignals\x12-.sysarmor.controlplane.v1.WatchSignalsRequest\x1a%.sysarmor.controlplane.v1.SignalFrame0\x01BTZRgithub.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1;controlplanev1b\x06proto3"
 
@@ -4186,7 +4353,7 @@ func file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP() []byte {
 	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescData
 }
 
-var file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
+var file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_api_proto_controlplane_v1_agentcontrol_proto_goTypes = []any{
 	(*ControlFrame)(nil),                 // 0: sysarmor.controlplane.v1.ControlFrame
 	(*ControlError)(nil),                 // 1: sysarmor.controlplane.v1.ControlError
@@ -4228,14 +4395,16 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_goTypes = []any{
 	(*WatchEventsRequest)(nil),           // 37: sysarmor.controlplane.v1.WatchEventsRequest
 	(*GetEventRequest)(nil),              // 38: sysarmor.controlplane.v1.GetEventRequest
 	(*EventGetResponse)(nil),             // 39: sysarmor.controlplane.v1.EventGetResponse
-	(*EventFrame)(nil),                   // 40: sysarmor.controlplane.v1.EventFrame
-	(*WatchSignalsRequest)(nil),          // 41: sysarmor.controlplane.v1.WatchSignalsRequest
-	(*SignalFrame)(nil),                  // 42: sysarmor.controlplane.v1.SignalFrame
-	nil,                                  // 43: sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
-	nil,                                  // 44: sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
-	nil,                                  // 45: sysarmor.controlplane.v1.WatchFilter.LabelsEntry
-	(*v1.CanonicalEvent)(nil),            // 46: sysarmor.event.v1.CanonicalEvent
-	(*v11.Signal)(nil),                   // 47: sysarmor.signal.v1.Signal
+	(*DebugProfileRequest)(nil),          // 40: sysarmor.controlplane.v1.DebugProfileRequest
+	(*DebugProfileResponse)(nil),         // 41: sysarmor.controlplane.v1.DebugProfileResponse
+	(*EventFrame)(nil),                   // 42: sysarmor.controlplane.v1.EventFrame
+	(*WatchSignalsRequest)(nil),          // 43: sysarmor.controlplane.v1.WatchSignalsRequest
+	(*SignalFrame)(nil),                  // 44: sysarmor.controlplane.v1.SignalFrame
+	nil,                                  // 45: sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
+	nil,                                  // 46: sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
+	nil,                                  // 47: sysarmor.controlplane.v1.WatchFilter.LabelsEntry
+	(*v1.CanonicalEvent)(nil),            // 48: sysarmor.event.v1.CanonicalEvent
+	(*v11.Signal)(nil),                   // 49: sysarmor.signal.v1.Signal
 }
 var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	3,  // 0: sysarmor.controlplane.v1.ControlFrame.context:type_name -> sysarmor.controlplane.v1.RequestContext
@@ -4269,8 +4438,8 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	3,  // 28: sysarmor.controlplane.v1.CurrentPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	2,  // 29: sysarmor.controlplane.v1.CurrentPolicyResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
 	22, // 30: sysarmor.controlplane.v1.ResponseCommand.scope:type_name -> sysarmor.controlplane.v1.ResponseScope
-	43, // 31: sysarmor.controlplane.v1.ResponseCommand.labels:type_name -> sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
-	44, // 32: sysarmor.controlplane.v1.EvidencePullbackRequest.labels:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
+	45, // 31: sysarmor.controlplane.v1.ResponseCommand.labels:type_name -> sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
+	46, // 32: sysarmor.controlplane.v1.EvidencePullbackRequest.labels:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
 	3,  // 33: sysarmor.controlplane.v1.ApplyPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	9,  // 34: sysarmor.controlplane.v1.ApplyPolicyRequest.data_plane:type_name -> sysarmor.controlplane.v1.DataPlanePolicy
 	3,  // 35: sysarmor.controlplane.v1.ApplyContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
@@ -4279,42 +4448,45 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	3,  // 38: sysarmor.controlplane.v1.GetContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	29, // 39: sysarmor.controlplane.v1.ContentGetResponse.record:type_name -> sysarmor.controlplane.v1.ContentRecord
 	34, // 40: sysarmor.controlplane.v1.ControlAck.sections:type_name -> sysarmor.controlplane.v1.AppliedSection
-	45, // 41: sysarmor.controlplane.v1.WatchFilter.labels:type_name -> sysarmor.controlplane.v1.WatchFilter.LabelsEntry
+	47, // 41: sysarmor.controlplane.v1.WatchFilter.labels:type_name -> sysarmor.controlplane.v1.WatchFilter.LabelsEntry
 	3,  // 42: sysarmor.controlplane.v1.WatchEventsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	36, // 43: sysarmor.controlplane.v1.WatchEventsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
 	3,  // 44: sysarmor.controlplane.v1.GetEventRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	40, // 45: sysarmor.controlplane.v1.EventGetResponse.frame:type_name -> sysarmor.controlplane.v1.EventFrame
-	46, // 46: sysarmor.controlplane.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
-	3,  // 47: sysarmor.controlplane.v1.WatchSignalsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	36, // 48: sysarmor.controlplane.v1.WatchSignalsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
-	47, // 49: sysarmor.controlplane.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
-	0,  // 50: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:input_type -> sysarmor.controlplane.v1.ControlFrame
-	15, // 51: sysarmor.controlplane.v1.AgentControlPlaneService.Health:input_type -> sysarmor.controlplane.v1.HealthRequest
-	17, // 52: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:input_type -> sysarmor.controlplane.v1.CapabilityRequest
-	19, // 53: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:input_type -> sysarmor.controlplane.v1.CurrentPolicyRequest
-	27, // 54: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:input_type -> sysarmor.controlplane.v1.ApplyPolicyRequest
-	28, // 55: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:input_type -> sysarmor.controlplane.v1.ApplyContentRequest
-	30, // 56: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:input_type -> sysarmor.controlplane.v1.ListContentRequest
-	32, // 57: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:input_type -> sysarmor.controlplane.v1.GetContentRequest
-	38, // 58: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:input_type -> sysarmor.controlplane.v1.GetEventRequest
-	37, // 59: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:input_type -> sysarmor.controlplane.v1.WatchEventsRequest
-	41, // 60: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:input_type -> sysarmor.controlplane.v1.WatchSignalsRequest
-	0,  // 61: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:output_type -> sysarmor.controlplane.v1.ControlFrame
-	16, // 62: sysarmor.controlplane.v1.AgentControlPlaneService.Health:output_type -> sysarmor.controlplane.v1.HealthResponse
-	18, // 63: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:output_type -> sysarmor.controlplane.v1.CapabilityResponse
-	20, // 64: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:output_type -> sysarmor.controlplane.v1.CurrentPolicyResponse
-	35, // 65: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:output_type -> sysarmor.controlplane.v1.ControlAck
-	35, // 66: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:output_type -> sysarmor.controlplane.v1.ControlAck
-	31, // 67: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:output_type -> sysarmor.controlplane.v1.ListContentResponse
-	33, // 68: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:output_type -> sysarmor.controlplane.v1.ContentGetResponse
-	39, // 69: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:output_type -> sysarmor.controlplane.v1.EventGetResponse
-	40, // 70: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:output_type -> sysarmor.controlplane.v1.EventFrame
-	42, // 71: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:output_type -> sysarmor.controlplane.v1.SignalFrame
-	61, // [61:72] is the sub-list for method output_type
-	50, // [50:61] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	42, // 45: sysarmor.controlplane.v1.EventGetResponse.frame:type_name -> sysarmor.controlplane.v1.EventFrame
+	3,  // 46: sysarmor.controlplane.v1.DebugProfileRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	48, // 47: sysarmor.controlplane.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
+	3,  // 48: sysarmor.controlplane.v1.WatchSignalsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	36, // 49: sysarmor.controlplane.v1.WatchSignalsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
+	49, // 50: sysarmor.controlplane.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
+	0,  // 51: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:input_type -> sysarmor.controlplane.v1.ControlFrame
+	15, // 52: sysarmor.controlplane.v1.AgentControlPlaneService.Health:input_type -> sysarmor.controlplane.v1.HealthRequest
+	17, // 53: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:input_type -> sysarmor.controlplane.v1.CapabilityRequest
+	19, // 54: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:input_type -> sysarmor.controlplane.v1.CurrentPolicyRequest
+	27, // 55: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:input_type -> sysarmor.controlplane.v1.ApplyPolicyRequest
+	28, // 56: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:input_type -> sysarmor.controlplane.v1.ApplyContentRequest
+	30, // 57: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:input_type -> sysarmor.controlplane.v1.ListContentRequest
+	32, // 58: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:input_type -> sysarmor.controlplane.v1.GetContentRequest
+	38, // 59: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:input_type -> sysarmor.controlplane.v1.GetEventRequest
+	40, // 60: sysarmor.controlplane.v1.AgentControlPlaneService.DebugProfile:input_type -> sysarmor.controlplane.v1.DebugProfileRequest
+	37, // 61: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:input_type -> sysarmor.controlplane.v1.WatchEventsRequest
+	43, // 62: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:input_type -> sysarmor.controlplane.v1.WatchSignalsRequest
+	0,  // 63: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:output_type -> sysarmor.controlplane.v1.ControlFrame
+	16, // 64: sysarmor.controlplane.v1.AgentControlPlaneService.Health:output_type -> sysarmor.controlplane.v1.HealthResponse
+	18, // 65: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:output_type -> sysarmor.controlplane.v1.CapabilityResponse
+	20, // 66: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:output_type -> sysarmor.controlplane.v1.CurrentPolicyResponse
+	35, // 67: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:output_type -> sysarmor.controlplane.v1.ControlAck
+	35, // 68: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:output_type -> sysarmor.controlplane.v1.ControlAck
+	31, // 69: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:output_type -> sysarmor.controlplane.v1.ListContentResponse
+	33, // 70: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:output_type -> sysarmor.controlplane.v1.ContentGetResponse
+	39, // 71: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:output_type -> sysarmor.controlplane.v1.EventGetResponse
+	41, // 72: sysarmor.controlplane.v1.AgentControlPlaneService.DebugProfile:output_type -> sysarmor.controlplane.v1.DebugProfileResponse
+	42, // 73: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:output_type -> sysarmor.controlplane.v1.EventFrame
+	44, // 74: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:output_type -> sysarmor.controlplane.v1.SignalFrame
+	63, // [63:75] is the sub-list for method output_type
+	51, // [51:63] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_controlplane_v1_agentcontrol_proto_init() }
@@ -4328,7 +4500,7 @@ func file_api_proto_controlplane_v1_agentcontrol_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc), len(file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   46,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -98,6 +98,18 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	if policy.PolicyId != policymodel.DefaultPolicyID || policy.RawJson == "" {
 		t.Fatalf("policy = %+v", policy)
 	}
+	profile, err := client.DebugProfile(context.Background(), &controlplanev1.DebugProfileRequest{
+		Context:     &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"},
+		ProfileType: "cpu",
+		Seconds:     1,
+		Label:       "unit-test",
+	})
+	if err != nil {
+		t.Fatalf("DebugProfile() error = %v", err)
+	}
+	if profile.GetProfileType() != "cpu" || profile.GetSeconds() != 1 || profile.GetLabel() != "unit-test" || len(profile.GetProfile()) == 0 {
+		t.Fatalf("profile = %+v len=%d", profile, len(profile.GetProfile()))
+	}
 }
 
 func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {

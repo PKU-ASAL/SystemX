@@ -66,6 +66,13 @@ func main() {
 	}
 
 	if isLocalAgentCommand(args) {
+		if isStreamingWatchCommand(args) {
+			if err := streamLocalAgent(*socketPath, args); err != nil {
+				fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 		body, err := queryLocalAgent(*socketPath, args)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
@@ -99,6 +106,7 @@ func usage() {
   sysarmorctl [--socket PATH] policy current
   sysarmorctl [--socket PATH] policy apply --file policy.json
   sysarmorctl [--socket PATH] content apply --file content.json --allow-unsigned
+  sysarmorctl [--socket PATH] debug profile cpu --seconds 10 --output agent.cpu.pb.gz
   sysarmorctl [--socket PATH] event watch --include-recent --limit 10
   sysarmorctl [--socket PATH] signal watch --include-events --limit 10
 
@@ -145,12 +153,77 @@ func isLocalAgentCommand(args []string) bool {
 		return args[1] == "current" || args[1] == "apply" || args[1] == "explain"
 	case "content":
 		return args[1] == "apply" || args[1] == "list" || args[1] == "get"
+	case "debug":
+		return args[1] == "profile"
 	case "event":
 		return args[1] == "watch" || args[1] == "get"
 	case "signal":
 		return args[1] == "watch"
 	default:
 		return false
+	}
+}
+
+func isStreamingWatchCommand(args []string) bool {
+	if len(args) < 2 || hasFlag(args, "--snapshot") || flagValue(args, "--limit") != "" {
+		return false
+	}
+	return (args[0] == "event" && args[1] == "watch") || (args[0] == "signal" && args[1] == "watch")
+}
+
+func streamLocalAgent(socketPath string, args []string) error {
+	if strings.TrimSpace(socketPath) == "" {
+		return fmt.Errorf("--socket is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout(args, 5*time.Second))
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, "unix://"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client := controlplanev1.NewAgentControlPlaneServiceClient(conn)
+	reqCtx := requestContext(args)
+	switch args[0] + " " + args[1] {
+	case "event watch":
+		stream, err := client.WatchEvents(ctx, &controlplanev1.WatchEventsRequest{
+			Context:       reqCtx,
+			Behavior:      flagValue(args, "--behavior"),
+			Limit:         uint32Flag(args, "--limit"),
+			IncludeRecent: hasFlag(args, "--include-recent"),
+			SnapshotOnly:  hasFlag(args, "--snapshot"),
+			Filter:        watchFilter(args),
+		})
+		if err != nil {
+			return err
+		}
+		return writeEventFrames(stream)
+	case "signal watch":
+		stream, err := client.WatchSignals(ctx, &controlplanev1.WatchSignalsRequest{
+			Context:       reqCtx,
+			RuleId:        flagValue(args, "--rule-id"),
+			Where:         flagValue(args, "--where"),
+			Limit:         uint32Flag(args, "--limit"),
+			IncludeRecent: hasFlag(args, "--include-recent"),
+			SnapshotOnly:  hasFlag(args, "--snapshot"),
+			Filter:        watchFilter(args),
+		})
+		if err != nil {
+			return err
+		}
+		if hasFlag(args, "--include-events") {
+			return writeSignalFramesWithEvents(ctx, client, reqCtx, stream)
+		}
+		return writeSignalFrames(stream)
+	default:
+		return fmt.Errorf("unsupported streaming local agent command %q", strings.Join(args, " "))
 	}
 }
 
@@ -267,6 +340,29 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 			return nil, err
 		}
 		return marshalProtoJSON(resp)
+	case "debug profile":
+		profileType := "cpu"
+		if len(args) > 2 && strings.TrimSpace(args[2]) != "" {
+			profileType = strings.TrimSpace(args[2])
+		}
+		output := strings.TrimSpace(flagValue(args, "--output"))
+		if output == "" {
+			return nil, fmt.Errorf("--output is required for debug profile")
+		}
+		resp, err := client.DebugProfile(ctx, &controlplanev1.DebugProfileRequest{
+			Context:     reqCtx,
+			ProfileType: profileType,
+			Seconds:     uint32Flag(args, "--seconds"),
+			Label:       flagValue(args, "--label"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(output, resp.GetProfile(), 0o644); err != nil {
+			return nil, err
+		}
+		resp.Profile = nil
+		return marshalProtoJSON(resp)
 	case "event get":
 		resp, err := client.GetEvent(ctx, &controlplanev1.GetEventRequest{
 			Context: reqCtx,
@@ -374,6 +470,72 @@ func collectSignalFramesWithEvents(ctx context.Context, client controlplanev1.Ag
 		}
 		out.Write(data)
 		out.WriteByte('\n')
+	}
+}
+
+func writeEventFrames(stream controlplanev1.AgentControlPlaneService_WatchEventsClient) error {
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			if status.Code(err) == codes.DeadlineExceeded {
+				return nil
+			}
+			return err
+		}
+		data, err := marshalProtoJSONLine(frame)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stdout.Write(append(data, '\n')); err != nil {
+			return err
+		}
+	}
+}
+
+func writeSignalFrames(stream controlplanev1.AgentControlPlaneService_WatchSignalsClient) error {
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			if status.Code(err) == codes.DeadlineExceeded {
+				return nil
+			}
+			return err
+		}
+		data, err := marshalProtoJSONLine(frame)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stdout.Write(append(data, '\n')); err != nil {
+			return err
+		}
+	}
+}
+
+func writeSignalFramesWithEvents(ctx context.Context, client controlplanev1.AgentControlPlaneServiceClient, reqCtx *controlplanev1.RequestContext, stream controlplanev1.AgentControlPlaneService_WatchSignalsClient) error {
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			if status.Code(err) == codes.DeadlineExceeded {
+				return nil
+			}
+			return err
+		}
+		data, err := marshalSignalEventEnvelope(ctx, client, reqCtx, frame)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stdout.Write(append(data, '\n')); err != nil {
+			return err
+		}
 	}
 }
 
@@ -653,6 +815,10 @@ func watchFilter(args []string) *controlplanev1.WatchFilter {
 func commandTimeout(args []string, fallback time.Duration) time.Duration {
 	raw := flagValue(args, "--timeout")
 	if raw == "" {
+		if len(args) >= 3 && args[0] == "debug" && args[1] == "profile" {
+			seconds := uint64Flag(args, "--seconds", 10)
+			return time.Duration(seconds+5) * time.Second
+		}
 		if len(args) >= 2 && args[1] == "watch" && flagValue(args, "--limit") == "" {
 			return 24 * time.Hour
 		}

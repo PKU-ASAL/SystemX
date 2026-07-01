@@ -28,6 +28,7 @@ const (
 	AgentControlPlaneService_ListContent_FullMethodName   = "/sysarmor.controlplane.v1.AgentControlPlaneService/ListContent"
 	AgentControlPlaneService_GetContent_FullMethodName    = "/sysarmor.controlplane.v1.AgentControlPlaneService/GetContent"
 	AgentControlPlaneService_GetEvent_FullMethodName      = "/sysarmor.controlplane.v1.AgentControlPlaneService/GetEvent"
+	AgentControlPlaneService_DebugProfile_FullMethodName  = "/sysarmor.controlplane.v1.AgentControlPlaneService/DebugProfile"
 	AgentControlPlaneService_WatchEvents_FullMethodName   = "/sysarmor.controlplane.v1.AgentControlPlaneService/WatchEvents"
 	AgentControlPlaneService_WatchSignals_FullMethodName  = "/sysarmor.controlplane.v1.AgentControlPlaneService/WatchSignals"
 )
@@ -45,6 +46,7 @@ type AgentControlPlaneServiceClient interface {
 	ListContent(ctx context.Context, in *ListContentRequest, opts ...grpc.CallOption) (*ListContentResponse, error)
 	GetContent(ctx context.Context, in *GetContentRequest, opts ...grpc.CallOption) (*ContentGetResponse, error)
 	GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*EventGetResponse, error)
+	DebugProfile(ctx context.Context, in *DebugProfileRequest, opts ...grpc.CallOption) (*DebugProfileResponse, error)
 	WatchEvents(ctx context.Context, in *WatchEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventFrame], error)
 	WatchSignals(ctx context.Context, in *WatchSignalsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SignalFrame], error)
 }
@@ -150,6 +152,16 @@ func (c *agentControlPlaneServiceClient) GetEvent(ctx context.Context, in *GetEv
 	return out, nil
 }
 
+func (c *agentControlPlaneServiceClient) DebugProfile(ctx context.Context, in *DebugProfileRequest, opts ...grpc.CallOption) (*DebugProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DebugProfileResponse)
+	err := c.cc.Invoke(ctx, AgentControlPlaneService_DebugProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentControlPlaneServiceClient) WatchEvents(ctx context.Context, in *WatchEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &AgentControlPlaneService_ServiceDesc.Streams[1], AgentControlPlaneService_WatchEvents_FullMethodName, cOpts...)
@@ -201,6 +213,7 @@ type AgentControlPlaneServiceServer interface {
 	ListContent(context.Context, *ListContentRequest) (*ListContentResponse, error)
 	GetContent(context.Context, *GetContentRequest) (*ContentGetResponse, error)
 	GetEvent(context.Context, *GetEventRequest) (*EventGetResponse, error)
+	DebugProfile(context.Context, *DebugProfileRequest) (*DebugProfileResponse, error)
 	WatchEvents(*WatchEventsRequest, grpc.ServerStreamingServer[EventFrame]) error
 	WatchSignals(*WatchSignalsRequest, grpc.ServerStreamingServer[SignalFrame]) error
 	mustEmbedUnimplementedAgentControlPlaneServiceServer()
@@ -239,6 +252,9 @@ func (UnimplementedAgentControlPlaneServiceServer) GetContent(context.Context, *
 }
 func (UnimplementedAgentControlPlaneServiceServer) GetEvent(context.Context, *GetEventRequest) (*EventGetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetEvent not implemented")
+}
+func (UnimplementedAgentControlPlaneServiceServer) DebugProfile(context.Context, *DebugProfileRequest) (*DebugProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DebugProfile not implemented")
 }
 func (UnimplementedAgentControlPlaneServiceServer) WatchEvents(*WatchEventsRequest, grpc.ServerStreamingServer[EventFrame]) error {
 	return status.Error(codes.Unimplemented, "method WatchEvents not implemented")
@@ -419,6 +435,24 @@ func _AgentControlPlaneService_GetEvent_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentControlPlaneService_DebugProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DebugProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlPlaneServiceServer).DebugProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControlPlaneService_DebugProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlPlaneServiceServer).DebugProfile(ctx, req.(*DebugProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AgentControlPlaneService_WatchEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WatchEventsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -479,6 +513,10 @@ var AgentControlPlaneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetEvent",
 			Handler:    _AgentControlPlaneService_GetEvent_Handler,
+		},
+		{
+			MethodName: "DebugProfile",
+			Handler:    _AgentControlPlaneService_DebugProfile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
