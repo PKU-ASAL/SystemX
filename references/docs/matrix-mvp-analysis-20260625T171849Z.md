@@ -1,5 +1,9 @@
 # MVP Matrix Analysis: 20260625T171849Z
 
+> Historical note: this document predates the endpoint/topology test restructure.
+> Use `test/README.md` and `references/docs/testing-benchmark.md` for current
+> entrypoints and result layout.
+
 本文记录 slim VM matrix 运行 `20260625T171849Z` 的结果，并分析 MVP 阶段检测效果不足、CPU 占用偏高的原因。本文已按修复后的 effectiveness report 重新生成，修复点包括 recorder scoped/all cursor 竞态，以及 signal 引用事件缺失时的 report 补偿逻辑。
 
 本文的 CPU 数据来自 `test/.results/bench-matrix-vm/20260625T171849Z/matrix.csv`，effectiveness 数据来自修复后的 `effectiveness_report.py` 重新计算结果。报告产物已简化为原始 case artifacts、`matrix.csv` 和 `truth_steps.csv`。
