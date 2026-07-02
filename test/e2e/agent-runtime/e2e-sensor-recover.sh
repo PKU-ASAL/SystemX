@@ -127,11 +127,17 @@ wait_contains() {
 
 "$BIN/sysarmor-manager" \
   --listen "127.0.0.1:$MANAGER_PORT" \
-  --grpc-listen "127.0.0.1:$GRPC_PORT" \
   --store-backend memory \
-  --dev-token "$TOKEN" \
   >"$TMP/manager.log" 2>&1 &
 MGR_PID=$!
+
+"$BIN/sysarmor-gateway" \
+  --listen "127.0.0.1:$GRPC_PORT" \
+  --store-backend memory \
+  --local-ingest \
+  --dev-token "$TOKEN" \
+  >"$TMP/gateway.log" 2>&1 &
+GATEWAY_PID=$!
 
 wait_contains "http://127.0.0.1:$MANAGER_PORT/healthz" '"ok":true' "$TMP/healthz.json"
 

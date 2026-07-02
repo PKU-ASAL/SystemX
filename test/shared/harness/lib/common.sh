@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
 sa_init_repo_paths() {
-  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-  RESULTS="$ROOT/test/.results"
-  BIN="$ROOT/bin"
+  TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+  REPO_ROOT="$(cd "$TEST_ROOT/.." && pwd)"
+  ROOT="$TEST_ROOT"
+  RESULTS="$TEST_ROOT/.results"
+  BIN="$REPO_ROOT/bin"
   mkdir -p "$RESULTS" "$BIN"
 }
 
@@ -18,7 +20,9 @@ sa_pick_ports() {
   PORT_BASE="${PORT_BASE:-$((start + RANDOM % span))}"
   MANAGER_PORT="${MANAGER_PORT:-$PORT_BASE}"
   GRPC_PORT="${GRPC_PORT:-$((PORT_BASE + 1))}"
+  GATEWAY_HEALTH_PORT="${GATEWAY_HEALTH_PORT:-$((PORT_BASE + 2))}"
   MGR_URL="${MGR_URL:-http://127.0.0.1:$MANAGER_PORT}"
+  GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:$GATEWAY_HEALTH_PORT}"
 }
 
 sa_kill_pid_ref() {
@@ -111,13 +115,13 @@ sa_wait_no_glob() {
 }
 
 sa_build_all() {
-  make -C "$ROOT" build >/dev/null
+  make -C "$REPO_ROOT" build >/dev/null
 }
 
 sa_build_go_bins() {
   local pkg
   for pkg in "$@"; do
-    GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/$pkg" "$ROOT/cmd/$pkg"
+    GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/$pkg" "$REPO_ROOT/cmd/$pkg"
   done
 }
 
@@ -125,20 +129,11 @@ sa_start_memory_gateway() {
   local extra_args=("$@")
   "$BIN/sysarmor-gateway" \
     --listen "127.0.0.1:$GRPC_PORT" \
+    --health-listen "127.0.0.1:$GATEWAY_HEALTH_PORT" \
     --store-backend memory \
     "${extra_args[@]}" \
     >"$TMP/gateway.log" 2>&1 &
   GATEWAY_PID=$!
-}
-
-sa_start_split_memory_manager() {
-  local extra_args=("$@")
-  "$BIN/sysarmor-manager" \
-    --listen "127.0.0.1:$MANAGER_PORT" \
-    --store-backend memory \
-    "${extra_args[@]}" \
-    >"$TMP/manager.log" 2>&1 &
-  MGR_PID=$!
 }
 
 sa_start_memory_manager() {
@@ -149,6 +144,12 @@ sa_start_memory_manager() {
     "${extra_args[@]}" \
     >"$TMP/manager.log" 2>&1 &
   MGR_PID=$!
+}
+
+sa_start_memory_agent_stack() {
+  local token="${1:-}"
+  sa_start_memory_manager
+  sa_start_memory_gateway --local-ingest --dev-token "$token"
 }
 
 sa_manager_ctl() {

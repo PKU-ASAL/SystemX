@@ -14,15 +14,16 @@ SA_WAIT_LOGS=("$TMP/agent.log" "$TMP/manager.log")
 
 cleanup() {
   sa_kill_pid_ref AGENT_PID
+  sa_kill_pid_ref GATEWAY_PID
   sa_kill_pid_ref MGR_PID
   sa_cleanup_tmp "$TMP"
 }
 trap cleanup EXIT
 
 echo "[e2e-response-observe-only] building binaries"
-sa_build_all
+sa_build_go_bins sysarmor-agent sysarmor-gateway sysarmor-manager sysarmorctl
 
-sa_start_memory_manager --dev-token "$TOKEN"
+sa_start_memory_agent_stack "$TOKEN"
 
 wait_contains() {
   sa_wait_contains "$@"
