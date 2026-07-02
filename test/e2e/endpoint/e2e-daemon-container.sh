@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[e2e-agent-daemon-container] starting container topology"
-bash "$HERE/start-container.sh" >/dev/null
+bash "$ROOT/shared/harness/start-container.sh" >/dev/null
 
 echo "[e2e-agent-daemon-container] preparing daemon config in mgr container"
 docker exec mgr sh -c 'mkdir -p /tmp/sysarmor-agent-container'
@@ -29,7 +29,7 @@ agent:
   token: '"$TOKEN"'
 
 manager:
-  address: http://127.0.0.1:9443
+  address: 10.66.0.14:9444
   transport: grpc
 
 sensor:

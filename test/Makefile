@@ -17,7 +17,7 @@ SYSARMOR_BENCH_POLICIES ?=
 EVALUATION_SCOPE ?= local
 
 .PHONY: up down provision status clean help
-.PHONY: test-unit test-endpoint test-topology test-platform test-all
+.PHONY: test-unit test-endpoint test-topology test-platform test-platform-full test-all
 .PHONY: bench-endpoint bench-topology bench-module bench-rule-engine bench-matcher
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
 .PHONY: capture-endpoint capture-topology report effectiveness-report
@@ -49,28 +49,36 @@ test-unit:
 	cd .. && go test ./...
 
 test-endpoint:
-	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash e2e/local-agent/e2e-real-tetragon-owned-vm.sh
+	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash e2e/endpoint/e2e-real-tetragon-owned-vm.sh
 
 test-topology:
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash e2e/agent-runtime/e2e-systemd-vm.sh
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash e2e/local-agent/capture-vm.sh $(SCENARIO) $(DUR)
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash e2e/topology/e2e-systemd-vm.sh
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
 test-platform:
-	bash e2e/control-plane/e2e-contract.sh
+	bash e2e/platform/e2e-control-contract.sh
 	bash e2e/platform/e2e-gateway-local-ingest.sh
-	bash e2e/manager-cloud/e2e-policy.sh
-	bash e2e/manager-cloud/e2e-response.sh
-	bash e2e/storage/e2e-store-status.sh
+	bash e2e/platform/e2e-agent-gateway-manager-local.sh
+	bash e2e/platform/e2e-control-roundtrip-local.sh
+	bash e2e/platform/e2e-manager-api-policy.sh
+	bash e2e/platform/e2e-response-policy-deny.sh
+	bash e2e/platform/e2e-response-scope-deny.sh
+	bash e2e/platform/e2e-response-approval.sh
+	bash e2e/platform/e2e-store-status.sh
+
+test-platform-full:
+	bash shared/harness/start-container.sh
+	bash e2e/topology/e2e-scenarios-container.sh
 
 test-all: test-unit test-endpoint test-topology test-platform
 
 # Capture ---------------------------------------------------------------------
 
 capture-endpoint:
-	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash e2e/local-agent/capture-vm.sh $(SCENARIO) $(DUR)
+	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
 capture-topology:
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash e2e/local-agent/capture-vm.sh $(SCENARIO) $(DUR)
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
 # Benchmarks and diagnostics --------------------------------------------------
 
@@ -115,6 +123,7 @@ help:
 	@echo "  test-endpoint    single VM endpoint agent/sensor/local control"
 	@echo "  test-topology    multi-VM manager/agent/attacker path"
 	@echo "  test-platform    manager/control/storage/platform contracts"
+	@echo "  test-platform-full container gateway/worker/manager product path"
 	@echo ""
 	@echo "Environments:"
 	@echo "  ENV=container | vm-endpoint | vm-topology"

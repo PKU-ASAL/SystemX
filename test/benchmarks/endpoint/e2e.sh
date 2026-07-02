@@ -25,7 +25,7 @@ echo "[bench-endpoint-e2e] output: $OUT_DIR env=$VM_ENV scenario=$SCENARIO"
 SYSARMOR_RECORDER_DURATION=3600 recorder start
 
 mark e2e_start "$SCENARIO"
-SYSARMOR_VM_ENV="$VM_ENV" bash "$ROOT/e2e/local-agent/capture-vm.sh" "$SCENARIO" "${DUR:-30}" > "$OUT_DIR/e2e.out" 2>"$OUT_DIR/e2e.err"
+SYSARMOR_VM_ENV="$VM_ENV" bash "$ROOT/shared/diagnostics/capture-vm.sh" "$SCENARIO" "${DUR:-30}" > "$OUT_DIR/e2e.out" 2>"$OUT_DIR/e2e.err"
 mark e2e_done "$SCENARIO"
 
 recorder stop

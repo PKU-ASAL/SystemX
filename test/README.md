@@ -33,17 +33,13 @@ test/
     vm-endpoint/
     vm-topology/
   e2e/
-    local-agent/       endpoint-owned sensor and local control checks
-    agent-runtime/     daemon/runtime/restart/capability checks
-    manager-cloud/     manager ingest/query/policy/response/incident checks
-    control-plane/     gRPC contract and mTLS checks
-    storage/           store and query checks
+    endpoint/          single endpoint agent, sensor, local control checks
+    platform/          gateway, manager, worker, store, policy, response contracts
+    topology/          product-path scenarios across manager, endpoint, attacker
   benchmarks/
     endpoint/          endpoint benchmark runner and report
     topology/          topology benchmark runner and report
     matrix/            shared lifecycle/effectiveness report helpers
-    modules/           Go microbenchmarks
-    perf/              short legacy samplers
   data/
     scenarios/         security behavior contracts
     workloads/         benign or synthetic pressure sources
@@ -67,6 +63,7 @@ make -C test test-unit
 make -C test test-endpoint
 make -C test test-topology SCENARIO=apt-fileless-c2
 make -C test test-platform
+make -C test test-platform-full
 
 make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
 make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'

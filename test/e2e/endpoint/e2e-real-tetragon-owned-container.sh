@@ -23,7 +23,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[e2e-agent-real-tetragon-owned-container] starting container topology"
-bash "$HERE/start-container.sh" >/dev/null
+bash "$ROOT/shared/harness/start-container.sh" >/dev/null
 
 NODE_A_DOCKER="$(docker inspect node-a --format '{{.Id}}' | cut -c1-16)"
 NETWORK="$(docker inspect mgr --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
@@ -76,7 +76,7 @@ agent:
   scenario: $SCENARIO
 
 manager:
-  address: http://10.66.0.10:9443
+  address: 10.66.0.14:9444
   transport: grpc
 
 sensor:

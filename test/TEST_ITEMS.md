@@ -25,7 +25,8 @@ make -C test <target>
 | `test-unit` | unit | Run local Go tests. |
 | `test-endpoint` | endpoint | Run single-VM endpoint-owned sensor smoke. |
 | `test-topology` | topology | Run multi-VM manager/agent/scenario smoke. |
-| `test-platform` | platform | Run manager, control-plane, storage, policy, response, and incident contracts. |
+| `test-platform` | platform | Run local-process gateway, manager, storage, policy, response, and control contracts. |
+| `test-platform-full` | platform | Run container gateway/worker/manager product path with Kafka and storage dependencies. |
 | `test-all` | all | Run all scope suites. |
 
 ## Capture

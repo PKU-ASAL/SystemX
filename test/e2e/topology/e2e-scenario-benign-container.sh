@@ -19,7 +19,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[e2e-agent-benign-container] starting container topology"
-bash "$HERE/start-container.sh" >/dev/null
+bash "$ROOT/shared/harness/start-container.sh" >/dev/null
 
 NODE_A_DOCKER="$(docker inspect node-a --format '{{.Id}}' | cut -c1-16)"
 echo "[e2e-agent-benign-container] node-a docker prefix=$NODE_A_DOCKER"
@@ -39,7 +39,7 @@ agent:
   label.scenario: $SCENARIO
 
 manager:
-  address: http://10.66.0.10:9443
+  address: 10.66.0.14:9444
   transport: grpc
 
 sensor:

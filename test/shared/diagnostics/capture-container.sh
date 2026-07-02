@@ -47,7 +47,7 @@ agent:
   label.scenario: $S
 
 manager:
-  address: http://10.66.0.10:9443
+  address: 10.66.0.14:9444
   transport: grpc
 
 sensor:

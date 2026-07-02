@@ -15,7 +15,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[e2e-agent-managed-container] starting container topology"
-bash "$HERE/start-container.sh" >/dev/null
+bash "$ROOT/shared/harness/start-container.sh" >/dev/null
 
 echo "[e2e-agent-managed-container] preparing fake Tetragon bundle in mgr container"
 docker exec mgr sh -c "rm -rf '$WORK'; mkdir -p '$WORK/bundle/bin' '$WORK/install'"
@@ -60,7 +60,7 @@ agent:
   scenario: container-managed
 
 manager:
-  address: http://127.0.0.1:9443
+  address: 10.66.0.14:9444
   transport: grpc
 
 sensor:
