@@ -7,7 +7,6 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -15,11 +14,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-type DataAppendResult = agentplane.DataAppendResult
-type ResumeCursor = agentplane.ResumeCursor
-
 type Store interface {
-	agentplane.ControlStore
+	ControlStore
 	BindAgentIdentity(store.AgentIdentity) error
 	ListAgentSessions(string, string) []store.AgentSession
 	RecordDataBatchAppend(store.AgentIdentity, string, string, time.Time) store.AgentSession
@@ -32,6 +28,7 @@ type Runtime struct {
 	localProcessor *ingestworker.Processor
 	agentToken     string
 	owner          string
+	metrics        Metrics
 }
 
 type RuntimeOptions struct {
@@ -70,7 +67,7 @@ func (r *Runtime) AgentToken() string {
 	return r.agentToken
 }
 
-func (r *Runtime) Store() agentplane.ControlStore {
+func (r *Runtime) Store() ControlStore {
 	return r.store
 }
 
@@ -95,8 +92,8 @@ func (r *Runtime) TouchHotSession(session store.AgentSession) {
 	})
 }
 
-func (r *Runtime) ResumeCursor(tenantID, agentID string) agentplane.ResumeCursor {
-	resume := agentplane.ResumeCursor{TenantID: tenantID, AgentID: agentID}
+func (r *Runtime) ResumeCursor(tenantID, agentID string) ResumeCursor {
+	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
 	sessions := r.store.ListAgentSessions(tenantID, agentID)
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
@@ -105,25 +102,36 @@ func (r *Runtime) ResumeCursor(tenantID, agentID string) agentplane.ResumeCursor
 	return resume
 }
 
-func (r *Runtime) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, transport string) (agentplane.DataAppendResult, error) {
+func (r *Runtime) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, transport string) (DataAppendResult, error) {
 	if err := validateUploadIdentity(batch); err != nil {
-		return agentplane.DataAppendResult{}, err
+		r.metrics.rejectedBatches.Add(1)
+		return DataAppendResult{}, err
 	}
 	header := batch.GetHeader()
 	if r.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId()) {
 		session := r.store.RecordDataBatchAppend(store.AgentIdentityFromDataBatch(batch), header.GetBatchId(), transport, time.Now().UTC())
 		r.TouchHotSession(session)
-		return agentplane.DataAppendResult{Duplicate: true}, r.store.Save()
+		r.metrics.duplicateBatches.Add(1)
+		return DataAppendResult{Duplicate: true}, r.store.Save()
 	}
 	if err := r.appendRawBatch(batch); err != nil {
-		return agentplane.DataAppendResult{}, err
+		r.metrics.handoffErrors.Add(1)
+		return DataAppendResult{}, err
 	}
 	session := r.store.RecordDataBatchAppend(store.AgentIdentityFromDataBatch(batch), header.GetBatchId(), transport, time.Now().UTC())
 	r.TouchHotSession(session)
 	if err := r.store.Save(); err != nil {
-		return agentplane.DataAppendResult{}, err
+		return DataAppendResult{}, err
 	}
-	return r.processLocal(batch)
+	result, err := r.processLocal(batch)
+	if err != nil {
+		r.metrics.rejectedBatches.Add(1)
+		return DataAppendResult{}, err
+	}
+	r.metrics.acceptedBatches.Add(1)
+	r.metrics.acceptedEvents.Add(uint64(result.AcceptedEvents))
+	r.metrics.acceptedSignals.Add(uint64(result.AcceptedSignals))
+	return result, nil
 }
 
 func (r *Runtime) appendRawBatch(batch *dataplanev1.DataBatch) error {
@@ -136,15 +144,15 @@ func (r *Runtime) appendRawBatch(batch *dataplanev1.DataBatch) error {
 	return r.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.databatch.raw", Key: key, Value: raw})
 }
 
-func (r *Runtime) processLocal(batch *dataplanev1.DataBatch) (agentplane.DataAppendResult, error) {
+func (r *Runtime) processLocal(batch *dataplanev1.DataBatch) (DataAppendResult, error) {
 	if r.localProcessor == nil {
-		return agentplane.DataAppendResult{}, nil
+		return DataAppendResult{}, nil
 	}
 	result, err := r.localProcessor.Process(context.Background(), batch)
 	if err != nil {
-		return agentplane.DataAppendResult{}, err
+		return DataAppendResult{}, err
 	}
-	return agentplane.DataAppendResult{
+	return DataAppendResult{
 		AcceptedEvents:  result.AcceptedEvents,
 		AcceptedSignals: result.AcceptedSignals,
 		CloudSignals:    result.CloudSignals,
@@ -166,7 +174,7 @@ func (r *Runtime) isDuplicateBatch(tenantID, agentID, batchID string) bool {
 
 func validateUploadIdentity(batch *dataplanev1.DataBatch) error {
 	if batch == nil || batch.GetHeader() == nil {
-		return fmt.Errorf("%w: batch header identity is required", agentplane.ErrInvalidUpload)
+		return fmt.Errorf("%w: batch header identity is required", ErrInvalidUpload)
 	}
 	header := batch.GetHeader()
 	missing := []string{}
@@ -180,7 +188,11 @@ func validateUploadIdentity(batch *dataplanev1.DataBatch) error {
 		missing = append(missing, "tenant_id")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%w: agent identity missing %s", agentplane.ErrInvalidUpload, strings.Join(missing, ", "))
+		return fmt.Errorf("%w: agent identity missing %s", ErrInvalidUpload, strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func (r *Runtime) MetricsSnapshot() MetricsSnapshot {
+	return r.metrics.Snapshot()
 }

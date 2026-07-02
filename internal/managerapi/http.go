@@ -1,26 +1,20 @@
 package managerapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
-	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
-	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"net/http"
@@ -30,12 +24,8 @@ import (
 )
 
 type Server struct {
-	store          ManagerStore
-	producer       platformkafka.Producer
-	hotState       platformredis.HotState
-	localProcessor *ingestworker.Processor
-	authToken      string
-	operatorToken  string
+	store         ManagerStore
+	operatorToken string
 }
 
 type ManagerStore interface {
@@ -63,7 +53,6 @@ type ManagerStore interface {
 	Info() store.Info
 	ListAgentHealth() []agenthealth.AgentHealth
 	ListAgents() []store.AgentIdentity
-	BindAgentIdentity(store.AgentIdentity) error
 	ListAssignments(string, string) []policymodel.Assignment
 	ListControlCommands(string, string, string) []controlmodel.ControlCommand
 	ListEvents(store.LabelSelector, string) []*eventv1.CanonicalEvent
@@ -201,64 +190,21 @@ type AgentListItem struct {
 	HealthObserved time.Time                    `json:"health_observed_at,omitempty"`
 }
 
-var ErrInvalidUpload = agentplane.ErrInvalidUpload
-
-type DataAppendResult = agentplane.DataAppendResult
-type ResumeCursor = agentplane.ResumeCursor
+type DataResume struct {
+	TenantID     string `json:"tenant_id"`
+	AgentID      string `json:"agent_id"`
+	SessionID    string `json:"session_id,omitempty"`
+	ResumeCursor string `json:"resume_cursor,omitempty"`
+}
 
 func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, producer: platformkafka.NoopProducer{}, hotState: platformredis.NoopHotState{}}
+	return &Server{store: st}
 }
 
-func NewServerWithAuth(st ManagerStore, token string) *Server {
-	return NewServerWithTokens(st, token, "")
-}
-
-func NewServerWithTokens(st ManagerStore, agentToken, operatorToken string) *Server {
+func NewServerWithOperatorToken(st ManagerStore, operatorToken string) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, producer: platformkafka.NoopProducer{}, hotState: platformredis.NoopHotState{}, authToken: agentToken, operatorToken: operatorToken}
-}
-
-func (s *Server) WithProducer(producer platformkafka.Producer) *Server {
-	if producer == nil {
-		producer = platformkafka.NoopProducer{}
-	}
-	s.producer = producer
-	return s
-}
-
-func (s *Server) WithHotState(hotState platformredis.HotState) *Server {
-	if hotState == nil {
-		hotState = platformredis.NoopHotState{}
-	}
-	s.hotState = hotState
-	return s
-}
-
-func (s *Server) WithLocalProcessor(processor *ingestworker.Processor) *Server {
-	s.localProcessor = processor
-	return s
-}
-
-func (s *Server) AgentToken() string {
-	return s.authToken
-}
-
-func (s *Server) Store() agentplane.ControlStore {
-	return s.store
-}
-
-func (s *Server) BindAgentIdentity(agent store.AgentIdentity) error {
-	return s.store.BindAgentIdentity(agent)
-}
-
-func (s *Server) TouchHotSession(session store.AgentSession) {
-	s.touchHotSession(session)
-}
-
-func (s *Server) ResumeCursor(tenantID, agentID string) agentplane.ResumeCursor {
-	return s.resumeCursor(tenantID, agentID)
+	return &Server{store: st, operatorToken: operatorToken}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -316,98 +262,6 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "labels": labels})
 }
 
-func (s *Server) AppendDataBatch(batch *dataplanev1.DataBatch) (DataAppendResult, error) {
-	return s.AppendDataBatchWithTransport(batch, "")
-}
-
-func (s *Server) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, transport string) (DataAppendResult, error) {
-	if err := validateUploadIdentity(batch); err != nil {
-		return DataAppendResult{}, err
-	}
-	raw, err := protojson.Marshal(batch)
-	if err != nil {
-		return DataAppendResult{}, fmt.Errorf("encode raw data batch: %w", err)
-	}
-	header := batch.GetHeader()
-	if s.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId()) {
-		agent := store.AgentIdentityFromDataBatch(batch)
-		session := s.store.RecordDataBatchAppend(agent, header.GetBatchId(), transport, time.Now().UTC())
-		s.touchHotSession(session)
-		if err := s.store.Save(); err != nil {
-			return DataAppendResult{}, err
-		}
-		return DataAppendResult{Duplicate: true}, nil
-	}
-	key := strings.Join([]string{header.GetTenantId(), header.GetAgentId(), header.GetBatchId()}, ":")
-	if err := s.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.databatch.raw", Key: key, Value: raw}); err != nil {
-		return DataAppendResult{}, fmt.Errorf("append raw data batch: %w", err)
-	}
-	agent := store.AgentIdentityFromDataBatch(batch)
-	session := s.store.RecordDataBatchAppend(agent, header.GetBatchId(), transport, time.Now().UTC())
-	s.touchHotSession(session)
-	if err := s.store.Save(); err != nil {
-		return DataAppendResult{}, err
-	}
-	if s.localProcessor == nil {
-		return DataAppendResult{}, nil
-	}
-	result, err := s.localProcessor.Process(context.Background(), batch)
-	if err != nil {
-		return DataAppendResult{}, err
-	}
-	return DataAppendResult{AcceptedEvents: result.AcceptedEvents, AcceptedSignals: result.AcceptedSignals, CloudSignals: result.CloudSignals, Incidents: result.Incidents}, nil
-}
-
-func (s *Server) isDuplicateBatch(tenantID, agentID, batchID string) bool {
-	if batchID == "" {
-		return false
-	}
-	for _, session := range s.store.ListAgentSessions(tenantID, agentID) {
-		if session.LastAckCursor == batchID {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) touchHotSession(session store.AgentSession) {
-	if session.AgentID == "" {
-		return
-	}
-	_ = s.hotState.TouchAgentSession(context.Background(), platformredis.AgentSession{
-		TenantID:          session.TenantID,
-		AgentID:           session.AgentID,
-		Owner:             "sysarmor-manager",
-		LastSeenAt:        session.LastSeenAt,
-		LastDataSeenAt:    session.LastDataSeenAt,
-		LastControlSeenAt: session.LastControlSeenAt,
-		LastAckCursor:     session.LastAckCursor,
-		DataTransport:     session.DataTransport,
-		ControlTransport:  session.ControlTransport,
-	})
-}
-
-func validateUploadIdentity(batch *dataplanev1.DataBatch) error {
-	if batch == nil || batch.GetHeader() == nil {
-		return fmt.Errorf("%w: batch header identity is required", ErrInvalidUpload)
-	}
-	header := batch.GetHeader()
-	missing := []string{}
-	if header.GetAgentId() == "" {
-		missing = append(missing, "agent_id")
-	}
-	if header.GetHostId() == "" {
-		missing = append(missing, "host_id")
-	}
-	if header.GetTenantId() == "" {
-		missing = append(missing, "tenant_id")
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("%w: agent identity missing %s", ErrInvalidUpload, strings.Join(missing, ", "))
-	}
-	return nil
-}
-
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	tenantID := q.Get("tenant_id")
@@ -451,8 +305,7 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		if !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if !s.requireOperator(w, r, "admin") {
 			return
 		}
 		var health agenthealth.AgentHealth
@@ -486,19 +339,6 @@ func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *Server) authorized(r *http.Request) bool {
-	if s.authToken == "" {
-		return true
-	}
-	if r.Header.Get("X-SysArmor-Agent-Token") == s.authToken {
-		return true
-	}
-	if r.Header.Get("Authorization") == "Bearer "+s.authToken {
-		return true
-	}
-	return false
 }
 
 func (s *Server) operatorAuthorized(r *http.Request) bool {
@@ -612,8 +452,8 @@ func (s *Server) dataResume(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.resumeCursor(tenantID, agentID))
 }
 
-func (s *Server) resumeCursor(tenantID, agentID string) ResumeCursor {
-	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
+func (s *Server) resumeCursor(tenantID, agentID string) DataResume {
+	resume := DataResume{TenantID: tenantID, AgentID: agentID}
 	sessions := s.store.ListAgentSessions(tenantID, agentID)
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
@@ -1430,8 +1270,7 @@ func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.authorized(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !s.requireOperator(w, r, "response_admin") {
 		return
 	}
 	var ack responsemodel.Ack

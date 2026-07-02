@@ -12,7 +12,8 @@ import (
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
+	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -1139,7 +1140,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	server := managerapi.NewServer(result.Store).WithLocalProcessor(ingestworker.NewProcessor(result.Store, nil))
+	server := managerapi.NewServer(result.Store)
 	handler := server.Handler()
 	batch := backendDataBatch("pg-api-batch-1", "agent-pg-api", "host-pg-api",
 		[]*eventv1.CanonicalEvent{{
@@ -1154,7 +1155,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 			postgresEndpointSignal("sig-pg-drop", "pg-api", "payload_dropped", "lin-pg", false, postgresFile("/dev/shm/x.sh")),
 			postgresEndpointSignal("sig-pg-c2", "pg-api", "reverse_shell_pattern", "lin-pg", true, postgresProcess("process:p-bash"), postgresSocket("10.66.0.99:443")),
 		})
-	acceptDataBatch(t, server, batch)
+	acceptDataBatch(t, result.Store, batch)
 	assertGetContains(t, handler, "/api/v1/events?label=scenario=pg-api", `"id":"ev-pg-api"`)
 	assertGetContains(t, handler, "/api/v1/signals?label=scenario=pg-api&layer=endpoint", `"id":"sig-pg-c2"`)
 	assertGetContains(t, handler, "/api/v1/incidents?label=scenario=pg-api", `"labels":{"scenario":"pg-api"}`)
@@ -1223,9 +1224,12 @@ func backendDataBatch(batchID, agentID, hostID string, events []*eventv1.Canonic
 	return batch
 }
 
-func acceptDataBatch(t *testing.T, server *managerapi.Server, batch *dataplanev1.DataBatch) {
+func acceptDataBatch(t *testing.T, st *store.Store, batch *dataplanev1.DataBatch) {
 	t.Helper()
-	result, err := server.AppendDataBatchWithTransport(batch, "grpc")
+	result, err := gateway.NewRuntime(gateway.RuntimeOptions{
+		Store:          st,
+		LocalProcessor: ingestworker.NewProcessor(st, nil),
+	}).AppendDataBatchWithTransport(batch, "grpc")
 	if err != nil {
 		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
 	}

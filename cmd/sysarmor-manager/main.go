@@ -24,15 +24,12 @@ func main() {
 	postgresDriver := flag.String("postgres-driver", envDefault("SYSARMOR_POSTGRES_DRIVER", "postgres"), "database/sql driver name for postgres backend")
 	postgresDSN := flag.String("postgres-dsn", envDefault("SYSARMOR_POSTGRES_DSN", ""), "Postgres DSN for postgres backend")
 	operatorToken := flag.String("operator-token", "", "static development operator token for control-plane writes; empty disables operator checks")
-	deprecatedGatewayFlags := deprecatedAgentGatewayFlags()
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
 		fmt.Println(version)
 		return
 	}
-	warnDeprecatedGatewayFlags(deprecatedGatewayFlags)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if *storeBackend == backend.KindFile {
@@ -55,7 +52,7 @@ func main() {
 		}
 	}()
 	st := storeResult.Store
-	managerSrv := managerapi.NewServerWithTokens(st, "", *operatorToken)
+	managerSrv := managerapi.NewServerWithOperatorToken(st, *operatorToken)
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -73,66 +70,4 @@ func envDefault(name, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-type deprecatedGatewayFlagSet struct {
-	grpcListen              *string
-	grpcTLSCert             *string
-	grpcTLSKey              *string
-	grpcClientCA            *string
-	grpcRequireClientCert   *bool
-	kafkaBrokers            *string
-	redisAddr               *string
-	localIngest             *bool
-	devToken                *string
-	warnedDeprecatedOptions []string
-}
-
-func deprecatedAgentGatewayFlags() deprecatedGatewayFlagSet {
-	return deprecatedGatewayFlagSet{
-		grpcListen:            flag.String("grpc-listen", "", "deprecated: use sysarmor-gateway --listen"),
-		grpcTLSCert:           flag.String("grpc-tls-cert", "", "deprecated: use sysarmor-gateway --tls-cert"),
-		grpcTLSKey:            flag.String("grpc-tls-key", "", "deprecated: use sysarmor-gateway --tls-key"),
-		grpcClientCA:          flag.String("grpc-client-ca", "", "deprecated: use sysarmor-gateway --client-ca"),
-		grpcRequireClientCert: flag.Bool("grpc-require-client-cert", false, "deprecated: use sysarmor-gateway --require-client-cert"),
-		kafkaBrokers:          flag.String("kafka-brokers", "", "deprecated: use sysarmor-gateway --kafka-brokers"),
-		redisAddr:             flag.String("redis-addr", "", "deprecated: use sysarmor-gateway --redis-addr"),
-		localIngest:           flag.Bool("local-ingest", false, "deprecated: use sysarmor-gateway --local-ingest"),
-		devToken:              flag.String("dev-token", "", "deprecated: use sysarmor-gateway --dev-token"),
-	}
-}
-
-func warnDeprecatedGatewayFlags(flags deprecatedGatewayFlagSet) {
-	_ = flags.warnedDeprecatedOptions
-	used := []string{}
-	if *flags.grpcListen != "" {
-		used = append(used, "--grpc-listen")
-	}
-	if *flags.grpcTLSCert != "" {
-		used = append(used, "--grpc-tls-cert")
-	}
-	if *flags.grpcTLSKey != "" {
-		used = append(used, "--grpc-tls-key")
-	}
-	if *flags.grpcClientCA != "" {
-		used = append(used, "--grpc-client-ca")
-	}
-	if *flags.grpcRequireClientCert {
-		used = append(used, "--grpc-require-client-cert")
-	}
-	if *flags.kafkaBrokers != "" {
-		used = append(used, "--kafka-brokers")
-	}
-	if *flags.redisAddr != "" {
-		used = append(used, "--redis-addr")
-	}
-	if *flags.localIngest {
-		used = append(used, "--local-ingest")
-	}
-	if *flags.devToken != "" {
-		used = append(used, "--dev-token")
-	}
-	if len(used) > 0 {
-		log.Printf("deprecated gateway flags ignored by sysarmor-manager: %s; start sysarmor-gateway for agent data/control", strings.Join(used, ", "))
-	}
 }

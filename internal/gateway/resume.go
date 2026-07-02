@@ -1,4 +1,4 @@
-package agentplane
+package gateway
 
 type ResumeCursor struct {
 	TenantID     string `json:"tenant_id"`

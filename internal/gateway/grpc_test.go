@@ -1,4 +1,4 @@
-package agentplane_test
+package gateway_test
 
 import (
 	"context"
@@ -18,9 +18,8 @@ import (
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
-	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
+	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -36,9 +35,9 @@ import (
 
 func TestDataPlaneAppendBatch(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, LocalProcessor: ingestworker.NewProcessor(st, nil)})
 	grpcServer := grpc.NewServer()
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -78,9 +77,9 @@ func TestDataPlaneAppendBatch(t *testing.T) {
 
 func TestDataPlaneAppendBatchDuplicateReturnsCommittedAck(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, LocalProcessor: ingestworker.NewProcessor(st, nil)})
 	grpcServer := grpc.NewServer()
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -120,9 +119,9 @@ func TestAgentDataPlaneServiceMTLSBindsBatchIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store.Store{}
-	server := managerapi.NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, LocalProcessor: ingestworker.NewProcessor(st, nil)})
 	grpcServer := grpc.NewServer(serverOpt)
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(server))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -163,9 +162,9 @@ func TestControlPlaneConnectMTLSBindsFrameIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store.Store{}
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer(serverOpt)
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -248,9 +247,9 @@ func TestControlPlaneConnectMTLSBindsFrameIdentity(t *testing.T) {
 
 func TestControlPlaneConnectAcceptsHealthReport(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -307,9 +306,9 @@ func TestControlPlaneConnectAcceptsHealthReport(t *testing.T) {
 
 func TestControlPlaneConnectAcceptsAgentAck(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -359,9 +358,9 @@ func TestControlPlaneConnectAcceptsAgentAck(t *testing.T) {
 
 func TestControlPlaneConnectSequenceRejectsReplayAndGap(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -492,9 +491,9 @@ func TestControlPlaneConnectReconnectReturnsResumeAndPendingCommands(t *testing.
 		Action:     "collect",
 		Target:     "process:p1",
 	})
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -558,9 +557,9 @@ func TestControlPlaneConnectSendsPendingControlCommandAndPersistsAck(t *testing.
 		Type:        controlmodel.ControlCommandTypeContentUpdate,
 		PayloadJSON: []byte(`{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}}`),
 	})
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -643,9 +642,9 @@ func TestControlPlaneConnectSendsPendingControlCommandAndPersistsAck(t *testing.
 
 func TestControlPlaneConnectRequiresRequestID(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -788,9 +787,9 @@ func TestControlPlaneConnectHelloReturnsPolicyUpdate(t *testing.T) {
 	policy.Version = 9
 	st.UpsertPolicy(policy)
 	st.AssignPolicy(policymodel.Assignment{TenantID: "default", AgentID: "control-agent", PolicyID: "control-policy", PolicyVersion: 9})
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(server))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -833,9 +832,9 @@ func TestControlPlaneConnectHelloReturnsPolicyUpdate(t *testing.T) {
 
 func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServerWithAuth(st, "dev-token")
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, AgentToken: "dev-token"})
 	grpcServer := grpc.NewServer()
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -870,9 +869,9 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 
 func TestDataPlaneAppendBatchRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
-	server := managerapi.NewServer(st)
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(server))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(server))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -904,7 +903,7 @@ func TestDataPlaneAppendBatchRequiresAgentIdentity(t *testing.T) {
 
 func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 	grpcServer := grpc.NewServer()
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(retryableUploadBackend{err: status.Error(codes.Unavailable, "durable telemetry unavailable")}))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(retryableUploadBackend{err: status.Error(codes.Unavailable, "durable telemetry unavailable")}))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -934,7 +933,7 @@ func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 
 func TestDataAckClassifiesNonRetryableBackendError(t *testing.T) {
 	grpcServer := grpc.NewServer()
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(retryableUploadBackend{err: status.Error(codes.InvalidArgument, "schema rejected")}))
+	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(retryableUploadBackend{err: status.Error(codes.InvalidArgument, "schema rejected")}))
 	lis := bufconn.Listen(1024 * 1024)
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -968,16 +967,16 @@ type retryableUploadBackend struct {
 
 func (b retryableUploadBackend) AgentToken() string { return "" }
 
-func (b retryableUploadBackend) AppendDataBatchWithTransport(*dataplanev1.DataBatch, string) (agentplane.DataAppendResult, error) {
-	return agentplane.DataAppendResult{}, b.err
+func (b retryableUploadBackend) AppendDataBatchWithTransport(*dataplanev1.DataBatch, string) (gateway.DataAppendResult, error) {
+	return gateway.DataAppendResult{}, b.err
 }
 
 func (b retryableUploadBackend) BindAgentIdentity(store.AgentIdentity) error { return nil }
 
-func (b retryableUploadBackend) Store() agentplane.ControlStore { return &store.Store{} }
+func (b retryableUploadBackend) Store() gateway.ControlStore { return &store.Store{} }
 
-func (b retryableUploadBackend) ResumeCursor(string, string) agentplane.ResumeCursor {
-	return agentplane.ResumeCursor{}
+func (b retryableUploadBackend) ResumeCursor(string, string) gateway.ResumeCursor {
+	return gateway.ResumeCursor{}
 }
 
 func (b retryableUploadBackend) TouchHotSession(store.AgentSession) {}

@@ -23,11 +23,10 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
-	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
-	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
+	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
@@ -258,9 +257,9 @@ func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 
 func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 	st := &store.Store{}
-	linkSrv := managerapi.NewServer(st)
+	linkSrv := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -327,9 +326,9 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 		Action:     "collect",
 		Target:     "process:p1",
 	})
-	linkSrv := managerapi.NewServer(st)
+	linkSrv := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(linkSrv))
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(linkSrv))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

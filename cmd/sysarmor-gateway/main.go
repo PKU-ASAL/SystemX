@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -27,6 +29,7 @@ var version = "dev"
 
 func main() {
 	listen := flag.String("listen", ":9444", "gateway agent data/control gRPC listen address")
+	healthListen := flag.String("health-listen", ":9445", "gateway health/metrics HTTP listen address; empty disables HTTP health")
 	grpcTLSCert := flag.String("tls-cert", envDefault("SYSARMOR_GRPC_TLS_CERT", ""), "gateway gRPC server TLS certificate")
 	grpcTLSKey := flag.String("tls-key", envDefault("SYSARMOR_GRPC_TLS_KEY", ""), "gateway gRPC server TLS private key")
 	grpcClientCA := flag.String("client-ca", envDefault("SYSARMOR_GRPC_CLIENT_CA", ""), "CA bundle used to verify agent client certificates")
@@ -77,6 +80,9 @@ func main() {
 		agentToken:  *devToken,
 	})
 	defer cleanup()
+	if *healthListen != "" {
+		startHealthServer(ctx, *healthListen, runtime)
+	}
 
 	var grpcOptions []grpc.ServerOption
 	grpcTLSOption, err := tlsconfig.ServerOption(*grpcTLSCert, *grpcTLSKey, *grpcClientCA, *grpcRequireClientCert)
@@ -104,6 +110,36 @@ func main() {
 	if err := grpcServer.Serve(lis); err != nil {
 		fmt.Fprintf(os.Stderr, "gateway grpc serve: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func startHealthServer(ctx context.Context, listen string, runtime *gateway.Runtime) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{"ok": true, "service": "sysarmor-gateway"})
+	})
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, runtime.MetricsSnapshot())
+	})
+	server := &http.Server{Addr: listen, Handler: mux}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+	go func() {
+		log.Printf("sysarmor-gateway health listening on %s", listen)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("gateway health serve: %v", err)
+		}
+	}()
+}
+
+func writeJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 

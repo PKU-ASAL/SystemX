@@ -3,14 +3,12 @@ package managerapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/agentplane/model"
-	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -23,23 +21,6 @@ import (
 	"time"
 )
 
-type failingProducer struct {
-	err error
-}
-
-func (p failingProducer) Append(context.Context, platformkafka.Message) error {
-	return p.err
-}
-
-type recordingProducer struct {
-	messages []platformkafka.Message
-}
-
-func (p *recordingProducer) Append(_ context.Context, msg platformkafka.Message) error {
-	p.messages = append(p.messages, msg)
-	return nil
-}
-
 type recordingIndexer struct {
 	docs []platformopensearch.Document
 }
@@ -50,7 +31,7 @@ func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Docum
 }
 
 func newTestServer(st *store.Store) *Server {
-	return NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	return NewServer(st)
 }
 
 func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
@@ -331,66 +312,16 @@ func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) 
 	}
 }
 
-func TestUploadRequiresAgentIdentity(t *testing.T) {
-	st := &store.Store{}
-	srv := NewServer(st)
-	_, err := srv.AppendDataBatchWithTransport(&dataplanev1.DataBatch{
-		Header: &dataplanev1.BatchHeader{AgentId: "agent-a", HostId: "host-a"},
-	}, "grpc")
-	if err == nil || !strings.Contains(err.Error(), "tenant_id") {
-		t.Fatalf("AppendDataBatchWithTransport error = %v, want missing tenant_id", err)
-	}
-}
-
-func TestUploadRequiresDurableTelemetryAppend(t *testing.T) {
-	st, _ := store.Open("")
-	srv := NewServer(st).WithProducer(failingProducer{err: errors.New("kafka unavailable")})
-	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-kafka", "agent-kafka", "host-kafka", []*eventv1.CanonicalEvent{{Id: "ev-kafka", Labels: labelsForScenario("kafka-gate")}}, nil), "grpc")
-	if err == nil || !strings.Contains(err.Error(), "append raw data batch") {
-		t.Fatalf("AppendDataBatchWithTransport error = %v, want append failure", err)
-	}
-	if got := st.ListEvents(store.LabelSelector{"scenario": "kafka-gate"}, ""); len(got) != 0 {
-		t.Fatalf("events were stored before durable append: %+v", got)
-	}
-}
-
-func TestDataPlaneAppendOnlyAppendsTelemetryAndRecordsSessionByDefault(t *testing.T) {
-	st, _ := store.Open("")
-	producer := &recordingProducer{}
-	srv := NewServer(st).WithProducer(producer)
-	result, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-data-plane-only", "agent-data-plane-only", "host-data-plane-only", []*eventv1.CanonicalEvent{{Id: "ev-data-plane-only", Labels: labelsForScenario("data-plane-only")}}, []*signalv1.Signal{endpointSignalForScenario("data-plane-only", "payload_dropped", "lin-data-plane-only", false)}), "grpc")
-	if err != nil {
-		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
-	}
-	if result.AcceptedEvents != 0 || result.AcceptedSignals != 0 || result.CloudSignals != 0 || result.Incidents != 0 {
-		t.Fatalf("data-plane result = %+v, want ack-only counts before worker processing", result)
-	}
-	if len(producer.messages) != 1 || producer.messages[0].Topic != "sysarmor.agent.databatch.raw" {
-		t.Fatalf("producer messages = %+v, want one raw data batch append", producer.messages)
-	}
-	if got := st.ListEvents(store.LabelSelector{"scenario": "data-plane-only"}, ""); len(got) != 0 {
-		t.Fatalf("data-plane stored events before worker processing: %+v", got)
-	}
-	if got := st.ListSignals(store.LabelSelector{"scenario": "data-plane-only"}, "endpoint", false); len(got) != 0 {
-		t.Fatalf("data-plane stored signals before worker processing: %+v", got)
-	}
-	sessions := st.ListAgentSessions("default", "agent-data-plane-only")
-	if len(sessions) != 1 || sessions[0].LastAckCursor != "batch-data-plane-only" || sessions[0].DataTransport != "grpc" {
-		t.Fatalf("sessions = %+v, want cursor/session recorded", sessions)
-	}
-}
-
 func TestUploadIndexesSecurityDocuments(t *testing.T) {
 	st, _ := store.Open("")
 	indexer := &recordingIndexer{}
-	srv := NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, indexer))
-	_, err := srv.AppendDataBatchWithTransport(httpDataBatch("batch-index", "agent-index", "host-index", []*eventv1.CanonicalEvent{{Id: "ev-index", Labels: labelsForScenario("apt-fileless-c2"), Behavior: "process.exec"}}, []*signalv1.Signal{
+	_, err := ingestworker.NewProcessor(st, indexer).Process(context.Background(), httpDataBatch("batch-index", "agent-index", "host-index", []*eventv1.CanonicalEvent{{Id: "ev-index", Labels: labelsForScenario("apt-fileless-c2"), Behavior: "process.exec"}}, []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-index", false, processEntity("p-web")),
 		endpointSignal("payload_dropped", "lin-index", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-index", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
-	}), "grpc")
+	}))
 	if err != nil {
-		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
+		t.Fatalf("Process() error = %v", err)
 	}
 	indexes := map[string]bool{}
 	for _, doc := range indexer.docs {
@@ -520,9 +451,9 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	}
 }
 
-func TestHTTPAuthRequiresDevTokenForHealth(t *testing.T) {
+func TestOperatorTokenGuardsHealthWrites(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithAuth(st, "dev-token").Handler()
+	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
 
 	health := agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"}
 	healthData, err := json.Marshal(health)
@@ -536,14 +467,14 @@ func TestHTTPAuthRequiresDevTokenForHealth(t *testing.T) {
 		t.Fatalf("health without token status = %d", rec.Code)
 	}
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/agent-health", strings.NewReader(string(healthData)))
-	req.Header.Set("Authorization", "Bearer dev-token")
+	req.Header.Set("Authorization", "Bearer operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("health with token status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("health with operator token status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
-
 func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
@@ -592,7 +523,7 @@ func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 
 func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 	st := &store.Store{}
-	srv := NewServer(st).WithLocalProcessor(ingestworker.NewProcessor(st, nil))
+	srv := NewServer(st)
 	handler := srv.Handler()
 
 	rec := get(t, handler, "/api/v1/rules?where=cloud")
@@ -704,7 +635,7 @@ func TestPolicyAPIDraftRequiresPublishBeforeAssignment(t *testing.T) {
 
 func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "guarded-policy"
 	policy.Version = 3
@@ -790,7 +721,7 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 
 func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
 		"command_id":"ctrl-content-api",
@@ -875,7 +806,7 @@ func TestPolicyAssignmentDownlinkRequiresControlAdmin(t *testing.T) {
 	policy.Version = 1
 	policy.Published = true
 	st.UpsertPolicy(policy)
-	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
 
 	body := `{"tenant_id":"default","agent_id":"agent-a","policy_id":"downlink-auth-policy","policy_version":1,"downlink":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(body))
@@ -958,7 +889,7 @@ func TestControlCommandActionsUpdateLifecycle(t *testing.T) {
 
 func TestOperatorRoleBindingsAuthorizeControlPlaneWrites(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithTokens(st, "agent-token", "operator-token").Handler()
+	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/operator-role-bindings", strings.NewReader(`{"actor":"alice","roles":["policy_admin","responder","policy_admin"]}`))
 	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
@@ -1137,13 +1068,28 @@ func appendBatchAndAck(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) 
 	if batch.Header.TenantId == "" {
 		batch.Header.TenantId = "default"
 	}
-	result, err := srv.AppendDataBatchWithTransport(batch, "grpc")
-	if err != nil {
-		t.Fatalf("AppendDataBatchWithTransport() error = %v", err)
+	st, ok := srv.store.(*store.Store)
+	if !ok {
+		t.Fatalf("test server store type = %T, want *store.Store", srv.store)
+	}
+	duplicate := isDuplicateTestBatch(st, batch)
+	st.RecordDataBatchAppend(store.AgentIdentityFromDataBatch(batch), batch.GetHeader().GetBatchId(), "grpc", time.Now().UTC())
+	if err := st.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	acceptedEvents := 0
+	acceptedSignals := 0
+	if !duplicate {
+		result, err := ingestworker.NewProcessor(st, nil).Process(context.Background(), batch)
+		if err != nil {
+			t.Fatalf("Process() error = %v", err)
+		}
+		acceptedEvents = result.AcceptedEvents
+		acceptedSignals = result.AcceptedSignals
 	}
 	status := dataplanev1.DataAck_STATUS_ACCEPTED
 	message := "accepted"
-	if result.Duplicate {
+	if duplicate {
 		status = dataplanev1.DataAck_STATUS_DUPLICATE
 		message = "duplicate"
 	}
@@ -1155,10 +1101,23 @@ func appendBatchAndAck(t *testing.T, srv *Server, batch *dataplanev1.DataBatch) 
 		ReasonCode:      message,
 		CommittedCursor: batch.GetHeader().GetBatchId(),
 		ServerTime:      time.Now().UTC().Format(time.RFC3339Nano),
-		AcceptedEvents:  uint64(result.AcceptedEvents),
-		AcceptedSignals: uint64(result.AcceptedSignals),
+		AcceptedEvents:  uint64(acceptedEvents),
+		AcceptedSignals: uint64(acceptedSignals),
 		ContractVersion: "dataplane.v1",
 	}
+}
+
+func isDuplicateTestBatch(st *store.Store, batch *dataplanev1.DataBatch) bool {
+	header := batch.GetHeader()
+	if header.GetBatchId() == "" {
+		return false
+	}
+	for _, session := range st.ListAgentSessions(header.GetTenantId(), header.GetAgentId()) {
+		if session.LastAckCursor == header.GetBatchId() {
+			return true
+		}
+	}
+	return false
 }
 
 func httpDataBatch(batchID, agentID, hostID string, events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
