@@ -4,7 +4,8 @@
 #
 # attacker  10.66.0.99  C2 (http :8080 + nc :443)
 # node-a    10.66.0.11  受害端点（web 运行时 + CI 构建 + 假凭据）
-# mgr       10.66.0.10  manager / agent data-control endpoint
+# mgr       10.66.0.10  manager control/query API
+# gateway   10.66.0.14  agent data/control endpoint
 # worker    10.66.0.13  Kafka ingest consumer + detection/indexing
 # postgres 10.66.0.20  control/state/audit store
 # kafka    10.66.0.21  telemetry ingest log
@@ -37,14 +38,31 @@ services:
     container_name: mgr
     depends_on:
       - postgres
-      - kafka
-      - redis
-      - opensearch
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.10
     ports:
       - "19443:9443"
+    environment:
+      SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
+    volumes:
+      - ../../../bin:/opt/sysarmor/bin:ro
+    entrypoint:
+      - bash
+      - -lc
+      - /opt/sysarmor/bin/sysarmor-manager --listen 0.0.0.0:9443 --store-backend postgres --postgres-driver $${SYSARMOR_POSTGRES_DRIVER:-postgres} --postgres-dsn "$$SYSARMOR_POSTGRES_DSN"
+
+  gateway:
+    build: ./images/mgr
+    container_name: gateway
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+    networks:
+      sysarmor-net:
+        ipv4_address: 10.66.0.14
+    ports:
       - "19444:9444"
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
@@ -52,6 +70,10 @@ services:
       SYSARMOR_REDIS_ADDR: redis:6379
     volumes:
       - ../../../bin:/opt/sysarmor/bin:ro
+    entrypoint:
+      - bash
+      - -lc
+      - /opt/sysarmor/bin/sysarmor-gateway --listen 0.0.0.0:9444 --store-backend postgres --postgres-driver $${SYSARMOR_POSTGRES_DRIVER:-postgres} --postgres-dsn "$$SYSARMOR_POSTGRES_DSN" --kafka-brokers "$$SYSARMOR_KAFKA_BROKERS" --redis-addr "$$SYSARMOR_REDIS_ADDR"
 
   worker:
     build: ./images/mgr

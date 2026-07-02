@@ -5,49 +5,33 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/agentplane"
 	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
-	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
-	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
-	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
-	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
-	"google.golang.org/grpc"
 )
 
 var version = "dev"
 
 func main() {
 	listen := flag.String("listen", ":9443", "manager HTTP listen address")
-	grpcListen := flag.String("grpc-listen", ":9444", "manager agent data/control gRPC listen address")
-	grpcTLSCert := flag.String("grpc-tls-cert", envDefault("SYSARMOR_GRPC_TLS_CERT", ""), "manager gRPC server TLS certificate")
-	grpcTLSKey := flag.String("grpc-tls-key", envDefault("SYSARMOR_GRPC_TLS_KEY", ""), "manager gRPC server TLS private key")
-	grpcClientCA := flag.String("grpc-client-ca", envDefault("SYSARMOR_GRPC_CLIENT_CA", ""), "CA bundle used to verify agent client certificates")
-	grpcRequireClientCert := flag.Bool("grpc-require-client-cert", envDefault("SYSARMOR_GRPC_REQUIRE_CLIENT_CERT", "") == "true", "require and verify agent client certificates for gRPC")
 	storeBackend := flag.String("store-backend", backend.KindPostgres, "store backend: postgres")
 	storePath := flag.String("store", "", "deprecated: file store path is not used by product backends")
 	postgresDriver := flag.String("postgres-driver", envDefault("SYSARMOR_POSTGRES_DRIVER", "postgres"), "database/sql driver name for postgres backend")
 	postgresDSN := flag.String("postgres-dsn", envDefault("SYSARMOR_POSTGRES_DSN", ""), "Postgres DSN for postgres backend")
-	kafkaBrokers := flag.String("kafka-brokers", envDefault("SYSARMOR_KAFKA_BROKERS", ""), "comma-separated Kafka brokers for raw telemetry ingest")
-	redisAddr := flag.String("redis-addr", envDefault("SYSARMOR_REDIS_ADDR", ""), "Redis address for agent data hot state")
-	localIngest := flag.Bool("local-ingest", false, "development/test mode: process accepted DataBatch payloads in-process")
-	devToken := flag.String("dev-token", "", "static development agent token; empty disables token checks")
 	operatorToken := flag.String("operator-token", "", "static development operator token for control-plane writes; empty disables operator checks")
+	deprecatedGatewayFlags := deprecatedAgentGatewayFlags()
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
 		fmt.Println(version)
 		return
 	}
+	warnDeprecatedGatewayFlags(deprecatedGatewayFlags)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -71,59 +55,7 @@ func main() {
 		}
 	}()
 	st := storeResult.Store
-	managerSrv := managerapi.NewServerWithTokens(st, *devToken, *operatorToken)
-	if *localIngest {
-		managerSrv.WithLocalProcessor(ingestworker.NewProcessor(st, nil))
-	}
-	if *kafkaBrokers != "" {
-		producer, err := platformkafka.NewWriterProducer(splitCSV(*kafkaBrokers))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "open kafka producer: %v\n", err)
-			os.Exit(1)
-		}
-		defer func() {
-			if err := producer.Close(); err != nil {
-				log.Printf("close kafka producer: %v", err)
-			}
-		}()
-		managerSrv.WithProducer(producer)
-	}
-	if *redisAddr != "" {
-		hotState, err := platformredis.NewClientHotState(*redisAddr, 2*time.Minute)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "open redis hot state: %v\n", err)
-			os.Exit(1)
-		}
-		defer func() {
-			if err := hotState.Close(); err != nil {
-				log.Printf("close redis hot state: %v", err)
-			}
-		}()
-		managerSrv.WithHotState(hotState)
-	}
-	var grpcOptions []grpc.ServerOption
-	grpcTLSOption, err := tlsconfig.ServerOption(*grpcTLSCert, *grpcTLSKey, *grpcClientCA, *grpcRequireClientCert)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "manager grpc tls: %v\n", err)
-		os.Exit(1)
-	}
-	if grpcTLSOption != nil {
-		grpcOptions = append(grpcOptions, grpcTLSOption)
-	}
-	grpcServer := grpc.NewServer(grpcOptions...)
-	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, agentplane.NewDataServer(managerSrv))
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, agentplane.NewControlServer(managerSrv))
-	lis, err := net.Listen("tcp", *grpcListen)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "manager grpc listen: %v\n", err)
-		os.Exit(1)
-	}
-	go func() {
-		log.Printf("sysarmor-manager agent data/control grpc listening on %s mtls=%t", *grpcListen, *grpcClientCA != "" || *grpcRequireClientCert)
-		if err := grpcServer.Serve(lis); err != nil {
-			log.Printf("manager grpc serve: %v", err)
-		}
-	}()
+	managerSrv := managerapi.NewServerWithTokens(st, "", *operatorToken)
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -143,14 +75,64 @@ func envDefault(name, fallback string) string {
 	return fallback
 }
 
-func splitCSV(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
+type deprecatedGatewayFlagSet struct {
+	grpcListen              *string
+	grpcTLSCert             *string
+	grpcTLSKey              *string
+	grpcClientCA            *string
+	grpcRequireClientCert   *bool
+	kafkaBrokers            *string
+	redisAddr               *string
+	localIngest             *bool
+	devToken                *string
+	warnedDeprecatedOptions []string
+}
+
+func deprecatedAgentGatewayFlags() deprecatedGatewayFlagSet {
+	return deprecatedGatewayFlagSet{
+		grpcListen:            flag.String("grpc-listen", "", "deprecated: use sysarmor-gateway --listen"),
+		grpcTLSCert:           flag.String("grpc-tls-cert", "", "deprecated: use sysarmor-gateway --tls-cert"),
+		grpcTLSKey:            flag.String("grpc-tls-key", "", "deprecated: use sysarmor-gateway --tls-key"),
+		grpcClientCA:          flag.String("grpc-client-ca", "", "deprecated: use sysarmor-gateway --client-ca"),
+		grpcRequireClientCert: flag.Bool("grpc-require-client-cert", false, "deprecated: use sysarmor-gateway --require-client-cert"),
+		kafkaBrokers:          flag.String("kafka-brokers", "", "deprecated: use sysarmor-gateway --kafka-brokers"),
+		redisAddr:             flag.String("redis-addr", "", "deprecated: use sysarmor-gateway --redis-addr"),
+		localIngest:           flag.Bool("local-ingest", false, "deprecated: use sysarmor-gateway --local-ingest"),
+		devToken:              flag.String("dev-token", "", "deprecated: use sysarmor-gateway --dev-token"),
 	}
-	return out
+}
+
+func warnDeprecatedGatewayFlags(flags deprecatedGatewayFlagSet) {
+	_ = flags.warnedDeprecatedOptions
+	used := []string{}
+	if *flags.grpcListen != "" {
+		used = append(used, "--grpc-listen")
+	}
+	if *flags.grpcTLSCert != "" {
+		used = append(used, "--grpc-tls-cert")
+	}
+	if *flags.grpcTLSKey != "" {
+		used = append(used, "--grpc-tls-key")
+	}
+	if *flags.grpcClientCA != "" {
+		used = append(used, "--grpc-client-ca")
+	}
+	if *flags.grpcRequireClientCert {
+		used = append(used, "--grpc-require-client-cert")
+	}
+	if *flags.kafkaBrokers != "" {
+		used = append(used, "--kafka-brokers")
+	}
+	if *flags.redisAddr != "" {
+		used = append(used, "--redis-addr")
+	}
+	if *flags.localIngest {
+		used = append(used, "--local-ingest")
+	}
+	if *flags.devToken != "" {
+		used = append(used, "--dev-token")
+	}
+	if len(used) > 0 {
+		log.Printf("deprecated gateway flags ignored by sysarmor-manager: %s; start sysarmor-gateway for agent data/control", strings.Join(used, ", "))
+	}
 }

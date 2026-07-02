@@ -121,11 +121,30 @@ sa_build_go_bins() {
   done
 }
 
+sa_start_memory_gateway() {
+  local extra_args=("$@")
+  "$BIN/sysarmor-gateway" \
+    --listen "127.0.0.1:$GRPC_PORT" \
+    --store-backend memory \
+    "${extra_args[@]}" \
+    >"$TMP/gateway.log" 2>&1 &
+  GATEWAY_PID=$!
+}
+
+sa_start_split_memory_manager() {
+  local extra_args=("$@")
+  "$BIN/sysarmor-manager" \
+    --listen "127.0.0.1:$MANAGER_PORT" \
+    --store-backend memory \
+    "${extra_args[@]}" \
+    >"$TMP/manager.log" 2>&1 &
+  MGR_PID=$!
+}
+
 sa_start_memory_manager() {
   local extra_args=("$@")
   "$BIN/sysarmor-manager" \
     --listen "127.0.0.1:$MANAGER_PORT" \
-    --grpc-listen "127.0.0.1:$GRPC_PORT" \
     --store-backend memory \
     "${extra_args[@]}" \
     >"$TMP/manager.log" 2>&1 &

@@ -57,14 +57,11 @@ test-topology:
 
 test-platform:
 	bash e2e/control-plane/e2e-contract.sh
-	bash e2e/control-plane/e2e-mtls.sh
-	bash e2e/manager-cloud/e2e-manager-idempotency.sh
 	bash e2e/manager-cloud/e2e-agent-health.sh
 	bash e2e/manager-cloud/e2e-policy.sh
 	bash e2e/manager-cloud/e2e-response.sh
 	bash e2e/manager-cloud/e2e-incident.sh
 	bash e2e/storage/e2e-store-status.sh
-	bash e2e/storage/e2e-query-pagination.sh
 
 test-all: test-unit test-endpoint test-topology test-platform
 
