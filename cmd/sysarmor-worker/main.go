@@ -60,7 +60,7 @@ func main() {
 		}
 	}()
 
-	consumer, err := platformkafka.NewReaderConsumer(splitCSV(*kafkaBrokers), *kafkaTopic, *kafkaGroupID)
+	consumer, err := openKafkaConsumerWithRetry(ctx, splitCSV(*kafkaBrokers), *kafkaTopic, *kafkaGroupID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open kafka consumer: %v\n", err)
 		os.Exit(1)
@@ -105,4 +105,23 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func openKafkaConsumerWithRetry(ctx context.Context, brokers []string, topic, groupID string) (*platformkafka.ReaderConsumer, error) {
+	var lastErr error
+	for attempt := 0; attempt < 30; attempt++ {
+		consumer, err := platformkafka.NewReaderConsumer(brokers, topic, groupID)
+		if err == nil {
+			return consumer, nil
+		}
+		lastErr = err
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
 }

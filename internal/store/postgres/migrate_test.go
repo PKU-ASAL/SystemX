@@ -17,12 +17,14 @@ func TestApplyMigrationsExecutesPostgresSchema(t *testing.T) {
 	if got.Version != 1 {
 		t.Fatalf("migration version = %d, want 1", got.Version)
 	}
-	query := FakeLastQuery()
+	query := FakeAllQueries()
 	for _, want := range []string{
+		"SELECT pg_advisory_lock",
 		"CREATE TABLE IF NOT EXISTS agents",
 		"CREATE TABLE IF NOT EXISTS incidents",
 		"CREATE TABLE IF NOT EXISTS response_audit",
 		"INSERT INTO schema_migrations (version) VALUES (1)",
+		"SELECT pg_advisory_unlock",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("migration query missing %q: %s", want, query)
