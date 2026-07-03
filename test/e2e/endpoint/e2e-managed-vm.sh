@@ -4,7 +4,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
-VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
+VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
@@ -67,7 +67,7 @@ agent:
   token: $TOKEN
 
 manager:
-  address: http://10.66.0.10:9443
+  address: 10.66.0.10:9444
   transport: grpc
 
 sensor:
@@ -101,7 +101,7 @@ cd "$ENVDIR"
 
 echo "[e2e-agent-managed-vm] installing agent, systemd unit, and fake bundle"
 vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
-vagrant upload "$REPO/deployments/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
+vagrant upload "$REPO/deployments/agent/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
 vagrant upload "$TMP/bundle/bin/tetragon" /tmp/sysarmor-fake-tetragon node-a >/dev/null
 vagrant upload "$TMP/bundle/bin/tetra" /tmp/sysarmor-fake-tetra node-a >/dev/null
 vagrant upload "$TMP/bundle/manifest.json" /tmp/sysarmor-fake-manifest.json node-a >/dev/null

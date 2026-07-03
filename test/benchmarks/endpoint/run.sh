@@ -57,6 +57,11 @@ RECORDER_SEMANTIC_INTERVAL="${SYSARMOR_RECORDER_SEMANTIC_INTERVAL:-10}"
 RECORDER_DURATION_SECONDS="${SYSARMOR_BENCH_RECORDER_DURATION_SECONDS:-$((HOST_BASELINE_SECONDS + AGENT_IDLE_SECONDS + SENSOR_IDLE_SECONDS + BASELINE_SECONDS + POLICY_SETTLE_SECONDS + SETTLE_SECONDS + STEADY_SECONDS + WORKLOAD_WARMUP_SECONDS + WORKLOAD_SECONDS + SCENARIO_OBSERVE_SECONDS + COOLDOWN_SECONDS + 300))}"
 SYNC_VM_AGENT="${SYSARMOR_BENCH_SYNC_VM_AGENT:-1}"
 BUILD_BINARIES="${SYSARMOR_BENCH_BUILD_BINARIES:-1}"
+VM_FRESH="${SYSARMOR_BENCH_VM_FRESH:-1}"
+VM_LIFECYCLE="reuse"
+if [[ "$VM_FRESH" == "1" ]]; then
+  VM_LIFECYCLE="fresh"
+fi
 
 mkdir -p "$OUT_DIR"
 cat >"$OUT_DIR/manifest.json" <<EOF
@@ -83,10 +88,11 @@ cat >"$OUT_DIR/manifest.json" <<EOF
   "cooldown_seconds": $COOLDOWN_SECONDS,
   "recorder_duration_seconds": $RECORDER_DURATION_SECONDS,
   "recorder_semantic_interval_seconds": $RECORDER_SEMANTIC_INTERVAL,
-  "vm_lifecycle": "fresh",
-  "vm_lifecycle_steps": ["make build", "vagrant destroy -f", "vagrant up", "vagrant provision node-a", "sync-agent"],
+  "vm_lifecycle": "$VM_LIFECYCLE",
+  "vm_lifecycle_steps": ["make build", "vagrant destroy -f", "start-vm", "sync-agent"],
   "build_binaries": "$BUILD_BINARIES",
   "sync_vm_agent": "$SYNC_VM_AGENT",
+  "vm_fresh": "$VM_FRESH",
   "profile_enabled": "$PROFILE_ENABLED",
   "profile_types": "$PROFILE_TYPES",
   "profile_phases": "$PROFILE_PHASES",
@@ -462,10 +468,14 @@ if [[ "$BUILD_BINARIES" == "1" ]]; then
 else
   echo "[bench-endpoint] binary build disabled"
 fi
-echo "[bench-endpoint] recreating fresh VM environment: $VM_ENV"
-vagrant destroy -f
-vagrant up
-vagrant provision node-a
+if [[ "$VM_FRESH" == "1" ]]; then
+  echo "[bench-endpoint] recreating fresh VM environment: $VM_ENV"
+  vagrant destroy -f
+  SYSARMOR_VM_ENV="$VM_ENV" SYSARMOR_VM_BUILD_BINARIES=0 bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV"
+  cd "$ENVDIR"
+else
+  echo "[bench-endpoint] reusing existing VM environment: $VM_ENV"
+fi
 if [[ "$SYNC_VM_AGENT" == "1" ]]; then
   SYSARMOR_VM_ENV="$VM_ENV" bash "$ROOT/shared/vm/sync-agent.sh"
   cd "$ENVDIR"
@@ -589,7 +599,7 @@ for policy in $POLICIES_RAW; do
   },
   "sync_vm_agent": "$SYNC_VM_AGENT",
   "vm_lifecycle": "fresh",
-  "vm_lifecycle_steps": ["make build", "vagrant destroy -f", "vagrant up", "vagrant provision node-a", "sync-agent"],
+  "vm_lifecycle_steps": ["make build", "vagrant destroy -f", "start-vm", "sync-agent"],
   "build_binaries": "$BUILD_BINARIES",
   "artifacts": {
     "timeline": "timeline.csv",

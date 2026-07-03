@@ -24,6 +24,14 @@ shape.
 `vm-topology` may collect resource samples, but those are topology observations,
 not clean endpoint-cost conclusions.
 
+Installation differs by purpose:
+
+- `vm-endpoint`: installs only the endpoint agent/sensor on `node-a`; the agent
+  uses local transport so the run stays focused on endpoint behavior and cost.
+- `vm-topology`: starts the deployment-shaped platform on `mgr` with Docker
+  Compose, then installs the endpoint agent on `node-a`; the agent connects to
+  gateway over default agent-plane mTLS.
+
 ## Layout
 
 ```text

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 跑 VM 拓扑场景。当前阶段只验证本地 sysarmor-agent:
+# 跑 VM endpoint 诊断场景。只验证本地 sysarmor-agent:
 # agent owns Tetragon -> local control socket -> local event/signal streams.
 # 用法: capture-vm.sh <scenario> [duration_s]
 #   scenario: apt-fileless-c2 | apt-staged-drop | benign-ci-noise
@@ -120,7 +120,7 @@ data_plane:
 health:
   interval: 500ms
 EOF
-  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/install-agent.sh
+  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh
   test -f \"$TETRAGON_BUNDLE_DIR/manifest.json\"
   systemctl daemon-reload
   install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl

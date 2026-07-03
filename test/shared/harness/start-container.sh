@@ -14,7 +14,7 @@ docker compose up -d attacker node-a tetragon
 
 echo ">>> 等待 manager health"
 for i in $(seq 1 20); do
-  if docker exec mgr curl -sf http://127.0.0.1:9443/healthz >/dev/null; then
+  if curl -sf http://127.0.0.1:19443/healthz >/dev/null; then
     break
   fi
   sleep 1
@@ -22,7 +22,7 @@ done
 
 echo ">>> 等待 gateway health"
 for i in $(seq 1 20); do
-  if docker exec gateway curl -sf http://127.0.0.1:9445/healthz >/dev/null; then
+  if curl -sf http://127.0.0.1:19445/healthz >/dev/null; then
     break
   fi
   sleep 1

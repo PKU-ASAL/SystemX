@@ -8,6 +8,8 @@ VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$VM_ENV}"
+AGENT_ID="vm-owned-tetragon"
 
 mkdir -p "$RESULTS"
 
@@ -26,23 +28,28 @@ cd "$ENVDIR"
 
 echo "[e2e-agent-systemd-vm] installing agent binary, config, and systemd unit"
 vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
-vagrant upload "$REPO/deployments/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
+vagrant upload "$REPO/deployments/agent/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
+vagrant upload "$PKI_DIR" /tmp/sysarmor-pki.upload node-a >/dev/null
 
-vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /var/lib/sysarmor/agent/telemetry /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service" >/dev/null
+vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /etc/sysarmor/pki /var/lib/sysarmor/agent/telemetry /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service; sudo install -m 0644 /tmp/sysarmor-pki.upload/ca.pem /etc/sysarmor/pki/ca.pem; sudo install -m 0644 /tmp/sysarmor-pki.upload/agent.pem /etc/sysarmor/pki/agent.pem; sudo install -m 0600 /tmp/sysarmor-pki.upload/agent-key.pem /etc/sysarmor/pki/agent-key.pem" >/dev/null
 
 vagrant ssh node-a -c "sudo tee /etc/sysarmor/policies/sysarmor-fake.yaml >/dev/null <<'EOF'
 {"behaviors":["process.exec"],"observe_only":true}
 EOF
 sudo tee /etc/sysarmor/agent.yaml >/dev/null <<EOF
 agent:
-  id: vm-systemd-agent
+  id: $AGENT_ID
   host_id: vm-node-a
   tenant_id: default
   token: $TOKEN
 
 manager:
-  address: http://10.66.0.10:9443
+  address: 10.66.0.10:9444
   transport: grpc
+  tls_ca: /etc/sysarmor/pki/ca.pem
+  tls_cert: /etc/sysarmor/pki/agent.pem
+  tls_key: /etc/sysarmor/pki/agent-key.pem
+  tls_server_name: sysarmor-gateway.local
 
 sensor:
   backend: fake
@@ -90,17 +97,21 @@ wait_contains() {
       echo "--- agent journal ---" >&2
       vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 80 || true" >&2 2>/dev/null || true
       echo "--- manager log ---" >&2
-      vagrant ssh mgr -c "cat /tmp/sysarmor-manager.log 2>/dev/null || true" >&2 2>/dev/null || true
+      vagrant ssh mgr -c "sudo docker logs sysarmor-manager --tail 120 2>/dev/null || true" >&2 2>/dev/null || true
+      echo "--- gateway log ---" >&2
+      vagrant ssh mgr -c "sudo docker logs sysarmor-gateway --tail 120 2>/dev/null || true" >&2 2>/dev/null || true
+      echo "--- worker log ---" >&2
+      vagrant ssh mgr -c "sudo docker logs sysarmor-worker --tail 120 2>/dev/null || true" >&2 2>/dev/null || true
       exit 1
     fi
     sleep 1
   done
 }
 
-wait_contains "agent-health" '"agent_id":"vm-systemd-agent"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-systemd-agent --tenant-id default"
+wait_contains "agent-health" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 wait_contains "agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-systemd-agent --tenant-id default"
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-systemd-vm.metrics.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics"
 
@@ -127,8 +138,8 @@ until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE"
   PID_AFTER="$(vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent" 2>/dev/null | tr -d '\r' | tail -1)"
 done
 
-wait_contains "agent-health after systemd restart" '"agent_id":"vm-systemd-agent"' "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id vm-systemd-agent --tenant-id default"
+wait_contains "agent-health after systemd restart" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-systemd-vm.systemd.txt" 2>&1 || true
 vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 120" > "$RESULTS/e2e-agent-systemd-vm.journal.txt" 2>&1 || true

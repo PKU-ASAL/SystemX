@@ -53,7 +53,6 @@ test-endpoint:
 
 test-topology:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash e2e/topology/e2e-systemd-vm.sh
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
 test-platform:
 	bash e2e/platform/e2e-control-contract.sh
@@ -121,7 +120,7 @@ help:
 	@echo "SysArmor test scopes:"
 	@echo "  test-unit        local Go tests"
 	@echo "  test-endpoint    single VM endpoint agent/sensor/local control"
-	@echo "  test-topology    multi-VM manager/agent/attacker path"
+	@echo "  test-topology    multi-VM manager/gateway/agent/attacker path"
 	@echo "  test-platform    manager/control/storage/platform contracts"
 	@echo "  test-platform-full container gateway/worker/manager product path"
 	@echo ""

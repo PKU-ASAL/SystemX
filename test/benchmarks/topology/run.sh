@@ -15,7 +15,6 @@ MATCHER_VARIANTS="${MATCHER_VARIANTS:-}"
 MATRIX_MODE="${MATRIX_MODE:-cross}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
 EVALUATION_SCOPE="${EVALUATION_SCOPE:-local}"
-SYNC_VM_AGENT="${SYSARMOR_BENCH_SYNC_VM_AGENT:-1}"
 
 mkdir -p "$OUT_DIR"
 
@@ -30,7 +29,8 @@ cat >"$OUT_DIR/manifest.json" <<EOF
   "workloads": "$WORKLOADS",
   "scenarios": "$SCENARIOS",
   "matcher_variants": "$MATCHER_VARIANTS",
-  "matrix_mode": "$MATRIX_MODE"
+  "matrix_mode": "$MATRIX_MODE",
+  "vm_lifecycle": "fresh-per-case"
 }
 EOF
 
@@ -80,14 +80,6 @@ echo "[bench-topology] workloads: $WORKLOADS"
 echo "[bench-topology] scenarios: $SCENARIOS"
 echo "[bench-topology] matcher_variants: ${MATCHER_VARIANTS:-default}"
 echo "[bench-topology] matrix_mode: $MATRIX_MODE"
-
-if [[ "$SYNC_VM_AGENT" == "1" ]]; then
-  SYSARMOR_VM_ENV="$VM_ENV" bash "$ROOT/shared/vm/sync-agent.sh"
-  cd "$ROOT/environments/$VM_ENV" && vagrant rsync node-a >/dev/null 2>&1 || true
-  cd "$HERE"
-else
-  echo "[bench-topology] VM agent sync disabled"
-fi
 
 run_mode_for_variant() {
   local variant="${1:-}"
@@ -146,7 +138,7 @@ else
 fi
 
 python3 "$HERE/report.py" "$OUT_DIR"
-python3 "$HERE/effectiveness_report.py" \
+python3 "$ROOT/benchmarks/matrix/effectiveness_report.py" \
   --bench-matrix-dir "$OUT_DIR" \
   --output-dir "$RESULTS/effectiveness/$RUN_ID" \
   --topology vm \

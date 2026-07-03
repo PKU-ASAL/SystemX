@@ -68,7 +68,7 @@ health:
   interval: 500ms
 EOF"
 
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
 docker exec tetragon sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
 wait_contains() {
@@ -103,7 +103,7 @@ until [[ "$(docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.
   fi
   sleep 1
 done
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
 
 echo "[e2e-agent-benign-container] running benign-ci-noise"
 C2="$C2" CYCLES="$CYCLES" bash "$ROOT/data/scenarios/container/benign-ci-noise/attack.sh"

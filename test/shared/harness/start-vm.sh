@@ -5,16 +5,103 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 ENV_NAME="${1:-${ENV:-vm-endpoint}}"
+PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$ENV_NAME}"
+PLATFORM_UPLOAD_DIR="${SYSARMOR_VM_PLATFORM_UPLOAD_DIR:-$ROOT/.results/platform-upload/$ENV_NAME}"
+PLATFORM_IMAGE_BUNDLE="$PLATFORM_UPLOAD_DIR/deployments/vm-images.tar"
+BUILD_BINARIES="${SYSARMOR_VM_BUILD_BINARIES:-1}"
 
 case "$ENV_NAME" in
   vm-endpoint|vm-topology) ;;
   *) echo "[start-vm][ERROR] unsupported VM ENV=$ENV_NAME" >&2; exit 2 ;;
 esac
 
-echo ">>> 构建 SysArmor binaries"
-make -C "$REPO" build
+if [[ "$BUILD_BINARIES" == "1" ]]; then
+  echo ">>> 构建 SysArmor binaries"
+  make -C "$REPO" build
+else
+  echo ">>> 复用已构建 SysArmor binaries"
+fi
 
 cd "$ROOT/environments/$ENV_NAME"
 vagrant up
+
+if [[ "$ENV_NAME" == "vm-topology" ]]; then
+  echo ">>> 生成 VM topology agent-plane mTLS 证书"
+  SYSARMOR_GATEWAY_IPS="127.0.0.1,10.66.0.10" \
+    "$REPO/tools/pki/gen-agent-plane-mtls.sh" "$PKI_DIR" default vm-owned-tetragon sysarmor-gateway.local >/dev/null
+
+  echo ">>> 准备 VM topology deployment 源码包"
+  mkdir -p "$(dirname "$PLATFORM_UPLOAD_DIR")"
+  rsync -a --delete \
+    --exclude '.git/' \
+    --exclude '.vagrant/' \
+    --exclude '.cache/' \
+    --exclude 'bin/' \
+    --exclude 'test/.results/' \
+    --exclude 'references/code/' \
+    "$REPO/" "$PLATFORM_UPLOAD_DIR/"
+  mkdir -p \
+    "$PLATFORM_UPLOAD_DIR/deployments/vm-build/manager" \
+    "$PLATFORM_UPLOAD_DIR/deployments/vm-build/gateway" \
+    "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker"
+  install -m 0755 "$REPO/bin/sysarmor-manager" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/manager/sysarmor-manager"
+  install -m 0755 "$REPO/bin/sysarmor-gateway" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/gateway/sysarmor-gateway"
+  install -m 0755 "$REPO/bin/sysarmor-worker" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker/sysarmor-worker"
+  mkdir -p "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime"
+  rsync -a --delete "$PKI_DIR/" "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime/"
+  required_images=(ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest sysarmor-kafka:latest sysarmor-opensearch:latest)
+  for image in "${required_images[@]}"; do
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      echo "[start-vm][ERROR] required local Docker image missing: $image" >&2
+      exit 1
+    fi
+  done
+  docker save -o "$PLATFORM_IMAGE_BUNDLE" "${required_images[@]}"
+
+  echo ">>> 启动 VM topology platform services"
+  if ! vagrant ssh mgr -c "command -v docker >/dev/null && (docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null)" >/dev/null 2>&1; then
+    vagrant provision mgr >/dev/null
+  fi
+  vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload mgr >/dev/null
+  vagrant upload "$PLATFORM_UPLOAD_DIR" /tmp/sysarmor-platform.upload mgr >/dev/null
+  vagrant ssh mgr -c "
+set -euo pipefail
+sudo install -m 0755 /tmp/sysarmorctl.upload /tmp/sysarmorctl
+sudo pkill -x sysarmor-manager 2>/dev/null || true
+sudo pkill -x sysarmor-gateway 2>/dev/null || true
+sudo rm -rf /opt/sysarmor/platform
+sudo mkdir -p /opt/sysarmor
+sudo cp -a /tmp/sysarmor-platform.upload /opt/sysarmor/platform
+cd /opt/sysarmor/platform
+printf '%s\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf >/dev/null
+sudo systemctl restart docker
+sudo docker load -i deployments/vm-images.tar >/tmp/sysarmor-docker-load.log 2>&1
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE='docker compose'
+else
+  COMPOSE='docker-compose'
+fi
+sudo \$COMPOSE -f deployments/compose.platform.yaml -f deployments/compose.vm-topology.yaml down -v --remove-orphans >/tmp/sysarmor-compose-down.log 2>&1 || true
+sudo \$COMPOSE -f deployments/compose.platform.yaml -f deployments/compose.vm-topology.yaml up -d --build >/tmp/sysarmor-compose-up.log 2>&1
+" >/dev/null
+  ready=0
+  for _ in $(seq 1 120); do
+    if vagrant ssh mgr -c "curl -sf http://127.0.0.1:9443/healthz >/dev/null && curl -sf http://127.0.0.1:9445/healthz | grep -F '\"mtls\":true' >/dev/null" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != "1" ]]; then
+    echo "[start-vm][ERROR] manager/gateway health did not become ready" >&2
+    vagrant ssh mgr -c "cat /tmp/sysarmor-docker-load.log 2>/dev/null || true" >&2 2>/dev/null || true
+    vagrant ssh mgr -c "cat /tmp/sysarmor-compose-up.log 2>/dev/null || true" >&2 2>/dev/null || true
+    vagrant ssh mgr -c "cd /opt/sysarmor/platform && if docker compose version >/dev/null 2>&1; then sudo docker compose -f deployments/compose.platform.yaml -f deployments/compose.vm-topology.yaml ps; else sudo docker-compose -f deployments/compose.platform.yaml -f deployments/compose.vm-topology.yaml ps; fi || true" >&2 2>/dev/null || true
+    vagrant ssh mgr -c "sudo docker logs sysarmor-manager --tail 120 2>/dev/null || true" >&2 2>/dev/null || true
+    vagrant ssh mgr -c "sudo docker logs sysarmor-gateway --tail 120 2>/dev/null || true" >&2 2>/dev/null || true
+    vagrant ssh mgr -c "sudo docker logs sysarmor-worker --tail 120 2>/dev/null || true" >&2 2>/dev/null || true
+    exit 1
+  fi
+fi
 
 echo "[start-vm] done ENV=$ENV_NAME"

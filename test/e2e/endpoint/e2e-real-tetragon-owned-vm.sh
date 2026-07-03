@@ -136,7 +136,7 @@ sudo rm -rf /var/lib/sysarmor/agent/telemetry-owned-tetragon '$TETRAGON_BUNDLE_D
 sudo systemctl daemon-reload
 sudo install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl" >/dev/null
 
-vagrant ssh node-a -c "sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-owned-tetragon.yaml SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1" >/dev/null
+vagrant ssh node-a -c "sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-owned-tetragon.yaml SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1" >/dev/null
 vagrant ssh node-a -c "sudo test -f /opt/sysarmor/bundles/tetragon/manifest.json" >/dev/null
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
 
