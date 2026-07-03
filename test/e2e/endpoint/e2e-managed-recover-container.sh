@@ -92,7 +92,7 @@ health:
   interval: 50ms
 EOF"
 
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset" >/dev/null
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset" >/dev/null
 docker exec mgr sh -c "rm -f '$WORK/agent.log' '$WORK/tetragon.count'; SYSARMOR_TETRAGON_COUNT='$WORK/tetragon.count' /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
 wait_contains() {

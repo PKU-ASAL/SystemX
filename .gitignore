@@ -8,6 +8,7 @@ test/.results/*.csv
 # build artifacts
 bin/
 .cache/
+deployments/pki/agent-plane-mtls/runtime/
 
 # vagrant
 .vagrant/

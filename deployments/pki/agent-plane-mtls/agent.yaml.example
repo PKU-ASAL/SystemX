@@ -4,12 +4,12 @@ agent:
   tenant_id: "default"
   token: "unused-with-mtls-but-required-by-local-config"
 manager:
-  address: "sysarmor-manager.example.com:9444"
+  address: "sysarmor-gateway.example.com:9444"
   transport: "grpc"
   tls_ca: "/etc/sysarmor/pki/ca.pem"
   tls_cert: "/etc/sysarmor/pki/agent.pem"
   tls_key: "/etc/sysarmor/pki/agent-key.pem"
-  tls_server_name: "sysarmor-manager.example.com"
+  tls_server_name: "sysarmor-gateway.example.com"
 control:
   socket_path: "/var/run/sysarmor/agent.sock"
 sensor:

@@ -54,7 +54,7 @@ health:
   interval: 100ms
 EOF'
 
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset" >/dev/null
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset" >/dev/null
 docker exec mgr sh -c 'rm -f /tmp/sysarmor-agent-container/agent.log; /opt/sysarmor/bin/sysarmor-agent run --config /tmp/sysarmor-agent-container/agent.yaml > /tmp/sysarmor-agent-container/agent.log 2>&1 & echo $! > /tmp/sysarmor-agent-container.pid'
 
 wait_contains() {
@@ -73,7 +73,7 @@ wait_contains() {
       echo "--- agent log ---" >&2
       docker exec mgr cat /tmp/sysarmor-agent-container/agent.log >&2 2>/dev/null || true
       echo "--- manager health ---" >&2
-      docker exec mgr curl -s http://127.0.0.1:9443/healthz >&2 2>/dev/null || true
+      curl -s http://127.0.0.1:19443/healthz >&2 2>/dev/null || true
       exit 1
     fi
     sleep 0.2

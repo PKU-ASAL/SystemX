@@ -13,7 +13,7 @@ CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent.yaml}"
 POLICY_DST="${SYSARMOR_POLICY_DST:-/etc/sysarmor/policies/sysarmor-owned-tetragon.yaml}"
 BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
 INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-/opt/sysarmor/sensors}"
-SENSOR_INSTALLER="${SYSARMOR_TETRAGON_INSTALLER:-$HERE/sensors/tetragon/install-bundle.sh}"
+SENSOR_INSTALLER="${SYSARMOR_TETRAGON_INSTALLER:-$HERE/../sensors/tetragon/install-bundle.sh}"
 ENABLE_SERVICE="${SYSARMOR_ENABLE_SERVICE:-1}"
 
 require_file() {

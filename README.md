@@ -89,7 +89,7 @@ The manager checks the certificate identity against `DataBatch.header.tenant_id/
 
 `sysarmorctl --agent-sock ...` is a local operator/debug boundary. It talks to the local agent over Unix socket gRPC and reads the local spool/WAL as a side channel for watch/query commands. Cloud or manager communication must use `AgentDataPlaneService.AppendBatch` and `AgentControlPlaneService.Connect`; local ctl is not a second production data plane.
 
-See [references/docs/agent-manager-contract.md](references/docs/agent-manager-contract.md) for the table-form contract.
+See [references/docs/agent-gateway-contract.md](references/docs/agent-gateway-contract.md) for the table-form contract.
 
 ## Useful Debug Commands
 

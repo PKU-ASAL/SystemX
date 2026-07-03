@@ -13,7 +13,7 @@
 # opensearch 10.66.0.23 evidence/search layer
 # tetragon  10.66.0.12  eBPF 传感器 + sysarmor-agent stream smoke
 #
-# tetragon 通过 eBPF 在内核层采集，同时加入 sysarmor-net 以便 agent smoke 上传 manager。
+# tetragon 通过 eBPF 在内核层采集，同时加入 sysarmor-net 以便 agent smoke 上传 gateway。
 
 services:
   attacker:
@@ -34,7 +34,9 @@ services:
       - node-secrets:/var/run/secrets/kubernetes.io/serviceaccount
 
   mgr:
-    build: ./images/mgr
+    build:
+      context: ../../..
+      dockerfile: deployments/manager/Dockerfile
     container_name: mgr
     depends_on:
       - postgres
@@ -47,13 +49,11 @@ services:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
     volumes:
       - ../../../bin:/opt/sysarmor/bin:ro
-    entrypoint:
-      - bash
-      - -lc
-      - /opt/sysarmor/bin/sysarmor-manager --listen 0.0.0.0:9443 --store-backend postgres --postgres-driver $${SYSARMOR_POSTGRES_DRIVER:-postgres} --postgres-dsn "$$SYSARMOR_POSTGRES_DSN"
 
   gateway:
-    build: ./images/mgr
+    build:
+      context: ../../..
+      dockerfile: deployments/gateway/Dockerfile
     container_name: gateway
     depends_on:
       - postgres
@@ -64,19 +64,18 @@ services:
         ipv4_address: 10.66.0.14
     ports:
       - "19444:9444"
+      - "19445:9445"
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_KAFKA_BROKERS: kafka:9092
       SYSARMOR_REDIS_ADDR: redis:6379
     volumes:
       - ../../../bin:/opt/sysarmor/bin:ro
-    entrypoint:
-      - bash
-      - -lc
-      - /opt/sysarmor/bin/sysarmor-gateway --listen 0.0.0.0:9444 --store-backend postgres --postgres-driver $${SYSARMOR_POSTGRES_DRIVER:-postgres} --postgres-dsn "$$SYSARMOR_POSTGRES_DSN" --kafka-brokers "$$SYSARMOR_KAFKA_BROKERS" --redis-addr "$$SYSARMOR_REDIS_ADDR"
 
   worker:
-    build: ./images/mgr
+    build:
+      context: ../../..
+      dockerfile: deployments/worker/Dockerfile
     container_name: worker
     depends_on:
       - postgres
@@ -91,12 +90,6 @@ services:
       SYSARMOR_KAFKA_TOPIC: sysarmor.agent.databatch.raw
       SYSARMOR_KAFKA_GROUP_ID: sysarmor-ingest-worker
       SYSARMOR_OPENSEARCH_URL: http://opensearch:9200
-    volumes:
-      - ../../../bin:/opt/sysarmor/bin:ro
-    entrypoint:
-      - bash
-      - -lc
-      - /opt/sysarmor/bin/sysarmor-worker --store-backend postgres --postgres-driver $${SYSARMOR_POSTGRES_DRIVER:-postgres} --postgres-dsn "$$SYSARMOR_POSTGRES_DSN"
 
   postgres:
     image: postgres:16-alpine

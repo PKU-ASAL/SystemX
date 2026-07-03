@@ -1,6 +1,6 @@
 services:
   postgres:
-    build: ./postgres
+    build: ./infra/postgres
     container_name: sysarmor-postgres
     environment:
       POSTGRES_DB: sysarmor
@@ -17,7 +17,7 @@ services:
       retries: 20
 
   kafka:
-    build: ./kafka
+    build: ./infra/kafka
     container_name: sysarmor-kafka
     environment:
       KAFKA_ENABLE_KRAFT: "yes"
@@ -33,7 +33,7 @@ services:
       - "19092:9092"
 
   redis:
-    build: ./redis
+    build: ./infra/redis
     container_name: sysarmor-redis
     ports:
       - "16379:6379"
@@ -41,7 +41,7 @@ services:
       - redis-data:/data
 
   opensearch:
-    build: ./opensearch
+    build: ./infra/opensearch
     container_name: sysarmor-opensearch
     environment:
       discovery.type: single-node
@@ -60,19 +60,36 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ./manager/manager.env.example
+    environment:
+      SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
+    ports:
+      - "19443:9443"
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deployments/gateway/Dockerfile
+    container_name: sysarmor-gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
       kafka:
         condition: service_started
       redis:
         condition: service_started
-      opensearch:
-        condition: service_started
+    env_file:
+      - ./gateway/gateway.env.example
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_KAFKA_BROKERS: kafka:9092
       SYSARMOR_REDIS_ADDR: redis:6379
+    volumes:
+      - ./pki/agent-plane-mtls/runtime:/etc/sysarmor/pki:ro
     ports:
-      - "19443:9443"
       - "19444:9444"
+      - "19445:9445"
 
   worker:
     build:
@@ -86,6 +103,8 @@ services:
         condition: service_started
       opensearch:
         condition: service_started
+    env_file:
+      - ./worker/worker.env.example
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_KAFKA_BROKERS: kafka:9092
