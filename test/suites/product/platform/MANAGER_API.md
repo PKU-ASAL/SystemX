@@ -9,9 +9,9 @@ policy APIs, response APIs, and manager-facing agent health checks.
 Entrypoints:
 
 ```bash
-make -C test test-platform
-make -C test test-topology SCENARIO=apt-fileless-c2
+make -C test product-platform
+make -C test product-topology SCENARIO=apt-fileless-c2
 ```
 
-Endpoint resource conclusions are out of scope here; use `bench-endpoint` on
+Endpoint resource conclusions are out of scope here; use `performance-endpoint` on
 `vm-endpoint` for that.

@@ -39,14 +39,14 @@ are topology observations rather than clean endpoint-cost baselines.
 
 Functional E2E, benchmark, and diagnostic logic should stay separate.
 
-## Endpoint Benchmark
+## Performance Endpoint
 
 Run:
 
 ```bash
-make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
-make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
-make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
+make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
+make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
+make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
 ```
 
 Useful knobs:
@@ -66,7 +66,7 @@ SYSARMOR_BENCH_ACTIVITY_PROFILE_SECONDS=5
 Output:
 
 ```text
-test/.results/bench-endpoint/<run-id>/
+test/.results/performance-endpoint/<run-id>/
   manifest.json
   matrix.csv
   <policy>/
@@ -101,7 +101,7 @@ windows to smooth startup spikes and collector jitter. Profiling is disabled by
 default in all profiles because profile collection changes the workload being
 measured; enable it only for diagnostic attribution.
 
-Profile defaults are stored in `test/benchmarks/endpoint/profiles/quick.env`
+Profile defaults are stored in `test/suites/performance/endpoint/profiles/quick.env`
 `medium.env`, and `long.env`. Override individual windows with
 `SYSARMOR_BENCH_*` variables when a specific experiment needs a different
 duration.
@@ -151,18 +151,18 @@ diagnostic run. Profiling runs also emit raw markers such as
 profile collection overhead visible in `markers.ndjson` and
 `summary.json.raw_phases` without changing the standard report phases.
 
-## Topology Benchmark
+## Effectiveness Topology
 
 Run:
 
 ```bash
-make -C test bench-topology ENV=vm-topology
+make -C test effectiveness-topology ENV=vm-topology
 ```
 
-`bench-topology` composes workload/scenario cases and writes:
+`effectiveness-topology` composes workload/scenario cases and writes:
 
 ```text
-test/.results/bench-topology/<run-id>/
+test/.results/effectiveness-topology/<run-id>/
   manifest.json
   matrix.csv
   cases/

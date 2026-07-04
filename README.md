@@ -43,20 +43,20 @@ make test
 
 The build writes static binaries to `bin/`, which is ignored because it is regenerated.
 
-## Test Scopes
+## Test Suites
 
 Run from `test/`:
 
 ```bash
 make test-unit
-make test-endpoint
-make test-topology SCENARIO=apt-fileless-c2
-make test-platform
+make product-endpoint
+make product-topology SCENARIO=apt-fileless-c2
+make product-platform
 
-make bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
-make bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
-make bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
-make bench-topology ENV=vm-topology
+make performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
+make performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
+make performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
+make effectiveness-topology ENV=vm-topology
 ```
 
 Environment choices:
@@ -65,10 +65,10 @@ Environment choices:
 - `vm-endpoint`: one fresh endpoint VM per benchmark run; source of truth for agent/sensor CPU and memory conclusions.
 - `vm-topology`: three VMs (`mgr`, `node-a`, `attacker`) for manager-agent-C2 product path checks.
 
-Endpoint benchmark reports use these standard phases: `startup`, `steady`,
+Performance/effectiveness reports use these standard phases: `startup`, `steady`,
 `workload`, `activity`, `persistence`, and `overall`.
 
-`test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored.
+`test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored. `vm-topology` deployment input cache lives under `test/environments/vm-topology/deploy/`, split into a lightweight platform bundle and a reusable Docker image bundle.
 
 ## Data And Control Plane Contract
 

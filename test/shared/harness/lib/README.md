@@ -1,15 +1,28 @@
 # Harness Library
 
-`test/shared/harness/lib` contains shared shell glue for suite scripts. Keep these helpers generic: start/wait/query/collect/cleanup mechanics belong here; product assertions belong in `test/e2e/<suite>/`.
+结论：`test/shared/harness/lib` 是 shell 级通用工具库，只处理路径、端口、进程、等待和清理；产品断言留在具体 suite。
 
-Current helpers:
+## 当前 Helpers
 
-- `sa_init_repo_paths`: initialize `ROOT`, `RESULTS`, and `BIN`.
-- `sa_make_tmp`: create a namespaced temporary directory.
-- `sa_pick_ports`: allocate HTTP/gRPC manager ports and `MGR_URL`.
-- `sa_kill_pid_ref` and `sa_cleanup_tmp`: standard process and tmp cleanup.
-- `sa_wait_contains` and `sa_wait_url_contains`: retry a command or URL until output contains a string.
-- `sa_wait_glob` and `sa_wait_no_glob`: wait for generated test artifacts to appear or drain.
-- `sa_build_all` and `sa_build_go_bins`: build project binaries for e2e scripts.
-- `sa_start_memory_manager`: start an in-memory manager on the selected HTTP/gRPC ports.
-- `sa_manager_ctl`: run `sysarmorctl --manager-url "$MGR_URL" --json manager ...`.
+| Helper | 作用 |
+|---|---|
+| `sa_init_repo_paths` | 初始化 `ROOT`、`RESULTS`、`BIN` |
+| `sa_make_tmp` | 创建带命名空间的临时目录 |
+| `sa_pick_ports` | 分配 manager HTTP/gRPC 端口和 `MGR_URL` |
+| `sa_kill_pid_ref` | 按 pid 文件清理进程 |
+| `sa_cleanup_tmp` | 清理临时目录 |
+| `sa_wait_contains` | 重试命令直到输出包含目标字符串 |
+| `sa_wait_url_contains` | 重试 URL 直到响应包含目标字符串 |
+| `sa_wait_glob` | 等待文件出现 |
+| `sa_wait_no_glob` | 等待文件消失或队列清空 |
+| `sa_build_all` | 构建项目常用二进制 |
+| `sa_build_go_bins` | 构建指定 Go binary |
+| `sa_start_memory_manager` | 启动 in-memory manager |
+| `sa_manager_ctl` | 通过 `sysarmorctl --manager-url "$MGR_URL"` 调 manager API |
+
+## 维护规则
+
+1. helper 只做机制，不写 scenario 语义。
+2. 不在 lib 中硬编码具体 test case 的 expected event/signal。
+3. 需要复用三次以上的 shell glue 再下沉到这里。
+4. 新 helper 保持短小，错误显式返回。
