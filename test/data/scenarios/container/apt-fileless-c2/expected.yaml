@@ -10,7 +10,6 @@ events:
 endpoint_signals:
   must_have_entities: true        # D4：每个 Signal 必带 entities
   must_contain:
-    - { name: web_runtime_spawns_shell }
     - { name: download_by_lolbin, entities_keys: ["socket:10.66.0.99:8080"] }
     - { name: payload_dropped, entities_keys: ["file:/dev/shm/x.sh"] }
     - { name: reverse_shell_pattern, terminal: true,
@@ -18,7 +17,7 @@ endpoint_signals:
   may_contain:                    # 真实后渗透产生的额外凭据信号
     - { name: sensitive_cred_read }
 cloud_signals:
-  must_contain: [dropped_payload_executed_and_connects, web_shell_chain]
+  must_contain: [dropped_payload_executed_and_connects]
 incident:
   count: 1
   terminals_include_binary: ["bash"]

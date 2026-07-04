@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
@@ -33,9 +33,7 @@ vagrant upload "$PKI_DIR" /tmp/sysarmor-pki.upload node-a >/dev/null
 
 vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /etc/sysarmor/pki /var/lib/sysarmor/agent/telemetry /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service; sudo install -m 0644 /tmp/sysarmor-pki.upload/ca.pem /etc/sysarmor/pki/ca.pem; sudo install -m 0644 /tmp/sysarmor-pki.upload/agent.pem /etc/sysarmor/pki/agent.pem; sudo install -m 0600 /tmp/sysarmor-pki.upload/agent-key.pem /etc/sysarmor/pki/agent-key.pem" >/dev/null
 
-vagrant ssh node-a -c "sudo tee /etc/sysarmor/policies/sysarmor-fake.yaml >/dev/null <<'EOF'
-{"behaviors":["process.exec"],"observe_only":true}
-EOF
+vagrant ssh node-a -c "printf '%s\n' '{\"behaviors\":[\"process.exec\"],\"observe_only\":true}' | sudo tee /etc/sysarmor/policies/sysarmor-fake.yaml >/dev/null
 sudo tee /etc/sysarmor/agent.yaml >/dev/null <<EOF
 agent:
   id: $AGENT_ID
@@ -53,6 +51,7 @@ manager:
 
 sensor:
   backend: fake
+  fake_startup_events: 1
   mode: managed
   policy_path: /etc/sysarmor/policies/sysarmor-fake.yaml
   observe_only: true
