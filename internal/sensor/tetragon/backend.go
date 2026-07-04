@@ -487,6 +487,7 @@ func (b *Backend) Subscribe(ctx context.Context, intent contract.CollectionInten
 		defer stopSensor()
 		defer closeSource()
 		scanner := bufio.NewScanner(source)
+		scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 		for scanner.Scan() {
 			line := append([]byte(nil), scanner.Bytes()...)
 			if len(line) == 0 {

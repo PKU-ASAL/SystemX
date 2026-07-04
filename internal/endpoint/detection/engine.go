@@ -1276,7 +1276,7 @@ func availableFieldsFromCapabilities(collection contract.CollectionIntent) map[s
 func resolveContext(refs []policymodel.ContentRef, content ContentSnapshot) ContextSnapshot {
 	out := ContextSnapshot{
 		CredentialPathPrefixes: []string{"/root/.ssh/", "/home/", "/var/run/secrets/", "/run/secrets/", "/etc/kubernetes/"},
-		PayloadPathPrefixes:    []string{"/tmp/", "/dev/shm/", "/var/lib/app/plugins/"},
+		PayloadPathPrefixes:    []string{"/dev/shm/", "/tmp/.sysarmor-attack/", "/var/tmp/.sysarmor-attack/", "/var/lib/app/plugins/"},
 		TrustedAdminBinaries:   []string{"/usr/bin/vim", "/usr/bin/vi", "/usr/bin/nano"},
 	}
 	for _, ref := range refs {

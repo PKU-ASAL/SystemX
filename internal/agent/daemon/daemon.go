@@ -190,7 +190,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
 	})
 	endpointRuntime := NewEndpointRuntime(r, norm)
-	transportRuntime := NewTransportRuntime(r, rt, batcher, sender, startedAt, scopeType, scopeSelector)
+	transportRuntime := NewTransportRuntime(r, rt, bus, batcher, sender, startedAt, scopeType, scopeSelector)
 	go transportRuntime.RunDataFlow(dataPlaneCtx)
 	go transportRuntime.RunControlFlow(dataPlaneCtx)
 	r.applyRuntimePolicy(effectivePolicy)
