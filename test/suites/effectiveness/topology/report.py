@@ -25,14 +25,14 @@ def load_csv(path):
 
 def main():
     if len(sys.argv) != 2:
-        raise SystemExit("usage: report.py <bench-topology-dir>")
+        raise SystemExit("usage: report.py <effectiveness-topology-dir>")
     out_dir = Path(sys.argv[1])
     rows = []
     cases_dir = out_dir / "cases"
     for case_dir in sorted(p for p in cases_dir.iterdir() if p.is_dir()) if cases_dir.exists() else []:
         status = load_json(case_dir / "status.json")
         bench_run_id = status.get("bench_run_id", "")
-        source = out_dir.parents[1] / "bench-endpoint" / bench_run_id / "matrix.csv"
+        source = out_dir.parents[1] / "performance-endpoint" / bench_run_id / "matrix.csv"
         matrix_rows = load_csv(source)
         variant = status.get("variant", "")
         matcher_strategy = status.get("matcher_strategy", "")

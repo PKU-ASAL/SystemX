@@ -122,7 +122,7 @@ def build_row(policy_dir):
 
 def main():
     if len(sys.argv) != 2:
-        raise SystemExit("usage: report.py <bench-endpoint-dir>")
+        raise SystemExit("usage: report.py <performance-endpoint-dir>")
     out_dir = Path(sys.argv[1])
     rows = []
     for child in sorted(out_dir.iterdir()):

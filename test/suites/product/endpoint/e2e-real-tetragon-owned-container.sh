@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 RESULTS="$ROOT/.results"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
@@ -184,7 +184,7 @@ wait_contains "scenario events" "\"labels\":{\"scenario\":\"$SCENARIO\"" "$RESUL
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --label scenario="$SCENARIO"
 wait_contains "cloud cross-lineage signal" 'dropped_payload_executed_and_connects' "$RESULTS/e2e-agent-real-tetragon-owned-container.cloud-signals.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --label scenario="$SCENARIO" --layer cloud
-wait_contains "incident" '"incidents":[{' "$RESULTS/e2e-agent-real-tetragon-owned-container.incidents.json" \
+wait_contains "incident" '"id":"inc-' "$RESULTS/e2e-agent-real-tetragon-owned-container.incidents.json" \
   docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list --label scenario="$SCENARIO"
 
 PID_BEFORE="$(docker exec "$OWNED_CONTAINER" sh -c "cat '$WORK/agent.pid'" 2>/dev/null | tr -d '\r' | tail -1)"

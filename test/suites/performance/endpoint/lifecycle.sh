@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"

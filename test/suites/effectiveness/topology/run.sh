@@ -2,11 +2,11 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 RESULTS="$ROOT/.results"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
-OUT_DIR="$RESULTS/bench-topology/$RUN_ID"
+OUT_DIR="$RESULTS/effectiveness-topology/$RUN_ID"
 
 POLICIES="${POLICIES-test/data/policies/collection-minimal.json test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
 WORKLOADS="${WORKLOADS-business-normal}"
@@ -21,7 +21,7 @@ mkdir -p "$OUT_DIR"
 cat >"$OUT_DIR/manifest.json" <<EOF
 {
   "suite": "topology",
-  "tool": "bench-topology",
+  "tool": "effectiveness-topology",
   "evaluation_scope": "$EVALUATION_SCOPE",
   "topology": "vm",
   "run_id": "$RUN_ID",
@@ -50,7 +50,7 @@ run_case() {
   local case_dir="$OUT_DIR/cases/$case_name"
   mkdir -p "$case_dir"
 
-  echo "[bench-topology] variant=$variant_label matcher_strategy=${matcher_strategy:-config-default} workload=$workload_label scenario=$scenario_label"
+  echo "[effectiveness-topology] variant=$variant_label matcher_strategy=${matcher_strategy:-config-default} workload=$workload_label scenario=$scenario_label"
   if SYSARMOR_BENCH_RUN_ID="$case_run_id" \
       POLICIES="$POLICIES" \
       SYSARMOR_BENCH_VARIANT="$variant" \
@@ -58,7 +58,7 @@ run_case() {
       SYSARMOR_BENCH_WORKLOAD="$workload" \
       SYSARMOR_BENCH_SCENARIO="$scenario" \
       SYSARMOR_VM_ENV="$VM_ENV" \
-      bash "$ROOT/benchmarks/endpoint/run.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
+      bash "$ROOT/suites/performance/endpoint/run.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
     printf '{"name":"%s","variant":"%s","matcher_strategy":"%s","workload":"%s","scenario":"%s","status":"ok","bench_run_id":"%s"}\n' \
       "$case_name" "$variant" "$matcher_strategy" "$workload" "$scenario" "$case_run_id" >"$case_dir/status.json"
   else
@@ -66,20 +66,20 @@ run_case() {
     printf '{"name":"%s","variant":"%s","matcher_strategy":"%s","workload":"%s","scenario":"%s","status":"failed","exit_code":%s,"bench_run_id":"%s"}\n' \
       "$case_name" "$variant" "$matcher_strategy" "$workload" "$scenario" "$rc" "$case_run_id" >"$case_dir/status.json"
     if [[ "$STOP_ON_ERROR" == "1" ]]; then
-      echo "[bench-topology][ERROR] failed workload=$workload_label scenario=$scenario_label" >&2
+      echo "[effectiveness-topology][ERROR] failed workload=$workload_label scenario=$scenario_label" >&2
       cat "$case_dir/run.err" >&2 2>/dev/null || true
       exit "$rc"
     fi
   fi
 }
 
-echo "[bench-topology] output: $OUT_DIR"
-echo "[bench-topology] evaluation_scope: $EVALUATION_SCOPE"
-echo "[bench-topology] policies: $POLICIES"
-echo "[bench-topology] workloads: $WORKLOADS"
-echo "[bench-topology] scenarios: $SCENARIOS"
-echo "[bench-topology] matcher_variants: ${MATCHER_VARIANTS:-default}"
-echo "[bench-topology] matrix_mode: $MATRIX_MODE"
+echo "[effectiveness-topology] output: $OUT_DIR"
+echo "[effectiveness-topology] evaluation_scope: $EVALUATION_SCOPE"
+echo "[effectiveness-topology] policies: $POLICIES"
+echo "[effectiveness-topology] workloads: $WORKLOADS"
+echo "[effectiveness-topology] scenarios: $SCENARIOS"
+echo "[effectiveness-topology] matcher_variants: ${MATCHER_VARIANTS:-default}"
+echo "[effectiveness-topology] matrix_mode: $MATRIX_MODE"
 
 run_mode_for_variant() {
   local variant="${1:-}"
@@ -116,7 +116,7 @@ run_mode_for_variant() {
       done
       ;;
     *)
-      echo "[bench-topology][ERROR] unsupported MATRIX_MODE=$MATRIX_MODE (want workload|scenario|cross|all)" >&2
+      echo "[effectiveness-topology][ERROR] unsupported MATRIX_MODE=$MATRIX_MODE (want workload|scenario|cross|all)" >&2
       exit 1
       ;;
   esac
@@ -127,7 +127,7 @@ if [[ -n "$MATCHER_VARIANTS" ]]; then
     case "$matcher_strategy" in
       linear|optimized) ;;
       *)
-        echo "[bench-topology][ERROR] unsupported matcher variant: $matcher_strategy" >&2
+        echo "[effectiveness-topology][ERROR] unsupported matcher variant: $matcher_strategy" >&2
         exit 1
         ;;
     esac
@@ -138,7 +138,7 @@ else
 fi
 
 python3 "$HERE/report.py" "$OUT_DIR"
-python3 "$ROOT/benchmarks/matrix/effectiveness_report.py" \
+python3 "$ROOT/shared/reports/effectiveness_report.py" \
   --bench-matrix-dir "$OUT_DIR" \
   --output-dir "$RESULTS/effectiveness/$RUN_ID" \
   --topology vm \
@@ -146,5 +146,5 @@ python3 "$ROOT/benchmarks/matrix/effectiveness_report.py" \
   --scenarios $SCENARIOS \
   --workloads $WORKLOADS
 
-echo "[bench-topology] matrix written to $OUT_DIR/matrix.csv"
-echo "[bench-topology] effectiveness written to $RESULTS/effectiveness/$RUN_ID"
+echo "[effectiveness-topology] matrix written to $OUT_DIR/matrix.csv"
+echo "[effectiveness-topology] effectiveness written to $RESULTS/effectiveness/$RUN_ID"

@@ -598,7 +598,7 @@ def discover_bench_cases(root, results, matrix_dir):
         for case_dir in sorted(p for p in cases_dir.iterdir() if p.is_dir()):
             status = load_json(case_dir / "status.json")
             bench_run_id = status.get("bench_run_id", "")
-            bench_root = results / "bench-endpoint" / bench_run_id
+            bench_root = results / "performance-endpoint" / bench_run_id
             if not bench_root.exists():
                 continue
             workload = status.get("workload", "")

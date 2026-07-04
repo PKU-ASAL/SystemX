@@ -2,13 +2,13 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
-OUT_DIR="$RESULTS/bench-endpoint/$RUN_ID"
+OUT_DIR="$RESULTS/performance-endpoint/$RUN_ID"
 BENCH_PROFILE="${SYSARMOR_BENCH_PROFILE:-quick}"
 AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/var/run/sysarmor/agent.sock}"
 AGENT_ID="${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}"
@@ -32,7 +32,7 @@ case "$BENCH_PROFILE" in
     source "$HERE/profiles/$BENCH_PROFILE.env"
     ;;
   *)
-    echo "[bench-endpoint][ERROR] unsupported SYSARMOR_BENCH_PROFILE=$BENCH_PROFILE (expected quick|medium|long)" >&2
+    echo "[performance-endpoint][ERROR] unsupported SYSARMOR_BENCH_PROFILE=$BENCH_PROFILE (expected quick|medium|long)" >&2
     exit 1
     ;;
 esac
@@ -67,7 +67,7 @@ mkdir -p "$OUT_DIR"
 cat >"$OUT_DIR/manifest.json" <<EOF
 {
   "suite": "endpoint",
-  "tool": "bench-endpoint",
+  "tool": "performance-endpoint",
   "benchmark_profile": "$BENCH_PROFILE",
   "vm_env": "$VM_ENV",
   "run_id": "$RUN_ID",
@@ -107,7 +107,7 @@ wait_agent_socket() {
   local deadline=$((SECONDS + 60))
   until vagrant ssh node-a -c "sudo test -S '$AGENT_SOCK'" >/dev/null 2>&1; do
     if (( SECONDS >= deadline )); then
-      echo "[bench-endpoint][ERROR] timeout waiting for agent socket: $AGENT_SOCK" >&2
+      echo "[performance-endpoint][ERROR] timeout waiting for agent socket: $AGENT_SOCK" >&2
       vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l || true" >&2 2>/dev/null || true
       exit 1
     fi
@@ -195,7 +195,7 @@ set_runtime_feature_flags() {
   case "$matcher_strategy" in
     linear|optimized) ;;
     *)
-      echo "[bench-endpoint][ERROR] unsupported matcher strategy: $matcher_strategy" >&2
+      echo "[performance-endpoint][ERROR] unsupported matcher strategy: $matcher_strategy" >&2
       exit 1
       ;;
   esac
@@ -284,11 +284,11 @@ profile_cpu_should_start() {
   local phase="$1"
   profile_type_enabled cpu || return 1
   if [[ "$phase" == "workload" && -n "$SCENARIO" ]] && profile_has_nested_phase; then
-    echo "[bench-endpoint][WARN] skipping workload cpu profile because activity/persistence profiling is enabled; recorder CPU/RSS still covers workload" >&2
+    echo "[performance-endpoint][WARN] skipping workload cpu profile because activity/persistence profiling is enabled; recorder CPU/RSS still covers workload" >&2
     return 1
   fi
   if [[ -n "$PROFILE_CPU_ACTIVE_PHASE" ]]; then
-    echo "[bench-endpoint][WARN] skipping $phase cpu profile because $PROFILE_CPU_ACTIVE_PHASE cpu profile is still running" >&2
+    echo "[performance-endpoint][WARN] skipping $phase cpu profile because $PROFILE_CPU_ACTIVE_PHASE cpu profile is still running" >&2
     return 1
   fi
   return 0
@@ -305,7 +305,7 @@ start_agent_profile_window() {
   printf '{"phase":"%s","profile_types":"%s","window_seconds":%s,"started_at":"%s"}\n' \
     "$phase" "$PROFILE_TYPES" "$seconds" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$policy_out/profiles/$phase.window.json"
   if profile_cpu_should_start "$phase"; then
-    echo "[bench-endpoint] profiling agent cpu phase=$phase seconds=$seconds"
+    echo "[performance-endpoint] profiling agent cpu phase=$phase seconds=$seconds"
     vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json debug profile cpu --seconds '$seconds' --label '$phase' --output '/tmp/sysarmor-agent-$phase.cpu.pb.gz' --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout '$((seconds + 10))s'" \
       > "$policy_out/profiles/$phase.cpu.profile.json" 2>"$policy_out/profiles/$phase.cpu.profile.err" &
     PROFILE_PIDS["$phase"]=$!
@@ -321,11 +321,11 @@ capture_instant_profile() {
   ext="$(profile_ext "$profile_type")"
   local remote="/tmp/sysarmor-agent-$phase.$profile_type.$ext"
   local local_path="$policy_out/profiles/$phase.$profile_type.$ext"
-  echo "[bench-endpoint] capturing agent $profile_type profile phase=$phase"
+  echo "[performance-endpoint] capturing agent $profile_type profile phase=$phase"
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json debug profile '$profile_type' --seconds 1 --label '$phase' --output '$remote' --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 15s" \
     > "$policy_out/profiles/$phase.$profile_type.profile.json" \
     2>"$policy_out/profiles/$phase.$profile_type.profile.err" || {
-      echo "[bench-endpoint][WARN] agent $profile_type profile failed for phase=$phase" >&2
+      echo "[performance-endpoint][WARN] agent $profile_type profile failed for phase=$phase" >&2
       return 0
     }
   vagrant ssh node-a -c "sudo cat '$remote' 2>/dev/null || true" > "$local_path" 2>/dev/null || true
@@ -349,7 +349,7 @@ finish_agent_profile_window() {
     :
   else
     wait "${PROFILE_PIDS[$phase]}" || {
-      echo "[bench-endpoint][WARN] agent cpu profile failed for phase=$phase" >&2
+      echo "[performance-endpoint][WARN] agent cpu profile failed for phase=$phase" >&2
     }
     vagrant ssh node-a -c "sudo cat '/tmp/sysarmor-agent-$phase.cpu.pb.gz' 2>/dev/null || true" > "$policy_out/profiles/$phase.cpu.pb.gz" 2>/dev/null || true
     vagrant ssh node-a -c "sudo rm -f '/tmp/sysarmor-agent-$phase.cpu.pb.gz'" >/dev/null 2>&1 || true
@@ -384,7 +384,7 @@ run_workload() {
     vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /tmp/sysarmor-scenario-attack.sh'" \
       > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
   else
-    echo "[bench-endpoint][ERROR] workload not found: $workload_name" >&2
+    echo "[performance-endpoint][ERROR] workload not found: $workload_name" >&2
     exit 1
   fi
 }
@@ -395,7 +395,7 @@ start_workload_background() {
   WORKLOAD_PID=""
   cd "$ENVDIR"
   if [[ ! -f "$ROOT/data/workloads/vm/$workload_name/run.sh" ]]; then
-    echo "[bench-endpoint][ERROR] workload not found: $workload_name" >&2
+    echo "[performance-endpoint][ERROR] workload not found: $workload_name" >&2
     exit 1
   fi
   vagrant upload "$ROOT/data/workloads/vm/$workload_name/run.sh" /tmp/sysarmor-workload-run.sh node-a >/dev/null
@@ -409,7 +409,7 @@ run_scenario() {
   local scenario_name="$2"
   cd "$ENVDIR"
   if [[ ! -f "$ROOT/data/scenarios/vm/$scenario_name/attack.sh" ]]; then
-    echo "[bench-endpoint][ERROR] scenario not found: $scenario_name" >&2
+    echo "[performance-endpoint][ERROR] scenario not found: $scenario_name" >&2
     exit 1
   fi
   vagrant upload "$ROOT/data/scenarios/vm/$scenario_name/attack.sh" /tmp/sysarmor-scenario-attack.sh node-a >/dev/null
@@ -456,40 +456,40 @@ run_case_activity() {
   fi
 }
 
-echo "[bench-endpoint] output: $OUT_DIR"
-echo "[bench-endpoint] benchmark_profile: $BENCH_PROFILE"
-echo "[bench-endpoint] variant: ${VARIANT:-default}"
-echo "[bench-endpoint] matcher_strategy: ${MATCHER_STRATEGY:-config-default}"
-echo "[bench-endpoint] sync_vm_agent: $SYNC_VM_AGENT"
-echo "[bench-endpoint] profile_agent: $PROFILE_ENABLED types=${PROFILE_TYPES:-none} phases=${PROFILE_PHASES:-none}"
+echo "[performance-endpoint] output: $OUT_DIR"
+echo "[performance-endpoint] benchmark_profile: $BENCH_PROFILE"
+echo "[performance-endpoint] variant: ${VARIANT:-default}"
+echo "[performance-endpoint] matcher_strategy: ${MATCHER_STRATEGY:-config-default}"
+echo "[performance-endpoint] sync_vm_agent: $SYNC_VM_AGENT"
+echo "[performance-endpoint] profile_agent: $PROFILE_ENABLED types=${PROFILE_TYPES:-none} phases=${PROFILE_PHASES:-none}"
 if [[ "$BUILD_BINARIES" == "1" ]]; then
-  echo "[bench-endpoint] building current SysArmor binaries"
+  echo "[performance-endpoint] building current SysArmor binaries"
   make -C "$REPO" build
 else
-  echo "[bench-endpoint] binary build disabled"
+  echo "[performance-endpoint] binary build disabled"
 fi
 if [[ "$VM_FRESH" == "1" ]]; then
-  echo "[bench-endpoint] recreating fresh VM environment: $VM_ENV"
+  echo "[performance-endpoint] recreating fresh VM environment: $VM_ENV"
   vagrant destroy -f
   SYSARMOR_VM_ENV="$VM_ENV" SYSARMOR_VM_BUILD_BINARIES=0 bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV"
   cd "$ENVDIR"
 else
-  echo "[bench-endpoint] reusing existing VM environment: $VM_ENV"
+  echo "[performance-endpoint] reusing existing VM environment: $VM_ENV"
 fi
 if [[ "$SYNC_VM_AGENT" == "1" ]]; then
   SYSARMOR_VM_ENV="$VM_ENV" bash "$ROOT/shared/vm/sync-agent.sh"
   cd "$ENVDIR"
   vagrant rsync node-a >/dev/null 2>&1 || true
 else
-  echo "[bench-endpoint] VM agent sync disabled"
+  echo "[performance-endpoint] VM agent sync disabled"
 fi
 wait_agent_socket
 set_runtime_feature_flags "$MATCHER_STRATEGY"
 
-echo "[bench-endpoint] uploading content packs and policies"
+echo "[performance-endpoint] uploading content packs and policies"
 vagrant upload "$REPO/$CONTENT_DIR" /tmp/sysarmor-bench-content node-a >/dev/null
 if [[ "$APPLY_DETECTION" == "1" && ! -f "$REPO/$DETECTION_POLICY" ]]; then
-  echo "[bench-endpoint][ERROR] detection policy not found: $DETECTION_POLICY" >&2
+  echo "[performance-endpoint][ERROR] detection policy not found: $DETECTION_POLICY" >&2
   exit 1
 fi
 if [[ "$APPLY_DETECTION" == "1" ]]; then
@@ -503,44 +503,44 @@ apply_content_and_detection() {
     vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
       > "$policy_out/content.$name.apply.json" \
       2>"$policy_out/content.$name.apply.err" || {
-        echo "[bench-endpoint][ERROR] content apply failed: $name" >&2
+        echo "[performance-endpoint][ERROR] content apply failed: $name" >&2
         cat "$policy_out/content.$name.apply.err" >&2 2>/dev/null || true
         exit 1
       }
   done
 
   if [[ "$APPLY_DETECTION" == "1" ]]; then
-    echo "[bench-endpoint] applying detection policy: $DETECTION_POLICY"
+    echo "[performance-endpoint] applying detection policy: $DETECTION_POLICY"
     vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply --type detection --file /tmp/sysarmor-bench-detection.policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
       > "$policy_out/detection-apply.json" \
       2>"$policy_out/detection-apply.err" || {
-        echo "[bench-endpoint][ERROR] detection policy apply failed: $DETECTION_POLICY" >&2
+        echo "[performance-endpoint][ERROR] detection policy apply failed: $DETECTION_POLICY" >&2
         cat "$policy_out/detection-apply.err" >&2 2>/dev/null || true
         exit 1
       }
     if grep -Fq '"status":"rejected"' "$policy_out/detection-apply.json"; then
-      echo "[bench-endpoint][ERROR] detection policy rejected: $DETECTION_POLICY" >&2
+      echo "[performance-endpoint][ERROR] detection policy rejected: $DETECTION_POLICY" >&2
       cat "$policy_out/detection-apply.json" >&2 2>/dev/null || true
       exit 1
     fi
   else
-    echo "[bench-endpoint] detection policy apply disabled"
+    echo "[performance-endpoint] detection policy apply disabled"
   fi
 }
 
 for policy in $POLICIES_RAW; do
   if [[ ! -f "$REPO/$policy" ]]; then
-    echo "[bench-endpoint][ERROR] policy not found: $policy" >&2
+    echo "[performance-endpoint][ERROR] policy not found: $policy" >&2
     exit 1
   fi
   name="$(policy_name "$policy")"
   policy_out="$OUT_DIR/$name"
-  rec_run_id="bench-endpoint/$RUN_ID/$name"
+  rec_run_id="performance-endpoint/$RUN_ID/$name"
   rec_dir="$RESULTS/recordings/$rec_run_id"
   case_workload="$WORKLOAD"
   case_scenario="$SCENARIO"
   if [[ -z "$case_workload" && -z "$case_scenario" ]]; then
-    echo "[bench-endpoint][ERROR] at least one of SYSARMOR_BENCH_WORKLOAD or SYSARMOR_BENCH_SCENARIO is required" >&2
+    echo "[performance-endpoint][ERROR] at least one of SYSARMOR_BENCH_WORKLOAD or SYSARMOR_BENCH_SCENARIO is required" >&2
     exit 1
   fi
   rec_labels="benchmark_run=$RUN_ID,policy_profile=$name"
@@ -560,7 +560,7 @@ for policy in $POLICIES_RAW; do
   cat >"$policy_out/manifest.json" <<EOF
 {
   "suite": "endpoint",
-  "tool": "bench-endpoint",
+  "tool": "performance-endpoint",
   "benchmark_profile": "$BENCH_PROFILE",
   "vm_env": "$VM_ENV",
   "run_id": "$RUN_ID",
@@ -638,7 +638,7 @@ EOF
 }
 EOF
 
-  echo "[bench-endpoint] recording policy=$name workload=${case_workload:-none} scenario=${case_scenario:-none}"
+  echo "[performance-endpoint] recording policy=$name workload=${case_workload:-none} scenario=${case_scenario:-none}"
   set_agent_labels "$RUN_ID" "$name" "$case_workload" "$case_scenario"
   apply_content_and_detection "$policy_out"
   SYSARMOR_RECORDER_DURATION="$RECORDER_DURATION_SECONDS" recorder "$rec_run_id" "$rec_labels" start
@@ -653,25 +653,25 @@ EOF
   mark "$rec_run_id" baseline_start "$name"
   sleep "$BASELINE_SECONDS"
 
-  echo "[bench-endpoint] applying policy: $policy"
+  echo "[performance-endpoint] applying policy: $policy"
   mark "$rec_run_id" policy_apply_start "$policy"
   vagrant upload "$REPO/$policy" "/tmp/sysarmor-bench-$name.policy" node-a >/dev/null
   start_agent_profile_window "$policy_out" policy_apply "$((POLICY_SETTLE_SECONDS + 5))"
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply collection --file '/tmp/sysarmor-bench-$name.policy' --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
     > "$policy_out/collection-apply.json" \
     2>"$policy_out/collection-apply.err" || {
-      echo "[bench-endpoint][ERROR] policy apply failed: $policy" >&2
+      echo "[performance-endpoint][ERROR] policy apply failed: $policy" >&2
       cat "$policy_out/collection-apply.err" >&2 2>/dev/null || true
       exit 1
     }
   mark "$rec_run_id" policy_apply_done "$policy"
   if ! grep -Fq 'generated_policy_hash' "$policy_out/collection-apply.json" && ! grep -Fq 'resolved_refs' "$policy_out/collection-apply.json"; then
-    echo "[bench-endpoint][ERROR] policy apply did not report generated policy details: $policy" >&2
+    echo "[performance-endpoint][ERROR] policy apply did not report generated policy details: $policy" >&2
     cat "$policy_out/collection-apply.json" >&2 2>/dev/null || true
     exit 1
   fi
 
-  echo "[bench-endpoint] waiting ${POLICY_SETTLE_SECONDS}s for sensor BPF reload"
+  echo "[performance-endpoint] waiting ${POLICY_SETTLE_SECONDS}s for sensor BPF reload"
   sleep "$POLICY_SETTLE_SECONDS"
   finish_agent_profile_window "$policy_out" policy_apply "$rec_run_id"
 
@@ -710,4 +710,4 @@ done
 
 python3 "$HERE/report.py" "$OUT_DIR"
 
-echo "[bench-endpoint] matrix written to $OUT_DIR/matrix.csv"
+echo "[performance-endpoint] matrix written to $OUT_DIR/matrix.csv"

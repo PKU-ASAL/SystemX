@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
@@ -304,7 +304,7 @@ vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent heal
 if [[ "$CAPTURE_PERF" == "1" ]]; then
   vagrant ssh node-a -c "deadline=\$((SECONDS + 60)); until sudo test -f /tmp/sysarmor-perf-resource.done; do if (( SECONDS >= deadline )); then sudo cat /tmp/sysarmor-vm-perf-sampler.log 2>/dev/null || true; exit 1; fi; sleep 1; done; sudo cat /tmp/sysarmor-perf-resource.csv" \
     > "$RESULTS/perf-resource.vm.$SCENARIO.csv" 2>>"$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-resource.err"
-  python3 "$ROOT/benchmarks/local_perf_report.py" "$SCENARIO" \
+  python3 "$ROOT/shared/reports/local_perf_report.py" "$SCENARIO" \
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json" \
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-attack.json" \
     "$RESULTS/perf-resource.vm.$SCENARIO.csv" \

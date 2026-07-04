@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEST_ROOT="$(cd "$HERE/../../.." && pwd)"
+TEST_ROOT="$(cd "$HERE/../../../.." && pwd)"
 ROOT="$(cd "$TEST_ROOT/.." && pwd)"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 BENCHTIME="${BENCHTIME:-200ms}"
