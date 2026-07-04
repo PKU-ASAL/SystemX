@@ -5,6 +5,12 @@ test/.results/*.txt
 test/.results/*.json
 test/.results/*.csv
 
+# vm topology deployment cache (large, regenerated)
+test/environments/vm-topology/deploy/platform/
+test/environments/vm-topology/deploy/images/
+!test/environments/vm-topology/deploy/
+!test/environments/vm-topology/deploy/README.md
+
 # build artifacts
 bin/
 .cache/

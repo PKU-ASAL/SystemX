@@ -6,8 +6,11 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 ENV_NAME="${1:-${ENV:-vm-endpoint}}"
 PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$ENV_NAME}"
-PLATFORM_UPLOAD_DIR="${SYSARMOR_VM_PLATFORM_UPLOAD_DIR:-$ROOT/.results/platform-upload/$ENV_NAME}"
-PLATFORM_IMAGE_BUNDLE="$PLATFORM_UPLOAD_DIR/deployments/vm-images.tar"
+VM_DEPLOY_DIR="${SYSARMOR_VM_DEPLOY_DIR:-$ROOT/environments/$ENV_NAME/deploy}"
+PLATFORM_UPLOAD_DIR="${SYSARMOR_VM_PLATFORM_UPLOAD_DIR:-$VM_DEPLOY_DIR/platform}"
+PLATFORM_IMAGES_DIR="${SYSARMOR_VM_PLATFORM_IMAGES_DIR:-$VM_DEPLOY_DIR/images}"
+PLATFORM_IMAGE_BUNDLE="$PLATFORM_IMAGES_DIR/vm-images.tar"
+PLATFORM_IMAGE_MANIFEST="$PLATFORM_IMAGES_DIR/images.manifest"
 BUILD_BINARIES="${SYSARMOR_VM_BUILD_BINARIES:-1}"
 
 case "$ENV_NAME" in
@@ -31,13 +34,14 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
     "$REPO/tools/pki/gen-agent-plane-mtls.sh" "$PKI_DIR" default vm-owned-tetragon sysarmor-gateway.local >/dev/null
 
   echo ">>> 准备 VM topology deployment 源码包"
-  mkdir -p "$(dirname "$PLATFORM_UPLOAD_DIR")"
+  mkdir -p "$PLATFORM_UPLOAD_DIR" "$PLATFORM_IMAGES_DIR"
   rsync -a --delete \
     --exclude '.git/' \
     --exclude '.vagrant/' \
     --exclude '.cache/' \
     --exclude 'bin/' \
     --exclude 'test/.results/' \
+    --exclude 'test/environments/vm-topology/deploy/' \
     --exclude 'references/code/' \
     "$REPO/" "$PLATFORM_UPLOAD_DIR/"
   mkdir -p \
@@ -50,13 +54,24 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   mkdir -p "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime"
   rsync -a --delete "$PKI_DIR/" "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime/"
   required_images=(ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest sysarmor-kafka:latest sysarmor-opensearch:latest)
+  tmp_manifest="$PLATFORM_IMAGE_MANIFEST.tmp"
+  : > "$tmp_manifest"
   for image in "${required_images[@]}"; do
     if ! docker image inspect "$image" >/dev/null 2>&1; then
       echo "[start-vm][ERROR] required local Docker image missing: $image" >&2
       exit 1
     fi
+    image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+    printf '%s %s\n' "$image" "$image_id" >> "$tmp_manifest"
   done
-  docker save -o "$PLATFORM_IMAGE_BUNDLE" "${required_images[@]}"
+  if [[ ! -f "$PLATFORM_IMAGE_BUNDLE" ]] || [[ ! -f "$PLATFORM_IMAGE_MANIFEST" ]] || ! cmp -s "$tmp_manifest" "$PLATFORM_IMAGE_MANIFEST"; then
+    echo ">>> 更新 VM topology image bundle"
+    docker save -o "$PLATFORM_IMAGE_BUNDLE" "${required_images[@]}"
+    mv "$tmp_manifest" "$PLATFORM_IMAGE_MANIFEST"
+  else
+    echo ">>> 复用 VM topology image bundle"
+    rm -f "$tmp_manifest"
+  fi
 
   echo ">>> 启动 VM topology platform services"
   if ! vagrant ssh mgr -c "command -v docker >/dev/null && (docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null)" >/dev/null 2>&1; then
@@ -64,18 +79,35 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   fi
   vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload mgr >/dev/null
   vagrant upload "$PLATFORM_UPLOAD_DIR" /tmp/sysarmor-platform.upload mgr >/dev/null
+  vagrant upload "$PLATFORM_IMAGE_MANIFEST" /tmp/sysarmor-vm-images.manifest mgr >/dev/null
+  image_upload=0
+  if vagrant ssh mgr -c "test -f /opt/sysarmor/images/vm-images.tar && test -f /opt/sysarmor/images/images.manifest && cmp -s /tmp/sysarmor-vm-images.manifest /opt/sysarmor/images/images.manifest && sudo docker image inspect ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest sysarmor-kafka:latest sysarmor-opensearch:latest >/dev/null" >/dev/null 2>&1; then
+    echo ">>> 复用 mgr VM image bundle"
+  else
+    image_upload=1
+    vagrant upload "$PLATFORM_IMAGE_BUNDLE" /tmp/sysarmor-vm-images.tar mgr >/dev/null
+  fi
   vagrant ssh mgr -c "
 set -euo pipefail
+IMAGE_UPLOAD=$image_upload
 sudo install -m 0755 /tmp/sysarmorctl.upload /tmp/sysarmorctl
 sudo pkill -x sysarmor-manager 2>/dev/null || true
 sudo pkill -x sysarmor-gateway 2>/dev/null || true
 sudo rm -rf /opt/sysarmor/platform
-sudo mkdir -p /opt/sysarmor
+sudo mkdir -p /opt/sysarmor /opt/sysarmor/images
 sudo cp -a /tmp/sysarmor-platform.upload /opt/sysarmor/platform
+if [ \"\$IMAGE_UPLOAD\" = '1' ]; then
+  sudo install -m 0644 /tmp/sysarmor-vm-images.tar /opt/sysarmor/images/vm-images.tar
+  sudo install -m 0644 /tmp/sysarmor-vm-images.manifest /opt/sysarmor/images/images.manifest
+fi
 cd /opt/sysarmor/platform
 printf '%s\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf >/dev/null
 sudo systemctl restart docker
-sudo docker load -i deployments/vm-images.tar >/tmp/sysarmor-docker-load.log 2>&1
+if [ \"\$IMAGE_UPLOAD\" = '1' ]; then
+  sudo docker load -i /opt/sysarmor/images/vm-images.tar >/tmp/sysarmor-docker-load.log 2>&1
+else
+  printf '%s\n' 'reused existing vm image bundle' >/tmp/sysarmor-docker-load.log
+fi
 if docker compose version >/dev/null 2>&1; then
   COMPOSE='docker compose'
 else
