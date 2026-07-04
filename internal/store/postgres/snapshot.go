@@ -74,6 +74,34 @@ func (b *tableBackend) SaveState(ctx context.Context, state store.State) error {
 	return saveTables(ctx, b.db, state)
 }
 
+func (b *tableBackend) ListAgents(ctx context.Context) ([]store.AgentIdentity, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryAgents(ctx, b.db)
+}
+
+func (b *tableBackend) ListAgentHealth(ctx context.Context) ([]agenthealth.AgentHealth, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryAgentHealth(ctx, b.db, "", "")
+}
+
+func (b *tableBackend) GetAgentHealth(ctx context.Context, tenantID, agentID string) (agenthealth.AgentHealth, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	rows, err := queryAgentHealth(ctx, b.db, tenantID, agentID)
+	if err != nil {
+		return agenthealth.AgentHealth{}, false, err
+	}
+	if len(rows) == 0 {
+		return agenthealth.AgentHealth{}, false, nil
+	}
+	if len(rows) > 1 {
+		return agenthealth.AgentHealth{}, false, nil
+	}
+	return rows[0], true, nil
+}
+
 func (b *tableBackend) ListIncidents(ctx context.Context, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
@@ -200,14 +228,68 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	if err := projectRarityBaseline(ctx, tx, state.RarityBaseline); err != nil {
 		return err
 	}
-	if err := projectMetrics(ctx, tx, state.Metrics); err != nil {
-		return err
-	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit state projection tx: %w", err)
 	}
 	committed = true
 	return nil
+}
+
+func queryAgents(ctx context.Context, db sqlExecutor) ([]store.AgentIdentity, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM agents
+ORDER BY tenant_id ASC, agent_id ASC
+`)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres agents: %w", err)
+	}
+	defer rows.Close()
+	var out []store.AgentIdentity
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres agent: %w", err)
+		}
+		var agent store.AgentIdentity
+		if err := json.Unmarshal(raw, &agent); err != nil {
+			return nil, fmt.Errorf("decode postgres agent: %w", err)
+		}
+		out = append(out, agent.Normalized())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres agents: %w", err)
+	}
+	return out, nil
+}
+
+func queryAgentHealth(ctx context.Context, db sqlExecutor, tenantID, agentID string) ([]agenthealth.AgentHealth, error) {
+	query := `
+SELECT data FROM agent_health
+WHERE ($1 = '' OR tenant_id = $1)
+  AND ($2 = '' OR agent_id = $2)
+ORDER BY tenant_id ASC, agent_id ASC
+`
+	rows, err := db.QueryContext(ctx, query, tenantID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres agent health: %w", err)
+	}
+	defer rows.Close()
+	var out []agenthealth.AgentHealth
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres agent health: %w", err)
+		}
+		var health agenthealth.AgentHealth
+		if err := json.Unmarshal(raw, &health); err != nil {
+			return nil, fmt.Errorf("decode postgres agent health: %w", err)
+		}
+		out = append(out, health)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres agent health: %w", err)
+	}
+	return out, nil
 }
 
 func queryIncidents(ctx context.Context, db sqlExecutor, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
@@ -1193,6 +1275,43 @@ ON CONFLICT (tenant_id, metric_key) DO UPDATE SET
 		return fmt.Errorf("project metrics: %w", err)
 	}
 	return nil
+}
+
+func (b *tableBackend) LoadMetrics(ctx context.Context) (store.Metrics, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryMetrics(ctx, b.db)
+}
+
+func (b *tableBackend) SaveMetrics(ctx context.Context, metrics store.Metrics) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return projectMetrics(ctx, b.db, metrics)
+}
+
+func (b *tableBackend) ResetMetrics(ctx context.Context) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return projectMetrics(ctx, b.db, store.Metrics{})
+}
+
+func queryMetrics(ctx context.Context, db sqlExecutor) (store.Metrics, error) {
+	row := db.QueryRowContext(ctx, `
+SELECT data FROM metrics
+WHERE tenant_id = $1 AND metric_key = $2
+`, "default", "manager")
+	var raw []byte
+	if err := row.Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return store.Metrics{}, nil
+		}
+		return store.Metrics{}, fmt.Errorf("query metrics: %w", err)
+	}
+	var metrics store.Metrics
+	if err := json.Unmarshal(raw, &metrics); err != nil {
+		return store.Metrics{}, fmt.Errorf("decode metrics: %w", err)
+	}
+	return metrics, nil
 }
 
 func projectRarityBaseline(ctx context.Context, db sqlExecutor, baseline rarity.Baseline) error {

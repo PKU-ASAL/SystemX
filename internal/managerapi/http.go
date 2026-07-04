@@ -1,6 +1,7 @@
 package managerapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
@@ -12,6 +13,7 @@ import (
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -26,6 +28,7 @@ import (
 type Server struct {
 	store         ManagerStore
 	operatorToken string
+	searcher      platformopensearch.Searcher
 }
 
 type ManagerStore interface {
@@ -81,6 +84,7 @@ type ManagerStore interface {
 	RarityBaselineSnapshot() rarity.Baseline
 	RetryControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	ExpireControlCommand(string, string, string, string) (controlmodel.ControlCommand, bool)
+	ResetMetrics() error
 	Save() error
 	UpdateIncidentStatus(string, store.LabelSelector, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
@@ -207,6 +211,11 @@ func NewServerWithOperatorToken(st ManagerStore, operatorToken string) *Server {
 	return &Server{store: st, operatorToken: operatorToken}
 }
 
+func NewServerWithSearch(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
+	st.EnsureDefaultPolicy("default")
+	return &Server{store: st, operatorToken: operatorToken, searcher: searcher}
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
@@ -258,6 +267,12 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Save(); err != nil {
 		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
 		return
+	}
+	if len(labels) == 0 {
+		if err := s.store.ResetMetrics(); err != nil {
+			http.Error(w, fmt.Sprintf("reset metrics: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 	writeJSON(w, map[string]any{"ok": true, "labels": labels})
 }
@@ -671,17 +686,47 @@ func contentMetadataFromPayload(payload json.RawMessage) (string, string, string
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if s.searcher != nil {
+		raw, err := s.searchTelemetry(r.Context(), "sysarmor-events")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("query events: %v", err), http.StatusBadGateway)
+			return
+		}
+		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), rawStringEquals("behavior", q.Get("behavior")))
+		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+		return
+	}
 	writeEventList(w, pageSlice(s.store.ListEvents(parseLabelSelector(q["label"]), q.Get("behavior")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if s.searcher != nil {
+		raw, err := s.searchTelemetry(r.Context(), "sysarmor-signals")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("query signals: %v", err), http.StatusBadGateway)
+			return
+		}
+		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), rawSignalMatches(q.Get("layer"), q.Get("terminal")))
+		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+		return
+	}
 	signals := s.store.ListSignals(parseLabelSelector(q["label"]), q.Get("layer"), q.Get("terminal") == "true")
 	writeSignalList(w, pageSlice(signals, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
 
 func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if s.searcher != nil {
+		raw, err := s.searchTelemetry(r.Context(), "sysarmor-incidents")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("query incidents: %v", err), http.StatusBadGateway)
+			return
+		}
+		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), nil)
+		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+		return
+	}
 	incidents := s.store.ListIncidents(parseLabelSelector(q["label"]))
 	writeIncidentList(w, pageSlice(incidents, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 }
@@ -1347,6 +1392,87 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func (s *Server) searchTelemetry(ctx context.Context, index string) ([]json.RawMessage, error) {
+	if s.searcher == nil {
+		return nil, nil
+	}
+	return s.searcher.Search(ctx, index, 1000)
+}
+
+func filterRawTelemetry(raw []json.RawMessage, labels store.LabelSelector, extra func(map[string]any) bool) []json.RawMessage {
+	if len(labels) == 0 && extra == nil {
+		return raw
+	}
+	out := make([]json.RawMessage, 0, len(raw))
+	for _, item := range raw {
+		var doc map[string]any
+		if err := json.Unmarshal(item, &doc); err != nil {
+			continue
+		}
+		if !rawLabelsMatch(doc, labels) {
+			continue
+		}
+		if extra != nil && !extra(doc) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func rawLabelsMatch(doc map[string]any, labels store.LabelSelector) bool {
+	if len(labels) == 0 {
+		return true
+	}
+	raw, ok := doc["labels"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for key, want := range labels {
+		if got, _ := raw[key].(string); got != want {
+			return false
+		}
+	}
+	return true
+}
+
+func rawStringEquals(field, want string) func(map[string]any) bool {
+	if strings.TrimSpace(want) == "" {
+		return nil
+	}
+	return func(doc map[string]any) bool {
+		got, _ := doc[field].(string)
+		return got == want
+	}
+}
+
+func rawSignalMatches(layer, terminal string) func(map[string]any) bool {
+	layer = strings.TrimSpace(layer)
+	terminal = strings.TrimSpace(terminal)
+	if layer == "" && terminal == "" {
+		return nil
+	}
+	return func(doc map[string]any) bool {
+		if layer != "" && !rawSignalLayerMatches(doc["where"], layer) {
+			return false
+		}
+		if terminal != "" {
+			want := terminal == "true"
+			got, ok := doc["terminal"].(bool)
+			if !ok || got != want {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func rawSignalLayerMatches(value any, layer string) bool {
+	got, _ := value.(string)
+	got = strings.ToLower(strings.TrimPrefix(got, "SIGNAL_WHERE_"))
+	return got == strings.ToLower(layer)
+}
+
 func parseUint(raw string) uint64 {
 	if raw == "" {
 		return 0
@@ -1412,6 +1538,11 @@ func writeSignalList(w http.ResponseWriter, signals []*signalv1.Signal) {
 	for _, sig := range signals {
 		raw = append(raw, mustProtoJSON(sig))
 	}
+	_ = json.NewEncoder(w).Encode(raw)
+}
+
+func writeRawList(w http.ResponseWriter, raw []json.RawMessage) {
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(raw)
 }
 

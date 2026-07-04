@@ -1492,6 +1492,11 @@ func (s *Store) updateAgentSession(tenantID, agentID, transport, cursor, status 
 }
 
 func (s *Store) ListAgents() []AgentIdentity {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if agents, err := backend.ListAgents(ctx); err == nil {
+			return agents
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]AgentIdentity, len(s.Agents))
@@ -1578,6 +1583,11 @@ func (s *Store) OperatorRolesForActor(actor string) ([]string, bool) {
 }
 
 func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if health, err := backend.ListAgentHealth(ctx); err == nil {
+			return health
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]agenthealth.AgentHealth, 0, len(s.Health))
@@ -1594,6 +1604,11 @@ func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
 }
 
 func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealth, bool) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if health, ok, err := backend.GetAgentHealth(ctx, tenantID, agentID); err == nil {
+			return health, ok
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if agentID == "" {
@@ -1787,8 +1802,41 @@ func (s *Store) MergeIncidents(targetID, sourceID string) (*incidentv1.Incident,
 
 func (s *Store) MetricsSnapshot() Metrics {
 	s.mu.RLock()
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
+	s.mu.RUnlock()
+	if metricsBackend, ok := backend.(MetricsBackend); ok {
+		if metrics, err := metricsBackend.LoadMetrics(ctx); err == nil {
+			return metrics
+		}
+	}
+	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.Metrics
+}
+
+func (s *Store) SaveMetrics() error {
+	s.mu.RLock()
+	metrics := s.Metrics
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
+	s.mu.RUnlock()
+	if metricsBackend, ok := backend.(MetricsBackend); ok {
+		return metricsBackend.SaveMetrics(ctx, metrics)
+	}
+	return nil
+}
+
+func (s *Store) ResetMetrics() error {
+	s.mu.Lock()
+	s.Metrics = Metrics{}
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
+	s.mu.Unlock()
+	if metricsBackend, ok := backend.(MetricsBackend); ok {
+		return metricsBackend.ResetMetrics(ctx)
+	}
+	return nil
 }
 
 func (s *Store) DeleteByLabels(labels LabelSelector) {

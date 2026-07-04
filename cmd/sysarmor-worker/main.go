@@ -29,6 +29,8 @@ func main() {
 	kafkaTopic := flag.String("kafka-topic", envDefault("SYSARMOR_KAFKA_TOPIC", "sysarmor.agent.databatch.raw"), "Kafka raw data batch topic")
 	kafkaGroupID := flag.String("kafka-group-id", envDefault("SYSARMOR_KAFKA_GROUP_ID", "sysarmor-ingest-worker"), "Kafka consumer group id")
 	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable security data")
+	opensearchUsername := flag.String("opensearch-username", envDefault("SYSARMOR_OPENSEARCH_USERNAME", ""), "OpenSearch basic auth username")
+	opensearchPassword := flag.String("opensearch-password", envDefault("SYSARMOR_OPENSEARCH_PASSWORD", ""), "OpenSearch basic auth password")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -73,7 +75,7 @@ func main() {
 
 	var indexer platformopensearch.Indexer = platformopensearch.NoopIndexer{}
 	if *opensearchURL != "" {
-		indexer, err = platformopensearch.NewHTTPIndexer(*opensearchURL)
+		indexer, err = platformopensearch.NewHTTPIndexerWithAuth(*opensearchURL, *opensearchUsername, *opensearchPassword)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "open opensearch indexer: %v\n", err)
 			os.Exit(1)

@@ -69,12 +69,15 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	}
 	start := time.Now()
 	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
-	cloudSignals, incidents := p.recomputeTouchedScopes(touchedScopes)
+	cloudSignals, incidents := p.recomputeTouchedScopes(ctx, touchedScopes)
 	convergenceLatency := time.Since(start)
 	p.store.RecordDataBatchIngest(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	p.store.ObserveRaritySignals(acceptedSignalList)
 	p.indexSecurityData(ctx, batch, touchedScopes)
 	if err := p.store.Save(); err != nil {
+		return Result{}, err
+	}
+	if err := p.store.SaveMetrics(); err != nil {
 		return Result{}, err
 	}
 	return Result{AcceptedEvents: acceptedEvents, AcceptedSignals: acceptedSignals, CloudSignals: cloudSignals, Incidents: incidents}, nil
@@ -116,7 +119,7 @@ func labelSelectorKey(labels store.LabelSelector) string {
 	return strings.Join(parts, ",")
 }
 
-func (p *Processor) recomputeTouchedScopes(touchedScopes map[string]touchedScope) (int, int) {
+func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes map[string]touchedScope) (int, int) {
 	totalCloud := 0
 	totalIncidents := 0
 	for _, scope := range touchedScopes {
@@ -125,6 +128,9 @@ func (p *Processor) recomputeTouchedScopes(touchedScopes map[string]touchedScope
 		policy := p.effectiveDetectionPolicyForAgent(scope.agent)
 		analysis := p.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
 		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, analysis.Incidents)
+		for _, sig := range analysis.CloudSignals {
+			p.indexSignal(ctx, sig)
+		}
 		totalCloud += len(analysis.CloudSignals)
 		totalIncidents += len(analysis.Incidents)
 	}
@@ -157,15 +163,7 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 		}
 	}
 	for _, frame := range batch.GetSignals() {
-		sig := frame.GetSignal()
-		id := SignalDocumentID(sig)
-		if id == "" {
-			continue
-		}
-		raw, err := protojson.Marshal(sig)
-		if err == nil {
-			_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw})
-		}
+		p.indexSignal(ctx, frame.GetSignal())
 	}
 	for _, scope := range touchedScopes {
 		for _, inc := range p.store.ListIncidents(scope.labels) {
@@ -184,6 +182,17 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 				}
 			}
 		}
+	}
+}
+
+func (p *Processor) indexSignal(ctx context.Context, sig *signalv1.Signal) {
+	id := SignalDocumentID(sig)
+	if id == "" {
+		return
+	}
+	raw, err := protojson.Marshal(sig)
+	if err == nil {
+		_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw})
 	}
 }
 

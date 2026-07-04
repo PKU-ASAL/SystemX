@@ -30,8 +30,47 @@ func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Docum
 	return nil
 }
 
+type fakeSearcher struct {
+	docs map[string][]json.RawMessage
+}
+
+func (s fakeSearcher) Search(_ context.Context, index string, _ int) ([]json.RawMessage, error) {
+	return append([]json.RawMessage(nil), s.docs[index]...), nil
+}
+
 func newTestServer(st *store.Store) *Server {
 	return NewServer(st)
+}
+
+func TestSearchBackedTelemetryQueries(t *testing.T) {
+	st := &store.Store{}
+	searcher := fakeSearcher{docs: map[string][]json.RawMessage{
+		"sysarmor-events": {
+			json.RawMessage(`{"id":"ev-a","behavior":"process.exec","labels":{"scenario":"managed"}}`),
+			json.RawMessage(`{"id":"ev-b","behavior":"file.write","labels":{"scenario":"other"}}`),
+		},
+		"sysarmor-signals": {
+			json.RawMessage(`{"id":"sig-a","name":"payload_dropped","where":"SIGNAL_WHERE_ENDPOINT","terminal":false,"labels":{"scenario":"managed"}}`),
+			json.RawMessage(`{"id":"sig-b","name":"web_shell_chain","where":"SIGNAL_WHERE_CLOUD","terminal":true,"labels":{"scenario":"managed"}}`),
+		},
+		"sysarmor-incidents": {
+			json.RawMessage(`{"id":"inc-a","summary":"incident","labels":{"scenario":"managed"}}`),
+		},
+	}}
+	handler := NewServerWithSearch(st, "", searcher).Handler()
+
+	rec := get(t, handler, "/api/v1/events?label=scenario=managed&behavior=process.exec")
+	if !strings.Contains(rec.Body.String(), `"id":"ev-a"`) || strings.Contains(rec.Body.String(), `"id":"ev-b"`) {
+		t.Fatalf("search-backed events mismatch: %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/signals?label=scenario=managed&layer=cloud&terminal=true")
+	if !strings.Contains(rec.Body.String(), `"id":"sig-b"`) || strings.Contains(rec.Body.String(), `"id":"sig-a"`) {
+		t.Fatalf("search-backed signals mismatch: %s", rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/incidents?label=scenario=managed")
+	if !strings.Contains(rec.Body.String(), `"id":"inc-a"`) {
+		t.Fatalf("search-backed incidents mismatch: %s", rec.Body.String())
+	}
 }
 
 func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -17,6 +18,9 @@ import (
 type Backend interface {
 	SaveState(ctx context.Context, state State) error
 
+	ListAgents(ctx context.Context) ([]AgentIdentity, error)
+	ListAgentHealth(ctx context.Context) ([]agenthealth.AgentHealth, error)
+	GetAgentHealth(ctx context.Context, tenantID, agentID string) (agenthealth.AgentHealth, bool, error)
 	ListIncidents(ctx context.Context, labels LabelSelector) ([]*incidentv1.Incident, error)
 	ListResponses(ctx context.Context, tenantID, agentID string) ([]responsemodel.AuditRecord, error)
 	ListControlCommands(ctx context.Context, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
@@ -30,4 +34,10 @@ type Backend interface {
 	WritePolicy(ctx context.Context, policy policymodel.Policy) error
 	WriteAssignment(ctx context.Context, assignment policymodel.Assignment) error
 	WritePolicyAudit(ctx context.Context, audit policymodel.AuditRecord) error
+}
+
+type MetricsBackend interface {
+	LoadMetrics(ctx context.Context) (Metrics, error)
+	SaveMetrics(ctx context.Context, metrics Metrics) error
+	ResetMetrics(ctx context.Context) error
 }
