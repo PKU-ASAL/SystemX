@@ -71,9 +71,9 @@ func TestAgentGatewayManagerLocalDataPath(t *testing.T) {
 			},
 		}},
 	}
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(context.Background(), batch)
+	ack, err := appendStreamBatch(context.Background(), conn, batch)
 	if err != nil {
-		t.Fatalf("append batch: %v", err)
+		t.Fatalf("stream batch: %v", err)
 	}
 	if !ack.GetAccepted() || ack.GetAcceptedEvents() != 1 {
 		t.Fatalf("ack = %+v, want one accepted event", ack)
@@ -90,6 +90,26 @@ func TestAgentGatewayManagerLocalDataPath(t *testing.T) {
 	if !strings.Contains(body, "platform-local-agent") {
 		t.Fatalf("manager agents missing gateway-bound agent: %s", body)
 	}
+}
+
+func appendStreamBatch(ctx context.Context, conn *grpc.ClientConn, batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+	stream, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).StreamBatches(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := stream.Send(batch); err != nil {
+		_ = stream.CloseSend()
+		return nil, err
+	}
+	ack, err := stream.Recv()
+	if err != nil {
+		_ = stream.CloseSend()
+		return nil, err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return ack, nil
 }
 
 func get(t *testing.T, url string) string {

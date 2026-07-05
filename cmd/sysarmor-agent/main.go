@@ -160,7 +160,7 @@ func appendJSONL(manager, transport, agentID, hostID, tenantID string, labels ma
 	if err != nil {
 		return err
 	}
-	_, err = up.AppendBatch(batch)
+	_, err = up.SendBatch(batch)
 	return err
 }
 
@@ -189,7 +189,7 @@ func streamJSONL(manager, transport, agentID, hostID, tenantID string, labels ma
 	})
 }
 
-func newUploader(manager, transport string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchAppender, error) {
+func newUploader(manager, transport string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchSender, error) {
 	switch transport {
 	case "grpc":
 		return dataappend.NewGRPCAppenderWithTLS(manager, 10*time.Second, "", tlsCfg), nil

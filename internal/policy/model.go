@@ -86,6 +86,7 @@ type DataPlanePolicy struct {
 	Transport      string `json:"transport,omitempty"`
 	Endpoint       string `json:"endpoint,omitempty"`
 	BatchSize      int    `json:"batch_size,omitempty"`
+	MaxBytes       int    `json:"max_bytes,omitempty"`
 	FlushInterval  string `json:"flush_interval,omitempty"`
 	RetryInitial   string `json:"retry_initial,omitempty"`
 	RetryMax       string `json:"retry_max,omitempty"`

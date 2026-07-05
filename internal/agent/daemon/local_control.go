@@ -94,10 +94,10 @@ func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*tele
 			startedAt, _ = rest[2].(time.Time)
 		}
 		if batcher == nil {
-			batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64)
+			batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBytes)
 		}
 		if sender == nil {
-			sender = &telemetry.Sender{Appender: localBatchAppender{}, Batcher: batcher}
+			sender = &telemetry.Sender{Appender: localBatchSender{}, Batcher: batcher}
 		}
 		if sender.Batcher == nil {
 			sender.Batcher = batcher
@@ -108,8 +108,8 @@ func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*tele
 		return bus, batcher, sender, startedAt
 	}
 	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
-	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64)
-	sender := &telemetry.Sender{Appender: localBatchAppender{}, Batcher: batcher}
+	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBytes)
+	sender := &telemetry.Sender{Appender: localBatchSender{}, Batcher: batcher}
 	startedAt := time.Now().UTC()
 	return bus, batcher, sender, startedAt
 }
@@ -746,6 +746,7 @@ func dataPlanePolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback
 			Transport:      req.GetDataPlane().GetTransport(),
 			Endpoint:       req.GetDataPlane().GetEndpoint(),
 			BatchSize:      int(req.GetDataPlane().GetBatchSize()),
+			MaxBytes:       int(req.GetDataPlane().GetMaxBytes()),
 			FlushInterval:  req.GetDataPlane().GetFlushInterval(),
 			RetryInitial:   req.GetDataPlane().GetRetryInitial(),
 			RetryMax:       req.GetDataPlane().GetRetryMax(),
@@ -794,6 +795,9 @@ func validateDataPlanePolicy(policy *policymodel.DataPlanePolicy) error {
 	if policy.BatchSize < 0 {
 		return fmt.Errorf("data_plane.batch_size must be non-negative")
 	}
+	if policy.MaxBytes < 0 {
+		return fmt.Errorf("data_plane.max_bytes must be non-negative")
+	}
 	if policy.MaxInflight < 0 {
 		return fmt.Errorf("data_plane.max_inflight must be non-negative")
 	}
@@ -823,6 +827,9 @@ func (r *AgentRuntime) applyDataPlaneConfig(dataPlane policymodel.DataPlanePolic
 	}
 	if dataPlane.BatchSize > 0 {
 		r.Config.Telemetry.BatchSize = dataPlane.BatchSize
+	}
+	if dataPlane.MaxBytes > 0 {
+		r.Config.Telemetry.MaxBytes = dataPlane.MaxBytes
 	}
 	if d := parseOptionalDuration(dataPlane.FlushInterval); d > 0 {
 		r.Config.Telemetry.FlushInterval = d
@@ -1204,19 +1211,25 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 			SignalSubscribers: health.TelemetryBus.SignalSubscribers,
 		},
 		TelemetryBatcher: &controlplanev1.TelemetryBatcherHealth{
-			PendingEvents:   health.TelemetryBatcher.PendingEvents,
-			PendingSignals:  health.TelemetryBatcher.PendingSignals,
-			QueuedBatches:   health.TelemetryBatcher.QueuedBatches,
-			QueueCapacity:   health.TelemetryBatcher.QueueCapacity,
-			DroppedBatches:  health.TelemetryBatcher.DroppedBatches,
-			DroppedEvents:   health.TelemetryBatcher.DroppedEvents,
-			DroppedSignals:  health.TelemetryBatcher.DroppedSignals,
-			FlushedBatches:  health.TelemetryBatcher.FlushedBatches,
-			FlushedEvents:   health.TelemetryBatcher.FlushedEvents,
-			FlushedSignals:  health.TelemetryBatcher.FlushedSignals,
-			LastFlushReason: health.TelemetryBatcher.LastFlushReason,
-			Closed:          health.TelemetryBatcher.Closed,
-			LastError:       health.TelemetryBatcher.LastError,
+			PendingEvents:     health.TelemetryBatcher.PendingEvents,
+			PendingSignals:    health.TelemetryBatcher.PendingSignals,
+			QueuedBatches:     health.TelemetryBatcher.QueuedBatches,
+			QueueCapacity:     health.TelemetryBatcher.QueueCapacity,
+			DroppedBatches:    health.TelemetryBatcher.DroppedBatches,
+			DroppedEvents:     health.TelemetryBatcher.DroppedEvents,
+			DroppedSignals:    health.TelemetryBatcher.DroppedSignals,
+			FlushedBatches:    health.TelemetryBatcher.FlushedBatches,
+			FlushedEvents:     health.TelemetryBatcher.FlushedEvents,
+			FlushedSignals:    health.TelemetryBatcher.FlushedSignals,
+			PendingBytes:      health.TelemetryBatcher.PendingBytes,
+			MaxBytes:          health.TelemetryBatcher.MaxBytes,
+			FlushedByCount:    health.TelemetryBatcher.FlushedByCount,
+			FlushedByBytes:    health.TelemetryBatcher.FlushedByBytes,
+			FlushedByInterval: health.TelemetryBatcher.FlushedByInterval,
+			FlushedByShutdown: health.TelemetryBatcher.FlushedByShutdown,
+			LastFlushReason:   health.TelemetryBatcher.LastFlushReason,
+			Closed:            health.TelemetryBatcher.Closed,
+			LastError:         health.TelemetryBatcher.LastError,
 		},
 		TelemetrySender: &controlplanev1.TelemetrySenderHealth{
 			SentBatches:     health.TelemetrySender.SentBatches,

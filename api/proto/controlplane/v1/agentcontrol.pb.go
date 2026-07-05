@@ -816,22 +816,28 @@ func (x *TelemetryBusHealth) GetSignalSubscribers() uint64 {
 }
 
 type TelemetryBatcherHealth struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	PendingEvents   uint64                 `protobuf:"varint,1,opt,name=pending_events,json=pendingEvents,proto3" json:"pending_events,omitempty"`
-	PendingSignals  uint64                 `protobuf:"varint,2,opt,name=pending_signals,json=pendingSignals,proto3" json:"pending_signals,omitempty"`
-	QueuedBatches   uint64                 `protobuf:"varint,3,opt,name=queued_batches,json=queuedBatches,proto3" json:"queued_batches,omitempty"`
-	QueueCapacity   uint64                 `protobuf:"varint,4,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
-	DroppedBatches  uint64                 `protobuf:"varint,5,opt,name=dropped_batches,json=droppedBatches,proto3" json:"dropped_batches,omitempty"`
-	DroppedEvents   uint64                 `protobuf:"varint,6,opt,name=dropped_events,json=droppedEvents,proto3" json:"dropped_events,omitempty"`
-	DroppedSignals  uint64                 `protobuf:"varint,7,opt,name=dropped_signals,json=droppedSignals,proto3" json:"dropped_signals,omitempty"`
-	FlushedBatches  uint64                 `protobuf:"varint,8,opt,name=flushed_batches,json=flushedBatches,proto3" json:"flushed_batches,omitempty"`
-	FlushedEvents   uint64                 `protobuf:"varint,9,opt,name=flushed_events,json=flushedEvents,proto3" json:"flushed_events,omitempty"`
-	FlushedSignals  uint64                 `protobuf:"varint,10,opt,name=flushed_signals,json=flushedSignals,proto3" json:"flushed_signals,omitempty"`
-	LastFlushReason string                 `protobuf:"bytes,11,opt,name=last_flush_reason,json=lastFlushReason,proto3" json:"last_flush_reason,omitempty"`
-	Closed          bool                   `protobuf:"varint,12,opt,name=closed,proto3" json:"closed,omitempty"`
-	LastError       string                 `protobuf:"bytes,13,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PendingEvents     uint64                 `protobuf:"varint,1,opt,name=pending_events,json=pendingEvents,proto3" json:"pending_events,omitempty"`
+	PendingSignals    uint64                 `protobuf:"varint,2,opt,name=pending_signals,json=pendingSignals,proto3" json:"pending_signals,omitempty"`
+	QueuedBatches     uint64                 `protobuf:"varint,3,opt,name=queued_batches,json=queuedBatches,proto3" json:"queued_batches,omitempty"`
+	QueueCapacity     uint64                 `protobuf:"varint,4,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
+	DroppedBatches    uint64                 `protobuf:"varint,5,opt,name=dropped_batches,json=droppedBatches,proto3" json:"dropped_batches,omitempty"`
+	DroppedEvents     uint64                 `protobuf:"varint,6,opt,name=dropped_events,json=droppedEvents,proto3" json:"dropped_events,omitempty"`
+	DroppedSignals    uint64                 `protobuf:"varint,7,opt,name=dropped_signals,json=droppedSignals,proto3" json:"dropped_signals,omitempty"`
+	FlushedBatches    uint64                 `protobuf:"varint,8,opt,name=flushed_batches,json=flushedBatches,proto3" json:"flushed_batches,omitempty"`
+	FlushedEvents     uint64                 `protobuf:"varint,9,opt,name=flushed_events,json=flushedEvents,proto3" json:"flushed_events,omitempty"`
+	FlushedSignals    uint64                 `protobuf:"varint,10,opt,name=flushed_signals,json=flushedSignals,proto3" json:"flushed_signals,omitempty"`
+	LastFlushReason   string                 `protobuf:"bytes,11,opt,name=last_flush_reason,json=lastFlushReason,proto3" json:"last_flush_reason,omitempty"`
+	Closed            bool                   `protobuf:"varint,12,opt,name=closed,proto3" json:"closed,omitempty"`
+	LastError         string                 `protobuf:"bytes,13,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	PendingBytes      uint64                 `protobuf:"varint,14,opt,name=pending_bytes,json=pendingBytes,proto3" json:"pending_bytes,omitempty"`
+	MaxBytes          uint64                 `protobuf:"varint,15,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
+	FlushedByCount    uint64                 `protobuf:"varint,16,opt,name=flushed_by_count,json=flushedByCount,proto3" json:"flushed_by_count,omitempty"`
+	FlushedByBytes    uint64                 `protobuf:"varint,17,opt,name=flushed_by_bytes,json=flushedByBytes,proto3" json:"flushed_by_bytes,omitempty"`
+	FlushedByInterval uint64                 `protobuf:"varint,18,opt,name=flushed_by_interval,json=flushedByInterval,proto3" json:"flushed_by_interval,omitempty"`
+	FlushedByShutdown uint64                 `protobuf:"varint,19,opt,name=flushed_by_shutdown,json=flushedByShutdown,proto3" json:"flushed_by_shutdown,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *TelemetryBatcherHealth) Reset() {
@@ -955,6 +961,48 @@ func (x *TelemetryBatcherHealth) GetLastError() string {
 	return ""
 }
 
+func (x *TelemetryBatcherHealth) GetPendingBytes() uint64 {
+	if x != nil {
+		return x.PendingBytes
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetMaxBytes() uint64 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedByCount() uint64 {
+	if x != nil {
+		return x.FlushedByCount
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedByBytes() uint64 {
+	if x != nil {
+		return x.FlushedByBytes
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedByInterval() uint64 {
+	if x != nil {
+		return x.FlushedByInterval
+	}
+	return 0
+}
+
+func (x *TelemetryBatcherHealth) GetFlushedByShutdown() uint64 {
+	if x != nil {
+		return x.FlushedByShutdown
+	}
+	return 0
+}
+
 type TelemetrySenderHealth struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	SentBatches     uint64                 `protobuf:"varint,1,opt,name=sent_batches,json=sentBatches,proto3" json:"sent_batches,omitempty"`
@@ -1059,6 +1107,7 @@ type DataPlanePolicy struct {
 	MaxInflight    uint32                 `protobuf:"varint,8,opt,name=max_inflight,json=maxInflight,proto3" json:"max_inflight,omitempty"`
 	Compression    string                 `protobuf:"bytes,9,opt,name=compression,proto3" json:"compression,omitempty"`
 	TlsProfile     string                 `protobuf:"bytes,10,opt,name=tls_profile,json=tlsProfile,proto3" json:"tls_profile,omitempty"`
+	MaxBytes       uint32                 `protobuf:"varint,11,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1161,6 +1210,13 @@ func (x *DataPlanePolicy) GetTlsProfile() string {
 		return x.TlsProfile
 	}
 	return ""
+}
+
+func (x *DataPlanePolicy) GetMaxBytes() uint32 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
 }
 
 type CEPHealth struct {
@@ -4063,7 +4119,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x0fsignal_capacity\x18\x05 \x01(\x04R\x0esignalCapacity\x12'\n" +
 	"\x0fsignal_buffered\x18\x06 \x01(\x04R\x0esignalBuffered\x12%\n" +
 	"\x0esignal_dropped\x18\a \x01(\x04R\rsignalDropped\x12-\n" +
-	"\x12signal_subscribers\x18\b \x01(\x04R\x11signalSubscribers\"\x8b\x04\n" +
+	"\x12signal_subscribers\x18\b \x01(\x04R\x11signalSubscribers\"\x81\x06\n" +
 	"\x16TelemetryBatcherHealth\x12%\n" +
 	"\x0epending_events\x18\x01 \x01(\x04R\rpendingEvents\x12'\n" +
 	"\x0fpending_signals\x18\x02 \x01(\x04R\x0ependingSignals\x12%\n" +
@@ -4079,7 +4135,13 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x11last_flush_reason\x18\v \x01(\tR\x0flastFlushReason\x12\x16\n" +
 	"\x06closed\x18\f \x01(\bR\x06closed\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\r \x01(\tR\tlastError\"\x8b\x02\n" +
+	"last_error\x18\r \x01(\tR\tlastError\x12#\n" +
+	"\rpending_bytes\x18\x0e \x01(\x04R\fpendingBytes\x12\x1b\n" +
+	"\tmax_bytes\x18\x0f \x01(\x04R\bmaxBytes\x12(\n" +
+	"\x10flushed_by_count\x18\x10 \x01(\x04R\x0eflushedByCount\x12(\n" +
+	"\x10flushed_by_bytes\x18\x11 \x01(\x04R\x0eflushedByBytes\x12.\n" +
+	"\x13flushed_by_interval\x18\x12 \x01(\x04R\x11flushedByInterval\x12.\n" +
+	"\x13flushed_by_shutdown\x18\x13 \x01(\x04R\x11flushedByShutdown\"\x8b\x02\n" +
 	"\x15TelemetrySenderHealth\x12!\n" +
 	"\fsent_batches\x18\x01 \x01(\x04R\vsentBatches\x12\x1f\n" +
 	"\vsent_events\x18\x02 \x01(\x04R\n" +
@@ -4089,7 +4151,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x0fretried_batches\x18\x05 \x01(\x04R\x0eretriedBatches\x12\x18\n" +
 	"\adrained\x18\x06 \x01(\bR\adrained\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\a \x01(\tR\tlastError\"\xe2\x02\n" +
+	"last_error\x18\a \x01(\tR\tlastError\"\xff\x02\n" +
 	"\x0fDataPlanePolicy\x12\x1c\n" +
 	"\ttransport\x18\x01 \x01(\tR\ttransport\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12\x1d\n" +
@@ -4103,7 +4165,8 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\vcompression\x18\t \x01(\tR\vcompression\x12\x1f\n" +
 	"\vtls_profile\x18\n" +
 	" \x01(\tR\n" +
-	"tlsProfile\"\x92\x02\n" +
+	"tlsProfile\x12\x1b\n" +
+	"\tmax_bytes\x18\v \x01(\rR\bmaxBytes\"\x92\x02\n" +
 	"\tCEPHealth\x12#\n" +
 	"\ractive_groups\x18\x01 \x01(\x04R\factiveGroups\x12%\n" +
 	"\x0eevicted_groups\x18\x02 \x01(\x04R\revictedGroups\x12%\n" +

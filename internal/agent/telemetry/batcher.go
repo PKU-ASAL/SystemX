@@ -8,10 +8,12 @@ import (
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
 	defaultBatchSize     = 64
+	defaultMaxBytes      = 256 * 1024
 	defaultFlushInterval = time.Second
 	defaultQueueCapacity = 128
 )
@@ -21,35 +23,47 @@ type BatchBuilder func(now time.Time) *dataplanev1.DataBatch
 type Batcher struct {
 	builder       BatchBuilder
 	batchSize     int
+	maxBytes      int
 	flushInterval time.Duration
 	queue         chan *dataplanev1.DataBatch
 
 	mu      sync.Mutex
 	pending *dataplanev1.DataBatch
+	bytes   int
 	timer   *time.Timer
 	closed  bool
 	stats   BatcherStats
 }
 
 type BatcherStats struct {
-	PendingEvents   uint64
-	PendingSignals  uint64
-	QueuedBatches   uint64
-	QueueCapacity   uint64
-	DroppedBatches  uint64
-	DroppedEvents   uint64
-	DroppedSignals  uint64
-	FlushedBatches  uint64
-	FlushedEvents   uint64
-	FlushedSignals  uint64
-	LastFlushReason string
-	LastError       string
-	Closed          bool
+	PendingEvents     uint64
+	PendingSignals    uint64
+	QueuedBatches     uint64
+	QueueCapacity     uint64
+	DroppedBatches    uint64
+	DroppedEvents     uint64
+	DroppedSignals    uint64
+	FlushedBatches    uint64
+	FlushedEvents     uint64
+	FlushedSignals    uint64
+	PendingBytes      uint64
+	MaxBytes          uint64
+	FlushedByCount    uint64
+	FlushedByBytes    uint64
+	FlushedByInterval uint64
+	FlushedByShutdown uint64
+	LastFlushReason   string
+	LastError         string
+	Closed            bool
 }
 
-func NewBatcher(builder BatchBuilder, batchSize int, flushInterval time.Duration, queueCapacity int) *Batcher {
+func NewBatcher(builder BatchBuilder, batchSize int, flushInterval time.Duration, queueCapacity int, maxBytes ...int) *Batcher {
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
+	}
+	limitBytes := defaultMaxBytes
+	if len(maxBytes) > 0 && maxBytes[0] > 0 {
+		limitBytes = maxBytes[0]
 	}
 	if flushInterval <= 0 {
 		flushInterval = defaultFlushInterval
@@ -60,6 +74,7 @@ func NewBatcher(builder BatchBuilder, batchSize int, flushInterval time.Duration
 	b := &Batcher{
 		builder:       builder,
 		batchSize:     batchSize,
+		maxBytes:      limitBytes,
 		flushInterval: flushInterval,
 		queue:         make(chan *dataplanev1.DataBatch, queueCapacity),
 	}
@@ -87,12 +102,19 @@ func (b *Batcher) Add(batch *dataplanev1.DataBatch) {
 		b.pending = b.newBatch(time.Now().UTC())
 		b.resetTimerLocked()
 	}
+	addedBytes := proto.Size(batch)
 	b.pending.Events = append(b.pending.Events, batch.GetEvents()...)
 	b.pending.Signals = append(b.pending.Signals, batch.GetSignals()...)
+	b.bytes += addedBytes
 	b.stats.PendingEvents = uint64(len(b.pending.Events))
 	b.stats.PendingSignals = uint64(len(b.pending.Signals))
+	b.stats.PendingBytes = uint64(b.bytes)
 	if len(b.pending.Events)+len(b.pending.Signals) >= b.batchSize {
 		b.flushLocked("count")
+		return
+	}
+	if b.bytes >= b.maxBytes {
+		b.flushLocked("bytes")
 	}
 }
 
@@ -153,10 +175,12 @@ func (b *Batcher) Stats() BatcherStats {
 	stats := b.stats
 	stats.QueueCapacity = uint64(cap(b.queue))
 	stats.QueuedBatches = uint64(len(b.queue))
+	stats.MaxBytes = uint64(b.maxBytes)
 	stats.Closed = b.closed
 	if b.pending != nil {
 		stats.PendingEvents = uint64(len(b.pending.Events))
 		stats.PendingSignals = uint64(len(b.pending.Signals))
+		stats.PendingBytes = uint64(b.bytes)
 	}
 	return stats
 }
@@ -188,10 +212,26 @@ func (b *Batcher) flushLocked(reason string) {
 		b.stats.DroppedSignals += uint64(len(batch.Signals))
 		b.stats.LastError = "telemetry batch queue full"
 	}
+	b.recordFlushReasonLocked(reason)
 	b.pending = nil
+	b.bytes = 0
 	b.stats.PendingEvents = 0
 	b.stats.PendingSignals = 0
+	b.stats.PendingBytes = 0
 	b.stopTimerLocked()
+}
+
+func (b *Batcher) recordFlushReasonLocked(reason string) {
+	switch reason {
+	case "count":
+		b.stats.FlushedByCount++
+	case "bytes":
+		b.stats.FlushedByBytes++
+	case "interval":
+		b.stats.FlushedByInterval++
+	case "shutdown":
+		b.stats.FlushedByShutdown++
+	}
 }
 
 func (b *Batcher) finalizeBatch(batch *dataplanev1.DataBatch) {
@@ -234,7 +274,7 @@ func (b *Batcher) stopTimerLocked() {
 }
 
 type Sender struct {
-	Appender     dataappend.BatchAppender
+	Appender     dataappend.BatchSender
 	Batcher      *Batcher
 	RetryInitial time.Duration
 	RetryMax     time.Duration
@@ -313,7 +353,7 @@ func (s *Sender) sendWithRetry(ctx context.Context, batch *dataplanev1.DataBatch
 		maxBackoff = 30 * time.Second
 	}
 	for {
-		ack, err := s.Appender.AppendBatch(batch)
+		ack, err := s.Appender.SendBatch(batch)
 		if err == nil && dataappend.AckCommitted(ack) {
 			s.recordSent(batch)
 			return

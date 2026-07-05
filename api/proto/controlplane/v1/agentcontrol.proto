@@ -125,6 +125,12 @@ message TelemetryBatcherHealth {
   string last_flush_reason = 11;
   bool closed = 12;
   string last_error = 13;
+  uint64 pending_bytes = 14;
+  uint64 max_bytes = 15;
+  uint64 flushed_by_count = 16;
+  uint64 flushed_by_bytes = 17;
+  uint64 flushed_by_interval = 18;
+  uint64 flushed_by_shutdown = 19;
 }
 
 message TelemetrySenderHealth {
@@ -148,6 +154,7 @@ message DataPlanePolicy {
   uint32 max_inflight = 8;
   string compression = 9;
   string tls_profile = 10;
+  uint32 max_bytes = 11;
 }
 
 message CEPHealth {

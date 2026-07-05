@@ -19,14 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentDataPlaneService_AppendBatch_FullMethodName = "/sysarmor.dataplane.v1.AgentDataPlaneService/AppendBatch"
+	AgentDataPlaneService_StreamBatches_FullMethodName = "/sysarmor.dataplane.v1.AgentDataPlaneService/StreamBatches"
 )
 
 // AgentDataPlaneServiceClient is the client API for AgentDataPlaneService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AgentDataPlaneServiceClient interface {
-	AppendBatch(ctx context.Context, in *DataBatch, opts ...grpc.CallOption) (*DataAck, error)
+	StreamBatches(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[DataBatch, DataAck], error)
 }
 
 type agentDataPlaneServiceClient struct {
@@ -37,21 +37,24 @@ func NewAgentDataPlaneServiceClient(cc grpc.ClientConnInterface) AgentDataPlaneS
 	return &agentDataPlaneServiceClient{cc}
 }
 
-func (c *agentDataPlaneServiceClient) AppendBatch(ctx context.Context, in *DataBatch, opts ...grpc.CallOption) (*DataAck, error) {
+func (c *agentDataPlaneServiceClient) StreamBatches(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[DataBatch, DataAck], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DataAck)
-	err := c.cc.Invoke(ctx, AgentDataPlaneService_AppendBatch_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &AgentDataPlaneService_ServiceDesc.Streams[0], AgentDataPlaneService_StreamBatches_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[DataBatch, DataAck]{ClientStream: stream}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentDataPlaneService_StreamBatchesClient = grpc.BidiStreamingClient[DataBatch, DataAck]
 
 // AgentDataPlaneServiceServer is the server API for AgentDataPlaneService service.
 // All implementations must embed UnimplementedAgentDataPlaneServiceServer
 // for forward compatibility.
 type AgentDataPlaneServiceServer interface {
-	AppendBatch(context.Context, *DataBatch) (*DataAck, error)
+	StreamBatches(grpc.BidiStreamingServer[DataBatch, DataAck]) error
 	mustEmbedUnimplementedAgentDataPlaneServiceServer()
 }
 
@@ -62,8 +65,8 @@ type AgentDataPlaneServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentDataPlaneServiceServer struct{}
 
-func (UnimplementedAgentDataPlaneServiceServer) AppendBatch(context.Context, *DataBatch) (*DataAck, error) {
-	return nil, status.Error(codes.Unimplemented, "method AppendBatch not implemented")
+func (UnimplementedAgentDataPlaneServiceServer) StreamBatches(grpc.BidiStreamingServer[DataBatch, DataAck]) error {
+	return status.Error(codes.Unimplemented, "method StreamBatches not implemented")
 }
 func (UnimplementedAgentDataPlaneServiceServer) mustEmbedUnimplementedAgentDataPlaneServiceServer() {}
 func (UnimplementedAgentDataPlaneServiceServer) testEmbeddedByValue()                               {}
@@ -86,23 +89,12 @@ func RegisterAgentDataPlaneServiceServer(s grpc.ServiceRegistrar, srv AgentDataP
 	s.RegisterService(&AgentDataPlaneService_ServiceDesc, srv)
 }
 
-func _AgentDataPlaneService_AppendBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DataBatch)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentDataPlaneServiceServer).AppendBatch(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentDataPlaneService_AppendBatch_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentDataPlaneServiceServer).AppendBatch(ctx, req.(*DataBatch))
-	}
-	return interceptor(ctx, in, info, handler)
+func _AgentDataPlaneService_StreamBatches_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentDataPlaneServiceServer).StreamBatches(&grpc.GenericServerStream[DataBatch, DataAck]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentDataPlaneService_StreamBatchesServer = grpc.BidiStreamingServer[DataBatch, DataAck]
 
 // AgentDataPlaneService_ServiceDesc is the grpc.ServiceDesc for AgentDataPlaneService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -110,12 +102,14 @@ func _AgentDataPlaneService_AppendBatch_Handler(srv interface{}, ctx context.Con
 var AgentDataPlaneService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "sysarmor.dataplane.v1.AgentDataPlaneService",
 	HandlerType: (*AgentDataPlaneServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "AppendBatch",
-			Handler:    _AgentDataPlaneService_AppendBatch_Handler,
+			StreamName:    "StreamBatches",
+			Handler:       _AgentDataPlaneService_StreamBatches_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "api/proto/dataplane/v1/dataplane.proto",
 }

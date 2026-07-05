@@ -33,7 +33,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-func TestDataPlaneAppendBatch(t *testing.T) {
+func TestDataPlaneStreamBatches(t *testing.T) {
 	st := &store.Store{}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, LocalProcessor: ingestworker.NewProcessor(st, nil)})
 	grpcServer := grpc.NewServer()
@@ -56,7 +56,7 @@ func TestDataPlaneAppendBatch(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("00000000000000000007", "grpc-agent", "grpc-host", []*signalv1.Signal{
+	ack, err := appendStreamBatch(ctx, conn, grpcDataBatch("00000000000000000007", "grpc-agent", "grpc-host", []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
 		endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
 		endpointSignal("reverse_shell_pattern", "lin-a", true, processEntity("p-bash"), socketEntity("10.66.0.99:443")),
@@ -75,7 +75,7 @@ func TestDataPlaneAppendBatch(t *testing.T) {
 	}
 }
 
-func TestDataPlaneAppendBatchDuplicateReturnsCommittedAck(t *testing.T) {
+func TestDataPlaneStreamBatchesDuplicateReturnsCommittedAck(t *testing.T) {
 	st := &store.Store{}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, LocalProcessor: ingestworker.NewProcessor(st, nil)})
 	grpcServer := grpc.NewServer()
@@ -98,14 +98,13 @@ func TestDataPlaneAppendBatchDuplicateReturnsCommittedAck(t *testing.T) {
 	}
 	defer conn.Close()
 
-	client := dataplanev1.NewAgentDataPlaneServiceClient(conn)
 	batch := grpcDataBatch("duplicate-batch", "grpc-agent", "grpc-host", nil)
-	if ack, err := client.AppendBatch(ctx, batch); err != nil || !ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_ACCEPTED {
-		t.Fatalf("first AppendBatch ack=%+v err=%v, want accepted", ack, err)
+	if ack, err := appendStreamBatch(ctx, conn, batch); err != nil || !ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_ACCEPTED {
+		t.Fatalf("first StreamBatches ack=%+v err=%v, want accepted", ack, err)
 	}
-	ack, err := client.AppendBatch(ctx, batch)
+	ack, err := appendStreamBatch(ctx, conn, batch)
 	if err != nil {
-		t.Fatalf("duplicate AppendBatch error = %v", err)
+		t.Fatalf("duplicate StreamBatches error = %v", err)
 	}
 	if !ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_DUPLICATE || ack.GetReasonCode() != "duplicate" || ack.GetCommittedCursor() != "duplicate-batch" || ack.GetRetryable() {
 		t.Fatalf("duplicate ack = %+v, want committed duplicate", ack)
@@ -145,13 +144,12 @@ func TestAgentDataPlaneServiceMTLSBindsBatchIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	client := dataplanev1.NewAgentDataPlaneServiceClient(conn)
-	if _, err := client.AppendBatch(context.Background(), grpcDataBatch("mtls-ok", "grpc-agent", "grpc-host", nil)); err != nil {
-		t.Fatalf("AppendBatch() matching mTLS identity error = %v", err)
+	if _, err := appendStreamBatch(context.Background(), conn, grpcDataBatch("mtls-ok", "grpc-agent", "grpc-host", nil)); err != nil {
+		t.Fatalf("StreamBatches() matching mTLS identity error = %v", err)
 	}
-	_, err = client.AppendBatch(context.Background(), grpcDataBatch("mtls-denied", "other-agent", "grpc-host", nil))
+	_, err = appendStreamBatch(context.Background(), conn, grpcDataBatch("mtls-denied", "other-agent", "grpc-host", nil))
 	if status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("AppendBatch() mismatched mTLS identity error = %v, want permission denied", err)
+		t.Fatalf("StreamBatches() mismatched mTLS identity error = %v, want permission denied", err)
 	}
 }
 
@@ -853,21 +851,21 @@ func TestGRPCAuthRequiresDevToken(t *testing.T) {
 	}
 	defer conn.Close()
 
-	_, err = dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
+	_, err = appendStreamBatch(ctx, conn, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
 	if status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("AppendBatch() error = %v, want unauthenticated", err)
+		t.Fatalf("StreamBatches() error = %v, want unauthenticated", err)
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", "dev-token")
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
+	ack, err := appendStreamBatch(ctx, conn, grpcDataBatch("", "grpc-agent", "grpc-host", nil))
 	if err != nil {
-		t.Fatalf("AppendBatch() with token error = %v", err)
+		t.Fatalf("StreamBatches() with token error = %v", err)
 	}
 	if !ack.GetAccepted() {
 		t.Fatalf("ack = %#v", ack)
 	}
 }
 
-func TestDataPlaneAppendBatchRequiresAgentIdentity(t *testing.T) {
+func TestDataPlaneStreamBatchesRequiresAgentIdentity(t *testing.T) {
 	st := &store.Store{}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
@@ -890,11 +888,11 @@ func TestDataPlaneAppendBatchRequiresAgentIdentity(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, &dataplanev1.DataBatch{
+	ack, err := appendStreamBatch(ctx, conn, &dataplanev1.DataBatch{
 		Header: &dataplanev1.BatchHeader{AgentId: "grpc-agent", HostId: "grpc-host"},
 	})
 	if err != nil {
-		t.Fatalf("AppendBatch() error = %v, want structured DataAck rejection", err)
+		t.Fatalf("StreamBatches() error = %v, want structured DataAck rejection", err)
 	}
 	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "invalid_data_batch" || ack.GetRetryable() || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want non-retryable invalid_data_batch rejection", ack)
@@ -922,9 +920,9 @@ func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("retryable-batch", "grpc-agent", "grpc-host", nil))
+	ack, err := appendStreamBatch(ctx, conn, grpcDataBatch("retryable-batch", "grpc-agent", "grpc-host", nil))
 	if err != nil {
-		t.Fatalf("AppendBatch() error = %v, want structured retryable DataAck", err)
+		t.Fatalf("StreamBatches() error = %v, want structured retryable DataAck", err)
 	}
 	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_RETRYABLE || ack.GetReasonCode() != "retryable_server_error" || !ack.GetRetryable() || ack.GetRetryAfterMs() == 0 || ack.GetBatchId() != "retryable-batch" || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want retryable server error", ack)
@@ -952,9 +950,9 @@ func TestDataAckClassifiesNonRetryableBackendError(t *testing.T) {
 	}
 	defer conn.Close()
 
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, grpcDataBatch("server-reject-batch", "grpc-agent", "grpc-host", nil))
+	ack, err := appendStreamBatch(ctx, conn, grpcDataBatch("server-reject-batch", "grpc-agent", "grpc-host", nil))
 	if err != nil {
-		t.Fatalf("AppendBatch() error = %v, want structured non-retryable DataAck", err)
+		t.Fatalf("StreamBatches() error = %v, want structured non-retryable DataAck", err)
 	}
 	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "server_error" || ack.GetRetryable() || ack.GetRetryAfterMs() != 0 || ack.GetBatchId() != "server-reject-batch" || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want non-retryable server error", ack)
@@ -980,6 +978,26 @@ func (b retryableUploadBackend) ResumeCursor(string, string) gateway.ResumeCurso
 }
 
 func (b retryableUploadBackend) TouchHotSession(store.AgentSession) {}
+
+func appendStreamBatch(ctx context.Context, conn *grpc.ClientConn, batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+	stream, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).StreamBatches(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := stream.Send(batch); err != nil {
+		_ = stream.CloseSend()
+		return nil, err
+	}
+	ack, err := stream.Recv()
+	if err != nil {
+		_ = stream.CloseSend()
+		return nil, err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return ack, nil
+}
 
 func grpcDataBatch(batchID, agentID, hostID string, signals []*signalv1.Signal) *dataplanev1.DataBatch {
 	batch := &dataplanev1.DataBatch{

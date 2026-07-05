@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
@@ -17,6 +18,11 @@ type GRPCAppender struct {
 	timeout time.Duration
 	token   string
 	tls     tlsconfig.ClientConfig
+
+	mu     sync.Mutex
+	conn   *grpc.ClientConn
+	stream dataplanev1.AgentDataPlaneService_StreamBatchesClient
+	cancel context.CancelFunc
 }
 
 func NewGRPCAppender(manager string) *GRPCAppender {
@@ -38,29 +44,77 @@ func NewGRPCAppenderWithTLS(manager string, timeout time.Duration, token string,
 	return &GRPCAppender{manager: normalizeGRPCAddress(manager), timeout: timeout, token: token, tls: tlsCfg}
 }
 
-func (u *GRPCAppender) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), u.timeout)
-	defer cancel()
-	if u.token != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", u.token)
-	}
-	creds, err := tlsconfig.ClientCredentials(u.tls)
+func (u *GRPCAppender) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	stream, err := u.streamClientLocked()
 	if err != nil {
+		u.closeLocked()
 		return nil, err
 	}
-	conn, err := grpc.DialContext(ctx, u.manager, grpc.WithTransportCredentials(creds), grpc.WithBlock())
-	if err != nil {
+	if err := stream.Send(batch); err != nil {
+		u.closeLocked()
 		return nil, err
 	}
-	defer conn.Close()
-	ack, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).AppendBatch(ctx, batch)
+	ack, err := stream.Recv()
 	if err != nil {
+		u.closeLocked()
 		return nil, err
 	}
 	if !AckCommitted(ack) {
 		return ack, fmt.Errorf("append batch rejected: %s", ack.GetMessage())
 	}
 	return ack, nil
+}
+
+func (u *GRPCAppender) streamClientLocked() (dataplanev1.AgentDataPlaneService_StreamBatchesClient, error) {
+	if u.stream != nil {
+		return u.stream, nil
+	}
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), u.timeout)
+	defer cancelDial()
+	if u.token != "" {
+		dialCtx = metadata.AppendToOutgoingContext(dialCtx, "x-sysarmor-agent-token", u.token)
+	}
+	creds, err := tlsconfig.ClientCredentials(u.tls)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := grpc.DialContext(dialCtx, u.manager, grpc.WithTransportCredentials(creds), grpc.WithBlock())
+	if err != nil {
+		return nil, err
+	}
+	streamCtx := context.Background()
+	var cancel context.CancelFunc
+	streamCtx, cancel = context.WithCancel(streamCtx)
+	if u.token != "" {
+		streamCtx = metadata.AppendToOutgoingContext(streamCtx, "x-sysarmor-agent-token", u.token)
+	}
+	stream, err := dataplanev1.NewAgentDataPlaneServiceClient(conn).StreamBatches(streamCtx)
+	if err != nil {
+		cancel()
+		_ = conn.Close()
+		return nil, err
+	}
+	u.conn = conn
+	u.stream = stream
+	u.cancel = cancel
+	return stream, nil
+}
+
+func (u *GRPCAppender) closeLocked() {
+	if u.stream != nil {
+		_ = u.stream.CloseSend()
+		u.stream = nil
+	}
+	if u.cancel != nil {
+		u.cancel()
+		u.cancel = nil
+	}
+	if u.conn != nil {
+		_ = u.conn.Close()
+		u.conn = nil
+	}
 }
 
 func normalizeGRPCAddress(manager string) string {
