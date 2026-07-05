@@ -44,7 +44,7 @@ docker compose up -d --build --force-recreate attacker node-a tetragon
 echo ">>> 等待 manager health"
 manager_ready=0
 for i in $(seq 1 20); do
-  if curl -sf http://127.0.0.1:19443/healthz >/dev/null; then
+  if docker exec node-a curl -sf http://mgr:9443/healthz >/dev/null; then
     manager_ready=1
     break
   fi

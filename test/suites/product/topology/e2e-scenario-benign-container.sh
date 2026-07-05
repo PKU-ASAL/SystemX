@@ -70,7 +70,7 @@ health:
   interval: 500ms
 EOF"
 
-curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
+docker exec node-a curl -sf -X POST "http://mgr:9443/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
 docker exec tetragon tetra tracingpolicy delete sysarmor-runtime-collection >/dev/null 2>&1 || true
 docker exec tetragon sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
