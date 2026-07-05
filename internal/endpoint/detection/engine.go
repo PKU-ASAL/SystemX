@@ -153,16 +153,19 @@ type cepGroupState struct {
 }
 
 type lineageState struct {
-	webShellExecRefs   []string
-	downloadRefs       []string
-	payloadRefs        []string
-	payloadExecRefs    []string
-	payloads           map[string]bool
-	payloadExecStable  map[string]bool
-	lastWriterByPath   map[string]string
-	stagedPayloadSeen  bool
-	reverseShellSeen   bool
-	lastExecByStableID map[string]string
+	webShellExecRefs        []string
+	downloadRefs            []string
+	payloadRefs             []string
+	payloadExecRefs         []string
+	reverseConnectRefs      []string
+	reverseSocketAddr       string
+	payloads                map[string]bool
+	payloadExecStable       map[string]bool
+	lastWriterByPath        map[string]string
+	stagedPayloadSeen       bool
+	reverseShellSeen        bool
+	payloadLifecycleEmitted bool
+	lastExecByStableID      map[string]string
 }
 
 type ApplyReport struct {
@@ -408,6 +411,7 @@ func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState)
 		if hasAnyPrefix(payloadPath, []string{"/var/lib/app/plugins/"}) {
 			st.stagedPayloadSeen = true
 		}
+		return e.detectPayloadLifecycle(ev, st)
 	}
 	return nil
 }
@@ -437,7 +441,11 @@ func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState
 	refs = appendRefs(refs, st.webShellExecRefs...)
 	refs = appendRefs(refs, st.downloadRefs...)
 	st.reverseShellSeen = true
-	return []*signalv1.Signal{e.signal(ev, rule, refs, true, processEntity(ev), socketEntity(ev))}
+	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
+	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
+	out := []*signalv1.Signal{e.signal(ev, rule, refs, true, processEntity(ev), socketEntity(ev))}
+	out = append(out, e.detectPayloadLifecycle(ev, st)...)
+	return out
 }
 
 func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
@@ -454,22 +462,37 @@ func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageSta
 	if !payloadProc {
 		return nil
 	}
+	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
+	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
 	var out []*signalv1.Signal
 	if rule, ok := e.rule("suspicious_exec_connect"); ok {
 		sigRefs := appendRefs(nil, st.payloadExecRefs...)
 		sigRefs = appendUnique(sigRefs, ev.GetId())
 		out = append(out, e.signal(ev, rule, sigRefs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketEntity(ev)))
 	}
+	out = append(out, e.detectPayloadLifecycle(ev, st)...)
+	return out
+}
+
+func (e *Engine) detectPayloadLifecycle(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
+	if st.payloadLifecycleEmitted || len(st.payloadRefs) == 0 || len(st.payloadExecRefs) == 0 || len(st.reverseConnectRefs) == 0 {
+		return nil
+	}
+	rule, ok := e.rule("payload_lifecycle")
+	if !ok {
+		return nil
+	}
 	refs := appendRefs(nil, st.downloadRefs...)
 	refs = appendRefs(refs, st.payloadRefs...)
 	refs = appendRefs(refs, st.payloadExecRefs...)
-	refs = appendUnique(refs, ev.GetId())
-	if len(refs) > 1 {
-		if rule, ok := e.rule("payload_lifecycle"); ok {
-			out = append(out, e.signal(ev, rule, refs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketEntity(ev)))
-		}
+	refs = appendRefs(refs, st.reverseConnectRefs...)
+	if len(refs) < 3 {
+		return nil
 	}
-	return out
+	st.payloadLifecycleEmitted = true
+	return []*signalv1.Signal{
+		e.signal(ev, rule, refs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketAddrEntity(st.reverseSocketAddr)),
+	}
 }
 
 func (e *Engine) detectCredentialRead(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
@@ -1364,6 +1387,10 @@ func processEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {
 
 func socketEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {
 	return &signalv1.EntityRef{Kind: "socket", Key: ev.GetObject().GetSocketAddr(), Role: "object"}
+}
+
+func socketAddrEntity(addr string) *signalv1.EntityRef {
+	return &signalv1.EntityRef{Kind: "socket", Key: addr, Role: "object"}
 }
 
 func fileEntity(path, role string) *signalv1.EntityRef {
