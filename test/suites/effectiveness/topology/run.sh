@@ -145,6 +145,10 @@ python3 "$ROOT/shared/reports/effectiveness_report.py" \
   --scope "$EVALUATION_SCOPE" \
   --scenarios $SCENARIOS \
   --workloads $WORKLOADS
+python3 "$ROOT/shared/reports/assert_effectiveness.py" \
+  --matrix "$RESULTS/effectiveness/$RUN_ID/matrix.csv" \
+  --truth-steps "$RESULTS/effectiveness/$RUN_ID/truth_steps.csv" \
+  --min-score "${SYSARMOR_EFFECTIVENESS_MIN_SCORE:-1.0}"
 
 echo "[effectiveness-topology] matrix written to $OUT_DIR/matrix.csv"
 echo "[effectiveness-topology] effectiveness written to $RESULTS/effectiveness/$RUN_ID"
