@@ -20,7 +20,7 @@ EVALUATION_SCOPE ?= local
 
 .PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
-.PHONY: product-endpoint product-topology product-platform product-platform-full
+.PHONY: product-endpoint product-topology product-topology-smoke product-platform product-platform-smoke product-platform-full
 .PHONY: performance-endpoint performance-modules performance-rule-engine performance-matcher
 .PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
@@ -83,6 +83,8 @@ product-endpoint:
 product-topology:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/product/topology/e2e-systemd-vm.sh
 
+product-topology-smoke: product-topology
+
 product-platform:
 	bash suites/product/platform/e2e-control-contract.sh
 	bash suites/product/platform/e2e-gateway-local-ingest.sh
@@ -93,6 +95,8 @@ product-platform:
 	bash suites/product/platform/e2e-response-scope-deny.sh
 	bash suites/product/platform/e2e-response-approval.sh
 	bash suites/product/platform/e2e-store-status.sh
+
+product-platform-smoke: product-platform
 
 product-platform-full:
 	bash shared/harness/start-container.sh
@@ -148,9 +152,11 @@ report:
 help:
 	@echo "SysArmor test suites:"
 	@echo "  test-unit        local Go tests"
-	@echo "  product-endpoint single VM endpoint agent/sensor/local control"
-	@echo "  product-topology multi-VM manager/gateway/agent/attacker path"
-	@echo "  product-platform manager/control/storage/platform contracts"
+	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
+	@echo "  product-topology multi-VM smoke: fake sensor, mTLS/systemd/data path"
+	@echo "  product-topology-smoke alias for product-topology"
+	@echo "  product-platform local platform contracts/smoke"
+	@echo "  product-platform-smoke alias for product-platform"
 	@echo "  product-platform-full container gateway/worker/manager product path"
 	@echo "  performance-endpoint endpoint CPU/RSS benchmark"
 	@echo "  performance-modules local module microbenchmarks"

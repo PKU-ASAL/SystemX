@@ -18,7 +18,10 @@
 
 ```bash
 make -C test product-platform
+make -C test product-platform-smoke
 ```
+
+这是 smoke/contract 入口，`product-platform-smoke` 是显式别名。它使用构造数据或 fake 输入验证平台合约，不证明真实 sensor 检测效果。
 
 容器产品路径：
 
@@ -33,7 +36,9 @@ make -C test product-platform-full
 | `platform` | 平台组件和 API/控制/存储合约 |
 | `topology` | 三节点真实产品链路和 C2 场景 |
 
-如果要验证 agent 通过 mTLS 接入 gateway 并形成 incident，优先跑 `product-topology` 或 `effectiveness-topology`。
+如果只验证 agent 通过 mTLS 接入 gateway 并能上传 event，跑 `product-topology`，它是 fake sensor VM smoke。
+
+如果要验证真实 Tetragon 事件、signal 和 incident，跑 `product-platform-full` 或 `effectiveness-topology`。
 
 ## 不覆盖
 

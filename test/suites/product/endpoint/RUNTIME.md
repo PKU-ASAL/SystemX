@@ -1,8 +1,8 @@
-# Agent Runtime Suite
+# Agent Runtime Smoke
 
-This suite owns agent runtime smoke tests for local, container, and VM
-topologies. Fake-sensor tests are preferred for fast local gates; container and
-VM tests cover packaging, service lifecycle, and managed sensor behavior.
+This folder still contains focused agent runtime smoke scripts. They are useful
+for fast local gates, but they do not replace `product-endpoint`, performance
+benchmarks, or detection effectiveness tests.
 
 It validates:
 
@@ -10,37 +10,26 @@ It validates:
 - sensor restart and recovery health semantics;
 - startup capability failures such as bundle checksum, BTF, and bpffs;
 - sensor parse/drop health degradation;
-- data-plane append session cursor behavior.
-- container and VM managed sensor startup/restart/recovery behavior.
+- container and VM managed fake sensor startup/restart/recovery behavior.
 
 This suite may start a memory manager and query it with `sysarmorctl manager`
 when a runtime smoke needs manager-visible health or session state. It should
 not own cloud analytics, incident semantics, storage projection, or VM real
 Tetragon benchmarks.
 
-Entrypoint:
+Smoke script groups:
+
+| Scripts | Smoke | Sensor | Purpose |
+|---|---|---|---|
+| `e2e-daemon*.sh` | yes | fake input | agent daemon startup and local health. |
+| `e2e-sensor-*.sh` | yes | fake sensor process | restart/recovery health semantics. |
+| `e2e-capability*.sh` | yes | broken/fake bundle | startup capability failure semantics. |
+| `e2e-parse-health.sh`, `e2e-dropped-health.sh` | yes | malformed/fake input | health degradation on parse/drop errors. |
+| `e2e-managed-*.sh` | yes | fake Tetragon bundle | managed sensor lifecycle. |
+| `e2e-real-tetragon-owned-*.sh` | no | owned real Tetragon | real owned sensor path. |
+
+Run the current public endpoint entrypoint with:
 
 ```bash
-make -C test test-agent-runtime
-```
-
-Focused targets:
-
-```bash
-make -C test e2e-agent-daemon
-make -C test e2e-agent-sensor-restart
-make -C test e2e-agent-sensor-recover
-make -C test e2e-agent-capability
-make -C test e2e-agent-capability-btf
-make -C test e2e-agent-capability-bpffs
-make -C test e2e-agent-parse-health
-make -C test e2e-agent-dropped-health
-make -C test e2e-agent-session
-make -C test e2e-agent-daemon-container
-make -C test e2e-agent-managed-container
-make -C test e2e-agent-managed-recover-container
-make -C test e2e-agent-managed-restart-container
-make -C test e2e-agent-systemd-vm
-make -C test e2e-agent-managed-vm
-make -C test e2e-agent-managed-recover-vm
+make -C test product-endpoint
 ```

@@ -21,12 +21,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[e2e-agent-systemd-vm] starting VM topology"
+echo "[e2e-agent-systemd-vm] starting VM topology smoke (fake sensor, real mTLS/systemd/data path)"
 bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV" >/dev/null
 
 cd "$ENVDIR"
 
-echo "[e2e-agent-systemd-vm] installing agent binary, config, and systemd unit"
+echo "[e2e-agent-systemd-vm] installing agent binary, fake sensor config, and systemd unit"
 vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
 vagrant upload "$REPO/deployments/agent/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
 vagrant upload "$PKI_DIR" /tmp/sysarmor-pki.upload node-a >/dev/null

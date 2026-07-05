@@ -63,9 +63,34 @@ make -C test effectiveness-topology
 含义是：
 
 1. `product-platform-full`：在 container 环境确认 gateway、Kafka、worker、manager 能串起来。
-2. `product-topology`：在三 VM 环境确认 agent 通过 mTLS 接入 gateway，数据最终能被 manager 查询。
+2. `product-topology`：三 VM smoke。使用 fake sensor，确认 agent 通过 mTLS 接入 gateway，event 最终能被 manager 查询。
 3. `performance-endpoint`：在单 VM 上采 agent/sensor CPU/RSS。`quick` 是短测，`medium` 是中等长度，`long` 是长窗口。
 4. `effectiveness-topology`：在三 VM 环境跑攻击/良性场景，看 event、signal、incident 是否符合预期。
+
+## Smoke 口径
+
+带 smoke 口径的测试只证明产品链路健康，不证明真实检测效果。
+
+```text
+product-platform / product-platform-smoke
+  smoke: yes
+  sensor: constructed data / fake input
+  proves: local manager/gateway/control/store contracts
+  does not prove: real sensor collection, VM deployment, detection effectiveness
+
+product-topology
+  smoke: yes
+  sensor: fake
+  proves: VM 部署、mTLS、systemd agent、streaming dataplane、manager events query
+  does not prove: Tetragon 内核采集、signal/incident 检测效果
+```
+
+真实 sensor 和检测效果结论看：
+
+```bash
+make -C test product-platform-full
+make -C test effectiveness-topology
+```
 
 ## 性能测什么
 
@@ -136,9 +161,11 @@ make -C test down-all
 
 ```bash
 make -C test product-platform
+make -C test product-platform-smoke
 make -C test product-platform-full
 make -C test product-endpoint
 make -C test product-topology
+make -C test product-topology-smoke
 ```
 
 性能：
@@ -164,7 +191,7 @@ performance 测“端侧成本高不高”
 
 container 快，适合平台功能
 vm-endpoint 准，适合 agent 性能
-vm-topology 真，适合完整链路和攻击场景
+vm-topology 真，适合完整部署链路和攻击场景；其中 product-topology 是 fake sensor smoke
 ```
 
 真正做结论时：

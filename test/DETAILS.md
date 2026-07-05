@@ -88,8 +88,10 @@ make -C test down-vm-topology
 ```bash
 make -C test product-endpoint
 make -C test product-platform
+make -C test product-platform-smoke
 make -C test product-platform-full
 make -C test product-topology
+make -C test product-topology-smoke
 ```
 
 端侧性能：
@@ -151,10 +153,12 @@ make -C test performance-matcher
 
 | Target | Purpose |
 |---|---|
-| `product-endpoint` | 验证单 VM agent/sensor/local control 基础能力。 |
-| `product-platform` | 验证 manager/gateway/store/policy/response/control 本地合约。 |
+| `product-endpoint` | 验证单 VM agent 和 owned real Tetragon 基础能力；不是 smoke。 |
+| `product-platform` | 验证 manager/gateway/store/policy/response/control 本地合约和轻量 smoke。 |
+| `product-platform-smoke` | `product-platform` 的显式 smoke 别名。 |
 | `product-platform-full` | 使用 container 环境验证 gateway/worker/manager/Kafka/store 产品路径。 |
-| `product-topology` | 验证 `node-a` agent 通过 mTLS 接入 `mgr` 上 gateway/manager 的产品链路。 |
+| `product-topology` | 三 VM smoke；使用 fake sensor 验证 `node-a` agent 通过 mTLS 接入 `mgr` 上 gateway/manager，并能查询 event。 |
+| `product-topology-smoke` | `product-topology` 的显式 smoke 别名。 |
 
 ### Performance Suite
 
