@@ -11,8 +11,9 @@ ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
 NODES = [
   { name: "mgr",      ip: "10.66.0.10", mem: 3072, cpus: 2, provisions: ["provision/setup-platform.sh"] },
   { name: "node-a",   ip: "10.66.0.11", mem: 2048, cpus: 2,
-    provisions: ["provision/setup-credentials.sh"] },
-  { name: "attacker", ip: "10.66.0.99", mem: 1024, cpus: 1, provisions: ["provision/setup-c2.sh"] },
+    provisions: ["provision/setup-apt.sh", "provision/setup-credentials.sh"] },
+  { name: "attacker", ip: "10.66.0.99", mem: 1024, cpus: 1,
+    provisions: ["provision/setup-apt.sh", "provision/setup-c2.sh"] },
 ]
 
 PRIV_NET = <<-SHELL
