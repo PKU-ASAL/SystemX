@@ -113,28 +113,55 @@ wait_contains "agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-system
   vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-systemd-vm.metrics.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics"
+wait_contains "events" 'fake-startup' "$RESULTS/e2e-agent-systemd-vm.events.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --behavior process.exec --limit 20"
 
-PID_BEFORE="$(vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent" 2>/dev/null | tr -d '\r' | tail -1)"
-if [[ -z "$PID_BEFORE" || "$PID_BEFORE" == "0" ]]; then
-  echo "[e2e-agent-systemd-vm][ERROR] sysarmor-agent MainPID is empty before restart" >&2
-  vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l || true" >&2 2>/dev/null || true
-  exit 1
-fi
+read_agent_pid() {
+  vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent 2>/dev/null | awk '/^[0-9]+$/ { print \"PID=\" \$1; exit }'" 2>/dev/null \
+    | tr -d '\r' \
+    | awk -F= '/^PID=[0-9]+$/ { print $2; exit }' || true
+}
+
+wait_agent_pid() {
+  local pid=""
+  local deadline=$((SECONDS + 30))
+  until [[ -n "$pid" && "$pid" != "0" ]]; do
+    if (( SECONDS >= deadline )); then
+      echo "[e2e-agent-systemd-vm][ERROR] sysarmor-agent MainPID is empty before restart" >&2
+      vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l || true" >&2 2>/dev/null || true
+      exit 1
+    fi
+    sleep 1
+    pid="$(read_agent_pid)"
+  done
+  printf '%s\n' "$pid"
+}
+
+PID_BEFORE="$(wait_agent_pid)"
 
 echo "[e2e-agent-systemd-vm] verifying systemd restarts agent"
-vagrant ssh node-a -c "sudo kill -TERM $PID_BEFORE" >/dev/null
+if ! vagrant ssh node-a -c "sudo systemctl kill -s TERM sysarmor-agent" >/dev/null; then
+  echo "[e2e-agent-systemd-vm][ERROR] failed to signal sysarmor-agent via systemctl; before=$PID_BEFORE" >&2
+  vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l || true" >&2 2>/dev/null || true
+  vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 80 || true" >&2 2>/dev/null || true
+  exit 1
+fi
 
 deadline=$((SECONDS + 30))
 PID_AFTER=""
 until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE" ]]; do
   if (( SECONDS >= deadline )); then
-    echo "[e2e-agent-systemd-vm][ERROR] systemd did not restart agent; before=$PID_BEFORE after=${PID_AFTER:-empty}" >&2
+    if [[ -z "$PID_AFTER" || "$PID_AFTER" == "0" ]]; then
+      echo "[e2e-agent-systemd-vm][ERROR] sysarmor-agent MainPID is empty after restart signal; before=$PID_BEFORE after=${PID_AFTER:-empty}" >&2
+    else
+      echo "[e2e-agent-systemd-vm][ERROR] systemd did not restart agent; before=$PID_BEFORE after=$PID_AFTER" >&2
+    fi
     vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l || true" >&2 2>/dev/null || true
     vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 80 || true" >&2 2>/dev/null || true
     exit 1
   fi
   sleep 1
-  PID_AFTER="$(vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent" 2>/dev/null | tr -d '\r' | tail -1)"
+  PID_AFTER="$(read_agent_pid)"
 done
 
 wait_contains "agent-health after systemd restart" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \

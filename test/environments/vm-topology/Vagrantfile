@@ -7,6 +7,7 @@
 # 与容器拓扑的区别：3 台独立 VM + 独立内核，agent 在 VM 内以 host scope 托管 sensor（不依赖 Docker）。
 # 默认 provider = libvirt。
 ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
+require_relative "../../shared/harness/vagrant-libvirt-compat"
 
 NODES = [
   { name: "mgr",      ip: "10.66.0.10", mem: 3072, cpus: 2, provisions: ["provision/setup-platform.sh"] },

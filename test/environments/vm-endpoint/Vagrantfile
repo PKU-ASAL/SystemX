@@ -7,6 +7,7 @@
 # Node:
 #   node-a 10.66.0.11  monitored endpoint host
 ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
+require_relative "../../shared/harness/vagrant-libvirt-compat"
 
 PRIV_NET = <<-SHELL
   set -e
