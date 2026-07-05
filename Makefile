@@ -1,4 +1,6 @@
-.PHONY: api build test clean-bin
+.DEFAULT_GOAL := help
+
+.PHONY: api build test clean-bin help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -22,3 +24,13 @@ test:
 
 clean-bin:
 	rm -rf $(BIN_DIR)
+
+help:
+	@echo "SysArmor project commands:"
+	@echo "  make api        generate protobuf code"
+	@echo "  make build      build agent/gateway/manager/worker/sysarmorctl"
+	@echo "  make test       run Go tests"
+	@echo "  make clean-bin  remove built binaries"
+	@echo ""
+	@echo "Test suites:"
+	@echo "  make -C test help"

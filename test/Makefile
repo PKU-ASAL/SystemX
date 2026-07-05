@@ -16,6 +16,8 @@ SYSARMOR_BENCH_SCENARIO ?=
 SYSARMOR_BENCH_POLICIES ?=
 EVALUATION_SCOPE ?= local
 
+.DEFAULT_GOAL := help
+
 .PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
 .PHONY: product-endpoint product-topology product-platform product-platform-full
