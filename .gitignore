@@ -1,3 +1,6 @@
+# scratchpad
+.scratchpad/
+
 # test results (large, regenerated)
 test/.results/
 test/.results/*.jsonl
@@ -12,7 +15,7 @@ test/environments/vm-topology/deploy/images/
 !test/environments/vm-topology/deploy/README.md
 
 # build artifacts
-bin/
+dist/
 .cache/
 deployments/pki/agent-plane-mtls/runtime/
 
@@ -28,4 +31,4 @@ __pycache__/
 .DS_Store
 
 # nested git repos (reference material, not our code)
-references/code/
+third_party/references/code/

@@ -45,18 +45,18 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
     --exclude '.git/' \
     --exclude '.vagrant/' \
     --exclude '.cache/' \
-    --exclude 'bin/' \
+    --exclude 'dist/' \
     --exclude 'test/.results/' \
     --exclude 'test/environments/vm-topology/deploy/' \
-    --exclude 'references/code/' \
+    --exclude 'third_party/references/code/' \
     "$REPO/" "$PLATFORM_UPLOAD_DIR/"
   mkdir -p \
     "$PLATFORM_UPLOAD_DIR/deployments/vm-build/manager" \
     "$PLATFORM_UPLOAD_DIR/deployments/vm-build/gateway" \
     "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker"
-  install -m 0755 "$REPO/bin/sysarmor-manager" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/manager/sysarmor-manager"
-  install -m 0755 "$REPO/bin/sysarmor-gateway" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/gateway/sysarmor-gateway"
-  install -m 0755 "$REPO/bin/sysarmor-worker" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker/sysarmor-worker"
+  install -m 0755 "$REPO/dist/bin/sysarmor-manager" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/manager/sysarmor-manager"
+  install -m 0755 "$REPO/dist/bin/sysarmor-gateway" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/gateway/sysarmor-gateway"
+  install -m 0755 "$REPO/dist/bin/sysarmor-worker" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker/sysarmor-worker"
   mkdir -p "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime"
   rsync -a --delete "$PKI_DIR/" "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime/"
   required_images=(ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest apache/kafka:latest sysarmor-opensearch:latest)
@@ -83,7 +83,7 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   if ! vagrant ssh mgr -c "command -v docker >/dev/null && (docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null)" >/dev/null 2>&1; then
     vagrant provision mgr >/dev/null
   fi
-  vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload mgr >/dev/null
+  vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload mgr >/dev/null
   vagrant upload "$PLATFORM_UPLOAD_DIR" /tmp/sysarmor-platform.upload mgr >/dev/null
   vagrant upload "$PLATFORM_IMAGE_MANIFEST" /tmp/sysarmor-vm-images.manifest mgr >/dev/null
   image_upload=0

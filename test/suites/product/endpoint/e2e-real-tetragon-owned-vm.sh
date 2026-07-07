@@ -40,8 +40,8 @@ if [[ -z "$TETRAGON_ARCHIVE" ]]; then
   echo "[e2e-agent-real-tetragon-owned-vm][ERROR] SYSARMOR_TETRAGON_ARCHIVE is required" >&2
   exit 1
 fi
-vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
-vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
 vagrant upload "$REPO/test/data/content" /tmp/sysarmor-content.upload node-a >/dev/null
 vagrant upload "$REPO/test/data/policies/collection-balanced.json" /tmp/sysarmor-collection-balanced.json node-a >/dev/null

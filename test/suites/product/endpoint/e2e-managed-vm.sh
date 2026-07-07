@@ -100,7 +100,7 @@ bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV" >/dev/null
 cd "$ENVDIR"
 
 echo "[e2e-agent-managed-vm] installing agent, systemd unit, and fake bundle"
-vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
 vagrant upload "$REPO/deployments/agent/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
 vagrant upload "$TMP/bundle/bin/tetragon" /tmp/sysarmor-fake-tetragon node-a >/dev/null
 vagrant upload "$TMP/bundle/bin/tetra" /tmp/sysarmor-fake-tetra node-a >/dev/null

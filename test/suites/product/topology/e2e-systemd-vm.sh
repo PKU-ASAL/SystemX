@@ -45,7 +45,7 @@ fi
 "$REPO/deployments/agent/package-agent.sh" \
   --version topology-test \
   --output "$TMP/sysarmor-agent-linux-amd64.tar.gz" \
-  --agent-bin "$REPO/bin/sysarmor-agent" \
+  --agent-bin "$REPO/dist/bin/sysarmor-agent" \
   --tetragon-archive "$TETRAGON_ARCHIVE" \
   --signing-key "$SIGNING_KEY" >/dev/null
 vagrant upload "$TMP/sysarmor-agent-linux-amd64.tar.gz" /tmp/sysarmor-agent-linux-amd64.tar.gz mgr >/dev/null

@@ -33,8 +33,8 @@ else
   MANAGER_CONFIG="${SYSARMOR_VM_AGENT_MANAGER_CONFIG:-  transport: local}"
 fi
 
-if [[ ! -x "$REPO/bin/sysarmor-agent" || ! -x "$REPO/bin/sysarmorctl" ]]; then
-  echo "[sync-agent-vm][ERROR] missing bin/sysarmor-agent or bin/sysarmorctl; run make build first" >&2
+if [[ ! -x "$REPO/dist/bin/sysarmor-agent" || ! -x "$REPO/dist/bin/sysarmorctl" ]]; then
+  echo "[sync-agent-vm][ERROR] missing dist/bin/sysarmor-agent or dist/bin/sysarmorctl; run make build first" >&2
   exit 1
 fi
 if [[ -n "$TETRAGON_ARCHIVE" && ! -f "$TETRAGON_ARCHIVE" ]]; then
@@ -49,8 +49,8 @@ fi
 cd "$ENVDIR"
 
 echo "[sync-agent-vm] uploading current sysarmor-agent distribution to $NODE in $VM_ENV"
-vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload "$NODE" >/dev/null
-vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload "$NODE" >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload "$NODE" >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload "$NODE" >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload "$NODE" >/dev/null
 if [[ "$VM_ENV" == "vm-topology" ]]; then
   vagrant upload "$PKI_DIR" /tmp/sysarmor-pki.upload "$NODE" >/dev/null

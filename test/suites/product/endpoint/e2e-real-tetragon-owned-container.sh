@@ -43,7 +43,7 @@ docker run -d \
   --network "$NETWORK" \
   -v /sys/kernel/btf/vmlinux:/sys/kernel/btf/vmlinux:ro \
   -v /sys/fs/bpf:/sys/fs/bpf \
-  -v "$REPO/bin:/opt/sysarmor/bin:ro" \
+  -v "$REPO/dist/bin:/opt/sysarmor/bin:ro" \
   quay.io/cilium/tetragon:v1.7.0 \
   -c 'tail -f /dev/null' >/dev/null
 

@@ -5,7 +5,7 @@
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
 GOBIN_PATH := $(shell go env GOPATH)/bin
-BIN_DIR ?= bin
+BIN_DIR ?= dist/bin
 COMPOSE ?= docker compose
 PLATFORM_COMPOSE ?= deployments/compose.platform.yaml
 PKI_RUNTIME_DIR ?= deployments/pki/agent-plane-mtls/runtime

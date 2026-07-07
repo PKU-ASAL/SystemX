@@ -16,7 +16,7 @@ prepare_runtime_image() {
   local dir="$RUNTIME_DIR/$name"
 
   mkdir -p "$dir"
-  install -m 0755 "$REPO/bin/$binary" "$dir/$binary"
+  install -m 0755 "$REPO/dist/bin/$binary" "$dir/$binary"
   cat >"$dir/Dockerfile" <<EOF
 FROM scratch
 COPY $binary /usr/local/bin/$binary
