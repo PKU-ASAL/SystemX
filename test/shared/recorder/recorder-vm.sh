@@ -14,7 +14,7 @@ ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 RUN_ID="${RUN_ID:-${SYSARMOR_RECORDER_RUN_ID:-manual}}"
 OUT_DIR="$RESULTS/recordings/$RUN_ID"
-AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/var/run/sysarmor/agent.sock}"
+AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent.sock}"
 AGENT_ID="${SYSARMOR_RECORDER_AGENT_ID:-${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}}"
 TENANT_ID="${SYSARMOR_RECORDER_TENANT_ID:-${SYSARMOR_BENCH_TENANT_ID:-default}}"
 DURATION="${DURATION:-${SYSARMOR_RECORDER_DURATION:-3600}}"
@@ -64,7 +64,7 @@ start_remote_sampler() {
 #!/usr/bin/env bash
 set -euo pipefail
 DUR=\"\${1:-3600}\"
-AGENT_SOCK=\"\${2:-/var/run/sysarmor/agent.sock}\"
+AGENT_SOCK=\"\${2:-/run/sysarmor/agent.sock}\"
 AGENT_ID=\"\${3:-vm-owned-tetragon}\"
 TENANT_ID=\"\${4:-default}\"
 LABELS=\"\${5:-}\"

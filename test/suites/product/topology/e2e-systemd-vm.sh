@@ -7,9 +7,9 @@ REPO="$(cd "$ROOT/.." && pwd)"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$VM_ENV}"
 AGENT_ID="vm-owned-tetragon"
+CASE_LABEL="product-topology"
 
 mkdir -p "$RESULTS"
 
@@ -21,62 +21,57 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[e2e-agent-systemd-vm] starting VM topology smoke (fake sensor, real mTLS/systemd/data path)"
+echo "[e2e-agent-systemd-vm] starting VM topology"
 bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV" >/dev/null
 
 cd "$ENVDIR"
 
-echo "[e2e-agent-systemd-vm] installing agent binary, fake sensor config, and systemd unit"
-vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
-vagrant upload "$REPO/deployments/agent/systemd/sysarmor-agent.service" /tmp/sysarmor-agent.service.upload node-a >/dev/null
-vagrant upload "$PKI_DIR" /tmp/sysarmor-pki.upload node-a >/dev/null
-
-vagrant ssh node-a -c "sudo mkdir -p /etc/sysarmor/policies /etc/sysarmor/pki /var/lib/sysarmor/agent/telemetry /usr/local/bin; sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent; sudo install -m 0644 /tmp/sysarmor-agent.service.upload /etc/systemd/system/sysarmor-agent.service; sudo install -m 0644 /tmp/sysarmor-pki.upload/ca.pem /etc/sysarmor/pki/ca.pem; sudo install -m 0644 /tmp/sysarmor-pki.upload/agent.pem /etc/sysarmor/pki/agent.pem; sudo install -m 0600 /tmp/sysarmor-pki.upload/agent-key.pem /etc/sysarmor/pki/agent-key.pem" >/dev/null
-
-vagrant ssh node-a -c "printf '%s\n' '{\"behaviors\":[\"process.exec\"],\"observe_only\":true}' | sudo tee /etc/sysarmor/policies/sysarmor-fake.yaml >/dev/null
-sudo tee /etc/sysarmor/agent.yaml >/dev/null <<EOF
-agent:
-  id: $AGENT_ID
-  host_id: vm-node-a
-  tenant_id: default
-  token: $TOKEN
-
-manager:
-  address: 10.66.0.10:9444
-  transport: grpc
-  tls_ca: /etc/sysarmor/pki/ca.pem
-  tls_cert: /etc/sysarmor/pki/agent.pem
-  tls_key: /etc/sysarmor/pki/agent-key.pem
-  tls_server_name: sysarmor-gateway.local
-
-sensor:
-  backend: fake
-  fake_startup_events: 1
-  mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-fake.yaml
-  observe_only: true
-  restart: always
-  max_restarts: 1
-  restart_window: 1h
-
-telemetry:
-  batch_size: 256
-  flush_interval: 100ms
-
-data_plane:
-  retry_initial: 100ms
-  retry_max: 500ms
-  request_timeout: 2s
-
-health:
-  interval: 500ms
-EOF
-sudo systemctl daemon-reload
-sudo systemctl enable sysarmor-agent >/dev/null
-sudo systemctl restart sysarmor-agent" >/dev/null
+echo "[e2e-agent-systemd-vm] publishing agent artifact through manager"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"; cleanup' EXIT
+TETRAGON_ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
+if [[ -z "$TETRAGON_ARCHIVE" && -f "$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz" ]]; then
+  TETRAGON_ARCHIVE="$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz"
+fi
+if [[ -z "$TETRAGON_ARCHIVE" || ! -f "$TETRAGON_ARCHIVE" ]]; then
+  echo "[e2e-agent-systemd-vm][ERROR] SYSARMOR_TETRAGON_ARCHIVE is required for product-topology agent artifact" >&2
+  exit 1
+fi
+SIGNING_KEY="$PKI_DIR/artifact-signing-key.pem"
+if [[ ! -f "$SIGNING_KEY" ]]; then
+  echo "[e2e-agent-systemd-vm][ERROR] missing artifact signing key: $SIGNING_KEY" >&2
+  exit 1
+fi
+"$REPO/deployments/agent/package-agent.sh" \
+  --version topology-test \
+  --output "$TMP/sysarmor-agent-linux-amd64.tar.gz" \
+  --agent-bin "$REPO/bin/sysarmor-agent" \
+  --tetragon-archive "$TETRAGON_ARCHIVE" \
+  --signing-key "$SIGNING_KEY" >/dev/null
+vagrant upload "$TMP/sysarmor-agent-linux-amd64.tar.gz" /tmp/sysarmor-agent-linux-amd64.tar.gz mgr >/dev/null
 
 vagrant ssh mgr -c "curl -sf -X POST 'http://127.0.0.1:9443/api/v1/reset'" >/dev/null
-vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
+
+ARTIFACT_JSON="$RESULTS/e2e-agent-systemd-vm.artifact.json"
+vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url http://127.0.0.1:9443 --json manager artifacts upload --file /tmp/sysarmor-agent-linux-amd64.tar.gz --name sysarmor-agent --kind agent --version topology-test --os linux --arch amd64 --status active" >"$ARTIFACT_JSON"
+ARTIFACT_ID="$(python3 - "$ARTIFACT_JSON" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))["artifact"]["artifact_id"])
+PY
+)"
+CHANNEL_JSON="$RESULTS/e2e-agent-systemd-vm.channel.json"
+vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url http://127.0.0.1:9443 --json manager channels upsert --channel topology-test --artifact-id $ARTIFACT_ID" >"$CHANNEL_JSON"
+
+ENROLLMENT_JSON="$RESULTS/e2e-agent-systemd-vm.enrollment.json"
+vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url http://10.66.0.10:9443 --json manager enrollments create --agent-id $AGENT_ID --host-id vm-node-a --gateway-addr 10.66.0.10:9444 --gateway-sni sysarmor-gateway.local --channel topology-test --ttl 1h --label suite=$CASE_LABEL --label topology=vm" >"$ENROLLMENT_JSON"
+INSTALL_URL="$(python3 - "$ENROLLMENT_JSON" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))["install_url"])
+PY
+)"
+
+echo "[e2e-agent-systemd-vm] installing agent from manager enrollment"
+vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /opt/sysarmor/agent /etc/sysarmor/agent.yaml /etc/systemd/system/sysarmor-agent.service /etc/sysarmor/pki/agent.pem /etc/sysarmor/pki/agent-key.pem; sudo mkdir -p /etc/sysarmor/policies; printf '%s\n' '{\"policy_id\":\"topology-product-agent\",\"version\":1,\"behaviors\":[{\"id\":\"process.exec\",\"enabled\":true}],\"observe_only\":true}' | sudo tee /etc/sysarmor/policies/sysarmor-tetragon.yaml >/dev/null; curl -fsSL '$INSTALL_URL' | sudo bash" >/dev/null
 
 wait_contains() {
   local name="$1"
@@ -109,12 +104,20 @@ wait_contains() {
 
 wait_contains "agent-health" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
-wait_contains "agent-health sensor" '"sensor_health"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
+wait_contains "agent-health artifact agent" '"backend":"tetragon"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
   vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
-wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-systemd-vm.metrics.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics"
-wait_contains "events" 'fake-startup' "$RESULTS/e2e-agent-systemd-vm.events.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --behavior process.exec --limit 20"
+wait_contains "agent-session" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.sessions.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager sessions list --agent-id $AGENT_ID --tenant-id default"
+wait_contains "artifact list" "\"artifact_id\":\"$ARTIFACT_ID\"" "$RESULTS/e2e-agent-systemd-vm.artifacts.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager artifacts list --kind agent --status active"
+wait_contains "channel list" '"channel":"topology-test"' "$RESULTS/e2e-agent-systemd-vm.channels.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager channels list --tenant-id default"
+wait_contains "enrollment list" "\"artifact_id\":\"$ARTIFACT_ID\"" "$RESULTS/e2e-agent-systemd-vm.enrollments.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager enrollments list --tenant-id default --status active"
+wait_contains "manager events" "\"agentId\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.events.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --label suite=$CASE_LABEL --limit 50"
+wait_contains "agent-session data plane" '"data_transport":"grpc_stream"' "$RESULTS/e2e-agent-systemd-vm.sessions.json" \
+  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager sessions list --agent-id $AGENT_ID --tenant-id default"
 
 read_agent_pid() {
   vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent 2>/dev/null | awk '/^[0-9]+$/ { print \"PID=\" \$1; exit }'" 2>/dev/null \
@@ -169,5 +172,47 @@ wait_contains "agent-health after systemd restart" "\"agent_id\":\"$AGENT_ID\"" 
 
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-systemd-vm.systemd.txt" 2>&1 || true
 vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 120" > "$RESULTS/e2e-agent-systemd-vm.journal.txt" 2>&1 || true
+
+python3 - "$RESULTS" "$ARTIFACT_ID" "$AGENT_ID" "$CASE_LABEL" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+artifact_id, agent_id, case_label = sys.argv[2:5]
+
+def load(name, default):
+    path = root / name
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return default
+
+events = load("e2e-agent-systemd-vm.events.json", [])
+sessions = load("e2e-agent-systemd-vm.sessions.json", {}).get("sessions", [])
+health = load("e2e-agent-systemd-vm.health.json", {})
+health_after = load("e2e-agent-systemd-vm.health-after-restart.json", {})
+enrollment = load("e2e-agent-systemd-vm.enrollment.json", {}).get("enrollment", {})
+
+summary = {
+    "suite": "product-topology",
+    "topology": "vm",
+    "agent_id": agent_id,
+    "artifact_id": artifact_id,
+    "labels": {"suite": case_label, "topology": "vm"},
+    "artifact_uploaded": bool(artifact_id),
+    "channel_bound": True,
+    "enrollment_created": bool(enrollment.get("enrollment_id")),
+    "certificate_requested_during_install": True,
+    "health_status": health.get("status"),
+    "health_after_restart_status": health_after.get("status"),
+    "session_count": len(sessions),
+    "event_count": len(events),
+    "sensor_backend": (health.get("sensor_capability") or {}).get("backend"),
+    "sensor_running": (health.get("sensor_health") or {}).get("running"),
+    "systemd_restart_verified": bool(health_after.get("agent_id") == agent_id),
+}
+(root / "e2e-agent-systemd-vm.summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+PY
 
 echo "[e2e-agent-systemd-vm] ok"

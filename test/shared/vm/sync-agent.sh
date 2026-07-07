@@ -6,7 +6,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-endpoint}}"
 ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
-AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/var/run/sysarmor/agent.sock}"
+AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent.sock}"
 NODE="${SYSARMOR_VM_NODE:-node-a}"
 TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$VM_ENV}"
@@ -14,8 +14,8 @@ TETRAGON_ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
 if [[ -z "$TETRAGON_ARCHIVE" && -f "$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz" ]]; then
   TETRAGON_ARCHIVE="$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz"
 fi
-TETRAGON_BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
-TETRAGON_INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-/opt/sysarmor/sensors}"
+TETRAGON_BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon}"
+TETRAGON_INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-/opt/sysarmor/agent/sensors}"
 TETRAGON_CGROUP_RATE="${SYSARMOR_TETRAGON_CGROUP_RATE:-}"
 TETRAGON_PROCESS_CACHE_SIZE="${SYSARMOR_TETRAGON_PROCESS_CACHE_SIZE:-4096}"
 TETRAGON_DATA_CACHE_SIZE="${SYSARMOR_TETRAGON_DATA_CACHE_SIZE:-128}"
@@ -156,8 +156,8 @@ health:
   interval: 500ms
 EOF
 if sudo test -x '$TETRAGON_BUNDLE_DIR/bin/tetragon' && sudo test -x '$TETRAGON_BUNDLE_DIR/bin/tetra' && sudo test -f '$TETRAGON_BUNDLE_DIR/manifest.json' && [ '$FORCE_INSTALL' != '1' ] && [ -z '$archive_env' ]; then
-  sudo mkdir -p /usr/local/bin /etc/systemd/system /etc/sysarmor/policies /var/lib/sysarmor/agent '$TETRAGON_BUNDLE_DIR' '$TETRAGON_INSTALL_DIR'
-  sudo install -m 0755 /tmp/sysarmor-agent.upload /usr/local/bin/sysarmor-agent
+  sudo mkdir -p /opt/sysarmor/agent/bin /etc/systemd/system /etc/sysarmor/policies /var/lib/sysarmor/agent '$TETRAGON_BUNDLE_DIR' '$TETRAGON_INSTALL_DIR'
+  sudo install -m 0755 /tmp/sysarmor-agent.upload /opt/sysarmor/agent/bin/sysarmor-agent
   sudo install -m 0644 /tmp/sysarmor-deployments.upload/agent/systemd/sysarmor-agent.service /etc/systemd/system/sysarmor-agent.service
   sudo install -m 0644 /tmp/sysarmor-agent.yaml /etc/sysarmor/agent.yaml
   sudo install -m 0644 /tmp/sysarmor-owned-tetragon.yaml /etc/sysarmor/policies/sysarmor-owned-tetragon.yaml

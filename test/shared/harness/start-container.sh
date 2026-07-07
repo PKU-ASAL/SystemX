@@ -29,7 +29,7 @@ prepare_runtime_image manager sysarmor-manager 'CMD ["--listen", "0.0.0.0:9443"]
 prepare_runtime_image gateway sysarmor-gateway 'CMD ["--listen", "0.0.0.0:9444", "--health-listen", "0.0.0.0:9445"]'
 prepare_runtime_image worker sysarmor-worker ''
 
-required_images=(sysarmor-kafka:latest sysarmor-opensearch:latest)
+required_images=(apache/kafka:latest sysarmor-opensearch:latest)
 for image in "${required_images[@]}"; do
   if ! docker image inspect "$image" >/dev/null 2>&1; then
     echo "[start-container][ERROR] required local Docker image missing: $image" >&2

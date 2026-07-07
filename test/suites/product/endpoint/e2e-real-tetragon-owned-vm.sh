@@ -47,11 +47,11 @@ vagrant upload "$REPO/test/data/content" /tmp/sysarmor-content.upload node-a >/d
 vagrant upload "$REPO/test/data/policies/collection-balanced.json" /tmp/sysarmor-collection-balanced.json node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
-TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
-TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/sensors}"
+TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon}"
+TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/agent/sensors}"
 TETRA_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetra"
 TETRAGON_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetragon"
-AGENT_SOCK="/var/run/sysarmor/agent.sock"
+AGENT_SOCK="/run/sysarmor/agent.sock"
 
 vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo systemctl disable sysarmor-agent 2>/dev/null || true; sudo systemctl reset-failed sysarmor-agent 2>/dev/null || true; sudo systemctl stop tetragon 2>/dev/null || true; sudo systemctl disable tetragon 2>/dev/null || true; sudo pkill -x sysarmor-agent 2>/dev/null || true; sudo pkill -x tetragon 2>/dev/null || true; sudo pkill -x tetra 2>/dev/null || true" >/dev/null
 
@@ -137,7 +137,7 @@ sudo systemctl daemon-reload
 sudo install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl" >/dev/null
 
 vagrant ssh node-a -c "sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-owned-tetragon.yaml SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1" >/dev/null
-vagrant ssh node-a -c "sudo test -f /opt/sysarmor/bundles/tetragon/manifest.json" >/dev/null
+vagrant ssh node-a -c "sudo test -f '$TETRAGON_BUNDLE_DIR/manifest.json'" >/dev/null
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
 
 wait_contains() {

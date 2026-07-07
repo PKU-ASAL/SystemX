@@ -32,6 +32,12 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   echo ">>> 生成 VM topology agent-plane mTLS 证书"
   SYSARMOR_GATEWAY_IPS="127.0.0.1,10.66.0.10" \
     "$REPO/tools/pki/gen-agent-plane-mtls.sh" "$PKI_DIR" default vm-owned-tetragon sysarmor-gateway.local >/dev/null
+  if [[ ! -f "$PKI_DIR/artifact-signing-key.pem" || ! -f "$PKI_DIR/artifact-public.pem" ]]; then
+    openssl genrsa -out "$PKI_DIR/artifact-signing-key.pem" 3072 >/dev/null 2>&1
+    openssl rsa -in "$PKI_DIR/artifact-signing-key.pem" -pubout -out "$PKI_DIR/artifact-public.pem" >/dev/null 2>&1
+    chmod 0600 "$PKI_DIR/artifact-signing-key.pem"
+    chmod 0644 "$PKI_DIR/artifact-public.pem"
+  fi
 
   echo ">>> 准备 VM topology deployment 源码包"
   mkdir -p "$PLATFORM_UPLOAD_DIR" "$PLATFORM_IMAGES_DIR"
@@ -53,7 +59,7 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   install -m 0755 "$REPO/bin/sysarmor-worker" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker/sysarmor-worker"
   mkdir -p "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime"
   rsync -a --delete "$PKI_DIR/" "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime/"
-  required_images=(ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest sysarmor-kafka:latest sysarmor-opensearch:latest)
+  required_images=(ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest apache/kafka:latest sysarmor-opensearch:latest)
   tmp_manifest="$PLATFORM_IMAGE_MANIFEST.tmp"
   : > "$tmp_manifest"
   for image in "${required_images[@]}"; do
@@ -81,7 +87,7 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   vagrant upload "$PLATFORM_UPLOAD_DIR" /tmp/sysarmor-platform.upload mgr >/dev/null
   vagrant upload "$PLATFORM_IMAGE_MANIFEST" /tmp/sysarmor-vm-images.manifest mgr >/dev/null
   image_upload=0
-  if vagrant ssh mgr -c "test -f /opt/sysarmor/images/vm-images.tar && test -f /opt/sysarmor/images/images.manifest && cmp -s /tmp/sysarmor-vm-images.manifest /opt/sysarmor/images/images.manifest && sudo docker image inspect ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest sysarmor-kafka:latest sysarmor-opensearch:latest >/dev/null" >/dev/null 2>&1; then
+  if vagrant ssh mgr -c "test -f /opt/sysarmor/images/vm-images.tar && test -f /opt/sysarmor/images/images.manifest && cmp -s /tmp/sysarmor-vm-images.manifest /opt/sysarmor/images/images.manifest && sudo docker image inspect ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest apache/kafka:latest sysarmor-opensearch:latest >/dev/null" >/dev/null 2>&1; then
     echo ">>> 复用 mgr VM image bundle"
   else
     image_upload=1

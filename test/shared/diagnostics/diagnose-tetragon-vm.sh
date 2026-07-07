@@ -43,7 +43,7 @@ wait_agent_socket() {
   local socket_path
   socket_path="$(vagrant ssh node-a -c "sudo awk '/socket_path:/ {print \$2}' /etc/sysarmor/agent.yaml 2>/dev/null | tail -1" 2>/dev/null | tr -d '\r')"
   if [[ -z "$socket_path" ]]; then
-    socket_path="/var/run/sysarmor/agent.sock"
+    socket_path="/run/sysarmor/agent.sock"
   fi
   local deadline=$((SECONDS + 60))
   until vagrant ssh node-a -c "sudo test -S '$socket_path'" >/dev/null 2>&1; do
@@ -118,7 +118,7 @@ rm -f /tmp/sysarmor-tetragon-strace-c.txt \
 
 agent_sock=\$(awk \"/socket_path:/ {print \\\$2}\" /etc/sysarmor/agent.yaml 2>/dev/null | tail -1)
 if [ -z \"\$agent_sock\" ]; then
-  agent_sock=/var/run/sysarmor/agent.sock
+  agent_sock=/run/sysarmor/agent.sock
 fi
 sysarmorctl --socket \"\$agent_sock\" --json agent health --agent-id ${AGENT_ID} --tenant-id ${TENANT_ID} >/tmp/sysarmor-tetragon-health-before.json 2>/tmp/sysarmor-tetragon-health-before.err || true
 

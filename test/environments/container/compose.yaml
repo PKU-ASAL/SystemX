@@ -122,7 +122,7 @@ services:
       retries: 20
 
   kafka:
-    image: sysarmor-kafka:latest
+    image: apache/kafka:latest
     pull_policy: never
     container_name: sysarmor-kafka
     networks:

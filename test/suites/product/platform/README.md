@@ -36,7 +36,7 @@ make -C test product-platform-full
 | `platform` | 平台组件和 API/控制/存储合约 |
 | `topology` | 三节点真实产品链路和 C2 场景 |
 
-如果只验证 agent 通过 mTLS 接入 gateway 并能上传 event，跑 `product-topology`，它是 fake sensor VM smoke。
+如果要验证 manager 分发 agent、enrollment 安装和 VM mTLS 接入链路，跑 `product-topology`。
 
 如果要验证真实 Tetragon 事件、signal 和 incident，跑 `product-platform-full` 或 `effectiveness-topology`。
 

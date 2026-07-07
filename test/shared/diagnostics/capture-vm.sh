@@ -30,11 +30,11 @@ vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
-TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
-TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/sensors}"
+TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon}"
+TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/agent/sensors}"
 TETRA_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetra"
 TETRAGON_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetragon"
-AGENT_SOCK="/var/run/sysarmor/agent.sock"
+AGENT_SOCK="/run/sysarmor/agent.sock"
 WORK="/tmp/sysarmor-vm-capture-$S"
 SIGNAL_RULE=""
 case "$S" in
