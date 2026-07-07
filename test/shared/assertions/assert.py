@@ -3,7 +3,7 @@
 
 当前为骨架：sysarmorctl 尚未构建时以 DRY-RUN 跑通断言逻辑（打印将要校验的契约），
 binary 就绪后把 _query() 接到真实 CLI 即可。
-断言类型见 references/docs/testing-benchmark.md：正向存在 / 结构 / 契约完整性 / 负向缺失 / 对照。
+断言类型见 test/README.md 和 test/DETAILS.md：正向存在 / 结构 / 契约完整性 / 负向缺失 / 对照。
 """
 import argparse, json, os, shlex, shutil, subprocess, sys
 

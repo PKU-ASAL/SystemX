@@ -29,6 +29,3 @@ __pycache__/
 
 # OS
 .DS_Store
-
-# nested git repos (reference material, not our code)
-third_party/references/code/
