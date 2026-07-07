@@ -21,7 +21,7 @@ EVALUATION_SCOPE ?= local
 .PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
 .PHONY: product-endpoint product-topology product-platform product-platform-smoke product-platform-full
-.PHONY: performance-endpoint performance-modules performance-rule-engine performance-matcher
+.PHONY: performance-endpoint performance-platform performance-modules performance-rule-engine performance-matcher
 .PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
 .PHONY: capture-endpoint capture-topology report effectiveness-report
@@ -115,6 +115,9 @@ capture-topology:
 performance-endpoint:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint SYSARMOR_BENCH_PROFILE=$(SYSARMOR_BENCH_PROFILE) SYSARMOR_BENCH_WORKLOAD=$(SYSARMOR_BENCH_WORKLOAD) SYSARMOR_BENCH_SCENARIO=$(SYSARMOR_BENCH_SCENARIO) SYSARMOR_BENCH_POLICIES="$(SYSARMOR_BENCH_POLICIES)" bash suites/performance/endpoint/run.sh
 
+performance-platform:
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/performance/platform/run.sh
+
 effectiveness-topology:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/effectiveness/topology/run.sh
 
@@ -156,6 +159,7 @@ help:
 	@echo "  product-platform-smoke alias for product-platform"
 	@echo "  product-platform-full container gateway/worker/manager product path"
 	@echo "  performance-endpoint endpoint CPU/RSS benchmark"
+	@echo "  performance-platform platform service CPU/memory benchmark over vm-topology"
 	@echo "  performance-modules local module microbenchmarks"
 	@echo "  effectiveness-topology detection effectiveness over vm-topology"
 	@echo ""
@@ -170,6 +174,7 @@ help:
 	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal"
 	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'"
 	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal"
+	@echo "  make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=600"
 	@echo "  make -C test effectiveness-topology ENV=vm-topology"
 	@echo "  make -C test recorder-start RUN_ID=my-run"
 	@echo ""

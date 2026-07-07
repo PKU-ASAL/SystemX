@@ -4,7 +4,7 @@
 
 1. **产品功能测试**：系统通不通。
 2. **检测效果测试**：抓得准不准。
-3. **性能测试**：端侧成本高不高。
+3. **性能测试**：端侧和平台侧成本高不高。
 
 更细的目录、输出、报告口径和完整 target 清单见 [DETAILS.md](DETAILS.md)。
 
@@ -14,14 +14,14 @@
 |---|---|---|
 | `product` | 产品功能和链路是否正常 | `make -C test product-*` |
 | `effectiveness` | 检测是否有效、误报是否可控 | `make -C test effectiveness-topology` |
-| `performance` | agent/sensor 占多少 CPU/RSS | `make -C test performance-endpoint` |
+| `performance` | agent/sensor 或平台组件占多少资源 | `make -C test performance-endpoint` / `make -C test performance-platform` |
 
 通俗理解：
 
 ```text
 product       系统有没有接通
 effectiveness 攻击能不能报，正常行为会不会误报
-performance   agent/sensor 在宿主机上花多少 CPU 和内存
+performance   agent/sensor 和平台组件分别花多少 CPU 和内存
 ```
 
 ## 三种环境
@@ -57,6 +57,7 @@ vm-topology:
 make -C test product-platform-full
 make -C test product-topology
 make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
+make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=120
 make -C test effectiveness-topology
 ```
 
@@ -65,7 +66,8 @@ make -C test effectiveness-topology
 1. `product-platform-full`：在 container 环境确认 gateway、Kafka、worker、manager 能串起来。
 2. `product-topology`：三 VM 产品链路。manager 上传 signed agent artifact、绑定 channel、创建 enrollment，`node-a` 从 manager 下载、验签、安装 agent，并自动申请 mTLS 证书接入 gateway。
 3. `performance-endpoint`：在单 VM 上采 agent/sensor CPU/RSS。`quick` 是短测，`medium` 是中等长度，`long` 是长窗口。
-4. `effectiveness-topology`：在三 VM 环境跑攻击/良性场景，并从 manager 查询 event、signal、incident 做检测评分。
+4. `performance-platform`：在三 VM topology 的 `mgr` 上采 manager/gateway/worker/数据库/消息队列资源。
+5. `effectiveness-topology`：在三 VM 环境跑攻击/良性场景，并从 manager 查询 event、signal、incident 做检测评分。
 
 ## Smoke 口径
 
@@ -96,7 +98,19 @@ make -C test effectiveness-topology
 
 ## 性能测什么
 
-性能测试不是简单看一眼 `top`，而是按阶段采样：
+性能测试分两层：
+
+```text
+performance-endpoint
+  测 node-a 上 agent/sensor 的端侧成本。
+  这是端侧 CPU/RSS 结论的主入口。
+
+performance-platform
+  测 mgr 上 manager/gateway/worker/Kafka/Postgres/Redis/OpenSearch 的平台成本。
+  这是平台侧资源和可观测性结论的入口。
+```
+
+端侧性能不是简单看一眼 `top`，而是按阶段采样：
 
 ```text
 startup      启动和策略应用
@@ -107,7 +121,7 @@ persistence  场景后观察
 overall      整体
 ```
 
-主要看：
+端侧主要看：
 
 ```text
 agent CPU 平均值、最大值
@@ -118,6 +132,17 @@ event/signal 数量
 ```
 
 它回答的是：SysArmor agent 平时占多少资源，业务负载下占多少，攻击发生时会不会飙高，攻击结束后会不会持续高。
+
+平台侧主要看：
+
+```text
+manager/gateway/worker CPU 和内存
+Kafka/Postgres/Redis/OpenSearch CPU 和内存
+manager metrics 起止快照
+manager/gateway health 起止快照
+```
+
+它回答的是：真实接入链路里，平台服务承接 telemetry、analytics、query 时自身花了多少资源。
 
 ## 检测效果测什么
 
@@ -177,6 +202,7 @@ make -C test product-topology
 make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
 make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=medium
 make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=long
+make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=120
 ```
 
 检测效果：
@@ -190,7 +216,7 @@ make -C test effectiveness-topology
 ```text
 product 测“系统有没有接通”
 effectiveness 测“检测准不准”
-performance 测“端侧成本高不高”
+performance 测“端侧和平台侧成本高不高”
 
 container 快，适合平台功能
 vm-endpoint 准，适合 agent 性能
@@ -200,6 +226,7 @@ vm-topology 真，适合完整部署链路和攻击场景；其中 product-topol
 真正做结论时：
 
 - 端侧 CPU/内存结论看 `performance-endpoint`
+- 平台组件 CPU/内存结论看 `performance-platform`
 - 检测准确性看 `effectiveness-topology`
 - 产品链路健康看 `product-*`
 - 测完统一 `make -C test down-all` 清理环境

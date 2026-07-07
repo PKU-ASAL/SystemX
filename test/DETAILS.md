@@ -47,11 +47,13 @@ test/
 |---|---|---|---|
 | `container` | Docker compose 轻量平台 | 快速平台/产品功能检查 | 不做端侧性能结论 |
 | `vm-endpoint` | 单 VM：`node-a` | 端侧检测、CPU/RSS、profiling、soak | 端侧性能基线 |
-| `vm-topology` | 三 VM：`mgr`、`node-a`、`attacker` | 完整产品链路和 C2 场景 | 当前只采 `node-a` 端侧资源 |
+| `vm-topology` | 三 VM：`mgr`、`node-a`、`attacker` | 完整产品链路、C2 场景、平台侧资源 | endpoint/effectiveness 采 `node-a`；platform performance 采 `mgr` |
 
 `vm-endpoint` 只安装 endpoint agent/sensor，agent 使用本地模式，目标是隔离 manager/gateway 噪声。
 
 `vm-topology` 在 `mgr` 上启动 deployment-shaped platform，包括 manager、gateway、worker、Postgres、Kafka、Redis、OpenSearch；在 `node-a` 上安装 agent/sensor，并通过 agent-plane mTLS 接入 gateway；`attacker` 提供 C2/攻击辅助。
+
+Telemetry 语义参考：[docs/architecture/telemetry-semantics.md](../docs/architecture/telemetry-semantics.md)。
 
 `vm-topology` 的部署输入缓存位于 `test/environments/vm-topology/deploy/`：
 
@@ -121,6 +123,7 @@ make -C test effectiveness-topology
 模块性能：
 
 ```bash
+make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=120
 make -C test performance-rule-engine
 make -C test performance-matcher
 ```
@@ -161,6 +164,7 @@ make -C test performance-matcher
 | `performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=...` | 单 VM endpoint 冒烟性能 benchmark。 |
 | `performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=... SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local` | 单 VM endpoint 检测 + 性能关联。 |
 | `performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=...` | 单 VM endpoint 长窗口 CPU/RSS benchmark。 |
+| `performance-platform SYSARMOR_PLATFORM_PERF_DURATION=...` | 三 VM topology 中采 `mgr` 上 manager/gateway/worker/Kafka/Postgres/Redis/OpenSearch 资源。 |
 | `performance-modules` | 运行本地模块 microbenchmark。 |
 | `performance-rule-engine` | 运行 endpoint detection engine microbenchmark。 |
 | `performance-matcher` | 运行 matcher microbenchmark。 |
@@ -226,6 +230,23 @@ test/.results/performance-endpoint/<run-id>/
 ```
 
 `suites/performance/modules` 是本地 Go microbenchmark，不启动 VM/container。
+
+`suites/performance/platform` 是平台侧资源采集入口，运行在 `vm-topology`。它采样的是 `mgr` 上的容器化平台组件，不替代 `node-a` 端侧 agent/sensor 性能结论。
+
+输出位置：
+
+```text
+test/.results/performance-platform/<run-id>/
+  platform.resources.csv
+  platform.summary.json
+  raw/
+    manager.healthz.start.json
+    manager.healthz.end.json
+    gateway.healthz.start.json
+    gateway.healthz.end.json
+    manager.metrics.start.json
+    manager.metrics.end.json
+```
 
 ## Effectiveness Suite
 
@@ -322,5 +343,5 @@ performance/effectiveness 报告统一使用：
 1. 要判断 agent/sensor 端侧性能，用 `performance-endpoint`。
 2. 要判断检测效果和真实链路下的 truth label 命中，用 `effectiveness-topology`。
 3. 要判断产品功能、API、控制面、部署链路是否工作，用 `product-*`。
-4. 要判断 manager/gateway/worker 自身性能，需要新增 `suites/performance/platform`；当前 `effectiveness-topology` 还不采 `mgr` 侧 CPU/RSS。
+4. 要判断 manager/gateway/worker/infra 自身性能，用 `performance-platform`。
 5. 要解释 CPU 高的根因，再开 profiling；不要把 profiling run 当正式资源结论。
