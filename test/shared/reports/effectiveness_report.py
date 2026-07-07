@@ -384,9 +384,19 @@ def case_kind(workload, scenario):
     return "scenario"
 
 
-def case_paths(results, bench_case_dir=None):
+def case_paths(results, bench_case_dir=None, scope="local"):
     if not bench_case_dir:
         return None, None, None, None
+    if scope in ("manager", "full", "control"):
+        manager_events = bench_case_dir / "manager.events.ndjson"
+        manager_signals = bench_case_dir / "manager.signals.ndjson"
+        manager_incidents = bench_case_dir / "manager.incidents.ndjson"
+        return (
+            manager_events if manager_events.exists() else None,
+            manager_events if manager_events.exists() else None,
+            manager_signals if manager_signals.exists() else None,
+            manager_incidents if manager_incidents.exists() else None,
+        )
     events_scope_path = bench_case_dir / "events.scope.ndjson"
     events_path = events_scope_path if events_scope_path.exists() else bench_case_dir / "events.ndjson"
     raw_events_path = bench_case_dir / "events.ndjson"
@@ -639,15 +649,21 @@ def build_rows(args):
         if not labels_path.exists():
             continue
         labels_doc = load_yaml(labels_path)
-        events_path, events_all_path, signals_path, incidents_path = case_paths(results, case["bench_case_dir"])
+        events_path, events_all_path, signals_path, incidents_path = case_paths(results, case["bench_case_dir"], args.scope)
         all_events = load_ndjson(events_path) if events_path else []
         auxiliary_events = load_ndjson(events_all_path) if events_all_path else []
         all_signals = load_ndjson(signals_path) if signals_path else []
         bench_summary = load_json(case["bench_case_dir"] / "summary.json")
         window_start, window_end, window_name = effectiveness_window(bench_summary)
-        events = filter_frames_by_window(all_events, window_start, window_end)
-        auxiliary_events = filter_frames_by_window(auxiliary_events, window_start, window_end)
-        signals = filter_frames_by_window(all_signals, window_start, window_end)
+        if args.scope in ("manager", "full", "control"):
+            events = all_events
+            auxiliary_events = auxiliary_events
+            signals = all_signals
+            window_name = "manager_query"
+        else:
+            events = filter_frames_by_window(all_events, window_start, window_end)
+            auxiliary_events = filter_frames_by_window(auxiliary_events, window_start, window_end)
+            signals = filter_frames_by_window(all_signals, window_start, window_end)
         evaluation = evaluate_case(labels_doc, events, signals, bench_summary, auxiliary_events)
         metrics = evaluation["metrics"]
         base = {

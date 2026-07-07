@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
@@ -172,13 +173,14 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 			}
 			raw, err := protojson.Marshal(inc)
 			if err == nil {
-				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: inc.GetId(), Body: raw})
-				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incident-timeline", ID: inc.GetId() + ":state", Body: raw})
+				id := IncidentDocumentID(inc)
+				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw})
+				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incident-timeline", ID: id + ":state", Body: raw})
 			}
 			if inc.GetEvidence() != nil {
 				evidenceRaw, err := protojson.Marshal(inc.GetEvidence())
 				if err == nil {
-					_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: inc.GetId() + ":evidence", Body: evidenceRaw})
+					_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: IncidentDocumentID(inc) + ":evidence", Body: evidenceRaw})
 				}
 			}
 		}
@@ -200,6 +202,9 @@ func SignalDocumentID(sig *signalv1.Signal) string {
 	if sig == nil {
 		return ""
 	}
+	if sig.GetWhere() == signalv1.SignalWhere_SIGNAL_WHERE_CLOUD {
+		return store.SignalProjectionKey(sig)
+	}
 	if sig.GetId() != "" {
 		return sig.GetId()
 	}
@@ -212,4 +217,14 @@ func SignalDocumentID(sig *signalv1.Signal) string {
 		return ""
 	}
 	return id
+}
+
+func IncidentDocumentID(inc *incidentv1.Incident) string {
+	if inc == nil {
+		return ""
+	}
+	if id := store.IncidentProjectionKey(inc); id != "" {
+		return id
+	}
+	return inc.GetId()
 }

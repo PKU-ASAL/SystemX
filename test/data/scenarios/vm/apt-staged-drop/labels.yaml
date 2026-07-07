@@ -6,7 +6,7 @@ objectives:
     required_events:
       - helper_c2
     required_signals:
-      - reverse_shell_pattern
+      - suspicious_exec_connect
   evidence:
     required_events:
       - helper_download
@@ -17,7 +17,7 @@ objectives:
       - download_by_lolbin
       - payload_dropped
       - suspicious_exec_connect
-      - payload_lifecycle
+      - dropped_payload_executed_and_connects
 labels:
   events:
     - id: helper_download
@@ -64,21 +64,15 @@ labels:
       link_events:
         - helper_exec
         - helper_c2
-    - id: payload_lifecycle
-      name: payload_lifecycle
-      terminal: false
+    - id: dropped_payload_executed_and_connects
+      name: dropped_payload_executed_and_connects
+      where: CLOUD
       entities:
         - "file:/var/lib/app/plugins/helper"
         - "socket:10.66.0.99:443"
       link_events:
+        - helper_write
         - helper_exec
         - helper_c2
-    - id: reverse_shell_pattern
-      name: reverse_shell_pattern
-      terminal: true
-      entities:
-        - "socket:10.66.0.99:443"
-      link_events:
-        - helper_c2
 policy:
-  terminal_signals_allowed: 1
+  terminal_signals_allowed: 0

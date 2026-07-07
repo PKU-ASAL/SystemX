@@ -38,7 +38,7 @@ test/
 | Suite | 核心问题 | 主环境 | 主输出 |
 |---|---|---|---|
 | `performance` | agent/sensor/platform 的资源成本是多少 | `vm-endpoint` 为主 | CPU/RSS、phase、pprof、drops |
-| `effectiveness` | 攻击/良性场景是否检测正确 | `vm-topology` 为主 | recall、precision、truth steps、incident linkage |
+| `effectiveness` | 攻击/良性场景是否检测正确 | `vm-topology` 为主 | manager-sourced recall、precision、truth steps、incident linkage |
 | `product` | 产品功能和链路是否工作 | local/container/VM | pass/fail、API response、health、ack、incident query |
 
 ## 环境模型
@@ -91,7 +91,6 @@ make -C test product-platform
 make -C test product-platform-smoke
 make -C test product-platform-full
 make -C test product-topology
-make -C test product-topology-smoke
 ```
 
 端侧性能：
@@ -116,11 +115,7 @@ make -C test performance-endpoint \
 检测效果：
 
 ```bash
-make -C test effectiveness-topology \
-  ENV=vm-topology \
-  POLICIES='test/data/policies/collection-balanced.json' \
-  WORKLOADS='business-normal' \
-  SCENARIOS='apt-fileless-c2'
+make -C test effectiveness-topology
 ```
 
 模块性能：
@@ -157,8 +152,7 @@ make -C test performance-matcher
 | `product-platform` | 验证 manager/gateway/store/policy/response/control 本地合约和轻量 smoke。 |
 | `product-platform-smoke` | `product-platform` 的显式 smoke 别名。 |
 | `product-platform-full` | 使用 container 环境验证 gateway/worker/manager/Kafka/store 产品路径。 |
-| `product-topology` | 三 VM smoke；使用 fake sensor 验证 `node-a` agent 通过 mTLS 接入 `mgr` 上 gateway/manager，并能查询 event。 |
-| `product-topology-smoke` | `product-topology` 的显式 smoke 别名。 |
+| `product-topology` | 三 VM 产品链路；manager 上传 signed agent artifact、绑定 channel、创建 enrollment，`node-a` 从 manager 下载验签安装真实 agent，并通过 CSR 自动签发证书接入 gateway/manager。 |
 
 ### Performance Suite
 
@@ -235,13 +229,33 @@ test/.results/performance-endpoint/<run-id>/
 
 ## Effectiveness Suite
 
-`suites/effectiveness/topology` 运行在 `vm-topology` 三节点环境。它会组合 workload、scenario、policy，验证真实链路下的 event/signal/incident 和 truth labels。
+`suites/effectiveness/topology` 运行在 `vm-topology` 三节点环境。它会组合 workload、scenario、policy，并默认从 manager API 查询 event/signal/incident 作为 truth label 评分输入。
+
+默认完整检测 gate 使用：
+
+```text
+policies:  collection-balanced, collection-deep
+workloads: business-normal
+scenarios: apt-fileless-c2, apt-staged-drop, benign-ci-noise
+```
+
+`collection-minimal` 是窄采集策略，适合观察降级覆盖、策略边界或资源成本；它不作为默认完整检测准确性的必过策略。
+
+关键 truth label 口径：
+
+| 场景 | 预期 |
+|---|---|
+| `apt-fileless-c2` | 同 lineage 内 download/write/exec/connect 关联，产生 `payload_lifecycle` 和 terminal `reverse_shell_pattern` |
+| `apt-staged-drop` | staged helper 跨 lineage 行为产生 `suspicious_exec_connect`，不要求 terminal `reverse_shell_pattern` |
+| `benign-ci-noise` | 正常业务噪声不产生恶意 signal/incident |
 
 它也会复用 endpoint recorder，因此资源指标含义是：
 
 ```text
 node-a 上 agent/sensor 的 CPU/RSS
 ```
+
+本地 recorder 的 `events.scope.ndjson` / `signals.scope.ndjson` 保留为诊断输入；topology 默认评分输入是每个 policy case 下的 `manager.events.ndjson`、`manager.signals.ndjson`、`manager.incidents.ndjson`。
 
 不是：
 

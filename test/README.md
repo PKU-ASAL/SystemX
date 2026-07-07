@@ -63,9 +63,9 @@ make -C test effectiveness-topology
 含义是：
 
 1. `product-platform-full`：在 container 环境确认 gateway、Kafka、worker、manager 能串起来。
-2. `product-topology`：三 VM smoke。使用 fake sensor，确认 agent 通过 mTLS 接入 gateway，event 最终能被 manager 查询。
+2. `product-topology`：三 VM 产品链路。manager 上传 signed agent artifact、绑定 channel、创建 enrollment，`node-a` 从 manager 下载、验签、安装 agent，并自动申请 mTLS 证书接入 gateway。
 3. `performance-endpoint`：在单 VM 上采 agent/sensor CPU/RSS。`quick` 是短测，`medium` 是中等长度，`long` 是长窗口。
-4. `effectiveness-topology`：在三 VM 环境跑攻击/良性场景，看 event、signal、incident 是否符合预期。
+4. `effectiveness-topology`：在三 VM 环境跑攻击/良性场景，并从 manager 查询 event、signal、incident 做检测评分。
 
 ## Smoke 口径
 
@@ -79,9 +79,9 @@ product-platform / product-platform-smoke
   does not prove: real sensor collection, VM deployment, detection effectiveness
 
 product-topology
-  smoke: yes
-  sensor: fake
-  proves: VM 部署、mTLS、systemd agent、streaming dataplane、manager events query
+  smoke: no
+  install: signed manager artifact + channel + enrollment + CSR cert issuance
+  proves: VM 部署、manager 分发 agent、mTLS、systemd agent、gateway/manager 接入
   does not prove: Tetragon 内核采集、signal/incident 检测效果
 ```
 
@@ -91,6 +91,8 @@ product-topology
 make -C test product-platform-full
 make -C test effectiveness-topology
 ```
+
+`effectiveness-topology` 默认用 `collection-balanced` 和 `collection-deep` 做完整检测 gate，并从 manager API 获取评分输入。`collection-minimal` 是窄采集策略，适合单独观察降级覆盖或资源成本，不作为默认准确性门槛。
 
 ## 性能测什么
 
@@ -127,6 +129,8 @@ apt-staged-drop
 benign-ci-noise
 ```
 
+其中 `apt-fileless-c2` 预期产生同 lineage 的 `payload_lifecycle` 和 terminal `reverse_shell_pattern`；`apt-staged-drop` 预期产生跨 lineage 的 `suspicious_exec_connect`，不要求 terminal signal。
+
 它检查：
 
 - 预期 event 有没有出现；
@@ -136,7 +140,7 @@ benign-ci-noise
 - 良性场景是否没有误报；
 - manager 查询接口能不能看到结果。
 
-一句话：不只是 agent 本地看到了事件，还要证明事件能走完整产品链路，最终在 manager 侧可查询、可解释。
+一句话：topology 检测效果不只看 agent 本地，还要证明事件能走完整产品链路，最终在 manager 侧可查询、可解释。
 
 ## 常用入口
 
@@ -165,7 +169,6 @@ make -C test product-platform-smoke
 make -C test product-platform-full
 make -C test product-endpoint
 make -C test product-topology
-make -C test product-topology-smoke
 ```
 
 性能：
@@ -191,7 +194,7 @@ performance 测“端侧成本高不高”
 
 container 快，适合平台功能
 vm-endpoint 准，适合 agent 性能
-vm-topology 真，适合完整部署链路和攻击场景；其中 product-topology 是 fake sensor smoke
+vm-topology 真，适合完整部署链路和攻击场景；其中 product-topology 验证 manager 分发 signed agent、channel/enrollment 安装、CSR 证书签发和 mTLS 接入链路
 ```
 
 真正做结论时：

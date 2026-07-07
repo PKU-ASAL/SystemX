@@ -5,16 +5,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 RESULTS="$ROOT/.results"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
+ENVDIR="$ROOT/environments/$VM_ENV"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUT_DIR="$RESULTS/effectiveness-topology/$RUN_ID"
 
-POLICIES="${POLICIES-test/data/policies/collection-minimal.json test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
+POLICIES="${POLICIES-test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
 WORKLOADS="${WORKLOADS-business-normal}"
 SCENARIOS="${SCENARIOS-apt-fileless-c2 apt-staged-drop benign-ci-noise}"
 MATCHER_VARIANTS="${MATCHER_VARIANTS:-}"
 MATRIX_MODE="${MATRIX_MODE:-cross}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
-EVALUATION_SCOPE="${EVALUATION_SCOPE:-local}"
+EVALUATION_SCOPE="${EVALUATION_SCOPE:-manager}"
 
 mkdir -p "$OUT_DIR"
 
@@ -33,6 +34,70 @@ cat >"$OUT_DIR/manifest.json" <<EOF
   "vm_lifecycle": "fresh-per-case"
 }
 EOF
+
+json_to_ndjson() {
+  local src="$1"
+  local dst="$2"
+  python3 - "$src" "$dst" <<'PY'
+import json
+import pathlib
+import sys
+
+src, dst = map(pathlib.Path, sys.argv[1:3])
+try:
+    data = json.loads(src.read_text(errors="replace"))
+except Exception:
+    data = []
+if isinstance(data, dict):
+    for key in ("events", "signals", "incidents", "items", "data"):
+        if isinstance(data.get(key), list):
+            data = data[key]
+            break
+    else:
+        data = [data] if data else []
+if not isinstance(data, list):
+    data = []
+with dst.open("w") as f:
+    for item in data:
+        f.write(json.dumps(item, separators=(",", ":")) + "\n")
+PY
+}
+
+manager_label_args() {
+  local policy="$1"
+  local workload="$2"
+  local scenario="$3"
+  local bench_run_id="$4"
+  printf -- "--label benchmark_run=%s --label policy_profile=%s" "$bench_run_id" "$policy"
+  if [[ -n "$workload" ]]; then
+    printf -- " --label workload=%s" "$workload"
+  fi
+  if [[ -n "$scenario" ]]; then
+    printf -- " --label scenario=%s" "$scenario"
+  fi
+}
+
+capture_manager_case() {
+  local bench_run_id="$1"
+  local workload="$2"
+  local scenario="$3"
+  local bench_root="$RESULTS/performance-endpoint/$bench_run_id"
+  [[ -d "$bench_root" ]] || return 0
+  for policy_out in "$bench_root"/*; do
+    [[ -d "$policy_out" && -f "$policy_out/summary.json" ]] || continue
+    local policy
+    policy="$(basename "$policy_out")"
+    local labels
+    labels="$(manager_label_args "$policy" "$workload" "$scenario" "$bench_run_id")"
+    echo "[effectiveness-topology] capturing manager telemetry policy=$policy workload=${workload:-none} scenario=${scenario:-none}"
+    (cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list $labels --limit 1000") >"$policy_out/manager.events.json"
+    (cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list $labels --limit 1000") >"$policy_out/manager.signals.json"
+    (cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list $labels --limit 1000") >"$policy_out/manager.incidents.json"
+    json_to_ndjson "$policy_out/manager.events.json" "$policy_out/manager.events.ndjson"
+    json_to_ndjson "$policy_out/manager.signals.json" "$policy_out/manager.signals.ndjson"
+    json_to_ndjson "$policy_out/manager.incidents.json" "$policy_out/manager.incidents.ndjson"
+  done
+}
 
 run_case() {
   local variant="${1:-}"
@@ -59,6 +124,7 @@ run_case() {
       SYSARMOR_BENCH_SCENARIO="$scenario" \
       SYSARMOR_VM_ENV="$VM_ENV" \
       bash "$ROOT/suites/performance/endpoint/run.sh" >"$case_dir/run.out" 2>"$case_dir/run.err"; then
+    capture_manager_case "$case_run_id" "$workload" "$scenario"
     printf '{"name":"%s","variant":"%s","matcher_strategy":"%s","workload":"%s","scenario":"%s","status":"ok","bench_run_id":"%s"}\n' \
       "$case_name" "$variant" "$matcher_strategy" "$workload" "$scenario" "$case_run_id" >"$case_dir/status.json"
   else
