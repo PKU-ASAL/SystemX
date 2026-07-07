@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
 type Config struct {
@@ -98,6 +98,7 @@ type RuntimeScope struct {
 
 type TelemetryConfig struct {
 	BatchSize     int
+	MaxBytes      int
 	FlushInterval time.Duration
 }
 
@@ -209,6 +210,9 @@ func (c Config) Validate() error {
 	}
 	if c.Telemetry.BatchSize <= 0 {
 		return fmt.Errorf("telemetry.batch_size must be positive")
+	}
+	if c.Telemetry.MaxBytes < 0 {
+		return fmt.Errorf("telemetry.max_bytes must be non-negative")
 	}
 	if c.Telemetry.FlushInterval <= 0 {
 		return fmt.Errorf("telemetry.flush_interval must be positive")
@@ -335,10 +339,10 @@ func parse(r *os.File) (Config, error) {
 func defaults() Config {
 	return Config{
 		Manager:   ManagerConfig{Transport: "grpc"},
-		Control:   ControlConfig{SocketPath: "/var/run/sysarmor/agent.sock"},
+		Control:   ControlConfig{SocketPath: "/run/sysarmor/agent.sock"},
 		Runtime:   RuntimeConfig{FeatureFlags: RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
-		Telemetry: TelemetryConfig{BatchSize: 256, FlushInterval: time.Second},
+		Telemetry: TelemetryConfig{BatchSize: 256, MaxBytes: 256 * 1024, FlushInterval: time.Second},
 		DataPlane: DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
 		Health:    HealthConfig{Interval: 10 * time.Second},
 		Policy:    PolicyConfig{RefreshInterval: 30 * time.Second},
@@ -540,6 +544,12 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("telemetry.batch_size: %w", err)
 			}
 			cfg.Telemetry.BatchSize = v
+		case "max_bytes":
+			v, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("telemetry.max_bytes: %w", err)
+			}
+			cfg.Telemetry.MaxBytes = v
 		case "flush_interval":
 			d, err := time.ParseDuration(value)
 			if err != nil {

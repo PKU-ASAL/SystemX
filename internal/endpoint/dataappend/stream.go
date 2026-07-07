@@ -14,11 +14,11 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/linux/tetragon"
 )
 
-type BatchAppender interface {
-	AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error)
+type BatchSender interface {
+	SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error)
 }
 
 type StreamOptions struct {
@@ -38,7 +38,7 @@ type StreamStats struct {
 	Batches int
 }
 
-func StreamJSONL(ctx context.Context, r io.Reader, up BatchAppender, opts StreamOptions) (StreamStats, error) {
+func StreamJSONL(ctx context.Context, r io.Reader, up BatchSender, opts StreamOptions) (StreamStats, error) {
 	if up == nil {
 		return StreamStats{}, fmt.Errorf("batch appender is nil")
 	}
@@ -65,7 +65,7 @@ func StreamJSONL(ctx context.Context, r io.Reader, up BatchAppender, opts Stream
 		if len(batch.GetEvents()) == 0 && len(batch.GetSignals()) == 0 {
 			return nil
 		}
-		if _, err := up.AppendBatch(batch); err != nil {
+		if _, err := up.SendBatch(batch); err != nil {
 			return err
 		}
 		stats.Batches++

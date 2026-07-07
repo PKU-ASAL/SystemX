@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
@@ -69,12 +70,15 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	}
 	start := time.Now()
 	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
-	cloudSignals, incidents := p.recomputeTouchedScopes(touchedScopes)
+	cloudSignals, incidents := p.recomputeTouchedScopes(ctx, touchedScopes)
 	convergenceLatency := time.Since(start)
 	p.store.RecordDataBatchIngest(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	p.store.ObserveRaritySignals(acceptedSignalList)
 	p.indexSecurityData(ctx, batch, touchedScopes)
 	if err := p.store.Save(); err != nil {
+		return Result{}, err
+	}
+	if err := p.store.SaveMetrics(); err != nil {
 		return Result{}, err
 	}
 	return Result{AcceptedEvents: acceptedEvents, AcceptedSignals: acceptedSignals, CloudSignals: cloudSignals, Incidents: incidents}, nil
@@ -116,7 +120,7 @@ func labelSelectorKey(labels store.LabelSelector) string {
 	return strings.Join(parts, ",")
 }
 
-func (p *Processor) recomputeTouchedScopes(touchedScopes map[string]touchedScope) (int, int) {
+func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes map[string]touchedScope) (int, int) {
 	totalCloud := 0
 	totalIncidents := 0
 	for _, scope := range touchedScopes {
@@ -125,6 +129,9 @@ func (p *Processor) recomputeTouchedScopes(touchedScopes map[string]touchedScope
 		policy := p.effectiveDetectionPolicyForAgent(scope.agent)
 		analysis := p.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
 		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, analysis.Incidents)
+		for _, sig := range analysis.CloudSignals {
+			p.indexSignal(ctx, sig)
+		}
 		totalCloud += len(analysis.CloudSignals)
 		totalIncidents += len(analysis.Incidents)
 	}
@@ -157,15 +164,7 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 		}
 	}
 	for _, frame := range batch.GetSignals() {
-		sig := frame.GetSignal()
-		id := SignalDocumentID(sig)
-		if id == "" {
-			continue
-		}
-		raw, err := protojson.Marshal(sig)
-		if err == nil {
-			_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw})
-		}
+		p.indexSignal(ctx, frame.GetSignal())
 	}
 	for _, scope := range touchedScopes {
 		for _, inc := range p.store.ListIncidents(scope.labels) {
@@ -174,22 +173,37 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 			}
 			raw, err := protojson.Marshal(inc)
 			if err == nil {
-				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: inc.GetId(), Body: raw})
-				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incident-timeline", ID: inc.GetId() + ":state", Body: raw})
+				id := IncidentDocumentID(inc)
+				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw})
+				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incident-timeline", ID: id + ":state", Body: raw})
 			}
 			if inc.GetEvidence() != nil {
 				evidenceRaw, err := protojson.Marshal(inc.GetEvidence())
 				if err == nil {
-					_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: inc.GetId() + ":evidence", Body: evidenceRaw})
+					_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: IncidentDocumentID(inc) + ":evidence", Body: evidenceRaw})
 				}
 			}
 		}
 	}
 }
 
+func (p *Processor) indexSignal(ctx context.Context, sig *signalv1.Signal) {
+	id := SignalDocumentID(sig)
+	if id == "" {
+		return
+	}
+	raw, err := protojson.Marshal(sig)
+	if err == nil {
+		_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw})
+	}
+}
+
 func SignalDocumentID(sig *signalv1.Signal) string {
 	if sig == nil {
 		return ""
+	}
+	if sig.GetWhere() == signalv1.SignalWhere_SIGNAL_WHERE_CLOUD {
+		return store.SignalProjectionKey(sig)
 	}
 	if sig.GetId() != "" {
 		return sig.GetId()
@@ -203,4 +217,14 @@ func SignalDocumentID(sig *signalv1.Signal) string {
 		return ""
 	}
 	return id
+}
+
+func IncidentDocumentID(inc *incidentv1.Incident) string {
+	if inc == nil {
+		return ""
+	}
+	if id := store.IncidentProjectionKey(inc); id != "" {
+		return id
+	}
+	return inc.GetId()
 }

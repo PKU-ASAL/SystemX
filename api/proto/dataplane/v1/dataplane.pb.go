@@ -654,9 +654,9 @@ const file_api_proto_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x0fSTATUS_ACCEPTED\x10\x01\x12\x14\n" +
 	"\x10STATUS_DUPLICATE\x10\x02\x12\x14\n" +
 	"\x10STATUS_RETRYABLE\x10\x03\x12\x13\n" +
-	"\x0fSTATUS_REJECTED\x10\x042h\n" +
-	"\x15AgentDataPlaneService\x12O\n" +
-	"\vAppendBatch\x12 .sysarmor.dataplane.v1.DataBatch\x1a\x1e.sysarmor.dataplane.v1.DataAckBNZLgithub.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1;dataplanev1b\x06proto3"
+	"\x0fSTATUS_REJECTED\x10\x042n\n" +
+	"\x15AgentDataPlaneService\x12U\n" +
+	"\rStreamBatches\x12 .sysarmor.dataplane.v1.DataBatch\x1a\x1e.sysarmor.dataplane.v1.DataAck(\x010\x01BNZLgithub.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1;dataplanev1b\x06proto3"
 
 var (
 	file_api_proto_dataplane_v1_dataplane_proto_rawDescOnce sync.Once
@@ -691,8 +691,8 @@ var file_api_proto_dataplane_v1_dataplane_proto_depIdxs = []int32{
 	7, // 4: sysarmor.dataplane.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
 	8, // 5: sysarmor.dataplane.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
 	0, // 6: sysarmor.dataplane.v1.DataAck.status:type_name -> sysarmor.dataplane.v1.DataAck.Status
-	1, // 7: sysarmor.dataplane.v1.AgentDataPlaneService.AppendBatch:input_type -> sysarmor.dataplane.v1.DataBatch
-	5, // 8: sysarmor.dataplane.v1.AgentDataPlaneService.AppendBatch:output_type -> sysarmor.dataplane.v1.DataAck
+	1, // 7: sysarmor.dataplane.v1.AgentDataPlaneService.StreamBatches:input_type -> sysarmor.dataplane.v1.DataBatch
+	5, // 8: sysarmor.dataplane.v1.AgentDataPlaneService.StreamBatches:output_type -> sysarmor.dataplane.v1.DataAck
 	8, // [8:9] is the sub-list for method output_type
 	7, // [7:8] is the sub-list for method input_type
 	7, // [7:7] is the sub-list for extension type_name

@@ -1,0 +1,50 @@
+services:
+  postgres:
+    build:
+      dockerfile: Dockerfile.vm
+
+  kafka:
+    build:
+      dockerfile: Dockerfile.vm
+    environment:
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+
+  redis:
+    build:
+      dockerfile: Dockerfile.vm
+
+  opensearch:
+    build:
+      dockerfile: Dockerfile.vm
+
+  manager:
+    build:
+      context: ./vm-build/manager
+      dockerfile: Dockerfile
+    ports:
+      - "9443:9443"
+
+  gateway:
+    build:
+      context: ./vm-build/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "9444:9444"
+      - "9445:9445"
+
+  worker:
+    build:
+      context: ./vm-build/worker
+      dockerfile: Dockerfile

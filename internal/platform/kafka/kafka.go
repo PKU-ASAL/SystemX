@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
@@ -98,11 +99,38 @@ func NewReaderConsumer(brokers []string, topic string, groupID string) (*ReaderC
 	if len(clean) == 0 || topic == "" || groupID == "" {
 		return nil, ErrDisabled
 	}
+	if err := ensureTopic(clean, topic); err != nil {
+		return nil, err
+	}
 	return &ReaderConsumer{reader: kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers: clean,
 		Topic:   topic,
 		GroupID: groupID,
 	})}, nil
+}
+
+func ensureTopic(brokers []string, topic string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var lastErr error
+	for _, broker := range brokers {
+		conn, err := kafkago.DialContext(ctx, "tcp", broker)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		err = conn.CreateTopics(kafkago.TopicConfig{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		})
+		_ = conn.Close()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+	}
+	return lastErr
 }
 
 func (c *ReaderConsumer) Fetch(ctx context.Context) (Message, error) {

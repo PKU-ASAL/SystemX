@@ -66,13 +66,14 @@ health:
 }
 
 func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "systemd", "sysarmor-agent.service"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "agent", "systemd", "sysarmor-agent.service"))
 	if err != nil {
 		t.Fatalf("ReadFile(systemd unit) error = %v", err)
 	}
 	unit := string(data)
 	for _, want := range []string{
-		"ExecStart=/usr/local/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml",
+		"ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml",
+		"WorkingDirectory=/opt/sysarmor/agent",
 		"Restart=always",
 		"WantedBy=multi-user.target",
 	} {

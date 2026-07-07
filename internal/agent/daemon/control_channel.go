@@ -48,7 +48,7 @@ func (s *ControlChannel) Open(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(context.WithoutCancel(ctx))
 	if err != nil {
 		_ = conn.Close()
 		return err

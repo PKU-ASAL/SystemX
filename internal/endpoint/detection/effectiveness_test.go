@@ -21,7 +21,13 @@ func TestRuleEngineEffectivenessScenarios(t *testing.T) {
 		{
 			name:         "apt-fileless-c2",
 			events:       filelessC2Events(),
-			wantSignals:  []string{"download_by_lolbin", "payload_dropped", "reverse_shell_pattern"},
+			wantSignals:  []string{"download_by_lolbin", "payload_dropped", "payload_lifecycle", "reverse_shell_pattern"},
+			wantTerminal: "reverse_shell_pattern",
+		},
+		{
+			name:         "apt-fileless-c2-reordered",
+			events:       filelessC2EventsReordered(),
+			wantSignals:  []string{"download_by_lolbin", "payload_dropped", "payload_lifecycle", "reverse_shell_pattern"},
 			wantTerminal: "reverse_shell_pattern",
 		},
 		{
@@ -117,6 +123,16 @@ func filelessC2Events() []*eventv1.CanonicalEvent {
 		writeEvent("fileless-write", "lin-fileless", "curl-fileless", "/usr/bin/curl", "/dev/shm/x.sh"),
 		execEvent("fileless-exec", "lin-fileless", "payload-fileless", "shell-fileless", "/dev/shm/x.sh", nil),
 		connectEventWithParent("fileless-c2", "lin-fileless", "payload-fileless", "shell-fileless", "/bin/bash", "10.66.0.99:443"),
+		openEvent("fileless-cred", "lin-fileless", "payload-fileless", "/bin/cat", "/root/.ssh/id_rsa"),
+	}
+}
+
+func filelessC2EventsReordered() []*eventv1.CanonicalEvent {
+	return []*eventv1.CanonicalEvent{
+		connectEventWithParent("fileless-download", "lin-fileless", "curl-fileless", "shell-fileless", "/usr/bin/curl", "10.66.0.99:8080"),
+		writeEvent("fileless-write", "lin-fileless", "curl-fileless", "/usr/bin/curl", "/dev/shm/x.sh"),
+		connectEventWithParent("fileless-c2", "lin-fileless", "payload-fileless", "shell-fileless", "/bin/bash", "10.66.0.99:443"),
+		execEvent("fileless-exec", "lin-fileless", "payload-fileless", "shell-fileless", "/usr/bin/bash", []string{"/usr/bin/bash", "/dev/shm/x.sh"}),
 		openEvent("fileless-cred", "lin-fileless", "payload-fileless", "/bin/cat", "/root/.ssh/id_rsa"),
 	}
 }

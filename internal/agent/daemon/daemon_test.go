@@ -29,9 +29,9 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/linux/tetragon"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
@@ -615,7 +615,7 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 	}
 }
 
-func TestNewBatchAppenderAcceptsConfiguredTimeout(t *testing.T) {
+func TestNewBatchSenderAcceptsConfiguredTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		transport string
@@ -624,12 +624,12 @@ func TestNewBatchAppenderAcceptsConfiguredTimeout(t *testing.T) {
 		{name: "local", transport: "local"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			up, err := newBatchAppender("127.0.0.1:9443", tc.transport, 250*time.Millisecond, "dev-token", tlsconfig.ClientConfig{})
+			up, err := newBatchSender("127.0.0.1:9443", tc.transport, 250*time.Millisecond, "dev-token", tlsconfig.ClientConfig{})
 			if err != nil {
-				t.Fatalf("newBatchAppender() error = %v", err)
+				t.Fatalf("newBatchSender() error = %v", err)
 			}
 			if up == nil {
-				t.Fatal("newBatchAppender() = nil")
+				t.Fatal("newBatchSender() = nil")
 			}
 		})
 	}
@@ -980,9 +980,9 @@ func sensorEventEnvelope(behavior string, pid uint32, binary, filePath, dst stri
 func runDaemonUntilUploadedBatch(t *testing.T, runner *AgentRuntime, out *bytes.Buffer) *dataplanev1.DataBatch {
 	t.Helper()
 	uploader := newRecordingUploader()
-	prev := newLocalBatchAppender
-	newLocalBatchAppender = func() dataappend.BatchAppender { return uploader }
-	t.Cleanup(func() { newLocalBatchAppender = prev })
+	prev := newLocalBatchSender
+	newLocalBatchSender = func() dataappend.BatchSender { return uploader }
+	t.Cleanup(func() { newLocalBatchSender = prev })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	errCh := make(chan error, 1)

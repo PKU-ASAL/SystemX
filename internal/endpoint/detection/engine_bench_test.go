@@ -7,7 +7,7 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
 func BenchmarkEngineProcessBuiltinMixed(b *testing.B) {

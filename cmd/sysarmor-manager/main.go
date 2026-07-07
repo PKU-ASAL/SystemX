@@ -11,7 +11,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
+	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
 )
 
@@ -23,6 +24,9 @@ func main() {
 	storePath := flag.String("store", "", "deprecated: file store path is not used by product backends")
 	postgresDriver := flag.String("postgres-driver", envDefault("SYSARMOR_POSTGRES_DRIVER", "postgres"), "database/sql driver name for postgres backend")
 	postgresDSN := flag.String("postgres-dsn", envDefault("SYSARMOR_POSTGRES_DSN", ""), "Postgres DSN for postgres backend")
+	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable telemetry")
+	opensearchUsername := flag.String("opensearch-username", envDefault("SYSARMOR_OPENSEARCH_USERNAME", ""), "OpenSearch basic auth username")
+	opensearchPassword := flag.String("opensearch-password", envDefault("SYSARMOR_OPENSEARCH_PASSWORD", ""), "OpenSearch basic auth password")
 	operatorToken := flag.String("operator-token", "", "static development operator token for control-plane writes; empty disables operator checks")
 	flag.Parse()
 
@@ -52,7 +56,15 @@ func main() {
 		}
 	}()
 	st := storeResult.Store
-	managerSrv := managerapi.NewServerWithOperatorToken(st, *operatorToken)
+	var searcher platformopensearch.Searcher
+	if strings.TrimSpace(*opensearchURL) != "" {
+		searcher, err = platformopensearch.NewHTTPIndexerWithAuth(*opensearchURL, *opensearchUsername, *opensearchPassword)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "open opensearch searcher: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	managerSrv := managerapi.NewServerWithSearch(st, *operatorToken, searcher)
 
 	srv := &http.Server{
 		Addr:    *listen,

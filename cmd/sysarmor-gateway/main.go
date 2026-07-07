@@ -80,8 +80,9 @@ func main() {
 		agentToken:  *devToken,
 	})
 	defer cleanup()
+	mtlsEnabled := *grpcClientCA != "" || *grpcRequireClientCert
 	if *healthListen != "" {
-		startHealthServer(ctx, *healthListen, runtime)
+		startHealthServer(ctx, *healthListen, runtime, mtlsEnabled)
 	}
 
 	var grpcOptions []grpc.ServerOption
@@ -106,17 +107,17 @@ func main() {
 		grpcServer.GracefulStop()
 	}()
 
-	log.Printf("sysarmor-gateway listening on %s mtls=%t local_ingest=%t", *listen, *grpcClientCA != "" || *grpcRequireClientCert, *localIngest)
+	log.Printf("sysarmor-gateway listening on %s mtls=%t local_ingest=%t", *listen, mtlsEnabled, *localIngest)
 	if err := grpcServer.Serve(lis); err != nil {
 		fmt.Fprintf(os.Stderr, "gateway grpc serve: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func startHealthServer(ctx context.Context, listen string, runtime *gateway.Runtime) {
+func startHealthServer(ctx context.Context, listen string, runtime *gateway.Runtime, mtlsEnabled bool) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]any{"ok": true, "service": "sysarmor-gateway"})
+		writeJSON(w, map[string]any{"ok": true, "service": "sysarmor-gateway", "mtls": mtlsEnabled})
 	})
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, runtime.MetricsSnapshot())

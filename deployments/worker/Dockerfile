@@ -1,11 +1,5 @@
-FROM golang:1.23 AS build
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o /out/sysarmor-worker ./cmd/sysarmor-worker
-
-FROM gcr.io/distroless/static-debian12
-COPY --from=build /out/sysarmor-worker /usr/local/bin/sysarmor-worker
-USER nonroot:nonroot
+ARG RUNTIME_IMAGE=alpine:latest
+FROM ${RUNTIME_IMAGE}
+COPY dist/bin/sysarmor-worker /usr/local/bin/sysarmor-worker
+USER nobody:nobody
 ENTRYPOINT ["/usr/local/bin/sysarmor-worker"]

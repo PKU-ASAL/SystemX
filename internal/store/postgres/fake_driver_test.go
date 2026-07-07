@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -16,6 +17,7 @@ func init() {
 var fakeSQLState struct {
 	sync.Mutex
 	lastQuery string
+	queries   []string
 	execErr   error
 }
 
@@ -23,6 +25,7 @@ func FakeSetExecError(err error) {
 	fakeSQLState.Lock()
 	defer fakeSQLState.Unlock()
 	fakeSQLState.lastQuery = ""
+	fakeSQLState.queries = nil
 	fakeSQLState.execErr = err
 }
 
@@ -30,6 +33,12 @@ func FakeLastQuery() string {
 	fakeSQLState.Lock()
 	defer fakeSQLState.Unlock()
 	return fakeSQLState.lastQuery
+}
+
+func FakeAllQueries() string {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	return strings.Join(fakeSQLState.queries, "\n")
 }
 
 type fakeSQLDriver struct{}
@@ -68,7 +77,8 @@ func (s fakeSQLStmt) Exec([]driver.Value) (driver.Result, error) {
 	fakeSQLState.Lock()
 	defer fakeSQLState.Unlock()
 	fakeSQLState.lastQuery = s.query
-	if fakeSQLState.execErr != nil {
+	fakeSQLState.queries = append(fakeSQLState.queries, s.query)
+	if fakeSQLState.execErr != nil && !strings.Contains(s.query, "pg_advisory") {
 		return nil, fakeSQLState.execErr
 	}
 	return driver.RowsAffected(1), nil

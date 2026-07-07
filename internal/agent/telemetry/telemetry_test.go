@@ -105,7 +105,7 @@ type recordingAppender struct {
 	appends int
 }
 
-func (r *recordingAppender) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (r *recordingAppender) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	r.appends++
 	return &dataplanev1.DataAck{Status: dataplanev1.DataAck_STATUS_ACCEPTED, Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
 }

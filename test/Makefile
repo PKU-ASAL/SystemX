@@ -1,10 +1,10 @@
 # SysArmor test entrypoints.
 #
-# The test system is organized by scope:
+# The test system is organized by evaluation suite:
 #   unit      - local Go tests and microbenchmarks, no environment
-#   endpoint  - one endpoint host: sysarmor-agent, sensor, local control, cost
-#   topology  - multi-node product path: manager, endpoint, attacker
-#   platform  - manager APIs, storage, policy, RBAC, control-plane contracts
+#   performance - resource cost and local microbenchmarks
+#   effectiveness - detection truth labels, recall, precision, incident linkage
+#   product   - product functionality: endpoint, platform, topology
 
 ENV       ?= container
 SCENARIO  ?= apt-fileless-c2
@@ -16,9 +16,13 @@ SYSARMOR_BENCH_SCENARIO ?=
 SYSARMOR_BENCH_POLICIES ?=
 EVALUATION_SCOPE ?= local
 
-.PHONY: up down provision status clean help
-.PHONY: test-unit test-endpoint test-topology test-platform test-platform-full test-all
-.PHONY: bench-endpoint bench-topology bench-module bench-rule-engine bench-matcher
+.DEFAULT_GOAL := help
+
+.PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
+.PHONY: test-unit test-all
+.PHONY: product-endpoint product-topology product-platform product-platform-smoke product-platform-full
+.PHONY: performance-endpoint performance-platform performance-modules performance-rule-engine performance-matcher
+.PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
 .PHONY: capture-endpoint capture-topology report effectiveness-report
 
@@ -32,6 +36,31 @@ down:
 	$(call require_env)
 	$(call stop_env)
 
+up-container:
+	$(MAKE) up ENV=container
+
+up-vm-endpoint:
+	$(MAKE) up ENV=vm-endpoint
+
+up-vm-topology:
+	$(MAKE) up ENV=vm-topology
+
+up-all: up-container up-vm-endpoint up-vm-topology
+
+down-container:
+	$(MAKE) down ENV=container
+
+down-vm-endpoint:
+	$(MAKE) down ENV=vm-endpoint
+
+down-vm-topology:
+	$(MAKE) down ENV=vm-topology
+
+down-all:
+	-$(MAKE) down ENV=container
+	-SYSARMOR_VM_STOP_BEST_EFFORT=1 $(MAKE) down ENV=vm-topology
+	-SYSARMOR_VM_STOP_BEST_EFFORT=1 $(MAKE) down ENV=vm-endpoint
+
 provision:
 	$(call require_vm_env)
 	cd environments/$(ENV) && vagrant rsync node-a && vagrant provision node-a
@@ -43,34 +72,35 @@ status:
 clean:
 	bash shared/harness/cleanup.sh $(ENV) --results
 
-# Scope suites ----------------------------------------------------------------
+# Product suites ---------------------------------------------------------------
 
 test-unit:
 	cd .. && go test ./...
 
-test-endpoint:
-	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash e2e/endpoint/e2e-real-tetragon-owned-vm.sh
+product-endpoint:
+	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash suites/product/endpoint/e2e-real-tetragon-owned-vm.sh
 
-test-topology:
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash e2e/topology/e2e-systemd-vm.sh
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
+product-topology:
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/product/topology/e2e-systemd-vm.sh
 
-test-platform:
-	bash e2e/platform/e2e-control-contract.sh
-	bash e2e/platform/e2e-gateway-local-ingest.sh
-	bash e2e/platform/e2e-agent-gateway-manager-local.sh
-	bash e2e/platform/e2e-control-roundtrip-local.sh
-	bash e2e/platform/e2e-manager-api-policy.sh
-	bash e2e/platform/e2e-response-policy-deny.sh
-	bash e2e/platform/e2e-response-scope-deny.sh
-	bash e2e/platform/e2e-response-approval.sh
-	bash e2e/platform/e2e-store-status.sh
+product-platform:
+	bash suites/product/platform/e2e-control-contract.sh
+	bash suites/product/platform/e2e-gateway-local-ingest.sh
+	bash suites/product/platform/e2e-agent-gateway-manager-local.sh
+	bash suites/product/platform/e2e-control-roundtrip-local.sh
+	bash suites/product/platform/e2e-manager-api-policy.sh
+	bash suites/product/platform/e2e-response-policy-deny.sh
+	bash suites/product/platform/e2e-response-scope-deny.sh
+	bash suites/product/platform/e2e-response-approval.sh
+	bash suites/product/platform/e2e-store-status.sh
 
-test-platform-full:
+product-platform-smoke: product-platform
+
+product-platform-full:
 	bash shared/harness/start-container.sh
-	bash e2e/topology/e2e-scenarios-container.sh
+	bash suites/product/topology/e2e-scenarios-container.sh
 
-test-all: test-unit test-endpoint test-topology test-platform
+test-all: test-unit product-endpoint product-topology product-platform
 
 # Capture ---------------------------------------------------------------------
 
@@ -80,20 +110,23 @@ capture-endpoint:
 capture-topology:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
-# Benchmarks and diagnostics --------------------------------------------------
+# Performance and effectiveness ----------------------------------------------
 
-bench-endpoint:
-	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint SYSARMOR_BENCH_PROFILE=$(SYSARMOR_BENCH_PROFILE) SYSARMOR_BENCH_WORKLOAD=$(SYSARMOR_BENCH_WORKLOAD) SYSARMOR_BENCH_SCENARIO=$(SYSARMOR_BENCH_SCENARIO) SYSARMOR_BENCH_POLICIES="$(SYSARMOR_BENCH_POLICIES)" bash benchmarks/endpoint/run.sh
+performance-endpoint:
+	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint SYSARMOR_BENCH_PROFILE=$(SYSARMOR_BENCH_PROFILE) SYSARMOR_BENCH_WORKLOAD=$(SYSARMOR_BENCH_WORKLOAD) SYSARMOR_BENCH_SCENARIO=$(SYSARMOR_BENCH_SCENARIO) SYSARMOR_BENCH_POLICIES="$(SYSARMOR_BENCH_POLICIES)" bash suites/performance/endpoint/run.sh
 
-bench-topology:
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash benchmarks/topology/run.sh
+performance-platform:
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/performance/platform/run.sh
 
-bench-module: bench-rule-engine bench-matcher
+effectiveness-topology:
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/effectiveness/topology/run.sh
 
-bench-rule-engine:
+performance-modules: performance-rule-engine performance-matcher
+
+performance-rule-engine:
 	cd .. && go test ./internal/endpoint/detection -run '^$$' -bench 'BenchmarkEngineProcess' -benchtime="$(or $(BENCHTIME),200ms)" -count="$(or $(COUNT),1)" -benchmem
 
-bench-matcher:
+performance-matcher:
 	cd .. && go test ./internal/endpoint/matcher -run '^$$' -bench . -benchtime="$(or $(BENCHTIME),200ms)" -count="$(or $(COUNT),1)" -benchmem
 
 diag-endpoint:
@@ -112,28 +145,37 @@ recorder-report:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint RUN_ID=$(RUN_ID) bash shared/recorder/recorder-vm.sh report
 
 effectiveness-report:
-	python3 benchmarks/matrix/effectiveness_report.py --bench-matrix-dir .results/bench-topology/$(RUN_ID) --topology vm --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/effectiveness/$(RUN_ID)
+	python3 shared/reports/effectiveness_report.py --bench-matrix-dir .results/effectiveness-topology/$(RUN_ID) --topology vm --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/effectiveness/$(RUN_ID)
 
 report:
 	python3 shared/reports/report.py
 
 help:
-	@echo "SysArmor test scopes:"
+	@echo "SysArmor test suites:"
 	@echo "  test-unit        local Go tests"
-	@echo "  test-endpoint    single VM endpoint agent/sensor/local control"
-	@echo "  test-topology    multi-VM manager/agent/attacker path"
-	@echo "  test-platform    manager/control/storage/platform contracts"
-	@echo "  test-platform-full container gateway/worker/manager product path"
+	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
+	@echo "  product-topology multi-VM manager artifact/enrollment install path"
+	@echo "  product-platform local platform contracts/smoke"
+	@echo "  product-platform-smoke alias for product-platform"
+	@echo "  product-platform-full container gateway/worker/manager product path"
+	@echo "  performance-endpoint endpoint CPU/RSS benchmark"
+	@echo "  performance-platform platform service CPU/memory benchmark over vm-topology"
+	@echo "  performance-modules local module microbenchmarks"
+	@echo "  effectiveness-topology detection effectiveness over vm-topology"
 	@echo ""
 	@echo "Environments:"
 	@echo "  ENV=container | vm-endpoint | vm-topology"
+	@echo "  up-container | up-vm-endpoint | up-vm-topology | up-all"
+	@echo "  down-container | down-vm-endpoint | down-vm-topology | down-all"
 	@echo ""
 	@echo "Common:"
 	@echo "  make -C test up ENV=vm-endpoint"
-	@echo "  make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal"
-	@echo "  make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'"
-	@echo "  make -C test bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal"
-	@echo "  make -C test bench-topology ENV=vm-topology"
+	@echo "  make -C test down-all"
+	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal"
+	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'"
+	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal"
+	@echo "  make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=600"
+	@echo "  make -C test effectiveness-topology ENV=vm-topology"
 	@echo "  make -C test recorder-start RUN_ID=my-run"
 	@echo ""
 	@echo "Endpoint benchmark phases: startup, steady, workload, activity, persistence, overall"

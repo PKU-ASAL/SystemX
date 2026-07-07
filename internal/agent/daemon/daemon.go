@@ -32,10 +32,10 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/fake"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/fake"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/linux/tetragon"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -46,13 +46,13 @@ func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) erro
 	return nil
 }
 
-type localBatchAppender struct{}
+type localBatchSender struct{}
 
-var newLocalBatchAppender = func() dataappend.BatchAppender {
-	return localBatchAppender{}
+var newLocalBatchSender = func() dataappend.BatchSender {
+	return localBatchSender{}
 }
 
-func (localBatchAppender) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (localBatchSender) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if batch == nil {
 		return &dataplanev1.DataAck{Accepted: true, Status: dataplanev1.DataAck_STATUS_ACCEPTED}, nil
 	}
@@ -163,12 +163,12 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("subscribe", err)
 	}
-	appender, err := r.batchAppender()
+	appender, err := r.batchSender()
 	if err != nil {
 		return failStartup("data_plane", err)
 	}
 	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
-	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, r.Config.DataPlane.MaxInflight*64)
+	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, r.Config.DataPlane.MaxInflight*64, r.Config.Telemetry.MaxBytes)
 	sender := &telemetry.Sender{
 		Appender:     appender,
 		Batcher:      batcher,
@@ -190,7 +190,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
 	})
 	endpointRuntime := NewEndpointRuntime(r, norm)
-	transportRuntime := NewTransportRuntime(r, rt, batcher, sender, startedAt, scopeType, scopeSelector)
+	transportRuntime := NewTransportRuntime(r, rt, bus, batcher, sender, startedAt, scopeType, scopeSelector)
 	go transportRuntime.RunDataFlow(dataPlaneCtx)
 	go transportRuntime.RunControlFlow(dataPlaneCtx)
 	r.applyRuntimePolicy(effectivePolicy)
@@ -458,19 +458,25 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 			SignalSubscribers: busStats.SignalSubscribers,
 		},
 		TelemetryBatcher: agenthealth.TelemetryBatcherHealth{
-			PendingEvents:   batcherStats.PendingEvents,
-			PendingSignals:  batcherStats.PendingSignals,
-			QueuedBatches:   batcherStats.QueuedBatches,
-			QueueCapacity:   batcherStats.QueueCapacity,
-			DroppedBatches:  batcherStats.DroppedBatches,
-			DroppedEvents:   batcherStats.DroppedEvents,
-			DroppedSignals:  batcherStats.DroppedSignals,
-			FlushedBatches:  batcherStats.FlushedBatches,
-			FlushedEvents:   batcherStats.FlushedEvents,
-			FlushedSignals:  batcherStats.FlushedSignals,
-			LastFlushReason: batcherStats.LastFlushReason,
-			Closed:          batcherStats.Closed,
-			LastError:       batcherStats.LastError,
+			PendingEvents:     batcherStats.PendingEvents,
+			PendingSignals:    batcherStats.PendingSignals,
+			QueuedBatches:     batcherStats.QueuedBatches,
+			QueueCapacity:     batcherStats.QueueCapacity,
+			DroppedBatches:    batcherStats.DroppedBatches,
+			DroppedEvents:     batcherStats.DroppedEvents,
+			DroppedSignals:    batcherStats.DroppedSignals,
+			FlushedBatches:    batcherStats.FlushedBatches,
+			FlushedEvents:     batcherStats.FlushedEvents,
+			FlushedSignals:    batcherStats.FlushedSignals,
+			PendingBytes:      batcherStats.PendingBytes,
+			MaxBytes:          batcherStats.MaxBytes,
+			FlushedByCount:    batcherStats.FlushedByCount,
+			FlushedByBytes:    batcherStats.FlushedByBytes,
+			FlushedByInterval: batcherStats.FlushedByInterval,
+			FlushedByShutdown: batcherStats.FlushedByShutdown,
+			LastFlushReason:   batcherStats.LastFlushReason,
+			Closed:            batcherStats.Closed,
+			LastError:         batcherStats.LastError,
 		},
 		TelemetrySender: agenthealth.TelemetrySenderHealth{
 			SentBatches:     senderStats.SentBatches,
@@ -530,10 +536,10 @@ func (r *AgentRuntime) healthTelemetryArgs(source any, rest ...any) (*telemetry.
 		bus = telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
 	}
 	if batcher == nil {
-		batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64)
+		batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBytes)
 	}
 	if sender == nil {
-		sender = &telemetry.Sender{Appender: localBatchAppender{}, Batcher: batcher}
+		sender = &telemetry.Sender{Appender: localBatchSender{}, Batcher: batcher}
 	}
 	if sender.Batcher == nil {
 		sender.Batcher = batcher
@@ -735,8 +741,8 @@ func samePolicyRuntime(a, b policymodel.Policy) bool {
 		reflect.DeepEqual(a.Detection, b.Detection)
 }
 
-func (r *AgentRuntime) batchAppender() (dataappend.BatchAppender, error) {
-	return newBatchAppender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
+func (r *AgentRuntime) batchSender() (dataappend.BatchSender, error) {
+	return newBatchSender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 }
 
 func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
@@ -749,12 +755,12 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 	}
 }
 
-func newBatchAppender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchAppender, error) {
+func newBatchSender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchSender, error) {
 	switch transport {
 	case "grpc":
 		return dataappend.NewGRPCAppenderWithTLS(manager, timeout, token, tlsCfg), nil
 	case "local":
-		return newLocalBatchAppender(), nil
+		return newLocalBatchSender(), nil
 	default:
 		return nil, fmt.Errorf("unknown transport %q", transport)
 	}

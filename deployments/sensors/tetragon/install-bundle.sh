@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/bundle.env"
 
-BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
+BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon}"
 ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
 URL="${SYSARMOR_TETRAGON_URL:-$TETRAGON_URL}"
 VERSION="${SYSARMOR_TETRAGON_VERSION:-$TETRAGON_VERSION}"

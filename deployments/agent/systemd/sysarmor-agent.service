@@ -1,0 +1,15 @@
+[Unit]
+Description=SysArmor Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml
+WorkingDirectory=/opt/sysarmor/agent
+Restart=always
+RestartSec=5s
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

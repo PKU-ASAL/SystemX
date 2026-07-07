@@ -1,0 +1,48 @@
+# Platform E2E
+
+结论：platform e2e 验证 manager、gateway、worker、store、policy、response 和 control-plane 合约。它关注平台能力是否正确，不负责端侧 CPU/RSS 性能结论。
+
+## System Under Test
+
+| 对象 | 说明 |
+|---|---|
+| manager | operator-facing HTTP API、policy、audit、query |
+| gateway | agent-facing gRPC data/control endpoint |
+| worker | Kafka ingest、incident projection、indexing |
+| store | Postgres/OpenSearch/Redis/Kafka 相关合约 |
+| control | policy/control downlink、ack、response approval/deny |
+
+## 推荐入口
+
+本地轻量合约：
+
+```bash
+make -C test product-platform
+make -C test product-platform-smoke
+```
+
+这是 smoke/contract 入口，`product-platform-smoke` 是显式别名。它使用构造数据或 fake 输入验证平台合约，不证明真实 sensor 检测效果。
+
+容器产品路径：
+
+```bash
+make -C test product-platform-full
+```
+
+## 与 topology 的区别
+
+| Suite | 重点 |
+|---|---|
+| `platform` | 平台组件和 API/控制/存储合约 |
+| `topology` | 三节点真实产品链路和 C2 场景 |
+
+如果要验证 manager 分发 agent、enrollment 安装和 VM mTLS 接入链路，跑 `product-topology`。
+
+如果要验证真实 Tetragon 事件、signal 和 incident，跑 `product-platform-full` 或 `effectiveness-topology`。
+
+## 不覆盖
+
+- 单 endpoint 长窗口 CPU/RSS；
+- sensor/BPF reload 性能；
+- 攻击场景 effectiveness matrix；
+- VM fresh benchmark 生命周期。

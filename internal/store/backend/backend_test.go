@@ -14,7 +14,7 @@ import (
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
-	"github.com/sysarmor/sysarmor-next-project/internal/managerapi"
+	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -95,8 +95,8 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	if result.Store == nil || result.Store.Info().Backend != KindPostgres {
 		t.Fatalf("store info = %+v", result.Store.Info())
 	}
-	if !strings.Contains(fakeLastQuery(), "CREATE TABLE IF NOT EXISTS incidents") {
-		t.Fatalf("postgres migration did not run: %s", fakeLastQuery())
+	if execLog := fakeExecLog(); !strings.Contains(execLog, "CREATE TABLE IF NOT EXISTS incidents") {
+		t.Fatalf("postgres migration did not run: %s", execLog)
 	}
 	result.Store.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-pg",
@@ -923,6 +923,9 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
+	if err := result.Store.SaveMetrics(); err != nil {
+		t.Fatalf("SaveMetrics() error = %v", err)
+	}
 	execLog := fakeExecLog()
 	for _, want := range []string{
 		"INSERT INTO incident_events",
@@ -1201,7 +1204,7 @@ func TestOpenPostgresValidatesConfigAndWrapsMigrationError(t *testing.T) {
 		t.Fatalf("missing dsn error = %v", err)
 	}
 	fakeSetExecError(errors.New("boom"))
-	if _, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"}); err == nil || !strings.Contains(err.Error(), "apply postgres schema v1") {
+	if _, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"}); err == nil || !strings.Contains(err.Error(), "postgres schema migration") {
 		t.Fatalf("migration error = %v", err)
 	}
 }

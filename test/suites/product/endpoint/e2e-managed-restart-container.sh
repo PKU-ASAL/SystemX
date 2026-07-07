@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
+RESULTS="$ROOT/.results"
+TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
+WORK="/tmp/sysarmor-agent-managed-restart-container"
+
+mkdir -p "$RESULTS"
+
+cleanup() {
+  docker exec mgr sh -c 'if [ -f /tmp/sysarmor-agent-managed-restart-container/agent.pid ]; then kill "$(cat /tmp/sysarmor-agent-managed-restart-container/agent.pid)" 2>/dev/null || true; fi' >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+echo "[e2e-agent-managed-restart-container] starting container topology"
+bash "$ROOT/shared/harness/start-container.sh" >/dev/null
+
+echo "[e2e-agent-managed-restart-container] preparing crashing fake Tetragon bundle in mgr container"
+docker exec mgr sh -c "rm -rf '$WORK'; mkdir -p '$WORK/bundle/bin' '$WORK/install'"
+docker exec mgr sh -c "cat > '$WORK/bundle/bin/tetragon' <<'EOF'
+#!/usr/bin/env sh
+COUNT=\"\${SYSARMOR_TETRAGON_COUNT:-/tmp/sysarmor-managed-restart-tetragon-count}\"
+n=0
+if [ -f \"\$COUNT\" ]; then n=\"\$(cat \"\$COUNT\")\"; fi
+n=\$((n + 1))
+printf '%s' \"\$n\" > \"\$COUNT\"
+exit 7
+EOF
+chmod +x '$WORK/bundle/bin/tetragon'
+cat > '$WORK/bundle/bin/tetra' <<'EOF'
+#!/usr/bin/env sh
+if [ \"\$1\" = \"getevents\" ]; then
+  printf '%s\n' '{\"process_exec\":{\"process\":{\"pid\":210,\"uid\":0,\"binary\":\"/bin/bash\",\"arguments\":\"-c id\",\"start_time\":\"2026-06-14T10:00:00Z\"},\"parent\":{\"pid\":1,\"binary\":\"/sbin/init\",\"start_time\":\"2026-06-14T09:59:59Z\"}},\"node_name\":\"container-host\",\"time\":\"2026-06-14T10:00:00Z\"}'
+  sleep 300
+fi
+EOF
+chmod +x '$WORK/bundle/bin/tetra'"
+
+docker exec mgr sh -c "tetragon_sum=\$(sha256sum '$WORK/bundle/bin/tetragon' | awk '{print \$1}'); tetra_sum=\$(sha256sum '$WORK/bundle/bin/tetra' | awk '{print \$1}'); cat > '$WORK/bundle/manifest.json' <<EOF
+{
+  \"version\": \"container-managed-restart\",
+  \"files\": {
+    \"bin/tetragon\": { \"sha256\": \"\$tetragon_sum\" },
+    \"bin/tetra\": { \"sha256\": \"\$tetra_sum\" }
+  }
+}
+EOF"
+
+docker exec mgr sh -c "cat > '$WORK/policy.yaml' <<'EOF'
+{"behaviors":["process.exec"],"observe_only":true}
+EOF
+cat > '$WORK/agent.yaml' <<EOF
+agent:
+  id: container-agent-managed-restart
+  host_id: container-host
+  tenant_id: default
+  token: $TOKEN
+
+manager:
+  address: 10.66.0.14:9444
+  transport: grpc
+
+sensor:
+  backend: tetragon
+  mode: managed
+  bundle_dir: $WORK/bundle
+  install_dir: $WORK/install
+  policy_path: $WORK/policy.yaml
+  observe_only: true
+  restart: always
+  max_restarts: 2
+  restart_window: 50ms
+
+telemetry:
+  batch_size: 256
+  flush_interval: 100ms
+
+data_plane:
+  retry_initial: 50ms
+  retry_max: 100ms
+  request_timeout: 2s
+
+health:
+  interval: 100ms
+EOF"
+
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset" >/dev/null
+docker exec mgr sh -c "rm -f '$WORK/agent.log' '$WORK/tetragon.count'; SYSARMOR_TETRAGON_COUNT='$WORK/tetragon.count' /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
+
+wait_contains() {
+  local cmd_name="$1"
+  local needle="$2"
+  local out="$3"
+  shift 3
+  local deadline=$((SECONDS + 30))
+  until "$@" >"$out" 2>"$out.err" && grep -Fq "$needle" "$out"; do
+    if (( SECONDS >= deadline )); then
+      echo "[e2e-agent-managed-restart-container][ERROR] timeout waiting for $needle via $cmd_name" >&2
+      echo "--- last response ---" >&2
+      cat "$out" >&2 2>/dev/null || true
+      echo "--- last error ---" >&2
+      cat "$out.err" >&2 2>/dev/null || true
+      echo "--- agent log ---" >&2
+      docker exec mgr cat "$WORK/agent.log" >&2 2>/dev/null || true
+      echo "--- count ---" >&2
+      docker exec mgr cat "$WORK/tetragon.count" >&2 2>/dev/null || true
+      exit 1
+    fi
+    sleep 0.2
+  done
+}
+
+wait_contains "agent-health degraded" '"status":"degraded"' "$RESULTS/e2e-agent-managed-restart-container.health.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-restart --tenant-id default
+wait_contains "agent-health restart count" '"restart_count":3' "$RESULTS/e2e-agent-managed-restart-container.health.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id container-agent-managed-restart --tenant-id default
+wait_contains "tamper signal" 'sensor_tamper_or_blindness' "$RESULTS/e2e-agent-managed-restart-container.signals.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list --label scenario=agent-health --layer endpoint --terminal true
+wait_contains "metrics" '"events_ingested":1' "$RESULTS/e2e-agent-managed-restart-container.metrics.json" \
+  docker exec mgr /opt/sysarmor/bin/sysarmorctl --manager-url 127.0.0.1:9443 --json manager metrics
+
+if [[ "$(docker exec mgr cat "$WORK/tetragon.count" 2>/dev/null | tr -d '\r')" != "2" ]]; then
+  echo "[e2e-agent-managed-restart-container][ERROR] fake tetragon restart count mismatch" >&2
+  docker exec mgr cat "$WORK/tetragon.count" >&2 2>/dev/null || true
+  exit 1
+fi
+
+docker exec mgr cat "$WORK/agent.log" > "$RESULTS/e2e-agent-managed-restart-container.agent.log"
+
+echo "[e2e-agent-managed-restart-container] ok"

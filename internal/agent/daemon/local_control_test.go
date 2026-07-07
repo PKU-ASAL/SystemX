@@ -15,8 +15,8 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -930,7 +930,7 @@ func cepRulePackJSON() string {
 
 type noopUploader struct{}
 
-func (noopUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (noopUploader) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	return &dataplanev1.DataAck{Accepted: true, BatchId: batch.GetHeader().GetBatchId()}, nil
 }
 
@@ -942,11 +942,11 @@ func newRecordingUploader() *recordingUploader {
 	return &recordingUploader{ch: make(chan *dataplanev1.DataBatch, 16)}
 }
 
-func (u *recordingUploader) AppendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (u *recordingUploader) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
 	if u != nil && batch != nil {
 		u.ch <- batch
 	}
-	return (&noopUploader{}).AppendBatch(batch)
+	return (&noopUploader{}).SendBatch(batch)
 }
 
 func newTestTelemetry(runner *AgentRuntime) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender) {

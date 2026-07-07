@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
@@ -20,7 +21,26 @@ func NewDataServer(backend Backend) dataplanev1.AgentDataPlaneServiceServer {
 	return &DataServer{backend: backend}
 }
 
-func (s *DataServer) AppendBatch(ctx context.Context, batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+func (s *DataServer) StreamBatches(stream dataplanev1.AgentDataPlaneService_StreamBatchesServer) error {
+	for {
+		batch, err := stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		ack, err := s.handleBatch(stream.Context(), batch, "grpc_stream")
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(ack); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *DataServer) handleBatch(ctx context.Context, batch *dataplanev1.DataBatch, transport string) (*dataplanev1.DataAck, error) {
 	if !s.authorized(ctx) {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
@@ -35,7 +55,7 @@ func (s *DataServer) AppendBatch(ctx context.Context, batch *dataplanev1.DataBat
 			return nil, status.Error(codes.PermissionDenied, err.Error())
 		}
 	}
-	result, err := s.backend.AppendDataBatchWithTransport(batch, "grpc")
+	result, err := s.backend.AppendDataBatchWithTransport(batch, transport)
 	if err != nil {
 		if errors.Is(err, ErrInvalidUpload) {
 			return dataAck(batch, dataplanev1.DataAck_STATUS_REJECTED, DataAckReasonInvalidUpload, err.Error(), false, 0, DataAppendResult{}), nil

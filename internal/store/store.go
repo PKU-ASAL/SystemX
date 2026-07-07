@@ -49,6 +49,10 @@ type Store struct {
 	ControlCommands []controlmodel.ControlCommand
 	AgentSessions   []AgentSession
 	OperatorRoles   []OperatorRoleBinding
+	Enrollments     []Enrollment
+	Artifacts       []Artifact
+	Channels        []ArtifactChannel
+	Certificates    []AgentCertificate
 	Metrics         Metrics
 	RarityBaseline  rarity.Baseline
 }
@@ -104,6 +108,68 @@ type OperatorRoleBinding struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
+type Enrollment struct {
+	EnrollmentID   string            `json:"enrollment_id"`
+	TenantID       string            `json:"tenant_id"`
+	AgentID        string            `json:"agent_id,omitempty"`
+	HostID         string            `json:"host_id,omitempty"`
+	TokenHash      string            `json:"token_hash,omitempty"`
+	TokenPreview   string            `json:"token_preview,omitempty"`
+	GatewayAddr    string            `json:"gateway_addr"`
+	GatewaySNI     string            `json:"gateway_sni,omitempty"`
+	Profile        string            `json:"profile,omitempty"`
+	Channel        string            `json:"channel,omitempty"`
+	ArtifactID     string            `json:"artifact_id,omitempty"`
+	ArtifactSHA256 string            `json:"artifact_sha256,omitempty"`
+	ArtifactURL    string            `json:"artifact_url,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	Status         string            `json:"status"`
+	CreatedAt      time.Time         `json:"created_at"`
+	ExpiresAt      time.Time         `json:"expires_at"`
+	CreatedBy      string            `json:"created_by,omitempty"`
+	UsedAt         time.Time         `json:"used_at,omitempty"`
+}
+
+type ArtifactChannel struct {
+	TenantID   string    `json:"tenant_id"`
+	Channel    string    `json:"channel"`
+	ArtifactID string    `json:"artifact_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	CreatedBy  string    `json:"created_by,omitempty"`
+}
+
+type Artifact struct {
+	ArtifactID  string            `json:"artifact_id"`
+	TenantID    string            `json:"tenant_id"`
+	Name        string            `json:"name"`
+	Kind        string            `json:"kind"`
+	Version     string            `json:"version"`
+	OS          string            `json:"os,omitempty"`
+	Arch        string            `json:"arch,omitempty"`
+	SHA256      string            `json:"sha256"`
+	SizeBytes   int64             `json:"size_bytes"`
+	Status      string            `json:"status"`
+	StoragePath string            `json:"storage_path,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	CreatedBy   string            `json:"created_by,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+type AgentCertificate struct {
+	TenantID       string    `json:"tenant_id"`
+	AgentID        string    `json:"agent_id"`
+	EnrollmentID   string    `json:"enrollment_id,omitempty"`
+	SerialNumber   string    `json:"serial_number"`
+	Subject        string    `json:"subject,omitempty"`
+	NotBefore      time.Time `json:"not_before"`
+	NotAfter       time.Time `json:"not_after"`
+	CreatedAt      time.Time `json:"created_at"`
+	RevokedAt      time.Time `json:"revoked_at,omitempty"`
+	CertificatePEM string    `json:"certificate_pem,omitempty"`
+}
+
 type State struct {
 	Agents          []json.RawMessage                      `json:"agents"`
 	Events          []json.RawMessage                      `json:"events"`
@@ -120,6 +186,10 @@ type State struct {
 	ControlCommands []controlmodel.ControlCommand          `json:"control_commands,omitempty"`
 	AgentSessions   []AgentSession                         `json:"agent_sessions"`
 	OperatorRoles   []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
+	Enrollments     []Enrollment                           `json:"enrollments,omitempty"`
+	Artifacts       []Artifact                             `json:"artifacts,omitempty"`
+	Channels        []ArtifactChannel                      `json:"channels,omitempty"`
+	Certificates    []AgentCertificate                     `json:"certificates,omitempty"`
 	Metrics         Metrics                                `json:"metrics"`
 	RarityBaseline  rarity.Baseline                        `json:"rarity_baseline,omitempty"`
 }
@@ -202,6 +272,10 @@ func (s *Store) ImportState(state State) error {
 	s.ControlCommands = state.ControlCommands
 	s.AgentSessions = state.AgentSessions
 	s.OperatorRoles = state.OperatorRoles
+	s.Enrollments = state.Enrollments
+	s.Artifacts = state.Artifacts
+	s.Channels = state.Channels
+	s.Certificates = state.Certificates
 	s.Metrics = state.Metrics
 	s.RarityBaseline = state.RarityBaseline.Snapshot()
 	return nil
@@ -1492,6 +1566,11 @@ func (s *Store) updateAgentSession(tenantID, agentID, transport, cursor, status 
 }
 
 func (s *Store) ListAgents() []AgentIdentity {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if agents, err := backend.ListAgents(ctx); err == nil {
+			return agents
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]AgentIdentity, len(s.Agents))
@@ -1500,6 +1579,11 @@ func (s *Store) ListAgents() []AgentIdentity {
 }
 
 func (s *Store) ListAgentSessions(tenantID, agentID string) []AgentSession {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if sessions, err := backend.ListAgentSessions(ctx, tenantID, agentID); err == nil {
+			return sessions
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]AgentSession, 0, len(s.AgentSessions))
@@ -1562,6 +1646,397 @@ func (s *Store) ListOperatorRoleBindings(actor string) []OperatorRoleBinding {
 	return out
 }
 
+func (s *Store) CreateEnrollment(enrollment Enrollment) Enrollment {
+	enrollment = normalizeEnrollment(enrollment)
+	if enrollment.EnrollmentID == "" || enrollment.TokenHash == "" {
+		return Enrollment{}
+	}
+	now := time.Now().UTC()
+	if enrollment.CreatedAt.IsZero() {
+		enrollment.CreatedAt = now
+	}
+	if enrollment.Status == "" {
+		enrollment.Status = "active"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Enrollments {
+		if existing.TenantID == enrollment.TenantID && existing.EnrollmentID == enrollment.EnrollmentID {
+			s.Enrollments[i] = enrollment
+			return cloneEnrollment(enrollment)
+		}
+	}
+	s.Enrollments = append(s.Enrollments, enrollment)
+	return cloneEnrollment(enrollment)
+}
+
+func (s *Store) ListEnrollments(tenantID, status string) []Enrollment {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if enrollments, err := backend.ListEnrollments(ctx, tenantID, status); err == nil {
+			return enrollments
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Enrollment, 0, len(s.Enrollments))
+	for _, enrollment := range s.Enrollments {
+		if tenantID != "" && enrollment.TenantID != tenantID {
+			continue
+		}
+		if status != "" && enrollment.Status != status {
+			continue
+		}
+		out = append(out, cloneEnrollment(enrollment))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
+	return out
+}
+
+func (s *Store) GetEnrollmentByTokenHash(tokenHash string) (Enrollment, bool) {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return Enrollment{}, false
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if enrollment, ok, err := backend.GetEnrollmentByTokenHash(ctx, tokenHash); err == nil {
+			return enrollment, ok
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, enrollment := range s.Enrollments {
+		if enrollment.TokenHash == tokenHash {
+			return cloneEnrollment(enrollment), true
+		}
+	}
+	return Enrollment{}, false
+}
+
+func (s *Store) MarkEnrollmentUsed(tokenHash string, usedAt time.Time) (Enrollment, bool) {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return Enrollment{}, false
+	}
+	if usedAt.IsZero() {
+		usedAt = time.Now().UTC()
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		enrollment, ok, err := backend.GetEnrollmentByTokenHash(ctx, tokenHash)
+		if err == nil && ok && enrollment.Status == "active" {
+			enrollment.Status = "used"
+			enrollment.UsedAt = usedAt
+			if err := backend.WriteEnrollment(ctx, enrollment); err == nil {
+				s.replaceEnrollmentInMemory(enrollment)
+				return cloneEnrollment(enrollment), true
+			}
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, enrollment := range s.Enrollments {
+		if enrollment.TokenHash != tokenHash {
+			continue
+		}
+		if enrollment.Status != "active" {
+			return Enrollment{}, false
+		}
+		enrollment.Status = "used"
+		enrollment.UsedAt = usedAt
+		s.Enrollments[i] = enrollment
+		return cloneEnrollment(enrollment), true
+	}
+	return Enrollment{}, false
+}
+
+func (s *Store) replaceEnrollmentInMemory(enrollment Enrollment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Enrollments {
+		if existing.TenantID == enrollment.TenantID && existing.EnrollmentID == enrollment.EnrollmentID {
+			s.Enrollments[i] = enrollment
+			return
+		}
+	}
+	s.Enrollments = append(s.Enrollments, enrollment)
+}
+
+func (s *Store) UpsertArtifact(artifact Artifact) Artifact {
+	artifact = normalizeArtifact(artifact)
+	if artifact.ArtifactID == "" || artifact.Name == "" || artifact.Kind == "" || artifact.Version == "" || artifact.SHA256 == "" {
+		return Artifact{}
+	}
+	now := time.Now().UTC()
+	if artifact.UpdatedAt.IsZero() {
+		artifact.UpdatedAt = now
+	}
+	if artifact.Status == "" {
+		artifact.Status = "draft"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Artifacts {
+		if existing.TenantID == artifact.TenantID && existing.ArtifactID == artifact.ArtifactID {
+			if artifact.CreatedAt.IsZero() {
+				artifact.CreatedAt = existing.CreatedAt
+			}
+			if artifact.CreatedAt.IsZero() {
+				artifact.CreatedAt = now
+			}
+			s.Artifacts[i] = artifact
+			return cloneArtifact(artifact)
+		}
+	}
+	if artifact.CreatedAt.IsZero() {
+		artifact.CreatedAt = now
+	}
+	s.Artifacts = append(s.Artifacts, artifact)
+	return cloneArtifact(artifact)
+}
+
+func (s *Store) ListArtifacts(tenantID, kind, status string) []Artifact {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if artifacts, err := backend.ListArtifacts(ctx, tenantID, kind, status); err == nil {
+			return artifacts
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Artifact, 0, len(s.Artifacts))
+	for _, artifact := range s.Artifacts {
+		if tenantID != "" && artifact.TenantID != tenantID {
+			continue
+		}
+		if kind != "" && artifact.Kind != kind {
+			continue
+		}
+		if status != "" && artifact.Status != status {
+			continue
+		}
+		out = append(out, cloneArtifact(artifact))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
+	return out
+}
+
+func (s *Store) GetArtifact(tenantID, artifactID string) (Artifact, bool) {
+	tenantID = strings.TrimSpace(tenantID)
+	artifactID = strings.TrimSpace(artifactID)
+	if artifactID == "" {
+		return Artifact{}, false
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if artifact, ok, err := backend.GetArtifact(ctx, tenantID, artifactID); err == nil {
+			return artifact, ok
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, artifact := range s.Artifacts {
+		if artifact.TenantID == tenantID && artifact.ArtifactID == artifactID {
+			return cloneArtifact(artifact), true
+		}
+	}
+	return Artifact{}, false
+}
+
+func normalizeEnrollment(enrollment Enrollment) Enrollment {
+	enrollment.EnrollmentID = strings.TrimSpace(enrollment.EnrollmentID)
+	enrollment.TenantID = strings.TrimSpace(enrollment.TenantID)
+	if enrollment.TenantID == "" {
+		enrollment.TenantID = "default"
+	}
+	enrollment.AgentID = strings.TrimSpace(enrollment.AgentID)
+	enrollment.HostID = strings.TrimSpace(enrollment.HostID)
+	enrollment.TokenHash = strings.TrimSpace(enrollment.TokenHash)
+	enrollment.TokenPreview = strings.TrimSpace(enrollment.TokenPreview)
+	enrollment.GatewayAddr = strings.TrimSpace(enrollment.GatewayAddr)
+	enrollment.GatewaySNI = strings.TrimSpace(enrollment.GatewaySNI)
+	enrollment.Profile = strings.TrimSpace(enrollment.Profile)
+	enrollment.Channel = strings.TrimSpace(enrollment.Channel)
+	enrollment.ArtifactID = strings.TrimSpace(enrollment.ArtifactID)
+	enrollment.ArtifactSHA256 = strings.TrimSpace(enrollment.ArtifactSHA256)
+	enrollment.ArtifactURL = strings.TrimSpace(enrollment.ArtifactURL)
+	enrollment.Status = strings.TrimSpace(enrollment.Status)
+	enrollment.CreatedBy = strings.TrimSpace(enrollment.CreatedBy)
+	enrollment.Labels = cloneStringMap(enrollment.Labels)
+	return enrollment
+}
+
+func normalizeArtifact(artifact Artifact) Artifact {
+	artifact.ArtifactID = strings.TrimSpace(artifact.ArtifactID)
+	artifact.TenantID = strings.TrimSpace(artifact.TenantID)
+	if artifact.TenantID == "" {
+		artifact.TenantID = "default"
+	}
+	artifact.Name = strings.TrimSpace(artifact.Name)
+	artifact.Kind = strings.TrimSpace(artifact.Kind)
+	artifact.Version = strings.TrimSpace(artifact.Version)
+	artifact.OS = strings.TrimSpace(artifact.OS)
+	artifact.Arch = strings.TrimSpace(artifact.Arch)
+	artifact.SHA256 = strings.TrimSpace(artifact.SHA256)
+	artifact.Status = strings.TrimSpace(artifact.Status)
+	artifact.StoragePath = strings.TrimSpace(artifact.StoragePath)
+	artifact.CreatedBy = strings.TrimSpace(artifact.CreatedBy)
+	artifact.Metadata = cloneStringMap(artifact.Metadata)
+	return artifact
+}
+
+func cloneArtifact(artifact Artifact) Artifact {
+	artifact.Metadata = cloneStringMap(artifact.Metadata)
+	return artifact
+}
+
+func cloneEnrollment(enrollment Enrollment) Enrollment {
+	enrollment.Labels = cloneStringMap(enrollment.Labels)
+	return enrollment
+}
+
+func (s *Store) UpsertChannel(channel ArtifactChannel) ArtifactChannel {
+	channel = normalizeChannel(channel)
+	if channel.Channel == "" || channel.ArtifactID == "" {
+		return ArtifactChannel{}
+	}
+	now := time.Now().UTC()
+	if channel.UpdatedAt.IsZero() {
+		channel.UpdatedAt = now
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Channels {
+		if existing.TenantID == channel.TenantID && existing.Channel == channel.Channel {
+			if channel.CreatedAt.IsZero() {
+				channel.CreatedAt = existing.CreatedAt
+			}
+			if channel.CreatedAt.IsZero() {
+				channel.CreatedAt = now
+			}
+			s.Channels[i] = channel
+			return channel
+		}
+	}
+	if channel.CreatedAt.IsZero() {
+		channel.CreatedAt = now
+	}
+	s.Channels = append(s.Channels, channel)
+	return channel
+}
+
+func (s *Store) ListChannels(tenantID string) []ArtifactChannel {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if channels, err := backend.ListChannels(ctx, tenantID); err == nil {
+			return channels
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]ArtifactChannel, 0, len(s.Channels))
+	for _, channel := range s.Channels {
+		if tenantID != "" && channel.TenantID != tenantID {
+			continue
+		}
+		out = append(out, channel)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TenantID == out[j].TenantID {
+			return out[i].Channel < out[j].Channel
+		}
+		return out[i].TenantID < out[j].TenantID
+	})
+	return out
+}
+
+func (s *Store) GetChannel(tenantID, channelName string) (ArtifactChannel, bool) {
+	tenantID = strings.TrimSpace(tenantID)
+	channelName = strings.TrimSpace(channelName)
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if channelName == "" {
+		return ArtifactChannel{}, false
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if channel, ok, err := backend.GetChannel(ctx, tenantID, channelName); err == nil {
+			return channel, ok
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, channel := range s.Channels {
+		if channel.TenantID == tenantID && channel.Channel == channelName {
+			return channel, true
+		}
+	}
+	return ArtifactChannel{}, false
+}
+
+func (s *Store) RecordAgentCertificate(cert AgentCertificate) AgentCertificate {
+	cert = normalizeAgentCertificate(cert)
+	if cert.TenantID == "" || cert.AgentID == "" || cert.SerialNumber == "" {
+		return AgentCertificate{}
+	}
+	now := time.Now().UTC()
+	if cert.CreatedAt.IsZero() {
+		cert.CreatedAt = now
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Certificates {
+		if existing.TenantID == cert.TenantID && existing.SerialNumber == cert.SerialNumber {
+			s.Certificates[i] = cert
+			return cert
+		}
+	}
+	s.Certificates = append(s.Certificates, cert)
+	return cert
+}
+
+func normalizeChannel(channel ArtifactChannel) ArtifactChannel {
+	channel.TenantID = strings.TrimSpace(channel.TenantID)
+	if channel.TenantID == "" {
+		channel.TenantID = "default"
+	}
+	channel.Channel = strings.TrimSpace(channel.Channel)
+	channel.ArtifactID = strings.TrimSpace(channel.ArtifactID)
+	channel.CreatedBy = strings.TrimSpace(channel.CreatedBy)
+	return channel
+}
+
+func normalizeAgentCertificate(cert AgentCertificate) AgentCertificate {
+	cert.TenantID = strings.TrimSpace(cert.TenantID)
+	if cert.TenantID == "" {
+		cert.TenantID = "default"
+	}
+	cert.AgentID = strings.TrimSpace(cert.AgentID)
+	cert.EnrollmentID = strings.TrimSpace(cert.EnrollmentID)
+	cert.SerialNumber = strings.TrimSpace(cert.SerialNumber)
+	cert.Subject = strings.TrimSpace(cert.Subject)
+	return cert
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 func (s *Store) OperatorRolesForActor(actor string) ([]string, bool) {
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
@@ -1578,6 +2053,11 @@ func (s *Store) OperatorRolesForActor(actor string) ([]string, bool) {
 }
 
 func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if health, err := backend.ListAgentHealth(ctx); err == nil {
+			return health
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]agenthealth.AgentHealth, 0, len(s.Health))
@@ -1594,6 +2074,11 @@ func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
 }
 
 func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealth, bool) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if health, ok, err := backend.GetAgentHealth(ctx, tenantID, agentID); err == nil {
+			return health, ok
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if agentID == "" {
@@ -1787,8 +2272,41 @@ func (s *Store) MergeIncidents(targetID, sourceID string) (*incidentv1.Incident,
 
 func (s *Store) MetricsSnapshot() Metrics {
 	s.mu.RLock()
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
+	s.mu.RUnlock()
+	if metricsBackend, ok := backend.(MetricsBackend); ok {
+		if metrics, err := metricsBackend.LoadMetrics(ctx); err == nil {
+			return metrics
+		}
+	}
+	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.Metrics
+}
+
+func (s *Store) SaveMetrics() error {
+	s.mu.RLock()
+	metrics := s.Metrics
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
+	s.mu.RUnlock()
+	if metricsBackend, ok := backend.(MetricsBackend); ok {
+		return metricsBackend.SaveMetrics(ctx, metrics)
+	}
+	return nil
+}
+
+func (s *Store) ResetMetrics() error {
+	s.mu.Lock()
+	s.Metrics = Metrics{}
+	backend := s.backend
+	ctx := ctxOrBackground(s.baseCtx)
+	s.mu.Unlock()
+	if metricsBackend, ok := backend.(MetricsBackend); ok {
+		return metricsBackend.ResetMetrics(ctx)
+	}
+	return nil
 }
 
 func (s *Store) DeleteByLabels(labels LabelSelector) {
@@ -1905,6 +2423,14 @@ func (s *Store) exportStateLocked() (State, error) {
 	state.Metrics = s.Metrics
 	state.RarityBaseline = s.RarityBaseline.Snapshot()
 	state.OperatorRoles = append([]OperatorRoleBinding(nil), s.OperatorRoles...)
+	for _, enrollment := range s.Enrollments {
+		state.Enrollments = append(state.Enrollments, cloneEnrollment(enrollment))
+	}
+	for _, artifact := range s.Artifacts {
+		state.Artifacts = append(state.Artifacts, cloneArtifact(artifact))
+	}
+	state.Channels = append([]ArtifactChannel(nil), s.Channels...)
+	state.Certificates = append([]AgentCertificate(nil), s.Certificates...)
 	for _, agent := range s.Agents {
 		raw, err := json.Marshal(agent)
 		if err != nil {

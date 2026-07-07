@@ -1,18 +1,20 @@
 # SysArmor 测试 VM 拓扑
 # 隔离测试网 10.66.0.0/24：
+#   mgr    10.66.0.10   manager HTTP API + gateway gRPC + Postgres
 #   node-a 10.66.0.11  被监控主机（sysarmor-agent 自带/托管 Tetragon sensor + 假凭据），无 Docker
-#   mgr    10.66.0.10   manager（预留）
 #   attacker 10.66.0.99 C2 监听 :443 + 恶意脚本 http :8080
 #
 # 与容器拓扑的区别：3 台独立 VM + 独立内核，agent 在 VM 内以 host scope 托管 sensor（不依赖 Docker）。
 # 默认 provider = libvirt。
 ENV['VAGRANT_DEFAULT_PROVIDER'] ||= 'libvirt'
+require_relative "../../shared/harness/vagrant-libvirt-compat"
 
 NODES = [
-  { name: "mgr",      ip: "10.66.0.10", mem: 2048, cpus: 2, provisions: [] },
+  { name: "mgr",      ip: "10.66.0.10", mem: 3072, cpus: 2, provisions: ["provision/setup-platform.sh"] },
   { name: "node-a",   ip: "10.66.0.11", mem: 2048, cpus: 2,
-    provisions: ["provision/setup-credentials.sh"] },
-  { name: "attacker", ip: "10.66.0.99", mem: 1024, cpus: 1, provisions: ["provision/setup-c2.sh"] },
+    provisions: ["provision/setup-apt.sh", "provision/setup-credentials.sh"] },
+  { name: "attacker", ip: "10.66.0.99", mem: 1024, cpus: 1,
+    provisions: ["provision/setup-apt.sh", "provision/setup-c2.sh"] },
 ]
 
 PRIV_NET = <<-SHELL

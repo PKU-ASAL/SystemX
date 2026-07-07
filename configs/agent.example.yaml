@@ -15,7 +15,7 @@ manager:
   tls_insecure: false
 
 control:
-  socket_path: /var/run/sysarmor/agent.sock
+  socket_path: /run/sysarmor/agent.sock
 
 runtime:
   feature_flags:
@@ -25,10 +25,10 @@ sensor:
   backend: tetragon
   mode: managed
   version: "v1.x"
-  bundle_dir: /opt/sysarmor/bundles/tetragon
-  install_dir: /opt/sysarmor/sensors
-  tetra_path: /opt/sysarmor/sensors/tetragon/current/bin/tetra
-  tetragon_path: /opt/sysarmor/sensors/tetragon/current/bin/tetragon
+  bundle_dir: /opt/sysarmor/agent/bundles/tetragon
+  install_dir: /opt/sysarmor/agent/sensors
+  tetra_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetra
+  tetragon_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetragon
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   event_source: "" # managed mode runs tetra getevents; set "-" only for stdin JSONL debugging
   scope:

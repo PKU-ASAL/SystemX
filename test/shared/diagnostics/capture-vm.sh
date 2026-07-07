@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 跑 VM 拓扑场景。当前阶段只验证本地 sysarmor-agent:
+# 跑 VM endpoint 诊断场景。只验证本地 sysarmor-agent:
 # agent owns Tetragon -> local control socket -> local event/signal streams.
 # 用法: capture-vm.sh <scenario> [duration_s]
 #   scenario: apt-fileless-c2 | apt-staged-drop | benign-ci-noise
@@ -25,16 +25,16 @@ if [[ -z "$TETRAGON_ARCHIVE" ]]; then
 fi
 
 cd "$ENVDIR"
-vagrant upload "$REPO/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
-vagrant upload "$REPO/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
-TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
-TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/sensors}"
+TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon}"
+TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/agent/sensors}"
 TETRA_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetra"
 TETRAGON_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetragon"
-AGENT_SOCK="/var/run/sysarmor/agent.sock"
+AGENT_SOCK="/run/sysarmor/agent.sock"
 WORK="/tmp/sysarmor-vm-capture-$S"
 SIGNAL_RULE=""
 case "$S" in
@@ -120,7 +120,7 @@ data_plane:
 health:
   interval: 500ms
 EOF
-  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/install-agent.sh
+  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh
   test -f \"$TETRAGON_BUNDLE_DIR/manifest.json\"
   systemctl daemon-reload
   install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl

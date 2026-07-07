@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -115,12 +117,18 @@ func usage() {
   sysarmorctl [--manager-url URL] manager control-commands list --agent AGENT
   sysarmorctl [--manager-url URL] manager control-commands create content --agent AGENT --file content.json
   sysarmorctl [--manager-url URL] manager control-commands cancel --command-id ID --agent AGENT
+  sysarmorctl [--manager-url URL] manager artifacts upload --file agent.tar.gz --name sysarmor-agent --kind agent --version v1 --os linux --arch amd64
+  sysarmorctl [--manager-url URL] manager artifacts list [--kind agent] [--status active]
+  sysarmorctl [--manager-url URL] manager channels upsert --channel stable --artifact-id ARTIFACT
+  sysarmorctl [--manager-url URL] manager channels list
+  sysarmorctl [--manager-url URL] manager enrollments list
+  sysarmorctl [--manager-url URL] manager enrollments create --agent-id AGENT --gateway-addr HOST:PORT [--channel stable] [--artifact-id ARTIFACT] [--ttl 24h]
   sysarmorctl [--manager-url URL] manager evidence pullbacks --create --agent-id AGENT --incident-id ID --label key=value
   sysarmorctl [--manager-url URL] manager roles list [--actor ACTOR]
   sysarmorctl [--manager-url URL] manager roles upsert --actor ACTOR --roles policy_admin,control_admin
 
 Global flags:
-  --socket PATH        local agent Unix socket, default $SYSARMOR_AGENT_SOCK or /var/run/sysarmor/agent.sock
+  --socket PATH        local agent Unix socket, default $SYSARMOR_AGENT_SOCK or /run/sysarmor/agent.sock
   --manager-url URL    manager HTTP URL, default $SYSARMOR_MANAGER_URL or http://127.0.0.1:9443
   --json               emit JSON without extra formatting
 
@@ -139,7 +147,7 @@ func defaultAgentSock() string {
 	if v := strings.TrimSpace(os.Getenv("SYSARMOR_AGENT_SOCK")); v != "" {
 		return v
 	}
-	return "/var/run/sysarmor/agent.sock"
+	return "/run/sysarmor/agent.sock"
 }
 
 func isLocalAgentCommand(args []string) bool {
@@ -971,6 +979,94 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/agent-sessions?" + q.Encode())
+	case "artifacts":
+		return queryManagerArtifactsAPI(base, args[1:])
+	case "channels":
+		return queryManagerChannelsAPI(base, args[1:])
+	case "enrollments":
+		q := url.Values{}
+		req := map[string]any{}
+		labels := map[string]string{}
+		create := false
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--create":
+				create = true
+			case "--tenant-id":
+				i++
+				if i < len(args) {
+					q.Set("tenant_id", args[i])
+					req["tenant_id"] = args[i]
+				}
+			case "--agent-id", "--agent":
+				i++
+				if i < len(args) {
+					req["agent_id"] = args[i]
+				}
+			case "--host-id":
+				i++
+				if i < len(args) {
+					req["host_id"] = args[i]
+				}
+			case "--gateway-addr":
+				i++
+				if i < len(args) {
+					req["gateway_addr"] = args[i]
+				}
+			case "--gateway-sni":
+				i++
+				if i < len(args) {
+					req["gateway_sni"] = args[i]
+				}
+			case "--profile":
+				i++
+				if i < len(args) {
+					req["profile"] = args[i]
+				}
+			case "--channel":
+				i++
+				if i < len(args) {
+					req["channel"] = args[i]
+				}
+			case "--artifact-id":
+				i++
+				if i < len(args) {
+					req["artifact_id"] = args[i]
+				}
+			case "--artifact-url":
+				i++
+				if i < len(args) {
+					req["artifact_url"] = args[i]
+				}
+			case "--ttl":
+				i++
+				if i < len(args) {
+					req["ttl"] = args[i]
+				}
+			case "--label":
+				i++
+				if i < len(args) {
+					addLabelMap(labels, args[i])
+				}
+			case "--actor":
+				i++
+				if i < len(args) {
+					req["actor"] = args[i]
+				}
+			case "--status":
+				i++
+				if i < len(args) {
+					q.Set("status", args[i])
+				}
+			}
+		}
+		if len(labels) > 0 {
+			req["labels"] = labels
+		}
+		if create {
+			return httpPostJSON(base+"/api/v1/enrollments", req)
+		}
+		return httpGet(base + "/api/v1/enrollments?" + q.Encode())
 	case "data-resume":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
@@ -1605,6 +1701,12 @@ func queryManager(base string, args []string) ([]byte, error) {
 		return queryManagerAPI(base, append([]string{"agent-health"}, managerArgsAfterAction(args, "list", "get")...))
 	case "sessions":
 		return queryManagerAPI(base, append([]string{"agent-sessions"}, managerArgsAfterAction(args, "list")...))
+	case "artifacts":
+		return queryManagerArtifacts(base, args[1:])
+	case "channels":
+		return queryManagerChannels(base, args[1:])
+	case "enrollments":
+		return queryManagerEnrollments(base, args[1:])
 	case "resume":
 		return queryManagerAPI(base, append([]string{"data-resume"}, managerArgsAfterAction(args, "get")...))
 	case "metrics":
@@ -1663,6 +1765,103 @@ func queryManager(base string, args []string) ([]byte, error) {
 		return queryManagerAPI(base, args)
 	}
 	return nil, fmt.Errorf("unknown manager command %q", strings.Join(args, " "))
+}
+
+func queryManagerArtifactsAPI(base string, args []string) ([]byte, error) {
+	q := url.Values{}
+	form := map[string]string{}
+	var filePath, artifactID string
+	upload, activate, revoke := false, false, false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--upload":
+			upload = true
+		case "--activate":
+			activate = true
+		case "--revoke":
+			revoke = true
+		case "--artifact-id":
+			i++
+			if i < len(args) {
+				artifactID = args[i]
+			}
+		case "--file":
+			i++
+			if i < len(args) {
+				filePath = args[i]
+			}
+		case "--tenant-id":
+			i++
+			if i < len(args) {
+				q.Set("tenant_id", args[i])
+				form["tenant_id"] = args[i]
+			}
+		case "--name", "--kind", "--version", "--os", "--arch", "--status", "--actor":
+			key := strings.TrimPrefix(args[i], "--")
+			i++
+			if i < len(args) {
+				if key == "kind" || key == "status" {
+					q.Set(key, args[i])
+				}
+				form[key] = args[i]
+			}
+		}
+	}
+	if upload {
+		return httpPostMultipart(base+"/api/v1/artifacts", filePath, form)
+	}
+	if activate || revoke {
+		if artifactID == "" {
+			return nil, fmt.Errorf("--artifact-id is required")
+		}
+		action := "activate"
+		if revoke {
+			action = "revoke"
+		}
+		suffix := ""
+		if tenantID := q.Get("tenant_id"); tenantID != "" {
+			suffix = "?tenant_id=" + url.QueryEscape(tenantID)
+		}
+		return httpPostJSON(base+"/api/v1/artifacts/"+artifactID+"/"+action+suffix, map[string]any{})
+	}
+	return httpGet(base + "/api/v1/artifacts?" + q.Encode())
+}
+
+func queryManagerChannelsAPI(base string, args []string) ([]byte, error) {
+	q := url.Values{}
+	req := map[string]any{}
+	upsert := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--upsert":
+			upsert = true
+		case "--tenant-id":
+			i++
+			if i < len(args) {
+				q.Set("tenant_id", args[i])
+				req["tenant_id"] = args[i]
+			}
+		case "--channel":
+			i++
+			if i < len(args) {
+				req["channel"] = args[i]
+			}
+		case "--artifact-id":
+			i++
+			if i < len(args) {
+				req["artifact_id"] = args[i]
+			}
+		case "--actor":
+			i++
+			if i < len(args) {
+				req["actor"] = args[i]
+			}
+		}
+	}
+	if upsert {
+		return httpPostJSON(base+"/api/v1/channels", req)
+	}
+	return httpGet(base + "/api/v1/channels?" + q.Encode())
 }
 
 func queryManagerPolicies(base string, args []string) ([]byte, error) {
@@ -1905,6 +2104,52 @@ func queryManagerRoles(base string, args []string) ([]byte, error) {
 	}
 }
 
+func queryManagerArtifacts(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list":
+		return queryManagerAPI(base, append([]string{"artifacts"}, managerArgsAfterAction(args, "list")...))
+	case "upload":
+		return queryManagerAPI(base, append([]string{"artifacts", "--upload"}, args[1:]...))
+	case "activate":
+		return queryManagerAPI(base, append([]string{"artifacts", "--activate"}, args[1:]...))
+	case "revoke":
+		return queryManagerAPI(base, append([]string{"artifacts", "--revoke"}, args[1:]...))
+	default:
+		return nil, fmt.Errorf("unknown manager artifacts command %q", args[0])
+	}
+}
+
+func queryManagerChannels(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list":
+		return queryManagerAPI(base, append([]string{"channels"}, managerArgsAfterAction(args, "list")...))
+	case "upsert":
+		return queryManagerAPI(base, append([]string{"channels", "--upsert"}, args[1:]...))
+	default:
+		return nil, fmt.Errorf("unknown manager channels command %q", args[0])
+	}
+}
+
+func queryManagerEnrollments(base string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	switch args[0] {
+	case "list":
+		return queryManagerAPI(base, append([]string{"enrollments"}, managerArgsAfterAction(args, "list")...))
+	case "create":
+		return queryManagerAPI(base, append([]string{"enrollments", "--create"}, args[1:]...))
+	default:
+		return nil, fmt.Errorf("unknown manager enrollments command %q", args[0])
+	}
+}
+
 func managerArgsAfterAction(args []string, actions ...string) []string {
 	if len(args) >= 2 {
 		for _, action := range actions {
@@ -1985,6 +2230,50 @@ func httpPostJSON(url string, body any) ([]byte, error) {
 		return nil, err
 	}
 	return httpPostRaw(url, data)
+}
+
+func httpPostMultipart(url, filePath string, fields map[string]string) ([]byte, error) {
+	if strings.TrimSpace(filePath) == "" {
+		return nil, fmt.Errorf("--file is required")
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for k, v := range fields {
+		if err := writer.WriteField(k, v); err != nil {
+			return nil, err
+		}
+	}
+	part, err := writer.CreateFormFile("file", filePath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, url, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	addAuthHeaders(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("POST %s: %s: %s", url, resp.Status, string(out))
+	}
+	return out, nil
 }
 
 func httpPostRaw(url string, data []byte) ([]byte, error) {

@@ -29,6 +29,8 @@ func main() {
 	kafkaTopic := flag.String("kafka-topic", envDefault("SYSARMOR_KAFKA_TOPIC", "sysarmor.agent.databatch.raw"), "Kafka raw data batch topic")
 	kafkaGroupID := flag.String("kafka-group-id", envDefault("SYSARMOR_KAFKA_GROUP_ID", "sysarmor-ingest-worker"), "Kafka consumer group id")
 	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable security data")
+	opensearchUsername := flag.String("opensearch-username", envDefault("SYSARMOR_OPENSEARCH_USERNAME", ""), "OpenSearch basic auth username")
+	opensearchPassword := flag.String("opensearch-password", envDefault("SYSARMOR_OPENSEARCH_PASSWORD", ""), "OpenSearch basic auth password")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -60,7 +62,7 @@ func main() {
 		}
 	}()
 
-	consumer, err := platformkafka.NewReaderConsumer(splitCSV(*kafkaBrokers), *kafkaTopic, *kafkaGroupID)
+	consumer, err := openKafkaConsumerWithRetry(ctx, splitCSV(*kafkaBrokers), *kafkaTopic, *kafkaGroupID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open kafka consumer: %v\n", err)
 		os.Exit(1)
@@ -73,7 +75,7 @@ func main() {
 
 	var indexer platformopensearch.Indexer = platformopensearch.NoopIndexer{}
 	if *opensearchURL != "" {
-		indexer, err = platformopensearch.NewHTTPIndexer(*opensearchURL)
+		indexer, err = platformopensearch.NewHTTPIndexerWithAuth(*opensearchURL, *opensearchUsername, *opensearchPassword)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "open opensearch indexer: %v\n", err)
 			os.Exit(1)
@@ -105,4 +107,23 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func openKafkaConsumerWithRetry(ctx context.Context, brokers []string, topic, groupID string) (*platformkafka.ReaderConsumer, error) {
+	var lastErr error
+	for attempt := 0; attempt < 30; attempt++ {
+		consumer, err := platformkafka.NewReaderConsumer(brokers, topic, groupID)
+		if err == nil {
+			return consumer, nil
+		}
+		lastErr = err
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
 }

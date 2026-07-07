@@ -75,7 +75,7 @@ data_plane:
 health:
   interval: 500ms
 EOF"
-  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S" >/dev/null
+  curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$S" >/dev/null
   docker exec tetragon sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/bin/sysarmor-agent run --config '$WORK/agent.yaml' > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
   cleanup_agent() {
     docker exec tetragon sh -c "if [ -f '$WORK/agent.pid' ]; then kill \"\$(cat '$WORK/agent.pid')\" 2>/dev/null || true; fi" >/dev/null 2>&1 || true
@@ -97,7 +97,7 @@ EOF"
     fi
     sleep 1
   done
-  docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S" >/dev/null
+  curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$S" >/dev/null
   run_attack
   sleep "$DUR"
   cleanup_agent
@@ -130,8 +130,8 @@ echo "[capture-container] v1 replay/stream 调试路径: $S（窗口 ${DUR}s）"
 POLICY="$ROOT/environments/resources/syscall-capture.yaml"
 docker cp "$POLICY" tetragon:/tmp/p.yaml 2>/dev/null || true
 docker exec tetragon tetra tracingpolicy add /tmp/p.yaml 2>/dev/null | tail -1 || true
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S-stream" >/dev/null
-docker exec -e NODE_A_DOCKER="$NODE_A_DOCKER" tetragon sh -c "rm -f /tmp/cap-$S.json; timeout $DUR tetra getevents -o json 2>/dev/null | grep -F '\"docker\":\"'\$NODE_A_DOCKER | tee /tmp/cap-$S.json | /opt/sysarmor/bin/sysarmor-agent --manager http://10.66.0.10:9443 --agent-id container-node-a-stream --host-id container-node-a --label scenario=$S-stream --stream-jsonl - --batch-size 256 --flush-interval 1s" &
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$S-stream" >/dev/null
+docker exec -e NODE_A_DOCKER="$NODE_A_DOCKER" tetragon sh -c "rm -f /tmp/cap-$S.json; timeout $DUR tetra getevents -o json 2>/dev/null | grep -F '\"docker\":\"'\$NODE_A_DOCKER | tee /tmp/cap-$S.json | /opt/sysarmor/bin/sysarmor-agent --manager 10.66.0.14:9444 --agent-id container-node-a-stream --host-id container-node-a --label scenario=$S-stream --stream-jsonl - --batch-size 256 --flush-interval 1s" &
 CAP=$!
 sleep 3
 run_attack
@@ -159,9 +159,9 @@ fi
 echo "[capture-container] 生成 Phase1 replay events 并上传 manager"
 python3 "$ROOT/shared/fixtures/replay_scenario.py" --scenario "$S" --out "$RESULTS/$S.sensor.jsonl"
 docker cp "$RESULTS/$S.sensor.jsonl" mgr:/tmp/$S.sensor.jsonl
-docker exec mgr curl -sf -X POST "http://127.0.0.1:9443/api/v1/reset?label=scenario=$S" >/dev/null
+curl -sf -X POST "http://127.0.0.1:19443/api/v1/reset?label=scenario=$S" >/dev/null
 docker exec mgr /opt/sysarmor/bin/sysarmor-agent \
-  --manager http://127.0.0.1:9443 \
+  --manager 10.66.0.14:9444 \
   --agent-id container-node-a \
   --host-id container-node-a \
   --label scenario="$S" \

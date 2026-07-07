@@ -4,22 +4,23 @@ set -euo pipefail
 OUT_DIR="${1:-test/.results/pki}"
 TENANT_ID="${2:-default}"
 AGENT_ID="${3:-agent-mtls}"
-MANAGER_DNS="${4:-localhost}"
+GATEWAY_DNS="${4:-localhost}"
 TRUST_DOMAIN="${SYSARMOR_TRUST_DOMAIN:-sysarmor.local}"
 DAYS="${SYSARMOR_CERT_DAYS:-365}"
+GATEWAY_IPS="${SYSARMOR_GATEWAY_IPS:-127.0.0.1}"
 
 mkdir -p "$OUT_DIR"
 chmod 700 "$OUT_DIR"
 
 CA_KEY="$OUT_DIR/ca-key.pem"
 CA_CERT="$OUT_DIR/ca.pem"
-SERVER_KEY="$OUT_DIR/manager-key.pem"
-SERVER_CSR="$OUT_DIR/manager.csr"
-SERVER_CERT="$OUT_DIR/manager.pem"
+SERVER_KEY="$OUT_DIR/gateway-key.pem"
+SERVER_CSR="$OUT_DIR/gateway.csr"
+SERVER_CERT="$OUT_DIR/gateway.pem"
 CLIENT_KEY="$OUT_DIR/agent-key.pem"
 CLIENT_CSR="$OUT_DIR/agent.csr"
 CLIENT_CERT="$OUT_DIR/agent.pem"
-SERVER_EXT="$OUT_DIR/manager.ext"
+SERVER_EXT="$OUT_DIR/gateway.ext"
 CLIENT_EXT="$OUT_DIR/agent.ext"
 
 openssl genrsa -out "$CA_KEY" 4096 >/dev/null 2>&1
@@ -29,13 +30,21 @@ openssl req -x509 -new -nodes -key "$CA_KEY" -sha256 -days "$DAYS" \
 
 openssl genrsa -out "$SERVER_KEY" 2048 >/dev/null 2>&1
 openssl req -new -key "$SERVER_KEY" \
-  -subj "/CN=$MANAGER_DNS" \
+  -subj "/CN=$GATEWAY_DNS" \
   -out "$SERVER_CSR" >/dev/null 2>&1
+SAN="DNS:$GATEWAY_DNS,DNS:localhost"
+IFS=',' read -r -a ip_parts <<< "$GATEWAY_IPS"
+for ip in "${ip_parts[@]}"; do
+  ip="${ip//[[:space:]]/}"
+  if [[ -n "$ip" ]]; then
+    SAN="$SAN,IP:$ip"
+  fi
+done
 cat > "$SERVER_EXT" <<EOF
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:$MANAGER_DNS,DNS:localhost,IP:127.0.0.1
+subjectAltName=$SAN
 EOF
 openssl x509 -req -in "$SERVER_CSR" -CA "$CA_CERT" -CAkey "$CA_KEY" -CAcreateserial \
   -out "$SERVER_CERT" -days "$DAYS" -sha256 -extfile "$SERVER_EXT" >/dev/null 2>&1
@@ -68,7 +77,7 @@ Identity:
 
 Production convention:
   - The URI SAN is the canonical agent identity.
-  - The manager must validate the issuing CA and bind uri_san to tenant_id/agent_id.
+  - The gateway must validate the issuing CA and bind uri_san to tenant_id/agent_id.
   - Reusing tenant_id/agent_id with a different certificate principal is rejected.
   - Rotation should issue a new certificate for the same URI SAN from a trusted CA.
   - Revocation and short certificate lifetimes should be handled by production PKI.
@@ -76,8 +85,8 @@ Production convention:
 
 Files:
   ca.pem
-  manager.pem
-  manager-key.pem
+  gateway.pem
+  gateway-key.pem
   agent.pem
   agent-key.pem
 EOF

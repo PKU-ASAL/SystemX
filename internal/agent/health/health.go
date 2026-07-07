@@ -99,19 +99,25 @@ type TelemetryBusHealth struct {
 }
 
 type TelemetryBatcherHealth struct {
-	PendingEvents   uint64 `json:"pending_events"`
-	PendingSignals  uint64 `json:"pending_signals"`
-	QueuedBatches   uint64 `json:"queued_batches"`
-	QueueCapacity   uint64 `json:"queue_capacity"`
-	DroppedBatches  uint64 `json:"dropped_batches"`
-	DroppedEvents   uint64 `json:"dropped_events"`
-	DroppedSignals  uint64 `json:"dropped_signals"`
-	FlushedBatches  uint64 `json:"flushed_batches"`
-	FlushedEvents   uint64 `json:"flushed_events"`
-	FlushedSignals  uint64 `json:"flushed_signals"`
-	LastFlushReason string `json:"last_flush_reason,omitempty"`
-	Closed          bool   `json:"closed"`
-	LastError       string `json:"last_error,omitempty"`
+	PendingEvents     uint64 `json:"pending_events"`
+	PendingSignals    uint64 `json:"pending_signals"`
+	QueuedBatches     uint64 `json:"queued_batches"`
+	QueueCapacity     uint64 `json:"queue_capacity"`
+	DroppedBatches    uint64 `json:"dropped_batches"`
+	DroppedEvents     uint64 `json:"dropped_events"`
+	DroppedSignals    uint64 `json:"dropped_signals"`
+	FlushedBatches    uint64 `json:"flushed_batches"`
+	FlushedEvents     uint64 `json:"flushed_events"`
+	FlushedSignals    uint64 `json:"flushed_signals"`
+	PendingBytes      uint64 `json:"pending_bytes"`
+	MaxBytes          uint64 `json:"max_bytes"`
+	FlushedByCount    uint64 `json:"flushed_by_count"`
+	FlushedByBytes    uint64 `json:"flushed_by_bytes"`
+	FlushedByInterval uint64 `json:"flushed_by_interval"`
+	FlushedByShutdown uint64 `json:"flushed_by_shutdown"`
+	LastFlushReason   string `json:"last_flush_reason,omitempty"`
+	Closed            bool   `json:"closed"`
+	LastError         string `json:"last_error,omitempty"`
 }
 
 type TelemetrySenderHealth struct {

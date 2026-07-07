@@ -60,7 +60,7 @@ func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 			return err
 		}
 	}
-	health, err := runner.collectHealth(ctx, r.sensor, nil, r.batcher, r.sender, r.startedAt)
+	health, err := runner.collectHealth(ctx, r.sensor, r.bus, r.batcher, r.sender, r.startedAt)
 	if err == nil {
 		if err := session.SendHealth(ctx, health); err != nil {
 			return err
@@ -105,7 +105,7 @@ func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 				return err
 			}
 		case <-ticker.C:
-			health, err := runner.collectHealth(ctx, r.sensor, nil, r.batcher, r.sender, r.startedAt)
+			health, err := runner.collectHealth(ctx, r.sensor, r.bus, r.batcher, r.sender, r.startedAt)
 			if err != nil {
 				return err
 			}

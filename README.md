@@ -1,6 +1,8 @@
 # SysArmor Next
 
-SysArmor Next is a Go prototype for an EDR/XDR platform path described in `references/docs/architecture.md`.
+SysArmor Next is a Go prototype for an EDR/XDR platform. The current repository
+keeps product source, deployment assets, tests, and future packaging/UI work in
+separate top-level areas.
 
 Current product path:
 
@@ -16,20 +18,25 @@ agent-owned sensor runtime
 
 - `cmd/sysarmor-agent`: owns endpoint runtime, sensor lifecycle, normalization, local detection, local control, and data append.
 - `cmd/sysarmor-manager`: platform control/query prototype for agents, policies, responses, incidents, evidence, and metrics.
+- `cmd/sysarmor-gateway`: agent-facing access layer for data/control plane traffic.
+- `cmd/sysarmor-worker`: platform analytics and indexing worker.
 - `cmd/sysarmorctl`: CLI/control boundary used by local agent workflows and tests.
 - `api/proto`: source of truth for generated protobuf contracts.
 - `internal/endpoint`: normalizer, detection engine, ring buffers, upload clients.
+- `internal/sensors`: sensor contracts and platform-specific sensor adapters.
+- `internal/manager/api`: operator-facing manager HTTP API.
 - `internal/analytics`: entity, evidence, correlation, convergence, and incident logic.
 - `internal/store`: platform state store prototypes and Postgres foundations.
+- `packages`: product distribution package definitions for agent/sensor bundles.
+- `deployments`: compose, Docker, systemd, PKI, and sensor deployment assets.
+- `web`: reserved for future operator-facing UI projects.
 - `test`: unit, endpoint, topology, and platform test scopes.
 
 Core docs:
 
-- `references/docs/architecture.md`
-- `references/docs/endpoint-agent.md`
-- `references/docs/policy-content.md`
-- `references/docs/testing-benchmark.md`
-- `references/docs/roadmap.md`
+- `docs/architecture/repo-layout.md`
+- `test/README.md`
+- `test/DETAILS.md`
 
 ## Build And Test
 
@@ -41,22 +48,22 @@ make test
 
 `make api` requires `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc` on `PATH` or under `$(go env GOPATH)/bin`.
 
-The build writes static binaries to `bin/`, which is ignored because it is regenerated.
+The build writes static binaries to `dist/bin/`, which is ignored because it is regenerated.
 
-## Test Scopes
+## Test Suites
 
 Run from `test/`:
 
 ```bash
 make test-unit
-make test-endpoint
-make test-topology SCENARIO=apt-fileless-c2
-make test-platform
+make product-endpoint
+make product-topology SCENARIO=apt-fileless-c2
+make product-platform
 
-make bench-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
-make bench-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
-make bench-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
-make bench-topology ENV=vm-topology
+make performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
+make performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
+make performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
+make effectiveness-topology ENV=vm-topology
 ```
 
 Environment choices:
@@ -65,10 +72,10 @@ Environment choices:
 - `vm-endpoint`: one fresh endpoint VM per benchmark run; source of truth for agent/sensor CPU and memory conclusions.
 - `vm-topology`: three VMs (`mgr`, `node-a`, `attacker`) for manager-agent-C2 product path checks.
 
-Endpoint benchmark reports use these standard phases: `startup`, `steady`,
+Performance/effectiveness reports use these standard phases: `startup`, `steady`,
 `workload`, `activity`, `persistence`, and `overall`.
 
-`test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored.
+`test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored. `vm-topology` deployment input cache lives under `test/environments/vm-topology/deploy/`, split into a lightweight platform bundle and a reusable Docker image bundle.
 
 ## Data And Control Plane Contract
 
@@ -89,7 +96,8 @@ The manager checks the certificate identity against `DataBatch.header.tenant_id/
 
 `sysarmorctl --agent-sock ...` is a local operator/debug boundary. It talks to the local agent over Unix socket gRPC and reads the local spool/WAL as a side channel for watch/query commands. Cloud or manager communication must use `AgentDataPlaneService.AppendBatch` and `AgentControlPlaneService.Connect`; local ctl is not a second production data plane.
 
-See [references/docs/agent-manager-contract.md](references/docs/agent-manager-contract.md) for the table-form contract.
+The API/protobuf contracts under `api/proto/` are the source of truth for this
+boundary.
 
 ## Useful Debug Commands
 
