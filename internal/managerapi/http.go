@@ -50,6 +50,7 @@ type ManagerStore interface {
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
 	CreateEnrollment(store.Enrollment) store.Enrollment
+	MarkEnrollmentUsed(string, time.Time) (store.Enrollment, bool)
 	RecordAgentCertificate(store.AgentCertificate) store.AgentCertificate
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command

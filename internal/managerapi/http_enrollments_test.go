@@ -4,14 +4,21 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
@@ -119,6 +126,122 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), uploaded.Artifact.SHA256) || !strings.Contains(rec.Body.String(), "/api/v1/artifacts/"+uploaded.Artifact.ArtifactID+"/download") {
 		t.Fatalf("artifact install script status = %d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestEnrollmentCertificateConsumesToken(t *testing.T) {
+	st := &store.Store{}
+	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
+	handler := srv.Handler()
+
+	token := createTestEnrollment(t, handler, "agent-cert")
+	csr := testCSR(t, "tenant_id:default,agent_id:agent-cert")
+	body := `{"token":` + strconvQuote(token) + `,"csr":` + strconvQuote(csr) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"certificate_pem"`) {
+		t.Fatalf("certificate status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	enrollments := st.ListEnrollments("default", "used")
+	if len(enrollments) != 1 || enrollments[0].UsedAt.IsZero() {
+		t.Fatalf("used enrollments = %+v", enrollments)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("second certificate status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEnrollmentCertificateRejectsMismatchedCSR(t *testing.T) {
+	st := &store.Store{}
+	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
+	handler := srv.Handler()
+
+	token := createTestEnrollment(t, handler, "agent-cert")
+	csr := testCSR(t, "tenant_id:default,agent_id:other-agent")
+	body := `{"token":` + strconvQuote(token) + `,"csr":` + strconvQuote(csr) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "does not match enrollment") {
+		t.Fatalf("mismatched csr status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := st.ListEnrollments("default", "used"); len(got) != 0 {
+		t.Fatalf("mismatched CSR consumed enrollment: %+v", got)
+	}
+}
+
+func createTestEnrollment(t *testing.T, handler http.Handler, agentID string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"`+agentID+`",
+		"gateway_addr":"127.0.0.1:19444",
+		"ttl":"1h"
+	}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create enrollment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	return created.Token
+}
+
+func testCA(t *testing.T) ([]byte, *x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "sysarmor-test-ca"},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), cert, key
+}
+
+func testCSR(t *testing.T, commonName string) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: commonName}}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}))
+}
+
+func strconvQuote(v string) string {
+	data, _ := json.Marshal(v)
+	return string(data)
 }
 
 func multipartArtifactRequest(t *testing.T, target string, fields map[string]string, data []byte) *http.Request {

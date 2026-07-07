@@ -94,7 +94,8 @@ func (s *Server) agentInstallScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "token is required", http.StatusBadRequest)
 		return
 	}
-	enrollment, ok := s.store.GetEnrollmentByTokenHash(enrollmentTokenHash(token))
+	tokenHash := enrollmentTokenHash(token)
+	enrollment, ok := s.store.GetEnrollmentByTokenHash(tokenHash)
 	if !ok || enrollment.Status != "active" {
 		http.Error(w, "enrollment not found", http.StatusNotFound)
 		return
@@ -125,7 +126,8 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 	if token == "" {
 		token = strings.TrimSpace(r.URL.Query().Get("token"))
 	}
-	enrollment, ok := s.store.GetEnrollmentByTokenHash(enrollmentTokenHash(token))
+	tokenHash := enrollmentTokenHash(token)
+	enrollment, ok := s.store.GetEnrollmentByTokenHash(tokenHash)
 	if !ok || enrollment.Status != "active" {
 		http.Error(w, "enrollment not found", http.StatusNotFound)
 		return
@@ -139,6 +141,12 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	usedAt := time.Now().UTC()
+	enrollment, ok = s.store.MarkEnrollmentUsed(tokenHash, usedAt)
+	if !ok {
+		http.Error(w, "enrollment already used", http.StatusConflict)
+		return
+	}
 	s.store.RecordAgentCertificate(store.AgentCertificate{
 		TenantID:       defaultString(enrollment.TenantID, "default"),
 		AgentID:        enrollment.AgentID,
@@ -147,7 +155,7 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 		Subject:        cert.Subject.String(),
 		NotBefore:      cert.NotBefore,
 		NotAfter:       cert.NotAfter,
-		CreatedAt:      time.Now().UTC(),
+		CreatedAt:      usedAt,
 		CertificatePEM: string(certPEM),
 	})
 	if err := s.store.Save(); err != nil {
@@ -176,6 +184,10 @@ func (s *Server) signAgentCSR(enrollment store.Enrollment, csrPEM []byte) ([]byt
 	}
 	if err := csr.CheckSignature(); err != nil {
 		return nil, nil, fmt.Errorf("verify csr signature: %w", err)
+	}
+	wantCN := fmt.Sprintf("tenant_id:%s,agent_id:%s", defaultString(enrollment.TenantID, "default"), enrollment.AgentID)
+	if csr.Subject.CommonName != wantCN {
+		return nil, nil, fmt.Errorf("csr common name %q does not match enrollment %q", csr.Subject.CommonName, wantCN)
 	}
 	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serial, err := rand.Int(rand.Reader, serialLimit)

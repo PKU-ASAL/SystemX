@@ -1717,6 +1717,54 @@ func (s *Store) GetEnrollmentByTokenHash(tokenHash string) (Enrollment, bool) {
 	return Enrollment{}, false
 }
 
+func (s *Store) MarkEnrollmentUsed(tokenHash string, usedAt time.Time) (Enrollment, bool) {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return Enrollment{}, false
+	}
+	if usedAt.IsZero() {
+		usedAt = time.Now().UTC()
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		enrollment, ok, err := backend.GetEnrollmentByTokenHash(ctx, tokenHash)
+		if err == nil && ok && enrollment.Status == "active" {
+			enrollment.Status = "used"
+			enrollment.UsedAt = usedAt
+			if err := backend.WriteEnrollment(ctx, enrollment); err == nil {
+				s.replaceEnrollmentInMemory(enrollment)
+				return cloneEnrollment(enrollment), true
+			}
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, enrollment := range s.Enrollments {
+		if enrollment.TokenHash != tokenHash {
+			continue
+		}
+		if enrollment.Status != "active" {
+			return Enrollment{}, false
+		}
+		enrollment.Status = "used"
+		enrollment.UsedAt = usedAt
+		s.Enrollments[i] = enrollment
+		return cloneEnrollment(enrollment), true
+	}
+	return Enrollment{}, false
+}
+
+func (s *Store) replaceEnrollmentInMemory(enrollment Enrollment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.Enrollments {
+		if existing.TenantID == enrollment.TenantID && existing.EnrollmentID == enrollment.EnrollmentID {
+			s.Enrollments[i] = enrollment
+			return
+		}
+	}
+	s.Enrollments = append(s.Enrollments, enrollment)
+}
+
 func (s *Store) UpsertArtifact(artifact Artifact) Artifact {
 	artifact = normalizeArtifact(artifact)
 	if artifact.ArtifactID == "" || artifact.Name == "" || artifact.Kind == "" || artifact.Version == "" || artifact.SHA256 == "" {
