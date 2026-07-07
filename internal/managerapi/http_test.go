@@ -26,10 +26,11 @@ func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Docum
 
 type fakeSearcher struct {
 	docs map[string][]json.RawMessage
+	last platformopensearch.SearchRequest
 }
 
-func (s fakeSearcher) Search(_ context.Context, index string, _ int) ([]json.RawMessage, error) {
-	return append([]json.RawMessage(nil), s.docs[index]...), nil
+func (s fakeSearcher) Search(_ context.Context, search platformopensearch.SearchRequest) ([]json.RawMessage, error) {
+	return append([]json.RawMessage(nil), s.docs[search.Index]...), nil
 }
 
 func newTestServer(st *store.Store) *Server {

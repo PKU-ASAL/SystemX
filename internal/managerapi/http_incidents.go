@@ -7,24 +7,33 @@ import (
 
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	labels := parseLabelSelector(q["label"])
+	limit := parseUint(q.Get("limit"))
+	offset := parseUint(q.Get("offset"))
 	if s.searcher != nil {
-		raw, err := s.searchTelemetry(r.Context(), "sysarmor-incidents")
+		raw, err := s.searchTelemetry(r.Context(), platformopensearch.SearchRequest{
+			Index:  "sysarmor-incidents",
+			Size:   searchLimit(limit),
+			Offset: int(offset),
+			Labels: labels,
+		})
 		if err != nil {
 			http.Error(w, fmt.Sprintf("query incidents: %v", err), http.StatusBadGateway)
 			return
 		}
-		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), nil)
-		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+		raw = filterRawTelemetry(raw, labels, nil)
+		writeRawList(w, raw)
 		return
 	}
-	incidents := s.store.ListIncidents(parseLabelSelector(q["label"]))
-	writeIncidentList(w, pageSlice(incidents, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+	incidents := s.store.ListIncidents(labels)
+	writeIncidentList(w, pageSlice(incidents, limit, offset))
 }
 
 func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {

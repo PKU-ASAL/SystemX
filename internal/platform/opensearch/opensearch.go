@@ -25,7 +25,18 @@ type Indexer interface {
 }
 
 type Searcher interface {
-	Search(context.Context, string, int) ([]json.RawMessage, error)
+	Search(context.Context, SearchRequest) ([]json.RawMessage, error)
+}
+
+type SearchRequest struct {
+	Index     string
+	Size      int
+	Offset    int
+	Labels    map[string]string
+	Exact     map[string]string
+	Bool      map[string]bool
+	SortField string
+	SortDesc  bool
 }
 
 type DisabledIndexer struct{}
@@ -88,23 +99,31 @@ func (i *HTTPIndexer) Index(ctx context.Context, doc Document) error {
 	return nil
 }
 
-func (i *HTTPIndexer) Search(ctx context.Context, index string, size int) ([]json.RawMessage, error) {
+func (i *HTTPIndexer) Search(ctx context.Context, search SearchRequest) ([]json.RawMessage, error) {
 	if i == nil || i.client == nil || i.base == "" {
 		return nil, ErrDisabled
 	}
-	index = strings.TrimSpace(index)
+	index := strings.TrimSpace(search.Index)
 	if index == "" {
 		return nil, fmt.Errorf("opensearch index is required")
 	}
+	size := search.Size
 	if size <= 0 {
-		size = 1000
+		size = 100
 	}
-	body, err := json.Marshal(map[string]any{
-		"size": size,
-		"query": map[string]any{
-			"match_all": map[string]any{},
-		},
-	})
+	bodyMap := map[string]any{
+		"size":  size,
+		"from":  max(search.Offset, 0),
+		"query": searchQuery(search),
+	}
+	if sortField := strings.TrimSpace(search.SortField); sortField != "" {
+		order := "asc"
+		if search.SortDesc {
+			order = "desc"
+		}
+		bodyMap["sort"] = []map[string]any{{sortField: map[string]any{"order": order, "unmapped_type": "keyword"}}}
+	}
+	body, err := json.Marshal(bodyMap)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +165,33 @@ func (i *HTTPIndexer) Search(ctx context.Context, index string, size int) ([]jso
 		}
 	}
 	return out, nil
+}
+
+func searchQuery(search SearchRequest) map[string]any {
+	filters := make([]map[string]any, 0, len(search.Labels)+len(search.Exact)+len(search.Bool))
+	for key, value := range search.Labels {
+		if key = strings.TrimSpace(key); key != "" {
+			filters = append(filters, termFilter("labels."+key+".keyword", value))
+		}
+	}
+	for field, value := range search.Exact {
+		if field = strings.TrimSpace(field); field != "" {
+			filters = append(filters, termFilter(field+".keyword", value))
+		}
+	}
+	for field, value := range search.Bool {
+		if field = strings.TrimSpace(field); field != "" {
+			filters = append(filters, map[string]any{"term": map[string]any{field: value}})
+		}
+	}
+	if len(filters) == 0 {
+		return map[string]any{"match_all": map[string]any{}}
+	}
+	return map[string]any{"bool": map[string]any{"filter": filters}}
+}
+
+func termFilter(field, value string) map[string]any {
+	return map[string]any{"term": map[string]any{field: value}}
 }
 
 func (i *HTTPIndexer) setAuth(req *http.Request) {

@@ -2,8 +2,11 @@ package opensearch
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -45,7 +48,7 @@ func TestHTTPIndexerSearchesDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHTTPIndexer() error = %v", err)
 	}
-	docs, err := indexer.Search(context.Background(), "sysarmor-events", 10)
+	docs, err := indexer.Search(context.Background(), SearchRequest{Index: "sysarmor-events", Size: 10})
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -71,7 +74,51 @@ func TestHTTPIndexerUsesBasicAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHTTPIndexerWithAuth() error = %v", err)
 	}
-	if _, err := indexer.Search(context.Background(), "sysarmor-events", 10); err != nil {
+	if _, err := indexer.Search(context.Background(), SearchRequest{Index: "sysarmor-events", Size: 10}); err != nil {
 		t.Fatalf("Search() error = %v", err)
+	}
+}
+
+func TestHTTPIndexerSearchPushesFilters(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &body); err != nil {
+			t.Fatalf("decode body: %v body=%s", err, data)
+		}
+		_, _ = w.Write([]byte(`{"hits":{"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	indexer, err := NewHTTPIndexer(server.URL)
+	if err != nil {
+		t.Fatalf("NewHTTPIndexer() error = %v", err)
+	}
+	_, err = indexer.Search(context.Background(), SearchRequest{
+		Index:  "sysarmor-signals",
+		Size:   25,
+		Offset: 50,
+		Labels: map[string]string{"scenario": "apt-staged-drop"},
+		Exact:  map[string]string{"where": "SIGNAL_WHERE_CLOUD"},
+		Bool:   map[string]bool{"terminal": true},
+	})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	encoded, _ := json.Marshal(body)
+	got := string(encoded)
+	for _, want := range []string{
+		`"size":25`,
+		`"from":50`,
+		`"labels.scenario.keyword":"apt-staged-drop"`,
+		`"where.keyword":"SIGNAL_WHERE_CLOUD"`,
+		`"terminal":true`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("search body missing %s: %s", want, got)
+		}
 	}
 }
