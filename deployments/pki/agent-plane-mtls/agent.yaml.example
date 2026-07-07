@@ -11,7 +11,7 @@ manager:
   tls_key: "/etc/sysarmor/pki/agent-key.pem"
   tls_server_name: "sysarmor-gateway.example.com"
 control:
-  socket_path: "/var/run/sysarmor/agent.sock"
+  socket_path: "/run/sysarmor/agent.sock"
 sensor:
   backend: "tetragon"
   mode: "managed"

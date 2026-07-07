@@ -1,1 +1,1 @@
-FROM sysarmor-kafka:latest
+FROM apache/kafka:latest

@@ -21,6 +21,7 @@ type Backend interface {
 	ListAgents(ctx context.Context) ([]AgentIdentity, error)
 	ListAgentHealth(ctx context.Context) ([]agenthealth.AgentHealth, error)
 	GetAgentHealth(ctx context.Context, tenantID, agentID string) (agenthealth.AgentHealth, bool, error)
+	ListAgentSessions(ctx context.Context, tenantID, agentID string) ([]AgentSession, error)
 	ListIncidents(ctx context.Context, labels LabelSelector) ([]*incidentv1.Incident, error)
 	ListResponses(ctx context.Context, tenantID, agentID string) ([]responsemodel.AuditRecord, error)
 	ListControlCommands(ctx context.Context, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
@@ -29,11 +30,21 @@ type Backend interface {
 	ListPolicyAudits(ctx context.Context, tenantID, policyID string) ([]policymodel.AuditRecord, error)
 	GetPolicy(ctx context.Context, tenantID, policyID string, version uint64) (policymodel.Policy, bool, error)
 	EffectivePolicy(ctx context.Context, tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
+	ListEnrollments(ctx context.Context, tenantID, status string) ([]Enrollment, error)
+	GetEnrollmentByTokenHash(ctx context.Context, tokenHash string) (Enrollment, bool, error)
+	ListArtifacts(ctx context.Context, tenantID, kind, status string) ([]Artifact, error)
+	GetArtifact(ctx context.Context, tenantID, artifactID string) (Artifact, bool, error)
+	ListChannels(ctx context.Context, tenantID string) ([]ArtifactChannel, error)
+	GetChannel(ctx context.Context, tenantID, channel string) (ArtifactChannel, bool, error)
 
 	WriteResponse(ctx context.Context, cmd responsemodel.Command, ack *responsemodel.Ack) error
 	WritePolicy(ctx context.Context, policy policymodel.Policy) error
 	WriteAssignment(ctx context.Context, assignment policymodel.Assignment) error
 	WritePolicyAudit(ctx context.Context, audit policymodel.AuditRecord) error
+	WriteEnrollment(ctx context.Context, enrollment Enrollment) error
+	WriteArtifact(ctx context.Context, artifact Artifact) error
+	WriteChannel(ctx context.Context, channel ArtifactChannel) error
+	WriteAgentCertificate(ctx context.Context, cert AgentCertificate) error
 }
 
 type MetricsBackend interface {

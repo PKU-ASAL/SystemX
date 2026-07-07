@@ -72,7 +72,8 @@ func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
 	}
 	unit := string(data)
 	for _, want := range []string{
-		"ExecStart=/usr/local/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml",
+		"ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml",
+		"WorkingDirectory=/opt/sysarmor/agent",
 		"Restart=always",
 		"WantedBy=multi-user.target",
 	} {

@@ -7,12 +7,13 @@ AGENT_BIN="${SYSARMOR_AGENT_BIN:-./bin/sysarmor-agent}"
 SERVICE_FILE="${SYSARMOR_AGENT_SERVICE:-$HERE/systemd/sysarmor-agent.service}"
 CONFIG_FILE="${SYSARMOR_AGENT_CONFIG:-}"
 POLICY_FILE="${SYSARMOR_COLLECTION_POLICY:-}"
-AGENT_DST="${SYSARMOR_AGENT_DST:-/usr/local/bin/sysarmor-agent}"
+AGENT_HOME="${SYSARMOR_AGENT_HOME:-/opt/sysarmor/agent}"
+AGENT_DST="${SYSARMOR_AGENT_DST:-$AGENT_HOME/bin/sysarmor-agent}"
 SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}"
 CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent.yaml}"
 POLICY_DST="${SYSARMOR_POLICY_DST:-/etc/sysarmor/policies/sysarmor-owned-tetragon.yaml}"
-BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/bundles/tetragon}"
-INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-/opt/sysarmor/sensors}"
+BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-$AGENT_HOME/bundles/tetragon}"
+INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-$AGENT_HOME/sensors}"
 SENSOR_INSTALLER="${SYSARMOR_TETRAGON_INSTALLER:-$HERE/../sensors/tetragon/install-bundle.sh}"
 ENABLE_SERVICE="${SYSARMOR_ENABLE_SERVICE:-1}"
 
@@ -44,7 +45,7 @@ systemctl disable tetragon 2>/dev/null || true
 pkill -x tetragon 2>/dev/null || true
 pkill -x tetra 2>/dev/null || true
 
-mkdir -p "$(dirname "$AGENT_DST")" "$(dirname "$SERVICE_DST")" /etc/sysarmor/policies /var/lib/sysarmor/agent "$BUNDLE_DIR" "$INSTALL_DIR"
+mkdir -p "$(dirname "$AGENT_DST")" "$(dirname "$SERVICE_DST")" /etc/sysarmor/policies /var/lib/sysarmor/agent "$BUNDLE_DIR" "$INSTALL_DIR" "$AGENT_HOME/runtime" "$AGENT_HOME/cache"
 install -m 0755 "$AGENT_BIN" "$AGENT_DST"
 install -m 0644 "$SERVICE_FILE" "$SERVICE_DST"
 

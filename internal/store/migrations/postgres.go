@@ -93,6 +93,61 @@ CREATE TABLE IF NOT EXISTS operator_role_bindings (
   PRIMARY KEY (tenant_id, actor)
 );
 
+CREATE TABLE IF NOT EXISTS enrollments (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  enrollment_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL DEFAULT '',
+  host_id TEXT NOT NULL DEFAULT '',
+  token_hash TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  used_at TIMESTAMPTZ,
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, enrollment_id)
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  artifact_id TEXT NOT NULL,
+  artifact_name TEXT NOT NULL DEFAULT '',
+  artifact_kind TEXT NOT NULL DEFAULT '',
+  artifact_version TEXT NOT NULL DEFAULT '',
+  artifact_os TEXT NOT NULL DEFAULT '',
+  artifact_arch TEXT NOT NULL DEFAULT '',
+  sha256 TEXT NOT NULL DEFAULT '',
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'draft',
+  storage_path TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, artifact_id)
+);
+
+CREATE TABLE IF NOT EXISTS artifact_channels (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  channel_name TEXT NOT NULL,
+  artifact_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, channel_name)
+);
+
+CREATE TABLE IF NOT EXISTS agent_certificates (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  agent_id TEXT NOT NULL DEFAULT '',
+  serial_number TEXT NOT NULL,
+  enrollment_id TEXT NOT NULL DEFAULT '',
+  not_before TIMESTAMPTZ NOT NULL,
+  not_after TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ,
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, serial_number)
+);
+
 CREATE TABLE IF NOT EXISTS events (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   event_id TEXT NOT NULL,
@@ -237,6 +292,10 @@ CREATE INDEX IF NOT EXISTS idx_policy_assignments_scope ON policy_assignments (t
 CREATE INDEX IF NOT EXISTS idx_policy_audit_policy ON policy_audit (tenant_id, policy_id);
 CREATE INDEX IF NOT EXISTS idx_policy_audit_actor ON policy_audit (tenant_id, actor);
 CREATE INDEX IF NOT EXISTS idx_operator_role_bindings_actor ON operator_role_bindings (tenant_id, actor);
+CREATE INDEX IF NOT EXISTS idx_enrollments_token_hash ON enrollments (token_hash);
+CREATE INDEX IF NOT EXISTS idx_enrollments_status ON enrollments (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_artifacts_lookup ON artifacts (tenant_id, artifact_kind, status);
+CREATE INDEX IF NOT EXISTS idx_artifacts_version ON artifacts (tenant_id, artifact_name, artifact_version);
 CREATE INDEX IF NOT EXISTS idx_events_labels ON events USING GIN ((data->'labels'));
 CREATE INDEX IF NOT EXISTS idx_events_observed_at ON events (observed_at);
 CREATE INDEX IF NOT EXISTS idx_signals_labels_layer ON signals USING GIN ((data->'labels'));

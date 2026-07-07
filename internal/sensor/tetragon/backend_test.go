@@ -712,7 +712,7 @@ func TestBackendTetragonArgsEnableGRPCServer(t *testing.T) {
 		EventQueueSize:   1024,
 		RBQueueSize:      "8192",
 	}
-	joined := strings.Join(backend.tetragonArgs("/opt/sysarmor/sensors/tetragon/current/bin/tetragon"), " ")
+	joined := strings.Join(backend.tetragonArgs("/opt/sysarmor/agent/sensors/tetragon/current/bin/tetragon"), " ")
 	for _, want := range []string{
 		"--server-address unix:///tmp/tetragon-test.sock",
 		"--cgroup-rate 1000",

@@ -1,15 +1,15 @@
 package managerapi
 
 import (
-	"context"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,11 @@ type Server struct {
 	store         ManagerStore
 	operatorToken string
 	searcher      platformopensearch.Searcher
+	artifactDir   string
+	artifactPub   []byte
+	caCert        *x509.Certificate
+	caCertPEM     []byte
+	caKey         *rsa.PrivateKey
 }
 
 type ManagerStore interface {
@@ -43,6 +49,8 @@ type ManagerStore interface {
 	CancelControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
+	CreateEnrollment(store.Enrollment) store.Enrollment
+	RecordAgentCertificate(store.AgentCertificate) store.AgentCertificate
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
 	CreateResponse(responsemodel.Command) responsemodel.Command
 	DeleteByLabels(store.LabelSelector)
@@ -50,6 +58,9 @@ type ManagerStore interface {
 	EnsureDefaultPolicy(string)
 	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
 	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
+	GetEnrollmentByTokenHash(string) (store.Enrollment, bool)
+	GetArtifact(string, string) (store.Artifact, bool)
+	GetChannel(string, string) (store.ArtifactChannel, bool)
 	GetIncident(string, store.LabelSelector) (*incidentv1.Incident, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
 	GetSignal(string) (*signalv1.Signal, bool)
@@ -62,6 +73,9 @@ type ManagerStore interface {
 	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	ListIncidents(store.LabelSelector) []*incidentv1.Incident
 	ListAgentSessions(string, string) []store.AgentSession
+	ListEnrollments(string, string) []store.Enrollment
+	ListArtifacts(string, string, string) []store.Artifact
+	ListChannels(string) []store.ArtifactChannel
 	ListPolicies(string) []policymodel.Policy
 	ListPolicyAudits(string, string) []policymodel.AuditRecord
 	ListOperatorRoleBindings(string) []store.OperatorRoleBinding
@@ -88,6 +102,8 @@ type ManagerStore interface {
 	Save() error
 	UpdateIncidentStatus(string, store.LabelSelector, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
+	UpsertArtifact(store.Artifact) store.Artifact
+	UpsertChannel(store.ArtifactChannel) store.ArtifactChannel
 	UpsertOperatorRoleBinding(store.OperatorRoleBinding) store.OperatorRoleBinding
 	UpsertPolicy(policymodel.Policy) policymodel.Policy
 }
@@ -123,6 +139,33 @@ type policyAssignmentRequest struct {
 type operatorRoleBindingRequest struct {
 	Actor string   `json:"actor"`
 	Roles []string `json:"roles"`
+}
+
+type enrollmentRequest struct {
+	TenantID    string            `json:"tenant_id,omitempty"`
+	AgentID     string            `json:"agent_id,omitempty"`
+	HostID      string            `json:"host_id,omitempty"`
+	GatewayAddr string            `json:"gateway_addr"`
+	GatewaySNI  string            `json:"gateway_sni,omitempty"`
+	Profile     string            `json:"profile,omitempty"`
+	Channel     string            `json:"channel,omitempty"`
+	ArtifactID  string            `json:"artifact_id,omitempty"`
+	ArtifactURL string            `json:"artifact_url,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	TTL         string            `json:"ttl,omitempty"`
+	Actor       string            `json:"actor,omitempty"`
+}
+
+type channelRequest struct {
+	TenantID   string `json:"tenant_id,omitempty"`
+	Channel    string `json:"channel"`
+	ArtifactID string `json:"artifact_id"`
+	Actor      string `json:"actor,omitempty"`
+}
+
+type certificateRequest struct {
+	Token string `json:"token,omitempty"`
+	CSR   string `json:"csr"`
 }
 
 type responseApprovalRequest struct {
@@ -203,17 +246,72 @@ type DataResume struct {
 
 func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st}
+	return newServer(st, "", nil)
 }
 
 func NewServerWithOperatorToken(st ManagerStore, operatorToken string) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, operatorToken: operatorToken}
+	return newServer(st, operatorToken, nil)
 }
 
 func NewServerWithSearch(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
 	st.EnsureDefaultPolicy("default")
-	return &Server{store: st, operatorToken: operatorToken, searcher: searcher}
+	return newServer(st, operatorToken, searcher)
+}
+
+func newServer(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
+	s := &Server{store: st, operatorToken: operatorToken, searcher: searcher, artifactDir: defaultArtifactDir()}
+	s.artifactPub = readOptionalFile(os.Getenv("SYSARMOR_ARTIFACT_PUBLIC_KEY"))
+	s.caCertPEM = readOptionalFile(os.Getenv("SYSARMOR_AGENT_CA_CERT"))
+	caKeyPEM := readOptionalFile(os.Getenv("SYSARMOR_AGENT_CA_KEY"))
+	if len(s.caCertPEM) > 0 && len(caKeyPEM) > 0 {
+		s.caCert, s.caKey = parseCA(s.caCertPEM, caKeyPEM)
+	}
+	return s
+}
+
+func defaultArtifactDir() string {
+	if v := strings.TrimSpace(os.Getenv("SYSARMOR_ARTIFACT_DIR")); v != "" {
+		return v
+	}
+	return "/var/lib/sysarmor/manager/artifacts"
+}
+
+func readOptionalFile(path string) []byte {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func parseCA(certPEM, keyPEM []byte) (*x509.Certificate, *rsa.PrivateKey) {
+	certBlock, _ := pem.Decode(certPEM)
+	keyBlock, _ := pem.Decode(keyPEM)
+	if certBlock == nil || keyBlock == nil {
+		return nil, nil
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, nil
+	}
+	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		parsed, parseErr := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+		if parseErr != nil {
+			return nil, nil
+		}
+		rsaKey, ok := parsed.(*rsa.PrivateKey)
+		if !ok {
+			return nil, nil
+		}
+		key = rsaKey
+	}
+	return cert, key
 }
 
 func (s *Server) Handler() http.Handler {
@@ -226,6 +324,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/policy-publish", s.policyPublish)
 	mux.HandleFunc("/api/v1/policy-audit", s.policyAudit)
 	mux.HandleFunc("/api/v1/operator-role-bindings", s.operatorRoleBindings)
+	mux.HandleFunc("/api/v1/artifacts", s.artifacts)
+	mux.HandleFunc("/api/v1/artifacts/", s.artifactByID)
+	mux.HandleFunc("/api/v1/channels", s.channels)
+	mux.HandleFunc("/api/v1/enrollments", s.enrollments)
+	mux.HandleFunc("/api/v1/enrollment-certificate", s.enrollmentCertificate)
+	mux.HandleFunc("/api/v1/agent-install.sh", s.agentInstallScript)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
@@ -250,1129 +354,6 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "store": s.store.Info()})
-}
-
-func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "admin") {
-		return
-	}
-	labels := parseLabelSelector(r.URL.Query()["label"])
-	s.store.DeleteByLabels(labels)
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	if len(labels) == 0 {
-		if err := s.store.ResetMetrics(); err != nil {
-			http.Error(w, fmt.Sprintf("reset metrics: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
-	writeJSON(w, map[string]any{"ok": true, "labels": labels})
-}
-
-func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	tenantID := q.Get("tenant_id")
-	scopeType := q.Get("scope_type")
-	scopeSelector := q.Get("scope_selector")
-	healthStatus := q.Get("health_status")
-	agents := s.store.ListAgents()
-	out := make([]AgentListItem, 0, len(agents))
-	for _, agent := range agents {
-		if tenantID != "" && agent.TenantID != tenantID {
-			continue
-		}
-		item := AgentListItem{
-			AgentID:      agent.AgentID,
-			HostID:       agent.HostID,
-			TenantID:     agent.TenantID,
-			Version:      agent.Version,
-			AuthType:     agent.AuthType,
-			CertIdentity: agent.CertIdentity,
-		}
-		if health, ok := s.store.GetAgentHealth(agent.TenantID, agent.AgentID); ok {
-			item.HealthStatus = health.Status
-			item.Scope = health.Scope
-			item.Capability = health.Capability
-			item.HealthObserved = health.ObservedAt
-		}
-		if scopeType != "" && item.Scope.Type != scopeType {
-			continue
-		}
-		if scopeSelector != "" && item.Scope.Selector != scopeSelector {
-			continue
-		}
-		if healthStatus != "" && item.HealthStatus != healthStatus {
-			continue
-		}
-		out = append(out, item)
-	}
-	writeJSON(w, out)
-}
-
-func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "admin") {
-			return
-		}
-		var health agenthealth.AgentHealth
-		if err := json.NewDecoder(r.Body).Decode(&health); err != nil {
-			http.Error(w, fmt.Sprintf("decode agent health: %v", err), http.StatusBadRequest)
-			return
-		}
-		if health.AgentID == "" {
-			http.Error(w, "agent_id is required", http.StatusBadRequest)
-			return
-		}
-		s.store.UpsertAgentHealth(health)
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, map[string]any{"ok": true})
-	case http.MethodGet:
-		q := r.URL.Query()
-		agentID := q.Get("agent_id")
-		if agentID == "" {
-			writeJSON(w, s.store.ListAgentHealth())
-			return
-		}
-		health, ok := s.store.GetAgentHealth(q.Get("tenant_id"), agentID)
-		if !ok {
-			http.Error(w, "agent health not found", http.StatusNotFound)
-			return
-		}
-		writeJSON(w, health)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) operatorAuthorized(r *http.Request) bool {
-	if s.operatorToken == "" {
-		return true
-	}
-	if r.Header.Get("X-SysArmor-Operator-Token") == s.operatorToken {
-		return true
-	}
-	if r.Header.Get("Authorization") == "Bearer "+s.operatorToken {
-		return true
-	}
-	return false
-}
-
-func (s *Server) operatorAuthorizedFor(r *http.Request, roles ...string) bool {
-	if !s.operatorAuthorized(r) {
-		return false
-	}
-	if s.operatorToken == "" || len(roles) == 0 {
-		return true
-	}
-	if boundRoles, ok := s.store.OperatorRolesForActor(s.actorFromRequest(r, "")); ok {
-		return rolesAllowed(boundRoles, roles...)
-	}
-	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
-		if rolesAllowed([]string{role}, roles...) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request, roles ...string) bool {
-	if s.operatorToken == "" {
-		return true
-	}
-	if !s.operatorAuthorized(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return false
-	}
-	if !s.operatorAuthorizedFor(r, roles...) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return false
-	}
-	return true
-}
-
-func (s *Server) actorFromRequest(r *http.Request, explicit string) string {
-	if explicit != "" {
-		return explicit
-	}
-	return r.Header.Get("X-SysArmor-Actor")
-}
-
-func (s *Server) roleFromRequest(r *http.Request, explicit string) string {
-	if explicit != "" {
-		return explicit
-	}
-	if roles, ok := s.store.OperatorRolesForActor(s.actorFromRequest(r, "")); ok && len(roles) > 0 {
-		return roles[0]
-	}
-	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
-		role = strings.TrimSpace(role)
-		if role != "" {
-			return role
-		}
-	}
-	return ""
-}
-
-func rolesAllowed(granted []string, required ...string) bool {
-	for _, role := range granted {
-		role = strings.TrimSpace(role)
-		if role == "admin" {
-			return true
-		}
-		for _, allowed := range required {
-			if role == allowed {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	writeJSON(w, map[string]any{"sessions": s.store.ListAgentSessions(q.Get("tenant_id"), q.Get("agent_id"))})
-}
-
-func (s *Server) dataResume(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	agentID := q.Get("agent_id")
-	if agentID == "" {
-		http.Error(w, "agent_id is required", http.StatusBadRequest)
-		return
-	}
-	tenantID := q.Get("tenant_id")
-	if tenantID == "" {
-		tenantID = "default"
-	}
-	writeJSON(w, s.resumeCursor(tenantID, agentID))
-}
-
-func (s *Server) resumeCursor(tenantID, agentID string) DataResume {
-	resume := DataResume{TenantID: tenantID, AgentID: agentID}
-	sessions := s.store.ListAgentSessions(tenantID, agentID)
-	if len(sessions) > 0 {
-		resume.SessionID = sessions[0].SessionID
-		resume.ResumeCursor = sessions[0].LastAckCursor
-	}
-	return resume
-}
-
-func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		writeJSON(w, s.store.ListEvidencePullbacks(q.Get("tenant_id"), q.Get("agent_id")))
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "incident_admin") {
-			return
-		}
-		var req evidencePullbackRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, fmt.Sprintf("decode evidence pullback: %v", err), http.StatusBadRequest)
-			return
-		}
-		if req.AgentID == "" {
-			http.Error(w, "agent_id is required", http.StatusBadRequest)
-			return
-		}
-		out := s.store.CreateEvidencePullback(controlmodel.EvidencePullbackRequest{
-			RequestID:  req.RequestID,
-			TenantID:   req.TenantID,
-			AgentID:    req.AgentID,
-			IncidentID: req.IncidentID,
-			Labels:     cloneStringMap(req.Labels),
-			Target:     req.Target,
-			Reason:     req.Reason,
-			Actor:      s.actorFromRequest(r, req.Actor),
-		})
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, out)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		writeJSON(w, s.store.ListControlCommands(q.Get("tenant_id"), q.Get("agent_id"), q.Get("type")))
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "control_admin") {
-			return
-		}
-		var req controlCommandRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, fmt.Sprintf("decode control command: %v", err), http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(req.Action) != "" {
-			s.controlCommandAction(w, r, req)
-			return
-		}
-		cmd, err := s.controlCommandFromRequest(r, req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		out := s.store.CreateControlCommand(cmd)
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, out)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) controlCommandAction(w http.ResponseWriter, r *http.Request, req controlCommandRequest) {
-	commandID := strings.TrimSpace(req.CommandID)
-	if commandID == "" {
-		http.Error(w, "command_id is required", http.StatusBadRequest)
-		return
-	}
-	tenantID := req.TenantID
-	if tenantID == "" {
-		tenantID = "default"
-	}
-	actor := s.actorFromRequest(r, req.Actor)
-	var (
-		out controlmodel.ControlCommand
-		ok  bool
-	)
-	switch strings.TrimSpace(req.Action) {
-	case "cancel":
-		out, ok = s.store.CancelControlCommand(commandID, tenantID, req.AgentID, actor, req.Reason)
-	case "retry":
-		out, ok = s.store.RetryControlCommand(commandID, tenantID, req.AgentID, actor, req.Reason)
-	case "expire":
-		out, ok = s.store.ExpireControlCommand(commandID, tenantID, req.AgentID, req.Reason)
-	default:
-		http.Error(w, fmt.Sprintf("unsupported control command action %q", req.Action), http.StatusBadRequest)
-		return
-	}
-	if !ok {
-		http.Error(w, "control command not found", http.StatusNotFound)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, out)
-}
-
-func (s *Server) controlCommandFromRequest(r *http.Request, req controlCommandRequest) (controlmodel.ControlCommand, error) {
-	commandType := strings.TrimSpace(req.Type)
-	if commandType == "" {
-		return controlmodel.ControlCommand{}, fmt.Errorf("type is required")
-	}
-	if strings.TrimSpace(req.AgentID) == "" {
-		return controlmodel.ControlCommand{}, fmt.Errorf("agent_id is required")
-	}
-	tenantID := req.TenantID
-	if tenantID == "" {
-		tenantID = "default"
-	}
-	payload := append(json.RawMessage(nil), req.PayloadJSON...)
-	policyID := req.PolicyID
-	policyVersion := req.PolicyVersion
-	switch commandType {
-	case controlmodel.ControlCommandTypePolicyUpdate:
-		if len(payload) == 0 {
-			if policyID == "" {
-				return controlmodel.ControlCommand{}, fmt.Errorf("policy_id or payload_json is required for policy_update")
-			}
-			policy, ok := s.store.GetPolicy(tenantID, policyID, policyVersion)
-			if !ok {
-				return controlmodel.ControlCommand{}, fmt.Errorf("policy not found")
-			}
-			raw, err := json.Marshal(policy)
-			if err != nil {
-				return controlmodel.ControlCommand{}, fmt.Errorf("encode policy payload: %v", err)
-			}
-			payload = raw
-			policyID = policy.PolicyID
-			policyVersion = policy.Version
-		} else if policyID == "" || policyVersion == 0 {
-			if parsedID, parsedVersion := policyMetadataFromPayload(payload); policyID == "" || policyVersion == 0 {
-				if policyID == "" {
-					policyID = parsedID
-				}
-				if policyVersion == 0 {
-					policyVersion = parsedVersion
-				}
-			}
-		}
-	case controlmodel.ControlCommandTypeContentUpdate:
-		if len(payload) == 0 {
-			return controlmodel.ControlCommand{}, fmt.Errorf("payload_json is required for content_update")
-		}
-		if req.ContentRef == "" || req.ContentKind == "" || req.ContentVersion == "" {
-			ref, kind, version := contentMetadataFromPayload(payload)
-			if req.ContentRef == "" {
-				req.ContentRef = ref
-			}
-			if req.ContentKind == "" {
-				req.ContentKind = kind
-			}
-			if req.ContentVersion == "" {
-				req.ContentVersion = version
-			}
-		}
-	default:
-		return controlmodel.ControlCommand{}, fmt.Errorf("unsupported control command type %q", commandType)
-	}
-	return controlmodel.ControlCommand{
-		CommandID:      req.CommandID,
-		TenantID:       tenantID,
-		AgentID:        req.AgentID,
-		Type:           commandType,
-		PolicyID:       policyID,
-		PolicyVersion:  policyVersion,
-		ContentRef:     req.ContentRef,
-		ContentKind:    req.ContentKind,
-		ContentVersion: req.ContentVersion,
-		PayloadJSON:    payload,
-		Actor:          s.actorFromRequest(r, req.Actor),
-		Reason:         req.Reason,
-	}, nil
-}
-
-func policyMetadataFromPayload(payload json.RawMessage) (string, uint64) {
-	var policy struct {
-		PolicyID string `json:"policy_id"`
-		Version  uint64 `json:"version"`
-	}
-	_ = json.Unmarshal(payload, &policy)
-	return policy.PolicyID, policy.Version
-}
-
-func contentMetadataFromPayload(payload json.RawMessage) (string, string, string) {
-	var content struct {
-		Kind     string `json:"kind"`
-		Metadata struct {
-			ID      string `json:"id"`
-			Version string `json:"version"`
-		} `json:"metadata"`
-	}
-	_ = json.Unmarshal(payload, &content)
-	return content.Metadata.ID, content.Kind, content.Metadata.Version
-}
-
-func (s *Server) events(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	if s.searcher != nil {
-		raw, err := s.searchTelemetry(r.Context(), "sysarmor-events")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("query events: %v", err), http.StatusBadGateway)
-			return
-		}
-		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), rawStringEquals("behavior", q.Get("behavior")))
-		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
-		return
-	}
-	writeEventList(w, pageSlice(s.store.ListEvents(parseLabelSelector(q["label"]), q.Get("behavior")), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
-}
-
-func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	if s.searcher != nil {
-		raw, err := s.searchTelemetry(r.Context(), "sysarmor-signals")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("query signals: %v", err), http.StatusBadGateway)
-			return
-		}
-		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), rawSignalMatches(q.Get("layer"), q.Get("terminal")))
-		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
-		return
-	}
-	signals := s.store.ListSignals(parseLabelSelector(q["label"]), q.Get("layer"), q.Get("terminal") == "true")
-	writeSignalList(w, pageSlice(signals, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
-}
-
-func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	if s.searcher != nil {
-		raw, err := s.searchTelemetry(r.Context(), "sysarmor-incidents")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("query incidents: %v", err), http.StatusBadGateway)
-			return
-		}
-		raw = filterRawTelemetry(raw, parseLabelSelector(q["label"]), nil)
-		writeRawList(w, pageSlice(raw, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
-		return
-	}
-	incidents := s.store.ListIncidents(parseLabelSelector(q["label"]))
-	writeIncidentList(w, pageSlice(incidents, parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
-}
-
-func (s *Server) incidentEvidence(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		if !s.requireOperator(w, r, "incident_admin") {
-			return
-		}
-		s.attachIncidentEvidence(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	inc, ok := s.store.GetIncident(q.Get("incident_id"), parseLabelSelector(q["label"]))
-	if !ok {
-		http.Error(w, "incident not found", http.StatusNotFound)
-		return
-	}
-	if q.Get("path_from") != "" || q.Get("path_to") != "" {
-		if q.Get("path_from") == "" || q.Get("path_to") == "" {
-			http.Error(w, "path_from and path_to are required together", http.StatusBadRequest)
-			return
-		}
-		writeProtoJSON(w, graph.FromSignals(inc.GetContributingSignals()).ShortestPath(q.Get("path_from"), q.Get("path_to")))
-		return
-	}
-	if q.Get("seed") != "" {
-		writeProtoJSON(w, graph.FromSignals(inc.GetContributingSignals()).KHop(q.Get("seed"), int(parseUint(q.Get("hops")))))
-		return
-	}
-	if inc.GetEvidence() == nil {
-		writeProtoJSON(w, &incidentv1.EvidenceSubgraph{})
-		return
-	}
-	writeProtoJSON(w, inc.GetEvidence())
-}
-
-func (s *Server) attachIncidentEvidence(w http.ResponseWriter, r *http.Request) {
-	var req incidentEvidenceAttachRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode incident evidence: %v", err), http.StatusBadRequest)
-		return
-	}
-	labels := store.LabelSelector(req.Labels)
-	if req.IncidentID == "" && len(labels) == 0 {
-		http.Error(w, "incident_id or labels is required", http.StatusBadRequest)
-		return
-	}
-	if len(req.Evidence) == 0 {
-		http.Error(w, "evidence is required", http.StatusBadRequest)
-		return
-	}
-	evidence := &incidentv1.EvidenceSubgraph{}
-	if err := protojson.Unmarshal(req.Evidence, evidence); err != nil {
-		http.Error(w, fmt.Sprintf("decode evidence: %v", err), http.StatusBadRequest)
-		return
-	}
-	inc, ok := s.store.AttachIncidentEvidence(req.IncidentID, labels, evidence)
-	if !ok {
-		http.Error(w, "incident not found", http.StatusNotFound)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeProtoJSON(w, inc)
-}
-
-func (s *Server) incidentLifecycle(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "incident_admin") {
-		return
-	}
-	var req incidentLifecycleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode incident lifecycle: %v", err), http.StatusBadRequest)
-		return
-	}
-	labels := store.LabelSelector(req.Labels)
-	if req.IncidentID == "" && len(labels) == 0 {
-		http.Error(w, "incident_id or labels is required", http.StatusBadRequest)
-		return
-	}
-	inc, ok := s.store.UpdateIncidentStatus(req.IncidentID, labels, req.Status, req.Reason, s.actorFromRequest(r, req.Actor))
-	if !ok {
-		http.Error(w, "incident not found or status invalid", http.StatusNotFound)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeProtoJSON(w, inc)
-}
-
-func (s *Server) incidentMerge(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "incident_admin") {
-		return
-	}
-	var req incidentMergeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode incident merge: %v", err), http.StatusBadRequest)
-		return
-	}
-	if req.TargetIncidentID == "" || req.SourceIncidentID == "" {
-		http.Error(w, "target_incident_id and source_incident_id are required", http.StatusBadRequest)
-		return
-	}
-	inc, ok := s.store.MergeIncidents(req.TargetIncidentID, req.SourceIncidentID)
-	if !ok {
-		http.Error(w, "incident not found or merge invalid", http.StatusNotFound)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeProtoJSON(w, inc)
-}
-
-func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, s.store.MetricsSnapshot())
-}
-
-func (s *Server) storeStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	writeJSON(w, s.store.Info())
-}
-
-func (s *Server) rarityBaseline(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	baseline := s.store.RarityBaselineSnapshot()
-	writeJSON(w, map[string]any{
-		"baseline": baseline,
-		"count":    baseline.Count(q.Get("workload"), q.Get("signal")),
-	})
-}
-
-func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	writeJSON(w, s.store.ListRules(r.URL.Query().Get("where")))
-}
-
-func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		if policyID := q.Get("policy_id"); policyID != "" {
-			version := parseUint(q.Get("version"))
-			policy, ok := s.store.GetPolicy(q.Get("tenant_id"), policyID, version)
-			if !ok {
-				http.Error(w, "policy not found", http.StatusNotFound)
-				return
-			}
-			writeJSON(w, policy)
-			return
-		}
-		writeJSON(w, s.store.ListPolicies(q.Get("tenant_id")))
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "policy_admin") {
-			return
-		}
-		var policy policymodel.Policy
-		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
-			http.Error(w, fmt.Sprintf("decode policy: %v", err), http.StatusBadRequest)
-			return
-		}
-		if policy.PolicyID == "" {
-			http.Error(w, "policy_id is required", http.StatusBadRequest)
-			return
-		}
-		policy = s.store.UpsertPolicy(policy)
-		s.recordPolicyAudit(policymodel.AuditRecord{
-			TenantID:      policy.TenantID,
-			Action:        "policy.upsert",
-			PolicyID:      policy.PolicyID,
-			PolicyVersion: policy.Version,
-			Actor:         s.actorFromRequest(r, r.URL.Query().Get("actor")),
-			Reason:        r.URL.Query().Get("reason"),
-		})
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, policy)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) policyPublish(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "policy_admin") {
-		return
-	}
-	var req policyPublishRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode policy publish: %v", err), http.StatusBadRequest)
-		return
-	}
-	if req.PolicyID == "" {
-		http.Error(w, "policy_id is required", http.StatusBadRequest)
-		return
-	}
-	policy, ok := s.store.PublishPolicy(req.TenantID, req.PolicyID, req.Version, req.Published)
-	if !ok {
-		http.Error(w, "policy not found", http.StatusNotFound)
-		return
-	}
-	action := "policy.unpublish"
-	if req.Published {
-		action = "policy.publish"
-	}
-	s.recordPolicyAudit(policymodel.AuditRecord{
-		TenantID:      policy.TenantID,
-		Action:        action,
-		PolicyID:      policy.PolicyID,
-		PolicyVersion: policy.Version,
-		Actor:         s.actorFromRequest(r, req.Actor),
-		Reason:        req.Reason,
-	})
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, policy)
-}
-
-func (s *Server) policyAudit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	writeJSON(w, s.store.ListPolicyAudits(q.Get("tenant_id"), q.Get("policy_id")))
-}
-
-func (s *Server) operatorRoleBindings(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, map[string]any{"bindings": s.store.ListOperatorRoleBindings(r.URL.Query().Get("actor"))})
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "admin") {
-			return
-		}
-		var req operatorRoleBindingRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, fmt.Sprintf("decode operator role binding: %v", err), http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(req.Actor) == "" {
-			http.Error(w, "actor is required", http.StatusBadRequest)
-			return
-		}
-		binding := s.store.UpsertOperatorRoleBinding(store.OperatorRoleBinding{Actor: req.Actor, Roles: req.Roles})
-		writeJSON(w, binding)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		writeJSON(w, s.store.ListAssignments(q.Get("tenant_id"), q.Get("agent_id")))
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "policy_admin") {
-			return
-		}
-		var req policyAssignmentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, fmt.Sprintf("decode assignment: %v", err), http.StatusBadRequest)
-			return
-		}
-		if req.Downlink && !s.requireOperator(w, r, "control_admin") {
-			return
-		}
-		assignment := req.Assignment
-		saved, ok := s.store.AssignPolicy(assignment)
-		if !ok {
-			http.Error(w, "policy not found or assignment invalid", http.StatusBadRequest)
-			return
-		}
-		s.recordPolicyAudit(policymodel.AuditRecord{
-			TenantID:      saved.TenantID,
-			Action:        "policy.assign",
-			PolicyID:      saved.PolicyID,
-			PolicyVersion: saved.PolicyVersion,
-			AssignmentID:  saved.AssignmentID,
-			Actor:         s.actorFromRequest(r, req.Actor),
-			Reason:        req.Reason,
-		})
-		var command *controlmodel.ControlCommand
-		if req.Downlink {
-			cmd, err := s.policyDownlinkCommand(r, saved, req)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			out := s.store.CreateControlCommand(cmd)
-			command = &out
-		}
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-			return
-		}
-		if command != nil {
-			writeJSON(w, map[string]any{"assignment": saved, "control_command": command})
-			return
-		}
-		writeJSON(w, saved)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) policyDownlinkCommand(r *http.Request, assignment policymodel.Assignment, req policyAssignmentRequest) (controlmodel.ControlCommand, error) {
-	if strings.TrimSpace(assignment.AgentID) == "" {
-		return controlmodel.ControlCommand{}, fmt.Errorf("downlink requires agent_id on policy assignment")
-	}
-	policy, ok := s.store.GetPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
-	if !ok {
-		return controlmodel.ControlCommand{}, fmt.Errorf("policy not found for downlink")
-	}
-	payload, err := json.Marshal(policy)
-	if err != nil {
-		return controlmodel.ControlCommand{}, fmt.Errorf("encode policy downlink payload: %v", err)
-	}
-	return controlmodel.ControlCommand{
-		CommandID:     req.CommandID,
-		TenantID:      assignment.TenantID,
-		AgentID:       assignment.AgentID,
-		Type:          controlmodel.ControlCommandTypePolicyUpdate,
-		PolicyID:      policy.PolicyID,
-		PolicyVersion: policy.Version,
-		PayloadJSON:   payload,
-		Actor:         s.actorFromRequest(r, req.Actor),
-		Reason:        firstNonEmptyString(req.Reason, "policy assignment downlink"),
-	}, nil
-}
-
-func (s *Server) recordPolicyAudit(record policymodel.AuditRecord) {
-	s.store.RecordPolicyAudit(record)
-}
-
-func (s *Server) effectivePolicy(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	q := r.URL.Query()
-	policy, ok := s.store.EffectivePolicy(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
-	if !ok {
-		http.Error(w, "effective policy not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, policy)
-}
-
-func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		if q.Get("pending") == "true" {
-			writeJSON(w, s.store.PendingResponses(q.Get("tenant_id"), q.Get("agent_id")))
-			return
-		}
-		writeJSON(w, s.store.ListResponses(q.Get("tenant_id"), q.Get("agent_id")))
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "responder") {
-			return
-		}
-		var cmd responsemodel.Command
-		if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-			http.Error(w, fmt.Sprintf("decode response command: %v", err), http.StatusBadRequest)
-			return
-		}
-		cmd.Actor = s.actorFromRequest(r, cmd.Actor)
-		s.createResponse(w, cmd)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) responseDecisions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "responder") {
-		return
-	}
-	var req responseDecisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode response decision: %v", err), http.StatusBadRequest)
-		return
-	}
-	if req.SignalID == "" {
-		http.Error(w, "signal_id is required", http.StatusBadRequest)
-		return
-	}
-	if req.AgentID == "" {
-		http.Error(w, "agent_id is required", http.StatusBadRequest)
-		return
-	}
-	sig, ok := s.store.GetSignal(req.SignalID)
-	if !ok {
-		http.Error(w, "signal not found", http.StatusNotFound)
-		return
-	}
-	intent := sig.GetResponseIntent()
-	if intent == nil || intent.GetResponseIntent() == "" {
-		http.Error(w, "signal response intent not found", http.StatusBadRequest)
-		return
-	}
-	action := intent.GetRecommendedAction()
-	if action == "" {
-		action = intent.GetResponseIntent()
-	}
-	target := req.Target
-	if target == "" {
-		target = signalResponseTarget(sig)
-	}
-	reason := fmt.Sprintf("signal=%s name=%s response_intent=%s confidence=%d", sig.GetId(), sig.GetName(), intent.GetResponseIntent(), intent.GetConfidence())
-	if intent.GetReason() != "" {
-		reason += " reason=" + intent.GetReason()
-	}
-	cmd := responsemodel.Command{
-		ResponseID: "resp-" + sig.GetId(),
-		TenantID:   req.TenantID,
-		AgentID:    req.AgentID,
-		SignalID:   sig.GetId(),
-		Labels:     cloneStringMap(sig.GetLabels()),
-		Scope:      req.Scope,
-		Action:     action,
-		Mode:       responsemodel.DefaultMode,
-		Target:     target,
-		Reason:     reason,
-		Actor:      s.actorFromRequest(r, req.Actor),
-	}
-	s.createResponse(w, cmd)
-}
-
-func (s *Server) responseApprovals(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "responder") {
-		return
-	}
-	var req responseApprovalRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode response approval: %v", err), http.StatusBadRequest)
-		return
-	}
-	if req.ResponseID == "" {
-		http.Error(w, "response_id is required", http.StatusBadRequest)
-		return
-	}
-	cmd, ok := s.store.ApproveResponse(req.TenantID, req.AgentID, req.ResponseID, req.Approved, s.actorFromRequest(r, req.Actor), s.roleFromRequest(r, req.Role), req.Reason)
-	if !ok {
-		http.Error(w, "response command not found", http.StatusNotFound)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, responsemodel.AuditRecord{Command: cmd})
-}
-
-func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command) {
-	if cmd.AgentID == "" {
-		http.Error(w, "agent_id is required", http.StatusBadRequest)
-		return
-	}
-	if cmd.TenantID == "" {
-		cmd.TenantID = "default"
-	}
-	if health, ok := s.store.GetAgentHealth(cmd.TenantID, cmd.AgentID); ok {
-		if cmd.Scope.Type == "" && cmd.Scope.Selector == "" {
-			cmd.Scope = responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}
-		}
-		if decision := responsemodel.ScopeDecision(cmd.Scope, responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}, true); !decision.Allowed {
-			s.denyResponse(w, cmd, decision)
-			return
-		}
-	} else if cmd.Scope.Type != "" || cmd.Scope.Selector != "" {
-		s.denyResponse(w, cmd, responsemodel.Decision{Allowed: false, Reason: "agent runtime scope is required for scoped response command"})
-		return
-	}
-	responsePolicy := responsemodel.DefaultPolicy()
-	if policy, ok := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector); ok {
-		responsePolicy = policy.Response
-		if len(responsePolicy.AllowedActions) == 0 && len(responsePolicy.AllowedModes) == 0 {
-			responsePolicy = responsemodel.DefaultPolicy()
-		}
-		if cmd.PolicyID == "" {
-			cmd.PolicyID = policy.PolicyID
-			cmd.PolicyVersion = policy.Version
-		}
-	}
-	if cmd.PolicyID == "" {
-		policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
-		cmd.PolicyID = policy.PolicyID
-		cmd.PolicyVersion = policy.Version
-	}
-	cmd = responsemodel.ApplyPolicyRequirements(cmd, responsePolicy)
-	if decision := responsemodel.ValidateCommandWithPolicy(cmd, responsePolicy); !decision.Allowed {
-		s.denyResponse(w, cmd, decision)
-		return
-	}
-	if cmd.ApprovalRequired {
-		cmd = responsemodel.NormalizeCommand(cmd)
-		cmd.Status = "pending_approval"
-		cmd.ApprovalStatus = "required"
-	}
-	cmd = s.store.CreateResponse(cmd)
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, cmd)
-}
-
-func (s *Server) denyResponse(w http.ResponseWriter, cmd responsemodel.Command, decision responsemodel.Decision) {
-	cmd = responsemodel.NormalizeCommand(cmd)
-	cmd.Status = "denied"
-	if cmd.Reason == "" {
-		cmd.Reason = decision.Reason
-	} else {
-		cmd.Reason = cmd.Reason + "; denied: " + decision.Reason
-	}
-	cmd = s.store.CreateResponse(cmd)
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusForbidden)
-	writeJSON(w, responsemodel.AuditRecord{Command: cmd})
-}
-
-func signalResponseTarget(sig *signalv1.Signal) string {
-	for _, entity := range sig.GetEntities() {
-		if entity.GetKind() == "process" && entity.GetKey() != "" {
-			return entity.GetKey()
-		}
-	}
-	for _, entity := range sig.GetEntities() {
-		if entity.GetKey() != "" {
-			return entity.GetKey()
-		}
-	}
-	return ""
-}
-
-func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.requireOperator(w, r, "response_admin") {
-		return
-	}
-	var ack responsemodel.Ack
-	if err := json.NewDecoder(r.Body).Decode(&ack); err != nil {
-		http.Error(w, fmt.Sprintf("decode response ack: %v", err), http.StatusBadRequest)
-		return
-	}
-	if ack.AgentID == "" {
-		http.Error(w, "agent_id is required", http.StatusBadRequest)
-		return
-	}
-	if _, ok := s.store.AckResponse(ack); !ok {
-		http.Error(w, "response command not found", http.StatusNotFound)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true})
-}
-
-func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	effective, _ := s.store.EffectivePolicy(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
-	policy := effective.DetectionPolicy()
-	if policy.Converge == nil {
-		policy.Converge = &policyv1.ConvergeParams{CrossLineage: true}
-	}
-	switch q.Get("disable") {
-	case "cloud.cross_lineage":
-		policy.Converge.CrossLineage = false
-	case "":
-	default:
-		if strings.HasPrefix(q.Get("disable"), "cloud.rule:") {
-			disabled := strings.TrimPrefix(q.Get("disable"), "cloud.rule:")
-			policy.CloudRules = removeString(policy.CloudRules, disabled)
-			break
-		}
-		http.Error(w, fmt.Sprintf("unknown disable %q", q.Get("disable")), http.StatusBadRequest)
-		return
-	}
-	switch q.Get("mode") {
-	case "additive_threshold":
-		policy.Converge.Mode = "additive_threshold"
-		policy.Converge.AdditiveRiskThreshold = 100
-	case "", "rarity_structural":
-	default:
-		http.Error(w, fmt.Sprintf("unknown converge mode %q", q.Get("mode")), http.StatusBadRequest)
-		return
-	}
-	engine := ingest.NewEngine()
-	engine.SetRarityBaseline(s.store.RarityBaselineSnapshot())
-	result := engine.AnalyzeWithPolicy(nil, s.store.ListSignals(parseLabelSelector(q["label"]), "endpoint", false), policy)
-	writeAnalysisResult(w, result)
-}
-
 func parseLabelSelector(values []string) store.LabelSelector {
 	labels := store.LabelSelector{}
 	for _, raw := range values {
@@ -1390,87 +371,6 @@ func parseLabelSelector(values []string) store.LabelSelector {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func (s *Server) searchTelemetry(ctx context.Context, index string) ([]json.RawMessage, error) {
-	if s.searcher == nil {
-		return nil, nil
-	}
-	return s.searcher.Search(ctx, index, 1000)
-}
-
-func filterRawTelemetry(raw []json.RawMessage, labels store.LabelSelector, extra func(map[string]any) bool) []json.RawMessage {
-	if len(labels) == 0 && extra == nil {
-		return raw
-	}
-	out := make([]json.RawMessage, 0, len(raw))
-	for _, item := range raw {
-		var doc map[string]any
-		if err := json.Unmarshal(item, &doc); err != nil {
-			continue
-		}
-		if !rawLabelsMatch(doc, labels) {
-			continue
-		}
-		if extra != nil && !extra(doc) {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
-func rawLabelsMatch(doc map[string]any, labels store.LabelSelector) bool {
-	if len(labels) == 0 {
-		return true
-	}
-	raw, ok := doc["labels"].(map[string]any)
-	if !ok {
-		return false
-	}
-	for key, want := range labels {
-		if got, _ := raw[key].(string); got != want {
-			return false
-		}
-	}
-	return true
-}
-
-func rawStringEquals(field, want string) func(map[string]any) bool {
-	if strings.TrimSpace(want) == "" {
-		return nil
-	}
-	return func(doc map[string]any) bool {
-		got, _ := doc[field].(string)
-		return got == want
-	}
-}
-
-func rawSignalMatches(layer, terminal string) func(map[string]any) bool {
-	layer = strings.TrimSpace(layer)
-	terminal = strings.TrimSpace(terminal)
-	if layer == "" && terminal == "" {
-		return nil
-	}
-	return func(doc map[string]any) bool {
-		if layer != "" && !rawSignalLayerMatches(doc["where"], layer) {
-			return false
-		}
-		if terminal != "" {
-			want := terminal == "true"
-			got, ok := doc["terminal"].(bool)
-			if !ok || got != want {
-				return false
-			}
-		}
-		return true
-	}
-}
-
-func rawSignalLayerMatches(value any, layer string) bool {
-	got, _ := value.(string)
-	got = strings.ToLower(strings.TrimPrefix(got, "SIGNAL_WHERE_"))
-	return got == strings.ToLower(layer)
 }
 
 func parseUint(raw string) uint64 {

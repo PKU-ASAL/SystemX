@@ -1,1 +1,2 @@
-FROM bitnami/kafka:3.7
+ARG KAFKA_IMAGE=apache/kafka:latest
+FROM ${KAFKA_IMAGE}
