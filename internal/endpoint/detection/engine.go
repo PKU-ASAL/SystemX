@@ -11,7 +11,7 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
 const builtinRuleSetRef = "ruleset:endpoint-linux-builtin"

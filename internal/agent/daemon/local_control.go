@@ -26,9 +26,9 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/tetragon"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/linux/tetragon"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 	"google.golang.org/grpc"
 )
 

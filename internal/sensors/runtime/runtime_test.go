@@ -7,7 +7,7 @@ import (
 	"time"
 
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
 func TestManagerLifecycle(t *testing.T) {

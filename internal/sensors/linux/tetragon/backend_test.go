@@ -10,7 +10,7 @@ import (
 	"time"
 
 	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 

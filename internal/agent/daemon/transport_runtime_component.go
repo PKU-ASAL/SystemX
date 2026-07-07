@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 )
 
 type TransportRuntime struct {

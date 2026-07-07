@@ -12,7 +12,7 @@ import (
 
 	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"

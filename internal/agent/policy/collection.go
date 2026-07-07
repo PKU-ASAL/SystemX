@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
 type CollectionPolicy struct {

@@ -15,8 +15,8 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensor/contract"
-	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensor/runtime"
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
