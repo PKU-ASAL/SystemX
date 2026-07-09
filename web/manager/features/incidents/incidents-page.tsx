@@ -9,7 +9,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 
-import { ClockIcon, GitBranchIcon, NetworkIcon, SearchIcon } from "lucide-react";
+import { ClockIcon, GitBranchIcon, NetworkIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -204,15 +204,16 @@ function IncidentFilterBar({
             aria-label="Incident index query"
           />
         </div>
-        <Button className="h-11 rounded-none border-0 px-4 max-lg:w-full max-lg:rounded-lg" size="md">
-          Run
-        </Button>
         <SuperDatePicker
           value={timeRange}
           refresh={refresh}
           onChange={onTimeRangeChange}
           onRefreshChange={onRefreshChange}
         />
+        <Button className="h-11 rounded-none border-0 px-4 max-lg:w-full max-lg:rounded-lg" size="md">
+          <RefreshCwIcon />
+          Run
+        </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{count} hits</Badge>
