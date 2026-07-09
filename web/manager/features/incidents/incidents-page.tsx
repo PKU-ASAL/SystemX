@@ -45,6 +45,13 @@ type IncidentTimeRange =
   | { mode: "absolute"; label: string; start: string; end: string };
 
 const incidentIndexOptions: IncidentIndexPattern[] = ["incidents-*", "incident-*"];
+const incidentQueryFields = [
+  { name: "incident.chain_id", example: "threat-chain-001" },
+  { name: "host.name", example: "oa-web" },
+  { name: "severity", example: "critical" },
+  { name: "status", example: "active" },
+  { name: "root_cause", example: "credential" },
+];
 const quickTimeRanges: Array<Extract<IncidentTimeRange, { mode: "quick" }>> = [
   { mode: "quick", label: "Last 15 minutes", minutes: 15 },
   { mode: "quick", label: "Last 30 minutes", minutes: 30 },
@@ -228,9 +235,11 @@ function IncidentFilterBar({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{count} hits</Badge>
-        <Badge className="bg-bg text-muted-fg">incident.chain_id</Badge>
-        <Badge className="bg-bg text-muted-fg">host.name</Badge>
-        <Badge className="bg-bg text-muted-fg">incident.status</Badge>
+        {incidentQueryFields.map((field) => (
+          <Badge key={field.name} className="bg-bg text-muted-fg">
+            {field.name}
+          </Badge>
+        ))}
       </div>
     </div>
   );
@@ -259,6 +268,7 @@ function IncidentQueryInput({
   if (status !== "all") {
     tokens.push({ key: "status", value: status, onRemove: () => onStatusChange("all") });
   }
+  const showHints = !query && !tokens.length;
 
   return (
     <div className="flex min-h-11 min-w-72 flex-1 items-center gap-2 bg-bg px-3 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
@@ -280,6 +290,17 @@ function IncidentQueryInput({
           </button>
         </span>
       ))}
+      {showHints &&
+        incidentQueryFields.slice(0, 3).map((field) => (
+          <button
+            key={field.name}
+            className="inline-flex h-7 shrink-0 items-center rounded-md border bg-bg px-2 font-mono text-xs text-muted-fg hover:bg-muted hover:text-fg"
+            type="button"
+            onClick={() => onQueryChange(`${field.name}:`)}
+          >
+            {field.name}:
+          </button>
+        ))}
       <Input
         className="h-10 min-w-40 flex-1 rounded-none border-0 bg-transparent px-0 font-mono focus-visible:ring-0"
         value={query}
@@ -738,6 +759,11 @@ function applyIncidentQueryInput(
       continue;
     }
 
+    if (isIncidentFreeTextField(normalizedKey) && rawValue) {
+      freeText.push(rawValue);
+      continue;
+    }
+
     freeText.push(token);
   }
 
@@ -750,4 +776,8 @@ function isIncidentSeverity(value: string | undefined): value is IncidentRecord[
 
 function isIncidentStatus(value: string | undefined): value is IncidentRecord["status"] {
   return value === "active" || value === "triage" || value === "contained";
+}
+
+function isIncidentFreeTextField(value: string | undefined) {
+  return value === "incident.chain_id" || value === "host.name" || value === "root_cause";
 }
