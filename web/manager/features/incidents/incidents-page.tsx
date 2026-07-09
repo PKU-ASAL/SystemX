@@ -9,10 +9,11 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 
-import { GitBranchIcon, NetworkIcon } from "lucide-react";
+import { GitBranchIcon, NetworkIcon, SearchIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -21,7 +22,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { incidents, type IncidentRecord } from "@/lib/mock-data";
+import {
+  buildIncidentSeverityBuckets,
+  filterIncidents,
+  incidents,
+  type IncidentRecord,
+  type IncidentSeverityBucket,
+} from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 const severityClass = {
@@ -31,13 +38,220 @@ const severityClass = {
 } as const;
 
 export function IncidentsPage() {
+  const [query, setQuery] = useState("");
+  const [severity, setSeverity] = useState<IncidentRecord["severity"] | "all">("all");
+  const [status, setStatus] = useState<IncidentRecord["status"] | "all">("all");
+  const filteredIncidents = useMemo(
+    () => filterIncidents(incidents, { query, severity, status }),
+    [query, severity, status],
+  );
+  const severityBuckets = useMemo(
+    () => buildIncidentSeverityBuckets(filteredIncidents),
+    [filteredIncidents],
+  );
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
       <header className="shrink-0 border-b bg-muted/10 px-6 py-5">
         <h1 className="text-xl font-semibold">威胁管理</h1>
       </header>
-      <IncidentTable rows={incidents} />
+      <IncidentWorkbench
+        query={query}
+        severity={severity}
+        status={status}
+        rows={filteredIncidents}
+        severityBuckets={severityBuckets}
+        onQueryChange={setQuery}
+        onSeverityChange={setSeverity}
+        onStatusChange={setStatus}
+      />
     </section>
+  );
+}
+
+function IncidentWorkbench({
+  query,
+  severity,
+  status,
+  rows,
+  severityBuckets,
+  onQueryChange,
+  onSeverityChange,
+  onStatusChange,
+}: {
+  query: string;
+  severity: IncidentRecord["severity"] | "all";
+  status: IncidentRecord["status"] | "all";
+  rows: IncidentRecord[];
+  severityBuckets: IncidentSeverityBucket[];
+  onQueryChange: (value: string) => void;
+  onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
+  onStatusChange: (value: IncidentRecord["status"] | "all") => void;
+}) {
+  return (
+    <>
+      <div className="flex shrink-0 flex-col gap-3 border-b bg-muted/10 p-4">
+        <IncidentFilterBar
+          query={query}
+          severity={severity}
+          status={status}
+          onQueryChange={onQueryChange}
+          onSeverityChange={onSeverityChange}
+          onStatusChange={onStatusChange}
+        />
+        <IncidentChart rows={rows} buckets={severityBuckets} />
+      </div>
+      <IncidentTable rows={rows} />
+    </>
+  );
+}
+
+function IncidentFilterBar({
+  query,
+  severity,
+  status,
+  onQueryChange,
+  onSeverityChange,
+  onStatusChange,
+}: {
+  query: string;
+  severity: IncidentRecord["severity"] | "all";
+  status: IncidentRecord["status"] | "all";
+  onQueryChange: (value: string) => void;
+  onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
+  onStatusChange: (value: IncidentRecord["status"] | "all") => void;
+}) {
+  return (
+    <div className="flex min-h-11 items-stretch overflow-hidden rounded-lg border bg-bg max-lg:flex-wrap max-lg:overflow-visible max-lg:border-0 max-lg:bg-transparent">
+      <div className="relative min-w-72 flex-1 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
+        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-fg" />
+        <Input
+          className="h-11 rounded-none border-0 bg-transparent pl-9 font-mono focus-visible:ring-0 max-lg:rounded-lg"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="chainId, host, root cause"
+          aria-label="Incident query"
+        />
+      </div>
+      <InlineSelect
+        ariaLabel="Incident severity"
+        label="Severity"
+        value={severity}
+        options={[
+          { value: "all", label: "All" },
+          { value: "critical", label: "Critical" },
+          { value: "high", label: "High" },
+          { value: "medium", label: "Medium" },
+        ]}
+        onChange={(value) => onSeverityChange(value as IncidentRecord["severity"] | "all")}
+      />
+      <InlineSelect
+        ariaLabel="Incident status"
+        label="Status"
+        value={status}
+        options={[
+          { value: "all", label: "All" },
+          { value: "active", label: "Active" },
+          { value: "triage", label: "Triage" },
+          { value: "contained", label: "Contained" },
+        ]}
+        onChange={(value) => onStatusChange(value as IncidentRecord["status"] | "all")}
+      />
+    </div>
+  );
+}
+
+function InlineSelect({
+  ariaLabel,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  ariaLabel: string;
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex w-[220px] min-w-0 items-center gap-2 border-l bg-bg px-3 max-lg:w-full max-lg:rounded-lg max-lg:border">
+      <span className="shrink-0 text-xs font-medium text-muted-fg">{label}</span>
+      <select
+        aria-label={ariaLabel}
+        className="h-11 min-w-0 flex-1 bg-transparent text-sm font-medium outline-none"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function IncidentChart({
+  rows,
+  buckets,
+}: {
+  rows: IncidentRecord[];
+  buckets: IncidentSeverityBucket[];
+}) {
+  const maxCount = Math.max(...buckets.map((bucket) => bucket.count), 1);
+  const totalAlerts = rows.reduce((sum, incident) => sum + incident.alertCount, 0);
+  const hostCount = new Set(rows.flatMap((incident) => incident.hosts)).size;
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-[260px_260px_minmax(0,1fr)]">
+      <MetricTile label="Incidents" value={String(rows.length)} />
+      <MetricTile label="Alerts" value={String(totalAlerts)} detail={`${hostCount} hosts`} />
+      <div className="rounded-lg border bg-bg p-3">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-semibold">Severity distribution</div>
+          <Badge className="bg-bg text-muted-fg">filtered</Badge>
+        </div>
+        <div className="flex h-16 items-end gap-2">
+          {buckets.map((bucket) => (
+            <div key={bucket.severity} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+              <div
+                aria-label={`${bucket.severity}: ${bucket.count}`}
+                className={cn(
+                  "w-full rounded-t",
+                  bucket.severity === "critical" && "bg-destructive/75",
+                  bucket.severity === "high" && "bg-warning/75",
+                  bucket.severity === "medium" && "bg-success/75",
+                )}
+                style={{ height: `${Math.max((bucket.count / maxCount) * 48, bucket.count ? 6 : 2)}px` }}
+              />
+              <span className="max-w-full truncate text-[10px] uppercase text-muted-fg">
+                {bucket.severity}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-bg p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-fg">{label}</div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+      {detail && <div className="mt-1 text-xs text-muted-fg">{detail}</div>}
+    </div>
   );
 }
 

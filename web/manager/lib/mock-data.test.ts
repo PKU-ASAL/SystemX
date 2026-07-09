@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   attackChain,
   buildEventHistogram,
+  buildIncidentSeverityBuckets,
   createDiscoverRows,
   createEventFields,
   createEventRawDocument,
   createEventSourceChips,
   events,
   filterEvents,
+  filterIncidents,
   incidents,
   overviewMetrics,
   agents,
@@ -83,5 +85,25 @@ describe("manager mock data", () => {
       source: expect.arrayContaining([{ key: "host.name", value: events[0].host }]),
     });
     expect(rows[0].raw._id).toBe(events[0].id);
+  });
+
+  it("filters incidents by query, severity, and status", () => {
+    const results = filterIncidents(incidents, {
+      query: "凭据",
+      severity: "critical",
+      status: "triage",
+    });
+
+    expect(results.map((incident) => incident.id)).toEqual(["inc-1019"]);
+  });
+
+  it("builds incident severity chart buckets", () => {
+    const buckets = buildIncidentSeverityBuckets(incidents);
+
+    expect(buckets).toEqual([
+      { severity: "critical", count: 2 },
+      { severity: "high", count: 0 },
+      { severity: "medium", count: 0 },
+    ]);
   });
 });

@@ -92,6 +92,17 @@ export interface IncidentRecord {
   alertCount: number;
 }
 
+export interface IncidentFilterOptions {
+  query?: string;
+  severity?: IncidentRecord["severity"] | "all";
+  status?: IncidentRecord["status"] | "all";
+}
+
+export interface IncidentSeverityBucket {
+  severity: IncidentRecord["severity"];
+  count: number;
+}
+
 export interface AttackStage {
   id: string;
   label: string;
@@ -337,5 +348,45 @@ export function createDiscoverRows(sourceEvents: SecurityEvent[]): EventDiscover
     event,
     source: createEventSourceChips(event),
     raw: createEventRawDocument(event),
+  }));
+}
+
+export function filterIncidents(
+  sourceIncidents: IncidentRecord[],
+  options: IncidentFilterOptions = {},
+) {
+  const normalized = options.query?.trim().toLowerCase() ?? "";
+
+  return sourceIncidents.filter((incident) => {
+    if (options.severity && options.severity !== "all" && incident.severity !== options.severity) {
+      return false;
+    }
+    if (options.status && options.status !== "all" && incident.status !== options.status) {
+      return false;
+    }
+    if (!normalized) return true;
+
+    return [
+      incident.chainId,
+      incident.title,
+      incident.rootCause,
+      incident.severity,
+      incident.status,
+      incident.hosts.join(" "),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalized);
+  });
+}
+
+export function buildIncidentSeverityBuckets(
+  sourceIncidents: IncidentRecord[],
+): IncidentSeverityBucket[] {
+  const severities: IncidentRecord["severity"][] = ["critical", "high", "medium"];
+
+  return severities.map((severity) => ({
+    severity,
+    count: sourceIncidents.filter((incident) => incident.severity === severity).length,
   }));
 }
