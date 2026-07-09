@@ -17,6 +17,7 @@ test/environments/vm-topology/deploy/images/
 # build artifacts
 dist/
 .cache/
+.run/
 deployments/pki/agent-plane-mtls/runtime/
 
 # vagrant
