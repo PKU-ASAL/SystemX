@@ -31,6 +31,10 @@ import {
 } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
+type IncidentIndexPattern = "incidents-*" | "incident-*";
+
+const incidentIndexOptions: IncidentIndexPattern[] = ["incidents-*", "incident-*"];
+
 const severityClass = {
   critical: "border-destructive/40 bg-destructive/10 text-destructive",
   high: "text-status-high",
@@ -38,6 +42,7 @@ const severityClass = {
 } as const;
 
 export function IncidentsPage() {
+  const [indexPattern, setIndexPattern] = useState<IncidentIndexPattern>("incidents-*");
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState<IncidentRecord["severity"] | "all">("all");
   const [status, setStatus] = useState<IncidentRecord["status"] | "all">("all");
@@ -51,16 +56,15 @@ export function IncidentsPage() {
   );
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-bg">
-      <header className="shrink-0 border-b bg-muted/10 px-6 py-5">
-        <h1 className="text-xl font-semibold">威胁管理</h1>
-      </header>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-bg">
       <IncidentWorkbench
+        indexPattern={indexPattern}
         query={query}
         severity={severity}
         status={status}
         rows={filteredIncidents}
         severityBuckets={severityBuckets}
+        onIndexPatternChange={(value) => setIndexPattern(value as IncidentIndexPattern)}
         onQueryChange={setQuery}
         onSeverityChange={setSeverity}
         onStatusChange={setStatus}
@@ -70,20 +74,24 @@ export function IncidentsPage() {
 }
 
 function IncidentWorkbench({
+  indexPattern,
   query,
   severity,
   status,
   rows,
   severityBuckets,
+  onIndexPatternChange,
   onQueryChange,
   onSeverityChange,
   onStatusChange,
 }: {
+  indexPattern: IncidentIndexPattern;
   query: string;
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
   rows: IncidentRecord[];
   severityBuckets: IncidentSeverityBucket[];
+  onIndexPatternChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
@@ -92,9 +100,12 @@ function IncidentWorkbench({
     <>
       <div className="flex shrink-0 flex-col gap-3 border-b bg-muted/10 p-4">
         <IncidentFilterBar
+          count={rows.length}
+          indexPattern={indexPattern}
           query={query}
           severity={severity}
           status={status}
+          onIndexPatternChange={onIndexPatternChange}
           onQueryChange={onQueryChange}
           onSeverityChange={onSeverityChange}
           onStatusChange={onStatusChange}
@@ -107,56 +118,80 @@ function IncidentWorkbench({
 }
 
 function IncidentFilterBar({
+  count,
+  indexPattern,
   query,
   severity,
   status,
+  onIndexPatternChange,
   onQueryChange,
   onSeverityChange,
   onStatusChange,
 }: {
+  count: number;
+  indexPattern: IncidentIndexPattern;
   query: string;
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
+  onIndexPatternChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
 }) {
   return (
-    <div className="flex min-h-11 items-stretch overflow-hidden rounded-lg border bg-bg max-lg:flex-wrap max-lg:overflow-visible max-lg:border-0 max-lg:bg-transparent">
-      <div className="relative min-w-72 flex-1 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-fg" />
-        <Input
-          className="h-11 rounded-none border-0 bg-transparent pl-9 font-mono focus-visible:ring-0 max-lg:rounded-lg"
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="chainId, host, root cause"
-          aria-label="Incident query"
+    <div className="flex flex-col gap-3">
+      <div className="flex min-h-11 items-stretch overflow-hidden rounded-lg border bg-bg max-lg:flex-wrap max-lg:overflow-visible max-lg:border-0 max-lg:bg-transparent">
+        <InlineSelect
+          ariaLabel="Incident index pattern"
+          label="Index"
+          value={indexPattern}
+          options={incidentIndexOptions.map((option) => ({ value: option, label: option }))}
+          onChange={onIndexPatternChange}
         />
+        <div className="relative min-w-72 flex-1 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
+          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-fg" />
+          <Input
+            className="h-11 rounded-none border-0 bg-transparent pl-9 font-mono focus-visible:ring-0 max-lg:rounded-lg"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="incident.chain_id: threat-chain-001 or host.name: oa-web"
+            aria-label="Incident index query"
+          />
+        </div>
+        <Button className="h-11 rounded-none border-0 px-4 max-lg:w-full max-lg:rounded-lg" size="md">
+          Run
+        </Button>
       </div>
-      <InlineSelect
-        ariaLabel="Incident severity"
-        label="Severity"
-        value={severity}
-        options={[
-          { value: "all", label: "All" },
-          { value: "critical", label: "Critical" },
-          { value: "high", label: "High" },
-          { value: "medium", label: "Medium" },
-        ]}
-        onChange={(value) => onSeverityChange(value as IncidentRecord["severity"] | "all")}
-      />
-      <InlineSelect
-        ariaLabel="Incident status"
-        label="Status"
-        value={status}
-        options={[
-          { value: "all", label: "All" },
-          { value: "active", label: "Active" },
-          { value: "triage", label: "Triage" },
-          { value: "contained", label: "Contained" },
-        ]}
-        onChange={(value) => onStatusChange(value as IncidentRecord["status"] | "all")}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge>{count} hits</Badge>
+        <CompactSelect
+          ariaLabel="Incident severity"
+          label="severity"
+          value={severity}
+          options={[
+            { value: "all", label: "all" },
+            { value: "critical", label: "critical" },
+            { value: "high", label: "high" },
+            { value: "medium", label: "medium" },
+          ]}
+          onChange={(value) => onSeverityChange(value as IncidentRecord["severity"] | "all")}
+        />
+        <CompactSelect
+          ariaLabel="Incident status"
+          label="status"
+          value={status}
+          options={[
+            { value: "all", label: "all" },
+            { value: "active", label: "active" },
+            { value: "triage", label: "triage" },
+            { value: "contained", label: "contained" },
+          ]}
+          onChange={(value) => onStatusChange(value as IncidentRecord["status"] | "all")}
+        />
+        <Badge className="bg-bg text-muted-fg">incident.chain_id</Badge>
+        <Badge className="bg-bg text-muted-fg">host.name</Badge>
+        <Badge className="bg-bg text-muted-fg">incident.status</Badge>
+      </div>
     </div>
   );
 }
@@ -180,6 +215,38 @@ function InlineSelect({
       <select
         aria-label={ariaLabel}
         className="h-11 min-w-0 flex-1 bg-transparent text-sm font-medium outline-none"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function CompactSelect({
+  ariaLabel,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  ariaLabel: string;
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="inline-flex h-7 items-center gap-1 rounded-md border bg-bg px-2 font-mono text-xs text-muted-fg">
+      <span>{label}:</span>
+      <select
+        aria-label={ariaLabel}
+        className="bg-transparent font-mono text-xs text-fg outline-none"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
