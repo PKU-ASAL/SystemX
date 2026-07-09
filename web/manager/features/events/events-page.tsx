@@ -15,13 +15,20 @@ import {
   ChevronRightIcon,
   ClockIcon,
   RefreshCwIcon,
-  SearchIcon,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { FieldMetadataPopover } from "@/components/field-metadata-popover";
 import { Input } from "@/components/ui/input";
+import { QueryAutocompleteInput } from "@/components/query-autocomplete-input";
+import {
+  SearchToolbar,
+  searchToolbarInlineSelectClass,
+  searchToolbarPlainButtonClass,
+  searchToolbarRunButtonClass,
+} from "@/components/search-toolbar";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import {
   Table,
@@ -39,6 +46,7 @@ import {
   filterEvents,
   type SecurityEventIndex,
 } from "@/lib/mock-data";
+import { getSearchFieldsForIndexPattern, type SearchField } from "@/lib/opensearch-fields";
 import { cn } from "@/lib/utils";
 
 type DiscoverIndexPattern = "events-*,signals-*" | "events-*" | "signals-*";
@@ -62,6 +70,7 @@ export function EventsPage() {
   const [refresh, setRefresh] = useState({ paused: true, intervalSeconds: 10 });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const selectedIndexes = useMemo(() => resolveIndexPattern(indexPattern), [indexPattern]);
+  const searchFields = useMemo(() => getSearchFieldsForIndexPattern(indexPattern), [indexPattern]);
   const timeFilter = useMemo(() => resolveTimeFilter(timeRange), [timeRange]);
   const filteredEvents = useMemo(
     () =>
@@ -95,6 +104,7 @@ export function EventsPage() {
           query={query}
           timeRange={timeRange}
           refresh={refresh}
+          searchFields={searchFields}
           onIndexPatternChange={(value) => setIndexPattern(value as DiscoverIndexPattern)}
           onQueryChange={setQuery}
           onRefreshChange={setRefresh}
@@ -117,6 +127,7 @@ function DiscoverQueryBar({
   query,
   timeRange,
   refresh,
+  searchFields,
   onIndexPatternChange,
   onQueryChange,
   onRefreshChange,
@@ -127,50 +138,49 @@ function DiscoverQueryBar({
   query: string;
   timeRange: DiscoverTimeRange;
   refresh: { paused: boolean; intervalSeconds: number };
+  searchFields: SearchField[];
   onIndexPatternChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onRefreshChange: (value: { paused: boolean; intervalSeconds: number }) => void;
   onTimeRangeChange: (value: DiscoverTimeRange) => void;
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex min-h-11 items-stretch overflow-hidden rounded-lg border bg-bg max-lg:flex-wrap max-lg:overflow-visible max-lg:border-0 max-lg:bg-transparent">
-        <InlineSelect
-          ariaLabel="Index pattern"
-          label="Index"
-          value={indexPattern}
-          options={indexOptions.map((option) => ({ value: option, label: option }))}
-          onChange={onIndexPatternChange}
-        />
-        <div className="relative min-w-72 flex-1 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-fg" />
-          <Input
-            className="h-11 rounded-none border-0 bg-transparent pl-9 font-mono focus-visible:ring-0 max-lg:rounded-lg"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="agent.id: node-a and event.kind: signal"
-            aria-label="KQL query"
+    <SearchToolbar
+      controls={
+        <>
+          <InlineSelect
+            ariaLabel="Index pattern"
+            label="Index"
+            value={indexPattern}
+            options={indexOptions.map((option) => ({ value: option, label: option }))}
+            onChange={onIndexPatternChange}
           />
-        </div>
-        <SuperDatePicker
-          value={timeRange}
-          refresh={refresh}
-          onChange={onTimeRangeChange}
-          onRefreshChange={onRefreshChange}
-        />
-        <Button className="h-11 rounded-none border-0 px-4 max-lg:w-full max-lg:rounded-lg" size="md">
-          <RefreshCwIcon />
-          Run
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge>{count} hits</Badge>
-        <Badge className="bg-bg text-muted-fg">host.name</Badge>
-        <Badge className="bg-bg text-muted-fg">event.kind</Badge>
-        <Badge className="bg-bg text-muted-fg">event.severity</Badge>
-        <Badge className="bg-bg text-muted-fg">event.tactic</Badge>
-      </div>
-    </div>
+          <QueryAutocompleteInput
+            query={query}
+            fields={searchFields}
+            placeholder="agent.id: node-a and event.kind: signal"
+            ariaLabel="KQL query"
+            onQueryChange={onQueryChange}
+          />
+          <SuperDatePicker
+            value={timeRange}
+            refresh={refresh}
+            onChange={onTimeRangeChange}
+            onRefreshChange={onRefreshChange}
+          />
+          <Button className={searchToolbarRunButtonClass} size="md">
+            <RefreshCwIcon />
+            Run
+          </Button>
+        </>
+      }
+      meta={
+        <>
+          <Badge>{count} hits</Badge>
+          <FieldMetadataPopover fields={searchFields} />
+        </>
+      }
+    />
   );
 }
 
@@ -202,10 +212,7 @@ function SuperDatePicker({
 
   return (
     <Popover>
-      <Button
-        className="h-11 rounded-none border-0 border-l px-3 max-lg:w-full max-lg:rounded-lg max-lg:border"
-        intent="plain"
-      >
+      <Button className={searchToolbarPlainButtonClass} intent="plain">
         <ClockIcon />
         <span className="min-w-0 truncate">{value.label}</span>
       </Button>
@@ -302,7 +309,7 @@ function InlineSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex w-[220px] min-w-0 items-center gap-2 border-l bg-bg px-3 max-lg:w-full max-lg:rounded-lg max-lg:border">
+    <label className={searchToolbarInlineSelectClass}>
       <span className="shrink-0 text-xs font-medium text-muted-fg">{label}</span>
       <select
         aria-label={ariaLabel}

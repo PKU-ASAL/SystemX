@@ -10,6 +10,7 @@ export interface AgentRecord {
   version: string;
   status: "healthy" | "degraded" | "offline";
   policy: string;
+  registeredAt: string;
   lastSeen: string;
 }
 
@@ -143,6 +144,7 @@ export const agents: AgentRecord[] = [
     version: "0.8.0",
     status: "healthy",
     policy: "default-edr-policy",
+    registeredAt: "2026-07-06 09:12:44",
     lastSeen: "32s ago",
   },
   {
@@ -151,6 +153,7 @@ export const agents: AgentRecord[] = [
     version: "0.8.0",
     status: "degraded",
     policy: "linux-server-hardening",
+    registeredAt: "2026-07-07 13:26:10",
     lastSeen: "4m ago",
   },
   {
@@ -159,9 +162,40 @@ export const agents: AgentRecord[] = [
     version: "0.7.4",
     status: "healthy",
     policy: "detection-lab",
+    registeredAt: "2026-07-05 18:42:31",
     lastSeen: "51s ago",
   },
 ];
+
+export function filterAgents(records: AgentRecord[], query = "") {
+  const tokens = query.split(/\s+/).filter(Boolean);
+
+  if (!tokens.length) {
+    return records;
+  }
+
+  return records.filter((agent) =>
+    tokens.every((token) => matchesAgentQueryToken(agent, token)),
+  );
+}
+
+function matchesAgentQueryToken(agent: AgentRecord, token: string) {
+  const [key, rawValue] = token.split(":");
+  const value = rawValue?.toLowerCase();
+
+  if (key === "agent.id" && value) return agent.id.toLowerCase().includes(value);
+  if (key === "host.name" && value) return agent.host.toLowerCase().includes(value);
+  if (key === "status" && value) return agent.status.toLowerCase().includes(value);
+  if (key === "policy.name" && value) return agent.policy.toLowerCase().includes(value);
+  if (key === "agent.version" && value) return agent.version.toLowerCase().includes(value);
+  if (key === "agent.registered_at" && value) return agent.registeredAt.toLowerCase().includes(value);
+
+  const normalizedToken = token.toLowerCase();
+
+  return [agent.id, agent.host, agent.status, agent.policy, agent.version, agent.registeredAt, agent.lastSeen].some(
+    (field) => field.toLowerCase().includes(normalizedToken),
+  );
+}
 
 export const events: SecurityEvent[] = [
   {

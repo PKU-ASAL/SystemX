@@ -14,13 +14,23 @@ import {
   GitBranchIcon,
   NetworkIcon,
   RefreshCwIcon,
-  SearchIcon,
-  XIcon,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FieldMetadataPopover } from "@/components/field-metadata-popover";
 import { Input } from "@/components/ui/input";
+import { QueryAutocompleteInput } from "@/components/query-autocomplete-input";
+import {
+  IncidentDetailView,
+  type IncidentDetailMode,
+} from "@/features/incidents/incident-detail-view";
+import {
+  SearchToolbar,
+  searchToolbarInlineSelectClass,
+  searchToolbarPlainButtonClass,
+  searchToolbarRunButtonClass,
+} from "@/components/search-toolbar";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import {
   Table,
@@ -37,6 +47,9 @@ import {
   type IncidentHistogramBucket,
   type IncidentRecord,
 } from "@/lib/mock-data";
+import { getIncidentDetail } from "@/lib/incident-detail-data";
+import type { SearchField } from "@/lib/opensearch-fields";
+import { getSearchFieldsForIndexPattern } from "@/lib/opensearch-fields";
 import { cn } from "@/lib/utils";
 
 type IncidentIndexPattern = "incidents-*" | "incident-*";
@@ -45,13 +58,6 @@ type IncidentTimeRange =
   | { mode: "absolute"; label: string; start: string; end: string };
 
 const incidentIndexOptions: IncidentIndexPattern[] = ["incidents-*", "incident-*"];
-const incidentQueryFields = [
-  { name: "incident.chain_id", example: "threat-chain-001" },
-  { name: "host.name", example: "oa-web" },
-  { name: "severity", example: "critical" },
-  { name: "status", example: "active" },
-  { name: "root_cause", example: "credential" },
-];
 const quickTimeRanges: Array<Extract<IncidentTimeRange, { mode: "quick" }>> = [
   { mode: "quick", label: "Last 15 minutes", minutes: 15 },
   { mode: "quick", label: "Last 30 minutes", minutes: 30 },
@@ -73,6 +79,11 @@ export function IncidentsPage() {
   const [refresh, setRefresh] = useState({ paused: true, intervalSeconds: 10 });
   const [severity, setSeverity] = useState<IncidentRecord["severity"] | "all">("all");
   const [status, setStatus] = useState<IncidentRecord["status"] | "all">("all");
+  const [detailSelection, setDetailSelection] = useState<{
+    incident: IncidentRecord;
+    mode: IncidentDetailMode;
+  } | null>(null);
+  const searchFields = useMemo(() => getSearchFieldsForIndexPattern(indexPattern), [indexPattern]);
   const timeFilter = useMemo(() => resolveTimeFilter(timeRange), [timeRange]);
   const filteredIncidents = useMemo(
     () => filterIncidents(incidents, { query, severity, status, ...timeFilter, now: referenceNow }),
@@ -90,6 +101,18 @@ export function IncidentsPage() {
       }),
     [query, severity, status, timeFilter],
   );
+  const selectedDetail = detailSelection ? getIncidentDetail(detailSelection.incident.id) : undefined;
+
+  if (detailSelection && selectedDetail) {
+    return (
+      <IncidentDetailView
+        incident={detailSelection.incident}
+        detail={selectedDetail}
+        mode={detailSelection.mode}
+        onBack={() => setDetailSelection(null)}
+      />
+    );
+  }
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-bg">
@@ -100,8 +123,10 @@ export function IncidentsPage() {
         refresh={refresh}
         severity={severity}
         status={status}
+        searchFields={searchFields}
         rows={filteredIncidents}
         histogram={histogram}
+        onOpenDetail={(incident, mode) => setDetailSelection({ incident, mode })}
         onIndexPatternChange={(value) => setIndexPattern(value as IncidentIndexPattern)}
         onQueryChange={(value) =>
           applyIncidentQueryInput(value, {
@@ -126,6 +151,7 @@ function IncidentWorkbench({
   refresh,
   severity,
   status,
+  searchFields,
   rows,
   histogram,
   onIndexPatternChange,
@@ -134,6 +160,7 @@ function IncidentWorkbench({
   onTimeRangeChange,
   onSeverityChange,
   onStatusChange,
+  onOpenDetail,
 }: {
   indexPattern: IncidentIndexPattern;
   query: string;
@@ -141,6 +168,7 @@ function IncidentWorkbench({
   refresh: { paused: boolean; intervalSeconds: number };
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
+  searchFields: SearchField[];
   rows: IncidentRecord[];
   histogram: IncidentHistogramBucket[];
   onIndexPatternChange: (value: string) => void;
@@ -149,6 +177,7 @@ function IncidentWorkbench({
   onTimeRangeChange: (value: IncidentTimeRange) => void;
   onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
+  onOpenDetail: (incident: IncidentRecord, mode: IncidentDetailMode) => void;
 }) {
   return (
     <>
@@ -161,6 +190,7 @@ function IncidentWorkbench({
           refresh={refresh}
           severity={severity}
           status={status}
+          searchFields={searchFields}
           onIndexPatternChange={onIndexPatternChange}
           onQueryChange={onQueryChange}
           onRefreshChange={onRefreshChange}
@@ -170,7 +200,7 @@ function IncidentWorkbench({
         />
         <IncidentHistogram buckets={histogram} />
       </div>
-      <IncidentTable rows={rows} />
+      <IncidentTable rows={rows} onOpenDetail={onOpenDetail} />
     </>
   );
 }
@@ -183,6 +213,7 @@ function IncidentFilterBar({
   refresh,
   severity,
   status,
+  searchFields,
   onIndexPatternChange,
   onQueryChange,
   onRefreshChange,
@@ -197,6 +228,7 @@ function IncidentFilterBar({
   refresh: { paused: boolean; intervalSeconds: number };
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
+  searchFields: SearchField[];
   onIndexPatternChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onRefreshChange: (value: { paused: boolean; intervalSeconds: number }) => void;
@@ -205,43 +237,44 @@ function IncidentFilterBar({
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex min-h-11 items-stretch overflow-hidden rounded-lg border bg-bg max-lg:flex-wrap max-lg:overflow-visible max-lg:border-0 max-lg:bg-transparent">
-        <InlineSelect
-          ariaLabel="Incident index pattern"
-          label="Index"
-          value={indexPattern}
-          options={incidentIndexOptions.map((option) => ({ value: option, label: option }))}
-          onChange={onIndexPatternChange}
-        />
-        <IncidentQueryInput
-          query={query}
-          severity={severity}
-          status={status}
-          onQueryChange={onQueryChange}
-          onSeverityChange={onSeverityChange}
-          onStatusChange={onStatusChange}
-        />
-        <SuperDatePicker
-          value={timeRange}
-          refresh={refresh}
-          onChange={onTimeRangeChange}
-          onRefreshChange={onRefreshChange}
-        />
-        <Button className="h-11 rounded-none border-0 px-4 max-lg:w-full max-lg:rounded-lg" size="md">
-          <RefreshCwIcon />
-          Run
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge>{count} hits</Badge>
-        {incidentQueryFields.map((field) => (
-          <Badge key={field.name} className="bg-bg text-muted-fg">
-            {field.name}
-          </Badge>
-        ))}
-      </div>
-    </div>
+    <SearchToolbar
+      controls={
+        <>
+          <InlineSelect
+            ariaLabel="Incident index pattern"
+            label="Index"
+            value={indexPattern}
+            options={incidentIndexOptions.map((option) => ({ value: option, label: option }))}
+            onChange={onIndexPatternChange}
+          />
+          <IncidentQueryInput
+            query={query}
+            severity={severity}
+            status={status}
+            searchFields={searchFields}
+            onQueryChange={onQueryChange}
+            onSeverityChange={onSeverityChange}
+            onStatusChange={onStatusChange}
+          />
+          <SuperDatePicker
+            value={timeRange}
+            refresh={refresh}
+            onChange={onTimeRangeChange}
+            onRefreshChange={onRefreshChange}
+          />
+          <Button className={searchToolbarRunButtonClass} size="md">
+            <RefreshCwIcon />
+            Run
+          </Button>
+        </>
+      }
+      meta={
+        <>
+          <Badge>{count} hits</Badge>
+          <FieldMetadataPopover fields={searchFields} />
+        </>
+      }
+    />
   );
 }
 
@@ -249,6 +282,7 @@ function IncidentQueryInput({
   query,
   severity,
   status,
+  searchFields,
   onQueryChange,
   onSeverityChange,
   onStatusChange,
@@ -256,6 +290,7 @@ function IncidentQueryInput({
   query: string;
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
+  searchFields: SearchField[];
   onQueryChange: (value: string) => void;
   onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
@@ -268,47 +303,16 @@ function IncidentQueryInput({
   if (status !== "all") {
     tokens.push({ key: "status", value: status, onRemove: () => onStatusChange("all") });
   }
-  const showHints = !query && !tokens.length;
 
   return (
-    <div className="flex min-h-11 min-w-72 flex-1 items-center gap-2 bg-bg px-3 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
-      <SearchIcon className="size-4 shrink-0 text-muted-fg" />
-      {tokens.map((token) => (
-        <span
-          key={token.key}
-          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border bg-muted px-2 font-mono text-xs"
-        >
-          <span className="font-semibold text-muted-fg">{token.key}:</span>
-          <span>{token.value}</span>
-          <button
-            aria-label={`移除 ${token.key}:${token.value}`}
-            className="ml-1 rounded text-muted-fg hover:text-fg"
-            type="button"
-            onClick={token.onRemove}
-          >
-            <XIcon className="size-3" />
-          </button>
-        </span>
-      ))}
-      {showHints &&
-        incidentQueryFields.slice(0, 3).map((field) => (
-          <button
-            key={field.name}
-            className="inline-flex h-7 shrink-0 items-center rounded-md border bg-bg px-2 font-mono text-xs text-muted-fg hover:bg-muted hover:text-fg"
-            type="button"
-            onClick={() => onQueryChange(`${field.name}:`)}
-          >
-            {field.name}:
-          </button>
-        ))}
-      <Input
-        className="h-10 min-w-40 flex-1 rounded-none border-0 bg-transparent px-0 font-mono focus-visible:ring-0"
-        value={query}
-        onChange={(event) => onQueryChange(event.target.value)}
-        placeholder={tokens.length ? "Add query..." : "incident.chain_id: threat-chain-001 or severity:critical"}
-        aria-label="Incident index query"
-      />
-    </div>
+    <QueryAutocompleteInput
+      query={query}
+      fields={searchFields}
+      tokens={tokens}
+      placeholder="incident.chain_id: threat-chain-001 or severity:critical"
+      ariaLabel="Incident index query"
+      onQueryChange={onQueryChange}
+    />
   );
 }
 
@@ -344,7 +348,7 @@ function SuperDatePicker({
   return (
     <Popover>
       <Button
-        className="h-11 rounded-none border-0 border-l px-3 max-lg:w-full max-lg:rounded-lg max-lg:border"
+        className={searchToolbarPlainButtonClass}
         intent="plain"
       >
         <ClockIcon />
@@ -443,7 +447,7 @@ function InlineSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex w-[220px] min-w-0 items-center gap-2 border-l bg-bg px-3 max-lg:w-full max-lg:rounded-lg max-lg:border">
+    <label className={searchToolbarInlineSelectClass}>
       <span className="shrink-0 text-xs font-medium text-muted-fg">{label}</span>
       <select
         aria-label={ariaLabel}
@@ -544,14 +548,20 @@ function LegendSwatch({
   );
 }
 
-function IncidentTable({ rows }: { rows: IncidentRecord[] }) {
+function IncidentTable({
+  rows,
+  onOpenDetail,
+}: {
+  rows: IncidentRecord[];
+  onOpenDetail: (incident: IncidentRecord, mode: IncidentDetailMode) => void;
+}) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "alertCount", desc: true }]);
   const parentRef = useRef<HTMLDivElement>(null);
   const columns = useMemo<ColumnDef<IncidentRecord>[]>(
     () => [
       {
         id: "chain",
-        header: "攻击链",
+        header: "Attack Chain",
         accessorFn: (incident) => incident.chainId,
         cell: ({ row }) => (
           <div>
@@ -573,26 +583,26 @@ function IncidentTable({ rows }: { rows: IncidentRecord[] }) {
       },
       {
         id: "actions",
-        header: "操作",
+        header: "Actions",
         enableSorting: false,
-        cell: ({ row }) => <IncidentActions incident={row.original} />,
+        cell: ({ row }) => <IncidentActions incident={row.original} onOpenDetail={onOpenDetail} />,
       },
       {
         id: "hosts",
-        header: "涉及主机",
+        header: "Hosts",
         accessorFn: (incident) => incident.hosts.join(","),
         cell: ({ row }) => <HostChips hosts={row.original.hosts} />,
       },
       {
         accessorKey: "alertCount",
-        header: "告警数",
+        header: "Alerts",
         cell: ({ row }) => (
           <span className="font-semibold tabular-nums">{row.original.alertCount}</span>
         ),
       },
       {
         accessorKey: "severity",
-        header: "严重度",
+        header: "Severity",
         cell: ({ row }) => (
           <Badge className={cn("rounded-full px-3", severityClass[row.original.severity])}>
             {row.original.severity}
@@ -600,7 +610,7 @@ function IncidentTable({ rows }: { rows: IncidentRecord[] }) {
         ),
       },
     ],
-    [],
+    [onOpenDetail],
   );
   // TanStack Table intentionally returns method-heavy state objects; keep it outside React Compiler memoization.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -670,16 +680,32 @@ function IncidentRow({ cells }: { cells: Cell<IncidentRecord, unknown>[] }) {
   );
 }
 
-function IncidentActions({ incident }: { incident: IncidentRecord }) {
+function IncidentActions({
+  incident,
+  onOpenDetail,
+}: {
+  incident: IncidentRecord;
+  onOpenDetail: (incident: IncidentRecord, mode: IncidentDetailMode) => void;
+}) {
   return (
     <div className="flex items-center gap-2">
-      <Button aria-label={`查看 ${incident.chainId} 攻击链`} intent="plain" size="xs">
+      <Button
+        aria-label={`View ${incident.chainId} attack chain`}
+        intent="plain"
+        size="xs"
+        onPress={() => onOpenDetail(incident, "attack-chain")}
+      >
         <GitBranchIcon />
-        攻击链
+        Attack Chain
       </Button>
-      <Button aria-label={`查看 ${incident.chainId} 溯源图`} intent="plain" size="xs">
+      <Button
+        aria-label={`View ${incident.chainId} provenance graph`}
+        intent="plain"
+        size="xs"
+        onPress={() => onOpenDetail(incident, "provenance")}
+      >
         <NetworkIcon />
-        溯源图
+        Provenance
       </Button>
     </div>
   );

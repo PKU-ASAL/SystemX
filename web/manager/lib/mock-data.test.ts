@@ -10,6 +10,7 @@ import {
   createEventRawDocument,
   createEventSourceChips,
   events,
+  filterAgents,
   filterEvents,
   filterIncidents,
   incidents,
@@ -31,6 +32,17 @@ describe("manager mock data", () => {
 
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((event) => event.summary.toLowerCase().includes("credential"))).toBe(true);
+  });
+
+  it("filters agents by free text and field query", () => {
+    expect(filterAgents(agents, "prod-db").map((agent) => agent.id)).toEqual(["agent-prod-014"]);
+    expect(filterAgents(agents, "agent.registered_at:2026-07-07").map((agent) => agent.id)).toEqual([
+      "agent-prod-014",
+    ]);
+    expect(filterAgents(agents, "status:healthy").map((agent) => agent.id)).toEqual([
+      "agent-prod-001",
+      "agent-lab-003",
+    ]);
   });
 
   it("filters events by selected index and time range", () => {
