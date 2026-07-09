@@ -9,7 +9,14 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 
-import { ClockIcon, GitBranchIcon, NetworkIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import {
+  ClockIcon,
+  GitBranchIcon,
+  NetworkIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,7 +96,13 @@ export function IncidentsPage() {
         rows={filteredIncidents}
         histogram={histogram}
         onIndexPatternChange={(value) => setIndexPattern(value as IncidentIndexPattern)}
-        onQueryChange={setQuery}
+        onQueryChange={(value) =>
+          applyIncidentQueryInput(value, {
+            setQuery,
+            setSeverity,
+            setStatus,
+          })
+        }
         onRefreshChange={setRefresh}
         onTimeRangeChange={setTimeRange}
         onSeverityChange={setSeverity}
@@ -194,16 +207,14 @@ function IncidentFilterBar({
           options={incidentIndexOptions.map((option) => ({ value: option, label: option }))}
           onChange={onIndexPatternChange}
         />
-        <div className="relative min-w-72 flex-1 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-fg" />
-          <Input
-            className="h-11 rounded-none border-0 bg-transparent pl-9 font-mono focus-visible:ring-0 max-lg:rounded-lg"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="incident.chain_id: threat-chain-001 or host.name: oa-web"
-            aria-label="Incident index query"
-          />
-        </div>
+        <IncidentQueryInput
+          query={query}
+          severity={severity}
+          status={status}
+          onQueryChange={onQueryChange}
+          onSeverityChange={onSeverityChange}
+          onStatusChange={onStatusChange}
+        />
         <SuperDatePicker
           value={timeRange}
           refresh={refresh}
@@ -217,34 +228,65 @@ function IncidentFilterBar({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{count} hits</Badge>
-        <CompactSelect
-          ariaLabel="Incident severity"
-          label="severity"
-          value={severity}
-          options={[
-            { value: "all", label: "all" },
-            { value: "critical", label: "critical" },
-            { value: "high", label: "high" },
-            { value: "medium", label: "medium" },
-          ]}
-          onChange={(value) => onSeverityChange(value as IncidentRecord["severity"] | "all")}
-        />
-        <CompactSelect
-          ariaLabel="Incident status"
-          label="status"
-          value={status}
-          options={[
-            { value: "all", label: "all" },
-            { value: "active", label: "active" },
-            { value: "triage", label: "triage" },
-            { value: "contained", label: "contained" },
-          ]}
-          onChange={(value) => onStatusChange(value as IncidentRecord["status"] | "all")}
-        />
         <Badge className="bg-bg text-muted-fg">incident.chain_id</Badge>
         <Badge className="bg-bg text-muted-fg">host.name</Badge>
         <Badge className="bg-bg text-muted-fg">incident.status</Badge>
       </div>
+    </div>
+  );
+}
+
+function IncidentQueryInput({
+  query,
+  severity,
+  status,
+  onQueryChange,
+  onSeverityChange,
+  onStatusChange,
+}: {
+  query: string;
+  severity: IncidentRecord["severity"] | "all";
+  status: IncidentRecord["status"] | "all";
+  onQueryChange: (value: string) => void;
+  onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
+  onStatusChange: (value: IncidentRecord["status"] | "all") => void;
+}) {
+  const tokens: Array<{ key: string; value: string; onRemove: () => void }> = [];
+
+  if (severity !== "all") {
+    tokens.push({ key: "severity", value: severity, onRemove: () => onSeverityChange("all") });
+  }
+  if (status !== "all") {
+    tokens.push({ key: "status", value: status, onRemove: () => onStatusChange("all") });
+  }
+
+  return (
+    <div className="flex min-h-11 min-w-72 flex-1 items-center gap-2 bg-bg px-3 max-lg:min-w-full max-lg:rounded-lg max-lg:border">
+      <SearchIcon className="size-4 shrink-0 text-muted-fg" />
+      {tokens.map((token) => (
+        <span
+          key={token.key}
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border bg-muted px-2 font-mono text-xs"
+        >
+          <span className="font-semibold text-muted-fg">{token.key}:</span>
+          <span>{token.value}</span>
+          <button
+            aria-label={`移除 ${token.key}:${token.value}`}
+            className="ml-1 rounded text-muted-fg hover:text-fg"
+            type="button"
+            onClick={token.onRemove}
+          >
+            <XIcon className="size-3" />
+          </button>
+        </span>
+      ))}
+      <Input
+        className="h-10 min-w-40 flex-1 rounded-none border-0 bg-transparent px-0 font-mono focus-visible:ring-0"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder={tokens.length ? "Add query..." : "incident.chain_id: threat-chain-001 or severity:critical"}
+        aria-label="Incident index query"
+      />
     </div>
   );
 }
@@ -385,38 +427,6 @@ function InlineSelect({
       <select
         aria-label={ariaLabel}
         className="h-11 min-w-0 flex-1 bg-transparent text-sm font-medium outline-none"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function CompactSelect({
-  ariaLabel,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  ariaLabel: string;
-  label: string;
-  value: string;
-  options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="inline-flex h-7 items-center gap-1 rounded-md border bg-bg px-2 font-mono text-xs text-muted-fg">
-      <span>{label}:</span>
-      <select
-        aria-label={ariaLabel}
-        className="bg-transparent font-mono text-xs text-fg outline-none"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -700,4 +710,44 @@ function resolveTimeFilter(range: IncidentTimeRange) {
 
 function formatDateTimeLabel(value: string) {
   return value.replace("T", " ");
+}
+
+function applyIncidentQueryInput(
+  value: string,
+  setters: {
+    setQuery: (value: string) => void;
+    setSeverity: (value: IncidentRecord["severity"] | "all") => void;
+    setStatus: (value: IncidentRecord["status"] | "all") => void;
+  },
+) {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  const freeText: string[] = [];
+
+  for (const token of tokens) {
+    const [key, rawValue] = token.split(":");
+    const normalizedKey = key?.toLowerCase();
+    const normalizedValue = rawValue?.toLowerCase();
+
+    if (normalizedKey === "severity" && isIncidentSeverity(normalizedValue)) {
+      setters.setSeverity(normalizedValue);
+      continue;
+    }
+
+    if (normalizedKey === "status" && isIncidentStatus(normalizedValue)) {
+      setters.setStatus(normalizedValue);
+      continue;
+    }
+
+    freeText.push(token);
+  }
+
+  setters.setQuery(freeText.join(" "));
+}
+
+function isIncidentSeverity(value: string | undefined): value is IncidentRecord["severity"] {
+  return value === "critical" || value === "high" || value === "medium";
+}
+
+function isIncidentStatus(value: string | undefined): value is IncidentRecord["status"] {
+  return value === "active" || value === "triage" || value === "contained";
 }
