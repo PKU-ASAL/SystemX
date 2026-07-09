@@ -9,11 +9,12 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 
-import { GitBranchIcon, NetworkIcon, SearchIcon } from "lucide-react";
+import { ClockIcon, GitBranchIcon, NetworkIcon, SearchIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -23,17 +24,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  buildIncidentSeverityBuckets,
+  buildIncidentHistogram,
   filterIncidents,
   incidents,
+  type IncidentHistogramBucket,
   type IncidentRecord,
-  type IncidentSeverityBucket,
 } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 type IncidentIndexPattern = "incidents-*" | "incident-*";
+type IncidentTimeRange =
+  | { mode: "quick"; label: string; minutes: number }
+  | { mode: "absolute"; label: string; start: string; end: string };
 
 const incidentIndexOptions: IncidentIndexPattern[] = ["incidents-*", "incident-*"];
+const quickTimeRanges: Array<Extract<IncidentTimeRange, { mode: "quick" }>> = [
+  { mode: "quick", label: "Last 15 minutes", minutes: 15 },
+  { mode: "quick", label: "Last 30 minutes", minutes: 30 },
+  { mode: "quick", label: "Last 1 hour", minutes: 60 },
+  { mode: "quick", label: "Last 24 hours", minutes: 1440 },
+];
+const referenceNow = new Date("2026-07-08T21:10:00").getTime();
 
 const severityClass = {
   critical: "border-destructive/40 bg-destructive/10 text-destructive",
@@ -44,15 +55,26 @@ const severityClass = {
 export function IncidentsPage() {
   const [indexPattern, setIndexPattern] = useState<IncidentIndexPattern>("incidents-*");
   const [query, setQuery] = useState("");
+  const [timeRange, setTimeRange] = useState<IncidentTimeRange>(quickTimeRanges[1]);
+  const [refresh, setRefresh] = useState({ paused: true, intervalSeconds: 10 });
   const [severity, setSeverity] = useState<IncidentRecord["severity"] | "all">("all");
   const [status, setStatus] = useState<IncidentRecord["status"] | "all">("all");
+  const timeFilter = useMemo(() => resolveTimeFilter(timeRange), [timeRange]);
   const filteredIncidents = useMemo(
-    () => filterIncidents(incidents, { query, severity, status }),
-    [query, severity, status],
+    () => filterIncidents(incidents, { query, severity, status, ...timeFilter, now: referenceNow }),
+    [query, severity, status, timeFilter],
   );
-  const severityBuckets = useMemo(
-    () => buildIncidentSeverityBuckets(filteredIncidents),
-    [filteredIncidents],
+  const histogram = useMemo(
+    () =>
+      buildIncidentHistogram(incidents, {
+        query,
+        severity,
+        status,
+        ...timeFilter,
+        now: referenceNow,
+        bucketCount: 12,
+      }),
+    [query, severity, status, timeFilter],
   );
 
   return (
@@ -60,12 +82,16 @@ export function IncidentsPage() {
       <IncidentWorkbench
         indexPattern={indexPattern}
         query={query}
+        timeRange={timeRange}
+        refresh={refresh}
         severity={severity}
         status={status}
         rows={filteredIncidents}
-        severityBuckets={severityBuckets}
+        histogram={histogram}
         onIndexPatternChange={(value) => setIndexPattern(value as IncidentIndexPattern)}
         onQueryChange={setQuery}
+        onRefreshChange={setRefresh}
+        onTimeRangeChange={setTimeRange}
         onSeverityChange={setSeverity}
         onStatusChange={setStatus}
       />
@@ -76,23 +102,31 @@ export function IncidentsPage() {
 function IncidentWorkbench({
   indexPattern,
   query,
+  timeRange,
+  refresh,
   severity,
   status,
   rows,
-  severityBuckets,
+  histogram,
   onIndexPatternChange,
   onQueryChange,
+  onRefreshChange,
+  onTimeRangeChange,
   onSeverityChange,
   onStatusChange,
 }: {
   indexPattern: IncidentIndexPattern;
   query: string;
+  timeRange: IncidentTimeRange;
+  refresh: { paused: boolean; intervalSeconds: number };
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
   rows: IncidentRecord[];
-  severityBuckets: IncidentSeverityBucket[];
+  histogram: IncidentHistogramBucket[];
   onIndexPatternChange: (value: string) => void;
   onQueryChange: (value: string) => void;
+  onRefreshChange: (value: { paused: boolean; intervalSeconds: number }) => void;
+  onTimeRangeChange: (value: IncidentTimeRange) => void;
   onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
 }) {
@@ -103,14 +137,18 @@ function IncidentWorkbench({
           count={rows.length}
           indexPattern={indexPattern}
           query={query}
+          timeRange={timeRange}
+          refresh={refresh}
           severity={severity}
           status={status}
           onIndexPatternChange={onIndexPatternChange}
           onQueryChange={onQueryChange}
+          onRefreshChange={onRefreshChange}
+          onTimeRangeChange={onTimeRangeChange}
           onSeverityChange={onSeverityChange}
           onStatusChange={onStatusChange}
         />
-        <IncidentChart rows={rows} buckets={severityBuckets} />
+        <IncidentHistogram buckets={histogram} />
       </div>
       <IncidentTable rows={rows} />
     </>
@@ -121,20 +159,28 @@ function IncidentFilterBar({
   count,
   indexPattern,
   query,
+  timeRange,
+  refresh,
   severity,
   status,
   onIndexPatternChange,
   onQueryChange,
+  onRefreshChange,
+  onTimeRangeChange,
   onSeverityChange,
   onStatusChange,
 }: {
   count: number;
   indexPattern: IncidentIndexPattern;
   query: string;
+  timeRange: IncidentTimeRange;
+  refresh: { paused: boolean; intervalSeconds: number };
   severity: IncidentRecord["severity"] | "all";
   status: IncidentRecord["status"] | "all";
   onIndexPatternChange: (value: string) => void;
   onQueryChange: (value: string) => void;
+  onRefreshChange: (value: { paused: boolean; intervalSeconds: number }) => void;
+  onTimeRangeChange: (value: IncidentTimeRange) => void;
   onSeverityChange: (value: IncidentRecord["severity"] | "all") => void;
   onStatusChange: (value: IncidentRecord["status"] | "all") => void;
 }) {
@@ -161,6 +207,12 @@ function IncidentFilterBar({
         <Button className="h-11 rounded-none border-0 px-4 max-lg:w-full max-lg:rounded-lg" size="md">
           Run
         </Button>
+        <SuperDatePicker
+          value={timeRange}
+          refresh={refresh}
+          onChange={onTimeRangeChange}
+          onRefreshChange={onRefreshChange}
+        />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{count} hits</Badge>
@@ -193,6 +245,123 @@ function IncidentFilterBar({
         <Badge className="bg-bg text-muted-fg">incident.status</Badge>
       </div>
     </div>
+  );
+}
+
+function SuperDatePicker({
+  value,
+  refresh,
+  onChange,
+  onRefreshChange,
+}: {
+  value: IncidentTimeRange;
+  refresh: { paused: boolean; intervalSeconds: number };
+  onChange: (value: IncidentTimeRange) => void;
+  onRefreshChange: (value: { paused: boolean; intervalSeconds: number }) => void;
+}) {
+  const absoluteValue =
+    value.mode === "absolute"
+      ? value
+      : {
+          mode: "absolute" as const,
+          label: "Absolute",
+          start: "2026-07-08T20:40",
+          end: "2026-07-08T21:10",
+        };
+  const [draft, setDraft] = useState(absoluteValue);
+
+  function applyAbsoluteRange() {
+    onChange({
+      ...draft,
+      label: `${formatDateTimeLabel(draft.start)} - ${formatDateTimeLabel(draft.end)}`,
+    });
+  }
+
+  return (
+    <Popover>
+      <Button
+        className="h-11 rounded-none border-0 border-l px-3 max-lg:w-full max-lg:rounded-lg max-lg:border"
+        intent="plain"
+      >
+        <ClockIcon />
+        <span className="min-w-0 truncate">{value.label}</span>
+      </Button>
+      <PopoverContent className="max-w-none [--trigger-width:22rem]" placement="bottom end">
+        <div className="grid w-[560px] grid-cols-[220px_minmax(0,1fr)] gap-0 max-sm:w-[calc(100vw-2rem)] max-sm:grid-cols-1">
+          <div className="border-r p-3 max-sm:border-r-0 max-sm:border-b">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-fg">
+              Quick select
+            </div>
+            <div className="flex flex-col gap-1">
+              {quickTimeRanges.map((range) => (
+                <Button
+                  key={range.label}
+                  className="justify-start"
+                  intent={value.mode === "quick" && value.minutes === range.minutes ? "primary" : "plain"}
+                  size="sm"
+                  onPress={() => onChange(range)}
+                >
+                  {range.label}
+                </Button>
+              ))}
+            </div>
+            <div className="mt-4 rounded-lg border bg-muted/20 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-fg">
+                Refresh every
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  intent={refresh.paused ? "primary" : "outline"}
+                  size="sm"
+                  onPress={() => onRefreshChange({ ...refresh, paused: !refresh.paused })}
+                >
+                  {refresh.paused ? "Paused" : "Live"}
+                </Button>
+                <select
+                  aria-label="Refresh interval"
+                  className="h-9 min-w-0 flex-1 rounded-md border bg-bg px-2 text-sm outline-none"
+                  value={refresh.intervalSeconds}
+                  onChange={(event) =>
+                    onRefreshChange({ ...refresh, intervalSeconds: Number(event.target.value) })
+                  }
+                >
+                  <option value={5}>5s</option>
+                  <option value={10}>10s</option>
+                  <option value={30}>30s</option>
+                  <option value={60}>1m</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="p-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-fg">
+              Absolute range
+            </div>
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                Start date
+                <Input
+                  type="datetime-local"
+                  value={draft.start}
+                  onChange={(event) => setDraft((current) => ({ ...current, start: event.target.value }))}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                End date
+                <Input
+                  type="datetime-local"
+                  value={draft.end}
+                  onChange={(event) => setDraft((current) => ({ ...current, end: event.target.value }))}
+                />
+              </label>
+              <Button className="self-start" size="sm" onPress={applyAbsoluteRange}>
+                Apply time range
+              </Button>
+            </div>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -260,41 +429,46 @@ function CompactSelect({
   );
 }
 
-function IncidentChart({
-  rows,
+function IncidentHistogram({
   buckets,
 }: {
-  rows: IncidentRecord[];
-  buckets: IncidentSeverityBucket[];
+  buckets: IncidentHistogramBucket[];
 }) {
-  const maxCount = Math.max(...buckets.map((bucket) => bucket.count), 1);
-  const totalAlerts = rows.reduce((sum, incident) => sum + incident.alertCount, 0);
-  const hostCount = new Set(rows.flatMap((incident) => incident.hosts)).size;
+  const maxCount = Math.max(...buckets.map((bucket) => bucket.total), 1);
+  const total = buckets.reduce((sum, bucket) => sum + bucket.total, 0);
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[260px_260px_minmax(0,1fr)]">
-      <MetricTile label="Incidents" value={String(rows.length)} />
-      <MetricTile label="Alerts" value={String(totalAlerts)} detail={`${hostCount} hosts`} />
-      <div className="rounded-lg border bg-bg p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-semibold">Severity distribution</div>
-          <Badge className="bg-bg text-muted-fg">filtered</Badge>
+    <div className="rounded-lg border bg-bg p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-lg font-semibold">{total.toLocaleString()} hits</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <LegendSwatch className="bg-destructive/75" label="critical" />
+          <LegendSwatch className="bg-warning/75" label="high" />
+          <LegendSwatch className="bg-success/75" label="medium" />
+          <Badge className="bg-bg text-muted-fg">@timestamp per bucket</Badge>
         </div>
-        <div className="flex h-16 items-end gap-2">
+      </div>
+      <div className="grid h-28 grid-cols-[32px_1fr] gap-2">
+        <div className="flex flex-col justify-between text-right font-mono text-[10px] text-muted-fg">
+          <span>{maxCount}</span>
+          <span>{Math.floor(maxCount / 2)}</span>
+          <span>0</span>
+        </div>
+        <div className="flex items-end gap-1 border-l border-b px-2 pb-1">
           {buckets.map((bucket) => (
-            <div key={bucket.severity} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-              <div
-                aria-label={`${bucket.severity}: ${bucket.count}`}
-                className={cn(
-                  "w-full rounded-t",
-                  bucket.severity === "critical" && "bg-destructive/75",
-                  bucket.severity === "high" && "bg-warning/75",
-                  bucket.severity === "medium" && "bg-success/75",
-                )}
-                style={{ height: `${Math.max((bucket.count / maxCount) * 48, bucket.count ? 6 : 2)}px` }}
-              />
-              <span className="max-w-full truncate text-[10px] uppercase text-muted-fg">
-                {bucket.severity}
+            <div key={bucket.start} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+              <div className="flex w-full flex-col justify-end overflow-hidden rounded-t bg-muted/40">
+                <StackedBarSegment
+                  count={bucket.critical}
+                  maxCount={maxCount}
+                  className="bg-destructive/75"
+                />
+                <StackedBarSegment count={bucket.high} maxCount={maxCount} className="bg-warning/75" />
+                <StackedBarSegment count={bucket.medium} maxCount={maxCount} className="bg-success/75" />
+                {!bucket.total && <div className="h-px w-full bg-muted-fg/20" />}
+              </div>
+              <span className="max-w-full truncate font-mono text-[9px] text-muted-fg">
+                {bucket.label}
               </span>
             </div>
           ))}
@@ -304,21 +478,37 @@ function IncidentChart({
   );
 }
 
-function MetricTile({
+function StackedBarSegment({
+  count,
+  maxCount,
+  className,
+}: {
+  count: number;
+  maxCount: number;
+  className: string;
+}) {
+  if (!count) return null;
+
+  return (
+    <div
+      className={cn("w-full", className)}
+      style={{ height: `${Math.max((count / maxCount) * 78, 4)}px` }}
+    />
+  );
+}
+
+function LegendSwatch({
   label,
-  value,
-  detail,
+  className,
 }: {
   label: string;
-  value: string;
-  detail?: string;
+  className: string;
 }) {
   return (
-    <div className="rounded-lg border bg-bg p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-fg">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
-      {detail && <div className="mt-1 text-xs text-muted-fg">{detail}</div>}
-    </div>
+    <span className="inline-flex items-center gap-1 text-xs text-muted-fg">
+      <span className={cn("size-2 rounded-sm", className)} />
+      {label}
+    </span>
   );
 }
 
@@ -494,4 +684,19 @@ function KillChainDots({ detected, total }: { detected: number; total: number })
       </span>
     </div>
   );
+}
+
+function resolveTimeFilter(range: IncidentTimeRange) {
+  if (range.mode === "quick") {
+    return { minutes: range.minutes };
+  }
+
+  return {
+    startTime: new Date(range.start).getTime(),
+    endTime: new Date(range.end).getTime(),
+  };
+}
+
+function formatDateTimeLabel(value: string) {
+  return value.replace("T", " ");
 }

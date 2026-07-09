@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   attackChain,
   buildEventHistogram,
+  buildIncidentHistogram,
   buildIncidentSeverityBuckets,
   createDiscoverRows,
   createEventFields,
@@ -97,6 +98,15 @@ describe("manager mock data", () => {
     expect(results.map((incident) => incident.id)).toEqual(["inc-1019"]);
   });
 
+  it("filters incidents by time range", () => {
+    const results = filterIncidents(incidents, {
+      minutes: 15,
+      now: new Date("2026-07-08T21:10:00").getTime(),
+    });
+
+    expect(results.map((incident) => incident.id)).toEqual(["inc-1027"]);
+  });
+
   it("builds incident severity chart buckets", () => {
     const buckets = buildIncidentSeverityBuckets(incidents);
 
@@ -105,5 +115,17 @@ describe("manager mock data", () => {
       { severity: "high", count: 0 },
       { severity: "medium", count: 0 },
     ]);
+  });
+
+  it("builds incident time histogram with severity stacks", () => {
+    const buckets = buildIncidentHistogram(incidents, {
+      minutes: 30,
+      now: new Date("2026-07-08T21:10:00").getTime(),
+      bucketCount: 6,
+    });
+
+    expect(buckets).toHaveLength(6);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.total, 0)).toBe(incidents.length);
+    expect(buckets.some((bucket) => bucket.critical > 0)).toBe(true);
   });
 });

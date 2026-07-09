@@ -81,6 +81,7 @@ export interface EventDiscoverRow {
 
 export interface IncidentRecord {
   id: string;
+  timestamp: string;
   chainId: string;
   title: string;
   severity: "critical" | "high" | "medium";
@@ -96,11 +97,29 @@ export interface IncidentFilterOptions {
   query?: string;
   severity?: IncidentRecord["severity"] | "all";
   status?: IncidentRecord["status"] | "all";
+  minutes?: number;
+  now?: number;
+  startTime?: number;
+  endTime?: number;
 }
 
 export interface IncidentSeverityBucket {
   severity: IncidentRecord["severity"];
   count: number;
+}
+
+export interface IncidentHistogramOptions extends IncidentFilterOptions {
+  bucketCount: number;
+}
+
+export interface IncidentHistogramBucket {
+  start: number;
+  end: number;
+  label: string;
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
 }
 
 export interface AttackStage {
@@ -186,6 +205,7 @@ export const events: SecurityEvent[] = [
 export const incidents: IncidentRecord[] = [
   {
     id: "inc-1027",
+    timestamp: "2026-07-08 21:03:18",
     chainId: "threat-chain-001",
     title: "Web服务器入侵链",
     severity: "critical",
@@ -198,6 +218,7 @@ export const incidents: IncidentRecord[] = [
   },
   {
     id: "inc-1019",
+    timestamp: "2026-07-08 20:51:02",
     chainId: "threat-chain-002",
     title: "凭据窃取与横向移动链",
     severity: "critical",
@@ -356,8 +377,16 @@ export function filterIncidents(
   options: IncidentFilterOptions = {},
 ) {
   const normalized = options.query?.trim().toLowerCase() ?? "";
+  const startTime =
+    options.startTime ??
+    (options.minutes && options.now ? options.now - options.minutes * 60 * 1000 : undefined);
+  const endTime = options.endTime;
 
   return sourceIncidents.filter((incident) => {
+    const incidentTime = new Date(incident.timestamp).getTime();
+
+    if (startTime && incidentTime < startTime) return false;
+    if (endTime && incidentTime > endTime) return false;
     if (options.severity && options.severity !== "all" && incident.severity !== options.severity) {
       return false;
     }
@@ -389,4 +418,38 @@ export function buildIncidentSeverityBuckets(
     severity,
     count: sourceIncidents.filter((incident) => incident.severity === severity).length,
   }));
+}
+
+export function buildIncidentHistogram(
+  sourceIncidents: IncidentRecord[],
+  options: IncidentHistogramOptions,
+): IncidentHistogramBucket[] {
+  const now = options.now ?? Date.now();
+  const minutes = options.minutes ?? 30;
+  const start = options.startTime ?? now - minutes * 60 * 1000;
+  const end = options.endTime ?? now;
+  const bucketWidth = (end - start) / options.bucketCount;
+  const filtered = filterIncidents(sourceIncidents, options);
+
+  return Array.from({ length: options.bucketCount }).map((_, index) => {
+    const bucketStart = start + bucketWidth * index;
+    const bucketEnd = index === options.bucketCount - 1 ? end + 1 : bucketStart + bucketWidth;
+    const incidentsInBucket = filtered.filter((incident) => {
+      const timestamp = new Date(incident.timestamp).getTime();
+      return timestamp >= bucketStart && timestamp < bucketEnd;
+    });
+
+    return {
+      start: bucketStart,
+      end: bucketEnd,
+      label: new Date(bucketStart).toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      total: incidentsInBucket.length,
+      critical: incidentsInBucket.filter((incident) => incident.severity === "critical").length,
+      high: incidentsInBucket.filter((incident) => incident.severity === "high").length,
+      medium: incidentsInBucket.filter((incident) => incident.severity === "medium").length,
+    };
+  });
 }
