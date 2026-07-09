@@ -1,3 +1,14 @@
+import { useMemo, useRef, useState } from "react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type Cell,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+
 import { GitBranchIcon, NetworkIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -22,70 +33,164 @@ const severityClass = {
 export function IncidentsPage() {
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
-      <header className="shrink-0 border-b px-6 py-5">
+      <header className="shrink-0 border-b bg-muted/10 px-6 py-5">
         <h1 className="text-xl font-semibold">威胁管理</h1>
       </header>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <Table containerClassName="h-full" className="min-w-[1040px]">
-          <TableHeader className="sticky top-0 z-10 bg-bg">
-            <TableRow>
-              <TableHead>攻击链</TableHead>
-              <TableHead>Kill Chain</TableHead>
-              <TableHead>操作</TableHead>
-              <TableHead>涉及主机</TableHead>
-              <TableHead>告警数</TableHead>
-              <TableHead>严重度</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {incidents.map((incident) => (
-              <IncidentRow key={incident.id} incident={incident} />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <IncidentTable rows={incidents} />
     </section>
   );
 }
 
-function IncidentRow({ incident }: { incident: IncidentRecord }) {
+function IncidentTable({ rows }: { rows: IncidentRecord[] }) {
+  const [sorting, setSorting] = useState<SortingState>([{ id: "alertCount", desc: true }]);
+  const parentRef = useRef<HTMLDivElement>(null);
+  const columns = useMemo<ColumnDef<IncidentRecord>[]>(
+    () => [
+      {
+        id: "chain",
+        header: "攻击链",
+        accessorFn: (incident) => incident.chainId,
+        cell: ({ row }) => (
+          <div>
+            <div className="font-mono text-sm font-semibold">{row.original.chainId}</div>
+            <div className="mt-1 text-xs text-muted-fg">{row.original.title}</div>
+          </div>
+        ),
+      },
+      {
+        id: "killChain",
+        header: "Kill Chain",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <KillChainDots
+            detected={row.original.detectedStages}
+            total={row.original.totalStages}
+          />
+        ),
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        cell: ({ row }) => <IncidentActions incident={row.original} />,
+      },
+      {
+        id: "hosts",
+        header: "涉及主机",
+        accessorFn: (incident) => incident.hosts.join(","),
+        cell: ({ row }) => <HostChips hosts={row.original.hosts} />,
+      },
+      {
+        accessorKey: "alertCount",
+        header: "告警数",
+        cell: ({ row }) => (
+          <span className="font-semibold tabular-nums">{row.original.alertCount}</span>
+        ),
+      },
+      {
+        accessorKey: "severity",
+        header: "严重度",
+        cell: ({ row }) => (
+          <Badge className={cn("rounded-full px-3", severityClass[row.original.severity])}>
+            {row.original.severity}
+          </Badge>
+        ),
+      },
+    ],
+    [],
+  );
+  // TanStack Table intentionally returns method-heavy state objects; keep it outside React Compiler memoization.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({
+    data: rows,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (row) => row.id,
+  });
+
+  return (
+    <div className="min-h-0 flex-1 overflow-hidden bg-bg">
+      <Table
+        containerClassName="h-full overflow-auto"
+        containerRef={parentRef}
+        className="min-w-[1040px]"
+      >
+        <TableHeader className="sticky top-0 z-10 bg-muted/10">
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id}>
+                  {header.isPlaceholder ? null : (
+                    <button
+                      className={cn(
+                        "flex items-center gap-1 text-left",
+                        header.column.getCanSort() && "cursor-pointer hover:text-fg",
+                      )}
+                      type="button"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.getIsSorted() === "asc" && <span>↑</span>}
+                      {header.column.getIsSorted() === "desc" && <span>↓</span>}
+                    </button>
+                  )}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <IncidentRow
+              key={row.id}
+              cells={row.getVisibleCells()}
+            />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function IncidentRow({ cells }: { cells: Cell<IncidentRecord, unknown>[] }) {
   return (
     <TableRow className="hover:bg-muted/40">
-      <TableCell>
-        <div className="font-mono text-sm font-semibold">{incident.chainId}</div>
-        <div className="mt-1 text-xs text-muted-fg">{incident.title}</div>
-      </TableCell>
-      <TableCell>
-        <KillChainDots detected={incident.detectedStages} total={incident.totalStages} />
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Button intent="plain" size="xs">
-            <GitBranchIcon />
-            攻击链
-          </Button>
-          <Button intent="plain" size="xs">
-            <NetworkIcon />
-            溯源图
-          </Button>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-wrap gap-2">
-          {incident.hosts.map((host) => (
-            <span key={host} className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-fg">
-              {host}
-            </span>
-          ))}
-        </div>
-      </TableCell>
-      <TableCell className="font-semibold tabular-nums">{incident.alertCount}</TableCell>
-      <TableCell>
-        <Badge className={cn("rounded-full px-3", severityClass[incident.severity])}>
-          {incident.severity}
-        </Badge>
-      </TableCell>
+      {cells.map((cell) => (
+        <TableCell key={cell.id}>
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </TableCell>
+      ))}
     </TableRow>
+  );
+}
+
+function IncidentActions({ incident }: { incident: IncidentRecord }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button aria-label={`查看 ${incident.chainId} 攻击链`} intent="plain" size="xs">
+        <GitBranchIcon />
+        攻击链
+      </Button>
+      <Button aria-label={`查看 ${incident.chainId} 溯源图`} intent="plain" size="xs">
+        <NetworkIcon />
+        溯源图
+      </Button>
+    </div>
+  );
+}
+
+function HostChips({ hosts }: { hosts: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {hosts.map((host) => (
+        <span key={host} className="rounded border bg-bg px-2 py-1 font-mono text-xs text-muted-fg">
+          {host}
+        </span>
+      ))}
+    </div>
   );
 }
 
