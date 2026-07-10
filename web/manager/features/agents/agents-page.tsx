@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCwIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, EyeIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { FieldMetadataPopover } from "@/components/field-metadata-popover";
@@ -11,7 +11,15 @@ import {
   searchToolbarInlineSelectClass,
   searchToolbarRunButtonClass,
 } from "@/components/search-toolbar";
-import { Button } from "@/components/ui/button";
+import { Button, buttonStyles } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -21,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createDefaultManagerApiClient, getManagerDataSource } from "@/lib/api";
-import { loadAgentRecords } from "@/lib/agents-data";
+import { buildAgentUninstallCommand, loadAgentRecords } from "@/lib/agents-data";
 import { filterAgents, type AgentRecord } from "@/lib/mock-data";
 import { getSearchFieldsForIndexPattern } from "@/lib/opensearch-fields";
 
@@ -35,6 +43,7 @@ export function AgentsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [copiedAgentId, setCopiedAgentId] = useState<string | null>(null);
   const searchFields = useMemo(() => getSearchFieldsForIndexPattern(agentIndexPattern), []);
   const filteredAgents = useMemo(() => filterAgents(records, query), [query, records]);
 
@@ -107,6 +116,7 @@ export function AgentsPage() {
               <TableHead>Version</TableHead>
               <TableHead>Registered</TableHead>
               <TableHead>Last seen</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -134,6 +144,19 @@ export function AgentsPage() {
                   <TableCell className="font-mono text-xs">{agent.version}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-fg">{agent.registeredAt}</TableCell>
                   <TableCell className="text-muted-fg">{agent.lastSeen}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <AgentDetailsSheet agent={agent} />
+                      <AgentUninstallSheet
+                        agent={agent}
+                        copied={copiedAgentId === agent.id}
+                        onCopy={() => {
+                          void navigator.clipboard?.writeText(buildAgentUninstallCommand(agent.id));
+                          setCopiedAgentId(agent.id);
+                        }}
+                      />
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -147,10 +170,94 @@ export function AgentsPage() {
 function TableStateRow({ message }: { message: string }) {
   return (
     <TableRow>
-      <TableCell colSpan={7} className="h-32 text-center text-sm text-muted-fg">
+      <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-fg">
         {message}
       </TableCell>
     </TableRow>
+  );
+}
+
+function AgentDetailsSheet({ agent }: { agent: AgentRecord }) {
+  return (
+    <Sheet>
+      <SheetTrigger
+        className={buttonStyles({ intent: "plain", size: "sq-xs" })}
+        aria-label={`View details for ${agent.id}`}
+      >
+        <EyeIcon />
+      </SheetTrigger>
+      <SheetContent className="sm:max-w-[440px]" aria-label="Agent details">
+        <SheetHeader>
+          <SheetTitle>Agent details</SheetTitle>
+        </SheetHeader>
+        <SheetBody className="gap-4">
+          <DetailGrid
+            rows={[
+              ["Agent", agent.id],
+              ["Host", agent.host],
+              ["Status", agent.status],
+              ["Policy", agent.policy],
+              ["Version", agent.version],
+              ["Registered", agent.registeredAt],
+              ["Last seen", agent.lastSeen],
+            ]}
+          />
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="mb-2 text-xs font-semibold uppercase text-muted-fg">Events query</div>
+            <code className="font-mono text-xs">agent.id:{agent.id}</code>
+          </div>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function AgentUninstallSheet({
+  agent,
+  copied,
+  onCopy,
+}: {
+  agent: AgentRecord;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  const command = buildAgentUninstallCommand(agent.id);
+
+  return (
+    <Sheet>
+      <SheetTrigger
+        className={buttonStyles({ intent: "plain", size: "sq-xs" })}
+        aria-label={`Uninstall ${agent.id}`}
+      >
+        <Trash2Icon />
+      </SheetTrigger>
+      <SheetContent className="sm:max-w-[520px]" aria-label="Uninstall agent">
+        <SheetHeader>
+          <SheetTitle>Uninstall agent</SheetTitle>
+        </SheetHeader>
+        <SheetBody className="gap-4">
+          <DetailGrid rows={[["Agent", agent.id], ["Host", agent.host], ["Status", agent.status]]} />
+          <pre className="overflow-auto rounded-lg border bg-muted/20 p-4 font-mono text-xs">{command}</pre>
+          <Button className="self-start" intent="outline" size="sm" onPress={onCopy}>
+            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? "Copied" : "Copy command"}
+          </Button>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function DetailGrid({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted-fg">{label}</dt>
+          <dd className="min-w-0 truncate font-medium">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

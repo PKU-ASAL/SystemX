@@ -31,6 +31,15 @@ export function mapAgentListItemToRecord(item: AgentListItem): AgentRecord {
   };
 }
 
+export function buildAgentUninstallCommand(agentId: string) {
+  return `# ${agentId}
+sudo systemctl stop sysarmor-agent
+sudo systemctl disable sysarmor-agent
+sudo rm -f /etc/sysarmor/agent.yaml
+sudo rm -f /etc/systemd/system/sysarmor-agent.service
+sudo systemctl daemon-reload`;
+}
+
 function mapHealthStatus(status?: string): AgentRecord["status"] {
   if (status === "ok" || status === "healthy") return "healthy";
   if (status === "degraded") return "degraded";

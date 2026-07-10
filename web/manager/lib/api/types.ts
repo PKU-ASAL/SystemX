@@ -25,6 +25,69 @@ export type AgentListItem = {
   capability?: Record<string, boolean | string | number | null>;
 };
 
+export type DeployPlatform = {
+  os: string;
+  arch: string;
+};
+
+export type DeployArtifact = {
+  artifact_id: string;
+  version: string;
+  os: string;
+  arch: string;
+  sha256: string;
+  status: string;
+  download_url: string;
+  created_at?: string;
+};
+
+export type DeployEnrollment = {
+  enrollment_id: string;
+  tenant_id: string;
+  agent_id?: string;
+  host_id?: string;
+  token_preview?: string;
+  gateway_addr?: string;
+  labels?: Record<string, string>;
+  status: string;
+  created_at?: string;
+  expires_at?: string;
+  used_at?: string;
+};
+
+export type DeployOptionsResponse = {
+  tenant_id: string;
+  gateway_addr: string;
+  gateway_sni?: string;
+  supported_platforms: DeployPlatform[];
+  artifacts: DeployArtifact[];
+  enrollments: DeployEnrollment[];
+};
+
+export type DeployAgentCommandRequest = {
+  tenant_id?: string;
+  agent_id?: string;
+  host_id?: string;
+  gateway_addr?: string;
+  gateway_sni?: string;
+  artifact_id?: string;
+  ttl?: string;
+  labels?: Record<string, string>;
+};
+
+export type DeployAgentCommandResponse = {
+  enrollment_id: string;
+  token_expires_at: string;
+  install_command: string;
+  script_url: string;
+  artifact: {
+    artifact_id?: string;
+    download_url?: string;
+    sha256?: string;
+  };
+  enrollment?: DeployEnrollment;
+};
+
 export type OverviewSummary = {
   generated_at: string;
   agents: {

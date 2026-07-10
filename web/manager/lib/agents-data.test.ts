@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapAgentListItemToRecord } from "./agents-data";
+import { buildAgentUninstallCommand, mapAgentListItemToRecord } from "./agents-data";
 
 describe("agents data mapping", () => {
   it("maps manager API agents into table records", () => {
@@ -37,5 +37,10 @@ describe("agents data mapping", () => {
       registeredAt: "-",
       lastSeen: "-",
     });
+  });
+
+  it("builds a local uninstall command for an agent", () => {
+    expect(buildAgentUninstallCommand("agent-prod-001")).toContain("systemctl stop sysarmor-agent");
+    expect(buildAgentUninstallCommand("agent-prod-001")).toContain("agent-prod-001");
   });
 });

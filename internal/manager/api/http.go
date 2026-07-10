@@ -341,6 +341,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/evidence-pullbacks", s.evidencePullbacks)
 	mux.HandleFunc("/api/v1/control-commands", s.controlCommands)
 	mux.HandleFunc("/api/v1/ui/overview", s.uiOverview)
+	mux.HandleFunc("/api/v1/ui/deploy/options", s.uiDeployOptions)
+	mux.HandleFunc("/api/v1/ui/deploy/agent-command", s.uiDeployAgentCommand)
 	mux.HandleFunc("/api/v1/search/fields", s.searchFields)
 	mux.HandleFunc("/api/v1/search/histogram", s.searchHistogram)
 	mux.HandleFunc("/api/v1/search", s.search)

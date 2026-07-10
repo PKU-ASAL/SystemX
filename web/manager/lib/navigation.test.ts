@@ -7,9 +7,10 @@ import {
 } from "./navigation";
 
 describe("manager navigation", () => {
-  it("defines the four manager tabs in the intended order", () => {
+  it("defines the manager tabs in the intended order", () => {
     expect(managerTabs.map((tab) => tab.id)).toEqual([
       "overview",
+      "deploy",
       "agents",
       "events",
       "incidents",

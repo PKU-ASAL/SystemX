@@ -156,6 +156,98 @@ Implementation note: this endpoint can initially compose existing
 `/api/v1/incidents` data. Add it as a backend view-model endpoint only if the
 UI would otherwise need multiple requests for one overview render.
 
+## Deploy
+
+### GET /api/v1/ui/deploy/options
+
+Returns the agent deployment defaults, supported platforms, active artifacts
+and recent enrollments for the Deploy tab.
+
+Query:
+
+```text
+tenant_id=default
+```
+
+Response:
+
+```json
+{
+  "tenant_id": "default",
+  "gateway_addr": "127.0.0.1:19444",
+  "gateway_sni": "",
+  "supported_platforms": [
+    { "os": "linux", "arch": "amd64" },
+    { "os": "linux", "arch": "arm64" }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "art-linux-amd64",
+      "version": "0.8.0",
+      "os": "linux",
+      "arch": "amd64",
+      "sha256": "abc123",
+      "status": "active",
+      "download_url": "http://127.0.0.1:19443/api/v1/artifacts/art-linux-amd64/download",
+      "created_at": "2026-07-10T06:00:00Z"
+    }
+  ],
+  "enrollments": [
+    {
+      "enrollment_id": "enr-existing",
+      "tenant_id": "default",
+      "agent_id": "agent-existing",
+      "token_preview": "enr_...abcd",
+      "labels": { "env": "prod" },
+      "status": "active",
+      "expires_at": "2026-07-10T07:00:00Z"
+    }
+  ]
+}
+```
+
+The response must not include `token_hash`.
+
+### POST /api/v1/ui/deploy/agent-command
+
+Creates an enrollment and returns a copyable install command. This endpoint is
+a UI view-model wrapper around the existing enrollment, artifact and install
+script endpoints.
+
+Request:
+
+```json
+{
+  "tenant_id": "default",
+  "agent_id": "agent-prod-001",
+  "host_id": "prod-api-01",
+  "gateway_addr": "127.0.0.1:19444",
+  "gateway_sni": "localhost",
+  "artifact_id": "art-linux-amd64",
+  "ttl": "24h",
+  "labels": {
+    "env": "prod",
+    "role": "api"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "enrollment_id": "enr-new",
+  "token_expires_at": "2026-07-10T07:00:00Z",
+  "install_command": "curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_x' | sudo bash",
+  "script_url": "http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_x",
+  "artifact": {
+    "artifact_id": "art-linux-amd64",
+    "download_url": "http://127.0.0.1:19443/api/v1/artifacts/art-linux-amd64/download",
+    "sha256": "abc123"
+  }
+}
+```
+
 ## Agents
 
 ### GET /api/v1/agents
@@ -555,6 +647,7 @@ Recommended API client files:
 web/manager/lib/api/client.ts       shared request/error handling
 web/manager/lib/api/types.ts        UI-facing DTOs
 web/manager/lib/api/overview.ts     overview service
+web/manager/lib/api/deploy.ts       deploy/enrollment command service
 web/manager/lib/api/agents.ts       agents service
 web/manager/lib/api/search.ts       events/signals search service
 web/manager/lib/api/incidents.ts    incident list/detail service
@@ -570,6 +663,7 @@ Recommended backend files:
 
 ```text
 internal/manager/api/http_ui_overview.go
+internal/manager/api/http_ui_deploy.go
 internal/manager/api/http_search.go
 internal/manager/api/http_incident_detail.go
 internal/manager/api/search_query.go
@@ -590,11 +684,15 @@ view-model shaping.
 - Keep current page behavior on `mock`.
 - Add mapper tests for agents, events and incidents.
 
-### Phase 2: Overview And Agents
+### Phase 2: Overview, Deploy And Agents
 
 - Connect overview to existing metrics/agents endpoints or
   `/api/v1/ui/overview`.
+- Add `/api/v1/ui/deploy/options`.
+- Add `/api/v1/ui/deploy/agent-command`.
+- Add Deploy tab for install command generation, artifacts and enrollments.
 - Connect agents table to `/api/v1/agents`.
+- Add local View details and Uninstall command actions to the agents table.
 - Show policy as `-` until policy binding is exposed.
 
 ### Phase 3: Events And Signals Search

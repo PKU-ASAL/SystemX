@@ -6,6 +6,7 @@ import AppSidebar from "@/components/app-sidebar";
 import AppSidebarNav from "@/components/app-sidebar-nav";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AgentsPage } from "@/features/agents/agents-page";
+import { DeployPage } from "@/features/deploy/deploy-page";
 import { EventsPage } from "@/features/events/events-page";
 import { IncidentsPage } from "@/features/incidents/incidents-page";
 import { OverviewPage } from "@/features/overview/overview-page";
@@ -17,6 +18,7 @@ import {
 
 const pageByTab: Record<ManagerTabId, React.ReactNode> = {
   overview: <OverviewPage />,
+  deploy: <DeployPage />,
   agents: <AgentsPage />,
   events: <EventsPage />,
   incidents: <IncidentsPage />,

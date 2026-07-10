@@ -1,12 +1,13 @@
 import {
   ActivityIcon,
   LayoutDashboardIcon,
+  PackagePlusIcon,
   RadioTowerIcon,
   ShieldAlertIcon,
   type LucideIcon,
 } from "lucide-react";
 
-export type ManagerTabId = "overview" | "agents" | "events" | "incidents";
+export type ManagerTabId = "overview" | "deploy" | "agents" | "events" | "incidents";
 
 export interface ManagerTab {
   id: ManagerTabId;
@@ -23,6 +24,12 @@ export const managerTabs: ManagerTab[] = [
     label: "Overview",
     description: "运行态势与关键指标",
     icon: LayoutDashboardIcon,
+  },
+  {
+    id: "deploy",
+    label: "Deploy",
+    description: "Agent 安装、分发与 enrollment",
+    icon: PackagePlusIcon,
   },
   {
     id: "agents",
