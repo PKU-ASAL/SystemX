@@ -61,7 +61,13 @@ export function createManagerApiClient({
 
 async function request<T>(fetcher: Fetcher, url: string, init: RequestInit): Promise<T> {
   const response = await fetcher(url, init);
-  const body = await readJSON(response);
+  const body = await readJSON(response).catch(() => {
+    throw new ManagerApiError({
+      code: "invalid_response",
+      message: "Manager API returned non-JSON response",
+      status: response.status,
+    });
+  });
 
   if (!response.ok) {
     const envelope = body as ManagerApiErrorEnvelope;

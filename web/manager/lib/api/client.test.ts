@@ -56,6 +56,20 @@ describe("manager api client", () => {
     });
     await expect(client.get("/search")).rejects.toBeInstanceOf(ManagerApiError);
   });
+
+  it("throws a readable error when the response is not JSON", async () => {
+    const fetcher = vi.fn(async () => new Response("<!DOCTYPE html>", {
+      status: 404,
+      headers: { "Content-Type": "text/html" },
+    }));
+    const client = createManagerApiClient({ baseUrl: "/api/v1", fetcher });
+
+    await expect(client.get("/agents")).rejects.toMatchObject({
+      code: "invalid_response",
+      message: "Manager API returned non-JSON response",
+      status: 404,
+    });
+  });
 });
 
 function jsonResponse(body: unknown, init: { status?: number } = {}) {

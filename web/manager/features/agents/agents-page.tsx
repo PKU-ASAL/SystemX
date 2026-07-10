@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,15 +20,53 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { agents, filterAgents } from "@/lib/mock-data";
+import { createDefaultManagerApiClient, getManagerDataSource } from "@/lib/api";
+import { loadAgentRecords } from "@/lib/agents-data";
+import { filterAgents, type AgentRecord } from "@/lib/mock-data";
 import { getSearchFieldsForIndexPattern } from "@/lib/opensearch-fields";
 
 const agentIndexPattern = "agents-*";
+const managerApiClient = createDefaultManagerApiClient();
+const managerDataSource = getManagerDataSource();
 
 export function AgentsPage() {
   const [query, setQuery] = useState("");
+  const [records, setRecords] = useState<AgentRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const searchFields = useMemo(() => getSearchFieldsForIndexPattern(agentIndexPattern), []);
-  const filteredAgents = useMemo(() => filterAgents(agents, query), [query]);
+  const filteredAgents = useMemo(() => filterAgents(records, query), [query, records]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    loadAgentRecords({
+      client: managerApiClient,
+      dataSource: managerDataSource,
+      signal: controller.signal,
+    })
+      .then((nextRecords) => {
+        setRecords(nextRecords);
+      })
+      .catch((nextError: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(nextError instanceof Error ? nextError.message : "Failed to load agents");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [reloadKey]);
+
+  function reloadAgents() {
+    setIsLoading(true);
+    setError(null);
+    setReloadKey((value) => value + 1);
+  }
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-bg">
@@ -44,7 +82,7 @@ export function AgentsPage() {
                 ariaLabel="Agent query"
                 onQueryChange={setQuery}
               />
-              <Button className={searchToolbarRunButtonClass} size="md">
+              <Button className={searchToolbarRunButtonClass} size="md" onPress={reloadAgents}>
                 <RefreshCwIcon />
                 Run
               </Button>
@@ -72,23 +110,47 @@ export function AgentsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredAgents.map((agent) => (
-              <TableRow key={agent.id} className="hover:bg-muted/40">
-                <TableCell className="font-mono text-sm font-semibold">{agent.id}</TableCell>
-                <TableCell className="font-medium">{agent.host}</TableCell>
-                <TableCell>
-                  <Badge>{agent.status}</Badge>
-                </TableCell>
-                <TableCell>{agent.policy}</TableCell>
-                <TableCell className="font-mono text-xs">{agent.version}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-fg">{agent.registeredAt}</TableCell>
-                <TableCell className="text-muted-fg">{agent.lastSeen}</TableCell>
-              </TableRow>
-            ))}
+            {isLoading || error || filteredAgents.length === 0 ? (
+              <TableStateRow
+                message={
+                  isLoading
+                    ? "Loading agents..."
+                    : error
+                      ? error
+                      : records.length === 0
+                        ? "No agents have enrolled yet."
+                        : "No agents match the current query."
+                }
+              />
+            ) : (
+              filteredAgents.map((agent) => (
+                <TableRow key={agent.id} className="hover:bg-muted/40">
+                  <TableCell className="font-mono text-sm font-semibold">{agent.id}</TableCell>
+                  <TableCell className="font-medium">{agent.host}</TableCell>
+                  <TableCell>
+                    <Badge>{agent.status}</Badge>
+                  </TableCell>
+                  <TableCell>{agent.policy}</TableCell>
+                  <TableCell className="font-mono text-xs">{agent.version}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-fg">{agent.registeredAt}</TableCell>
+                  <TableCell className="text-muted-fg">{agent.lastSeen}</TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
     </section>
+  );
+}
+
+function TableStateRow({ message }: { message: string }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={7} className="h-32 text-center text-sm text-muted-fg">
+        {message}
+      </TableCell>
+    </TableRow>
   );
 }
 

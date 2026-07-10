@@ -26,9 +26,11 @@ web/manager
   -> OpenSearch searcher
 ```
 
-Development should proxy `/api/v1/*` from Next.js to the local manager process,
-normally `http://127.0.0.1:9443/api/v1/*`. This keeps browser requests same
-origin and avoids CORS in local development.
+Development should proxy `/api/v1/*` from Next.js to the local manager process.
+With the default compose deployment this is normally
+`http://127.0.0.1:19443/api/v1/*`, because compose exposes host port `19443`
+to the manager container's `9443`. This keeps browser requests same origin and
+avoids CORS in local development.
 
 ## Shared Rules
 
