@@ -340,6 +340,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/data-resume", s.dataResume)
 	mux.HandleFunc("/api/v1/evidence-pullbacks", s.evidencePullbacks)
 	mux.HandleFunc("/api/v1/control-commands", s.controlCommands)
+	mux.HandleFunc("/api/v1/ui/overview", s.uiOverview)
 	mux.HandleFunc("/api/v1/agents", s.agents)
 	mux.HandleFunc("/api/v1/agent-health", s.agentHealth)
 	mux.HandleFunc("/api/v1/agent-sessions", s.agentSessions)
