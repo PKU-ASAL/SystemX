@@ -5,6 +5,7 @@ import {
   createAgentInstallCommand,
   loadDeployOptions,
   mapDeployOptionsToView,
+  parseManagementLabels,
 } from "./deploy-data";
 
 describe("deploy data", () => {
@@ -85,5 +86,12 @@ describe("deploy data", () => {
       expect.objectContaining({ agent_id: "agent-prod-001", labels: { env: "prod" } }),
       expect.any(Object),
     );
+  });
+
+  it("parses management labels from comma separated key value pairs", () => {
+    expect(parseManagementLabels("env=prod, role=api, empty= ")).toEqual({
+      env: "prod",
+      role: "api",
+    });
   });
 });

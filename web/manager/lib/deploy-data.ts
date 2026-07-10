@@ -89,6 +89,19 @@ export function mapDeployOptionsToView(options: DeployOptionsResponse): DeployOp
   };
 }
 
+export function parseManagementLabels(raw: string) {
+  const labels: Record<string, string> = {};
+
+  for (const token of raw.split(",")) {
+    const [key, value] = token.split("=");
+    if (key?.trim() && value?.trim()) {
+      labels[key.trim()] = value.trim();
+    }
+  }
+
+  return labels;
+}
+
 function mapArtifact(artifact: DeployArtifact) {
   return {
     id: artifact.artifact_id,

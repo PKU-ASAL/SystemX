@@ -22,23 +22,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createDefaultManagerApiClient, getManagerDataSource } from "@/lib/api";
+import type { DeployAgentCommandResponse } from "@/lib/api/types";
 import {
   createAgentInstallCommand,
   loadDeployOptions,
   mapDeployOptionsToView,
+  parseManagementLabels,
   type DeployOptionsView,
 } from "@/lib/deploy-data";
-import type { DeployAgentCommandResponse } from "@/lib/api/types";
 
 const managerApiClient = createDefaultManagerApiClient();
 const managerDataSource = getManagerDataSource();
 
 type DeployFormState = {
-  platform: string;
   tenantId: string;
   agentId: string;
   hostId: string;
-  labels: string;
+  managementLabels: string;
   artifactId: string;
   ttl: string;
   gatewayAddr: string;
@@ -46,11 +46,10 @@ type DeployFormState = {
 };
 
 const initialForm: DeployFormState = {
-  platform: "linux/amd64",
   tenantId: "default",
   agentId: "",
   hostId: "",
-  labels: "env=prod",
+  managementLabels: "env=prod,role=web",
   artifactId: "",
   ttl: "24h",
   gatewayAddr: "127.0.0.1:19444",
@@ -83,7 +82,7 @@ export function DeployPage() {
           ...current,
           gatewayAddr: current.gatewayAddr || view.gatewayAddr,
           gatewaySNI: current.gatewaySNI || view.gatewaySNI,
-          artifactId: current.artifactId || view.artifacts.find((item) => item.status === "active")?.id || "",
+          artifactId: current.artifactId || activeLinuxArtifact(view)?.id || "",
         }));
       })
       .catch((nextError: unknown) => {
@@ -97,10 +96,12 @@ export function DeployPage() {
     return () => controller.abort();
   }, [form.tenantId, reloadKey]);
 
-  const selectedArtifact = useMemo(
-    () => options?.artifacts.find((artifact) => artifact.id === form.artifactId),
-    [form.artifactId, options],
+  const linuxArtifacts = useMemo(
+    () => (options?.artifacts ?? []).filter((artifact) => artifact.platform.startsWith("linux/")),
+    [options],
   );
+  const selectedArtifact = linuxArtifacts.find((artifact) => artifact.id === form.artifactId);
+  const labels = parseManagementLabels(form.managementLabels);
 
   function updateForm<K extends keyof DeployFormState>(key: K, value: DeployFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -116,7 +117,6 @@ export function DeployPage() {
     setIsGenerating(true);
     setError(null);
     setCopied(false);
-    const [os, arch] = form.platform.split("/");
 
     try {
       const nextCommand = await createAgentInstallCommand({
@@ -130,14 +130,10 @@ export function DeployPage() {
           gateway_sni: form.gatewaySNI,
           artifact_id: form.artifactId,
           ttl: form.ttl,
-          labels: parseLabels(form.labels),
+          labels,
         },
       });
       setCommand(nextCommand);
-      setForm((current) => ({
-        ...current,
-        platform: `${os}/${arch}`,
-      }));
       reloadOptions();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to generate command");
@@ -154,155 +150,244 @@ export function DeployPage() {
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-bg">
-      <div className="shrink-0 border-b bg-muted/10 p-4">
+      <header className="shrink-0 border-b bg-muted/10 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <PackagePlusIcon className="size-5 text-muted-fg" />
-            <div className="text-sm font-semibold">Agent deployment</div>
+            <div className="text-sm font-semibold">Deploy agent</div>
           </div>
           <Button intent="outline" size="sm" onPress={reloadOptions}>
             <RefreshCwIcon />
             Refresh
           </Button>
         </div>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[380px_minmax(0,1fr)] overflow-hidden max-xl:grid-cols-1">
-        <div className="min-h-0 overflow-auto border-r bg-muted/5 p-4 max-xl:border-r-0 max-xl:border-b">
-          <div className="grid gap-3">
-            <Field label="Platform">
-              <select
-                className="h-9 rounded-lg border bg-bg px-3 text-sm outline-none"
-                value={form.platform}
-                onChange={(event) => updateForm("platform", event.target.value)}
-              >
-                {(options?.platforms ?? [{ id: "linux/amd64", label: "linux/amd64" }]).map((platform) => (
-                  <option key={platform.id} value={platform.id}>
-                    {platform.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Tenant">
-              <Input value={form.tenantId} onChange={(event) => updateForm("tenantId", event.target.value)} />
-            </Field>
-            <Field label="Agent ID">
-              <Input
-                placeholder="agent-prod-001"
-                value={form.agentId}
-                onChange={(event) => updateForm("agentId", event.target.value)}
-              />
-            </Field>
-            <Field label="Host ID">
-              <Input
-                placeholder="prod-api-01"
-                value={form.hostId}
-                onChange={(event) => updateForm("hostId", event.target.value)}
-              />
-            </Field>
-            <Field label="Labels">
-              <Input
-                placeholder="env=prod,role=api"
-                value={form.labels}
-                onChange={(event) => updateForm("labels", event.target.value)}
-              />
-            </Field>
-            <Field label="Artifact">
-              <select
-                className="h-9 rounded-lg border bg-bg px-3 text-sm outline-none"
-                value={form.artifactId}
-                onChange={(event) => updateForm("artifactId", event.target.value)}
-              >
-                <option value="">No artifact selected</option>
-                {(options?.artifacts ?? []).map((artifact) => (
-                  <option key={artifact.id} value={artifact.id}>
-                    {artifact.version} · {artifact.platform}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Token TTL">
-              <select
-                className="h-9 rounded-lg border bg-bg px-3 text-sm outline-none"
-                value={form.ttl}
-                onChange={(event) => updateForm("ttl", event.target.value)}
-              >
-                <option value="1h">1h</option>
-                <option value="24h">24h</option>
-                <option value="168h">7d</option>
-              </select>
-            </Field>
-            <Field label="Gateway">
-              <Input
-                value={form.gatewayAddr}
-                onChange={(event) => updateForm("gatewayAddr", event.target.value)}
-              />
-            </Field>
-            <Field label="Gateway SNI">
-              <Input value={form.gatewaySNI} onChange={(event) => updateForm("gatewaySNI", event.target.value)} />
-            </Field>
-            <Button className="mt-1" isDisabled={!form.agentId || !form.gatewayAddr || isGenerating} onPress={generateCommand}>
-              <TerminalIcon />
-              {isGenerating ? "Generating..." : "Generate command"}
-            </Button>
-            {error && <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
-          </div>
-        </div>
-        <div className="flex min-h-0 flex-col overflow-hidden">
-          <div className="shrink-0 border-b p-4">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Install command</div>
-              <div className="flex items-center gap-2">
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <InstallCard
+            command={command}
+            copied={copied}
+            error={error}
+            form={form}
+            isGenerating={isGenerating}
+            labels={labels}
+            linuxArtifacts={linuxArtifacts}
+            selectedArtifact={selectedArtifact}
+            onCopy={copyCommand}
+            onGenerate={generateCommand}
+            onUpdate={updateForm}
+          />
+          <div className="grid content-start gap-4">
+            <CompactCard title="Linux ARM64 Agent" badge="ready">
+              <p className="text-sm text-muted-fg">Use the same install flow with a linux/arm64 artifact.</p>
+              <Badge>{linuxArtifacts.find((artifact) => artifact.platform === "linux/arm64")?.version ?? "no artifact"}</Badge>
+            </CompactCard>
+            <CompactCard title="Manual install" badge="advanced">
+              <div className="flex flex-wrap gap-2">
                 {command?.script_url && (
                   <a className={buttonStyles({ intent: "outline", size: "sm" })} href={command.script_url}>
                     <DownloadIcon />
                     Script
                   </a>
                 )}
-                <Button intent="outline" size="sm" isDisabled={!command?.install_command} onPress={copyCommand}>
-                  {copied ? <CheckIcon /> : <CopyIcon />}
-                  {copied ? "Copied" : "Copy"}
-                </Button>
+                {selectedArtifact?.downloadUrl && (
+                  <a className={buttonStyles({ intent: "outline", size: "sm" })} href={selectedArtifact.downloadUrl}>
+                    <DownloadIcon />
+                    Artifact
+                  </a>
+                )}
               </div>
-            </div>
-            <pre className="min-h-24 overflow-auto rounded-lg border bg-muted/20 p-4 font-mono text-xs text-fg">
-              {command?.install_command ?? "Generate a command to create an enrollment token."}
-            </pre>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Badge>expires: {command?.token_expires_at ?? "-"}</Badge>
-              <Badge>artifact: {selectedArtifact?.id ?? command?.artifact.artifact_id ?? "-"}</Badge>
-              <Badge>sha256: {selectedArtifact?.sha256 ?? command?.artifact.sha256 ?? "-"}</Badge>
-            </div>
+              <div className="truncate font-mono text-xs text-muted-fg">sha256: {selectedArtifact?.sha256 ?? "-"}</div>
+            </CompactCard>
           </div>
-          <div className="grid min-h-0 flex-1 grid-rows-2 overflow-hidden">
-            <DeployTable
-              title="Artifacts"
-              isLoading={isLoading}
-              columns={["Version", "Platform", "Status", "SHA256", "Uploaded"]}
-              rows={(options?.artifacts ?? []).map((artifact) => [
-                artifact.version,
-                artifact.platform,
-                artifact.status,
-                artifact.sha256,
-                artifact.createdAt,
-              ])}
+        </div>
+
+        <RecentEnrollments isLoading={isLoading} rows={(options?.enrollments ?? []).slice(0, 5)} />
+      </div>
+    </section>
+  );
+}
+
+function InstallCard({
+  command,
+  copied,
+  error,
+  form,
+  isGenerating,
+  labels,
+  linuxArtifacts,
+  selectedArtifact,
+  onCopy,
+  onGenerate,
+  onUpdate,
+}: {
+  command: DeployAgentCommandResponse | null;
+  copied: boolean;
+  error: string | null;
+  form: DeployFormState;
+  isGenerating: boolean;
+  labels: Record<string, string>;
+  linuxArtifacts: DeployOptionsView["artifacts"];
+  selectedArtifact?: DeployOptionsView["artifacts"][number];
+  onCopy: () => void;
+  onGenerate: () => void;
+  onUpdate: <K extends keyof DeployFormState>(key: K, value: DeployFormState[K]) => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-bg">
+      <div className="border-b p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold">Linux Agent</div>
+            <div className="mt-1 text-sm text-muted-fg">Generate an enrollment command for a Linux host.</div>
+          </div>
+          <Badge>linux/amd64</Badge>
+        </div>
+      </div>
+
+      <div className="grid gap-4 p-4 lg:grid-cols-2">
+        <Field label="Agent ID">
+          <Input
+            placeholder="agent-prod-001"
+            value={form.agentId}
+            onChange={(event) => onUpdate("agentId", event.target.value)}
+          />
+        </Field>
+        <Field label="Host ID">
+          <Input
+            placeholder="prod-api-01"
+            value={form.hostId}
+            onChange={(event) => onUpdate("hostId", event.target.value)}
+          />
+        </Field>
+        <Field label="Artifact version">
+          <select
+            className="h-9 rounded-lg border bg-bg px-3 text-sm outline-none"
+            value={form.artifactId}
+            onChange={(event) => onUpdate("artifactId", event.target.value)}
+          >
+            <option value="">No artifact selected</option>
+            {linuxArtifacts.map((artifact) => (
+              <option key={artifact.id} value={artifact.id}>
+                {artifact.version} · {artifact.platform}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Token TTL">
+          <select
+            className="h-9 rounded-lg border bg-bg px-3 text-sm outline-none"
+            value={form.ttl}
+            onChange={(event) => onUpdate("ttl", event.target.value)}
+          >
+            <option value="1h">1h</option>
+            <option value="24h">24h</option>
+            <option value="168h">7d</option>
+          </select>
+        </Field>
+        <Field label="Tenant">
+          <Input value={form.tenantId} onChange={(event) => onUpdate("tenantId", event.target.value)} />
+        </Field>
+        <Field label="Gateway">
+          <Input value={form.gatewayAddr} onChange={(event) => onUpdate("gatewayAddr", event.target.value)} />
+        </Field>
+        <div className="lg:col-span-2">
+          <Field label="Management labels">
+            <Input
+              placeholder="env=prod,role=web,owner=secops"
+              value={form.managementLabels}
+              onChange={(event) => onUpdate("managementLabels", event.target.value)}
             />
-            <DeployTable
-              title="Recent enrollments"
-              isLoading={isLoading}
-              columns={["Enrollment", "Agent", "Status", "Labels", "Expires", "Used"]}
-              rows={(options?.enrollments ?? []).map((enrollment) => [
-                enrollment.id,
-                enrollment.agent,
-                enrollment.status,
-                enrollment.labels,
-                enrollment.expiresAt,
-                enrollment.usedAt,
-              ])}
-            />
+          </Field>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {Object.entries(labels).length === 0 ? (
+              <Badge>no labels</Badge>
+            ) : (
+              Object.entries(labels).map(([key, value]) => <Badge key={key}>{key}:{value}</Badge>)
+            )}
           </div>
         </div>
       </div>
-    </section>
+
+      <div className="border-t p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <Button isDisabled={!form.agentId || !form.gatewayAddr || isGenerating} onPress={onGenerate}>
+            <TerminalIcon />
+            {isGenerating ? "Generating..." : "Generate command"}
+          </Button>
+          <Button intent="outline" size="sm" isDisabled={!command?.install_command} onPress={onCopy}>
+            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+        <pre className="min-h-24 overflow-auto rounded-lg border bg-muted/20 p-4 font-mono text-xs">
+          {command?.install_command ?? "curl -fsSL ... | sudo bash"}
+        </pre>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge>expires: {command?.token_expires_at ?? "-"}</Badge>
+          <Badge>artifact: {selectedArtifact?.id ?? command?.artifact.artifact_id ?? "-"}</Badge>
+          <Badge>sha256: {selectedArtifact?.sha256 ?? command?.artifact.sha256 ?? "-"}</Badge>
+        </div>
+        {error && <div className="mt-3 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CompactCard({ title, badge, children }: { title: string; badge: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border bg-bg p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="font-semibold">{title}</div>
+        <Badge>{badge}</Badge>
+      </div>
+      <div className="grid gap-3">{children}</div>
+    </div>
+  );
+}
+
+function RecentEnrollments({
+  isLoading,
+  rows,
+}: {
+  isLoading: boolean;
+  rows: DeployOptionsView["enrollments"];
+}) {
+  return (
+    <div className="mt-4 rounded-lg border bg-bg">
+      <div className="flex h-11 items-center border-b px-4 text-sm font-semibold">Recent enrollments</div>
+      <Table containerClassName="max-h-72 overflow-auto">
+        <TableHeader className="sticky top-0 z-10 bg-muted/10">
+          <TableRow>
+            <TableHead>Enrollment</TableHead>
+            <TableHead>Agent</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Labels</TableHead>
+            <TableHead>Expires</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading || rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-fg">
+                {isLoading ? "Loading..." : "No recent enrollments."}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-mono text-xs">{row.id}</TableCell>
+                <TableCell className="font-mono text-xs">{row.agent}</TableCell>
+                <TableCell><Badge>{row.status}</Badge></TableCell>
+                <TableCell className="font-mono text-xs">{row.labels}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-fg">{row.expiresAt}</TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -315,61 +400,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function DeployTable({
-  title,
-  isLoading,
-  columns,
-  rows,
-}: {
-  title: string;
-  isLoading: boolean;
-  columns: string[];
-  rows: string[][];
-}) {
-  return (
-    <div className="min-h-0 overflow-hidden border-b">
-      <div className="flex h-10 items-center border-b px-4 text-sm font-semibold">{title}</div>
-      <Table containerClassName="h-[calc(100%-2.5rem)] overflow-auto">
-        <TableHeader className="sticky top-0 z-10 bg-muted/10">
-          <TableRow>
-            {columns.map((column) => (
-              <TableHead key={column}>{column}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading || rows.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center text-sm text-muted-fg">
-                {isLoading ? "Loading..." : "No records."}
-              </TableCell>
-            </TableRow>
-          ) : (
-            rows.map((row, rowIndex) => (
-              <TableRow key={`${title}-${rowIndex}`}>
-                {row.map((cell, cellIndex) => (
-                  <TableCell key={`${title}-${rowIndex}-${cellIndex}`} className="font-mono text-xs">
-                    {cell}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-function parseLabels(raw: string) {
-  const labels: Record<string, string> = {};
-
-  for (const token of raw.split(",")) {
-    const [key, value] = token.split("=");
-    if (key?.trim() && value?.trim()) {
-      labels[key.trim()] = value.trim();
-    }
-  }
-
-  return labels;
+function activeLinuxArtifact(options: DeployOptionsView) {
+  return options.artifacts.find((artifact) => artifact.status === "active" && artifact.platform === "linux/amd64")
+    ?? options.artifacts.find((artifact) => artifact.status === "active" && artifact.platform.startsWith("linux/"));
 }
