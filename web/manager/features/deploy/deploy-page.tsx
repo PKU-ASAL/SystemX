@@ -115,11 +115,16 @@ export function DeployPage() {
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-bg">
-      <header className="shrink-0 border-b bg-muted/10 p-4">
+      <header className="shrink-0 border-b bg-bg px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <PackagePlusIcon className="size-5 text-muted-fg" />
-            <div className="text-sm font-semibold">Deploy agent</div>
+            <div className="grid size-8 place-items-center rounded-md border bg-muted/20 text-muted-fg">
+              <PackagePlusIcon className="size-4" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold">Deploy agent</div>
+              <div className="text-xs text-muted-fg">Choose a deployment target and generate an enrollment command.</div>
+            </div>
           </div>
           <Button intent="outline" size="sm" onPress={reloadOptions}>
             <RefreshCwIcon />
@@ -128,8 +133,8 @@ export function DeployPage() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        <div className="grid gap-4 xl:grid-cols-3 xl:items-stretch">
+      <div className="min-h-0 flex-1 overflow-auto bg-muted/5 p-5">
+        <div className="grid max-w-6xl gap-4 xl:grid-cols-3 xl:items-stretch">
           <PlatformCard
             accent="primary"
             badge="default"
@@ -204,44 +209,37 @@ function PlatformCard({
   return (
     <div
       className={cn(
-        "relative flex min-h-[460px] flex-col overflow-hidden rounded-lg border bg-bg p-5 shadow-sm",
-        disabled && "bg-muted/20 text-muted-fg",
+        "group flex min-h-[340px] flex-col rounded-lg border bg-bg p-4 transition-colors",
+        !disabled && "hover:border-muted-fg/35 hover:bg-muted/10",
+        disabled && "bg-muted/15 text-muted-fg",
       )}
     >
-      <div
-        className={cn(
-          "absolute inset-x-0 top-0 h-1",
-          accent === "primary" && "bg-primary",
-          accent === "container" && "bg-success",
-          accent === "muted" && "bg-muted-fg/30",
-        )}
-      />
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div
           className={cn(
-            "grid size-11 place-items-center rounded-lg border bg-muted/20 text-muted-fg",
-            accent === "primary" && "border-primary/30 bg-primary/10 text-primary",
-            accent === "container" && "border-success/30 bg-success/10 text-success",
+            "grid size-9 place-items-center rounded-md border bg-bg text-muted-fg",
+            accent === "primary" && "border-primary/20 text-primary",
+            accent === "container" && "border-success/20 text-success",
           )}
         >
           <div className="[&>svg]:size-5">{icon}</div>
         </div>
         <Badge>{badge}</Badge>
       </div>
-      <div className="mt-6">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-fg">{eyebrow}</div>
-        <div className="mt-2 text-xl font-semibold">{title}</div>
+      <div className="mt-5">
+        <div className="text-xs font-medium text-muted-fg">{eyebrow}</div>
+        <div className="mt-1 text-lg font-semibold">{title}</div>
         <p className="mt-3 text-sm leading-6 text-muted-fg">{description}</p>
       </div>
-      <div className="mt-6 grid gap-2">
+      <div className="mt-5 grid gap-2">
         {details.map((detail) => (
-          <div key={detail} className="flex items-center gap-2 text-sm">
-            <span className="size-1.5 rounded-full bg-current opacity-50" />
+          <div key={detail} className="flex items-center gap-2 text-sm text-muted-fg">
+            <span className="size-1 rounded-full bg-current opacity-60" />
             {detail}
           </div>
         ))}
       </div>
-      <div className="mt-auto pt-6">
+      <div className="mt-auto pt-5">
         {action ?? (
           <Button className="w-full" intent="outline" isDisabled>
             Not available
@@ -283,7 +281,7 @@ function LinuxInstallSheet({
         <PanelRightOpenIcon />
         Install
       </SheetTrigger>
-      <SheetContent className="sm:max-w-[540px]" aria-label="Install Linux agent">
+      <SheetContent className="sm:max-w-[520px]" aria-label="Install Linux agent">
         <SheetHeader>
           <SheetTitle>Install Linux Agent</SheetTitle>
         </SheetHeader>
