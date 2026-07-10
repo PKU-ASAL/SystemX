@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -39,13 +39,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  buildEventHistogram,
-  createDiscoverRows,
   type EventDiscoverRow,
-  events,
-  filterEvents,
+  type EventHistogramBucket,
   type SecurityEventIndex,
 } from "@/lib/mock-data";
+import { createDefaultManagerApiClient, getManagerDataSource, type ManagerTimeRange } from "@/lib/api";
+import {
+  loadEventDiscoverData,
+  mapSearchFieldsToUiFields,
+} from "@/lib/events-data";
 import { getSearchFieldsForIndexPattern, type SearchField } from "@/lib/opensearch-fields";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +64,8 @@ const quickTimeRanges: Array<Extract<DiscoverTimeRange, { mode: "quick" }>> = [
   { mode: "quick", label: "Last 24 hours", minutes: 1440 },
 ];
 const referenceNow = new Date("2026-07-08T21:10:00").getTime();
+const managerApiClient = createDefaultManagerApiClient();
+const managerDataSource = getManagerDataSource();
 
 export function EventsPage() {
   const [indexPattern, setIndexPattern] = useState<DiscoverIndexPattern>("events-*,signals-*");
@@ -69,51 +73,99 @@ export function EventsPage() {
   const [timeRange, setTimeRange] = useState<DiscoverTimeRange>(quickTimeRanges[1]);
   const [refresh, setRefresh] = useState({ paused: true, intervalSeconds: 10 });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [rows, setRows] = useState<EventDiscoverRow[]>([]);
+  const [histogram, setHistogram] = useState<EventHistogramBucket[]>([]);
+  const [apiFields, setApiFields] = useState<SearchField[] | null>(null);
+  const [totalHits, setTotalHits] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const selectedIndexes = useMemo(() => resolveIndexPattern(indexPattern), [indexPattern]);
-  const searchFields = useMemo(() => getSearchFieldsForIndexPattern(indexPattern), [indexPattern]);
-  const timeFilter = useMemo(() => resolveTimeFilter(timeRange), [timeRange]);
-  const filteredEvents = useMemo(
-    () =>
-      filterEvents(events, {
-        query,
-        indexes: selectedIndexes,
-        ...timeFilter,
-        now: referenceNow,
-      }),
-    [query, selectedIndexes, timeFilter],
-  );
-  const rows = useMemo(() => createDiscoverRows(filteredEvents), [filteredEvents]);
-  const histogram = useMemo(
-    () =>
-      buildEventHistogram(events, {
-        query,
-        indexes: selectedIndexes,
-        ...timeFilter,
-        now: referenceNow,
-        bucketCount: 12,
-      }),
-    [query, selectedIndexes, timeFilter],
-  );
+  const fallbackFields = useMemo(() => getSearchFieldsForIndexPattern(indexPattern), [indexPattern]);
+  const searchFields = apiFields ?? fallbackFields;
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    loadEventDiscoverData({
+      client: managerApiClient,
+      dataSource: managerDataSource,
+      indexPattern,
+      indexes: selectedIndexes,
+      query,
+      time: resolveManagerTimeRange(timeRange, managerDataSource),
+      bucketCount: 12,
+      signal: controller.signal,
+    })
+      .then((data) => {
+        setRows(data.rows);
+        setHistogram(data.histogram);
+        setApiFields(mapSearchFieldsToUiFields(data.fields));
+        setTotalHits(data.total);
+      })
+      .catch((nextError: unknown) => {
+        if (controller.signal.aborted) return;
+        setRows([]);
+        setHistogram([]);
+        setTotalHits(0);
+        setError(nextError instanceof Error ? nextError.message : "Failed to load events");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [indexPattern, query, selectedIndexes, timeRange, reloadKey]);
+
+  function beginEventLoad() {
+    setIsLoading(true);
+    setError(null);
+  }
+
+  function changeIndexPattern(value: string) {
+    beginEventLoad();
+    setIndexPattern(value as DiscoverIndexPattern);
+  }
+
+  function changeQuery(value: string) {
+    beginEventLoad();
+    setQuery(value);
+  }
+
+  function changeTimeRange(value: DiscoverTimeRange) {
+    beginEventLoad();
+    setTimeRange(value);
+  }
+
+  function reloadEvents() {
+    beginEventLoad();
+    setReloadKey((value) => value + 1);
+  }
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-bg">
       <div className="flex shrink-0 flex-col gap-3 border-b bg-muted/10 p-4">
         <DiscoverQueryBar
-          count={filteredEvents.length}
+          count={totalHits}
           indexPattern={indexPattern}
           query={query}
           timeRange={timeRange}
           refresh={refresh}
           searchFields={searchFields}
-          onIndexPatternChange={(value) => setIndexPattern(value as DiscoverIndexPattern)}
-          onQueryChange={setQuery}
+          onIndexPatternChange={changeIndexPattern}
+          onQueryChange={changeQuery}
           onRefreshChange={setRefresh}
-          onTimeRangeChange={setTimeRange}
+          onTimeRangeChange={changeTimeRange}
+          onRun={reloadEvents}
         />
-        <DiscoverHistogram buckets={histogram} count={filteredEvents.length} />
+        <DiscoverHistogram buckets={histogram} count={totalHits} />
       </div>
       <DiscoverTable
         rows={rows}
+        isLoading={isLoading}
+        error={error}
         expanded={expanded}
         onToggle={(id) => setExpanded((current) => ({ ...current, [id]: !current[id] }))}
       />
@@ -132,6 +184,7 @@ function DiscoverQueryBar({
   onQueryChange,
   onRefreshChange,
   onTimeRangeChange,
+  onRun,
 }: {
   count: number;
   indexPattern: DiscoverIndexPattern;
@@ -143,6 +196,7 @@ function DiscoverQueryBar({
   onQueryChange: (value: string) => void;
   onRefreshChange: (value: { paused: boolean; intervalSeconds: number }) => void;
   onTimeRangeChange: (value: DiscoverTimeRange) => void;
+  onRun: () => void;
 }) {
   return (
     <SearchToolbar
@@ -168,7 +222,7 @@ function DiscoverQueryBar({
             onChange={onTimeRangeChange}
             onRefreshChange={onRefreshChange}
           />
-          <Button className={searchToolbarRunButtonClass} size="md">
+          <Button className={searchToolbarRunButtonClass} size="md" onPress={onRun}>
             <RefreshCwIcon />
             Run
           </Button>
@@ -331,7 +385,7 @@ function DiscoverHistogram({
   buckets,
   count,
 }: {
-  buckets: ReturnType<typeof buildEventHistogram>;
+  buckets: EventHistogramBucket[];
   count: number;
 }) {
   const maxCount = Math.max(...buckets.map((bucket) => bucket.count), 1);
@@ -371,10 +425,14 @@ function DiscoverHistogram({
 
 function DiscoverTable({
   rows,
+  isLoading,
+  error,
   expanded,
   onToggle,
 }: {
   rows: EventDiscoverRow[];
+  isLoading: boolean;
+  error: string | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
 }) {
@@ -481,18 +539,26 @@ function DiscoverTable({
               <TableCell colSpan={columns.length} style={{ height: `${paddingTop}px` }} />
             </TableRow>
           )}
-          {virtualRows.map((virtualRow) => {
-            const row = tableRows[virtualRow.index];
-            return (
-              <ExpandableDocumentRow
-                key={row.id}
-                row={row.original}
-                cells={row.getVisibleCells()}
-                expanded={Boolean(expanded[row.original.id])}
-                onToggle={() => onToggle(row.original.id)}
-              />
-            );
-          })}
+          {isLoading || error || rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-32 text-center text-sm text-muted-fg">
+                {isLoading ? "Loading events..." : error ? error : "No events match the current query."}
+              </TableCell>
+            </TableRow>
+          ) : (
+            virtualRows.map((virtualRow) => {
+              const row = tableRows[virtualRow.index];
+              return (
+                <ExpandableDocumentRow
+                  key={row.id}
+                  row={row.original}
+                  cells={row.getVisibleCells()}
+                  expanded={Boolean(expanded[row.original.id])}
+                  onToggle={() => onToggle(row.original.id)}
+                />
+              );
+            })
+          )}
           {paddingBottom > 0 && (
             <TableRow>
               <TableCell colSpan={columns.length} style={{ height: `${paddingBottom}px` }} />
@@ -582,14 +648,21 @@ function resolveIndexPattern(pattern: DiscoverIndexPattern): SecurityEventIndex[
   return ["sysarmor-events", "sysarmor-signals"];
 }
 
-function resolveTimeFilter(range: DiscoverTimeRange) {
+function resolveManagerTimeRange(range: DiscoverTimeRange, dataSource: "api" | "mock"): ManagerTimeRange {
   if (range.mode === "quick") {
-    return { minutes: range.minutes };
+    const now = dataSource === "mock" ? referenceNow : Date.now();
+
+    return {
+      field: "@timestamp",
+      from: new Date(now - range.minutes * 60 * 1000).toISOString(),
+      to: new Date(now).toISOString(),
+    };
   }
 
   return {
-    startTime: new Date(range.start).getTime(),
-    endTime: new Date(range.end).getTime(),
+    field: "@timestamp",
+    from: new Date(range.start).toISOString(),
+    to: new Date(range.end).toISOString(),
   };
 }
 

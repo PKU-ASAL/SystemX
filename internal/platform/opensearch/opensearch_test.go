@@ -98,12 +98,16 @@ func TestHTTPIndexerSearchPushesFilters(t *testing.T) {
 		t.Fatalf("NewHTTPIndexer() error = %v", err)
 	}
 	_, err = indexer.Search(context.Background(), SearchRequest{
-		Index:  "sysarmor-signals",
-		Size:   25,
-		Offset: 50,
-		Labels: map[string]string{"scenario": "apt-staged-drop"},
-		Exact:  map[string]string{"where": "SIGNAL_WHERE_CLOUD"},
-		Bool:   map[string]bool{"terminal": true},
+		Index:     "sysarmor-signals",
+		Size:      25,
+		Offset:    50,
+		Query:     "credential access",
+		Labels:    map[string]string{"scenario": "apt-staged-drop"},
+		Exact:     map[string]string{"where": "SIGNAL_WHERE_CLOUD"},
+		Bool:      map[string]bool{"terminal": true},
+		TimeField: "@timestamp",
+		TimeFrom:  "2026-07-08T21:00:00Z",
+		TimeTo:    "2026-07-08T21:10:00Z",
 	})
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
@@ -116,6 +120,8 @@ func TestHTTPIndexerSearchPushesFilters(t *testing.T) {
 		`"labels.scenario.keyword":"apt-staged-drop"`,
 		`"where.keyword":"SIGNAL_WHERE_CLOUD"`,
 		`"terminal":true`,
+		`"query":"credential access"`,
+		`"@timestamp":{"gte":"2026-07-08T21:00:00Z","lte":"2026-07-08T21:10:00Z"}`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("search body missing %s: %s", want, got)

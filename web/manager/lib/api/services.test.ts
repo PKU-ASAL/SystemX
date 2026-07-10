@@ -4,7 +4,7 @@ import { createManagerApiClient } from "./client";
 import { listAgents } from "./agents";
 import { getOverview } from "./overview";
 import { getIncidentDetail, searchIncidents } from "./incidents";
-import { getSearchFields, searchTelemetry } from "./search";
+import { getSearchFields, searchTelemetry, searchTelemetryHistogram } from "./search";
 
 describe("manager api services", () => {
   it("loads agents through the existing manager agents endpoint", async () => {
@@ -42,7 +42,8 @@ describe("manager api services", () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ indexes: ["sysarmor-events"], fields: [] }))
-      .mockResolvedValueOnce(jsonResponse({ total: 0, total_relation: "eq", rows: [] }));
+      .mockResolvedValueOnce(jsonResponse({ total: 0, total_relation: "eq", rows: [] }))
+      .mockResolvedValueOnce(jsonResponse({ buckets: [] }));
     const client = createManagerApiClient({ baseUrl: "/api/v1", fetcher });
 
     await getSearchFields(client, "events-*,signals-*");
@@ -51,6 +52,11 @@ describe("manager api services", () => {
       query: "host.name: prod-api-01",
       limit: 100,
       offset: 0,
+    });
+    await searchTelemetryHistogram(client, {
+      indexes: ["sysarmor-events", "sysarmor-signals"],
+      query: "host.name: prod-api-01",
+      bucket_count: 12,
     });
 
     expect(fetcher).toHaveBeenNthCalledWith(
@@ -68,6 +74,18 @@ describe("manager api services", () => {
           query: "host.name: prod-api-01",
           limit: 100,
           offset: 0,
+        }),
+      }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/search/histogram",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          indexes: ["sysarmor-events", "sysarmor-signals"],
+          query: "host.name: prod-api-01",
+          bucket_count: 12,
         }),
       }),
     );

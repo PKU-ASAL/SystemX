@@ -32,9 +32,13 @@ type SearchRequest struct {
 	Index     string
 	Size      int
 	Offset    int
+	Query     string
 	Labels    map[string]string
 	Exact     map[string]string
 	Bool      map[string]bool
+	TimeField string
+	TimeFrom  string
+	TimeTo    string
 	SortField string
 	SortDesc  bool
 }
@@ -168,7 +172,7 @@ func (i *HTTPIndexer) Search(ctx context.Context, search SearchRequest) ([]json.
 }
 
 func searchQuery(search SearchRequest) map[string]any {
-	filters := make([]map[string]any, 0, len(search.Labels)+len(search.Exact)+len(search.Bool))
+	filters := make([]map[string]any, 0, len(search.Labels)+len(search.Exact)+len(search.Bool)+1)
 	for key, value := range search.Labels {
 		if key = strings.TrimSpace(key); key != "" {
 			filters = append(filters, termFilter("labels."+key+".keyword", value))
@@ -184,14 +188,45 @@ func searchQuery(search SearchRequest) map[string]any {
 			filters = append(filters, map[string]any{"term": map[string]any{field: value}})
 		}
 	}
-	if len(filters) == 0 {
+	if rangeFilter := timeRangeFilter(search); rangeFilter != nil {
+		filters = append(filters, rangeFilter)
+	}
+	query := strings.TrimSpace(search.Query)
+	if len(filters) == 0 && query == "" {
 		return map[string]any{"match_all": map[string]any{}}
 	}
-	return map[string]any{"bool": map[string]any{"filter": filters}}
+	boolQuery := map[string]any{}
+	if len(filters) > 0 {
+		boolQuery["filter"] = filters
+	}
+	if query != "" {
+		boolQuery["must"] = []map[string]any{{
+			"simple_query_string": map[string]any{
+				"query":            query,
+				"default_operator": "and",
+			},
+		}}
+	}
+	return map[string]any{"bool": boolQuery}
 }
 
 func termFilter(field, value string) map[string]any {
 	return map[string]any{"term": map[string]any{field: value}}
+}
+
+func timeRangeFilter(search SearchRequest) map[string]any {
+	field := strings.TrimSpace(search.TimeField)
+	if field == "" || (strings.TrimSpace(search.TimeFrom) == "" && strings.TrimSpace(search.TimeTo) == "") {
+		return nil
+	}
+	rangeBody := map[string]any{}
+	if from := strings.TrimSpace(search.TimeFrom); from != "" {
+		rangeBody["gte"] = from
+	}
+	if to := strings.TrimSpace(search.TimeTo); to != "" {
+		rangeBody["lte"] = to
+	}
+	return map[string]any{"range": map[string]any{field: rangeBody}}
 }
 
 func (i *HTTPIndexer) setAuth(req *http.Request) {

@@ -88,6 +88,22 @@ export type TelemetrySearchResponse = {
   rows: TelemetrySearchRow[];
 };
 
+export type TelemetryHistogramRequest = TelemetrySearchRequest & {
+  bucket_count?: number;
+};
+
+export type TelemetryHistogramBucket = {
+  start: string;
+  end: string;
+  total: number;
+  events: number;
+  signals: number;
+};
+
+export type TelemetryHistogramResponse = {
+  buckets: TelemetryHistogramBucket[];
+};
+
 export type IncidentSearchRequest = {
   query?: string;
   time?: ManagerTimeRange;

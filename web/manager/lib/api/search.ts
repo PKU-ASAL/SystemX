@@ -1,5 +1,7 @@
 import type { ManagerApiClient, ManagerApiRequestOptions } from "./client";
 import type {
+  TelemetryHistogramRequest,
+  TelemetryHistogramResponse,
   SearchFieldsResponse,
   TelemetrySearchRequest,
   TelemetrySearchResponse,
@@ -22,6 +24,16 @@ export function searchTelemetry(
   options: { signal?: AbortSignal } = {},
 ) {
   return client.post<TelemetrySearchResponse>("/search", request, {
+    signal: options.signal,
+  });
+}
+
+export function searchTelemetryHistogram(
+  client: ManagerApiClient,
+  request: TelemetryHistogramRequest,
+  options: { signal?: AbortSignal } = {},
+) {
+  return client.post<TelemetryHistogramResponse>("/search/histogram", request, {
     signal: options.signal,
   });
 }
