@@ -63,7 +63,7 @@ func (s *Server) enrollments(w http.ResponseWriter, r *http.Request) {
 			}
 			enrollment.ArtifactID = artifact.ArtifactID
 			enrollment.ArtifactSHA256 = artifact.SHA256
-			enrollment.ArtifactURL = artifactDownloadURL(r, artifact.ArtifactID)
+			enrollment.ArtifactURL = artifactInstallURLForProfile(r, artifact, enrollment.Profile)
 		}
 		enrollment = s.store.CreateEnrollment(enrollment)
 		if enrollment.EnrollmentID == "" {
@@ -231,6 +231,10 @@ func newEnrollment(req enrollmentRequest, actor string) (store.Enrollment, strin
 	if strings.TrimSpace(req.GatewayAddr) == "" {
 		return store.Enrollment{}, "", fmt.Errorf("gateway_addr is required")
 	}
+	profile, err := normalizeInstallProfile(req.Profile)
+	if err != nil {
+		return store.Enrollment{}, "", err
+	}
 	ttl := 24 * time.Hour
 	if strings.TrimSpace(req.TTL) != "" {
 		parsed, err := time.ParseDuration(req.TTL)
@@ -261,7 +265,7 @@ func newEnrollment(req enrollmentRequest, actor string) (store.Enrollment, strin
 		TokenPreview: tokenPreview(token),
 		GatewayAddr:  req.GatewayAddr,
 		GatewaySNI:   req.GatewaySNI,
-		Profile:      req.Profile,
+		Profile:      profile,
 		Channel:      req.Channel,
 		ArtifactID:   req.ArtifactID,
 		ArtifactURL:  req.ArtifactURL,
@@ -271,10 +275,18 @@ func newEnrollment(req enrollmentRequest, actor string) (store.Enrollment, strin
 		ExpiresAt:    now.Add(ttl),
 		CreatedBy:    actor,
 	}
-	if enrollment.Profile == "" {
-		enrollment.Profile = "linux-tetragon"
-	}
 	return enrollment, token, nil
+}
+
+func normalizeInstallProfile(profile string) (string, error) {
+	switch strings.TrimSpace(profile) {
+	case "", "linux-systemd":
+		return "linux-systemd", nil
+	case "linux-container":
+		return "linux-container", nil
+	default:
+		return "", fmt.Errorf("unsupported install profile %q", profile)
+	}
 }
 
 func newEnrollmentToken() (string, error) {
@@ -335,12 +347,21 @@ func (s *Server) renderAgentInstallScript(r *http.Request, enrollment store.Enro
 	artifactSHA := enrollment.ArtifactSHA256
 	labels := renderAgentLabelConfig(enrollment.Labels)
 	publicKey := string(s.artifactPub)
+	profile := defaultString(enrollment.Profile, "linux-systemd")
+	dependencies := renderInstallDependencies(profile)
+	manifestCheck := renderManifestCheck(profile)
+	manifestEnv := renderManifestEnv(profile)
+	scopeConfig := renderInstallScopeConfig(profile)
+	serviceInstall := renderInstallServiceStep(profile)
+	certificateRequest := renderCertificateRequest(profile, token)
+	lifecycle := renderInstallLifecycle(profile, enrollment.EnrollmentID)
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
 %s
 SYSARMOR_AGENT_BUNDLE_SHA256="${SYSARMOR_AGENT_BUNDLE_SHA256:-%s}"
 SYSARMOR_ENROLLMENT_CERT_URL="${SYSARMOR_ENROLLMENT_CERT_URL:-%s}"
+SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-%s}"
 AGENT_HOME="${SYSARMOR_AGENT_HOME:-/opt/sysarmor/agent}"
 CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent.yaml}"
 SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}"
@@ -348,11 +369,7 @@ SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/runtime" "$AGENT_HOME/cache" /etc/sysarmor/policies /etc/sysarmor/pki /run/sysarmor "$(dirname "$CONFIG_DST")"
-if command -v apt-get >/dev/null 2>&1; then
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y >/dev/null
-  apt-get install -y ca-certificates curl openssl python3 >/dev/null
-fi
+%s
 curl -fsSL "$SYSARMOR_AGENT_BUNDLE_URL" -o "$tmp/sysarmor-agent.tar.gz"
 if [[ -n "$SYSARMOR_AGENT_BUNDLE_SHA256" ]]; then
   actual_sha="$(sha256sum "$tmp/sysarmor-agent.tar.gz" | awk '{print $1}')"
@@ -367,47 +384,17 @@ test -f "$tmp/manifest.sig" || { echo "[sysarmor-enroll][ERROR] distribution man
 cat > "$tmp/artifact-public.pem" <<'PEM'
 %s
 PEM
-if [[ -s "$tmp/artifact-public.pem" ]]; then
+if grep -Fq "BEGIN PUBLIC KEY" "$tmp/artifact-public.pem"; then
   openssl dgst -sha256 -verify "$tmp/artifact-public.pem" -signature "$tmp/manifest.sig" "$tmp/manifest.json" >/dev/null
 fi
-python3 - "$tmp" <<'PY'
-import hashlib, json, os, sys
-root = sys.argv[1]
-manifest = json.load(open(os.path.join(root, "manifest.json")))
-if manifest.get("schema_version") != "sysarmor.agent.distribution/v1":
-    raise SystemExit("unsupported distribution manifest schema")
-for item in manifest.get("files", []):
-    rel = item["path"].lstrip("./")
-    if rel.startswith("/") or ".." in rel.split("/"):
-        raise SystemExit(f"invalid manifest path: {rel}")
-    path = os.path.join(root, rel)
-    with open(path, "rb") as f:
-        got = hashlib.sha256(f.read()).hexdigest()
-    if got.lower() != item["sha256"].lower():
-        raise SystemExit(f"sha256 mismatch: {rel}")
-PY
-eval "$(python3 - "$tmp/manifest.json" <<'PY'
-import json, shlex, sys
-m = json.load(open(sys.argv[1]))
-sensors = m.get("sensors") or []
-sensor = sensors[0] if sensors else {}
-values = {
-    "DIST_ENTRYPOINT": m["entrypoint"],
-    "DIST_SYSTEMD_UNIT": m["systemd_unit"],
-    "DIST_SENSOR_NAME": sensor.get("name", "tetragon"),
-    "DIST_SENSOR_BUNDLE": sensor.get("bundle_dir", ""),
-    "DIST_SENSOR_INSTALL_DIR": sensor.get("install_dir", "sensors"),
-}
-for k, v in values.items():
-    print(f"{k}={shlex.quote(v)}")
-PY
-)"
+%s
+%s
 if [[ -z "$DIST_ENTRYPOINT" || -z "$DIST_SYSTEMD_UNIT" ]]; then
   echo "[sysarmor-enroll][ERROR] manifest entrypoint/systemd_unit missing" >&2
   exit 1
 fi
 install -m 0755 "$tmp/$DIST_ENTRYPOINT" "$AGENT_HOME/bin/sysarmor-agent"
-install -m 0644 "$tmp/$DIST_SYSTEMD_UNIT" "$SERVICE_DST"
+%s
 if [[ -n "$DIST_SENSOR_BUNDLE" ]]; then
   mkdir -p "$AGENT_HOME/bundles" "$AGENT_HOME/$DIST_SENSOR_INSTALL_DIR"
   rm -rf "$AGENT_HOME/bundles/$DIST_SENSOR_NAME"
@@ -418,20 +405,7 @@ chmod 0600 /etc/sysarmor/pki/agent-key.pem
 openssl req -new -key /etc/sysarmor/pki/agent-key.pem \
   -subj "/CN=tenant_id:%s,agent_id:%s" \
   -out "$tmp/agent.csr" >/dev/null 2>&1
-python3 - "$SYSARMOR_ENROLLMENT_CERT_URL" "$tmp/agent.csr" %s > "$tmp/cert-response.json" <<'PY'
-import json, sys, urllib.request
-url, csr_path, token = sys.argv[1], sys.argv[2], sys.argv[3]
-payload = json.dumps({"token": token, "csr": open(csr_path).read()}).encode()
-req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-with urllib.request.urlopen(req, timeout=30) as resp:
-    sys.stdout.write(resp.read().decode())
-PY
-python3 - "$tmp/cert-response.json" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-open("/etc/sysarmor/pki/agent.pem", "w").write(data["certificate_pem"])
-open("/etc/sysarmor/pki/ca.pem", "w").write(data["ca_pem"])
-PY
+%s
 chmod 0644 /etc/sysarmor/pki/agent.pem /etc/sysarmor/pki/ca.pem
 
 cat > "$CONFIG_DST" <<'YAML'
@@ -460,12 +434,160 @@ sensor:
   install_dir: /opt/sysarmor/agent/sensors
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   observe_only: true
+%s
 YAML
 
-systemctl daemon-reload
+if [[ ! -f /etc/sysarmor/policies/sysarmor-tetragon.yaml ]]; then
+  cat > /etc/sysarmor/policies/sysarmor-tetragon.yaml <<'JSON'
+{"behaviors":[{"id":"process.exec","enabled":true}],"observe_only":true}
+JSON
+fi
+
+%s
+`, artifactLine, artifactSHA, absoluteURL(r, "/api/v1/enrollment-certificate"), profile, dependencies, publicKey, manifestCheck, manifestEnv, serviceInstall, defaultString(enrollment.TenantID, "default"), enrollment.AgentID, certificateRequest, yamlQuote(enrollment.AgentID), yamlQuote(enrollment.HostID), yamlQuote(defaultString(enrollment.TenantID, "default")), yamlQuote(token), labels, yamlQuote(enrollment.GatewayAddr), yamlQuote(enrollment.GatewaySNI), scopeConfig, lifecycle)
+}
+
+func renderInstallDependencies(profile string) string {
+	if profile != "linux-container" {
+		return `if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y >/dev/null
+  apt-get install -y ca-certificates curl openssl python3 >/dev/null
+fi`
+	}
+	return `for bin in curl openssl tar sha256sum sed awk; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "[sysarmor-enroll][ERROR] missing required command for linux-container profile: $bin" >&2
+    exit 1
+  fi
+done`
+}
+
+func renderManifestCheck(profile string) string {
+	if profile != "linux-container" {
+		return `python3 - "$tmp" <<'PY'
+import hashlib, json, os, sys
+root = sys.argv[1]
+manifest = json.load(open(os.path.join(root, "manifest.json")))
+if manifest.get("schema_version") != "sysarmor.agent.distribution/v1":
+    raise SystemExit("unsupported distribution manifest schema")
+for item in manifest.get("files", []):
+    rel = item["path"].lstrip("./")
+    if rel.startswith("/") or ".." in rel.split("/"):
+        raise SystemExit(f"invalid manifest path: {rel}")
+    path = os.path.join(root, rel)
+    with open(path, "rb") as f:
+        got = hashlib.sha256(f.read()).hexdigest()
+    if got.lower() != item["sha256"].lower():
+        raise SystemExit(f"sha256 mismatch: {rel}")
+PY`
+	}
+	return `grep -Eq '"schema_version"[[:space:]]*:[[:space:]]*"sysarmor.agent.distribution/v1"' "$tmp/manifest.json" || {
+  echo "[sysarmor-enroll][ERROR] unsupported distribution manifest schema" >&2
+  exit 1
+}
+manifest_sums="$tmp/manifest-files.sha256"
+: > "$manifest_sums"
+tr -d '\n' < "$tmp/manifest.json" | sed 's/},[[:space:]]*{/}\
+{/g' | while IFS= read -r item; do
+  rel="$(printf '%s\n' "$item" | sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  sum="$(printf '%s\n' "$item" | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{64\}\)".*/\1/p')"
+  if [[ -z "$rel" || -z "$sum" ]]; then
+    continue
+  fi
+  case "$rel" in
+    /*|*../*|../*) echo "[sysarmor-enroll][ERROR] invalid manifest path: $rel" >&2; exit 1 ;;
+  esac
+  printf '%s  %s/%s\n' "$sum" "$tmp" "$rel" >> "$manifest_sums"
+done
+if [[ ! -s "$manifest_sums" ]]; then
+  echo "[sysarmor-enroll][ERROR] distribution manifest files are missing" >&2
+  exit 1
+fi
+sha256sum -c "$manifest_sums" >/dev/null`
+}
+
+func renderManifestEnv(profile string) string {
+	if profile != "linux-container" {
+		return `eval "$(python3 - "$tmp/manifest.json" <<'PY'
+import json, shlex, sys
+m = json.load(open(sys.argv[1]))
+sensors = m.get("sensors") or []
+sensor = sensors[0] if sensors else {}
+values = {
+    "DIST_ENTRYPOINT": m["entrypoint"],
+    "DIST_SYSTEMD_UNIT": m["systemd_unit"],
+    "DIST_SENSOR_NAME": sensor.get("name", "tetragon"),
+    "DIST_SENSOR_BUNDLE": sensor.get("bundle_dir", ""),
+    "DIST_SENSOR_INSTALL_DIR": sensor.get("install_dir", "sensors"),
+}
+for k, v in values.items():
+    print(f"{k}={shlex.quote(v)}")
+PY
+)"`
+	}
+	return `manifest_flat="$(tr -d '\n' < "$tmp/manifest.json")"
+DIST_ENTRYPOINT="$(printf '%s\n' "$manifest_flat" | sed -n 's/.*"entrypoint"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+DIST_SYSTEMD_UNIT="$(printf '%s\n' "$manifest_flat" | sed -n 's/.*"systemd_unit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+DIST_SENSOR_BUNDLE="$(printf '%s\n' "$manifest_flat" | sed -n 's/.*"bundle_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+DIST_SENSOR_INSTALL_DIR="$(printf '%s\n' "$manifest_flat" | sed -n 's/.*"install_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+DIST_SENSOR_NAME="tetragon"
+DIST_SENSOR_INSTALL_DIR="${DIST_SENSOR_INSTALL_DIR:-sensors}"`
+}
+
+func renderCertificateRequest(profile, token string) string {
+	if profile != "linux-container" {
+		return fmt.Sprintf(`python3 - "$SYSARMOR_ENROLLMENT_CERT_URL" "$tmp/agent.csr" %s > "$tmp/cert-response.json" <<'PY'
+import json, sys, urllib.request
+url, csr_path, token = sys.argv[1], sys.argv[2], sys.argv[3]
+payload = json.dumps({"token": token, "csr": open(csr_path).read()}).encode()
+req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+with urllib.request.urlopen(req, timeout=30) as resp:
+    sys.stdout.write(resp.read().decode())
+PY
+python3 - "$tmp/cert-response.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+open("/etc/sysarmor/pki/agent.pem", "w").write(data["certificate_pem"])
+open("/etc/sysarmor/pki/ca.pem", "w").write(data["ca_pem"])
+PY`, shellQuote(token))
+	}
+	return fmt.Sprintf(`csr_json="$(sed ':a;N;$!ba;s/\n/\\n/g' "$tmp/agent.csr")"
+curl -fsSL -X POST "$SYSARMOR_ENROLLMENT_CERT_URL" \
+  -H "Content-Type: application/json" \
+  -d '{"token":"%s","csr":"'"$csr_json"'"}' > "$tmp/cert-response.json"
+cert_pem="$(sed -n 's/.*"certificate_pem":"\([^"]*\)".*/\1/p' "$tmp/cert-response.json")"
+ca_pem="$(sed -n 's/.*"ca_pem":"\([^"]*\)".*/\1/p' "$tmp/cert-response.json")"
+if [[ -z "$cert_pem" || -z "$ca_pem" ]]; then
+  echo "[sysarmor-enroll][ERROR] certificate response missing PEM data" >&2
+  exit 1
+fi
+printf '%%b' "$cert_pem" > /etc/sysarmor/pki/agent.pem
+printf '%%b' "$ca_pem" > /etc/sysarmor/pki/ca.pem`, token)
+}
+
+func renderInstallScopeConfig(profile string) string {
+	if profile != "linux-container" {
+		return "  scope:\n    type: host"
+	}
+	return "  scope:\n    type: namespace\n    selector: self"
+}
+
+func renderInstallServiceStep(profile string) string {
+	if profile != "linux-container" {
+		return `install -m 0644 "$tmp/$DIST_SYSTEMD_UNIT" "$SERVICE_DST"`
+	}
+	return `echo "[sysarmor-enroll] linux-container profile: skipping systemd unit install"`
+}
+
+func renderInstallLifecycle(profile, enrollmentID string) string {
+	if profile != "linux-container" {
+		return fmt.Sprintf(`systemctl daemon-reload
 systemctl enable --now sysarmor-agent
-echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"
-`, artifactLine, artifactSHA, absoluteURL(r, "/api/v1/enrollment-certificate"), publicKey, defaultString(enrollment.TenantID, "default"), enrollment.AgentID, shellQuote(token), yamlQuote(enrollment.AgentID), yamlQuote(enrollment.HostID), yamlQuote(defaultString(enrollment.TenantID, "default")), yamlQuote(token), labels, yamlQuote(enrollment.GatewayAddr), yamlQuote(enrollment.GatewaySNI), enrollment.EnrollmentID)
+echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"`, enrollmentID)
+	}
+	return fmt.Sprintf(`echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"
+echo "[sysarmor-enroll] start with: $AGENT_HOME/bin/sysarmor-agent run --config $CONFIG_DST"`, enrollmentID)
 }
 
 func renderAgentLabelConfig(labels map[string]string) string {

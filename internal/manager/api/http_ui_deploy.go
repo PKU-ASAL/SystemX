@@ -122,7 +122,7 @@ func (s *Server) uiDeployAgentCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		enrollment.ArtifactID = artifact.ArtifactID
 		enrollment.ArtifactSHA256 = artifact.SHA256
-		enrollment.ArtifactURL = artifactDownloadURL(r, artifact.ArtifactID)
+		enrollment.ArtifactURL = artifactInstallURL(r, artifact)
 		artifactResponse = deployCommandArtifact{
 			ArtifactID:  artifact.ArtifactID,
 			DownloadURL: enrollment.ArtifactURL,
@@ -162,7 +162,7 @@ func deployArtifacts(r *http.Request, artifacts []store.Artifact) []deployArtifa
 			Arch:        artifact.Arch,
 			SHA256:      artifact.SHA256,
 			Status:      artifact.Status,
-			DownloadURL: artifactDownloadURL(r, artifact.ArtifactID),
+			DownloadURL: artifactInstallURL(r, artifact),
 			CreatedAt:   artifact.CreatedAt,
 		})
 	}

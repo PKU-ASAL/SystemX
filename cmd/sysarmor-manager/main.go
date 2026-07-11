@@ -65,6 +65,9 @@ func main() {
 		}
 	}
 	managerSrv := managerapi.NewServerWithSearch(st, *operatorToken, searcher)
+	if err := managerSrv.SeedArtifactFeedFromEnv(ctx); err != nil {
+		log.Printf("seed package index: %v", err)
+	}
 
 	srv := &http.Server{
 		Addr:    *listen,

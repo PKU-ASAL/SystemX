@@ -65,6 +65,69 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "127.0.0.1:19444") {
 		t.Fatalf("install script response = %d body=%s", rec.Code, body)
 	}
+	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, "systemctl enable --now sysarmor-agent") {
+		t.Fatalf("default install profile/script mismatch: profile=%q body=%s", created.Enrollment.Profile, body)
+	}
+}
+
+func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *testing.T) {
+	st := &store.Store{}
+	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-container",
+		"host_id":"container-host",
+		"gateway_addr":"gateway:9444",
+		"gateway_sni":"localhost",
+		"artifact_url":"https://example.invalid/sysarmor-agent.tar.gz",
+		"profile":"linux-container",
+		"labels":{"scenario":"namespace-self-container"},
+		"ttl":"1h"
+	}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create container enrollment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Token      string           `json:"token"`
+		InstallURL string           `json:"install_url"`
+		Enrollment store.Enrollment `json:"enrollment"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Enrollment.Profile != "linux-container" {
+		t.Fatalf("container enrollment profile = %q", created.Enrollment.Profile)
+	}
+
+	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("container install script status = %d body=%s", rec.Code, body)
+	}
+	for _, want := range []string{
+		`SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-linux-container}"`,
+		`label.scenario: "namespace-self-container"`,
+		"scope:",
+		"    type: namespace",
+		"    selector: self",
+		"sha256sum -c",
+		"sysarmor-agent run --config",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("container install script missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "systemctl enable --now sysarmor-agent") {
+		t.Fatalf("container install script should not enable systemd:\n%s", body)
+	}
+	if strings.Contains(body, "python3") {
+		t.Fatalf("container install script should not require python3:\n%s", body)
+	}
 }
 
 func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
@@ -125,6 +188,213 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), uploaded.Artifact.SHA256) || !strings.Contains(rec.Body.String(), "/api/v1/artifacts/"+uploaded.Artifact.ArtifactID+"/download") {
 		t.Fatalf("artifact install script status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestArtifactFeedSeedsExternalArtifactAndChannel(t *testing.T) {
+	st := &store.Store{}
+	srv := NewServerWithOperatorToken(st, "operator-token")
+	if err := srv.SeedArtifactFeedData([]byte(`{
+		"schema_version":"sysarmor.artifact.feed/v1",
+		"artifacts":[{
+			"artifact_id":"art-feed-linux-amd64-dev",
+			"tenant_id":"default",
+			"name":"sysarmor-agent",
+			"kind":"agent",
+			"version":"dev",
+			"os":"linux",
+			"arch":"amd64",
+			"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"size_bytes":1234,
+			"status":"active",
+			"download_url":"https://artifacts.example/sysarmor-agent-linux-amd64-dev.tar.gz",
+			"channels":["linux-container-dev"]
+		}]
+	}`)); err != nil {
+		t.Fatalf("seed artifact feed: %v", err)
+	}
+	handler := srv.Handler()
+
+	channel, ok := st.GetChannel("default", "linux-container-dev")
+	if !ok || channel.ArtifactID != "art-feed-linux-amd64-dev" {
+		t.Fatalf("seeded channel = %+v ok=%v", channel, ok)
+	}
+	artifact, ok := st.GetArtifact("default", channel.ArtifactID)
+	if !ok || artifact.Metadata["download_url"] != "https://artifacts.example/sysarmor-agent-linux-amd64-dev.tar.gz" {
+		t.Fatalf("seeded artifact = %+v ok=%v", artifact, ok)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-feed",
+		"gateway_addr":"gateway:9444",
+		"channel":"linux-container-dev",
+		"profile":"linux-container",
+		"ttl":"1h"
+	}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create feed enrollment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK ||
+		!strings.Contains(body, "https://artifacts.example/sysarmor-agent-linux-amd64-dev.tar.gz") ||
+		strings.Contains(body, "/api/v1/artifacts/art-feed-linux-amd64-dev/download") {
+		t.Fatalf("feed install script status = %d body=%s", rec.Code, body)
+	}
+}
+
+func TestArtifactFeedFromEnvUsesAgentPackageIndexURL(t *testing.T) {
+	st := &store.Store{}
+	srv := NewServerWithOperatorToken(st, "operator-token")
+	index := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"schema_version":"sysarmor.artifact.feed/v1",
+			"artifacts":[{
+				"artifact_id":"pkg-linux-amd64-dev",
+				"tenant_id":"default",
+				"name":"sysarmor-agent",
+				"kind":"agent",
+				"version":"dev",
+				"os":"linux",
+				"arch":"amd64",
+				"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"size_bytes":1234,
+				"status":"active",
+				"download_url":"https://packages.example/sysarmor-agent-linux-amd64-dev.tar.gz",
+				"channels":["linux-container-dev"]
+			}]
+		}`)
+	}))
+	defer index.Close()
+	t.Setenv("SYSARMOR_AGENT_PACKAGE_INDEX_URL", index.URL)
+	t.Setenv("SYSARMOR_ARTIFACT_FEED_URL", "")
+
+	if err := srv.SeedArtifactFeedFromEnv(t.Context()); err != nil {
+		t.Fatalf("seed package index from env: %v", err)
+	}
+	artifact, ok := st.GetArtifact("default", "pkg-linux-amd64-dev")
+	if !ok || artifact.Metadata["download_url"] != "https://packages.example/sysarmor-agent-linux-amd64-dev.tar.gz" {
+		t.Fatalf("seeded package artifact = %+v ok=%v", artifact, ok)
+	}
+}
+
+func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
+	t.Setenv("SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL", "http://127.0.0.1:18080/releases")
+	st := &store.Store{}
+	srv := NewServerWithOperatorToken(st, "operator-token")
+	if err := srv.SeedArtifactFeedData([]byte(`{
+		"schema_version":"sysarmor.artifact.feed/v1",
+		"artifacts":[{
+			"artifact_id":"release-linux-amd64-dev",
+			"tenant_id":"default",
+			"name":"sysarmor-agent",
+			"kind":"agent",
+			"version":"dev",
+			"os":"linux",
+			"arch":"amd64",
+			"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"size_bytes":1234,
+			"status":"active",
+			"download_url":"http://packages/sysarmor-agent-linux-amd64-dev.tar.gz",
+			"channels":["linux-systemd-dev"]
+		}]
+	}`)); err != nil {
+		t.Fatalf("seed package index: %v", err)
+	}
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-systemd",
+		"gateway_addr":"gateway:9444",
+		"channel":"linux-systemd-dev",
+		"profile":"linux-systemd",
+		"ttl":"1h"
+	}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create systemd enrollment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Token      string           `json:"token"`
+		Enrollment store.Enrollment `json:"enrollment"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := created.Enrollment.ArtifactURL, "http://127.0.0.1:18080/releases/sysarmor-agent-linux-amd64-dev.tar.gz"; got != want {
+		t.Fatalf("systemd artifact url = %q want %q", got, want)
+	}
+
+	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "http://127.0.0.1:18080/releases/sysarmor-agent-linux-amd64-dev.tar.gz") {
+		t.Fatalf("systemd install script status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEnrollmentKeepsPackageInternalURLForContainerProfile(t *testing.T) {
+	t.Setenv("SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL", "http://127.0.0.1:18080")
+	st := &store.Store{}
+	srv := NewServerWithOperatorToken(st, "operator-token")
+	if err := srv.SeedArtifactFeedData([]byte(`{
+		"schema_version":"sysarmor.artifact.feed/v1",
+		"artifacts":[{
+			"artifact_id":"release-linux-amd64-dev",
+			"tenant_id":"default",
+			"name":"sysarmor-agent",
+			"kind":"agent",
+			"version":"dev",
+			"os":"linux",
+			"arch":"amd64",
+			"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"size_bytes":1234,
+			"status":"active",
+			"download_url":"http://packages/sysarmor-agent-linux-amd64-dev.tar.gz",
+			"channels":["linux-container-dev"]
+		}]
+	}`)); err != nil {
+		t.Fatalf("seed package index: %v", err)
+	}
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-container",
+		"gateway_addr":"gateway:9444",
+		"channel":"linux-container-dev",
+		"profile":"linux-container",
+		"ttl":"1h"
+	}`))
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create container enrollment status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Enrollment store.Enrollment `json:"enrollment"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := created.Enrollment.ArtifactURL, "http://packages/sysarmor-agent-linux-amd64-dev.tar.gz"; got != want {
+		t.Fatalf("container artifact url = %q want %q", got, want)
 	}
 }
 

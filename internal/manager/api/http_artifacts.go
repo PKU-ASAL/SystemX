@@ -190,6 +190,10 @@ func (s *Server) downloadArtifact(w http.ResponseWriter, r *http.Request, tenant
 		return
 	}
 	if artifact.StoragePath == "" {
+		if url := artifactInstallURL(r, artifact); url != artifactDownloadURL(r, artifact.ArtifactID) {
+			http.Redirect(w, r, url, http.StatusFound)
+			return
+		}
 		http.Error(w, "artifact has no storage path", http.StatusNotFound)
 		return
 	}
