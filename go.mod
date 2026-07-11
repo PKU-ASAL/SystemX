@@ -4,7 +4,10 @@ go 1.26.0
 
 require google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 
-require github.com/cilium/tetragon/api v1.7.0 // indirect
+require (
+	github.com/cilium/tetragon/api v1.7.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+)
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0

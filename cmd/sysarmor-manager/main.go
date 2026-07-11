@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
+	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
 )
@@ -27,7 +28,9 @@ func main() {
 	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable telemetry")
 	opensearchUsername := flag.String("opensearch-username", envDefault("SYSARMOR_OPENSEARCH_USERNAME", ""), "OpenSearch basic auth username")
 	opensearchPassword := flag.String("opensearch-password", envDefault("SYSARMOR_OPENSEARCH_PASSWORD", ""), "OpenSearch basic auth password")
-	operatorToken := flag.String("operator-token", "", "static development operator token for control-plane writes; empty disables operator checks")
+	jwtPublicKey := flag.String("jwt-public-key", envDefault("SYSARMOR_JWT_PUBLIC_KEY_FILE", ""), "RS256 JWT public key PEM")
+	jwtIssuer := flag.String("jwt-issuer", envDefault("SYSARMOR_JWT_ISSUER", ""), "required JWT issuer")
+	jwtAudience := flag.String("jwt-audience", envDefault("SYSARMOR_JWT_AUDIENCE", ""), "required JWT audience")
 	flag.Parse()
 
 	if flag.NArg() > 0 && flag.Arg(0) == "version" {
@@ -38,6 +41,16 @@ func main() {
 	defer cancel()
 	if *storeBackend == backend.KindFile {
 		fmt.Fprintln(os.Stderr, "open store: file backend has been removed from the sysarmor-manager product path; use postgres")
+		os.Exit(1)
+	}
+	publicKey, err := os.ReadFile(*jwtPublicKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open JWT public key: %v\n", err)
+		os.Exit(1)
+	}
+	verifier, err := managerauth.NewVerifierPEM(publicKey, *jwtIssuer, *jwtAudience)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure JWT verifier: %v\n", err)
 		os.Exit(1)
 	}
 	storeResult, err := backend.Open(ctx, backend.Options{
@@ -64,14 +77,14 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	managerSrv := managerapi.NewServerWithSearch(st, *operatorToken, searcher)
+	managerSrv := managerapi.NewServerWithSearch(st, "", searcher)
 	if err := managerSrv.SeedArtifactFeedFromEnv(ctx); err != nil {
 		log.Printf("seed package index: %v", err)
 	}
 
 	srv := &http.Server{
 		Addr:    *listen,
-		Handler: managerSrv.Handler(),
+		Handler: managerSrv.HandlerWithAuth(verifier),
 	}
 	log.Printf("sysarmor-manager listening on %s store_backend=%s store=%s", *listen, *storeBackend, *storePath)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

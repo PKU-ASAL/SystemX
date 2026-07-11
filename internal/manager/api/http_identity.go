@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
@@ -148,6 +149,13 @@ func (s *Server) operatorAuthorizedFor(r *http.Request, roles ...string) bool {
 }
 
 func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request, roles ...string) bool {
+	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok {
+		if principal.HasRole("operator") || principal.HasRole("admin") {
+			return true
+		}
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
 	if s.operatorToken == "" {
 		return true
 	}
@@ -163,6 +171,9 @@ func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request, roles .
 }
 
 func (s *Server) actorFromRequest(r *http.Request, explicit string) string {
+	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok {
+		return principal.Subject
+	}
 	if explicit != "" {
 		return explicit
 	}
@@ -170,6 +181,9 @@ func (s *Server) actorFromRequest(r *http.Request, explicit string) string {
 }
 
 func (s *Server) roleFromRequest(r *http.Request, explicit string) string {
+	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok && len(principal.Roles) > 0 {
+		return principal.Roles[0]
+	}
 	if explicit != "" {
 		return explicit
 	}

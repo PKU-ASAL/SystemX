@@ -2299,13 +2299,7 @@ func addAuthHeaders(req *http.Request) {
 	if token := os.Getenv("SYSARMOR_DEV_TOKEN"); token != "" {
 		req.Header.Set("X-SysArmor-Agent-Token", token)
 	}
-	if token := os.Getenv("SYSARMOR_OPERATOR_TOKEN"); token != "" {
-		req.Header.Set("X-SysArmor-Operator-Token", token)
-	}
-	if actor := os.Getenv("SYSARMOR_ACTOR"); actor != "" {
-		req.Header.Set("X-SysArmor-Actor", actor)
-	}
-	if role := os.Getenv("SYSARMOR_ROLE"); role != "" {
-		req.Header.Set("X-SysArmor-Role", role)
+	if token := strings.TrimSpace(os.Getenv("SYSARMOR_MANAGER_JWT")); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 }
