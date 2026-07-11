@@ -203,6 +203,9 @@ func (c Config) Validate() error {
 	if err != nil {
 		return fmt.Errorf("sensor scope: %w", err)
 	}
+	if scope.Type == "namespace" && scope.Selector != "self" {
+		return fmt.Errorf("sensor scope: namespace scope selector must be self")
+	}
 	scopeSelector := strings.TrimSpace(scope.Selector)
 	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
 	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {

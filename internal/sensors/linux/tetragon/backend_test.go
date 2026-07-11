@@ -111,6 +111,12 @@ func TestCapabilityReportsHostProbeFields(t *testing.T) {
 	if !capabilityHasField(capability.Collection, "network.connect", "socket.port") {
 		t.Fatalf("collection capability missing network.connect socket.port: %+v", capability.Collection)
 	}
+	if !capabilityHasPushdownSelector(capability.Collection, "process.exec", "scope.namespace") {
+		t.Fatalf("collection capability should push down namespace scope: %+v", capability.Collection)
+	}
+	if capabilityHasAgentSideSelector(capability.Collection, "process.exec", "scope.namespace") {
+		t.Fatalf("collection capability should not mark namespace scope agent-side: %+v", capability.Collection)
+	}
 }
 
 func capabilityHasField(items []contract.CollectionBehaviorCapability, behavior, field string) bool {
@@ -120,6 +126,34 @@ func capabilityHasField(items []contract.CollectionBehaviorCapability, behavior,
 		}
 		for _, got := range item.Fields {
 			if got == field {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func capabilityHasPushdownSelector(items []contract.CollectionBehaviorCapability, behavior, selector string) bool {
+	for _, item := range items {
+		if item.Behavior != behavior {
+			continue
+		}
+		for _, got := range item.PushdownSelectors {
+			if got == selector {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func capabilityHasAgentSideSelector(items []contract.CollectionBehaviorCapability, behavior, selector string) bool {
+	for _, item := range items {
+		if item.Behavior != behavior {
+			continue
+		}
+		for _, got := range item.AgentSideSelectors {
+			if got == selector {
 				return true
 			}
 		}
@@ -547,6 +581,64 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 	}
 }
 
+func TestBackendAppliesNamespaceSelfTracingPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed policy apply test requires /bin/sh and procfs namespaces")
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is unavailable")
+	}
+	selectors, err := selfNamespaceSelectors()
+	if err != nil {
+		t.Skipf("namespace selectors unavailable: %v", err)
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte(`{"behaviors":["process.exec"],"observe_only":true}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appliedPath := filepath.Join(dir, "applied.yaml")
+	tetraPath := filepath.Join(dir, "tetra")
+	raw := `{"process_kprobe":{"process":{"pid":100,"uid":0,"binary":"/bin/busybox","arguments":"id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"},"function_name":"security_bprm_creds_from_file","args":[{"file_arg":{"path":"/bin/busybox"}}],"policy_name":"sysarmor-runtime-collection"},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ]; then cp \"$3\" '" + appliedPath + "'; exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nprintf '%s\\n' '" + raw + "'\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{TetraPath: tetraPath})
+	backend.EventTransport = "tetra"
+	intent := contract.CollectionIntent{
+		Behaviors:     []string{"process.exec"},
+		ScopeType:     "namespace",
+		ScopeSelector: "self",
+		ObserveOnly:   true,
+	}
+	if err := backend.Apply(context.Background(), intent); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	events, err := backend.Subscribe(context.Background(), intent)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	for range events {
+	}
+	data, err := os.ReadFile(appliedPath)
+	if err != nil {
+		t.Fatalf("generated tracing policy was not applied: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{"matchNamespaces:", "namespace: Pid", "namespace: Mnt"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("generated policy missing %q:\n%s", want, text)
+		}
+	}
+	for _, selector := range selectors {
+		if len(selector.Values) == 0 || !strings.Contains(text, selector.Values[0]) {
+			t.Fatalf("generated policy missing selector %+v:\n%s", selector, text)
+		}
+	}
+}
+
 func TestBackendManagedSubscribeUsesPolicyScopedGetEvents(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed subscribe test requires /bin/sh")
@@ -620,6 +712,29 @@ func TestBuildTracingPolicyUsesCollectionFilters(t *testing.T) {
 	}
 }
 
+func TestBuildTracingPolicyPushesNamespaceScope(t *testing.T) {
+	data := string(buildTracingPolicy(contract.CollectionIntent{
+		Behaviors: []string{"process.exec", "network.connect", "file.write"},
+		BehaviorFilters: []contract.CollectionBehaviorFilter{
+			{Behavior: "process.exec", BinaryPrefixes: []string{"/usr/bin"}},
+			{Behavior: "network.connect", SocketFamilies: []string{"AF_INET"}},
+			{Behavior: "file.write", FilePrefixes: []string{"/dev/shm"}},
+		},
+		NamespaceSelectors: []contract.NamespaceSelector{
+			{Namespace: "Pid", Values: []string{"4026533001"}},
+			{Namespace: "Mnt", Values: []string{"4026533002"}},
+		},
+	}))
+	for _, want := range []string{"matchNamespaces:", "namespace: Pid", "namespace: Mnt", `"4026533001"`, `"4026533002"`} {
+		if !strings.Contains(data, want) {
+			t.Fatalf("generated policy missing %q:\n%s", want, data)
+		}
+	}
+	if strings.Count(data, "matchNamespaces:") != 3 {
+		t.Fatalf("generated policy should attach namespace selectors to each kprobe selector:\n%s", data)
+	}
+}
+
 func TestBuildTracingPolicySeparatesReadAndWriteFileAccess(t *testing.T) {
 	data := string(buildTracingPolicy(contract.CollectionIntent{
 		Behaviors: []string{"file.read", "file.write"},
@@ -637,6 +752,28 @@ func TestBuildTracingPolicySeparatesReadAndWriteFileAccess(t *testing.T) {
 	for _, want := range []string{`"/etc/passwd"`, `"/dev/shm"`, `"4"`, `"2"`} {
 		if !strings.Contains(data, want) {
 			t.Fatalf("generated policy missing %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestCompileReportMarksNamespaceScopeAsPushedDown(t *testing.T) {
+	report := CompileReport(contract.CollectionIntent{
+		Behaviors: []string{"process.exec"},
+		ScopeType: "namespace", ScopeSelector: "self",
+		NamespaceSelectors: []contract.NamespaceSelector{
+			{Namespace: "Pid", Values: []string{"4026533001"}},
+			{Namespace: "Mnt", Values: []string{"4026533002"}},
+		},
+	})
+	if !selectorReportContains(report.PushedDownSelectors, "process.exec", "scope.namespace") {
+		t.Fatalf("namespace scope was not reported as pushed down: %+v", report)
+	}
+	if selectorReportContains(report.AgentSideSelectors, "process.exec", "scope.namespace") {
+		t.Fatalf("namespace scope should not be reported as agent-side when resolved: %+v", report)
+	}
+	for _, warning := range report.Warnings {
+		if strings.Contains(warning, "has no pushdown selectors") {
+			t.Fatalf("namespace scope should count as a pushdown selector, warnings = %v", report.Warnings)
 		}
 	}
 }

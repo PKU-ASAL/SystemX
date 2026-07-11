@@ -134,66 +134,71 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 
 func CollectionCapabilities() []contract.CollectionBehaviorCapability {
 	commonProcess := []string{"event.id", "event.behavior", "lineage_id", "process.stable_id", "process.binary", "process.argv", "process.uid", "parent.stable_id", "scope.type", "scope.selector", "container.id", "cgroup"}
+	agentSideScope := []string{"scope.container", "scope.cgroup", "scope.pod"}
 	with := func(base []string, fields ...string) []string {
 		out := append([]string(nil), base...)
 		out = append(out, fields...)
 		return out
+	}
+	pushdown := func(selectors ...string) []string {
+		return append([]string{"scope.namespace"}, selectors...)
 	}
 	return []contract.CollectionBehaviorCapability{
 		{
 			Behavior:           eventmodel.BehaviorProcessExec.String(),
 			SensorMapping:      "tetragon:process_exec/security_bprm_creds_from_file",
 			Fields:             commonProcess,
-			PushdownSelectors:  []string{"process.binary_prefix"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix"),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorProcessFork.String(),
 			SensorMapping:      "tetragon:process_exec.clone",
 			Fields:             commonProcess,
-			PushdownSelectors:  []string{"process.binary_prefix"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix"),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorProcessExit.String(),
 			SensorMapping:      "tetragon:process_exit/do_exit",
 			Fields:             commonProcess,
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown(),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorNetworkConnect.String(),
 			SensorMapping:      "tetragon:kprobe/security_socket_connect",
 			Fields:             with(commonProcess, "socket", "socket.addr", "socket.port", "object.socket_addr"),
-			PushdownSelectors:  []string{"process.binary_prefix", "socket.family", "socket.addr", "socket.port"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix", "socket.family", "socket.addr", "socket.port"),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileOpen.String(),
 			SensorMapping:      "tetragon:kprobe/security_file_permission",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix", "file.path.prefix"),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileRead.String(),
 			SensorMapping:      "tetragon:kprobe/security_file_permission",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix", "file.access"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix", "file.path.prefix", "file.access"),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileWrite.String(),
 			SensorMapping:      "tetragon:process_exec.inferred_write/security_file_permission",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix", "file.access"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix", "file.path.prefix", "file.access"),
+			AgentSideSelectors: agentSideScope,
 		},
 		{
 			Behavior:           eventmodel.BehaviorFileChmod.String(),
 			SensorMapping:      "tetragon:process_exec.inferred_chmod",
 			Fields:             with(commonProcess, "file.path", "object.file_path"),
-			PushdownSelectors:  []string{"process.binary_prefix", "file.path.prefix", "file.access"},
-			AgentSideSelectors: []string{"scope.container", "scope.cgroup", "scope.namespace", "scope.pod"},
+			PushdownSelectors:  pushdown("process.binary_prefix", "file.path.prefix", "file.access"),
+			AgentSideSelectors: agentSideScope,
 		},
 	}
 }
@@ -220,9 +225,15 @@ func CompileReport(intent contract.CollectionIntent) contract.CollectionCompileR
 		filter := behaviorFilter(intent, behavior)
 		report.PushedDownSelectors = append(report.PushedDownSelectors, pushedDownSelectorsForFilter(filter)...)
 		report.AgentSideSelectors = append(report.AgentSideSelectors, agentSideSelectorsForFilter(filter)...)
-		report.AgentSideSelectors = append(report.AgentSideSelectors, scopeSelectorReports(intent, behavior)...)
+		for _, scopeReport := range scopeSelectorReports(intent, behavior) {
+			if scopeReport.Status == "pushed_down" {
+				report.PushedDownSelectors = append(report.PushedDownSelectors, scopeReport)
+				continue
+			}
+			report.AgentSideSelectors = append(report.AgentSideSelectors, scopeReport)
+		}
 		report.UnsupportedSelectors = append(report.UnsupportedSelectors, unsupportedSelectorsForFilter(filter)...)
-		if !hasPushdownSelectors(behavior, filter) {
+		if !hasPushdownSelectors(intent, behavior, filter) {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("behavior %s has no pushdown selectors; kernel BPF filter will pass all events of this type, resulting in high event volume", behavior))
 		}
 	}
@@ -251,7 +262,10 @@ func hookForBehavior(behavior string) string {
 	}
 }
 
-func hasPushdownSelectors(behavior string, filter contract.CollectionBehaviorFilter) bool {
+func hasPushdownSelectors(intent contract.CollectionIntent, behavior string, filter contract.CollectionBehaviorFilter) bool {
+	if hasNamespacePushdown(intent) {
+		return true
+	}
 	switch eventmodel.NormalizeBehavior(behavior) {
 	case eventmodel.BehaviorProcessExec, eventmodel.BehaviorProcessFork:
 		return len(filter.BinaryPrefixes) > 0
@@ -303,6 +317,15 @@ func scopeSelectorReports(intent contract.CollectionIntent, behavior string) []c
 	if intent.ScopeType == "" || intent.ScopeType == "host" {
 		return nil
 	}
+	if hasNamespacePushdown(intent) {
+		return []contract.CollectionSelectorReport{{
+			Behavior: behavior,
+			Selector: "scope.namespace",
+			Status:   "pushed_down",
+			Location: "tetragon",
+			Mapping:  "selectors.matchNamespaces",
+		}}
+	}
 	return []contract.CollectionSelectorReport{{
 		Behavior: behavior,
 		Selector: "scope." + intent.ScopeType,
@@ -310,6 +333,10 @@ func scopeSelectorReports(intent contract.CollectionIntent, behavior string) []c
 		Location: "agent",
 		Reason:   "runtime scope is enforced after Tetragon emission; selector is correct but may collect extra events until backend pushdown is implemented",
 	}}
+}
+
+func hasNamespacePushdown(intent contract.CollectionIntent) bool {
+	return intent.ScopeType == "namespace" && (intent.ScopeSelector == "self" || len(intent.NamespaceSelectors) > 0)
 }
 
 func agentSideSelectorsForFilter(filter contract.CollectionBehaviorFilter) []contract.CollectionSelectorReport {
@@ -387,6 +414,11 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 		return err
 	}
 	normalized, err := intent.NormalizeScope()
+	if err != nil {
+		b.setError(err)
+		return err
+	}
+	normalized, err = resolveNamespaceScope(normalized)
 	if err != nil {
 		b.setError(err)
 		return err
@@ -557,6 +589,10 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	if err != nil {
 		return err
 	}
+	normalized, err = resolveNamespaceScope(normalized)
+	if err != nil {
+		return err
+	}
 	if err := validateSupportedScope(normalized); err != nil {
 		return err
 	}
@@ -584,6 +620,54 @@ func validateSupportedScope(intent contract.CollectionIntent) error {
 	default:
 		return fmt.Errorf("tetragon backend scope %q is not supported", intent.ScopeType)
 	}
+}
+
+func resolveNamespaceScope(intent contract.CollectionIntent) (contract.CollectionIntent, error) {
+	if intent.ScopeType != "namespace" || intent.ScopeSelector != "self" || len(intent.NamespaceSelectors) > 0 {
+		return intent, nil
+	}
+	selectors, err := selfNamespaceSelectors()
+	if err != nil {
+		return contract.CollectionIntent{}, err
+	}
+	intent.NamespaceSelectors = selectors
+	return intent, nil
+}
+
+func selfNamespaceSelectors() ([]contract.NamespaceSelector, error) {
+	namespaces := []struct {
+		name string
+		tp   string
+	}{
+		{name: "pid", tp: "Pid"},
+		{name: "mnt", tp: "Mnt"},
+	}
+	out := make([]contract.NamespaceSelector, 0, len(namespaces))
+	for _, ns := range namespaces {
+		link, err := os.Readlink(filepath.Join("/proc/self/ns", ns.name))
+		if err != nil {
+			return nil, fmt.Errorf("resolve namespace scope %s: %w", ns.name, err)
+		}
+		inode, ok := namespaceInode(link)
+		if !ok {
+			return nil, fmt.Errorf("resolve namespace scope %s: unexpected link %q", ns.name, link)
+		}
+		out = append(out, contract.NamespaceSelector{Namespace: ns.tp, Values: []string{inode}})
+	}
+	return out, nil
+}
+
+func namespaceInode(link string) (string, bool) {
+	start := strings.Index(link, "[")
+	end := strings.Index(link, "]")
+	if start < 0 || end <= start+1 {
+		return "", false
+	}
+	inode := link[start+1 : end]
+	if _, err := strconv.ParseUint(inode, 10, 64); err != nil {
+		return "", false
+	}
+	return inode, true
 }
 
 func (b *Backend) applyPreparedPolicy(ctx context.Context) error {
@@ -788,9 +872,13 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
     - index: 1
       type: "file"
 `)
+		if len(prefixes) > 0 || len(intent.NamespaceSelectors) > 0 {
+			out.WriteString("    selectors:\n")
+			out.WriteString("    -\n")
+			writeNamespaceSelectors(&out, intent.NamespaceSelectors, "      ")
+		}
 		if len(prefixes) > 0 {
-			out.WriteString(`    selectors:
-    - matchArgs:
+			out.WriteString(`      matchArgs:
       - index: 1
         operator: "Prefix"
         values:
@@ -827,6 +915,7 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
     -
 `)
 		writeMatchBinaries(&out, filter.BinaryPrefixes, "      ")
+		writeNamespaceSelectors(&out, intent.NamespaceSelectors, "      ")
 		out.WriteString(`      matchArgs:
       - index: 1
         operator: "Family"
@@ -861,10 +950,11 @@ func buildTracingPolicy(intent contract.CollectionIntent) []byte {
 }
 
 type filePermissionSelector struct {
-	Behavior       string
-	Access         int32
-	BinaryPrefixes []string
-	FilePrefixes   []string
+	Behavior           string
+	Access             int32
+	BinaryPrefixes     []string
+	FilePrefixes       []string
+	NamespaceSelectors []contract.NamespaceSelector
 }
 
 func filePermissionSelectors(intent contract.CollectionIntent) []filePermissionSelector {
@@ -879,10 +969,11 @@ func filePermissionSelectors(intent contract.CollectionIntent) []filePermissionS
 			prefixes = defaultFilePrefixesForBehavior(behavior)
 		}
 		selectors = append(selectors, filePermissionSelector{
-			Behavior:       behavior,
-			Access:         access,
-			BinaryPrefixes: filter.BinaryPrefixes,
-			FilePrefixes:   prefixes,
+			Behavior:           behavior,
+			Access:             access,
+			BinaryPrefixes:     filter.BinaryPrefixes,
+			FilePrefixes:       prefixes,
+			NamespaceSelectors: append([]contract.NamespaceSelector(nil), intent.NamespaceSelectors...),
 		})
 	}
 	add(eventmodel.BehaviorFileOpen.String(), 0)
@@ -906,6 +997,7 @@ func defaultFilePrefixesForBehavior(behavior string) []string {
 func writeFilePermissionSelector(out *bytes.Buffer, selector filePermissionSelector) {
 	out.WriteString("    -\n")
 	writeMatchBinaries(out, selector.BinaryPrefixes, "      ")
+	writeNamespaceSelectors(out, selector.NamespaceSelectors, "      ")
 	out.WriteString(`      matchArgs:
       - index: 0
         operator: "Prefix"
@@ -943,6 +1035,34 @@ func writeMatchBinaries(out *bytes.Buffer, prefixes []string, indent string) {
 		out.WriteString("  - ")
 		out.WriteString(fmt.Sprintf("%q", prefix))
 		out.WriteString("\n")
+	}
+}
+
+func writeNamespaceSelectors(out *bytes.Buffer, selectors []contract.NamespaceSelector, indent string) {
+	if len(selectors) == 0 {
+		return
+	}
+	out.WriteString(indent)
+	out.WriteString("matchNamespaces:\n")
+	for _, selector := range selectors {
+		values := mergeFilterStrings(selector.Values)
+		if selector.Namespace == "" || len(values) == 0 {
+			continue
+		}
+		out.WriteString(indent)
+		out.WriteString("- namespace: ")
+		out.WriteString(selector.Namespace)
+		out.WriteString("\n")
+		out.WriteString(indent)
+		out.WriteString("  operator: \"In\"\n")
+		out.WriteString(indent)
+		out.WriteString("  values:\n")
+		for _, value := range values {
+			out.WriteString(indent)
+			out.WriteString("  - ")
+			out.WriteString(fmt.Sprintf("%q", value))
+			out.WriteString("\n")
+		}
 	}
 }
 
@@ -1297,6 +1417,12 @@ func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
 	case "cgroup":
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
 	case "namespace":
+		b.mu.Lock()
+		hasNamespaceSelectors := len(b.intent.NamespaceSelectors) > 0
+		b.mu.Unlock()
+		if scopeSelector == "self" && hasNamespaceSelectors {
+			return true
+		}
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
 	case "pod":
 		return strings.HasPrefix(event.GetContainerId(), scopeSelector)

@@ -32,17 +32,18 @@ type Capability struct {
 }
 
 type CollectionIntent struct {
-	Behaviors       []string
-	BinaryPrefixes  []string
-	FilePrefixes    []string
-	SocketFamilies  []string
-	SocketAddrs     []string
-	SocketPorts     []string
-	BehaviorFilters []CollectionBehaviorFilter
-	ScopeType       string
-	ScopeSelector   string
-	ObserveOnly     bool
-	Capabilities    []CollectionBehaviorCapability
+	Behaviors          []string
+	BinaryPrefixes     []string
+	FilePrefixes       []string
+	SocketFamilies     []string
+	SocketAddrs        []string
+	SocketPorts        []string
+	BehaviorFilters    []CollectionBehaviorFilter
+	NamespaceSelectors []NamespaceSelector
+	ScopeType          string
+	ScopeSelector      string
+	ObserveOnly        bool
+	Capabilities       []CollectionBehaviorCapability
 }
 
 type CollectionBehaviorFilter struct {
@@ -52,6 +53,11 @@ type CollectionBehaviorFilter struct {
 	SocketFamilies []string
 	SocketAddrs    []string
 	SocketPorts    []string
+}
+
+type NamespaceSelector struct {
+	Namespace string
+	Values    []string
 }
 
 type CollectionCompileReport struct {

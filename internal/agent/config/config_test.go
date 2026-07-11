@@ -321,6 +321,87 @@ health:
 	}
 }
 
+func TestLoadFileAcceptsNamespaceSelfScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: grpc
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope:
+    type: namespace
+    selector: self
+
+telemetry:
+
+data_plane:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	scope, err := cfg.Sensor.EffectiveScope()
+	if err != nil {
+		t.Fatalf("EffectiveScope() error = %v", err)
+	}
+	if scope.Type != "namespace" || scope.Selector != "self" {
+		t.Fatalf("effective scope = %q/%q", scope.Type, scope.Selector)
+	}
+}
+
+func TestLoadFileRejectsNamespaceLegacySelector(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+agent:
+  id: node-a
+  host_id: node-a
+  tenant_id: default
+  token: dev-token
+
+manager:
+  address: http://10.66.0.10:9443
+  transport: grpc
+
+sensor:
+  backend: tetragon
+  mode: managed
+  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
+  scope:
+    type: namespace
+    selector: kubepods.slice/pod-a
+
+telemetry:
+
+data_plane:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+
+health:
+  interval: 10s
+`)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "sensor scope: namespace scope selector must be self") {
+		t.Fatalf("LoadFile() error = %v, want namespace self validation error", err)
+	}
+}
+
 func TestLoadFileRejectsInvalidScopeType(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
