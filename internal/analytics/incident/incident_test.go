@@ -3,12 +3,31 @@ package incident
 import (
 	"testing"
 
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/converge"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-func TestBuilderCreatesIncidentWithEvidenceAndStatus(t *testing.T) {
+func TestIncidentReportDescriptorDefinesFormalIdentity(t *testing.T) {
+	descriptor := (&incidentv1.Incident{}).ProtoReflect().Descriptor()
+	for _, name := range []string{"tenant_id", "correlation_key", "analysis_version", "first_observed_at", "last_observed_at"} {
+		if descriptor.Fields().ByName(protoreflect.Name(name)) == nil {
+			t.Fatalf("Incident field %s is missing", name)
+		}
+	}
+	for _, name := range []string{"status", "status_reason", "status_actor"} {
+		field := descriptor.Fields().ByName(protoreflect.Name(name))
+		options, ok := field.Options().(*descriptorpb.FieldOptions)
+		if !ok || !options.GetDeprecated() {
+			t.Fatalf("Incident field %s is not deprecated", name)
+		}
+	}
+}
+
+func TestBuilderCreatesIncidentWithEvidence(t *testing.T) {
 	builder := NewBuilder()
 	inc := builder.Build([]*signalv1.Signal{
 		{
@@ -24,8 +43,8 @@ func TestBuilderCreatesIncidentWithEvidenceAndStatus(t *testing.T) {
 			},
 		},
 	}, converge.Decision{Incident: true, Method: "rarity+causal-topk", Controls: []string{"terminal_reverse_shell"}})
-	if inc.GetStatus() != "open" {
-		t.Fatalf("status = %q, want open", inc.GetStatus())
+	if inc.GetStatus() != "" {
+		t.Fatalf("deprecated status = %q, want empty", inc.GetStatus())
 	}
 	if inc.GetConverge().GetScore() != 80 || inc.GetConverge().GetMethod() != "rarity+causal-topk" {
 		t.Fatalf("converge = %+v", inc.GetConverge())

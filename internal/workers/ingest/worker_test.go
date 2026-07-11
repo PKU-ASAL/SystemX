@@ -82,10 +82,33 @@ func TestWorkerRejectsMissingBatchIdentityToDLQ(t *testing.T) {
 }
 
 func TestIncidentDocumentIDUsesStableReportIdentity(t *testing.T) {
-	first := &incidentv1.Incident{Summary: "first", Labels: map[string]string{"tenant_id": "tenant-a", "correlation_key": "scenario=a", "analysis_version": "v1"}}
-	second := &incidentv1.Incident{Summary: "updated", Labels: map[string]string{"tenant_id": "tenant-a", "correlation_key": "scenario=a", "analysis_version": "v1"}}
+	first := &incidentv1.Incident{Summary: "first", TenantId: "tenant-a", CorrelationKey: "scenario=a", AnalysisVersion: "incident.v1"}
+	second := &incidentv1.Incident{Summary: "updated", TenantId: "tenant-a", CorrelationKey: "scenario=a", AnalysisVersion: "incident.v1"}
 	if IncidentDocumentID(first) != IncidentDocumentID(second) {
 		t.Fatalf("report id changed with report content")
+	}
+}
+
+func TestProcessorWritesFormalIncidentIdentity(t *testing.T) {
+	indexer := &recordingIndexer{}
+	processor := NewProcessor(&store.Store{}, indexer)
+	labels := map[string]string{"scenario": "formal-identity"}
+	mustProcess(t, processor, dataBatch("batch-drop", nil, []*signalv1.Signal{
+		workerSignal("sig-drop", "payload_dropped", "lin-drop", labels, workerFile("/tmp/payload")),
+	}))
+	mustProcess(t, processor, dataBatch("batch-connect", nil, []*signalv1.Signal{
+		workerSignal("sig-connect", "suspicious_exec_connect", "lin-connect", labels, workerFile("/tmp/payload"), workerSocket("10.0.0.1:443")),
+	}))
+	doc := lastDoc(indexer.docs, "sysarmor-incidents")
+	report := &incidentv1.Incident{}
+	if err := protojson.Unmarshal(doc.Body, report); err != nil {
+		t.Fatal(err)
+	}
+	if report.GetTenantId() != "default" || report.GetCorrelationKey() != "scenario=formal-identity" || report.GetAnalysisVersion() != "incident.v1" {
+		t.Fatalf("formal identity = %+v", report)
+	}
+	if report.GetLabels()["tenant_id"] != "" || report.GetStatus() != "" {
+		t.Fatalf("legacy fields populated = %+v", report)
 	}
 }
 
@@ -240,6 +263,15 @@ func lastDocID(docs []platformopensearch.Document, index string) string {
 		}
 	}
 	return ""
+}
+
+func lastDoc(docs []platformopensearch.Document, index string) platformopensearch.Document {
+	for i := len(docs) - 1; i >= 0; i-- {
+		if docs[i].Index == index {
+			return docs[i]
+		}
+	}
+	return platformopensearch.Document{}
 }
 
 func lastDocIDContaining(docs []platformopensearch.Document, index, needle string) string {

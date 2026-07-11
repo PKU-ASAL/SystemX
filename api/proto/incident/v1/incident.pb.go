@@ -297,12 +297,20 @@ type Incident struct {
 	Evidence            *EvidenceSubgraph      `protobuf:"bytes,8,opt,name=evidence,proto3" json:"evidence,omitempty"`
 	Converge            *ConvergeTrace         `protobuf:"bytes,9,opt,name=converge,proto3" json:"converge,omitempty"`
 	ContributingSignals []*v1.Signal           `protobuf:"bytes,10,rep,name=contributing_signals,json=contributingSignals,proto3" json:"contributing_signals,omitempty"`
-	Status              string                 `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
-	StatusReason        string                 `protobuf:"bytes,12,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
-	StatusActor         string                 `protobuf:"bytes,13,opt,name=status_actor,json=statusActor,proto3" json:"status_actor,omitempty"`
-	Labels              map[string]string      `protobuf:"bytes,14,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Deprecated: Marked as deprecated in api/proto/incident/v1/incident.proto.
+	Status string `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
+	// Deprecated: Marked as deprecated in api/proto/incident/v1/incident.proto.
+	StatusReason string `protobuf:"bytes,12,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	// Deprecated: Marked as deprecated in api/proto/incident/v1/incident.proto.
+	StatusActor     string            `protobuf:"bytes,13,opt,name=status_actor,json=statusActor,proto3" json:"status_actor,omitempty"`
+	Labels          map[string]string `protobuf:"bytes,14,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	TenantId        string            `protobuf:"bytes,15,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	CorrelationKey  string            `protobuf:"bytes,16,opt,name=correlation_key,json=correlationKey,proto3" json:"correlation_key,omitempty"`
+	AnalysisVersion string            `protobuf:"bytes,17,opt,name=analysis_version,json=analysisVersion,proto3" json:"analysis_version,omitempty"`
+	FirstObservedAt string            `protobuf:"bytes,18,opt,name=first_observed_at,json=firstObservedAt,proto3" json:"first_observed_at,omitempty"`
+	LastObservedAt  string            `protobuf:"bytes,19,opt,name=last_observed_at,json=lastObservedAt,proto3" json:"last_observed_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Incident) Reset() {
@@ -398,6 +406,7 @@ func (x *Incident) GetContributingSignals() []*v1.Signal {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in api/proto/incident/v1/incident.proto.
 func (x *Incident) GetStatus() string {
 	if x != nil {
 		return x.Status
@@ -405,6 +414,7 @@ func (x *Incident) GetStatus() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in api/proto/incident/v1/incident.proto.
 func (x *Incident) GetStatusReason() string {
 	if x != nil {
 		return x.StatusReason
@@ -412,6 +422,7 @@ func (x *Incident) GetStatusReason() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in api/proto/incident/v1/incident.proto.
 func (x *Incident) GetStatusActor() string {
 	if x != nil {
 		return x.StatusActor
@@ -424,6 +435,41 @@ func (x *Incident) GetLabels() map[string]string {
 		return x.Labels
 	}
 	return nil
+}
+
+func (x *Incident) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *Incident) GetCorrelationKey() string {
+	if x != nil {
+		return x.CorrelationKey
+	}
+	return ""
+}
+
+func (x *Incident) GetAnalysisVersion() string {
+	if x != nil {
+		return x.AnalysisVersion
+	}
+	return ""
+}
+
+func (x *Incident) GetFirstObservedAt() string {
+	if x != nil {
+		return x.FirstObservedAt
+	}
+	return ""
+}
+
+func (x *Incident) GetLastObservedAt() string {
+	if x != nil {
+		return x.LastObservedAt
+	}
+	return ""
 }
 
 var File_api_proto_incident_v1_incident_proto protoreflect.FileDescriptor
@@ -449,7 +495,7 @@ const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
 	"\bseed_ids\x18\x02 \x03(\tR\aseedIds\x12\x19\n" +
 	"\bpath_ids\x18\x03 \x03(\tR\apathIds\x12\x14\n" +
 	"\x05score\x18\x04 \x01(\x02R\x05score\x12\x1a\n" +
-	"\bcontrols\x18\x05 \x03(\tR\bcontrols\"\xe8\x04\n" +
+	"\bcontrols\x18\x05 \x03(\tR\bcontrols\"\xbb\x06\n" +
 	"\bIncident\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\asummary\x18\x03 \x01(\tR\asummary\x12\x1a\n" +
@@ -461,11 +507,16 @@ const file_api_proto_incident_v1_incident_proto_rawDesc = "" +
 	"\bevidence\x18\b \x01(\v2&.sysarmor.incident.v1.EvidenceSubgraphR\bevidence\x12?\n" +
 	"\bconverge\x18\t \x01(\v2#.sysarmor.incident.v1.ConvergeTraceR\bconverge\x12M\n" +
 	"\x14contributing_signals\x18\n" +
-	" \x03(\v2\x1a.sysarmor.signal.v1.SignalR\x13contributingSignals\x12\x16\n" +
-	"\x06status\x18\v \x01(\tR\x06status\x12#\n" +
-	"\rstatus_reason\x18\f \x01(\tR\fstatusReason\x12!\n" +
-	"\fstatus_actor\x18\r \x01(\tR\vstatusActor\x12B\n" +
-	"\x06labels\x18\x0e \x03(\v2*.sysarmor.incident.v1.Incident.LabelsEntryR\x06labels\x1a9\n" +
+	" \x03(\v2\x1a.sysarmor.signal.v1.SignalR\x13contributingSignals\x12\x1a\n" +
+	"\x06status\x18\v \x01(\tB\x02\x18\x01R\x06status\x12'\n" +
+	"\rstatus_reason\x18\f \x01(\tB\x02\x18\x01R\fstatusReason\x12%\n" +
+	"\fstatus_actor\x18\r \x01(\tB\x02\x18\x01R\vstatusActor\x12B\n" +
+	"\x06labels\x18\x0e \x03(\v2*.sysarmor.incident.v1.Incident.LabelsEntryR\x06labels\x12\x1b\n" +
+	"\ttenant_id\x18\x0f \x01(\tR\btenantId\x12'\n" +
+	"\x0fcorrelation_key\x18\x10 \x01(\tR\x0ecorrelationKey\x12)\n" +
+	"\x10analysis_version\x18\x11 \x01(\tR\x0fanalysisVersion\x12*\n" +
+	"\x11first_observed_at\x18\x12 \x01(\tR\x0ffirstObservedAt\x12(\n" +
+	"\x10last_observed_at\x18\x13 \x01(\tR\x0elastObservedAt\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x02\x10\x03R\bscenarioBLZJgithub.com/sysarmor/sysarmor-next-project/api/proto/incident/v1;incidentv1b\x06proto3"

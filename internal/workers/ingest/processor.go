@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -135,13 +136,13 @@ func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes ma
 		endpointSignals := p.store.ListSignals(scope.labels, "endpoint", false)
 		policy := p.effectiveDetectionPolicyForAgent(scope.agent)
 		analysis := p.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
+		firstObserved, lastObserved := incidentObservedRange(events)
 		for _, inc := range analysis.Incidents {
-			if inc.Labels == nil {
-				inc.Labels = map[string]string{}
-			}
-			inc.Labels["tenant_id"] = scope.agent.Normalized().TenantID
-			inc.Labels["correlation_key"] = labelSelectorKey(scope.labels)
-			inc.Labels["analysis_version"] = "v1"
+			inc.TenantId = scope.agent.Normalized().TenantID
+			inc.CorrelationKey = labelSelectorKey(scope.labels)
+			inc.AnalysisVersion = "incident.v1"
+			inc.FirstObservedAt = firstObserved
+			inc.LastObservedAt = lastObserved
 		}
 		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, nil)
 		for _, sig := range analysis.CloudSignals {
@@ -158,6 +159,26 @@ func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes ma
 		totalIncidents += len(analysis.Incidents)
 	}
 	return totalCloud, totalIncidents, nil
+}
+
+func incidentObservedRange(events []*eventv1.CanonicalEvent) (string, string) {
+	var first, last uint64
+	for _, event := range events {
+		observed := event.GetOccurredAtNs()
+		if observed == 0 {
+			continue
+		}
+		if first == 0 || observed < first {
+			first = observed
+		}
+		if observed > last {
+			last = observed
+		}
+	}
+	if first == 0 {
+		return "", ""
+	}
+	return time.Unix(0, int64(first)).UTC().Format(time.RFC3339Nano), time.Unix(0, int64(last)).UTC().Format(time.RFC3339Nano)
 }
 
 func (p *Processor) effectiveDetectionPolicyForAgent(agent store.AgentIdentity) *policyv1.DetectionPolicy {
@@ -261,8 +282,11 @@ func IncidentDocumentID(inc *incidentv1.Incident) string {
 	if inc == nil {
 		return ""
 	}
-	labels := inc.GetLabels()
-	identity := strings.Join([]string{labels["tenant_id"], labels["correlation_key"], labels["analysis_version"]}, ":")
+	identity := strings.Join([]string{inc.GetTenantId(), inc.GetCorrelationKey(), inc.GetAnalysisVersion()}, ":")
+	if strings.Trim(identity, ":") == "" {
+		labels := inc.GetLabels()
+		identity = strings.Join([]string{labels["tenant_id"], labels["correlation_key"], labels["analysis_version"]}, ":")
+	}
 	if strings.Trim(identity, ":") != "" {
 		sum := sha256.Sum256([]byte(identity))
 		return "incident:" + hex.EncodeToString(sum[:16])

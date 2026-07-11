@@ -35,7 +35,6 @@ func (b *Builder) Build(signals []*signalv1.Signal, decision converge.Decision) 
 		Evidence:            evidence.FromSignals(contributing),
 		Converge:            &incidentv1.ConvergeTrace{Method: decision.Method, Score: b.Scorer.Score(contributing), Controls: decision.Controls},
 		ContributingSignals: contributing,
-		Status:              "open",
 	}
 }
 
