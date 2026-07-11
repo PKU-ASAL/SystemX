@@ -44,7 +44,6 @@ type ManagerStore interface {
 	AddSignal(*signalv1.Signal) bool
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
 	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
-	AttachIncidentEvidence(string, store.LabelSelector, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
 	CancelControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
@@ -62,7 +61,6 @@ type ManagerStore interface {
 	GetEnrollmentByTokenHash(string) (store.Enrollment, bool)
 	GetArtifact(string, string) (store.Artifact, bool)
 	GetChannel(string, string) (store.ArtifactChannel, bool)
-	GetIncident(string, store.LabelSelector) (*incidentv1.Incident, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
 	GetSignal(string) (*signalv1.Signal, bool)
 	Info() store.Info
@@ -72,7 +70,6 @@ type ManagerStore interface {
 	ListControlCommands(string, string, string) []controlmodel.ControlCommand
 	ListEvents(store.LabelSelector, string) []*eventv1.CanonicalEvent
 	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
-	ListIncidents(store.LabelSelector) []*incidentv1.Incident
 	ListAgentSessions(string, string) []store.AgentSession
 	ListEnrollments(string, string) []store.Enrollment
 	ListArtifacts(string, string, string) []store.Artifact
@@ -83,7 +80,6 @@ type ManagerStore interface {
 	ListResponses(string, string) []responsemodel.AuditRecord
 	ListRules(string) []policymodel.RuleContent
 	ListSignals(store.LabelSelector, string, bool) []*signalv1.Signal
-	MergeIncidents(string, string) (*incidentv1.Incident, bool)
 	MetricsSnapshot() store.Metrics
 	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)
 	PendingControlCommands(string, string) []controlmodel.ControlCommand
@@ -101,7 +97,6 @@ type ManagerStore interface {
 	ExpireControlCommand(string, string, string, string) (controlmodel.ControlCommand, bool)
 	ResetMetrics() error
 	Save() error
-	UpdateIncidentStatus(string, store.LabelSelector, string, string, string) (*incidentv1.Incident, bool)
 	UpsertAgentHealth(agenthealth.AgentHealth)
 	UpsertArtifact(store.Artifact) store.Artifact
 	UpsertChannel(store.ArtifactChannel) store.ArtifactChannel
@@ -179,20 +174,6 @@ type responseApprovalRequest struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
-type incidentLifecycleRequest struct {
-	IncidentID string            `json:"incident_id"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	Status     string            `json:"status"`
-	Reason     string            `json:"reason,omitempty"`
-	Actor      string            `json:"actor,omitempty"`
-}
-
-type incidentEvidenceAttachRequest struct {
-	IncidentID string            `json:"incident_id"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	Evidence   json.RawMessage   `json:"evidence"`
-}
-
 type evidencePullbackRequest struct {
 	RequestID  string            `json:"request_id"`
 	TenantID   string            `json:"tenant_id"`
@@ -218,11 +199,6 @@ type controlCommandRequest struct {
 	PayloadJSON    json.RawMessage `json:"payload_json,omitempty"`
 	Actor          string          `json:"actor,omitempty"`
 	Reason         string          `json:"reason,omitempty"`
-}
-
-type incidentMergeRequest struct {
-	TargetIncidentID string `json:"target_incident_id"`
-	SourceIncidentID string `json:"source_incident_id"`
 }
 
 type AgentListItem struct {
@@ -352,9 +328,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/signals", s.signals)
 	mux.HandleFunc("/api/v1/incidents", s.incidents)
-	mux.HandleFunc("/api/v1/incident-evidence", s.incidentEvidence)
-	mux.HandleFunc("/api/v1/incident-lifecycle", s.incidentLifecycle)
-	mux.HandleFunc("/api/v1/incident-merge", s.incidentMerge)
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)

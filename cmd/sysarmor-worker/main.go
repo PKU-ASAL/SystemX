@@ -41,6 +41,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "open store: file backend has been removed from the sysarmor-worker product path; use postgres")
 		os.Exit(1)
 	}
+	if strings.TrimSpace(*opensearchURL) == "" {
+		fmt.Fprintln(os.Stderr, "open opensearch indexer: opensearch url is required")
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -72,18 +76,25 @@ func main() {
 			log.Printf("close kafka consumer: %v", err)
 		}
 	}()
-
-	var indexer platformopensearch.Indexer = platformopensearch.NoopIndexer{}
-	if *opensearchURL != "" {
-		indexer, err = platformopensearch.NewHTTPIndexerWithAuth(*opensearchURL, *opensearchUsername, *opensearchPassword)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "open opensearch indexer: %v\n", err)
-			os.Exit(1)
+	dlqProducer, err := platformkafka.NewWriterProducer(splitCSV(*kafkaBrokers))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open kafka dead letter producer: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := dlqProducer.Close(); err != nil {
+			log.Printf("close kafka dead letter producer: %v", err)
 		}
+	}()
+
+	indexer, err := platformopensearch.NewHTTPIndexerWithAuth(*opensearchURL, *opensearchUsername, *opensearchPassword)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open opensearch indexer: %v\n", err)
+		os.Exit(1)
 	}
 
 	log.Printf("sysarmor-worker consuming topic=%s group=%s store_backend=%s", *kafkaTopic, *kafkaGroupID, *storeBackend)
-	err = ingestworker.NewWorker(consumer, ingestworker.NewProcessor(storeResult.Store, indexer)).Run(ctx)
+	err = ingestworker.NewWorkerWithDLQ(consumer, ingestworker.NewProcessor(storeResult.Store, indexer), dlqProducer).Run(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(os.Stderr, "run ingest worker: %v\n", err)
 		os.Exit(1)

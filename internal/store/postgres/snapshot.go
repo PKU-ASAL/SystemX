@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
@@ -16,7 +15,6 @@ import (
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const snapshotStateKey = "default"
@@ -106,12 +104,6 @@ func (b *tableBackend) ListAgentSessions(ctx context.Context, tenantID, agentID 
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 	return queryAgentSessions(ctx, b.db, tenantID, agentID)
-}
-
-func (b *tableBackend) ListIncidents(ctx context.Context, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
-	return queryIncidents(ctx, b.db, labels)
 }
 
 func (b *tableBackend) ListResponses(ctx context.Context, tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
@@ -291,9 +283,6 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	if err := projectAgentCertificates(ctx, tx, state.Certificates); err != nil {
 		return err
 	}
-	if err := projectIncidents(ctx, tx, state.Incidents); err != nil {
-		return err
-	}
 	if err := projectEvidencePullbacks(ctx, tx, state.Pullbacks); err != nil {
 		return err
 	}
@@ -395,36 +384,6 @@ ORDER BY last_seen_at DESC, tenant_id ASC, agent_id ASC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate postgres agent sessions: %w", err)
-	}
-	return out, nil
-}
-
-func queryIncidents(ctx context.Context, db sqlExecutor, labels store.LabelSelector) ([]*incidentv1.Incident, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT data FROM incidents
-ORDER BY updated_at ASC, incident_id ASC
-`)
-	if err != nil {
-		return nil, fmt.Errorf("query postgres incidents: %w", err)
-	}
-	defer rows.Close()
-	out := []*incidentv1.Incident{}
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return nil, fmt.Errorf("scan postgres incident: %w", err)
-		}
-		incident := &incidentv1.Incident{}
-		if err := protojson.Unmarshal(raw, incident); err != nil {
-			return nil, fmt.Errorf("decode postgres incident: %w", err)
-		}
-		if !store.LabelsMatch(incident.GetLabels(), labels) {
-			continue
-		}
-		out = append(out, incident)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate postgres incidents: %w", err)
 	}
 	return out, nil
 }
@@ -1561,165 +1520,6 @@ func formatOptionalTime(t time.Time) string {
 		return "0001-01-01T00:00:00Z"
 	}
 	return t.UTC().Format(time.RFC3339Nano)
-}
-
-func projectIncidents(ctx context.Context, db sqlExecutor, incidentRows []json.RawMessage) error {
-	for _, raw := range incidentRows {
-		var inc incidentv1.Incident
-		if err := protojson.Unmarshal(raw, &inc); err != nil {
-			return fmt.Errorf("decode incident projection: %w", err)
-		}
-		if inc.GetId() == "" {
-			continue
-		}
-		incidentKey := store.IncidentProjectionKey(&inc)
-		if incidentKey == "" {
-			incidentKey = inc.GetId()
-		}
-		status := inc.GetStatus()
-		if status == "" {
-			status = "open"
-		}
-		_, err := db.ExecContext(ctx, `
-INSERT INTO incidents (tenant_id, incident_key, incident_id, status, severity, data)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (tenant_id, incident_key) DO UPDATE SET
-  incident_id = EXCLUDED.incident_id,
-  status = EXCLUDED.status,
-  severity = EXCLUDED.severity,
-  updated_at = now(),
-  data = EXCLUDED.data
-`, "default", incidentKey, inc.GetId(), status, inc.GetSeverity(), []byte(raw))
-		if err != nil {
-			return fmt.Errorf("project incident: %w", err)
-		}
-		if err := projectIncidentEvidence(ctx, db, inc.GetId(), inc.GetEvidence()); err != nil {
-			return err
-		}
-		if err := projectIncidentEvents(ctx, db, inc.GetId(), &inc); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func projectIncidentEvents(ctx context.Context, db sqlExecutor, incidentID string, inc *incidentv1.Incident) error {
-	if incidentID == "" || inc == nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	for _, sig := range inc.GetContributingSignals() {
-		for _, eventID := range sig.GetEventRefs() {
-			if err := upsertIncidentEvent(ctx, db, incidentID, eventID, seen); err != nil {
-				return err
-			}
-		}
-		for _, eventID := range sig.GetEvidence().GetEventRefs() {
-			if err := upsertIncidentEvent(ctx, db, incidentID, eventID, seen); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func upsertIncidentEvent(ctx context.Context, db sqlExecutor, incidentID, eventID string, seen map[string]bool) error {
-	eventID = strings.TrimSpace(eventID)
-	if eventID == "" || seen[eventID] {
-		return nil
-	}
-	seen[eventID] = true
-	_, err := db.ExecContext(ctx, `
-INSERT INTO incident_events (tenant_id, incident_id, event_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (tenant_id, incident_id, event_id) DO NOTHING
-`, "default", incidentID, eventID)
-	if err != nil {
-		return fmt.Errorf("project incident event: %w", err)
-	}
-	return nil
-}
-
-func projectIncidentEvidence(ctx context.Context, db sqlExecutor, incidentID string, evidence *incidentv1.EvidenceSubgraph) error {
-	if incidentID == "" || evidence == nil {
-		return nil
-	}
-	mo := protojson.MarshalOptions{UseProtoNames: true}
-	for _, node := range evidence.GetNodes() {
-		evidenceID := nodeEvidenceID(node)
-		if evidenceID == "" {
-			continue
-		}
-		kind := node.GetKind()
-		if kind == "" {
-			kind = "node"
-		}
-		data, err := mo.Marshal(node)
-		if err != nil {
-			return fmt.Errorf("encode evidence node projection: %w", err)
-		}
-		if err := upsertEvidence(ctx, db, incidentID, evidenceID, kind, data); err != nil {
-			return err
-		}
-	}
-	for _, edge := range evidence.GetEdges() {
-		evidenceID := edgeEvidenceID(edge)
-		if evidenceID == "" {
-			continue
-		}
-		kind := edge.GetKind()
-		if kind == "" {
-			kind = "edge"
-		}
-		data, err := mo.Marshal(edge)
-		if err != nil {
-			return fmt.Errorf("encode evidence edge projection: %w", err)
-		}
-		if err := upsertEvidence(ctx, db, incidentID, evidenceID, kind, data); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func upsertEvidence(ctx context.Context, db sqlExecutor, incidentID, evidenceID, kind string, data []byte) error {
-	_, err := db.ExecContext(ctx, `
-INSERT INTO evidence (tenant_id, incident_id, evidence_id, evidence_kind, data)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (tenant_id, incident_id, evidence_id) DO UPDATE SET
-  evidence_kind = EXCLUDED.evidence_kind,
-  data = EXCLUDED.data
-`, "default", incidentID, evidenceID, kind, data)
-	if err != nil {
-		return fmt.Errorf("project evidence: %w", err)
-	}
-	return nil
-}
-
-func nodeEvidenceID(node *incidentv1.GraphNode) string {
-	if node == nil {
-		return ""
-	}
-	if node.GetId() != "" {
-		return "node:" + node.GetId()
-	}
-	if node.GetKind() == "" && node.GetLabel() == "" {
-		return ""
-	}
-	return "node:" + node.GetKind() + ":" + node.GetLabel()
-}
-
-func edgeEvidenceID(edge *incidentv1.GraphEdge) string {
-	if edge == nil {
-		return ""
-	}
-	if edge.GetId() != "" {
-		return "edge:" + edge.GetId()
-	}
-	if edge.GetFrom() == "" || edge.GetTo() == "" || edge.GetKind() == "" {
-		return ""
-	}
-	return "edge:" + edge.GetFrom() + ":" + edge.GetKind() + ":" + edge.GetTo()
 }
 
 func projectMetrics(ctx context.Context, db sqlExecutor, metrics store.Metrics) error {

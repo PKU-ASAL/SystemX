@@ -28,7 +28,7 @@ func TestSearchBackedTelemetryQueries(t *testing.T) {
 			json.RawMessage(`{"id":"sig-b","name":"web_shell_chain","where":"SIGNAL_WHERE_CLOUD","terminal":true,"labels":{"scenario":"managed"}}`),
 		},
 		"sysarmor-incidents": {
-			json.RawMessage(`{"id":"inc-a","summary":"incident","labels":{"scenario":"managed"}}`),
+			json.RawMessage(`{"id":"inc-a","summary":"incident","labels":{"scenario":"managed","tenant_id":"default"}}`),
 		},
 	}}
 	handler := NewServerWithSearch(st, "", searcher).Handler()
@@ -41,7 +41,7 @@ func TestSearchBackedTelemetryQueries(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"id":"sig-b"`) || strings.Contains(rec.Body.String(), `"id":"sig-a"`) {
 		t.Fatalf("search-backed signals mismatch: %s", rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/incidents?label=scenario=managed")
+	rec = get(t, handler, "/api/v1/incidents?tenant_id=default&label=scenario=managed")
 	if !strings.Contains(rec.Body.String(), `"id":"inc-a"`) {
 		t.Fatalf("search-backed incidents mismatch: %s", rec.Body.String())
 	}

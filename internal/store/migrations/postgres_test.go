@@ -19,9 +19,6 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"artifacts",
 		"events",
 		"signals",
-		"incidents",
-		"incident_events",
-		"evidence",
 		"response_audit",
 		"evidence_pullbacks",
 		"control_commands",
@@ -44,8 +41,6 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"idx_events_labels",
 		"idx_signals_labels_layer",
 		"idx_signals_lineage",
-		"idx_incidents_labels",
-		"idx_evidence_incident",
 		"idx_response_audit_agent",
 		"idx_evidence_pullbacks_agent",
 		"idx_control_commands_agent",
@@ -54,6 +49,11 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 	} {
 		if !strings.Contains(PostgresSchema, "CREATE INDEX IF NOT EXISTS "+index) {
 			t.Fatalf("postgres schema missing index %s", index)
+		}
+	}
+	for _, removed := range []string{"incidents", "incident_events", "evidence"} {
+		if strings.Contains(PostgresSchema, "CREATE TABLE IF NOT EXISTS "+removed+" (") {
+			t.Fatalf("postgres schema still creates incident report table %s", removed)
 		}
 	}
 	if !strings.Contains(PostgresSchema, "INSERT INTO schema_migrations (version) VALUES (1)") {

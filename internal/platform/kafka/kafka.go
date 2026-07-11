@@ -12,9 +12,11 @@ import (
 var ErrDisabled = errors.New("kafka ingest is disabled")
 
 type Message struct {
-	Topic string
-	Key   string
-	Value []byte
+	Topic     string
+	Partition int
+	Offset    int64
+	Key       string
+	Value     []byte
 
 	raw kafkago.Message
 }
@@ -141,7 +143,7 @@ func (c *ReaderConsumer) Fetch(ctx context.Context) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
-	return Message{Topic: msg.Topic, Key: string(msg.Key), Value: msg.Value, raw: msg}, nil
+	return Message{Topic: msg.Topic, Partition: msg.Partition, Offset: msg.Offset, Key: string(msg.Key), Value: msg.Value, raw: msg}, nil
 }
 
 func (c *ReaderConsumer) Commit(ctx context.Context, msg Message) error {

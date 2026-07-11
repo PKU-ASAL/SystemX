@@ -172,34 +172,6 @@ CREATE TABLE IF NOT EXISTS signals (
   PRIMARY KEY (tenant_id, signal_key)
 );
 
-CREATE TABLE IF NOT EXISTS incidents (
-  tenant_id TEXT NOT NULL DEFAULT 'default',
-  incident_key TEXT NOT NULL,
-  incident_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open',
-  severity INTEGER NOT NULL DEFAULT 0,
-  observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  data JSONB NOT NULL,
-  PRIMARY KEY (tenant_id, incident_key)
-);
-
-CREATE TABLE IF NOT EXISTS incident_events (
-  tenant_id TEXT NOT NULL DEFAULT 'default',
-  incident_id TEXT NOT NULL,
-  event_id TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, incident_id, event_id)
-);
-
-CREATE TABLE IF NOT EXISTS evidence (
-  tenant_id TEXT NOT NULL DEFAULT 'default',
-  incident_id TEXT NOT NULL,
-  evidence_id TEXT NOT NULL,
-  evidence_kind TEXT NOT NULL,
-  data JSONB NOT NULL,
-  PRIMARY KEY (tenant_id, incident_id, evidence_id)
-);
-
 CREATE TABLE IF NOT EXISTS response_audit (
   tenant_id TEXT NOT NULL DEFAULT 'default',
   response_id TEXT NOT NULL,
@@ -301,9 +273,6 @@ CREATE INDEX IF NOT EXISTS idx_events_observed_at ON events (observed_at);
 CREATE INDEX IF NOT EXISTS idx_signals_labels_layer ON signals USING GIN ((data->'labels'));
 CREATE INDEX IF NOT EXISTS idx_signals_layer ON signals (tenant_id, layer);
 CREATE INDEX IF NOT EXISTS idx_signals_lineage ON signals (tenant_id, lineage_id);
-CREATE INDEX IF NOT EXISTS idx_incidents_labels ON incidents USING GIN ((data->'labels'));
-CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (tenant_id, status);
-CREATE INDEX IF NOT EXISTS idx_evidence_incident ON evidence (tenant_id, incident_id);
 CREATE INDEX IF NOT EXISTS idx_response_audit_agent ON response_audit (tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS idx_response_audit_status ON response_audit (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_evidence_pullbacks_agent ON evidence_pullbacks (tenant_id, agent_id);

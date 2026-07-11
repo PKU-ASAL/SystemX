@@ -8,6 +8,7 @@ import (
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
@@ -35,6 +36,58 @@ func (c *stubConsumer) Commit(context.Context, platformkafka.Message) error {
 }
 
 func (c *stubConsumer) Close() error { return nil }
+
+type stubProducer struct {
+	err      error
+	messages []platformkafka.Message
+}
+
+func (p *stubProducer) Append(_ context.Context, msg platformkafka.Message) error {
+	p.messages = append(p.messages, msg)
+	return p.err
+}
+
+func TestWorkerCommitsMalformedMessageAfterDLQPublish(t *testing.T) {
+	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Partition: 2, Offset: 7, Key: "bad", Value: []byte("{")}}}
+	dlq := &stubProducer{}
+	err := NewWorkerWithDLQ(consumer, NewProcessor(&store.Store{}, nil), dlq).Run(context.Background())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+	if consumer.committed != 1 || len(dlq.messages) != 1 || dlq.messages[0].Topic != "raw.dlq" {
+		t.Fatalf("committed=%d dlq=%+v", consumer.committed, dlq.messages)
+	}
+}
+
+func TestWorkerDoesNotCommitWhenDLQPublishFails(t *testing.T) {
+	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Value: []byte("{")}}}
+	dlq := &stubProducer{err: errors.New("dlq unavailable")}
+	err := NewWorkerWithDLQ(consumer, NewProcessor(&store.Store{}, nil), dlq).Run(context.Background())
+	if err == nil || consumer.committed != 0 {
+		t.Fatalf("Run error=%v committed=%d", err, consumer.committed)
+	}
+}
+
+func TestWorkerRejectsMissingBatchIdentityToDLQ(t *testing.T) {
+	raw, err := protojson.Marshal(&dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Value: raw}}}
+	dlq := &stubProducer{}
+	err = NewWorkerWithDLQ(consumer, NewProcessor(&store.Store{}, nil), dlq).Run(context.Background())
+	if !errors.Is(err, context.Canceled) || consumer.committed != 1 || len(dlq.messages) != 1 {
+		t.Fatalf("Run error=%v committed=%d dlq=%d", err, consumer.committed, len(dlq.messages))
+	}
+}
+
+func TestIncidentDocumentIDUsesStableReportIdentity(t *testing.T) {
+	first := &incidentv1.Incident{Summary: "first", Labels: map[string]string{"tenant_id": "tenant-a", "correlation_key": "scenario=a", "analysis_version": "v1"}}
+	second := &incidentv1.Incident{Summary: "updated", Labels: map[string]string{"tenant_id": "tenant-a", "correlation_key": "scenario=a", "analysis_version": "v1"}}
+	if IncidentDocumentID(first) != IncidentDocumentID(second) {
+		t.Fatalf("report id changed with report content")
+	}
+}
 
 func TestWorkerConsumesKafkaUploadAndProcessesAfterCommit(t *testing.T) {
 	raw, err := protojson.Marshal(&dataplanev1.DataBatch{
@@ -104,6 +157,41 @@ type recordingIndexer struct {
 func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Document) error {
 	i.docs = append(i.docs, doc)
 	return nil
+}
+
+type failingIndexer struct {
+	err      error
+	attempts int
+}
+
+func (i *failingIndexer) Index(context.Context, platformopensearch.Document) error {
+	i.attempts++
+	return i.err
+}
+
+func TestProcessorReturnsIndexError(t *testing.T) {
+	want := errors.New("opensearch unavailable")
+	processor := NewProcessor(&store.Store{}, &failingIndexer{err: want})
+	_, err := processor.Process(context.Background(), dataBatch("batch-index-error", []*eventv1.CanonicalEvent{{
+		Id:     "event-index-error",
+		Labels: map[string]string{"scenario": "index-error"},
+	}}, nil))
+	if !errors.Is(err, want) {
+		t.Fatalf("Process() error = %v, want %v", err, want)
+	}
+}
+
+func TestWorkerRetriesProcessingFailureWithoutCommit(t *testing.T) {
+	raw, err := protojson.Marshal(dataBatch("batch-retry", []*eventv1.CanonicalEvent{{Id: "event-retry", Labels: map[string]string{"scenario": "retry"}}}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Key: "retry", Value: raw}}}
+	indexer := &failingIndexer{err: errors.New("opensearch unavailable")}
+	err = NewWorker(consumer, NewProcessor(&store.Store{}, indexer)).Run(context.Background())
+	if err == nil || consumer.committed != 0 || indexer.attempts != 3 {
+		t.Fatalf("Run error=%v committed=%d attempts=%d", err, consumer.committed, indexer.attempts)
+	}
 }
 
 func mustProcess(t *testing.T, processor *Processor, batch *dataplanev1.DataBatch) {

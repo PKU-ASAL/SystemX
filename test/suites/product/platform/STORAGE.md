@@ -9,6 +9,8 @@ System under test:
 - table projection paths;
 - query and write contracts backed by persistent storage.
 
+PostgreSQL owns control-plane state. Event, signal, evidence, and incident report projections belong to OpenSearch; storage tests must not expect incident reports to survive through PostgreSQL.
+
 Out of scope:
 
 - runtime agent behavior;

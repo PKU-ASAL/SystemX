@@ -95,8 +95,8 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	if result.Store == nil || result.Store.Info().Backend != KindPostgres {
 		t.Fatalf("store info = %+v", result.Store.Info())
 	}
-	if execLog := fakeExecLog(); !strings.Contains(execLog, "CREATE TABLE IF NOT EXISTS incidents") {
-		t.Fatalf("postgres migration did not run: %s", execLog)
+	if execLog := fakeExecLog(); strings.Contains(execLog, "CREATE TABLE IF NOT EXISTS incidents") {
+		t.Fatalf("postgres migration still creates incident reports: %s", execLog)
 	}
 	result.Store.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-pg",
@@ -671,11 +671,11 @@ func TestOpenPostgresQueriesIncidentsFromTablePath(t *testing.T) {
 	}
 	fakeSetIncidentRows(raw)
 	incidents := result.Store.ListIncidents(pgSelector("pg-query-table"))
-	if len(incidents) != 1 || incidents[0].GetId() != "inc-query-table-pg" || incidents[0].GetStatus() != "suppressed" {
-		t.Fatalf("incidents from postgres table = %+v", incidents)
+	if len(incidents) != 0 {
+		t.Fatalf("incidents from postgres table = %+v, want none", incidents)
 	}
-	if !strings.Contains(fakeLastQuery(), "SELECT data FROM incidents") {
-		t.Fatalf("ListIncidents did not query incidents table: %s", fakeLastQuery())
+	if strings.Contains(fakeLastQuery(), "SELECT data FROM incidents") {
+		t.Fatalf("ListIncidents queried postgres: %s", fakeLastQuery())
 	}
 }
 
@@ -875,19 +875,12 @@ func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 		t.Fatalf("Save() error = %v", err)
 	}
 	execLog := fakeExecLog()
-	for _, want := range []string{
+	for _, removed := range []string{
 		"INSERT INTO incidents",
-		"inc-table-pg",
-		"open",
-		"70",
 		"INSERT INTO evidence",
-		"node:process:p-incident",
-		"process",
-		"edge:edge-process-socket",
-		"connects_to",
 	} {
-		if !strings.Contains(execLog, want) {
-			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)
+		if strings.Contains(execLog, removed) {
+			t.Fatalf("postgres exec log contains removed projection %s:\n%s", removed, execLog)
 		}
 	}
 }
@@ -927,11 +920,10 @@ func TestOpenPostgresProjectsIncidentEventsAndMetricsTables(t *testing.T) {
 		t.Fatalf("SaveMetrics() error = %v", err)
 	}
 	execLog := fakeExecLog()
+	if strings.Contains(execLog, "INSERT INTO incident_events") {
+		t.Fatalf("postgres exec log contains incident event projection:\n%s", execLog)
+	}
 	for _, want := range []string{
-		"INSERT INTO incident_events",
-		"inc-event-pg",
-		"ev-ref-a",
-		"ev-ref-b",
 		"INSERT INTO metrics",
 		"manager",
 		`"data_batches_appended":1`,
@@ -1126,9 +1118,8 @@ func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
 	if len(audits) != 1 || audits[0].Actor != "tester" || audits[0].AssignmentID != assignment.AssignmentID {
 		t.Fatalf("policy audits after reopen = %+v", audits)
 	}
-	incidents := reopened.Store.ListIncidents(pgSelector("pg-policy"))
-	if len(incidents) != 1 || incidents[0].GetStatus() != "suppressed" || incidents[0].GetStatusActor() != "tester" {
-		t.Fatalf("incidents after reopen = %+v", incidents)
+	if incidents := reopened.Store.ListIncidents(pgSelector("pg-policy")); len(incidents) != 0 {
+		t.Fatalf("incidents persisted in postgres = %+v", incidents)
 	}
 }
 
@@ -1161,7 +1152,6 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	acceptDataBatch(t, result.Store, batch)
 	assertGetContains(t, handler, "/api/v1/events?label=scenario=pg-api", `"id":"ev-pg-api"`)
 	assertGetContains(t, handler, "/api/v1/signals?label=scenario=pg-api&layer=endpoint", `"id":"sig-pg-c2"`)
-	assertGetContains(t, handler, "/api/v1/incidents?label=scenario=pg-api", `"labels":{"scenario":"pg-api"}`)
 
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "pg-api-policy"
@@ -1175,9 +1165,6 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 		"tenant_id": "default", "agent_id": "agent-pg-api", "policy_id": "pg-api-policy", "policy_version": 11, "actor": "operator",
 	}, http.StatusOK)
 	assertGetContains(t, handler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
-	postJSON(t, handler, "/api/v1/incident-lifecycle", map[string]any{
-		"labels": map[string]string{"scenario": "pg-api"}, "status": "suppressed", "reason": "postgres api persistence", "actor": "analyst",
-	}, http.StatusOK)
 
 	reopened, err := Open(context.Background(), Options{
 		Kind:           KindPostgres,
@@ -1188,10 +1175,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
 	reopenedHandler := managerapi.NewServer(reopened.Store).Handler()
-	// Telemetry (events/signals) is not persisted in the relational backend, so
-	// it does not survive a reopen; platform state (incidents, policies, audits)
-	// must.
-	assertGetContains(t, reopenedHandler, "/api/v1/incidents?label=scenario=pg-api", `"status":"suppressed"`)
+	// Telemetry reports are not persisted in the relational backend.
 	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
 	assertGetContains(t, reopenedHandler, "/api/v1/policy-audit?tenant_id=default&policy_id=pg-api-policy", `"actor":"operator"`)
 }

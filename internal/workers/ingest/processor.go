@@ -2,6 +2,8 @@ package ingestworker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -54,27 +56,32 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	for _, frame := range batch.GetEvents() {
 		ev := frame.GetEvent()
 		inserted := p.store.AddEvent(ev)
+		rememberTouchedScope(touchedScopes, ev.GetLabels(), agent)
 		if inserted {
 			acceptedEvents++
-			rememberTouchedScope(touchedScopes, ev.GetLabels(), agent)
 		}
 	}
 	for _, frame := range batch.GetSignals() {
 		sig := frame.GetSignal()
 		inserted := p.store.AddSignal(sig)
+		rememberTouchedScope(touchedScopes, sig.GetLabels(), agent)
 		if inserted {
 			acceptedSignals++
 			acceptedSignalList = append(acceptedSignalList, sig)
-			rememberTouchedScope(touchedScopes, sig.GetLabels(), agent)
 		}
 	}
 	start := time.Now()
 	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
-	cloudSignals, incidents := p.recomputeTouchedScopes(ctx, touchedScopes)
+	cloudSignals, incidents, err := p.recomputeTouchedScopes(ctx, touchedScopes)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := p.indexSecurityData(ctx, batch); err != nil {
+		return Result{}, err
+	}
 	convergenceLatency := time.Since(start)
 	p.store.RecordDataBatchIngest(acceptedEvents, acceptedSignals, cloudSignals, incidents, convergenceLatency)
 	p.store.ObserveRaritySignals(acceptedSignalList)
-	p.indexSecurityData(ctx, batch, touchedScopes)
 	if err := p.store.Save(); err != nil {
 		return Result{}, err
 	}
@@ -120,7 +127,7 @@ func labelSelectorKey(labels store.LabelSelector) string {
 	return strings.Join(parts, ",")
 }
 
-func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes map[string]touchedScope) (int, int) {
+func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes map[string]touchedScope) (int, int, error) {
 	totalCloud := 0
 	totalIncidents := 0
 	for _, scope := range touchedScopes {
@@ -128,14 +135,29 @@ func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes ma
 		endpointSignals := p.store.ListSignals(scope.labels, "endpoint", false)
 		policy := p.effectiveDetectionPolicyForAgent(scope.agent)
 		analysis := p.engine.AnalyzeWithPolicy(events, endpointSignals, policy)
-		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, analysis.Incidents)
+		for _, inc := range analysis.Incidents {
+			if inc.Labels == nil {
+				inc.Labels = map[string]string{}
+			}
+			inc.Labels["tenant_id"] = scope.agent.Normalized().TenantID
+			inc.Labels["correlation_key"] = labelSelectorKey(scope.labels)
+			inc.Labels["analysis_version"] = "v1"
+		}
+		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, nil)
 		for _, sig := range analysis.CloudSignals {
-			p.indexSignal(ctx, sig)
+			if err := p.indexSignal(ctx, sig); err != nil {
+				return 0, 0, err
+			}
+		}
+		for _, inc := range analysis.Incidents {
+			if err := p.indexIncident(ctx, inc); err != nil {
+				return 0, 0, err
+			}
 		}
 		totalCloud += len(analysis.CloudSignals)
 		totalIncidents += len(analysis.Incidents)
 	}
-	return totalCloud, totalIncidents
+	return totalCloud, totalIncidents, nil
 }
 
 func (p *Processor) effectiveDetectionPolicyForAgent(agent store.AgentIdentity) *policyv1.DetectionPolicy {
@@ -152,50 +174,66 @@ func (p *Processor) effectiveDetectionPolicyForAgent(agent store.AgentIdentity) 
 	return policy.DetectionPolicy()
 }
 
-func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.DataBatch, touchedScopes map[string]touchedScope) {
+func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.DataBatch) error {
 	for _, frame := range batch.GetEvents() {
 		ev := frame.GetEvent()
 		if ev.GetId() == "" {
 			continue
 		}
 		raw, err := protojson.Marshal(ev)
-		if err == nil {
-			_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-events", ID: ev.GetId(), Body: raw})
+		if err != nil {
+			return fmt.Errorf("marshal event %q: %w", ev.GetId(), err)
+		}
+		if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-events", ID: ev.GetId(), Body: raw}); err != nil {
+			return fmt.Errorf("index event %q: %w", ev.GetId(), err)
 		}
 	}
 	for _, frame := range batch.GetSignals() {
-		p.indexSignal(ctx, frame.GetSignal())
-	}
-	for _, scope := range touchedScopes {
-		for _, inc := range p.store.ListIncidents(scope.labels) {
-			if inc.GetId() == "" {
-				continue
-			}
-			raw, err := protojson.Marshal(inc)
-			if err == nil {
-				id := IncidentDocumentID(inc)
-				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw})
-				_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incident-timeline", ID: id + ":state", Body: raw})
-			}
-			if inc.GetEvidence() != nil {
-				evidenceRaw, err := protojson.Marshal(inc.GetEvidence())
-				if err == nil {
-					_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: IncidentDocumentID(inc) + ":evidence", Body: evidenceRaw})
-				}
-			}
+		if err := p.indexSignal(ctx, frame.GetSignal()); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-func (p *Processor) indexSignal(ctx context.Context, sig *signalv1.Signal) {
+func (p *Processor) indexIncident(ctx context.Context, inc *incidentv1.Incident) error {
+	if inc == nil || inc.GetId() == "" {
+		return nil
+	}
+	raw, err := protojson.Marshal(inc)
+	if err != nil {
+		return fmt.Errorf("marshal incident %q: %w", inc.GetId(), err)
+	}
+	id := IncidentDocumentID(inc)
+	if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw}); err != nil {
+		return fmt.Errorf("index incident %q: %w", id, err)
+	}
+	if inc.GetEvidence() == nil {
+		return nil
+	}
+	evidenceRaw, err := protojson.Marshal(inc.GetEvidence())
+	if err != nil {
+		return fmt.Errorf("marshal incident evidence %q: %w", id, err)
+	}
+	if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: id + ":evidence", Body: evidenceRaw}); err != nil {
+		return fmt.Errorf("index incident evidence %q: %w", id, err)
+	}
+	return nil
+}
+
+func (p *Processor) indexSignal(ctx context.Context, sig *signalv1.Signal) error {
 	id := SignalDocumentID(sig)
 	if id == "" {
-		return
+		return nil
 	}
 	raw, err := protojson.Marshal(sig)
-	if err == nil {
-		_ = p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw})
+	if err != nil {
+		return fmt.Errorf("marshal signal %q: %w", id, err)
 	}
+	if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw}); err != nil {
+		return fmt.Errorf("index signal %q: %w", id, err)
+	}
+	return nil
 }
 
 func SignalDocumentID(sig *signalv1.Signal) string {
@@ -223,8 +261,11 @@ func IncidentDocumentID(inc *incidentv1.Incident) string {
 	if inc == nil {
 		return ""
 	}
-	if id := store.IncidentProjectionKey(inc); id != "" {
-		return id
+	labels := inc.GetLabels()
+	identity := strings.Join([]string{labels["tenant_id"], labels["correlation_key"], labels["analysis_version"]}, ":")
+	if strings.Trim(identity, ":") != "" {
+		sum := sha256.Sum256([]byte(identity))
+		return "incident:" + hex.EncodeToString(sum[:16])
 	}
 	return inc.GetId()
 }

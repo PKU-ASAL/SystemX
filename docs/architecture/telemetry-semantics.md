@@ -24,27 +24,29 @@ A signal is a detection assertion derived from events or health state.
 
 ## Evidence
 
-Evidence is the supporting bundle for a signal or incident.
+Evidence is the supporting bundle for a signal or incident report.
 
 - Source: endpoint signal references, platform graph, or explicit pullback
 - Examples: contributing signals, entity graph, shortest path, raw event references
-- Storage: incident/evidence projection
+- Storage: searchable OpenSearch projection
 - Rule: evidence should explain why a signal or incident exists, but should not be required for lightweight event transport
 
 ## Incident
 
-An incident is a converged case assembled from related signals and evidence.
+An incident is a reproducible report assembled from related signals and evidence. It is not a mutable case or ticket.
 
 - Source: platform analytics worker
 - Examples: fileless C2 chain, staged drop chain
-- Storage: incident projection plus searchable index
-- Rule: incident IDs must be stable for the same case scope so recomputation updates the case instead of creating duplicates
+- Storage: OpenSearch only; PostgreSQL does not persist incident reports
+- Rule: report IDs and tenant labels must be stable so retries update the same report instead of creating duplicates
+
+Human triage state is intentionally outside the report model. If case management is added later, a PostgreSQL `IncidentCase` will reference report IDs without changing report ownership.
 
 ## Query Ownership
 
 Endpoint tests may read local agent streams to validate endpoint behavior.
-Topology tests that include manager/gateway must use manager APIs as the source
-of truth for events, signals and incidents.
+Topology tests that include manager/gateway must use manager APIs as the query
+boundary. Manager reads incidents from OpenSearch and requires `tenant_id`.
 
 ## Deduplication
 
@@ -52,7 +54,9 @@ The platform indexes derived documents with stable projection keys:
 
 - signal: stable signal projection key
 - incident: stable incident projection key
-- evidence/timeline: stable incident projection key plus document kind
+- evidence: stable incident report key plus document kind
 
 This keeps Kafka retries and analytics recomputation idempotent from the manager
 query perspective.
+
+The Worker commits a Kafka source message only after required OpenSearch writes succeed. Transient failures are retried without committing. Permanently malformed payloads are committed only after a dead-letter envelope is written to `<source-topic>.dlq`.

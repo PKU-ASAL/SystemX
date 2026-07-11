@@ -21,7 +21,6 @@ func TestApplyMigrationsExecutesPostgresSchema(t *testing.T) {
 	for _, want := range []string{
 		"SELECT pg_advisory_lock",
 		"CREATE TABLE IF NOT EXISTS agents",
-		"CREATE TABLE IF NOT EXISTS incidents",
 		"CREATE TABLE IF NOT EXISTS response_audit",
 		"INSERT INTO schema_migrations (version) VALUES (1)",
 		"SELECT pg_advisory_unlock",
@@ -29,6 +28,9 @@ func TestApplyMigrationsExecutesPostgresSchema(t *testing.T) {
 		if !strings.Contains(query, want) {
 			t.Fatalf("migration query missing %q: %s", want, query)
 		}
+	}
+	if strings.Contains(query, "CREATE TABLE IF NOT EXISTS incidents") {
+		t.Fatal("migration still creates incident report table")
 	}
 }
 

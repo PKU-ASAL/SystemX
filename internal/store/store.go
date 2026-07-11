@@ -2158,11 +2158,6 @@ func (s *Store) GetSignal(id string) (*signalv1.Signal, bool) {
 }
 
 func (s *Store) ListIncidents(labels LabelSelector) []*incidentv1.Incident {
-	if backend, ctx := s.backendCtx(); backend != nil {
-		if incidents, err := backend.ListIncidents(ctx, labels); err == nil {
-			return incidents
-		}
-	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*incidentv1.Incident, 0, len(s.Incidents))

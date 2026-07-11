@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -22,7 +21,6 @@ type Backend interface {
 	ListAgentHealth(ctx context.Context) ([]agenthealth.AgentHealth, error)
 	GetAgentHealth(ctx context.Context, tenantID, agentID string) (agenthealth.AgentHealth, bool, error)
 	ListAgentSessions(ctx context.Context, tenantID, agentID string) ([]AgentSession, error)
-	ListIncidents(ctx context.Context, labels LabelSelector) ([]*incidentv1.Incident, error)
 	ListResponses(ctx context.Context, tenantID, agentID string) ([]responsemodel.AuditRecord, error)
 	ListControlCommands(ctx context.Context, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
 	ListPolicies(ctx context.Context, tenantID string) ([]policymodel.Policy, error)
