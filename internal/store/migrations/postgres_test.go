@@ -56,7 +56,8 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 			t.Fatalf("postgres schema still creates incident report table %s", removed)
 		}
 	}
-	if !strings.Contains(PostgresSchema, "INSERT INTO schema_migrations (version) VALUES (1)") {
-		t.Fatal("postgres schema does not record migration version 1")
+	ordered := Ordered()
+	if len(ordered) != 2 || ordered[0].Version != 1 || ordered[1].Version != 2 || strings.Contains(ordered[1].SQL, "DROP ") {
+		t.Fatalf("ordered migrations = %+v", ordered)
 	}
 }

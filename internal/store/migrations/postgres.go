@@ -1,6 +1,12 @@
 package migrations
 
-const PostgresVersion = 1
+const PostgresVersion = 2
+
+type Migration struct {
+	Version int
+	Name    string
+	SQL     string
+}
 
 const PostgresSchema = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -285,6 +291,15 @@ CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions (tenant_i
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_workload ON rarity_baseline (tenant_id, workload_key);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_signal ON rarity_baseline (tenant_id, signal_name);
 
-INSERT INTO schema_migrations (version) VALUES (1)
-ON CONFLICT (version) DO NOTHING;
 `
+
+const incidentReportsToOpenSearch = `
+SELECT 1 /* incident_reports_to_opensearch */;
+`
+
+func Ordered() []Migration {
+	return []Migration{
+		{Version: 1, Name: "control_plane_baseline", SQL: PostgresSchema},
+		{Version: 2, Name: "incident_reports_to_opensearch", SQL: incidentReportsToOpenSearch},
+	}
+}
