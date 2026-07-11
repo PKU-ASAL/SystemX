@@ -75,6 +75,8 @@ describe("deploy data", () => {
         host_id: "prod-api-01",
         gateway_addr: "127.0.0.1:19444",
         artifact_id: "art-linux-amd64",
+        profile: "linux-container",
+        channel: "linux-container-dev",
         ttl: "1h",
         labels: { env: "prod" },
       },
@@ -83,9 +85,37 @@ describe("deploy data", () => {
     expect(command.install_command).toContain("agent-install.sh");
     expect(client.post).toHaveBeenCalledWith(
       "/ui/deploy/agent-command",
-      expect.objectContaining({ agent_id: "agent-prod-001", labels: { env: "prod" } }),
+      expect.objectContaining({
+        agent_id: "agent-prod-001",
+        profile: "linux-container",
+        channel: "linux-container-dev",
+        labels: { env: "prod" },
+      }),
       expect.any(Object),
     );
+  });
+
+  it("creates a mock container install command without sudo", async () => {
+    const client = {
+      get: vi.fn(),
+      post: vi.fn(),
+    } satisfies ManagerApiClient;
+
+    const command = await createAgentInstallCommand({
+      client,
+      dataSource: "mock",
+      request: {
+        tenant_id: "default",
+        agent_id: "agent-container-001",
+        gateway_addr: "127.0.0.1:19444",
+        profile: "linux-container",
+        channel: "linux-container-dev",
+      },
+    });
+
+    expect(command.install_command).toContain("| bash");
+    expect(command.install_command).not.toContain("sudo bash");
+    expect(command.entrypoint_command).toBe("/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml");
   });
 
   it("parses management labels from comma separated key value pairs", () => {

@@ -138,16 +138,30 @@ function displayValue(value?: string) {
 }
 
 function mockDeployCommand(request: DeployAgentCommandRequest): DeployAgentCommandResponse {
+  const shellRunner = request.profile === "linux-container" ? "bash" : "sudo bash";
+  const entrypointCommand = request.profile === "linux-container"
+    ? "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml"
+    : undefined;
+
   return {
     enrollment_id: "enr-mock",
     token_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    install_command:
-      "curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_mock' | sudo bash",
+    install_command: `curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_mock' | ${shellRunner}`,
+    entrypoint_command: entrypointCommand,
     script_url: "http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_mock",
     artifact: {
       artifact_id: request.artifact_id,
       download_url: "/api/v1/artifacts/art-linux-amd64/download",
       sha256: "mock-sha256",
+    },
+    enrollment: {
+      enrollment_id: "enr-mock",
+      tenant_id: request.tenant_id ?? "default",
+      agent_id: request.agent_id,
+      host_id: request.host_id,
+      gateway_addr: request.gateway_addr,
+      status: "active",
+      labels: request.labels,
     },
   };
 }

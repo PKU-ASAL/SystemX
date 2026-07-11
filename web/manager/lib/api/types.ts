@@ -70,6 +70,8 @@ export type DeployAgentCommandRequest = {
   host_id?: string;
   gateway_addr?: string;
   gateway_sni?: string;
+  profile?: string;
+  channel?: string;
   artifact_id?: string;
   ttl?: string;
   labels?: Record<string, string>;
@@ -79,6 +81,7 @@ export type DeployAgentCommandResponse = {
   enrollment_id: string;
   token_expires_at: string;
   install_command: string;
+  entrypoint_command?: string;
   script_url: string;
   artifact: {
     artifact_id?: string;

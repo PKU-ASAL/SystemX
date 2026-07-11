@@ -42,6 +42,8 @@ type deployAgentCommandRequest struct {
 	HostID      string            `json:"host_id,omitempty"`
 	GatewayAddr string            `json:"gateway_addr,omitempty"`
 	GatewaySNI  string            `json:"gateway_sni,omitempty"`
+	Profile     string            `json:"profile,omitempty"`
+	Channel     string            `json:"channel,omitempty"`
 	ArtifactID  string            `json:"artifact_id,omitempty"`
 	TTL         string            `json:"ttl,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty"`
@@ -49,12 +51,13 @@ type deployAgentCommandRequest struct {
 }
 
 type deployAgentCommandResponse struct {
-	EnrollmentID   string                `json:"enrollment_id"`
-	TokenExpiresAt time.Time             `json:"token_expires_at"`
-	InstallCommand string                `json:"install_command"`
-	ScriptURL      string                `json:"script_url"`
-	Artifact       deployCommandArtifact `json:"artifact"`
-	Enrollment     store.Enrollment      `json:"enrollment"`
+	EnrollmentID      string                `json:"enrollment_id"`
+	TokenExpiresAt    time.Time             `json:"token_expires_at"`
+	InstallCommand    string                `json:"install_command"`
+	EntrypointCommand string                `json:"entrypoint_command,omitempty"`
+	ScriptURL         string                `json:"script_url"`
+	Artifact          deployCommandArtifact `json:"artifact"`
+	Enrollment        store.Enrollment      `json:"enrollment"`
 }
 
 type deployCommandArtifact struct {
@@ -103,6 +106,8 @@ func (s *Server) uiDeployAgentCommand(w http.ResponseWriter, r *http.Request) {
 		HostID:      req.HostID,
 		GatewayAddr: defaultString(req.GatewayAddr, defaultDeployGatewayAddr()),
 		GatewaySNI:  defaultString(req.GatewaySNI, defaultDeployGatewaySNI()),
+		Profile:     req.Profile,
+		Channel:     req.Channel,
 		ArtifactID:  req.ArtifactID,
 		Labels:      cloneStringMap(req.Labels),
 		TTL:         req.TTL,
@@ -114,15 +119,32 @@ func (s *Server) uiDeployAgentCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	artifactResponse := deployCommandArtifact{}
-	if strings.TrimSpace(req.ArtifactID) != "" {
-		artifact, ok := s.store.GetArtifact(enrollment.TenantID, req.ArtifactID)
+	artifactID := strings.TrimSpace(req.ArtifactID)
+	if strings.TrimSpace(req.Channel) != "" {
+		channel, ok := s.store.GetChannel(enrollment.TenantID, req.Channel)
+		if !ok {
+			if artifactID == "" {
+				http.Error(w, "channel not found", http.StatusBadRequest)
+				return
+			}
+		} else {
+			if !deployChannelMatchesProfile(enrollment.Profile, channel.Channel) {
+				http.Error(w, "channel profile mismatch", http.StatusBadRequest)
+				return
+			}
+			artifactID = channel.ArtifactID
+			enrollment.Channel = channel.Channel
+		}
+	}
+	if artifactID != "" {
+		artifact, ok := s.store.GetArtifact(enrollment.TenantID, artifactID)
 		if !ok || artifact.Status != "active" {
 			http.Error(w, "active artifact not found", http.StatusBadRequest)
 			return
 		}
 		enrollment.ArtifactID = artifact.ArtifactID
 		enrollment.ArtifactSHA256 = artifact.SHA256
-		enrollment.ArtifactURL = artifactInstallURL(r, artifact)
+		enrollment.ArtifactURL = artifactInstallURLForProfile(r, artifact, enrollment.Profile)
 		artifactResponse = deployCommandArtifact{
 			ArtifactID:  artifact.ArtifactID,
 			DownloadURL: enrollment.ArtifactURL,
@@ -139,13 +161,20 @@ func (s *Server) uiDeployAgentCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scriptURL := installURL(r, token)
+	installCommand := "curl -fsSL " + shellQuote(scriptURL) + " | sudo bash"
+	entrypointCommand := ""
+	if defaultString(enrollment.Profile, "linux-systemd") == "linux-container" {
+		installCommand = "curl -fsSL " + shellQuote(scriptURL) + " | bash"
+		entrypointCommand = defaultContainerEntrypointCommand()
+	}
 	writeJSON(w, deployAgentCommandResponse{
-		EnrollmentID:   enrollment.EnrollmentID,
-		TokenExpiresAt: enrollment.ExpiresAt,
-		InstallCommand: "curl -fsSL " + shellQuote(scriptURL) + " | sudo bash",
-		ScriptURL:      scriptURL,
-		Artifact:       artifactResponse,
-		Enrollment:     publicEnrollment(enrollment),
+		EnrollmentID:      enrollment.EnrollmentID,
+		TokenExpiresAt:    enrollment.ExpiresAt,
+		InstallCommand:    installCommand,
+		EntrypointCommand: entrypointCommand,
+		ScriptURL:         scriptURL,
+		Artifact:          artifactResponse,
+		Enrollment:        publicEnrollment(enrollment),
 	})
 }
 
@@ -192,4 +221,19 @@ func defaultDeployGatewayAddr() string {
 
 func defaultDeployGatewaySNI() string {
 	return os.Getenv("SYSARMOR_DEPLOY_GATEWAY_SNI")
+}
+
+func defaultContainerEntrypointCommand() string {
+	return "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml"
+}
+
+func deployChannelMatchesProfile(profile string, channel string) bool {
+	switch {
+	case strings.HasPrefix(channel, "linux-container-"):
+		return profile == "linux-container"
+	case strings.HasPrefix(channel, "linux-systemd-"):
+		return profile == "linux-systemd"
+	default:
+		return true
+	}
 }
