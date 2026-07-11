@@ -34,7 +34,7 @@ else
 fi
 
 if [[ ! -x "$REPO/dist/bin/sysarmor-agent" || ! -x "$REPO/dist/bin/sysarmorctl" ]]; then
-  echo "[sync-agent-vm][ERROR] missing dist/bin/sysarmor-agent or dist/bin/sysarmorctl; run make build first" >&2
+  echo "[sync-agent-vm][ERROR] missing dist/bin/sysarmor-agent or dist/bin/sysarmorctl; run make build-binary first" >&2
   exit 1
 fi
 if [[ -n "$TETRAGON_ARCHIVE" && ! -f "$TETRAGON_ARCHIVE" ]]; then

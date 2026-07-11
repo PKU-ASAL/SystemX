@@ -91,11 +91,50 @@ The generated `agent-install.sh` installs the agent into a stable agent home:
 /run/sysarmor/agent.sock
 ```
 
+Enrollment install profiles:
+
+- `linux-systemd` is the default Linux bare-metal/VM profile. It writes the
+  systemd unit and runs `systemctl enable --now sysarmor-agent`.
+- `linux-container` is the Linux in-container profile. It skips systemd,
+  writes `sensor.scope.type=namespace` and `sensor.scope.selector=self`, and
+  prints the entrypoint command:
+
+```bash
+/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml
+```
+
 Agent artifacts are signed distribution tarballs. The top-level
 `manifest.json` describes the entrypoint, systemd unit, sensor bundles, and
 file checksums; `manifest.sig` signs that manifest. The manager verifies the
 artifact at upload time when `SYSARMOR_ARTIFACT_PUBLIC_KEY` is configured, and
 the bootstrap script verifies the same manifest before installing.
+
+Local deploy also builds an agent release:
+
+```bash
+make release
+make deploy
+```
+
+`make release` writes the signed agent package and package index under
+`dist/release/`. The compose stack serves that directory from the
+`sysarmor-packages` container, and the manager imports
+`SYSARMOR_AGENT_PACKAGE_INDEX_URL=http://packages/index.json` on startup. This
+keeps the production shape clear: the packages service hosts immutable bytes,
+while the manager owns artifact metadata, channel selection, enrollment, and
+install script rendering. A production deployment can replace `packages` with
+S3, MinIO, OSS, GCS, or a CDN as long as it exposes the same package index
+schema.
+
+The manager uses two URLs for this path:
+
+- `SYSARMOR_AGENT_PACKAGE_INDEX_URL`: manager-side package index discovery URL.
+  In compose this is the internal service URL `http://packages/index.json`.
+- `SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL`: agent-side download base URL for
+  non-container profiles. In local compose this defaults to
+  `http://127.0.0.1:18080`. Container profile enrollments keep the internal
+  `http://packages/...` URL because the agent container joins the compose
+  network.
 
 The default gateway path requires agent-plane mTLS. The bootstrap script
 generates the endpoint private key locally, submits a CSR with the enrollment
@@ -106,6 +145,7 @@ The gateway validates the certificate URI SAN against the reported
 Services:
 
 - `manager`: operator-facing control, audit, policy, and query API.
+- `packages`: static file service for signed agent packages and package index.
 - `gateway`: agent-facing data/control gRPC endpoint.
 - `worker`: Kafka ingest consumer for detection, incident projection, and indexing.
 - `postgres`: control, state, and audit store.

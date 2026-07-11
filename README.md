@@ -42,13 +42,16 @@ Core docs:
 
 ```bash
 make api
-make build
+make build-binary
+make release
 make test
 ```
 
 `make api` requires `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc` on `PATH` or under `$(go env GOPATH)/bin`.
 
-The build writes static binaries to `dist/bin/`, which is ignored because it is regenerated.
+`make build-binary` writes static binaries to `dist/bin/`. `make release`
+writes the signed agent package and package index to `dist/release/`. Both
+directories are ignored because they are regenerated.
 
 ## Test Suites
 

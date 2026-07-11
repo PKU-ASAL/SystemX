@@ -89,7 +89,7 @@ cat >"$OUT_DIR/manifest.json" <<EOF
   "recorder_duration_seconds": $RECORDER_DURATION_SECONDS,
   "recorder_semantic_interval_seconds": $RECORDER_SEMANTIC_INTERVAL,
   "vm_lifecycle": "$VM_LIFECYCLE",
-  "vm_lifecycle_steps": ["make build", "vagrant destroy -f", "start-vm", "sync-agent"],
+  "vm_lifecycle_steps": ["make build-binary", "vagrant destroy -f", "start-vm", "sync-agent"],
   "build_binaries": "$BUILD_BINARIES",
   "sync_vm_agent": "$SYNC_VM_AGENT",
   "vm_fresh": "$VM_FRESH",
@@ -599,7 +599,7 @@ for policy in $POLICIES_RAW; do
   },
   "sync_vm_agent": "$SYNC_VM_AGENT",
   "vm_lifecycle": "fresh",
-  "vm_lifecycle_steps": ["make build", "vagrant destroy -f", "start-vm", "sync-agent"],
+  "vm_lifecycle_steps": ["make build-binary", "vagrant destroy -f", "start-vm", "sync-agent"],
   "build_binaries": "$BUILD_BINARIES",
   "artifacts": {
     "timeline": "timeline.csv",

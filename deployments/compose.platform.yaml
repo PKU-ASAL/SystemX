@@ -61,12 +61,22 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
 
+  packages:
+    image: nginx:alpine
+    container_name: sysarmor-packages
+    volumes:
+      - ../dist/release:/usr/share/nginx/html:ro
+    ports:
+      - "${SYSARMOR_PACKAGE_PORT:-18080}:80"
+
   manager:
     build:
       context: ..
       dockerfile: deployments/manager/Dockerfile
     container_name: sysarmor-manager
     depends_on:
+      packages:
+        condition: service_started
       postgres:
         condition: service_healthy
     env_file:
@@ -74,6 +84,8 @@ services:
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_ARTIFACT_DIR: /var/lib/sysarmor/manager/artifacts
+      SYSARMOR_AGENT_PACKAGE_INDEX_URL: http://packages/index.json
+      SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL: ${SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL:-http://127.0.0.1:18080}
       SYSARMOR_ARTIFACT_PUBLIC_KEY: /etc/sysarmor/pki/artifact-public.pem
       SYSARMOR_AGENT_CA_CERT: /etc/sysarmor/pki/ca.pem
       SYSARMOR_AGENT_CA_KEY: /etc/sysarmor/pki/ca-key.pem
