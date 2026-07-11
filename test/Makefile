@@ -20,7 +20,7 @@ EVALUATION_SCOPE ?= local
 
 .PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
-.PHONY: product-endpoint product-topology product-platform product-platform-smoke product-platform-full
+.PHONY: product-endpoint product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
 .PHONY: performance-endpoint performance-platform performance-modules performance-rule-engine performance-matcher
 .PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
@@ -79,6 +79,9 @@ test-unit:
 
 product-endpoint:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash suites/product/endpoint/e2e-real-tetragon-owned-vm.sh
+
+product-endpoint-namespace-container:
+	bash suites/product/endpoint/e2e-namespace-self-container.sh
 
 product-topology:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/product/topology/e2e-systemd-vm.sh
@@ -154,6 +157,7 @@ help:
 	@echo "SysArmor test suites:"
 	@echo "  test-unit        local Go tests"
 	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
+	@echo "  product-endpoint-namespace-container container agent with namespace/self Tetragon scope"
 	@echo "  product-topology multi-VM manager artifact/enrollment install path"
 	@echo "  product-platform local platform contracts/smoke"
 	@echo "  product-platform-smoke alias for product-platform"
