@@ -140,8 +140,30 @@ func (r *Runtime) appendRawBatch(batch *dataplanev1.DataBatch) error {
 		return fmt.Errorf("encode raw data batch: %w", err)
 	}
 	header := batch.GetHeader()
-	key := strings.Join([]string{header.GetTenantId(), header.GetAgentId(), header.GetBatchId()}, ":")
+	key := strings.Join([]string{header.GetTenantId(), batchCorrelationKey(batch)}, ":")
 	return r.producer.Append(context.Background(), platformkafka.Message{Topic: "sysarmor.agent.databatch.raw", Key: key, Value: raw})
+}
+
+func batchCorrelationKey(batch *dataplanev1.DataBatch) string {
+	for _, labels := range batchScopeLabels(batch) {
+		for _, key := range []string{"case_type", "scenario", "workload"} {
+			if value := strings.TrimSpace(labels[key]); value != "" {
+				return key + "=" + value
+			}
+		}
+	}
+	return batch.GetHeader().GetAgentId()
+}
+
+func batchScopeLabels(batch *dataplanev1.DataBatch) []map[string]string {
+	labels := []map[string]string{batch.GetHeader().GetLabels()}
+	for _, frame := range batch.GetEvents() {
+		labels = append(labels, frame.GetEvent().GetLabels())
+	}
+	for _, frame := range batch.GetSignals() {
+		labels = append(labels, frame.GetSignal().GetLabels())
+	}
+	return labels
 }
 
 func (r *Runtime) processLocal(batch *dataplanev1.DataBatch) (DataAppendResult, error) {

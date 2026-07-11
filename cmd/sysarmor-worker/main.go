@@ -94,7 +94,8 @@ func main() {
 	}
 
 	log.Printf("sysarmor-worker consuming topic=%s group=%s store_backend=%s", *kafkaTopic, *kafkaGroupID, *storeBackend)
-	err = ingestworker.NewWorkerWithDLQ(consumer, ingestworker.NewProcessor(storeResult.Store, indexer), dlqProducer).Run(ctx)
+	processor := ingestworker.NewProcessorWithHistory(storeResult.Store, indexer, ingestworker.NewOpenSearchHistory(indexer))
+	err = ingestworker.NewWorkerWithDLQ(consumer, processor, dlqProducer).Run(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(os.Stderr, "run ingest worker: %v\n", err)
 		os.Exit(1)

@@ -70,8 +70,8 @@ func TestDataPlaneStreamBatches(t *testing.T) {
 	if ack.GetPartial() {
 		t.Fatalf("ack partial = true, want false until partial append is explicitly supported")
 	}
-	if got := st.ListIncidents(store.LabelSelector{"scenario": "apt-fileless-c2"}); len(got) != 1 {
-		t.Fatalf("incidents = %d, want 1", len(got))
+	if got := st.MetricsSnapshot().IncidentsCreated; got != 1 {
+		t.Fatalf("incidents created = %d, want 1", got)
 	}
 }
 

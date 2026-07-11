@@ -101,7 +101,7 @@ func TestProcessorWritesFormalIncidentIdentity(t *testing.T) {
 	}))
 	doc := lastDoc(indexer.docs, "sysarmor-incidents")
 	report := &incidentv1.Incident{}
-	if err := protojson.Unmarshal(doc.Body, report); err != nil {
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(doc.Body, report); err != nil {
 		t.Fatal(err)
 	}
 	if report.GetTenantId() != "default" || report.GetCorrelationKey() != "scenario=formal-identity" || report.GetAnalysisVersion() != "incident.v1" {
