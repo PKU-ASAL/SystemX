@@ -24,6 +24,39 @@ type Indexer interface {
 	Index(context.Context, Document) error
 }
 
+type Projector interface {
+	BulkIndex(context.Context, []Document) error
+}
+
+type ErrorClass string
+
+const (
+	ErrorTransient ErrorClass = "transient"
+	ErrorPermanent ErrorClass = "permanent"
+)
+
+type ProjectionError struct {
+	Class  ErrorClass
+	Status int
+	Index  string
+	ID     string
+	Cause  error
+}
+
+func (e *ProjectionError) Error() string {
+	return fmt.Sprintf("opensearch projection class=%s status=%d index=%s id=%s: %v", e.Class, e.Status, e.Index, e.ID, e.Cause)
+}
+
+func (e *ProjectionError) Unwrap() error { return e.Cause }
+
+func ErrorClassOf(err error) ErrorClass {
+	var projection *ProjectionError
+	if errors.As(err, &projection) {
+		return projection.Class
+	}
+	return ErrorTransient
+}
+
 type Searcher interface {
 	Search(context.Context, SearchRequest) ([]json.RawMessage, error)
 }
@@ -54,6 +87,8 @@ type NoopIndexer struct{}
 func (NoopIndexer) Index(context.Context, Document) error {
 	return nil
 }
+
+func (NoopIndexer) BulkIndex(context.Context, []Document) error { return nil }
 
 type HTTPIndexer struct {
 	base     string
@@ -101,6 +136,79 @@ func (i *HTTPIndexer) Index(ctx context.Context, doc Document) error {
 		return fmt.Errorf("opensearch index status %s", resp.Status)
 	}
 	return nil
+}
+
+func (i *HTTPIndexer) BulkIndex(ctx context.Context, docs []Document) error {
+	if i == nil || i.client == nil || i.base == "" {
+		return ErrDisabled
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	var body bytes.Buffer
+	for _, doc := range docs {
+		if doc.Index == "" || doc.ID == "" || !json.Valid(doc.Body) {
+			return &ProjectionError{Class: ErrorPermanent, Index: doc.Index, ID: doc.ID, Cause: fmt.Errorf("valid index, id, and JSON body are required")}
+		}
+		metadata, _ := json.Marshal(map[string]any{"index": map[string]string{"_index": doc.Index, "_id": doc.ID}})
+		body.Write(metadata)
+		body.WriteByte('\n')
+		body.Write(doc.Body)
+		body.WriteByte('\n')
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, i.base+"/_bulk", &body)
+	if err != nil {
+		return &ProjectionError{Class: ErrorPermanent, Cause: err}
+	}
+	req.Header.Set("Content-Type", "application/x-ndjson")
+	i.setAuth(req)
+	resp, err := i.client.Do(req)
+	if err != nil {
+		return &ProjectionError{Class: ErrorTransient, Cause: err}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &ProjectionError{Class: classifyStatus(resp.StatusCode), Status: resp.StatusCode, Cause: fmt.Errorf("bulk status %s", resp.Status)}
+	}
+	return decodeBulkResponse(resp.Body, docs)
+}
+
+func decodeBulkResponse(reader io.Reader, docs []Document) error {
+	var response struct {
+		Items []map[string]struct {
+			Status int `json:"status"`
+			Error  *struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"error"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(reader).Decode(&response); err != nil {
+		return &ProjectionError{Class: ErrorTransient, Cause: fmt.Errorf("decode bulk response: %w", err)}
+	}
+	if len(response.Items) != len(docs) {
+		return &ProjectionError{Class: ErrorTransient, Cause: fmt.Errorf("bulk item count %d, want %d", len(response.Items), len(docs))}
+	}
+	for index, operations := range response.Items {
+		for _, item := range operations {
+			if item.Status >= 200 && item.Status < 300 {
+				continue
+			}
+			cause := fmt.Errorf("bulk item failed")
+			if item.Error != nil {
+				cause = fmt.Errorf("%s: %s", item.Error.Type, item.Error.Reason)
+			}
+			return &ProjectionError{Class: classifyStatus(item.Status), Status: item.Status, Index: docs[index].Index, ID: docs[index].ID, Cause: cause}
+		}
+	}
+	return nil
+}
+
+func classifyStatus(status int) ErrorClass {
+	if status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500 {
+		return ErrorTransient
+	}
+	return ErrorPermanent
 }
 
 func (i *HTTPIndexer) Search(ctx context.Context, search SearchRequest) ([]json.RawMessage, error) {

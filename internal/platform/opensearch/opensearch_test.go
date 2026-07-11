@@ -3,6 +3,7 @@ package opensearch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +31,55 @@ func TestHTTPIndexerIndexesDocument(t *testing.T) {
 	}
 	if gotPath != "/sysarmor-events/_doc/ev-a" {
 		t.Fatalf("path = %s", gotPath)
+	}
+}
+
+func TestHTTPIndexerBulkIndexesNDJSON(t *testing.T) {
+	var body string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/_bulk" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		_, _ = w.Write([]byte(`{"errors":false,"items":[{"index":{"status":201}},{"index":{"status":200}}]}`))
+	}))
+	defer server.Close()
+	indexer, _ := NewHTTPIndexer(server.URL)
+	err := indexer.BulkIndex(context.Background(), []Document{
+		{Index: "events", ID: "ev-1", Body: []byte(`{"id":"ev-1"}`)},
+		{Index: "signals", ID: "sig-1", Body: []byte(`{"id":"sig-1"}`)},
+	})
+	if err != nil {
+		t.Fatalf("BulkIndex() error = %v", err)
+	}
+	for _, want := range []string{`{"index":{"_id":"ev-1","_index":"events"}}`, `{"id":"ev-1"}`, `{"index":{"_id":"sig-1","_index":"signals"}}`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("bulk body missing %s: %s", want, body)
+		}
+	}
+	if !strings.HasSuffix(body, "\n") {
+		t.Fatalf("bulk body must end with newline: %q", body)
+	}
+}
+
+func TestHTTPIndexerClassifiesBulkItemErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		class  ErrorClass
+	}{{"throttled", 429, ErrorTransient}, {"mapping", 400, ErrorPermanent}} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"errors":true,"items":[{"index":{"status":%d,"error":{"type":"failure","reason":"broken"}}}]}`, tc.status)
+			}))
+			defer server.Close()
+			indexer, _ := NewHTTPIndexer(server.URL)
+			err := indexer.BulkIndex(context.Background(), []Document{{Index: "events", ID: "ev-1", Body: []byte(`{}`)}})
+			if ErrorClassOf(err) != tc.class {
+				t.Fatalf("class = %q error=%v, want %q", ErrorClassOf(err), err, tc.class)
+			}
+		})
 	}
 }
 

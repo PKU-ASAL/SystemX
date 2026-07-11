@@ -24,6 +24,11 @@ func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Docum
 	return nil
 }
 
+func (i *recordingIndexer) BulkIndex(_ context.Context, docs []platformopensearch.Document) error {
+	i.docs = append(i.docs, docs...)
+	return nil
+}
+
 type fakeSearcher struct {
 	docs map[string][]json.RawMessage
 	last platformopensearch.SearchRequest

@@ -22,9 +22,9 @@ import (
 )
 
 type Processor struct {
-	store   *store.Store
-	engine  *analyticingest.Engine
-	indexer platformopensearch.Indexer
+	store     *store.Store
+	engine    *analyticingest.Engine
+	projector platformopensearch.Projector
 }
 
 type Result struct {
@@ -34,11 +34,11 @@ type Result struct {
 	Incidents       int
 }
 
-func NewProcessor(st *store.Store, indexer platformopensearch.Indexer) *Processor {
-	if indexer == nil {
-		indexer = platformopensearch.NoopIndexer{}
+func NewProcessor(st *store.Store, projector platformopensearch.Projector) *Processor {
+	if projector == nil {
+		projector = platformopensearch.NoopIndexer{}
 	}
-	return &Processor{store: st, engine: analyticingest.NewEngine(), indexer: indexer}
+	return &Processor{store: st, engine: analyticingest.NewEngine(), projector: projector}
 }
 
 func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (Result, error) {
@@ -73,11 +73,16 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	}
 	start := time.Now()
 	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
-	cloudSignals, incidents, err := p.recomputeTouchedScopes(ctx, touchedScopes)
+	cloudSignals, incidents, derivedDocs, err := p.recomputeTouchedScopes(touchedScopes)
 	if err != nil {
 		return Result{}, err
 	}
-	if err := p.indexSecurityData(ctx, batch); err != nil {
+	docs, err := batchDocuments(batch)
+	if err != nil {
+		return Result{}, err
+	}
+	docs = append(docs, derivedDocs...)
+	if err := p.projector.BulkIndex(ctx, docs); err != nil {
 		return Result{}, err
 	}
 	convergenceLatency := time.Since(start)
@@ -128,9 +133,10 @@ func labelSelectorKey(labels store.LabelSelector) string {
 	return strings.Join(parts, ",")
 }
 
-func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes map[string]touchedScope) (int, int, error) {
+func (p *Processor) recomputeTouchedScopes(touchedScopes map[string]touchedScope) (int, int, []platformopensearch.Document, error) {
 	totalCloud := 0
 	totalIncidents := 0
+	var documents []platformopensearch.Document
 	for _, scope := range touchedScopes {
 		events := p.store.ListEvents(scope.labels, "")
 		endpointSignals := p.store.ListSignals(scope.labels, "endpoint", false)
@@ -146,19 +152,23 @@ func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes ma
 		}
 		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, nil)
 		for _, sig := range analysis.CloudSignals {
-			if err := p.indexSignal(ctx, sig); err != nil {
-				return 0, 0, err
+			doc, err := signalDocument(sig)
+			if err != nil {
+				return 0, 0, nil, err
 			}
+			documents = append(documents, doc)
 		}
 		for _, inc := range analysis.Incidents {
-			if err := p.indexIncident(ctx, inc); err != nil {
-				return 0, 0, err
+			docs, err := incidentDocuments(inc)
+			if err != nil {
+				return 0, 0, nil, err
 			}
+			documents = append(documents, docs...)
 		}
 		totalCloud += len(analysis.CloudSignals)
 		totalIncidents += len(analysis.Incidents)
 	}
-	return totalCloud, totalIncidents, nil
+	return totalCloud, totalIncidents, documents, nil
 }
 
 func incidentObservedRange(events []*eventv1.CanonicalEvent) (string, string) {
@@ -195,7 +205,8 @@ func (p *Processor) effectiveDetectionPolicyForAgent(agent store.AgentIdentity) 
 	return policy.DetectionPolicy()
 }
 
-func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.DataBatch) error {
+func batchDocuments(batch *dataplanev1.DataBatch) ([]platformopensearch.Document, error) {
+	var documents []platformopensearch.Document
 	for _, frame := range batch.GetEvents() {
 		ev := frame.GetEvent()
 		if ev.GetId() == "" {
@@ -203,58 +214,54 @@ func (p *Processor) indexSecurityData(ctx context.Context, batch *dataplanev1.Da
 		}
 		raw, err := protojson.Marshal(ev)
 		if err != nil {
-			return fmt.Errorf("marshal event %q: %w", ev.GetId(), err)
+			return nil, fmt.Errorf("marshal event %q: %w", ev.GetId(), err)
 		}
-		if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-events", ID: ev.GetId(), Body: raw}); err != nil {
-			return fmt.Errorf("index event %q: %w", ev.GetId(), err)
-		}
+		documents = append(documents, platformopensearch.Document{Index: "sysarmor-events", ID: ev.GetId(), Body: raw})
 	}
 	for _, frame := range batch.GetSignals() {
-		if err := p.indexSignal(ctx, frame.GetSignal()); err != nil {
-			return err
+		doc, err := signalDocument(frame.GetSignal())
+		if err != nil {
+			return nil, err
+		}
+		if doc.ID != "" {
+			documents = append(documents, doc)
 		}
 	}
-	return nil
+	return documents, nil
 }
 
-func (p *Processor) indexIncident(ctx context.Context, inc *incidentv1.Incident) error {
+func incidentDocuments(inc *incidentv1.Incident) ([]platformopensearch.Document, error) {
 	if inc == nil || inc.GetId() == "" {
-		return nil
+		return nil, nil
 	}
 	raw, err := protojson.Marshal(inc)
 	if err != nil {
-		return fmt.Errorf("marshal incident %q: %w", inc.GetId(), err)
+		return nil, fmt.Errorf("marshal incident %q: %w", inc.GetId(), err)
 	}
 	id := IncidentDocumentID(inc)
-	if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw}); err != nil {
-		return fmt.Errorf("index incident %q: %w", id, err)
-	}
+	documents := []platformopensearch.Document{}
 	if inc.GetEvidence() == nil {
-		return nil
+		return append(documents, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw}), nil
 	}
 	evidenceRaw, err := protojson.Marshal(inc.GetEvidence())
 	if err != nil {
-		return fmt.Errorf("marshal incident evidence %q: %w", id, err)
+		return nil, fmt.Errorf("marshal incident evidence %q: %w", id, err)
 	}
-	if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-evidence", ID: id + ":evidence", Body: evidenceRaw}); err != nil {
-		return fmt.Errorf("index incident evidence %q: %w", id, err)
-	}
-	return nil
+	documents = append(documents, platformopensearch.Document{Index: "sysarmor-evidence", ID: id + ":evidence", Body: evidenceRaw})
+	documents = append(documents, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw})
+	return documents, nil
 }
 
-func (p *Processor) indexSignal(ctx context.Context, sig *signalv1.Signal) error {
+func signalDocument(sig *signalv1.Signal) (platformopensearch.Document, error) {
 	id := SignalDocumentID(sig)
 	if id == "" {
-		return nil
+		return platformopensearch.Document{}, nil
 	}
 	raw, err := protojson.Marshal(sig)
 	if err != nil {
-		return fmt.Errorf("marshal signal %q: %w", id, err)
+		return platformopensearch.Document{}, fmt.Errorf("marshal signal %q: %w", id, err)
 	}
-	if err := p.indexer.Index(ctx, platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw}); err != nil {
-		return fmt.Errorf("index signal %q: %w", id, err)
-	}
-	return nil
+	return platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw}, nil
 }
 
 func SignalDocumentID(sig *signalv1.Signal) string {

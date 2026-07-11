@@ -182,12 +182,22 @@ func (i *recordingIndexer) Index(_ context.Context, doc platformopensearch.Docum
 	return nil
 }
 
+func (i *recordingIndexer) BulkIndex(_ context.Context, docs []platformopensearch.Document) error {
+	i.docs = append(i.docs, docs...)
+	return nil
+}
+
 type failingIndexer struct {
 	err      error
 	attempts int
 }
 
 func (i *failingIndexer) Index(context.Context, platformopensearch.Document) error {
+	i.attempts++
+	return i.err
+}
+
+func (i *failingIndexer) BulkIndex(context.Context, []platformopensearch.Document) error {
 	i.attempts++
 	return i.err
 }

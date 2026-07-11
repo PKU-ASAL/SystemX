@@ -8,6 +8,7 @@ import (
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -48,6 +49,12 @@ func (w *Worker) Run(ctx context.Context) error {
 			continue
 		}
 		if err := w.processWithRetry(ctx, batch); err != nil {
+			if platformopensearch.ErrorClassOf(err) == platformopensearch.ErrorPermanent {
+				if rejectErr := w.reject(ctx, msg, "permanent_projection", err); rejectErr != nil {
+					return rejectErr
+				}
+				continue
+			}
 			return fmt.Errorf("process raw data batch key=%q: %w", msg.Key, err)
 		}
 		if err := w.consumer.Commit(ctx, msg); err != nil {
@@ -73,6 +80,9 @@ func (w *Worker) processWithRetry(ctx context.Context, batch *dataplanev1.DataBa
 			return nil
 		} else {
 			lastErr = err
+			if platformopensearch.ErrorClassOf(err) == platformopensearch.ErrorPermanent {
+				return err
+			}
 		}
 		if attempt == 2 {
 			break
