@@ -74,7 +74,7 @@ func main() {
 			}
 			return
 		}
-		body, err := queryLocalAgent(*socketPath, args)
+		body, err := queryLocalAgentWithManager(*socketPath, *managerURL, args)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
 			os.Exit(1)
@@ -110,6 +110,8 @@ func usage() {
   sysarmorctl [--socket PATH] debug profile cpu --seconds 10 --output agent.cpu.pb.gz
   sysarmorctl [--socket PATH] event watch --include-recent --limit 10
   sysarmorctl [--socket PATH] signal watch --include-events --limit 10
+  sysarmorctl [--socket PATH] [--manager-url URL] enroll --token TOKEN --tenant TENANT --agent-id AGENT --gateway HOST:PORT [--gateway-server-name NAME] [--upload-history]
+  sysarmorctl [--socket PATH] unenroll
 
   sysarmorctl [--manager-url URL] manager agents list
   sysarmorctl [--manager-url URL] manager policies assign --agent AGENT --policy-id POLICY --version N [--downlink]
@@ -148,6 +150,12 @@ func defaultAgentSock() string {
 }
 
 func isLocalAgentCommand(args []string) bool {
+	if len(args) == 1 && args[0] == "unenroll" {
+		return true
+	}
+	if len(args) >= 1 && args[0] == "enroll" {
+		return true
+	}
 	if len(args) < 2 {
 		return false
 	}
@@ -233,6 +241,10 @@ func streamLocalAgent(socketPath string, args []string) error {
 }
 
 func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
+	return queryLocalAgentWithManager(socketPath, defaultManagerURL(), args)
+}
+
+func queryLocalAgentWithManager(socketPath, managerURL string, args []string) ([]byte, error) {
 	if strings.TrimSpace(socketPath) == "" {
 		return nil, fmt.Errorf("--socket is required")
 	}
@@ -252,6 +264,16 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 
 	client := controlplanev1.NewAgentControlPlaneServiceClient(conn)
 	reqCtx := requestContext(args)
+	if len(args) > 0 && args[0] == "enroll" {
+		return enrollLocalAgent(ctx, client, reqCtx, managerURL, args)
+	}
+	if len(args) == 1 && args[0] == "unenroll" {
+		resp, err := client.Unenroll(ctx, &controlplanev1.UnenrollRequest{Context: reqCtx})
+		if err != nil {
+			return nil, err
+		}
+		return marshalProtoJSON(resp)
+	}
 	switch args[0] + " " + args[1] {
 	case "agent health":
 		resp, err := client.Health(ctx, &controlplanev1.HealthRequest{Context: reqCtx})
@@ -410,6 +432,26 @@ func queryLocalAgent(socketPath string, args []string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported local agent command %q", strings.Join(args, " "))
 	}
+}
+
+func enrollLocalAgent(ctx context.Context, client controlplanev1.AgentControlPlaneServiceClient, reqCtx *controlplanev1.RequestContext, managerURL string, args []string) ([]byte, error) {
+	token := flagValue(args, "--token")
+	tenantID := flagValue(args, "--tenant")
+	agentID := flagValue(args, "--agent-id")
+	gateway := flagValue(args, "--gateway")
+	if token == "" || tenantID == "" || agentID == "" || gateway == "" {
+		return nil, fmt.Errorf("enroll requires --token, --tenant, --agent-id, and --gateway")
+	}
+	resp, err := client.Enroll(ctx, &controlplanev1.EnrollRequest{Context: reqCtx, ManagerUrl: managerURL,
+		EnrollmentToken: token, TenantId: tenantID, AgentId: agentID, GatewayAddress: gateway,
+		GatewayServerName: flagValue(args, "--gateway-server-name"), UploadHistory: hasFlag(args, "--upload-history")})
+	if err != nil {
+		return nil, err
+	}
+	if resp.GetStatus() != "applied" {
+		return nil, fmt.Errorf("enrollment rejected: %s", resp.GetMessage())
+	}
+	return marshalProtoJSON(resp)
 }
 
 func collectEventFrames(stream controlplanev1.AgentControlPlaneService_WatchEventsClient) ([]byte, error) {

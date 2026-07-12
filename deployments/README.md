@@ -48,9 +48,20 @@ gateway -> postgres/redis/kafka
 
 ## Agent Install And Enrollment
 
-Manager owns agent enrollment creation. Operators create an enrollment, receive
-a one-time token and an install script URL, then run the script on the endpoint.
-The manager stores only the token hash.
+New packages install and start in standalone mode. The Agent immediately
+collects into its bounded local store and makes no Manager or Gateway
+connection. The default state is under `/var/lib/sysarmor/agent`; inspect it
+through the local Unix socket:
+
+```bash
+sudo deployments/agent/install-agent.sh
+sudo sysarmorctl agent health
+```
+
+Enrollment is an explicit later operation. Manager creates a one-time token
+and stores only its hash. Run the returned command on the endpoint; the Agent
+generates its private key locally, obtains and validates the certificate, then
+atomically changes its SQLite enrollment state to managed:
 
 ```bash
 sysarmorctl --manager-url http://127.0.0.1:19443 --json \
@@ -75,6 +86,23 @@ sysarmorctl --manager-url http://127.0.0.1:19443 --json \
   --gateway-sni localhost \
   --ttl 24h \
   --channel stable
+
+sudo sysarmorctl \
+  --manager-url http://127.0.0.1:19443 \
+  enroll \
+  --token '<one-time-token>' \
+  --tenant default \
+  --agent-id node-a \
+  --gateway 127.0.0.1:19444 \
+  --gateway-server-name localhost
+```
+
+Registration uploads only batches created from the enrollment boundary.
+Add `--upload-history` only when pre-enrollment telemetry must be uploaded.
+Return to fully local operation without stopping the sensor:
+
+```bash
+sudo sysarmorctl unenroll
 ```
 
 The generated `agent-install.sh` installs the agent into a stable agent home:
@@ -136,9 +164,9 @@ The manager uses two URLs for this path:
   `http://packages/...` URL because the agent container joins the compose
   network.
 
-The default gateway path requires agent-plane mTLS. The bootstrap script
+The default gateway path requires agent-plane mTLS. The Agent enrollment RPC
 generates the endpoint private key locally, submits a CSR with the enrollment
-token, and stores the manager-issued certificate under `/etc/sysarmor/pki`.
+token, and stores the manager-issued certificate under its state directory.
 The gateway validates the certificate URI SAN against the reported
 `tenant_id/agent_id`.
 

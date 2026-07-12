@@ -20,6 +20,8 @@ service AgentControlPlaneService {
   rpc DebugProfile(DebugProfileRequest) returns (DebugProfileResponse);
   rpc WatchEvents(WatchEventsRequest) returns (stream EventFrame);
   rpc WatchSignals(WatchSignalsRequest) returns (stream SignalFrame);
+  rpc Enroll(EnrollRequest) returns (ControlAck);
+  rpc Unenroll(UnenrollRequest) returns (ControlAck);
 }
 
 message ControlFrame {
@@ -472,6 +474,21 @@ message WatchSignalsRequest {
   bool include_recent = 5;
   bool snapshot_only = 6;
   WatchFilter filter = 7;
+}
+
+message EnrollRequest {
+  RequestContext context = 1;
+  string manager_url = 2;
+  string enrollment_token = 3;
+  string tenant_id = 4;
+  string agent_id = 5;
+  string gateway_address = 6;
+  string gateway_server_name = 7;
+  bool upload_history = 8;
+}
+
+message UnenrollRequest {
+  RequestContext context = 1;
 }
 
 message SignalFrame {

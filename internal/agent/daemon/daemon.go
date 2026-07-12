@@ -101,6 +101,7 @@ type AgentRuntime struct {
 	identity           runtimeIdentity
 	standaloneIdentity runtimeIdentity
 	normalizer         *normalize.Normalizer
+	managedControl     *TransportRuntime
 	policy             policymodel.Policy
 	detection          *detection.Engine
 	collection         contract.CollectionIntent
@@ -239,16 +240,6 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	defer localRuntime.Close()
 	dataPlaneCtx, cancelDataPlane := context.WithCancel(ctx)
 	defer cancelDataPlane()
-	if r.localStore != nil {
-		r.network = newNetworkSupervisor(dataPlaneCtx, r.runManagedNetwork)
-		enrollment, err := r.localStore.Enrollment(ctx)
-		if err != nil {
-			return failStartup("enrollment", err)
-		}
-		r.network.ApplyEnrollment(enrollment)
-		r.applyEnrollmentIdentity(enrollment)
-		defer r.network.StopManaged()
-	}
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
 		TenantID:      r.Config.Agent.TenantID,
 		ScopeType:     scopeType,
@@ -258,6 +249,17 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	r.setNormalizer(norm)
 	endpointRuntime := NewEndpointRuntime(r, norm)
 	transportRuntime := NewTransportRuntime(r, rt, bus, batcher, sender, startedAt, scopeType, scopeSelector)
+	if r.localStore != nil {
+		r.managedControl = transportRuntime
+		r.network = newNetworkSupervisor(dataPlaneCtx, r.runManagedNetwork)
+		enrollment, err := r.localStore.Enrollment(ctx)
+		if err != nil {
+			return failStartup("enrollment", err)
+		}
+		r.applyEnrollmentIdentity(enrollment)
+		r.network.ApplyEnrollment(enrollment)
+		defer r.network.StopManaged()
+	}
 	go transportRuntime.RunDataFlow(dataPlaneCtx)
 	go transportRuntime.RunControlFlow(dataPlaneCtx)
 	r.applyRuntimePolicy(effectivePolicy)
@@ -832,7 +834,10 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
 	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
 	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.DataPlane.RequestTimeout, "", tlsCfg)
-	(&spoolUploader{store: r.localStore, sender: sender, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
+	go (&spoolUploader{store: r.localStore, sender: sender, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
+	if r.managedControl != nil {
+		r.managedControl.runControlFlowForEnrollment(ctx, enrollment, tlsCfg)
+	}
 }
 
 func newBatchSender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchSender, error) {

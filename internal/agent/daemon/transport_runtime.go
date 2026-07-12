@@ -8,6 +8,8 @@ import (
 	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
+	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -44,14 +46,20 @@ func (r *TransportRuntime) runControlFlow(ctx context.Context) {
 
 func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 	runner := r.runner
+	identity := runner.currentIdentity()
+	return r.runControlChannel(ctx, runner.Config.Manager.Address, runner.Config.Agent.Token, runner.managerTLS(), identity)
+}
+
+func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token string, tlsCfg tlsconfig.ClientConfig, identity runtimeIdentity) error {
+	runner := r.runner
 	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.DataPlane.RequestTimeout)
 	defer cancel()
-	session := NewControlChannel(runner.Config.Manager.Address, runner.Config.Agent.Token, runner.managerTLS())
+	session := NewControlChannel(manager, token, tlsCfg)
 	if err := session.Open(connectCtx); err != nil {
 		return err
 	}
 	defer session.Close()
-	frames, err := session.Hello(connectCtx, runner.Config.Agent.TenantID, runner.Config.Agent.ID, r.scopeType, r.scopeSelector)
+	frames, err := session.Hello(connectCtx, identity.TenantID, identity.AgentID, r.scopeType, r.scopeSelector)
 	if err != nil {
 		return err
 	}
@@ -115,6 +123,25 @@ func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 			if err := session.SendCapability(ctx, health); err != nil {
 				return err
 			}
+		}
+	}
+}
+
+func (r *TransportRuntime) runControlFlowForEnrollment(ctx context.Context, enrollment localstore.Enrollment, tlsCfg tlsconfig.ClientConfig) {
+	backoff := time.Second
+	for ctx.Err() == nil {
+		identity := runtimeIdentity{TenantID: enrollment.TenantID, AgentID: enrollment.AgentID, HostID: r.runner.currentIdentity().HostID}
+		if err := r.runControlChannel(ctx, enrollment.GatewayAddress, "", tlsCfg, identity); err != nil && ctx.Err() == nil && r.runner.Out != nil {
+			fmt.Fprintf(r.runner.Out, "agent managed control channel disconnected: %v\n", err)
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
+		if backoff < 30*time.Second {
+			backoff *= 2
 		}
 	}
 }

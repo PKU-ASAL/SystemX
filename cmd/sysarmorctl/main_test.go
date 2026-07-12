@@ -54,6 +54,30 @@ func TestTopLevelManagerCommandsRequireManagerNamespace(t *testing.T) {
 	}
 }
 
+func TestLocalEnrollmentCommandsUseAgentSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	lis, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fake := &fakeAgentControlServer{}
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
+	go server.Serve(lis)
+	defer server.Stop()
+
+	args := []string{"enroll", "--token", "secret", "--tenant", "default", "--agent-id", "agent-a", "--gateway", "gateway:9444", "--upload-history"}
+	if _, err := queryLocalAgentWithManager(socketPath, "https://manager.example", args); err != nil {
+		t.Fatal(err)
+	}
+	if fake.enrollReq.GetManagerUrl() != "https://manager.example" || fake.enrollReq.GetEnrollmentToken() != "secret" || !fake.enrollReq.GetUploadHistory() {
+		t.Fatalf("enroll request=%+v", fake.enrollReq)
+	}
+	if _, err := queryLocalAgentWithManager(socketPath, "", []string{"unenroll"}); err != nil || fake.unenrollReq == nil {
+		t.Fatalf("unenroll err=%v req=%+v", err, fake.unenrollReq)
+	}
+}
+
 func TestQueryPolicyCommands(t *testing.T) {
 	var gotPath string
 	server := newLocalHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -736,6 +760,18 @@ type fakeAgentControlServer struct {
 	debugProfileReq *controlplanev1.DebugProfileRequest
 	watchEventReq   *controlplanev1.WatchEventsRequest
 	watchSignalReq  *controlplanev1.WatchSignalsRequest
+	enrollReq       *controlplanev1.EnrollRequest
+	unenrollReq     *controlplanev1.UnenrollRequest
+}
+
+func (s *fakeAgentControlServer) Enroll(ctx context.Context, req *controlplanev1.EnrollRequest) (*controlplanev1.ControlAck, error) {
+	s.enrollReq = req
+	return &controlplanev1.ControlAck{Status: "applied", AgentId: req.GetAgentId(), TenantId: req.GetTenantId()}, nil
+}
+
+func (s *fakeAgentControlServer) Unenroll(ctx context.Context, req *controlplanev1.UnenrollRequest) (*controlplanev1.ControlAck, error) {
+	s.unenrollReq = req
+	return &controlplanev1.ControlAck{Status: "applied"}, nil
 }
 
 func (fakeAgentControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {

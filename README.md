@@ -97,7 +97,13 @@ spiffe://sysarmor.local/tenant/<tenant_id>/agent/<agent_id>
 
 The manager checks the certificate identity against `DataBatch.header.tenant_id/agent_id` and `ControlFrame.context.tenant_id/agent_id`, then binds the certificate principal into the agent registry. A later connection for the same tenant/agent with a different certificate principal is rejected.
 
-`sysarmorctl --agent-sock ...` is a local operator/debug boundary. It talks to the local agent over Unix socket gRPC and reads the local spool/WAL as a side channel for watch/query commands. Cloud or manager communication must use `AgentDataPlaneService.AppendBatch` and `AgentControlPlaneService.Connect`; local ctl is not a second production data plane.
+`sysarmorctl --socket ...` is the local operator/debug boundary. It talks to the
+Agent over Unix socket gRPC; the Agent alone reads its SQLite state and segment
+spool. `sysarmorctl enroll` passes a one-time Manager token to that local RPC,
+but never handles the generated private key. Cloud communication starts only
+after enrollment and uses `AgentDataPlaneService.AppendBatch` plus
+`AgentControlPlaneService.Connect`; local ctl is not a second production data
+plane.
 
 The API/protobuf contracts under `api/proto/` are the source of truth for this
 boundary.
