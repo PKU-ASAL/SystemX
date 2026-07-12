@@ -15,14 +15,18 @@ import (
 )
 
 type Normalizer struct {
-	agentID       string
-	hostID        string
-	tenantID      string
+	identity      atomic.Pointer[Identity]
 	scopeType     string
 	scopeSelector string
 	labels        map[string]string
 	table         *endpointctx.Table
 	seq           atomic.Uint64
+}
+
+type Identity struct {
+	AgentID  string
+	HostID   string
+	TenantID string
 }
 
 type Options struct {
@@ -43,22 +47,26 @@ func NewWithOptions(agentID, hostID string, table *endpointctx.Table, opts Optio
 	if opts.ScopeType == "" {
 		opts.ScopeType = "host"
 	}
-	return &Normalizer{
-		agentID:       agentID,
-		hostID:        hostID,
-		tenantID:      opts.TenantID,
+	n := &Normalizer{
 		scopeType:     opts.ScopeType,
 		scopeSelector: opts.ScopeSelector,
 		labels:        cloneLabels(opts.Labels),
 		table:         table,
 	}
+	n.SetIdentity(agentID, hostID, opts.TenantID)
+	return n
+}
+
+func (n *Normalizer) SetIdentity(agentID, hostID, tenantID string) {
+	n.identity.Store(&Identity{AgentID: agentID, HostID: hostID, TenantID: tenantID})
 }
 
 func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent {
+	identity := n.identity.Load()
 	seq := n.seq.Add(1)
-	stableID := StableID(n.hostID, ev.GetProc().GetPid(), ev.GetProc().GetStartTimeNs())
+	stableID := StableID(identity.HostID, ev.GetProc().GetPid(), ev.GetProc().GetStartTimeNs())
 	if ev.GetProc().GetSensorExecId() != "" {
-		stableID = StableIDFromSensor(n.hostID, ev.GetProc().GetSensorExecId())
+		stableID = StableIDFromSensor(identity.HostID, ev.GetProc().GetSensorExecId())
 	}
 	parentStableID := ""
 	lineageID := stableID
@@ -79,11 +87,11 @@ func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent
 	n.table.Upsert(proc)
 
 	return &eventv1.CanonicalEvent{
-		Id:           EventID(n.agentID, seq),
+		Id:           EventID(identity.AgentID, seq),
 		Seq:          seq,
-		AgentId:      n.agentID,
-		HostId:       n.hostID,
-		TenantId:     n.tenantID,
+		AgentId:      identity.AgentID,
+		HostId:       identity.HostID,
+		TenantId:     identity.TenantID,
 		MonoNs:       ev.GetMonoNs(),
 		OccurredAtNs: ev.GetMonoNs(),
 		Behavior:     eventBehavior(ev),

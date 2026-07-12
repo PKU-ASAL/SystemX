@@ -88,3 +88,18 @@ func TestNormalizeAddsProvenanceTags(t *testing.T) {
 		t.Fatalf("labels not set: %+v", ev.GetLabels())
 	}
 }
+
+func TestNormalizerSwitchesIdentityWithoutResettingSequence(t *testing.T) {
+	n := NewWithOptions("device-a", "host-a", nil, Options{TenantID: "local"})
+	first := n.Normalize(&sensorv1.SensorEvent{Proc: &sensorv1.RawProcess{Pid: 1}})
+
+	n.SetIdentity("agent-a", "host-a", "tenant-a")
+	second := n.Normalize(&sensorv1.SensorEvent{Proc: &sensorv1.RawProcess{Pid: 2}})
+
+	if second.GetAgentId() != "agent-a" || second.GetHostId() != "host-a" || second.GetTenantId() != "tenant-a" {
+		t.Fatalf("managed identity not applied: %+v", second)
+	}
+	if second.GetSeq() != first.GetSeq()+1 {
+		t.Fatalf("sequence reset across identity switch: first=%d second=%d", first.GetSeq(), second.GetSeq())
+	}
+}

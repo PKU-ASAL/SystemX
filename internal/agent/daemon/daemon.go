@@ -91,21 +91,24 @@ type Options struct {
 }
 
 type AgentRuntime struct {
-	Config          config.Config
-	Sensor          contract.Sensor
-	Out             io.Writer
-	capability      contract.Capability
-	localStore      *localstore.Store
-	network         *networkSupervisor
-	mu              sync.RWMutex
-	policy          policymodel.Policy
-	detection       *detection.Engine
-	collection      contract.CollectionIntent
-	content         *agentcontent.Store
-	featureFlags    agenthealth.RuntimeFeatureFlags
-	detectionStatus agenthealth.DetectionHealth
-	signalSeq       uint64
-	telemetrySeq    uint64
+	Config             config.Config
+	Sensor             contract.Sensor
+	Out                io.Writer
+	capability         contract.Capability
+	localStore         *localstore.Store
+	network            *networkSupervisor
+	mu                 sync.RWMutex
+	identity           runtimeIdentity
+	standaloneIdentity runtimeIdentity
+	normalizer         *normalize.Normalizer
+	policy             policymodel.Policy
+	detection          *detection.Engine
+	collection         contract.CollectionIntent
+	content            *agentcontent.Store
+	featureFlags       agenthealth.RuntimeFeatureFlags
+	detectionStatus    agenthealth.DetectionHealth
+	signalSeq          uint64
+	telemetrySeq       uint64
 }
 
 type healthReporter interface {
@@ -146,7 +149,9 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 			cfg.Agent.TenantID = "local"
 		}
 	}
-	return &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state}, nil
+	runtime := &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state}
+	runtime.setRuntimeIdentity(runtimeIdentity{AgentID: cfg.Agent.ID, HostID: cfg.Agent.HostID, TenantID: cfg.Agent.TenantID})
+	return runtime, nil
 }
 
 func NewAgentRuntime(cfg config.Config) (*AgentRuntime, error) {
@@ -241,6 +246,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 			return failStartup("enrollment", err)
 		}
 		r.network.ApplyEnrollment(enrollment)
+		r.applyEnrollmentIdentity(enrollment)
 		defer r.network.StopManaged()
 	}
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
@@ -249,6 +255,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		ScopeSelector: scopeSelector,
 		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
 	})
+	r.setNormalizer(norm)
 	endpointRuntime := NewEndpointRuntime(r, norm)
 	transportRuntime := NewTransportRuntime(r, rt, bus, batcher, sender, startedAt, scopeType, scopeSelector)
 	go transportRuntime.RunDataFlow(dataPlaneCtx)
@@ -825,7 +832,7 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
 	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
 	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.DataPlane.RequestTimeout, "", tlsCfg)
-	(&spoolUploader{store: r.localStore, sender: sender}).Run(ctx)
+	(&spoolUploader{store: r.localStore, sender: sender, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
 }
 
 func newBatchSender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchSender, error) {
@@ -958,6 +965,7 @@ func (r *AgentRuntime) dataBatchForSignals(signals []*signalv1.Signal) *dataplan
 }
 
 func (r *AgentRuntime) newDataBatch(now time.Time) *dataplanev1.DataBatch {
+	identity := r.currentIdentity()
 	policy := r.activePolicy()
 	labels := cloneStringMap(r.Config.Agent.Labels)
 	if labels == nil {
@@ -971,9 +979,9 @@ func (r *AgentRuntime) newDataBatch(now time.Time) *dataplanev1.DataBatch {
 	}
 	return &dataplanev1.DataBatch{
 		Header: &dataplanev1.BatchHeader{
-			TenantId:          r.Config.Agent.TenantID,
-			AgentId:           r.Config.Agent.ID,
-			HostId:            r.Config.Agent.HostID,
+			TenantId:          identity.TenantID,
+			AgentId:           identity.AgentID,
+			HostId:            identity.HostID,
 			PolicyId:          policy.PolicyID,
 			PolicyVersion:     policy.Version,
 			PolicyMode:        policy.Mode,

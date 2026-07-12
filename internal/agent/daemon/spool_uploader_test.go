@@ -59,6 +59,28 @@ func TestSpoolUploaderReplaysCheckpointBatchAfterRestart(t *testing.T) {
 	}
 }
 
+func TestSpoolUploaderStartsAtEnrollmentBoundary(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: filepath.Join(t.TempDir(), "state")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for sequence := uint64(1); sequence <= 3; sequence++ {
+		batch := &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{BatchId: string(rune('a' + sequence - 1)), EventSeqStart: sequence}}
+		if _, err := store.AppendBatch(t.Context(), batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sender := &sequenceSender{}
+	uploader := &spoolUploader{store: store, sender: sender, fromSequence: 3}
+	if err := uploader.uploadAvailable(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.sent) != 1 || sender.sent[0] != "c" {
+		t.Fatalf("sent=%v, want only post-enrollment batch", sender.sent)
+	}
+}
+
 type sequenceSender struct {
 	acks []*dataplanev1.DataAck
 	sent []string

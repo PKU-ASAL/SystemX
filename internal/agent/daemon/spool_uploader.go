@@ -10,8 +10,9 @@ import (
 )
 
 type spoolUploader struct {
-	store  *localstore.Store
-	sender dataappend.BatchSender
+	store        *localstore.Store
+	sender       dataappend.BatchSender
+	fromSequence uint64
 }
 
 func (u *spoolUploader) Run(ctx context.Context) {
@@ -49,7 +50,7 @@ func (u *spoolUploader) uploadAvailable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	batches, err := u.store.ReadBatches(ctx, localstore.ReadOptions{Limit: 1000})
+	batches, err := u.store.ReadBatches(ctx, localstore.ReadOptions{Limit: 1000, FromSequence: u.fromSequence})
 	if err != nil {
 		return err
 	}

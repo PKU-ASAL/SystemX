@@ -65,6 +65,23 @@ func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, bus *telem
 	return batch
 }
 
+func TestAgentRuntimeSwitchesBatchIdentityAfterEnrollment(t *testing.T) {
+	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "device-a", HostID: "host-a", TenantID: "local"}}}
+	runner.setRuntimeIdentity(runtimeIdentity{AgentID: "device-a", HostID: "host-a", TenantID: "local"})
+
+	runner.applyEnrollmentIdentity(localstore.Enrollment{State: localstore.StateManaged, AgentID: "agent-a", TenantID: "tenant-a"})
+	managed := runner.newDataBatch(time.Now())
+	if managed.GetHeader().GetAgentId() != "agent-a" || managed.GetHeader().GetTenantId() != "tenant-a" {
+		t.Fatalf("managed batch identity = %+v", managed.GetHeader())
+	}
+
+	runner.applyEnrollmentIdentity(localstore.Enrollment{State: localstore.StateStandalone})
+	standalone := runner.newDataBatch(time.Now())
+	if standalone.GetHeader().GetAgentId() != "device-a" || standalone.GetHeader().GetTenantId() != "local" {
+		t.Fatalf("standalone batch identity = %+v", standalone.GetHeader())
+	}
+}
+
 func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "")
