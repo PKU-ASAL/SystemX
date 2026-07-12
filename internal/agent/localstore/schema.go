@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS upload_checkpoint (
   record_offset INTEGER NOT NULL,
   last_batch_id TEXT,
   updated_at_ns INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runtime_counters (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  dropped_batches_storage INTEGER NOT NULL DEFAULT 0,
+  dropped_events_storage INTEGER NOT NULL DEFAULT 0
 );`
 
 func (s *Store) initialize(ctx context.Context, dbPath string) error {
