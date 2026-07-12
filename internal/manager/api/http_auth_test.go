@@ -71,6 +71,20 @@ func TestProtectedHandlerRejectsUnauthenticatedRequest(t *testing.T) {
 	assertAPIError(t, rec, "unauthorized")
 }
 
+func TestEnrollmentTokenEndpointsDoNotRequirePrincipal(t *testing.T) {
+	handler := NewServer(&store.Store{}).Handler()
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(`{"token":"invalid","csr":"invalid"}`)),
+		httptest.NewRequest(http.MethodGet, "/api/v1/agent-install.sh?token=invalid", nil),
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, request)
+		if rec.Code == http.StatusUnauthorized {
+			t.Fatalf("%s unexpectedly requires principal", request.URL.Path)
+		}
+	}
+}
+
 func TestForgedIdentityHeadersDoNotCreatePrincipal(t *testing.T) {
 	handler := NewServer(&store.Store{}).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reset", nil)

@@ -13,12 +13,20 @@ import (
 const maxAuthenticatedBody = 4 << 20
 
 func (s *Server) HandlerWithAuth(verifier *managerauth.Verifier) http.Handler {
-	return normalizeAPIErrors(verifier.Middleware(bindPrincipalTenant(s.Handler())))
+	base := s.Handler()
+	protected := verifier.Middleware(bindPrincipalTenant(base))
+	return normalizeAPIErrors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isEnrollmentTokenEndpoint(r.URL.Path) {
+			base.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	}))
 }
 
 func bindPrincipalTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path == "/healthz" || isEnrollmentTokenEndpoint(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -43,7 +51,7 @@ func bindPrincipalTenant(next http.Handler) http.Handler {
 
 func requireProductionPrincipal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path == "/healthz" || isEnrollmentTokenEndpoint(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -53,6 +61,10 @@ func requireProductionPrincipal(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isEnrollmentTokenEndpoint(path string) bool {
+	return path == "/api/v1/enrollment-certificate" || path == "/api/v1/agent-install.sh"
 }
 
 func bindJSONTenant(w http.ResponseWriter, r *http.Request, tenantID string) bool {
