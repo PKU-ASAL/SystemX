@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -26,9 +27,11 @@ type Options struct {
 }
 
 type Store struct {
-	db      *sql.DB
-	rootDir string
-	opts    Options
+	db        *sql.DB
+	rootDir   string
+	opts      Options
+	segmentMu sync.Mutex
+	writer    *segmentWriter
 }
 
 func Open(ctx context.Context, opts Options) (*Store, error) {
@@ -47,6 +50,10 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := store.recoverSegments(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -54,6 +61,11 @@ func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	s.segmentMu.Lock()
+	if s.writer != nil {
+		_ = s.writer.close()
+	}
+	s.segmentMu.Unlock()
 	return s.db.Close()
 }
 
