@@ -13,7 +13,7 @@ import (
 const maxAuthenticatedBody = 4 << 20
 
 func (s *Server) HandlerWithAuth(verifier *managerauth.Verifier) http.Handler {
-	return verifier.Middleware(bindPrincipalTenant(s.Handler()))
+	return normalizeAPIErrors(verifier.Middleware(bindPrincipalTenant(s.Handler())))
 }
 
 func bindPrincipalTenant(next http.Handler) http.Handler {
@@ -24,12 +24,12 @@ func bindPrincipalTenant(next http.Handler) http.Handler {
 		}
 		principal, ok := managerauth.PrincipalFromContext(r.Context())
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 			return
 		}
 		query := r.URL.Query()
 		if tenant := query.Get("tenant_id"); tenant != "" && tenant != principal.TenantID {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			writeAPIError(w, http.StatusForbidden, "forbidden", "Forbidden")
 			return
 		}
 		query.Set("tenant_id", principal.TenantID)
@@ -48,7 +48,7 @@ func requireProductionPrincipal(next http.Handler) http.Handler {
 			return
 		}
 		if _, ok := managerauth.PrincipalFromContext(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -61,7 +61,7 @@ func bindJSONTenant(w http.ResponseWriter, r *http.Request, tenantID string) boo
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxAuthenticatedBody+1))
 	if err != nil || len(raw) > maxAuthenticatedBody {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "Request body too large")
 		return false
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
@@ -74,13 +74,13 @@ func bindJSONTenant(w http.ResponseWriter, r *http.Request, tenantID string) boo
 		return true
 	}
 	if tenant, _ := object["tenant_id"].(string); tenant != "" && tenant != tenantID {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeAPIError(w, http.StatusForbidden, "forbidden", "Forbidden")
 		return false
 	}
 	object["tenant_id"] = tenantID
 	bound, err := json.Marshal(object)
 	if err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return false
 	}
 	r.Body = io.NopCloser(bytes.NewReader(bound))

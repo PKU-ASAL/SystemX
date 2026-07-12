@@ -28,10 +28,8 @@ func main() {
 	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable telemetry")
 	opensearchUsername := flag.String("opensearch-username", envDefault("SYSARMOR_OPENSEARCH_USERNAME", ""), "OpenSearch basic auth username")
 	opensearchPassword := flag.String("opensearch-password", envDefault("SYSARMOR_OPENSEARCH_PASSWORD", ""), "OpenSearch basic auth password")
-	authMode := flag.String("auth-mode", envDefault("SYSARMOR_AUTH_MODE", ""), "authentication mode: local or oidc")
-	jwtPublicKey := flag.String("jwt-public-key", envDefault("SYSARMOR_JWT_PUBLIC_KEY_FILE", ""), "local RS256 JWT public key PEM")
+	jwtPublicKey := flag.String("jwt-public-key", envDefault("SYSARMOR_JWT_PUBLIC_KEY_FILE", ""), "trusted BFF RS256 JWT public key PEM")
 	jwtIssuer := flag.String("jwt-issuer", envDefault("SYSARMOR_JWT_ISSUER", ""), "required JWT issuer")
-	oidcIssuerURL := flag.String("oidc-issuer-url", envDefault("SYSARMOR_OIDC_ISSUER_URL", ""), "OIDC issuer URL for discovery")
 	jwtAudience := flag.String("jwt-audience", envDefault("SYSARMOR_JWT_AUDIENCE", ""), "required JWT audience")
 	flag.Parse()
 
@@ -46,8 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 	verifier, err := managerauth.NewVerifier(ctx, managerauth.Config{
-		Mode: *authMode, PublicKeyFile: *jwtPublicKey, Issuer: *jwtIssuer,
-		IssuerURL: *oidcIssuerURL, Audience: *jwtAudience,
+		PublicKeyFile: *jwtPublicKey, Issuer: *jwtIssuer, Audience: *jwtAudience,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configure JWT verifier: %v\n", err)

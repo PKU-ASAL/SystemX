@@ -44,16 +44,6 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	if len(args) >= 2 && args[0] == "auth" && args[1] == "token" {
-		token, err := issueLocalToken(args[2:])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println(token)
-		return
-	}
-
 	if len(args) == 0 {
 		if *jsonOut {
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"manager_url": *managerURL, "socket": *socketPath})

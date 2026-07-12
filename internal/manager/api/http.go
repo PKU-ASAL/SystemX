@@ -326,7 +326,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)
-	return requireProductionPrincipal(mux)
+	return normalizeAPIErrors(requireProductionPrincipal(mux))
 }
 
 func parseLabelSelector(values []string) store.LabelSelector {

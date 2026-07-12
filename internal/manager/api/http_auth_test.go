@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
@@ -67,6 +68,7 @@ func TestProtectedHandlerRejectsUnauthenticatedRequest(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	assertAPIError(t, rec, "unauthorized")
 }
 
 func TestForgedIdentityHeadersDoNotCreatePrincipal(t *testing.T) {
@@ -94,6 +96,23 @@ func TestBindPrincipalTenantRejectsMismatch(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d", rec.Code)
+	}
+	assertAPIError(t, rec, "forbidden")
+}
+
+func assertAPIError(t *testing.T, rec *httptest.ResponseRecorder, code string) {
+	t.Helper()
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("content-type=%q", got)
+	}
+	var envelope struct {
+		Error struct{ Code, Message string } `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error: %v body=%q", err, rec.Body.String())
+	}
+	if envelope.Error.Code != code || envelope.Error.Message == "" {
+		t.Fatalf("error=%+v", envelope.Error)
 	}
 }
 
