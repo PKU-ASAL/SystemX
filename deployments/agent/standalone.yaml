@@ -1,0 +1,40 @@
+agent:
+  state_path: /var/lib/sysarmor/agent
+
+control:
+  socket_path: /run/sysarmor/agent.sock
+
+sensor:
+  backend: tetragon
+  mode: managed
+  bundle_dir: /opt/sysarmor/agent/bundles/tetragon
+  install_dir: /opt/sysarmor/agent/sensors
+  tetra_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetra
+  tetragon_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetragon
+  policy_path: /etc/sysarmor/policies/standalone-collection.json
+  scope:
+    type: host
+  observe_only: true
+  restart: always
+  max_restarts: 5
+  restart_window: 60s
+
+telemetry:
+  batch_size: 256
+  max_bytes: 262144
+  flush_interval: 1s
+
+data_plane:
+  retry_initial: 1s
+  retry_max: 30s
+  request_timeout: 10s
+  max_inflight: 1
+
+health:
+  interval: 10s
+
+storage:
+  max_bytes: 10GiB
+  min_free_bytes: 2GiB
+  event_segment_size: 64MiB
+  signal_max_count: 100000

@@ -81,6 +81,19 @@ func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
 			t.Fatalf("systemd unit missing %q:\n%s", want, unit)
 		}
 	}
+	if strings.Contains(unit, "network-online.target") {
+		t.Fatal("standalone service depends on network-online")
+	}
+}
+
+func TestStandaloneDeploymentConfigLoads(t *testing.T) {
+	cfg, err := LoadFile(filepath.Join("..", "..", "..", "deployments", "agent", "standalone.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Manager.Transport != "" || cfg.Storage.MaxBytes != 10<<30 || cfg.Agent.StatePath == "" {
+		t.Fatalf("config=%+v", cfg)
+	}
 }
 
 func TestLoadFileValidatesExampleShape(t *testing.T) {

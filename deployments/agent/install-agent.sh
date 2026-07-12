@@ -7,6 +7,8 @@ AGENT_BIN="${SYSARMOR_AGENT_BIN:-./bin/sysarmor-agent}"
 SERVICE_FILE="${SYSARMOR_AGENT_SERVICE:-$HERE/systemd/sysarmor-agent.service}"
 CONFIG_FILE="${SYSARMOR_AGENT_CONFIG:-}"
 POLICY_FILE="${SYSARMOR_COLLECTION_POLICY:-}"
+DEFAULT_CONFIG="$HERE/standalone.yaml"
+DEFAULT_POLICY="$HERE/standalone-collection.json"
 AGENT_HOME="${SYSARMOR_AGENT_HOME:-/opt/sysarmor/agent}"
 AGENT_DST="${SYSARMOR_AGENT_DST:-$AGENT_HOME/bin/sysarmor-agent}"
 SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}"
@@ -49,6 +51,12 @@ mkdir -p "$(dirname "$AGENT_DST")" "$(dirname "$SERVICE_DST")" /etc/sysarmor/pol
 install -m 0755 "$AGENT_BIN" "$AGENT_DST"
 install -m 0644 "$SERVICE_FILE" "$SERVICE_DST"
 
+if [[ -z "$CONFIG_FILE" ]]; then
+  CONFIG_FILE="$DEFAULT_CONFIG"
+fi
+if [[ -z "$POLICY_FILE" ]]; then
+  POLICY_FILE="$DEFAULT_POLICY"
+fi
 if [[ -n "$CONFIG_FILE" ]]; then
   require_file "$CONFIG_FILE"
   install -m 0644 "$CONFIG_FILE" "$CONFIG_DST"

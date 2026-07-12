@@ -67,6 +67,8 @@ install -m 0644 "$SERVICE_FILE" "$ROOT/systemd/sysarmor-agent.service"
 if [[ -f "$REPO/configs/agent.example.yaml" ]]; then
   install -m 0644 "$REPO/configs/agent.example.yaml" "$ROOT/configs/agent.example.yaml"
 fi
+install -m 0644 "$HERE/standalone.yaml" "$ROOT/configs/standalone.yaml"
+install -m 0644 "$HERE/standalone-collection.json" "$ROOT/policies/standalone-collection.json"
 
 SYSARMOR_TETRAGON_ARCHIVE="$TETRAGON_ARCHIVE" \
   SYSARMOR_TETRAGON_BUNDLE_DIR="$ROOT/sensors/tetragon" \
@@ -107,6 +109,8 @@ cat > "$ROOT/manifest.json" <<EOF
   "files": [
 $(file_json "bin/sysarmor-agent" "0755"),
 $(file_json "systemd/sysarmor-agent.service" "0644"),
+$(file_json "configs/standalone.yaml" "0644"),
+$(file_json "policies/standalone-collection.json" "0644"),
 $(file_json "sensors/tetragon/bin/tetragon" "0755"),
 $(file_json "sensors/tetragon/bin/tetra" "0755"),
 $(file_json "sensors/tetragon/manifest.json" "0644")
