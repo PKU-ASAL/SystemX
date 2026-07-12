@@ -1,6 +1,6 @@
 # Web
 
-`web/` is reserved for operator-facing UI projects, such as a future manager UI.
+`web/` contains operator-facing UI projects.
 
 Keep Go services under `cmd/` and `internal/`. UI projects should live here with
 their own package manager files and build pipeline.
@@ -8,21 +8,21 @@ their own package manager files and build pipeline.
 ## Manager Console
 
 `web/manager` is the SysArmor Manager Console UI. It is a Next.js React 19
-application using mock data to validate the manager workflows before the screens
-are connected to the manager HTTP API.
+application. API mode uses an authenticated same-origin BFF; the browser does
+not connect to Manager directly.
 
 Recommended commands from the repository root:
 
 ```bash
 make web-install
-make web-up
-make web-status
-make web-stop
+make auth-init
+make deploy
+make doctor
 ```
 
-`make web-up` builds the console and starts a Next.js production server in the
-background at `http://127.0.0.1:4173`, with logs in
-`.run/manager-console.log`.
+The compose deployment serves the console at `http://127.0.0.1:4173`. Sign in
+with the bootstrap credentials stored under
+`deployments/pki/agent-plane-mtls/runtime/`.
 
 For foreground development with live logs:
 
@@ -30,8 +30,8 @@ For foreground development with live logs:
 make web-dev
 ```
 
-`make web-dev` starts the Next.js hot-reload development server at
-`http://127.0.0.1:5173`.
+`make web-dev` requires the same Secret file environment variables as the
+compose service and starts the hot-reload server at `http://127.0.0.1:5173`.
 
 To check the production build locally:
 

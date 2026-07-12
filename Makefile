@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-binary test test-opensearch-lifecycle up deploy down status reset clean clean-bin pki release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-binary test test-opensearch-lifecycle up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -65,6 +65,12 @@ pki:
 	fi
 	@bash tools/pki/gen-manager-jwt.sh "$(PKI_RUNTIME_DIR)"
 
+auth-init: pki
+	@bash tools/auth/init-bootstrap-admin.sh "$(PKI_RUNTIME_DIR)"
+
+doctor:
+	@PLATFORM_COMPOSE="$(PLATFORM_COMPOSE)" PKI_RUNTIME_DIR="$(PKI_RUNTIME_DIR)" bash tools/doctor.sh
+
 release: build-agent-binary pki
 	bash deployments/packages/build-release.sh \
 	  --version "$(RELEASE_VERSION)" \
@@ -78,14 +84,14 @@ release: build-agent-binary pki
 	  --signing-key "$(RELEASE_SIGNING_KEY)" \
 	  --public-key "$(RELEASE_PUBLIC_KEY)"
 
-up: release
+up: release auth-init
 	@if [ -n "$(SERVICE)" ]; then \
 		$(COMPOSE) -f $(PLATFORM_COMPOSE) up -d --remove-orphans $(SERVICE); \
 	else \
 		$(COMPOSE) -f $(PLATFORM_COMPOSE) up -d --remove-orphans; \
 	fi
 
-deploy: build-binary release
+deploy: build-binary release auth-init
 	$(COMPOSE) -f $(PLATFORM_COMPOSE) up -d --build --remove-orphans
 
 down:
@@ -146,6 +152,8 @@ help:
 	@echo "  make down SERVICE=packages  stop and remove one service"
 	@echo "  make status     show local platform service status"
 	@echo "  make reset      DESTRUCTIVE: recreate data volumes and platform; preserve PKI"
+	@echo "  make auth-init  create bootstrap admin and BFF secrets once"
+	@echo "  make doctor     verify secrets, services, login, BFF, and Manager"
 	@echo "  make clean      stop local platform and remove volumes/orphans"
 	@echo "  make clean-bin  remove built binaries"
 	@echo ""

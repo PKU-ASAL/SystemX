@@ -104,15 +104,15 @@ boundary.
 
 ## Manager Authentication
 
-Manager API access requires an `RS256` JWT. Configure the public key, issuer,
-and audience with `SYSARMOR_JWT_PUBLIC_KEY_FILE`, `SYSARMOR_JWT_ISSUER`, and
-`SYSARMOR_JWT_AUDIENCE`. Claims must include `sub`, `tenant_id`, `roles`, `exp`,
-`iss`, and `aud`. Supported roles are `viewer`, `operator`, and `admin`; every
-role is restricted to its claimed tenant.
+The browser signs in to the Manager UI with the single deployment bootstrap
+admin. Auth.js keeps an encrypted HttpOnly cookie session, and the server-side
+Next.js BFF signs a five-minute `RS256` JWT for each Manager request. The
+browser never receives that JWT or the Manager internal address.
 
-`make pki` creates a local development RSA keypair. Manager reads only the
-public key. Set `SYSARMOR_MANAGER_JWT` when using `sysarmorctl`; caller-provided
-actor, role, and tenant headers are not trusted.
+Manager trusts only the BFF public key and converts verified `sub`, `tenant_id`,
+and `roles` claims into a request-scoped Principal. Caller-provided identity
+headers are never trusted. Run `make auth-init` once to create local secrets;
+no user or session tables are created.
 
 ## Analytics Persistence
 

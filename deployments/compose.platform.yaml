@@ -115,6 +115,24 @@ services:
     ports:
       - "${SYSARMOR_MANAGER_PORT:-19443}:9443"
 
+  manager-ui:
+    build:
+      context: ..
+      dockerfile: deployments/manager-ui/Dockerfile
+    container_name: sysarmor-manager-ui
+    depends_on:
+      manager:
+        condition: service_started
+    env_file:
+      - ./manager-ui/manager-ui.env.example
+    secrets:
+      - auth-secret
+      - bootstrap-admin-username
+      - bootstrap-admin-password
+      - manager-jwt-private.pem
+    ports:
+      - "${SYSARMOR_MANAGER_UI_PORT:-4173}:4173"
+
   gateway:
     build:
       context: ..
@@ -168,3 +186,13 @@ volumes:
   redis-data:
   opensearch-data:
   manager-artifacts:
+
+secrets:
+  auth-secret:
+    file: ./pki/agent-plane-mtls/runtime/auth-secret
+  bootstrap-admin-username:
+    file: ./pki/agent-plane-mtls/runtime/bootstrap-admin-username
+  bootstrap-admin-password:
+    file: ./pki/agent-plane-mtls/runtime/bootstrap-admin-password
+  manager-jwt-private.pem:
+    file: ./pki/agent-plane-mtls/runtime/manager-jwt-private.pem

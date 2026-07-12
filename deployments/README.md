@@ -155,39 +155,33 @@ Services:
 - `opensearch-init`: one-shot versioned-index and alias initialization that must
   complete before Manager and Worker start.
 
-Manager authentication is always enabled. Closed and development deployments
-use local JWT verification:
+Manager authentication is always enabled. Manager trusts only short-lived JWTs
+signed by the Manager UI BFF:
 
 ```text
-SYSARMOR_AUTH_MODE=local
 SYSARMOR_JWT_PUBLIC_KEY_FILE=/etc/sysarmor/pki/manager-jwt-public.pem
-SYSARMOR_JWT_ISSUER=sysarmor-identity
+SYSARMOR_JWT_ISSUER=sysarmor-bff
 SYSARMOR_JWT_AUDIENCE=sysarmor-manager
 ```
 
-Enterprise deployments may use an existing generic OIDC provider without
-adding an identity service to the SysArmor stack:
-
-```text
-SYSARMOR_AUTH_MODE=oidc
-SYSARMOR_OIDC_ISSUER_URL=https://identity.example.com/realms/security
-SYSARMOR_JWT_AUDIENCE=sysarmor-manager
-```
-
-The two modes are mutually exclusive. `sysarmorctl auth token` signs bounded
-local development tokens with an existing RSA private key; SysArmor does not
-store users or passwords.
+Initialize the one bootstrap admin and deploy the platform:
 
 ```bash
-sysarmorctl auth token \
-  --private-key deployments/pki/agent-plane-mtls/runtime/manager-jwt-private.pem \
-  --subject local-admin --tenant default --roles admin \
-  --issuer sysarmor-identity --audience sysarmor-manager --ttl 8h
+make auth-init
+make deploy
+make doctor
 ```
+
+The initial username and password are stored as mode `0600` files under
+`deployments/pki/agent-plane-mtls/runtime/`. Initialization never overwrites
+them. The UI is available at `http://127.0.0.1:4173`; its BFF is the only
+browser path to Manager APIs. Future OIDC providers attach to Auth.js and keep
+the same BFF-to-Manager contract; Manager does not implement an OIDC mode.
 
 Ports:
 
 - Manager HTTP: `19443`
+- Manager UI: `4173`
 - Gateway gRPC: `19444`
 - Gateway health HTTP: `19445`
 - Postgres: `15432`

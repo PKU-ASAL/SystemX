@@ -19,18 +19,17 @@ must not connect directly to Postgres, Kafka, or OpenSearch.
 ## Runtime Boundary
 
 ```text
-web/manager
-  -> /api/v1/*
+browser
+  -> web/manager /api/manager/*
+  -> Auth.js Session -> five-minute BFF JWT
   -> sysarmor-manager
   -> Postgres store
   -> OpenSearch searcher
 ```
 
-Development should proxy `/api/v1/*` from Next.js to the local manager process.
-With the default compose deployment this is normally
-`http://127.0.0.1:19443/api/v1/*`, because compose exposes host port `19443`
-to the manager container's `9443`. This keeps browser requests same origin and
-avoids CORS in local development.
+The browser only calls the same-origin `/api/manager/*` BFF. The BFF validates
+the Auth.js Session, signs an internal JWT, and calls Manager over its private
+origin. There is no public Next.js rewrite for `/api/v1/*`.
 
 ## Shared Rules
 
@@ -41,7 +40,7 @@ avoids CORS in local development.
 - List endpoints should return `total` when the backend can calculate it
   cheaply. Search-backed endpoints should return `total_relation` when exact
   totals are not available.
-- `/healthz` is anonymous. Every `/api/` endpoint requires
+- Manager `/healthz` is anonymous. Every Manager `/api/` endpoint requires
   `Authorization: Bearer <RS256 JWT>`.
 - The verified JWT Principal supplies subject, tenant, and roles. Request
   headers and JSON actor or role fields never establish identity or privileges.
@@ -110,12 +109,13 @@ mock  local UI development fixtures
 Recommended frontend environment variables:
 
 ```text
-NEXT_PUBLIC_MANAGER_API_BASE=/api/v1
 NEXT_PUBLIC_MANAGER_DATA_SOURCE=api
+MANAGER_API_ORIGIN=http://manager:9443
 ```
 
 `mock` mode may keep using files under `web/manager/lib/mock-data.ts`. API mode
-must go through typed client modules under `web/manager/lib/api/`.
+must go through typed client modules and the same-origin BFF. `MANAGER_API_ORIGIN`
+is server-only and must never use a `NEXT_PUBLIC_` prefix.
 
 ## Overview
 
