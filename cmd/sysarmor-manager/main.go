@@ -77,7 +77,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	managerSrv := managerapi.NewServerWithSearch(st, "", searcher)
+	managerSrv := managerapi.NewProductionServerWithSearch(st, searcher)
 	if err := managerSrv.SeedArtifactFeedFromEnv(ctx); err != nil {
 		log.Printf("seed package index: %v", err)
 	}

@@ -189,7 +189,12 @@ func decodeBulkResponse(reader io.Reader, docs []Document) error {
 	if len(response.Items) != len(docs) {
 		return &ProjectionError{Class: ErrorTransient, Cause: fmt.Errorf("bulk item count %d, want %d", len(response.Items), len(docs))}
 	}
+	var permanent *ProjectionError
+	var transient *ProjectionError
 	for index, operations := range response.Items {
+		if len(operations) != 1 {
+			return &ProjectionError{Class: ErrorTransient, Cause: fmt.Errorf("bulk item %d has %d operations", index, len(operations))}
+		}
 		for _, item := range operations {
 			if item.Status >= 200 && item.Status < 300 {
 				continue
@@ -198,8 +203,19 @@ func decodeBulkResponse(reader io.Reader, docs []Document) error {
 			if item.Error != nil {
 				cause = fmt.Errorf("%s: %s", item.Error.Type, item.Error.Reason)
 			}
-			return &ProjectionError{Class: classifyStatus(item.Status), Status: item.Status, Index: docs[index].Index, ID: docs[index].ID, Cause: cause}
+			failure := &ProjectionError{Class: classifyStatus(item.Status), Status: item.Status, Index: docs[index].Index, ID: docs[index].ID, Cause: cause}
+			if failure.Class == ErrorTransient && transient == nil {
+				transient = failure
+			} else if permanent == nil {
+				permanent = failure
+			}
 		}
+	}
+	if transient != nil {
+		return transient
+	}
+	if permanent != nil {
+		return permanent
 	}
 	return nil
 }

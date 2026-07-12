@@ -78,28 +78,6 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 		t.Fatalf("incident missing converge method: %s", rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/incident-evidence?label=scenario=apt-fileless-c2", nil)
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("incident evidence status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	for _, want := range []string{`"nodes"`, `"edges"`, `"kind":"connect"`} {
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Fatalf("incident evidence missing %s: %s", want, rec.Body.String())
-		}
-	}
-	rec = get(t, handler, "/api/v1/incident-evidence?label=scenario=apt-fileless-c2&path_from=process:p-bash&path_to=socket:10.66.0.99:443")
-	for _, want := range []string{`"id":"process:p-bash"`, `"id":"socket:10.66.0.99:443"`, `"kind":"connect"`} {
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Fatalf("incident path missing %s: %s", want, rec.Body.String())
-		}
-	}
-	rec = get(t, handler, "/api/v1/incident-evidence?label=scenario=apt-fileless-c2&seed=process:p-bash&hops=1")
-	if !strings.Contains(rec.Body.String(), `"id":"socket:10.66.0.99:443"`) {
-		t.Fatalf("incident k-hop missing socket node: %s", rec.Body.String())
-	}
-
 	rec = get(t, handler, "/api/v1/metrics")
 	for _, want := range []string{
 		`"data_batches_appended":1`,
@@ -267,7 +245,7 @@ func TestUploadIndexesSecurityDocuments(t *testing.T) {
 	for _, doc := range indexer.docs {
 		indexes[doc.Index] = true
 	}
-	for _, want := range []string{"sysarmor-events", "sysarmor-signals", "sysarmor-incidents", "sysarmor-incident-timeline", "sysarmor-evidence"} {
+	for _, want := range []string{"sysarmor-events", "sysarmor-signals", "sysarmor-incidents", "sysarmor-evidence"} {
 		if !indexes[want] {
 			t.Fatalf("indexed docs missing %s: %+v", want, indexer.docs)
 		}

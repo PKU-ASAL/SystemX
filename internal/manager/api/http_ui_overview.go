@@ -49,7 +49,7 @@ func (s *Server) uiOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenantID := r.URL.Query().Get("tenant_id")
-	if tenantID == "" {
+	if tenantID == "" && !s.local {
 		http.Error(w, "tenant_id is required", http.StatusBadRequest)
 		return
 	}
@@ -100,6 +100,12 @@ func (s *Server) overviewAgents() overviewAgentsSummary {
 
 func (s *Server) overviewIncidents(ctx context.Context, tenantID string) (overviewIncidents, error) {
 	summary := overviewIncidents{}
+	if s.local {
+		for _, incident := range s.store.ListIncidents(nil) {
+			addOverviewIncident(&summary, incident)
+		}
+		return summary, nil
+	}
 	if s.searcher == nil {
 		return summary, nil
 	}
@@ -112,15 +118,19 @@ func (s *Server) overviewIncidents(ctx context.Context, tenantID string) (overvi
 		if err := protojson.Unmarshal(document, incident); err != nil {
 			return summary, err
 		}
-		summary.Open++
-		switch {
-		case incident.GetSeverity() >= 90:
-			summary.Critical++
-		case incident.GetSeverity() >= 70:
-			summary.High++
-		case incident.GetSeverity() >= 40:
-			summary.Medium++
-		}
+		addOverviewIncident(&summary, incident)
 	}
 	return summary, nil
+}
+
+func addOverviewIncident(summary *overviewIncidents, incident *incidentv1.Incident) {
+	summary.Open++
+	switch {
+	case incident.GetSeverity() >= 90:
+		summary.Critical++
+	case incident.GetSeverity() >= 70:
+		summary.High++
+	case incident.GetSeverity() >= 40:
+		summary.Medium++
+	}
 }

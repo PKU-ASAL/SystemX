@@ -20,6 +20,7 @@ import (
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type Processor struct {
@@ -80,7 +81,9 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 		}
 	}
 	start := time.Now()
-	p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
+	if p.local {
+		p.engine.SetRarityBaseline(p.store.RarityBaselineSnapshot())
+	}
 	upper := batchUpperTime(batch, start)
 	cloudSignals, incidents, derivedDocs, err := p.recomputeTouchedScopes(ctx, touchedScopes, currentEvents, currentSignals, upper)
 	if err != nil {
@@ -96,7 +99,9 @@ func (p *Processor) Process(ctx context.Context, batch *dataplanev1.DataBatch) (
 	}
 	convergenceLatency := time.Since(start)
 	p.store.RecordDataBatchIngest(len(currentEvents), len(currentSignals), cloudSignals, incidents, convergenceLatency)
-	p.store.ObserveRaritySignals(currentSignals)
+	if p.local {
+		p.store.ObserveRaritySignals(currentSignals)
+	}
 	if err := p.store.Save(); err != nil {
 		return Result{}, err
 	}
@@ -163,7 +168,13 @@ func (p *Processor) recomputeTouchedScopes(ctx context.Context, touchedScopes ma
 			inc.FirstObservedAt = firstObserved
 			inc.LastObservedAt = lastObserved
 		}
-		p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, nil)
+		if p.local {
+			localIncidents := make([]*incidentv1.Incident, 0, len(analysis.Incidents))
+			for _, incident := range analysis.Incidents {
+				localIncidents = append(localIncidents, proto.Clone(incident).(*incidentv1.Incident))
+			}
+			p.store.ReplaceDerivedForLabels(scope.labels, analysis.CloudSignals, localIncidents)
+		}
 		for _, sig := range analysis.CloudSignals {
 			doc, err := signalDocument(sig)
 			if err != nil {

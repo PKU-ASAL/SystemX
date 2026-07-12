@@ -60,6 +60,7 @@ pki:
 		echo "Generating local agent-plane mTLS material in $(PKI_RUNTIME_DIR)"; \
 		SYSARMOR_GATEWAY_IPS=127.0.0.1 tools/pki/gen-agent-plane-mtls.sh "$(PKI_RUNTIME_DIR)" default agent-prod-001 localhost; \
 	fi
+	@bash tools/pki/gen-manager-jwt.sh "$(PKI_RUNTIME_DIR)"
 
 release: build-agent-binary pki
 	bash deployments/packages/build-release.sh \

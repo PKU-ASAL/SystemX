@@ -68,7 +68,7 @@ func TestUIOverviewReturnsManagerSummary(t *testing.T) {
 	if got.Telemetry.Events24h != 12 || got.Telemetry.Signals24h != 5 {
 		t.Fatalf("telemetry summary = %+v", got.Telemetry)
 	}
-	if got.Incidents.Open != 2 || got.Incidents.Critical != 1 || got.Incidents.High != 1 || got.Incidents.Medium != 1 {
+	if got.Incidents.Open != 3 || got.Incidents.Critical != 1 || got.Incidents.High != 1 || got.Incidents.Medium != 1 {
 		t.Fatalf("incident summary = %+v", got.Incidents)
 	}
 	if got.Store.Backend != "memory" {

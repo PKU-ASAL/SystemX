@@ -102,6 +102,31 @@ The manager checks the certificate identity against `DataBatch.header.tenant_id/
 The API/protobuf contracts under `api/proto/` are the source of truth for this
 boundary.
 
+## Manager Authentication
+
+Manager API access requires an `RS256` JWT. Configure the public key, issuer,
+and audience with `SYSARMOR_JWT_PUBLIC_KEY_FILE`, `SYSARMOR_JWT_ISSUER`, and
+`SYSARMOR_JWT_AUDIENCE`. Claims must include `sub`, `tenant_id`, `roles`, `exp`,
+`iss`, and `aud`. Supported roles are `viewer`, `operator`, and `admin`; every
+role is restricted to its claimed tenant.
+
+`make pki` creates a local development RSA keypair. Manager reads only the
+public key. Set `SYSARMOR_MANAGER_JWT` when using `sysarmorctl`; caller-provided
+actor, role, and tenant headers are not trusted.
+
+## Analytics Persistence
+
+Production Worker analysis is stateless across Kafka messages. For each scope it
+loads a tenant-bound 15-minute Event and endpoint Signal window from OpenSearch,
+merges the current batch by deterministic ID, and submits one Bulk projection.
+Kafka offsets are committed only after every Bulk item succeeds. Transient
+failures are retried; permanent payload or projection errors are committed only
+after a dead-letter message is durably published.
+
+PostgreSQL owns control-plane state and uses ordered transactional migrations.
+Legacy Incident tables are never dropped automatically; the operator-run cleanup
+SQL is `internal/store/migrations/legacy_incident_cleanup.sql`.
+
 ## Useful Debug Commands
 
 Container manager:

@@ -83,6 +83,18 @@ func TestHTTPIndexerClassifiesBulkItemErrors(t *testing.T) {
 	}
 }
 
+func TestHTTPIndexerBulkTransientFailureDominatesPermanent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"errors":true,"items":[{"index":{"status":400}},{"index":{"status":429}}]}`))
+	}))
+	defer server.Close()
+	indexer, _ := NewHTTPIndexer(server.URL)
+	err := indexer.BulkIndex(context.Background(), []Document{{Index: "events", ID: "bad", Body: []byte(`{}`)}, {Index: "signals", ID: "retry", Body: []byte(`{}`)}})
+	if ErrorClassOf(err) != ErrorTransient {
+		t.Fatalf("class = %q error=%v", ErrorClassOf(err), err)
+	}
+}
+
 func TestHTTPIndexerSearchesDocuments(t *testing.T) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

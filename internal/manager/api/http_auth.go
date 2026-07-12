@@ -41,6 +41,20 @@ func bindPrincipalTenant(next http.Handler) http.Handler {
 	})
 }
 
+func requireProductionPrincipal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, ok := managerauth.PrincipalFromContext(r.Context()); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func bindJSONTenant(w http.ResponseWriter, r *http.Request, tenantID string) bool {
 	if r.Body == nil || !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
 		return true

@@ -60,3 +60,9 @@ This keeps Kafka retries and analytics recomputation idempotent from the manager
 query perspective.
 
 The Worker commits a Kafka source message only after required OpenSearch writes succeed. Transient failures are retried without committing. Permanently malformed payloads are committed only after a dead-letter envelope is written to `<source-topic>.dlq`.
+
+Worker correlation uses an OpenSearch history window bounded to 15 minutes by
+`tenant_id`, analysis scope, and `@timestamp`. Process memory is not a source of
+historical truth. Event, Signal, Evidence, and Incident Report documents are
+submitted through one Bulk request with deterministic IDs; partial Bulk success
+converges through replay of the same IDs.

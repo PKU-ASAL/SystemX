@@ -11,6 +11,9 @@ System under test:
 
 PostgreSQL owns control-plane state. Event, signal, evidence, and incident report projections belong to OpenSearch; storage tests must not expect incident reports to survive through PostgreSQL.
 
+Schema changes use ordered transactional migrations. Runtime startup must never
+drop legacy Incident tables. Cleanup is a separate operator-controlled action.
+
 Out of scope:
 
 - runtime agent behavior;

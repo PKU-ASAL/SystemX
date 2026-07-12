@@ -29,15 +29,22 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) (MigrationResult, error) {
 	defer func() {
 		_, _ = conn.ExecContext(context.Background(), fmt.Sprintf("SELECT pg_advisory_unlock(%d)", migrationLockID))
 	}()
+	exists, err := schemaMigrationsExist(ctx, conn)
+	if err != nil {
+		return MigrationResult{}, err
+	}
 	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`); err != nil {
 		return MigrationResult{}, fmt.Errorf("initialize postgres migrations: %w", err)
 	}
-	applied, err := loadAppliedMigrations(ctx, conn)
-	if err != nil {
-		return MigrationResult{}, err
+	applied := map[int]bool{}
+	if exists {
+		applied, err = loadAppliedMigrations(ctx, conn)
+		if err != nil {
+			return MigrationResult{}, err
+		}
 	}
 	for _, migration := range migrations.Ordered() {
 		if applied[migration.Version] {
@@ -48,6 +55,18 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) (MigrationResult, error) {
 		}
 	}
 	return MigrationResult{Version: migrations.PostgresVersion}, nil
+}
+
+func schemaMigrationsExist(ctx context.Context, conn *sql.Conn) (bool, error) {
+	var exists bool
+	err := conn.QueryRowContext(ctx, "SELECT to_regclass('public.schema_migrations') IS NOT NULL").Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect postgres migration state: %w", err)
+	}
+	return exists, nil
 }
 
 func loadAppliedMigrations(ctx context.Context, conn *sql.Conn) (map[int]bool, error) {

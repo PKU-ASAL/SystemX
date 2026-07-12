@@ -13,6 +13,11 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.searcher == nil {
+		if s.local {
+			q := r.URL.Query()
+			writeIncidentList(w, pageSlice(s.store.ListIncidents(parseLabelSelector(q["label"])), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
+			return
+		}
 		http.Error(w, "incident report search is unavailable", http.StatusServiceUnavailable)
 		return
 	}

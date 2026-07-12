@@ -3,6 +3,7 @@ package ingestworker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -48,6 +49,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			}
 			continue
 		}
+		stabilizeBatchTime(batch, time.Now().UTC())
 		if err := w.processWithRetry(ctx, batch); err != nil {
 			if platformopensearch.ErrorClassOf(err) == platformopensearch.ErrorPermanent {
 				if rejectErr := w.reject(ctx, msg, "permanent_projection", err); rejectErr != nil {
@@ -61,6 +63,30 @@ func (w *Worker) Run(ctx context.Context) error {
 			return fmt.Errorf("commit raw data batch key=%q: %w", msg.Key, err)
 		}
 	}
+}
+
+func stabilizeBatchTime(batch *dataplanev1.DataBatch, fallback time.Time) {
+	latest := batch.GetHeader().GetCreatedAtUnixNano()
+	for _, frame := range batch.GetEvents() {
+		latest = maxUnixNano(latest, frame.GetObservedAt(), frame.GetEvent().GetOccurredAtNs())
+	}
+	for _, frame := range batch.GetSignals() {
+		latest = maxUnixNano(latest, frame.GetObservedAt(), 0)
+	}
+	if latest <= 0 {
+		latest = fallback.UnixNano()
+	}
+	batch.Header.CreatedAtUnixNano = latest
+}
+
+func maxUnixNano(current int64, observedAt string, occurredAt uint64) int64 {
+	if parsed, err := time.Parse(time.RFC3339Nano, observedAt); err == nil && parsed.UnixNano() > current {
+		current = parsed.UnixNano()
+	}
+	if occurredAt > 0 && int64(occurredAt) > current {
+		current = int64(occurredAt)
+	}
+	return current
 }
 
 func validateBatchIdentity(batch *dataplanev1.DataBatch) error {
@@ -105,6 +131,9 @@ type deadLetterEnvelope struct {
 	SourceKey       string    `json:"source_key"`
 	FailureClass    string    `json:"failure_class"`
 	FailureMessage  string    `json:"failure_message"`
+	FailureCode     string    `json:"failure_code"`
+	DocumentIndex   string    `json:"document_index,omitempty"`
+	DocumentID      string    `json:"document_id,omitempty"`
 	ObservedAt      time.Time `json:"observed_at"`
 	Payload         []byte    `json:"payload"`
 }
@@ -113,11 +142,18 @@ func (w *Worker) reject(ctx context.Context, msg platformkafka.Message, class st
 	if w.dlq == nil {
 		return fmt.Errorf("decode raw data batch key=%q: %w", msg.Key, cause)
 	}
-	body, err := json.Marshal(deadLetterEnvelope{
+	envelope := deadLetterEnvelope{
 		SourceTopic: msg.Topic, SourcePartition: msg.Partition, SourceOffset: msg.Offset,
 		SourceKey: msg.Key, FailureClass: class, FailureMessage: cause.Error(),
-		ObservedAt: time.Now().UTC(), Payload: msg.Value,
-	})
+		FailureCode: class, ObservedAt: time.Now().UTC(), Payload: msg.Value,
+	}
+	var projection *platformopensearch.ProjectionError
+	if errors.As(cause, &projection) {
+		envelope.FailureCode = fmt.Sprintf("opensearch_%d", projection.Status)
+		envelope.DocumentIndex = projection.Index
+		envelope.DocumentID = projection.ID
+	}
+	body, err := json.Marshal(envelope)
 	if err != nil {
 		return fmt.Errorf("encode dead letter key=%q: %w", msg.Key, err)
 	}

@@ -150,7 +150,14 @@ func (s *Server) operatorAuthorizedFor(r *http.Request, roles ...string) bool {
 
 func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request, roles ...string) bool {
 	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok {
-		if principal.HasRole("operator") || principal.HasRole("admin") {
+		requiredRole := "operator"
+		for _, role := range roles {
+			switch role {
+			case "admin", "policy_admin", "control_admin", "incident_admin":
+				requiredRole = "admin"
+			}
+		}
+		if principal.HasRole(requiredRole) {
 			return true
 		}
 		http.Error(w, "forbidden", http.StatusForbidden)

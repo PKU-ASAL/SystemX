@@ -35,6 +35,7 @@ type Server struct {
 	caCert        *x509.Certificate
 	caCertPEM     []byte
 	caKey         *rsa.PrivateKey
+	local         bool
 }
 
 type ManagerStore interface {
@@ -69,6 +70,7 @@ type ManagerStore interface {
 	ListAssignments(string, string) []policymodel.Assignment
 	ListControlCommands(string, string, string) []controlmodel.ControlCommand
 	ListEvents(store.LabelSelector, string) []*eventv1.CanonicalEvent
+	ListIncidents(store.LabelSelector) []*incidentv1.Incident
 	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	ListAgentSessions(string, string) []store.AgentSession
 	ListEnrollments(string, string) []store.Enrollment
@@ -223,17 +225,27 @@ type DataResume struct {
 
 func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
-	return newServer(st, "", nil)
+	s := newServer(st, "", nil)
+	s.local = true
+	return s
 }
 
 func NewServerWithOperatorToken(st ManagerStore, operatorToken string) *Server {
 	st.EnsureDefaultPolicy("default")
-	return newServer(st, operatorToken, nil)
+	s := newServer(st, operatorToken, nil)
+	s.local = true
+	return s
 }
 
 func NewServerWithSearch(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
 	st.EnsureDefaultPolicy("default")
-	return newServer(st, operatorToken, searcher)
+	s := newServer(st, operatorToken, searcher)
+	s.local = true
+	return s
+}
+
+func NewProductionServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) *Server {
+	return newServer(st, "", searcher)
 }
 
 func newServer(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
@@ -331,7 +343,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)
-	return mux
+	if s.local {
+		return mux
+	}
+	return requireProductionPrincipal(mux)
 }
 
 func parseLabelSelector(values []string) store.LabelSelector {
