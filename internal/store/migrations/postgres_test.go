@@ -55,10 +55,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		}
 	}
 	ordered := Ordered()
-	if len(ordered) != 3 || ordered[0].Version != 1 || ordered[1].Version != 2 || ordered[2].Version != 3 {
+	if len(ordered) != 1 || ordered[0].Version != 1 || ordered[0].Name != "current_control_plane_baseline" {
 		t.Fatalf("ordered migrations = %+v", ordered)
-	}
-	if ordered[2].Name != "drop_operator_role_bindings" || !strings.Contains(ordered[2].SQL, "DROP TABLE IF EXISTS operator_role_bindings") {
-		t.Fatalf("operator role cleanup migration = %+v", ordered[2])
 	}
 }

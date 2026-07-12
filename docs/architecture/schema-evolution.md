@@ -31,15 +31,9 @@ set it on every `DataBatch`.
 
 ## Worker Compatibility
 
-A Worker accepts the current schema and at most its immediate predecessor by an
-explicit allowlist. Successful protobuf decoding is not a compatibility check.
-
-During the first rollout, an empty `DataBatch.schema_version` represents legacy
-v0 and is accepted alongside `sysarmor.dataplane/v1`. Legacy acceptance is
-counted in `legacy_data_batches`. After producers have emitted v1 for longer
-than Kafka retention and the metric is zero, empty-version support is removed.
-
-An unsupported non-empty version is a permanent failure with code
+A Worker accepts only the explicitly listed current schema. Successful protobuf
+decoding is not a compatibility check. An empty or unsupported version is a
+permanent failure with code
 `unsupported_schema_version`. The source Kafka offset is committed only after
 the DLQ record is published successfully.
 
@@ -59,6 +53,3 @@ create a new physical index and use reindex plus an atomic alias switch.
 
 See `docs/operations/opensearch-schema-evolution.md` for the operational
 procedure.
-
-The exact legacy data-plane removal gate is documented in
-`docs/operations/data-plane-schema-retirement.md`.

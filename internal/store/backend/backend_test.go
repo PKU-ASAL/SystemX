@@ -90,8 +90,8 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	if result.Migration.Version != 3 {
-		t.Fatalf("migration version = %d, want 3", result.Migration.Version)
+	if result.Migration.Version != 1 {
+		t.Fatalf("migration version = %d, want 1", result.Migration.Version)
 	}
 	if result.Store == nil || result.Store.Info().Backend != KindPostgres {
 		t.Fatalf("store info = %+v", result.Store.Info())
@@ -654,7 +654,6 @@ func TestOpenPostgresQueriesIncidentsFromTablePath(t *testing.T) {
 	raw, err := protojson.Marshal(&incidentv1.Incident{
 		Id:      "inc-query-table-pg",
 		Labels:  pgLabels("pg-query-table"),
-		Status:  "suppressed",
 		Summary: "incident from table path",
 	})
 	if err != nil {
@@ -846,7 +845,6 @@ func TestOpenPostgresProjectsIncidentEvidenceTables(t *testing.T) {
 		Id:       "inc-table-pg",
 		Labels:   pgLabels("pg-incident"),
 		Summary:  "projected incident",
-		Status:   "open",
 		Severity: 70,
 		Evidence: &incidentv1.EvidenceSubgraph{
 			Nodes: []*incidentv1.GraphNode{{
@@ -1086,9 +1084,6 @@ func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
 		Actor:         "tester",
 	})
 	result.Store.AddIncident(&incidentv1.Incident{Id: "inc-pg", Labels: pgLabels("pg-policy"), Summary: "persisted incident"})
-	if _, ok := result.Store.UpdateIncidentStatus("inc-pg", nil, "suppressed", "known test", "tester"); !ok {
-		t.Fatal("UpdateIncidentStatus() ok = false")
-	}
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}

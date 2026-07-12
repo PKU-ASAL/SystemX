@@ -16,8 +16,6 @@ func ValidateDataPlane(version string) (bool, error) {
 	switch version {
 	case DataPlaneCurrent:
 		return false, nil
-	case "":
-		return true, nil
 	default:
 		return false, &UnsupportedVersionError{Version: version}
 	}

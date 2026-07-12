@@ -11,6 +11,7 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -41,21 +42,18 @@ func TestWorkerRejectsUnsupportedSchemaVersionToDLQ(t *testing.T) {
 	}
 }
 
-func TestWorkerCountsAcceptedLegacySchema(t *testing.T) {
-	st := &store.Store{}
-	raw, err := protojson.Marshal(dataBatch("batch-legacy", nil, nil))
+func TestWorkerRejectsEmptySchemaVersionToDLQ(t *testing.T) {
+	batch := dataBatch("batch-empty-schema", nil, nil)
+	batch.SchemaVersion = ""
+	raw, err := protojson.Marshal(batch)
 	if err != nil {
 		t.Fatal(err)
 	}
 	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Value: raw}}}
-
-	err = NewWorker(consumer, NewProcessor(st, nil)).Run(context.Background())
-
-	if !errors.Is(err, context.Canceled) || consumer.committed != 1 {
-		t.Fatalf("err=%v committed=%d", err, consumer.committed)
-	}
-	if got := st.MetricsSnapshot().LegacyDataBatches; got != 1 {
-		t.Fatalf("legacy batches=%d", got)
+	dlq := &stubProducer{}
+	err = NewWorkerWithDLQ(consumer, NewProcessor(&store.Store{}, nil), dlq).Run(context.Background())
+	if !errors.Is(err, context.Canceled) || consumer.committed != 1 || len(dlq.messages) != 1 {
+		t.Fatalf("err=%v committed=%d dlq=%d", err, consumer.committed, len(dlq.messages))
 	}
 }
 
@@ -150,14 +148,15 @@ func TestProcessorWritesFormalIncidentIdentity(t *testing.T) {
 	if report.GetTenantId() != "default" || report.GetCorrelationKey() != "scenario=formal-identity" || report.GetAnalysisVersion() != "incident.v1" {
 		t.Fatalf("formal identity = %+v", report)
 	}
-	if report.GetLabels()["tenant_id"] != "" || report.GetStatus() != "" {
+	if report.GetLabels()["tenant_id"] != "" {
 		t.Fatalf("legacy fields populated = %+v", report)
 	}
 }
 
 func TestWorkerConsumesKafkaUploadAndProcessesAfterCommit(t *testing.T) {
 	raw, err := protojson.Marshal(&dataplanev1.DataBatch{
-		Header: &dataplanev1.BatchHeader{BatchId: "batch-worker", TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
+		SchemaVersion: schema.DataPlaneCurrent,
+		Header:        &dataplanev1.BatchHeader{BatchId: "batch-worker", TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
 		Signals: []*dataplanev1.SignalFrame{{
 			Signal: &signalv1.Signal{
 				Id:     "sig-worker",
@@ -279,7 +278,8 @@ func mustProcess(t *testing.T, processor *Processor, batch *dataplanev1.DataBatc
 
 func dataBatch(id string, events []*eventv1.CanonicalEvent, signals []*signalv1.Signal) *dataplanev1.DataBatch {
 	batch := &dataplanev1.DataBatch{
-		Header: &dataplanev1.BatchHeader{BatchId: id, TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
+		SchemaVersion: schema.DataPlaneCurrent,
+		Header:        &dataplanev1.BatchHeader{BatchId: id, TenantId: "default", AgentId: "agent-worker", HostId: "host-worker"},
 	}
 	for _, ev := range events {
 		batch.Events = append(batch.Events, &dataplanev1.EventFrame{Event: ev})

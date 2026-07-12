@@ -32,9 +32,9 @@ func TestUIOverviewReturnsManagerSummary(t *testing.T) {
 		SignalsEmitted: 5,
 	}
 	st.Incidents = []*incidentv1.Incident{
-		{Id: "inc-critical", Severity: 95, Status: "active"},
-		{Id: "inc-high", Severity: 75, Status: "triage"},
-		{Id: "inc-medium", Severity: 45, Status: "contained"},
+		{Id: "inc-critical", Severity: 95},
+		{Id: "inc-high", Severity: 75},
+		{Id: "inc-medium", Severity: 45},
 	}
 
 	rec := get(t, NewServer(st).Handler(), "/api/v1/ui/overview")

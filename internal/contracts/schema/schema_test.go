@@ -12,9 +12,10 @@ func TestValidateDataPlaneCurrentSchema(t *testing.T) {
 	}
 }
 
-func TestValidateDataPlaneEmptySchemaAsLegacy(t *testing.T) {
+func TestValidateDataPlaneRejectsEmptySchema(t *testing.T) {
 	legacy, err := ValidateDataPlane("")
-	if err != nil || !legacy {
+	var unsupported *UnsupportedVersionError
+	if legacy || !errors.As(err, &unsupported) {
 		t.Fatalf("legacy=%t err=%v", legacy, err)
 	}
 }
@@ -36,7 +37,7 @@ func TestDataPlaneCompatibilityWindow(t *testing.T) {
 		legacy, fails bool
 	}{
 		{"current", DataPlaneCurrent, false, false},
-		{"legacy empty", "", true, false},
+		{"empty", "", false, true},
 		{"unknown", "sysarmor.dataplane/v2", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

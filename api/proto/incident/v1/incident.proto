@@ -35,23 +35,18 @@ message ConvergeTrace {
 
 message Incident {
   string id = 1;
-  reserved 2;
-  reserved "scenario";
-  string summary = 3;
-  uint32 severity = 4;
-  repeated string mitre = 5;
-  repeated string lineage_ids = 6;
-  repeated string terminals = 7;
-  EvidenceSubgraph evidence = 8;
-  ConvergeTrace converge = 9;
-  repeated sysarmor.signal.v1.Signal contributing_signals = 10;
-  string status = 11 [deprecated = true];
-  string status_reason = 12 [deprecated = true];
-  string status_actor = 13 [deprecated = true];
-  map<string, string> labels = 14;
-  string tenant_id = 15;
-  string correlation_key = 16;
-  string analysis_version = 17;
-  string first_observed_at = 18;
-  string last_observed_at = 19;
+  string summary = 2;
+  uint32 severity = 3;
+  repeated string mitre = 4;
+  repeated string lineage_ids = 5;
+  repeated string terminals = 6;
+  EvidenceSubgraph evidence = 7;
+  ConvergeTrace converge = 8;
+  repeated sysarmor.signal.v1.Signal contributing_signals = 9;
+  map<string, string> labels = 10;
+  string tenant_id = 11;
+  string correlation_key = 12;
+  string analysis_version = 13;
+  string first_observed_at = 14;
+  string last_observed_at = 15;
 }

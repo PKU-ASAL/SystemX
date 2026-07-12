@@ -310,37 +310,6 @@ func TestStoreInfoReportsBackendAndVersions(t *testing.T) {
 	}
 }
 
-func TestIncidentLifecycleStatusPersistsAcrossUpsert(t *testing.T) {
-	st := &Store{}
-	inc := &incidentv1.Incident{
-		Id:                  "inc-a",
-		Labels:              scenarioMap("a"),
-		Summary:             "same story",
-		LineageIds:          []string{"lin-a"},
-		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
-		ContributingSignals: []*signalv1.Signal{testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash")},
-	}
-	st.AddIncident(inc)
-	if got := st.ListIncidents(scenarioLabels("a"))[0].GetStatus(); got != "open" {
-		t.Fatalf("default status = %q, want open", got)
-	}
-	if _, ok := st.UpdateIncidentStatus("", scenarioLabels("a"), "suppressed", "known test", "tester"); !ok {
-		t.Fatal("UpdateIncidentStatus ok = false")
-	}
-	st.AddIncident(&incidentv1.Incident{
-		Id:                  "inc-b",
-		Labels:              scenarioMap("a"),
-		Summary:             "same story",
-		LineageIds:          []string{"lin-a"},
-		Converge:            &incidentv1.ConvergeTrace{Method: "rarity+causal-topk"},
-		ContributingSignals: inc.GetContributingSignals(),
-	})
-	got := st.ListIncidents(scenarioLabels("a"))[0]
-	if got.GetStatus() != "suppressed" || got.GetStatusReason() != "known test" || got.GetStatusActor() != "tester" {
-		t.Fatalf("status after upsert = %q/%q/%q", got.GetStatus(), got.GetStatusReason(), got.GetStatusActor())
-	}
-}
-
 func TestIncidentEvidenceAttachPersistsAcrossUpsert(t *testing.T) {
 	st := &Store{}
 	sig := testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash")
@@ -395,7 +364,6 @@ func TestMergeIncidentsCombinesEvidenceAndRemovesSource(t *testing.T) {
 		ContributingSignals: []*signalv1.Signal{
 			testSignal("sig-a", "a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "payload_dropped", "lin-a", "file:/tmp/a"),
 		},
-		Status: "suppressed",
 	})
 	st.AddIncident(&incidentv1.Incident{
 		Id:         "inc-b",
@@ -416,9 +384,6 @@ func TestMergeIncidentsCombinesEvidenceAndRemovesSource(t *testing.T) {
 	merged, ok := st.MergeIncidents("inc-a", "inc-b")
 	if !ok {
 		t.Fatal("MergeIncidents ok = false")
-	}
-	if merged.GetStatus() != "suppressed" {
-		t.Fatalf("target status = %q, want suppressed", merged.GetStatus())
 	}
 	if merged.GetSeverity() != 80 {
 		t.Fatalf("severity = %d, want 80", merged.GetSeverity())
@@ -580,7 +545,7 @@ func TestExportImportStateRoundTrip(t *testing.T) {
 	st.AddAgent(AgentIdentity{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Version: "test"})
 	st.AddEvent(testEvent("ev-a", "scenario-a"))
 	st.AddSignal(testSignal("sig-a", "scenario-a", signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT, "reverse_shell_pattern", "lin-a", "process:p-bash"))
-	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Labels: scenarioMap("scenario-a"), Summary: "incident-a", Status: "open"})
+	st.AddIncident(&incidentv1.Incident{Id: "inc-a", Labels: scenarioMap("scenario-a"), Summary: "incident-a"})
 	st.UpsertAgentHealth(agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"})
 	st.RecordDataBatchAppend(AgentIdentity{AgentID: "agent-a", TenantID: "default"}, "batch-a", "http", time.Unix(10, 0).UTC())
 	st.RecordDataBatchIngest(1, 1, 1, 1, time.Millisecond)

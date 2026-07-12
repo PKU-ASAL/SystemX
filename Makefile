@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-binary test test-opensearch-lifecycle up deploy down status clean clean-bin pki release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-binary test test-opensearch-lifecycle up deploy down status reset clean clean-bin pki release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -106,6 +106,8 @@ status:
 clean:
 	$(COMPOSE) -f $(PLATFORM_COMPOSE) down -v --remove-orphans
 
+reset: clean up status
+
 clean-bin:
 	rm -rf $(BIN_DIR)
 
@@ -143,6 +145,7 @@ help:
 	@echo "  make down       stop local platform"
 	@echo "  make down SERVICE=packages  stop and remove one service"
 	@echo "  make status     show local platform service status"
+	@echo "  make reset      DESTRUCTIVE: recreate data volumes and platform; preserve PKI"
 	@echo "  make clean      stop local platform and remove volumes/orphans"
 	@echo "  make clean-bin  remove built binaries"
 	@echo ""

@@ -1,6 +1,6 @@
 package migrations
 
-const PostgresVersion = 3
+const PostgresVersion = 1
 
 type Migration struct {
 	Version int
@@ -87,16 +87,6 @@ CREATE TABLE IF NOT EXISTS policy_audit (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   data JSONB NOT NULL,
   PRIMARY KEY (tenant_id, audit_id)
-);
-
-CREATE TABLE IF NOT EXISTS operator_role_bindings (
-  tenant_id TEXT NOT NULL DEFAULT 'default',
-  actor TEXT NOT NULL,
-  roles TEXT[] NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  data JSONB NOT NULL,
-  PRIMARY KEY (tenant_id, actor)
 );
 
 CREATE TABLE IF NOT EXISTS enrollments (
@@ -269,7 +259,6 @@ CREATE INDEX IF NOT EXISTS idx_policy_assignments_agent ON policy_assignments (t
 CREATE INDEX IF NOT EXISTS idx_policy_assignments_scope ON policy_assignments (tenant_id, scope_type, scope_selector);
 CREATE INDEX IF NOT EXISTS idx_policy_audit_policy ON policy_audit (tenant_id, policy_id);
 CREATE INDEX IF NOT EXISTS idx_policy_audit_actor ON policy_audit (tenant_id, actor);
-CREATE INDEX IF NOT EXISTS idx_operator_role_bindings_actor ON operator_role_bindings (tenant_id, actor);
 CREATE INDEX IF NOT EXISTS idx_enrollments_token_hash ON enrollments (token_hash);
 CREATE INDEX IF NOT EXISTS idx_enrollments_status ON enrollments (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_artifacts_lookup ON artifacts (tenant_id, artifact_kind, status);
@@ -293,18 +282,8 @@ CREATE INDEX IF NOT EXISTS idx_rarity_baseline_signal ON rarity_baseline (tenant
 
 `
 
-const incidentReportsToOpenSearch = `
-SELECT 1 /* incident_reports_to_opensearch */;
-`
-
-const dropOperatorRoleBindings = `
-DROP TABLE IF EXISTS operator_role_bindings;
-`
-
 func Ordered() []Migration {
 	return []Migration{
-		{Version: 1, Name: "control_plane_baseline", SQL: PostgresSchema},
-		{Version: 2, Name: "incident_reports_to_opensearch", SQL: incidentReportsToOpenSearch},
-		{Version: 3, Name: "drop_operator_role_bindings", SQL: dropOperatorRoleBindings},
+		{Version: 1, Name: "current_control_plane_baseline", SQL: PostgresSchema},
 	}
 }

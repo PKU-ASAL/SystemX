@@ -44,15 +44,12 @@ func (w *Worker) Run(ctx context.Context) error {
 			}
 			continue
 		}
-		legacy, err := schema.ValidateDataPlane(batch.GetSchemaVersion())
-		if err != nil {
-			if err := w.reject(ctx, msg, "unsupported_schema_version", err); err != nil {
+		_, schemaErr := schema.ValidateDataPlane(batch.GetSchemaVersion())
+		if schemaErr != nil {
+			if err := w.reject(ctx, msg, "unsupported_schema_version", schemaErr); err != nil {
 				return err
 			}
 			continue
-		}
-		if legacy {
-			w.processor.store.RecordLegacyDataBatch()
 		}
 		if err := validateBatchIdentity(batch); err != nil {
 			if err := w.reject(ctx, msg, "invalid_data_batch", err); err != nil {

@@ -27,10 +27,6 @@ for kind in events signals incidents evidence; do
   read_alias="sysarmor-${kind}-read"
   write_alias="sysarmor-${kind}-write"
 
-  if exists "sysarmor-${kind}"; then
-    echo "legacy index sysarmor-${kind} exists; migrate it before alias initialization" >&2
-    exit 1
-  fi
   if ! exists "${physical}"; then
     curl "${curl_args[@]}" -X PUT -H 'Content-Type: application/json' \
       --data-binary "@${mapping_dir}/${kind}-v1.json" "${base_url}/${physical}" >/dev/null
