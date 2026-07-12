@@ -96,6 +96,7 @@ type AgentRuntime struct {
 	Out             io.Writer
 	capability      contract.Capability
 	localStore      *localstore.Store
+	network         *networkSupervisor
 	mu              sync.RWMutex
 	policy          policymodel.Policy
 	detection       *detection.Engine
@@ -233,6 +234,15 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	defer localRuntime.Close()
 	dataPlaneCtx, cancelDataPlane := context.WithCancel(ctx)
 	defer cancelDataPlane()
+	if r.localStore != nil {
+		r.network = newNetworkSupervisor(dataPlaneCtx, r.runManagedNetwork)
+		enrollment, err := r.localStore.Enrollment(ctx)
+		if err != nil {
+			return failStartup("enrollment", err)
+		}
+		r.network.ApplyEnrollment(enrollment)
+		defer r.network.StopManaged()
+	}
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
 		TenantID:      r.Config.Agent.TenantID,
 		ScopeType:     scopeType,
@@ -810,6 +820,12 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 		ServerName: r.Config.Manager.TLSServerName,
 		Insecure:   r.Config.Manager.TLSInsecure,
 	}
+}
+
+func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
+	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
+	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.DataPlane.RequestTimeout, "", tlsCfg)
+	(&spoolUploader{store: r.localStore, sender: sender}).Run(ctx)
 }
 
 func newBatchSender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchSender, error) {
