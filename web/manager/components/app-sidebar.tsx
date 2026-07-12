@@ -1,8 +1,10 @@
 'use client';
 
-import { BoltIcon, CircleStackIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
+import { ArrowRightStartOnRectangleIcon, BoltIcon, CircleStackIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 
+import { logoutAction } from "@/app/login/actions";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -69,6 +71,12 @@ export default function AppSidebar({ activeTab, onTabChange, ...props }: AppSide
             <Badge>manager online</Badge>
           </SidebarLabel>
         </div>
+        <form action={logoutAction}>
+          <Button intent="plain" size="sm" type="submit" className="w-full justify-start">
+            <ArrowRightStartOnRectangleIcon />
+            退出登录
+          </Button>
+        </form>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

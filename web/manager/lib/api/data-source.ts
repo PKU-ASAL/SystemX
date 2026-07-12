@@ -5,9 +5,5 @@ export function getManagerDataSource(): ManagerDataSource {
 }
 
 export function getManagerApiBaseUrl() {
-  return trimTrailingSlash(process.env.NEXT_PUBLIC_MANAGER_API_BASE || "/api/v1");
-}
-
-function trimTrailingSlash(value: string) {
-  return value.replace(/\/+$/, "");
+  return "/api/manager";
 }

@@ -13,8 +13,8 @@ const PASSWORD_FILE = "SYSARMOR_BOOTSTRAP_ADMIN_PASSWORD_FILE";
 
 export function loadBootstrapCredentials(env: AuthEnvironment = process.env): BootstrapCredentials {
   return {
-    username: readSecret(env[USERNAME_FILE], USERNAME_FILE),
-    password: readSecret(env[PASSWORD_FILE], PASSWORD_FILE),
+    username: readProtectedSecret(env[USERNAME_FILE], USERNAME_FILE),
+    password: readProtectedSecret(env[PASSWORD_FILE], PASSWORD_FILE),
   };
 }
 
@@ -31,7 +31,7 @@ export function credentialVersion(credentials: BootstrapCredentials) {
   return digest(`${credentials.username}\0${credentials.password}`);
 }
 
-function readSecret(path: string | undefined, name: string) {
+export function readProtectedSecret(path: string | undefined, name: string) {
   if (!path?.trim()) throw new Error(`${name} is required`);
 
   const stat = statSync(path);
