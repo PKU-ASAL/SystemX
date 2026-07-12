@@ -15,6 +15,7 @@ import (
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
+	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -1135,7 +1136,7 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
 	server := managerapi.NewServer(result.Store)
-	handler := server.Handler()
+	handler := authenticatedManagerHandler(server.Handler())
 	batch := backendDataBatch("pg-api-batch-1", "agent-pg-api", "host-pg-api",
 		[]*eventv1.CanonicalEvent{{
 			Id:       "ev-pg-api",
@@ -1174,10 +1175,17 @@ func TestOpenPostgresBacksManagerIngestQueryPolicyAndIncidentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen postgres error = %v", err)
 	}
-	reopenedHandler := managerapi.NewServer(reopened.Store).Handler()
+	reopenedHandler := authenticatedManagerHandler(managerapi.NewServer(reopened.Store).Handler())
 	// Telemetry reports are not persisted in the relational backend.
 	assertGetContains(t, reopenedHandler, "/api/v1/effective-policy?tenant_id=default&agent_id=agent-pg-api", `"policy_id":"pg-api-policy"`)
-	assertGetContains(t, reopenedHandler, "/api/v1/policy-audit?tenant_id=default&policy_id=pg-api-policy", `"actor":"operator"`)
+	assertGetContains(t, reopenedHandler, "/api/v1/policy-audit?tenant_id=default&policy_id=pg-api-policy", `"actor":"backend-admin"`)
+}
+
+func authenticatedManagerHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal := managerauth.Principal{Subject: "backend-admin", TenantID: "default", Roles: []string{"admin"}}
+		next.ServeHTTP(w, r.WithContext(managerauth.WithPrincipal(r.Context(), principal)))
+	})
 }
 
 func TestOpenPostgresValidatesConfigAndWrapsMigrationError(t *testing.T) {

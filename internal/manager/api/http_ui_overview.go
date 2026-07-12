@@ -49,7 +49,7 @@ func (s *Server) uiOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenantID := r.URL.Query().Get("tenant_id")
-	if tenantID == "" && !s.local {
+	if tenantID == "" && !s.localTelemetry {
 		http.Error(w, "tenant_id is required", http.StatusBadRequest)
 		return
 	}
@@ -100,7 +100,7 @@ func (s *Server) overviewAgents() overviewAgentsSummary {
 
 func (s *Server) overviewIncidents(ctx context.Context, tenantID string) (overviewIncidents, error) {
 	summary := overviewIncidents{}
-	if s.local {
+	if s.localTelemetry {
 		for _, incident := range s.store.ListIncidents(nil) {
 			addOverviewIncident(&summary, incident)
 		}
@@ -109,7 +109,7 @@ func (s *Server) overviewIncidents(ctx context.Context, tenantID string) (overvi
 	if s.searcher == nil {
 		return summary, nil
 	}
-	raw, err := s.searchTelemetry(ctx, platformopensearch.SearchRequest{Index: "sysarmor-incidents", Size: 1000, Labels: map[string]string{"tenant_id": tenantID}})
+	raw, err := s.searchTelemetry(ctx, platformopensearch.SearchRequest{Index: platformopensearch.IncidentsReadAlias, Size: 1000, Labels: map[string]string{"tenant_id": tenantID}})
 	if err != nil {
 		return summary, err
 	}

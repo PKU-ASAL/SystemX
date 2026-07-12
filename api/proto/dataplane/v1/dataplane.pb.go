@@ -83,6 +83,7 @@ type DataBatch struct {
 	Header        *BatchHeader           `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
 	Events        []*EventFrame          `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
 	Signals       []*SignalFrame         `protobuf:"bytes,3,rep,name=signals,proto3" json:"signals,omitempty"`
+	SchemaVersion string                 `protobuf:"bytes,4,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -136,6 +137,13 @@ func (x *DataBatch) GetSignals() []*SignalFrame {
 		return x.Signals
 	}
 	return nil
+}
+
+func (x *DataBatch) GetSchemaVersion() string {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return ""
 }
 
 type BatchHeader struct {
@@ -590,11 +598,12 @@ var File_api_proto_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
 const file_api_proto_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\n" +
-	"&api/proto/dataplane/v1/dataplane.proto\x12\x15sysarmor.dataplane.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"\xc0\x01\n" +
+	"&api/proto/dataplane/v1/dataplane.proto\x12\x15sysarmor.dataplane.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"\xe7\x01\n" +
 	"\tDataBatch\x12:\n" +
 	"\x06header\x18\x01 \x01(\v2\".sysarmor.dataplane.v1.BatchHeaderR\x06header\x129\n" +
 	"\x06events\x18\x02 \x03(\v2!.sysarmor.dataplane.v1.EventFrameR\x06events\x12<\n" +
-	"\asignals\x18\x03 \x03(\v2\".sysarmor.dataplane.v1.SignalFrameR\asignals\"\xd2\x05\n" +
+	"\asignals\x18\x03 \x03(\v2\".sysarmor.dataplane.v1.SignalFrameR\asignals\x12%\n" +
+	"\x0eschema_version\x18\x04 \x01(\tR\rschemaVersion\"\xd2\x05\n" +
 	"\vBatchHeader\x12\x19\n" +
 	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x19\n" +

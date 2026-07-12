@@ -129,6 +129,7 @@ func httpDataBatch(batchID, agentID, hostID string, events []*eventv1.CanonicalE
 func get(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req = withTestPrincipal(req, "test-viewer", "default", "viewer")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

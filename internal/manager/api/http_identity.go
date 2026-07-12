@@ -117,37 +117,6 @@ func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) operatorAuthorized(r *http.Request) bool {
-	if s.operatorToken == "" {
-		return true
-	}
-	if r.Header.Get("X-SysArmor-Operator-Token") == s.operatorToken {
-		return true
-	}
-	if r.Header.Get("Authorization") == "Bearer "+s.operatorToken {
-		return true
-	}
-	return false
-}
-
-func (s *Server) operatorAuthorizedFor(r *http.Request, roles ...string) bool {
-	if !s.operatorAuthorized(r) {
-		return false
-	}
-	if s.operatorToken == "" || len(roles) == 0 {
-		return true
-	}
-	if boundRoles, ok := s.store.OperatorRolesForActor(s.actorFromRequest(r, "")); ok {
-		return rolesAllowed(boundRoles, roles...)
-	}
-	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
-		if rolesAllowed([]string{role}, roles...) {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request, roles ...string) bool {
 	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok {
 		requiredRole := "operator"
@@ -163,62 +132,22 @@ func (s *Server) requireOperator(w http.ResponseWriter, r *http.Request, roles .
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return false
 	}
-	if s.operatorToken == "" {
-		return true
-	}
-	if !s.operatorAuthorized(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return false
-	}
-	if !s.operatorAuthorizedFor(r, roles...) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return false
-	}
-	return true
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
 }
 
-func (s *Server) actorFromRequest(r *http.Request, explicit string) string {
+func (s *Server) actorFromRequest(r *http.Request, _ string) string {
 	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok {
 		return principal.Subject
-	}
-	if explicit != "" {
-		return explicit
-	}
-	return r.Header.Get("X-SysArmor-Actor")
-}
-
-func (s *Server) roleFromRequest(r *http.Request, explicit string) string {
-	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok && len(principal.Roles) > 0 {
-		return principal.Roles[0]
-	}
-	if explicit != "" {
-		return explicit
-	}
-	if roles, ok := s.store.OperatorRolesForActor(s.actorFromRequest(r, "")); ok && len(roles) > 0 {
-		return roles[0]
-	}
-	for _, role := range strings.Split(r.Header.Get("X-SysArmor-Role"), ",") {
-		role = strings.TrimSpace(role)
-		if role != "" {
-			return role
-		}
 	}
 	return ""
 }
 
-func rolesAllowed(granted []string, required ...string) bool {
-	for _, role := range granted {
-		role = strings.TrimSpace(role)
-		if role == "admin" {
-			return true
-		}
-		for _, allowed := range required {
-			if role == allowed {
-				return true
-			}
-		}
+func (s *Server) roleFromRequest(r *http.Request, _ string) string {
+	if principal, ok := managerauth.PrincipalFromContext(r.Context()); ok && len(principal.Roles) > 0 {
+		return principal.Roles[0]
 	}
-	return false
+	return ""
 }
 
 func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request) {

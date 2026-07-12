@@ -13,7 +13,7 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.searcher == nil {
-		if s.local {
+		if s.localTelemetry {
 			q := r.URL.Query()
 			writeIncidentList(w, pageSlice(s.store.ListIncidents(parseLabelSelector(q["label"])), parseUint(q.Get("limit")), parseUint(q.Get("offset"))))
 			return
@@ -32,7 +32,7 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 	limit := parseUint(q.Get("limit"))
 	offset := parseUint(q.Get("offset"))
 	raw, err := s.searchTelemetry(r.Context(), platformopensearch.SearchRequest{
-		Index:  "sysarmor-incidents",
+		Index:  platformopensearch.IncidentsReadAlias,
 		Size:   searchLimit(limit),
 		Offset: int(offset),
 		Labels: labels,

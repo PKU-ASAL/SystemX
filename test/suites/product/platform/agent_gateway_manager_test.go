@@ -14,6 +14,7 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
+	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 	"google.golang.org/grpc"
@@ -47,7 +48,11 @@ func TestAgentGatewayManagerLocalDataPath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	manager := httptest.NewServer(managerapi.NewServer(st).Handler())
+	managerHandler := managerapi.NewServer(st).Handler()
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal := managerauth.Principal{Subject: "platform-viewer", TenantID: "default", Roles: []string{"viewer"}}
+		managerHandler.ServeHTTP(w, r.WithContext(managerauth.WithPrincipal(r.Context(), principal)))
+	}))
 	t.Cleanup(manager.Close)
 
 	batch := &dataplanev1.DataBatch{

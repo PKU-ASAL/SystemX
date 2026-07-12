@@ -27,15 +27,14 @@ import (
 )
 
 type Server struct {
-	store         ManagerStore
-	operatorToken string
-	searcher      platformopensearch.Searcher
-	artifactDir   string
-	artifactPub   []byte
-	caCert        *x509.Certificate
-	caCertPEM     []byte
-	caKey         *rsa.PrivateKey
-	local         bool
+	store          ManagerStore
+	searcher       platformopensearch.Searcher
+	artifactDir    string
+	artifactPub    []byte
+	caCert         *x509.Certificate
+	caCertPEM      []byte
+	caKey          *rsa.PrivateKey
+	localTelemetry bool
 }
 
 type ManagerStore interface {
@@ -225,31 +224,24 @@ type DataResume struct {
 
 func NewServer(st ManagerStore) *Server {
 	st.EnsureDefaultPolicy("default")
-	s := newServer(st, "", nil)
-	s.local = true
+	s := newServer(st, nil)
+	s.localTelemetry = true
 	return s
 }
 
-func NewServerWithOperatorToken(st ManagerStore, operatorToken string) *Server {
+func NewServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) *Server {
 	st.EnsureDefaultPolicy("default")
-	s := newServer(st, operatorToken, nil)
-	s.local = true
-	return s
-}
-
-func NewServerWithSearch(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
-	st.EnsureDefaultPolicy("default")
-	s := newServer(st, operatorToken, searcher)
-	s.local = true
+	s := newServer(st, searcher)
+	s.localTelemetry = true
 	return s
 }
 
 func NewProductionServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) *Server {
-	return newServer(st, "", searcher)
+	return newServer(st, searcher)
 }
 
-func newServer(st ManagerStore, operatorToken string, searcher platformopensearch.Searcher) *Server {
-	s := &Server{store: st, operatorToken: operatorToken, searcher: searcher, artifactDir: defaultArtifactDir()}
+func newServer(st ManagerStore, searcher platformopensearch.Searcher) *Server {
+	s := &Server{store: st, searcher: searcher, artifactDir: defaultArtifactDir()}
 	s.artifactPub = readOptionalFile(os.Getenv("SYSARMOR_ARTIFACT_PUBLIC_KEY"))
 	s.caCertPEM = readOptionalFile(os.Getenv("SYSARMOR_AGENT_CA_CERT"))
 	caKeyPEM := readOptionalFile(os.Getenv("SYSARMOR_AGENT_CA_KEY"))
@@ -343,9 +335,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)
-	if s.local {
-		return mux
-	}
 	return requireProductionPrincipal(mux)
 }
 

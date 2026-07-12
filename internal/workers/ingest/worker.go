@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -42,6 +43,16 @@ func (w *Worker) Run(ctx context.Context) error {
 				return err
 			}
 			continue
+		}
+		legacy, err := schema.ValidateDataPlane(batch.GetSchemaVersion())
+		if err != nil {
+			if err := w.reject(ctx, msg, "unsupported_schema_version", err); err != nil {
+				return err
+			}
+			continue
+		}
+		if legacy {
+			w.processor.store.RecordLegacyDataBatch()
 		}
 		if err := validateBatchIdentity(batch); err != nil {
 			if err := w.reject(ctx, msg, "invalid_data_batch", err); err != nil {

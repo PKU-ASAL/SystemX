@@ -40,7 +40,7 @@ func TestUIDeployOptionsReturnsArtifactsAndEnrollments(t *testing.T) {
 		CreatedAt:    now,
 		ExpiresAt:    now.Add(time.Hour),
 	})
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 
 	rec := get(t, handler, "/api/v1/ui/deploy/options?tenant_id=default")
 
@@ -77,7 +77,7 @@ func TestUIDeployAgentCommandCreatesEnrollmentCommand(t *testing.T) {
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	})
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ui/deploy/agent-command", strings.NewReader(`{
 		"tenant_id":"default",
 		"agent_id":"agent-prod-001",
@@ -88,8 +88,6 @@ func TestUIDeployAgentCommandCreatesEnrollmentCommand(t *testing.T) {
 		"ttl":"1h",
 		"labels":{"env":"prod","role":"api"}
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -146,7 +144,7 @@ func TestUIDeployAgentCommandCreatesContainerProfileFromChannel(t *testing.T) {
 		ArtifactID: artifact.ArtifactID,
 		UpdatedAt:  now,
 	})
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ui/deploy/agent-command", strings.NewReader(`{
 		"tenant_id":"default",
 		"agent_id":"agent-container-001",
@@ -157,8 +155,6 @@ func TestUIDeployAgentCommandCreatesContainerProfileFromChannel(t *testing.T) {
 		"ttl":"1h",
 		"labels":{"env":"dev"}
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -205,7 +201,7 @@ func TestUIDeployAgentCommandFallsBackToArtifactWhenChannelMissing(t *testing.T)
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	})
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ui/deploy/agent-command", strings.NewReader(`{
 		"tenant_id":"default",
 		"agent_id":"agent-host-001",
@@ -215,8 +211,6 @@ func TestUIDeployAgentCommandFallsBackToArtifactWhenChannelMissing(t *testing.T)
 		"artifact_id":"art-linux-amd64",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -257,7 +251,7 @@ func TestUIDeployAgentCommandRejectsProfileChannelMismatch(t *testing.T) {
 		ArtifactID: artifact.ArtifactID,
 		UpdatedAt:  now,
 	})
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ui/deploy/agent-command", strings.NewReader(`{
 		"tenant_id":"default",
 		"agent_id":"agent-host-001",
@@ -266,8 +260,6 @@ func TestUIDeployAgentCommandRejectsProfileChannelMismatch(t *testing.T) {
 		"profile":"linux-systemd",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

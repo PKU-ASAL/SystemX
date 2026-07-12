@@ -8,6 +8,7 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
 )
 
 func TestBusSnapshotsAndWatchesFrames(t *testing.T) {
@@ -39,6 +40,9 @@ func TestBatcherFlushesByCount(t *testing.T) {
 	batcher.Add(&dataplanev1.DataBatch{Signals: []*dataplanev1.SignalFrame{signalFrame(1, "sig-1")}})
 	select {
 	case batch := <-batcher.Batches():
+		if batch.GetSchemaVersion() != schema.DataPlaneCurrent {
+			t.Fatalf("schema version = %q", batch.GetSchemaVersion())
+		}
 		if len(batch.GetEvents()) != 1 || len(batch.GetSignals()) != 1 || batch.GetHeader().GetEventCount() != 1 || batch.GetHeader().GetSignalCount() != 1 {
 			t.Fatalf("batch = %+v", batch)
 		}

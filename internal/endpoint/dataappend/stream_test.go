@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
 )
 
@@ -51,6 +52,9 @@ func TestStreamJSONLBatchesAndAssignsRawRefs(t *testing.T) {
 	}
 	if rec.batches[0].GetHeader().GetTenantId() != "default" {
 		t.Fatalf("tenant metadata missing: %#v", rec.batches[0].GetHeader())
+	}
+	if rec.batches[0].GetSchemaVersion() != schema.DataPlaneCurrent {
+		t.Fatalf("schema version = %q", rec.batches[0].GetSchemaVersion())
 	}
 	firstRef := rec.batches[0].GetEvents()[0].GetEvent().GetRawRef()
 	if firstRef == "" {

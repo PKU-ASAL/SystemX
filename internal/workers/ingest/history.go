@@ -30,12 +30,12 @@ func (h *OpenSearchHistory) Read(ctx context.Context, tenantID string, labels ma
 		return nil, nil, nil
 	}
 	request := platformopensearch.SearchRequest{Size: 10000, Labels: cloneStringMap(labels), Exact: map[string]string{"tenant_id": tenantID}, TimeField: "@timestamp", TimeFrom: from.UTC().Format(time.RFC3339Nano), TimeTo: to.UTC().Format(time.RFC3339Nano)}
-	request.Index = "sysarmor-events"
+	request.Index = platformopensearch.EventsReadAlias
 	eventDocs, err := h.searcher.Search(ctx, request)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read event history: %w", err)
 	}
-	request.Index = "sysarmor-signals"
+	request.Index = platformopensearch.SignalsReadAlias
 	request.Exact["where"] = "SIGNAL_WHERE_ENDPOINT"
 	signalDocs, err := h.searcher.Search(ctx, request)
 	if err != nil {

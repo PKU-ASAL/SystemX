@@ -73,6 +73,7 @@ type Info struct {
 
 type Metrics struct {
 	DataBatchesAppended       uint64  `json:"data_batches_appended"`
+	LegacyDataBatches         uint64  `json:"legacy_data_batches"`
 	EventsIngested            uint64  `json:"events_ingested"`
 	EndpointSignalsIngested   uint64  `json:"endpoint_signals_ingested"`
 	CloudSignalsEmitted       uint64  `json:"cloud_signals_emitted"`
@@ -1448,6 +1449,12 @@ func (s *Store) RecordDataBatchIngest(events, endpointSignals, cloudSignals, inc
 		s.Metrics.MaxConvergenceLatencyMs = latencyMs
 	}
 	s.Metrics.AverageConvergenceLatency = float64(s.Metrics.TotalConvergenceLatencyMs) / float64(s.Metrics.DataBatchesAppended)
+}
+
+func (s *Store) RecordLegacyDataBatch() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Metrics.LegacyDataBatches++
 }
 
 func (s *Store) RecordDataBatchAppend(agent AgentIdentity, batchID, transport string, observedAt time.Time) AgentSession {

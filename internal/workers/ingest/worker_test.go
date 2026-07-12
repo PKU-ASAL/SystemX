@@ -2,6 +2,7 @@ package ingestworker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -15,6 +16,48 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+func TestWorkerRejectsUnsupportedSchemaVersionToDLQ(t *testing.T) {
+	batch := dataBatch("batch-schema", nil, nil)
+	batch.SchemaVersion = "sysarmor.dataplane/v9"
+	raw, err := protojson.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Value: raw}}}
+	dlq := &stubProducer{}
+
+	err = NewWorkerWithDLQ(consumer, NewProcessor(&store.Store{}, nil), dlq).Run(context.Background())
+
+	if !errors.Is(err, context.Canceled) || consumer.committed != 1 || len(dlq.messages) != 1 {
+		t.Fatalf("err=%v committed=%d dlq=%d", err, consumer.committed, len(dlq.messages))
+	}
+	var envelope deadLetterEnvelope
+	if err := json.Unmarshal(dlq.messages[0].Value, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.FailureClass != "unsupported_schema_version" || envelope.FailureCode != "unsupported_schema_version" {
+		t.Fatalf("envelope=%+v", envelope)
+	}
+}
+
+func TestWorkerCountsAcceptedLegacySchema(t *testing.T) {
+	st := &store.Store{}
+	raw, err := protojson.Marshal(dataBatch("batch-legacy", nil, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer := &stubConsumer{messages: []platformkafka.Message{{Topic: "raw", Value: raw}}}
+
+	err = NewWorker(consumer, NewProcessor(st, nil)).Run(context.Background())
+
+	if !errors.Is(err, context.Canceled) || consumer.committed != 1 {
+		t.Fatalf("err=%v committed=%d", err, consumer.committed)
+	}
+	if got := st.MetricsSnapshot().LegacyDataBatches; got != 1 {
+		t.Fatalf("legacy batches=%d", got)
+	}
+}
 
 type stubConsumer struct {
 	messages  []platformkafka.Message
@@ -99,7 +142,7 @@ func TestProcessorWritesFormalIncidentIdentity(t *testing.T) {
 	mustProcess(t, processor, dataBatch("batch-connect", nil, []*signalv1.Signal{
 		workerSignal("sig-connect", "suspicious_exec_connect", "lin-connect", labels, workerFile("/tmp/payload"), workerSocket("10.0.0.1:443")),
 	}))
-	doc := lastDoc(indexer.docs, "sysarmor-incidents")
+	doc := lastDoc(indexer.docs, "sysarmor-incidents-write")
 	report := &incidentv1.Incident{}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(doc.Body, report); err != nil {
 		t.Fatal(err)
@@ -154,8 +197,8 @@ func TestProcessorIndexesDerivedDocumentsWithStableIDs(t *testing.T) {
 	mustProcess(t, processor, dataBatch("batch-connect", nil, []*signalv1.Signal{
 		workerSignal("sig-connect", "suspicious_exec_connect", "lin-connect", labels, workerFile("/var/lib/app/plugins/helper"), workerSocket("10.66.0.99:443")),
 	}))
-	firstSignalID := lastDocIDContaining(indexer.docs, "sysarmor-signals", "dropped_payload_executed_and_connects")
-	firstIncidentID := lastDocID(indexer.docs, "sysarmor-incidents")
+	firstSignalID := lastDocIDContaining(indexer.docs, "sysarmor-signals-write", "dropped_payload_executed_and_connects")
+	firstIncidentID := lastDocID(indexer.docs, "sysarmor-incidents-write")
 	if firstSignalID == "" || firstIncidentID == "" {
 		t.Fatalf("missing derived docs: %+v", indexer.docs)
 	}
@@ -165,10 +208,10 @@ func TestProcessorIndexesDerivedDocumentsWithStableIDs(t *testing.T) {
 		Labels:   labels,
 		Behavior: "process.exec",
 	}}, nil))
-	if got := lastDocIDContaining(indexer.docs, "sysarmor-signals", "dropped_payload_executed_and_connects"); got != firstSignalID {
+	if got := lastDocIDContaining(indexer.docs, "sysarmor-signals-write", "dropped_payload_executed_and_connects"); got != firstSignalID {
 		t.Fatalf("cloud signal document id = %q, want stable %q", got, firstSignalID)
 	}
-	if got := lastDocID(indexer.docs, "sysarmor-incidents"); got != firstIncidentID {
+	if got := lastDocID(indexer.docs, "sysarmor-incidents-write"); got != firstIncidentID {
 		t.Fatalf("incident document id = %q, want stable %q", got, firstIncidentID)
 	}
 }

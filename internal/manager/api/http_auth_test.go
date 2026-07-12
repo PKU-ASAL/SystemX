@@ -1,14 +1,88 @@
 package managerapi
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
+
+func TestHandlerWithAuthAcceptsSignedJWTForProtectedAPI(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := managerauth.NewVerifierPEM(
+		pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}),
+		"sysarmor-test", "manager-test",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := managerauth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject: "viewer-a", Issuer: "sysarmor-test",
+			Audience:  jwt.ClaimStrings{"manager-test"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+		TenantID: "tenant-a", Roles: []string{"viewer"},
+	}
+	raw, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(&store.Store{}).HandlerWithAuth(verifier)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
+	req.Header.Set("Authorization", "Bearer "+raw)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProtectedHandlerRejectsUnauthenticatedRequest(t *testing.T) {
+	handler := NewServer(&store.Store{}).Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestForgedIdentityHeadersDoNotCreatePrincipal(t *testing.T) {
+	handler := NewServer(&store.Store{}).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/reset", nil)
+	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
+	req.Header.Set("X-SysArmor-Actor", "forged-admin")
+	req.Header.Set("X-SysArmor-Role", "admin")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
 
 func TestBindPrincipalTenantRejectsMismatch(t *testing.T) {
 	handler := bindPrincipalTenant(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

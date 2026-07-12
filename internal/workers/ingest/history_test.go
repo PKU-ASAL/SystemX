@@ -23,8 +23,8 @@ func (s *recordingSearcher) Search(_ context.Context, request platformopensearch
 
 func TestOpenSearchHistoryReadsTenantScopeAndWindow(t *testing.T) {
 	searcher := &recordingSearcher{docs: map[string][]json.RawMessage{
-		"sysarmor-events":  {json.RawMessage(`{"id":"ev-history","labels":{"scenario":"a"},"@timestamp":"2026-07-12T00:05:00Z"}`)},
-		"sysarmor-signals": {json.RawMessage(`{"id":"sig-history","name":"payload_dropped","where":"SIGNAL_WHERE_ENDPOINT","labels":{"scenario":"a"},"@timestamp":"2026-07-12T00:05:00Z"}`)},
+		platformopensearch.EventsReadAlias:  {json.RawMessage(`{"id":"ev-history","labels":{"scenario":"a"},"@timestamp":"2026-07-12T00:05:00Z"}`)},
+		platformopensearch.SignalsReadAlias: {json.RawMessage(`{"id":"sig-history","name":"payload_dropped","where":"SIGNAL_WHERE_ENDPOINT","labels":{"scenario":"a"},"@timestamp":"2026-07-12T00:05:00Z"}`)},
 	}}
 	upper := time.Date(2026, 7, 12, 0, 10, 0, 0, time.UTC)
 	events, signals, err := NewOpenSearchHistory(searcher).Read(context.Background(), "tenant-a", map[string]string{"scenario": "a"}, upper.Add(-15*time.Minute), upper)

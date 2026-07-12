@@ -12,7 +12,7 @@ import (
 
 func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := NewServer(st).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
 		"command_id":"ctrl-content-api",
@@ -25,8 +25,9 @@ func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("control command without operator token status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("control command without principal status = %d body=%s", rec.Code, rec.Body.String())
 	}
+	handler = newAdminTestServer(st).Handler()
 
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
 		"command_id":"ctrl-content-api",
@@ -36,12 +37,9 @@ func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 		"payload_json":{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}},
 		"reason":"refresh ioc"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "control_admin")
-	req.Header.Set("X-SysArmor-Actor", "control-operator")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"command_id":"ctrl-content-api"`) || !strings.Contains(rec.Body.String(), `"actor":"control-operator"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"command_id":"ctrl-content-api"`) || !strings.Contains(rec.Body.String(), `"actor":"test-admin"`) {
 		t.Fatalf("control command create status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
@@ -57,7 +55,7 @@ func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 
 func TestControlCommandActionsUpdateLifecycle(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 	st.CreateControlCommand(controlmodel.ControlCommand{
 		CommandID:   "ctrl-action",
 		TenantID:    "default",

@@ -12,6 +12,7 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
 )
@@ -19,19 +20,19 @@ import (
 func TestSearchBackedTelemetryQueries(t *testing.T) {
 	st := &store.Store{}
 	searcher := fakeSearcher{docs: map[string][]json.RawMessage{
-		"sysarmor-events": {
+		"sysarmor-events-read": {
 			json.RawMessage(`{"id":"ev-a","behavior":"process.exec","labels":{"scenario":"managed"}}`),
 			json.RawMessage(`{"id":"ev-b","behavior":"file.write","labels":{"scenario":"other"}}`),
 		},
-		"sysarmor-signals": {
+		"sysarmor-signals-read": {
 			json.RawMessage(`{"id":"sig-a","name":"payload_dropped","where":"SIGNAL_WHERE_ENDPOINT","terminal":false,"labels":{"scenario":"managed"}}`),
 			json.RawMessage(`{"id":"sig-b","name":"web_shell_chain","where":"SIGNAL_WHERE_CLOUD","terminal":true,"labels":{"scenario":"managed"}}`),
 		},
-		"sysarmor-incidents": {
+		"sysarmor-incidents-read": {
 			json.RawMessage(`{"id":"inc-a","summary":"incident","labels":{"scenario":"managed","tenant_id":"default"}}`),
 		},
 	}}
-	handler := NewServerWithSearch(st, "", searcher).Handler()
+	handler := adminTestHandler(NewServerWithSearch(st, searcher))
 
 	rec := get(t, handler, "/api/v1/events?label=scenario=managed&behavior=process.exec")
 	if !strings.Contains(rec.Body.String(), `"id":"ev-a"`) || strings.Contains(rec.Body.String(), `"id":"ev-b"`) {
@@ -50,7 +51,7 @@ func TestSearchBackedTelemetryQueries(t *testing.T) {
 func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 	batch := httpDataBatch("", "agent-a", "host-a", nil, []*signalv1.Signal{
 		endpointSignal("web_runtime_spawns_shell", "lin-a", false, processEntity("p-web")),
 		endpointSignal("payload_dropped", "lin-a", false, fileEntity("/dev/shm/x.sh")),
@@ -95,7 +96,7 @@ func TestUploadTriggersAnalyticsAndQueries(t *testing.T) {
 func TestDataBatchAppendRecordsSessionCursor(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 	batch := httpDataBatch("00000000000000000042", "agent-a", "host-a", []*eventv1.CanonicalEvent{{
 		Id:       "ev-ack",
 		Behavior: "process.exec",
@@ -125,7 +126,7 @@ func TestQueryPagination(t *testing.T) {
 	st.AddSignal(endpointSignalForScenario("page", "sig-2", "lin-2", false, processEntity("p2")))
 	st.AddIncident(&incidentv1.Incident{Id: "inc-1", Labels: labelsForScenario("page"), Summary: "one"})
 	st.AddIncident(&incidentv1.Incident{Id: "inc-2", Labels: labelsForScenario("page"), Summary: "two"})
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 
 	rec := get(t, handler, "/api/v1/events?label=scenario=page&limit=1&offset=1")
 	if strings.Contains(rec.Body.String(), `"id":"ev-1"`) || !strings.Contains(rec.Body.String(), `"id":"ev-2"`) || strings.Contains(rec.Body.String(), `"id":"ev-3"`) {
@@ -144,7 +145,7 @@ func TestQueryPagination(t *testing.T) {
 func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 	batch := httpDataBatch("00000000000000000007", "agent-a", "host-a", []*eventv1.CanonicalEvent{{
 		Id:       "ev-retry",
 		Labels:   labelsForScenario("apt-fileless-c2"),
@@ -197,7 +198,7 @@ func TestDataBatchAppendRetryIsIdempotentForAcceptedCounts(t *testing.T) {
 func TestUploadUpdatesRarityBaselineWithoutDuplicateAmplification(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 	batch := httpDataBatch("rarity-batch-1", "agent-rarity", "host-rarity", nil, []*signalv1.Signal{{
 		Id:           "sig-rarity-download",
 		Name:         "download_by_lolbin",
@@ -245,7 +246,7 @@ func TestUploadIndexesSecurityDocuments(t *testing.T) {
 	for _, doc := range indexer.docs {
 		indexes[doc.Index] = true
 	}
-	for _, want := range []string{"sysarmor-events", "sysarmor-signals", "sysarmor-incidents", "sysarmor-evidence"} {
+	for _, want := range []string{platformopensearch.EventsWriteAlias, platformopensearch.SignalsWriteAlias, platformopensearch.IncidentsWriteAlias, platformopensearch.EvidenceWriteAlias} {
 		if !indexes[want] {
 			t.Fatalf("indexed docs missing %s: %+v", want, indexer.docs)
 		}
@@ -255,7 +256,7 @@ func TestUploadIndexesSecurityDocuments(t *testing.T) {
 func TestAgentsEventsResetAndRecompute(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 	batch := httpDataBatch("", "agent-a", "host-a", []*eventv1.CanonicalEvent{{
 		Id:       "ev-1",
 		Labels:   labelsForScenario("apt-staged-drop"),
@@ -301,7 +302,7 @@ func TestAgentsEventsResetAndRecompute(t *testing.T) {
 func TestSplitUploadRecomputesScenarioDerivedResults(t *testing.T) {
 	st := &store.Store{}
 	srv := newTestServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 	scenario := "apt-staged-drop-stream"
 	payload := fileEntity("/var/lib/app/plugins/helper")
 

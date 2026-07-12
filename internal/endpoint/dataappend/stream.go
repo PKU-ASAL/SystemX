@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
+
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -140,7 +142,7 @@ func newBatch(opts StreamOptions) *dataplanev1.DataBatch {
 	if tenantID == "" {
 		tenantID = "default"
 	}
-	return &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{
+	return &dataplanev1.DataBatch{SchemaVersion: schema.DataPlaneCurrent, Header: &dataplanev1.BatchHeader{
 		AgentId:           opts.AgentID,
 		HostId:            opts.HostID,
 		TenantId:          tenantID,

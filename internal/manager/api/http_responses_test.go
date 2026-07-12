@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
@@ -14,7 +15,7 @@ import (
 
 func TestResponsePolicyCanRequireApproval(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "approval-policy"
 	policy.Version = 4
@@ -60,7 +61,8 @@ func TestResponsePolicyCanRequireApproval(t *testing.T) {
 
 func TestResponsePolicyCanRequireMultiApprovalRoles(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	testServer := newAdminTestServer(st)
+	handler := testServer.Handler()
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "multi-approval-policy"
 	policy.Version = 5
@@ -69,7 +71,7 @@ func TestResponsePolicyCanRequireMultiApprovalRoles(t *testing.T) {
 		AllowedModes:      []string{"observe"},
 		ApprovalRequired:  true,
 		ApprovalThreshold: 2,
-		ApprovalRoles:     []string{"responder", "security_admin"},
+		ApprovalRoles:     []string{"admin"},
 	}
 	policyData, err := json.Marshal(policy)
 	if err != nil {
@@ -94,19 +96,21 @@ func TestResponsePolicyCanRequireMultiApprovalRoles(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("response post status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{`"approval_threshold":2`, `"approval_roles":["responder","security_admin"]`, `"status":"pending_approval"`} {
+	for _, want := range []string{`"approval_threshold":2`, `"approval_roles":["admin"]`, `"status":"pending_approval"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("response policy output missing %s: %s", want, rec.Body.String())
 		}
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/response-approvals", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-multi-approval","response_id":"resp-multi-http","approved":true,"actor":"viewer","role":"viewer"}`))
+	testServer.principal = managerauth.Principal{Subject: "operator-a", TenantID: "default", Roles: []string{"operator"}}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/response-approvals", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-multi-approval","response_id":"resp-multi-http","approved":true}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("wrong-role approval status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/response-approvals", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-multi-approval","response_id":"resp-multi-http","approved":true,"actor":"responder-a","role":"responder"}`))
+	testServer.principal = managerauth.Principal{Subject: "admin-a", TenantID: "default", Roles: []string{"admin"}}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/response-approvals", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-multi-approval","response_id":"resp-multi-http","approved":true}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"approval_status":"partial"`) {
@@ -116,7 +120,8 @@ func TestResponsePolicyCanRequireMultiApprovalRoles(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `"resp-multi-http"`) {
 		t.Fatalf("partial approval response should not be pending: %s", rec.Body.String())
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/response-approvals", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-multi-approval","response_id":"resp-multi-http","approved":true,"actor":"security-b","role":"security_admin"}`))
+	testServer.principal = managerauth.Principal{Subject: "admin-b", TenantID: "default", Roles: []string{"admin"}}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/response-approvals", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-multi-approval","response_id":"resp-multi-http","approved":true}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"approval_status":"approved"`) {

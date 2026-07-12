@@ -32,7 +32,7 @@ func TestStoreStatusAPI(t *testing.T) {
 
 func TestAgentHealthIngestAndQuery(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 	health := agenthealth.AgentHealth{
 		AgentID:          "agent-a",
 		HostID:           "host-a",
@@ -101,9 +101,9 @@ func TestAgentHealthIngestAndQuery(t *testing.T) {
 	}
 }
 
-func TestOperatorTokenGuardsHealthWrites(t *testing.T) {
+func TestPrincipalGuardsHealthWrites(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := NewServer(st).Handler()
 
 	health := agenthealth.AgentHealth{AgentID: "agent-a", HostID: "host-a", TenantID: "default", Status: "ok"}
 	healthData, err := json.Marshal(health)
@@ -114,30 +114,21 @@ func TestOperatorTokenGuardsHealthWrites(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("health without token status = %d", rec.Code)
+		t.Fatalf("health without principal status = %d", rec.Code)
 	}
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/agent-health", strings.NewReader(string(healthData)))
-	req.Header.Set("Authorization", "Bearer operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
+	req = withTestPrincipal(req, "health-admin", "default", "admin")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("health with operator token status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("health with admin principal status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestOperatorRoleBindingsAuthorizeControlPlaneWrites(t *testing.T) {
+func TestStoredRoleBindingsDoNotAuthorizeWithoutPrincipalRole(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/operator-role-bindings", strings.NewReader(`{"actor":"alice","roles":["policy_admin","responder","policy_admin"]}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"actor":"alice"`) || !strings.Contains(rec.Body.String(), `"roles":["policy_admin","responder"]`) {
-		t.Fatalf("role binding upsert status = %d body=%s", rec.Code, rec.Body.String())
-	}
+	handler := NewServer(st).Handler()
+	st.UpsertOperatorRoleBinding(store.OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin"}})
 
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "bound-policy"
@@ -146,28 +137,19 @@ func TestOperatorRoleBindingsAuthorizeControlPlaneWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
+	req = withTestPrincipal(req, "alice", "default", "operator")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("stored binding granted privilege: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Actor", "alice")
-	req.Header.Set("X-SysArmor-Role", "responder")
+	req = withTestPrincipal(req, "alice", "default", "admin")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("policy write with bound actor status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Actor", "bob")
-	req.Header.Set("X-SysArmor-Role", "responder")
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("policy write with unbound wrong role status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	rec = get(t, handler, "/api/v1/operator-role-bindings?actor=alice")
-	if !strings.Contains(rec.Body.String(), `"actor":"alice"`) || !strings.Contains(rec.Body.String(), `"policy_admin"`) {
-		t.Fatalf("role binding list response = %s", rec.Body.String())
+		t.Fatalf("admin principal status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

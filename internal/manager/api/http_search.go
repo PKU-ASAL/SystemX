@@ -203,19 +203,19 @@ func (s *Server) searchTelemetryDocuments(r *http.Request, req telemetrySearchRe
 
 func resolveTelemetryIndexes(raw []string) ([]string, error) {
 	if len(raw) == 0 || strings.TrimSpace(strings.Join(raw, "")) == "" {
-		return []string{"sysarmor-events", "sysarmor-signals"}, nil
+		return []string{platformopensearch.EventsReadAlias, platformopensearch.SignalsReadAlias}, nil
 	}
 	seen := map[string]bool{}
 	indexes := make([]string, 0, len(raw))
 	for _, item := range raw {
 		switch strings.TrimSpace(item) {
-		case "events-*", "sysarmor-events":
-			addIndex(&indexes, seen, "sysarmor-events")
-		case "signals-*", "sysarmor-signals":
-			addIndex(&indexes, seen, "sysarmor-signals")
-		case "events-*,signals-*", "sysarmor-events,sysarmor-signals":
-			addIndex(&indexes, seen, "sysarmor-events")
-			addIndex(&indexes, seen, "sysarmor-signals")
+		case "events-*", "sysarmor-events", platformopensearch.EventsReadAlias:
+			addIndex(&indexes, seen, platformopensearch.EventsReadAlias)
+		case "signals-*", "sysarmor-signals", platformopensearch.SignalsReadAlias:
+			addIndex(&indexes, seen, platformopensearch.SignalsReadAlias)
+		case "events-*,signals-*", "sysarmor-events,sysarmor-signals", platformopensearch.EventsReadAlias + "," + platformopensearch.SignalsReadAlias:
+			addIndex(&indexes, seen, platformopensearch.EventsReadAlias)
+			addIndex(&indexes, seen, platformopensearch.SignalsReadAlias)
 		case "":
 			continue
 		default:
@@ -383,7 +383,7 @@ func addTelemetryDocumentToBucket(buckets []telemetryHistogramBucket, doc teleme
 			continue
 		}
 		buckets[i].Total++
-		if doc.index == "sysarmor-signals" {
+		if doc.index == platformopensearch.SignalsReadAlias {
 			buckets[i].Signals++
 		} else {
 			buckets[i].Events++

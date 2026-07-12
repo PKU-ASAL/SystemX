@@ -25,7 +25,7 @@ import (
 
 func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
 		"tenant_id":"default",
@@ -36,8 +36,6 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 		"artifact_url":"https://example.invalid/sysarmor-agent.tar.gz",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -72,7 +70,7 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 
 func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
 		"tenant_id":"default",
@@ -85,8 +83,6 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 		"labels":{"scenario":"namespace-self-container"},
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -133,7 +129,7 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 	t.Setenv("SYSARMOR_ARTIFACT_DIR", t.TempDir())
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := newAdminTestServer(st).Handler()
 
 	req := multipartArtifactRequest(t, "/api/v1/artifacts", map[string]string{
 		"name":    "sysarmor-agent",
@@ -143,8 +139,6 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 		"arch":    "amd64",
 		"status":  "active",
 	}, testAgentDistribution(t))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -172,8 +166,6 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 		"artifact_id":"`+uploaded.Artifact.ArtifactID+`",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -193,7 +185,7 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 
 func TestArtifactFeedSeedsExternalArtifactAndChannel(t *testing.T) {
 	st := &store.Store{}
-	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv := newAdminTestServer(st)
 	if err := srv.SeedArtifactFeedData([]byte(`{
 		"schema_version":"sysarmor.artifact.feed/v1",
 		"artifacts":[{
@@ -232,8 +224,6 @@ func TestArtifactFeedSeedsExternalArtifactAndChannel(t *testing.T) {
 		"profile":"linux-container",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -256,7 +246,7 @@ func TestArtifactFeedSeedsExternalArtifactAndChannel(t *testing.T) {
 
 func TestArtifactFeedFromEnvUsesAgentPackageIndexURL(t *testing.T) {
 	st := &store.Store{}
-	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv := newAdminTestServer(st)
 	index := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{
@@ -293,7 +283,7 @@ func TestArtifactFeedFromEnvUsesAgentPackageIndexURL(t *testing.T) {
 func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
 	t.Setenv("SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL", "http://127.0.0.1:18080/releases")
 	st := &store.Store{}
-	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv := newAdminTestServer(st)
 	if err := srv.SeedArtifactFeedData([]byte(`{
 		"schema_version":"sysarmor.artifact.feed/v1",
 		"artifacts":[{
@@ -323,8 +313,6 @@ func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
 		"profile":"linux-systemd",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -350,7 +338,7 @@ func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
 func TestEnrollmentKeepsPackageInternalURLForContainerProfile(t *testing.T) {
 	t.Setenv("SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL", "http://127.0.0.1:18080")
 	st := &store.Store{}
-	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv := newAdminTestServer(st)
 	if err := srv.SeedArtifactFeedData([]byte(`{
 		"schema_version":"sysarmor.artifact.feed/v1",
 		"artifacts":[{
@@ -380,8 +368,6 @@ func TestEnrollmentKeepsPackageInternalURLForContainerProfile(t *testing.T) {
 		"profile":"linux-container",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -400,7 +386,7 @@ func TestEnrollmentKeepsPackageInternalURLForContainerProfile(t *testing.T) {
 
 func TestEnrollmentCertificateConsumesToken(t *testing.T) {
 	st := &store.Store{}
-	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv := newAdminTestServer(st)
 	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
 	handler := srv.Handler()
 
@@ -428,7 +414,7 @@ func TestEnrollmentCertificateConsumesToken(t *testing.T) {
 
 func TestEnrollmentCertificateRejectsMismatchedCSR(t *testing.T) {
 	st := &store.Store{}
-	srv := NewServerWithOperatorToken(st, "operator-token")
+	srv := newAdminTestServer(st)
 	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
 	handler := srv.Handler()
 
@@ -454,8 +440,6 @@ func createTestEnrollment(t *testing.T, handler http.Handler, agentID string) st
 		"gateway_addr":"127.0.0.1:19444",
 		"ttl":"1h"
 	}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

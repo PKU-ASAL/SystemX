@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
+
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 	"google.golang.org/protobuf/proto"
@@ -241,6 +243,7 @@ func (b *Batcher) finalizeBatch(batch *dataplanev1.DataBatch) {
 	if batch.Header.BatchId == "" {
 		batch.Header.BatchId = fmt.Sprintf("%020d", time.Now().UnixNano())
 	}
+	batch.SchemaVersion = schema.DataPlaneCurrent
 	batch.Header.EventCount = uint32(len(batch.Events))
 	batch.Header.SignalCount = uint32(len(batch.Signals))
 	if len(batch.Events) > 0 {

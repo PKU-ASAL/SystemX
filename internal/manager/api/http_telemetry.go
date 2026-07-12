@@ -18,7 +18,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	offset := parseUint(q.Get("offset"))
 	if s.searcher != nil {
 		raw, err := s.searchTelemetry(r.Context(), platformopensearch.SearchRequest{
-			Index:  "sysarmor-events",
+			Index:  platformopensearch.EventsReadAlias,
 			Size:   searchLimit(limit),
 			Offset: int(offset),
 			Labels: labels,
@@ -42,7 +42,7 @@ func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
 	offset := parseUint(q.Get("offset"))
 	if s.searcher != nil {
 		raw, err := s.searchTelemetry(r.Context(), platformopensearch.SearchRequest{
-			Index:  "sysarmor-signals",
+			Index:  platformopensearch.SignalsReadAlias,
 			Size:   searchLimit(limit),
 			Offset: int(offset),
 			Labels: labels,

@@ -297,7 +297,7 @@ func batchDocuments(batch *dataplanev1.DataBatch, fallback time.Time) ([]platfor
 		if err != nil {
 			return nil, fmt.Errorf("marshal event %q: %w", ev.GetId(), err)
 		}
-		documents = append(documents, decorateDocument(platformopensearch.Document{Index: "sysarmor-events", ID: ev.GetId(), Body: raw}, batch.GetHeader().GetTenantId(), frameTime(frame.GetObservedAt(), fallback)))
+		documents = append(documents, decorateDocument(platformopensearch.Document{Index: platformopensearch.EventsWriteAlias, ID: ev.GetId(), Body: raw}, batch.GetHeader().GetTenantId(), frameTime(frame.GetObservedAt(), fallback)))
 	}
 	for _, frame := range batch.GetSignals() {
 		doc, err := signalDocument(frame.GetSignal())
@@ -322,14 +322,14 @@ func incidentDocuments(inc *incidentv1.Incident) ([]platformopensearch.Document,
 	id := IncidentDocumentID(inc)
 	documents := []platformopensearch.Document{}
 	if inc.GetEvidence() == nil {
-		return append(documents, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw}), nil
+		return append(documents, platformopensearch.Document{Index: platformopensearch.IncidentsWriteAlias, ID: id, Body: raw}), nil
 	}
 	evidenceRaw, err := protojson.Marshal(inc.GetEvidence())
 	if err != nil {
 		return nil, fmt.Errorf("marshal incident evidence %q: %w", id, err)
 	}
-	documents = append(documents, platformopensearch.Document{Index: "sysarmor-evidence", ID: id + ":evidence", Body: evidenceRaw})
-	documents = append(documents, platformopensearch.Document{Index: "sysarmor-incidents", ID: id, Body: raw})
+	documents = append(documents, platformopensearch.Document{Index: platformopensearch.EvidenceWriteAlias, ID: id + ":evidence", Body: evidenceRaw})
+	documents = append(documents, platformopensearch.Document{Index: platformopensearch.IncidentsWriteAlias, ID: id, Body: raw})
 	return documents, nil
 }
 
@@ -342,7 +342,7 @@ func signalDocument(sig *signalv1.Signal) (platformopensearch.Document, error) {
 	if err != nil {
 		return platformopensearch.Document{}, fmt.Errorf("marshal signal %q: %w", id, err)
 	}
-	return platformopensearch.Document{Index: "sysarmor-signals", ID: id, Body: raw}, nil
+	return platformopensearch.Document{Index: platformopensearch.SignalsWriteAlias, ID: id, Body: raw}, nil
 }
 
 func SignalDocumentID(sig *signalv1.Signal) string {

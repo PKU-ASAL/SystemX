@@ -18,6 +18,7 @@ func TestIncidentMutationRoutesAreNotRegistered(t *testing.T) {
 		"/api/v1/incident-evidence",
 	} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req = withTestPrincipal(req, "test-admin", "default", "admin")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {

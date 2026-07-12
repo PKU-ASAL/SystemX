@@ -41,12 +41,12 @@ avoids CORS in local development.
 - List endpoints should return `total` when the backend can calculate it
   cheaply. Search-backed endpoints should return `total_relation` when exact
   totals are not available.
-- Write endpoints use the existing operator authorization headers:
-  - `Authorization: Bearer <token>`
-  - or `X-SysArmor-Operator-Token: <token>`
-- Read endpoints are unauthenticated when the manager is started without an
-  operator token. If an operator token is configured, read authorization policy
-  should be introduced deliberately rather than inferred from write paths.
+- `/healthz` is anonymous. Every `/api/` endpoint requires
+  `Authorization: Bearer <RS256 JWT>`.
+- The verified JWT Principal supplies subject, tenant, and roles. Request
+  headers and JSON actor or role fields never establish identity or privileges.
+- A missing or invalid JWT returns `401`. Insufficient role or a tenant mismatch
+  returns `403`.
 - Errors use a stable envelope:
 
 ```json

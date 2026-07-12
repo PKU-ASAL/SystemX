@@ -15,7 +15,7 @@ import (
 func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 	st := &store.Store{}
 	srv := NewServer(st)
-	handler := srv.Handler()
+	handler := adminTestHandler(srv)
 
 	rec := get(t, handler, "/api/v1/rules?where=cloud")
 	if !strings.Contains(rec.Body.String(), "dropped_payload_executed_and_connects") {
@@ -77,7 +77,7 @@ func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {
 
 func TestPolicyAPIDraftRequiresPublishBeforeAssignment(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "draft-policy"
 	policy.Version = 2
@@ -117,16 +117,16 @@ func TestPolicyAPIDraftRequiresPublishBeforeAssignment(t *testing.T) {
 		t.Fatalf("effective policy response = %s", rec.Body.String())
 	}
 	rec = get(t, handler, "/api/v1/policy-audit?tenant_id=default&policy_id=draft-policy")
-	for _, want := range []string{`"action":"policy.upsert"`, `"actor":"tester"`, `"action":"policy.publish"`, `"actor":"reviewer"`, `"action":"policy.assign"`, `"actor":"operator"`} {
+	for _, want := range []string{`"action":"policy.upsert"`, `"action":"policy.publish"`, `"action":"policy.assign"`, `"actor":"test-admin"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("policy audit missing %s: %s", want, rec.Body.String())
 		}
 	}
 }
 
-func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
+func TestPrincipalGuardsControlPlaneWritesAndAuditActor(t *testing.T) {
 	st := &store.Store{}
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := NewServer(st).Handler()
 	policy := policymodel.DefaultPolicy("default")
 	policy.PolicyID = "guarded-policy"
 	policy.Version = 3
@@ -140,73 +140,32 @@ func TestOperatorTokenGuardsControlPlaneWritesAndActorHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("policy write without operator token status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("policy write without principal status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies?reason=header-actor", strings.NewReader(string(policyData)))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "responder")
+	req = withTestPrincipal(req, "operator", "default", "operator")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("policy write with wrong operator role status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("policy write with operator status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies?reason=header-actor", strings.NewReader(string(policyData)))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "policy_admin")
-	req.Header.Set("X-SysArmor-Actor", "header-analyst")
+	req = withTestPrincipal(req, "jwt-admin", "default", "admin")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("policy write with operator token status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("policy write with admin principal status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rec = get(t, handler, "/api/v1/policy-audit?tenant_id=default&policy_id=guarded-policy")
-	for _, want := range []string{`"action":"policy.upsert"`, `"actor":"header-analyst"`, `"reason":"header-actor"`} {
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/policy-audit?tenant_id=default&policy_id=guarded-policy", nil)
+	req = withTestPrincipal(req, "jwt-admin", "default", "admin")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	for _, want := range []string{`"action":"policy.upsert"`, `"actor":"jwt-admin"`, `"reason":"header-actor"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("policy audit missing %s: %s", want, rec.Body.String())
 		}
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","action":"collect"}`))
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("response write without operator token status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","action":"collect"}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "policy_admin")
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("response write with wrong operator role status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/responses", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","action":"collect"}`))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "responder")
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("response write with responder role status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	adminPolicy := policymodel.DefaultPolicy("default")
-	adminPolicy.PolicyID = "admin-policy"
-	adminPolicy.Version = 1
-	adminData, err := json.Marshal(adminPolicy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(adminData)))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "admin")
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("policy write with admin role status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -217,7 +176,7 @@ func TestPolicyAssignmentDownlinkCreatesPolicyUpdateCommand(t *testing.T) {
 	policy.Version = 7
 	policy.Published = true
 	st.UpsertPolicy(policy)
-	handler := NewServer(st).Handler()
+	handler := newAdminTestServer(st).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(`{
 		"tenant_id":"default",
@@ -240,7 +199,7 @@ func TestPolicyAssignmentDownlinkCreatesPolicyUpdateCommand(t *testing.T) {
 		}
 	}
 	commands := st.PendingControlCommands("default", "agent-downlink")
-	if len(commands) != 1 || commands[0].CommandID != "ctrl-policy-downlink" || commands[0].PolicyID != "downlink-policy" || commands[0].PolicyVersion != 7 || commands[0].Actor != "policy-operator" {
+	if len(commands) != 1 || commands[0].CommandID != "ctrl-policy-downlink" || commands[0].PolicyID != "downlink-policy" || commands[0].PolicyVersion != 7 || commands[0].Actor != "test-admin" {
 		t.Fatalf("pending commands = %+v", commands)
 	}
 }
@@ -252,12 +211,11 @@ func TestPolicyAssignmentDownlinkRequiresControlAdmin(t *testing.T) {
 	policy.Version = 1
 	policy.Published = true
 	st.UpsertPolicy(policy)
-	handler := NewServerWithOperatorToken(st, "operator-token").Handler()
+	handler := NewServer(st).Handler()
 
 	body := `{"tenant_id":"default","agent_id":"agent-a","policy_id":"downlink-auth-policy","policy_version":1,"downlink":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(body))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "policy_admin")
+	req = withTestPrincipal(req, "operator", "default", "operator")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
@@ -265,8 +223,7 @@ func TestPolicyAssignmentDownlinkRequiresControlAdmin(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(body))
-	req.Header.Set("X-SysArmor-Operator-Token", "operator-token")
-	req.Header.Set("X-SysArmor-Role", "policy_admin,control_admin")
+	req = withTestPrincipal(req, "admin", "default", "admin")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"control_command"`) {

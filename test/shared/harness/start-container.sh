@@ -85,6 +85,6 @@ if [[ "$opensearch_ready" != "1" ]]; then
   docker logs sysarmor-opensearch --tail 120 >&2 2>/dev/null || true
   exit 1
 fi
-docker exec sysarmor-opensearch curl -sf -X DELETE 'http://127.0.0.1:9200/sysarmor-events,sysarmor-signals,sysarmor-incidents,sysarmor-incident-timeline,sysarmor-evidence' >/dev/null 2>&1 || true
+docker exec sysarmor-opensearch curl -sf -X DELETE 'http://127.0.0.1:9200/sysarmor-events-v*,sysarmor-signals-v*,sysarmor-incidents-v*,sysarmor-evidence-v*' >/dev/null 2>&1 || true
 
 echo "[start-container] done"
