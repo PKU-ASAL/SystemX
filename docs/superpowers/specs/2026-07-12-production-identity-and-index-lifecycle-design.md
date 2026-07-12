@@ -87,8 +87,7 @@ The verifier:
 - accepts only RSA signing keys with a non-empty `kid` and `use` absent or
   `sig`;
 - selects a key by the JWT `kid` and rejects tokens without `kid` in OIDC mode;
-- caches keys for a bounded interval, honoring a shorter positive HTTP cache
-  lifetime when supplied;
+- caches keys for a bounded five-minute interval;
 - performs one rate-limited JWKS refresh when a `kid` is unknown, enabling
   rotation without restart;
 - keeps the last successfully loaded key set when a background refresh fails;
@@ -105,7 +104,7 @@ or real identity provider is required.
 
 ```text
 sysarmorctl auth token \
-  --private-key deployments/pki/agent-plane-mtls/runtime/manager-jwt-key.pem \
+  --private-key deployments/pki/agent-plane-mtls/runtime/manager-jwt-private.pem \
   --subject local-admin \
   --tenant default \
   --roles admin \

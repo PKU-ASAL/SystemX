@@ -48,7 +48,6 @@ type Store struct {
 	Pullbacks       []controlmodel.EvidencePullbackRequest
 	ControlCommands []controlmodel.ControlCommand
 	AgentSessions   []AgentSession
-	OperatorRoles   []OperatorRoleBinding
 	Enrollments     []Enrollment
 	Artifacts       []Artifact
 	Channels        []ArtifactChannel
@@ -100,13 +99,6 @@ type AgentSession struct {
 	DataTransport     string    `json:"data_transport,omitempty"`
 	ControlTransport  string    `json:"control_transport,omitempty"`
 	Status            string    `json:"status,omitempty"`
-}
-
-type OperatorRoleBinding struct {
-	Actor     string    `json:"actor"`
-	Roles     []string  `json:"roles"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 type Enrollment struct {
@@ -186,7 +178,6 @@ type State struct {
 	Pullbacks       []controlmodel.EvidencePullbackRequest `json:"evidence_pullbacks"`
 	ControlCommands []controlmodel.ControlCommand          `json:"control_commands,omitempty"`
 	AgentSessions   []AgentSession                         `json:"agent_sessions"`
-	OperatorRoles   []OperatorRoleBinding                  `json:"operator_role_bindings,omitempty"`
 	Enrollments     []Enrollment                           `json:"enrollments,omitempty"`
 	Artifacts       []Artifact                             `json:"artifacts,omitempty"`
 	Channels        []ArtifactChannel                      `json:"channels,omitempty"`
@@ -272,7 +263,6 @@ func (s *Store) ImportState(state State) error {
 	s.Pullbacks = state.Pullbacks
 	s.ControlCommands = state.ControlCommands
 	s.AgentSessions = state.AgentSessions
-	s.OperatorRoles = state.OperatorRoles
 	s.Enrollments = state.Enrollments
 	s.Artifacts = state.Artifacts
 	s.Channels = state.Channels
@@ -1612,47 +1602,6 @@ func (s *Store) ListAgentSessions(tenantID, agentID string) []AgentSession {
 	return out
 }
 
-func (s *Store) UpsertOperatorRoleBinding(binding OperatorRoleBinding) OperatorRoleBinding {
-	binding.Actor = strings.TrimSpace(binding.Actor)
-	if binding.Actor == "" {
-		return OperatorRoleBinding{}
-	}
-	roles := normalizeRoles(binding.Roles)
-	now := time.Now().UTC()
-	binding.Roles = roles
-	binding.UpdatedAt = now
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, existing := range s.OperatorRoles {
-		if existing.Actor == binding.Actor {
-			binding.CreatedAt = existing.CreatedAt
-			if binding.CreatedAt.IsZero() {
-				binding.CreatedAt = now
-			}
-			s.OperatorRoles[i] = binding
-			return binding
-		}
-	}
-	binding.CreatedAt = now
-	s.OperatorRoles = append(s.OperatorRoles, binding)
-	return binding
-}
-
-func (s *Store) ListOperatorRoleBindings(actor string) []OperatorRoleBinding {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]OperatorRoleBinding, 0, len(s.OperatorRoles))
-	for _, binding := range s.OperatorRoles {
-		if actor != "" && binding.Actor != actor {
-			continue
-		}
-		binding.Roles = append([]string(nil), binding.Roles...)
-		out = append(out, binding)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Actor < out[j].Actor })
-	return out
-}
-
 func (s *Store) CreateEnrollment(enrollment Enrollment) Enrollment {
 	enrollment = normalizeEnrollment(enrollment)
 	if enrollment.EnrollmentID == "" || enrollment.TokenHash == "" {
@@ -2044,21 +1993,6 @@ func cloneStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-func (s *Store) OperatorRolesForActor(actor string) ([]string, bool) {
-	actor = strings.TrimSpace(actor)
-	if actor == "" {
-		return nil, false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, binding := range s.OperatorRoles {
-		if binding.Actor == actor {
-			return append([]string(nil), binding.Roles...), true
-		}
-	}
-	return nil, false
-}
-
 func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
 	if backend, ctx := s.backendCtx(); backend != nil {
 		if health, err := backend.ListAgentHealth(ctx); err == nil {
@@ -2424,7 +2358,6 @@ func (s *Store) exportStateLocked() (State, error) {
 	var state State
 	state.Metrics = s.Metrics
 	state.RarityBaseline = s.RarityBaseline.Snapshot()
-	state.OperatorRoles = append([]OperatorRoleBinding(nil), s.OperatorRoles...)
 	for _, enrollment := range s.Enrollments {
 		state.Enrollments = append(state.Enrollments, cloneEnrollment(enrollment))
 	}
@@ -2660,21 +2593,6 @@ func mergeSignals(base, extra []*signalv1.Signal) []*signalv1.Signal {
 
 func sortedStrings(in []string) []string {
 	out := append([]string(nil), in...)
-	sort.Strings(out)
-	return out
-}
-
-func normalizeRoles(in []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(in))
-	for _, role := range in {
-		role = strings.TrimSpace(role)
-		if role == "" || seen[role] {
-			continue
-		}
-		seen[role] = true
-		out = append(out, role)
-	}
 	sort.Strings(out)
 	return out
 }

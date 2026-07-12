@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+name="sysarmor-opensearch-lifecycle-$$"
+port="${SYSARMOR_OPENSEARCH_TEST_PORT:-39200}"
+base="http://127.0.0.1:${port}"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+
+cleanup() {
+  docker rm -f "${name}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+docker run -d --name "${name}" -p "${port}:9200" \
+  -e discovery.type=single-node -e DISABLE_SECURITY_PLUGIN=true \
+  -e OPENSEARCH_JAVA_OPTS='-Xms512m -Xmx512m' sysarmor-opensearch:latest >/dev/null
+
+SYSARMOR_OPENSEARCH_URL="${base}" \
+SYSARMOR_OPENSEARCH_MAPPING_DIR="${root}/deployments/opensearch/mappings" \
+  bash "${root}/deployments/opensearch/init.sh"
+SYSARMOR_OPENSEARCH_URL="${base}" \
+SYSARMOR_OPENSEARCH_MAPPING_DIR="${root}/deployments/opensearch/mappings" \
+  bash "${root}/deployments/opensearch/init.sh"
+
+curl -fsS -X PUT -H 'Content-Type: application/json' \
+  -d '{"id":"lifecycle-v1","tenant_id":"default","@timestamp":"2026-07-12T00:00:00Z"}' \
+  "${base}/sysarmor-events-write/_doc/lifecycle-v1?refresh=true" >/dev/null
+curl -fsS "${base}/sysarmor-events-read/_doc/lifecycle-v1" | grep -q 'lifecycle-v1'
+
+curl -fsS -X PUT -H 'Content-Type: application/json' \
+  --data-binary "@${root}/deployments/opensearch/mappings/events-v1.json" \
+  "${base}/sysarmor-events-v2" >/dev/null
+curl -fsS -X POST -H 'Content-Type: application/json' \
+  -d '{"source":{"index":"sysarmor-events-v1"},"dest":{"index":"sysarmor-events-v2"}}' \
+  "${base}/_reindex?wait_for_completion=true&refresh=true" >/dev/null
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{"actions":[
+  {"remove":{"index":"sysarmor-events-v1","alias":"sysarmor-events-read"}},
+  {"remove":{"index":"sysarmor-events-v1","alias":"sysarmor-events-write"}},
+  {"add":{"index":"sysarmor-events-v2","alias":"sysarmor-events-read"}},
+  {"add":{"index":"sysarmor-events-v2","alias":"sysarmor-events-write","is_write_index":true}}
+]}' "${base}/_aliases" >/dev/null
+curl -fsS "${base}/sysarmor-events-read/_doc/lifecycle-v1" | grep -q 'lifecycle-v1'
+
+curl -fsS -X PUT -H 'Content-Type: application/json' \
+  -d '{"id":"lifecycle-v2","tenant_id":"default","@timestamp":"2026-07-12T00:01:00Z"}' \
+  "${base}/sysarmor-events-write/_doc/lifecycle-v2?refresh=true" >/dev/null
+curl -fsS "${base}/sysarmor-events-v2/_doc/lifecycle-v2" | grep -q 'lifecycle-v2'
+
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{"actions":[
+  {"remove":{"index":"sysarmor-events-v2","alias":"sysarmor-events-read"}},
+  {"remove":{"index":"sysarmor-events-v2","alias":"sysarmor-events-write"}},
+  {"add":{"index":"sysarmor-events-v1","alias":"sysarmor-events-read"}},
+  {"add":{"index":"sysarmor-events-v1","alias":"sysarmor-events-write","is_write_index":true}}
+]}' "${base}/_aliases" >/dev/null
+curl -fsS "${base}/sysarmor-events-read/_doc/lifecycle-v1" | grep -q 'lifecycle-v1'
+if curl -fsS "${base}/sysarmor-events-read/_doc/lifecycle-v2" >/dev/null 2>&1; then
+  echo "rollback still exposes v2-only document" >&2
+  exit 1
+fi
+
+echo "opensearch alias lifecycle passed"

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
@@ -17,13 +16,13 @@ func TestStoreStatusAPI(t *testing.T) {
 	st := &store.Store{}
 	handler := NewServer(st).Handler()
 	rec := get(t, handler, "/healthz")
-	for _, want := range []string{`"ok":true`, `"store"`, `"backend":"memory"`, `"postgres_schema_version":2`} {
+	for _, want := range []string{`"ok":true`, `"store"`, `"backend":"memory"`, `"postgres_schema_version":3`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("healthz missing %s: %s", want, rec.Body.String())
 		}
 	}
 	rec = get(t, handler, "/api/v1/store-status")
-	for _, want := range []string{`"backend":"memory"`, `"state_version":1`, `"migration_version":1`, `"postgres_schema_version":2`} {
+	for _, want := range []string{`"backend":"memory"`, `"state_version":1`, `"migration_version":1`, `"postgres_schema_version":3`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("store status missing %s: %s", want, rec.Body.String())
 		}
@@ -122,34 +121,5 @@ func TestPrincipalGuardsHealthWrites(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("health with admin principal status = %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestStoredRoleBindingsDoNotAuthorizeWithoutPrincipalRole(t *testing.T) {
-	st := &store.Store{}
-	handler := NewServer(st).Handler()
-	st.UpsertOperatorRoleBinding(store.OperatorRoleBinding{Actor: "alice", Roles: []string{"policy_admin"}})
-
-	policy := policymodel.DefaultPolicy("default")
-	policy.PolicyID = "bound-policy"
-	policy.Version = 1
-	policyData, err := json.Marshal(policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
-	req = withTestPrincipal(req, "alice", "default", "operator")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("stored binding granted privilege: status=%d body=%s", rec.Code, rec.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/policies", strings.NewReader(string(policyData)))
-	req = withTestPrincipal(req, "alice", "default", "admin")
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("admin principal status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

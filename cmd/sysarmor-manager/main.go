@@ -28,8 +28,10 @@ func main() {
 	opensearchURL := flag.String("opensearch-url", envDefault("SYSARMOR_OPENSEARCH_URL", ""), "OpenSearch URL for searchable telemetry")
 	opensearchUsername := flag.String("opensearch-username", envDefault("SYSARMOR_OPENSEARCH_USERNAME", ""), "OpenSearch basic auth username")
 	opensearchPassword := flag.String("opensearch-password", envDefault("SYSARMOR_OPENSEARCH_PASSWORD", ""), "OpenSearch basic auth password")
-	jwtPublicKey := flag.String("jwt-public-key", envDefault("SYSARMOR_JWT_PUBLIC_KEY_FILE", ""), "RS256 JWT public key PEM")
+	authMode := flag.String("auth-mode", envDefault("SYSARMOR_AUTH_MODE", ""), "authentication mode: local or oidc")
+	jwtPublicKey := flag.String("jwt-public-key", envDefault("SYSARMOR_JWT_PUBLIC_KEY_FILE", ""), "local RS256 JWT public key PEM")
 	jwtIssuer := flag.String("jwt-issuer", envDefault("SYSARMOR_JWT_ISSUER", ""), "required JWT issuer")
+	oidcIssuerURL := flag.String("oidc-issuer-url", envDefault("SYSARMOR_OIDC_ISSUER_URL", ""), "OIDC issuer URL for discovery")
 	jwtAudience := flag.String("jwt-audience", envDefault("SYSARMOR_JWT_AUDIENCE", ""), "required JWT audience")
 	flag.Parse()
 
@@ -43,12 +45,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "open store: file backend has been removed from the sysarmor-manager product path; use postgres")
 		os.Exit(1)
 	}
-	publicKey, err := os.ReadFile(*jwtPublicKey)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "open JWT public key: %v\n", err)
-		os.Exit(1)
-	}
-	verifier, err := managerauth.NewVerifierPEM(publicKey, *jwtIssuer, *jwtAudience)
+	verifier, err := managerauth.NewVerifier(ctx, managerauth.Config{
+		Mode: *authMode, PublicKeyFile: *jwtPublicKey, Issuer: *jwtIssuer,
+		IssuerURL: *oidcIssuerURL, Audience: *jwtAudience,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configure JWT verifier: %v\n", err)
 		os.Exit(1)

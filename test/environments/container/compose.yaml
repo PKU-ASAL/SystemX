@@ -41,6 +41,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.10
@@ -90,7 +92,9 @@ services:
       kafka:
         condition: service_healthy
       opensearch:
-        condition: service_started
+        condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.13
@@ -168,6 +172,26 @@ services:
       OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
     volumes:
       - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  opensearch-init:
+    image: sysarmor-opensearch:latest
+    pull_policy: never
+    container_name: sysarmor-opensearch-init
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/opt/sysarmor/opensearch/init.sh"]
+    networks:
+      sysarmor-net:
+    environment:
+      SYSARMOR_OPENSEARCH_URL: http://10.66.0.23:9200
+    volumes:
+      - ../../../deployments/opensearch:/opt/sysarmor/opensearch:ro
 
   tetragon:
     image: quay.io/cilium/tetragon:v1.7.0

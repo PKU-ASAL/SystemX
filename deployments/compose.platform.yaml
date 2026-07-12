@@ -51,6 +51,7 @@ services:
 
   opensearch:
     build: ./infra/opensearch
+    image: sysarmor-opensearch:latest
     container_name: sysarmor-opensearch
     environment:
       discovery.type: single-node
@@ -60,6 +61,23 @@ services:
       - "${SYSARMOR_OPENSEARCH_PORT:-29200}:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  opensearch-init:
+    image: sysarmor-opensearch:latest
+    container_name: sysarmor-opensearch-init
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/opt/sysarmor/opensearch/init.sh"]
+    environment:
+      SYSARMOR_OPENSEARCH_URL: http://opensearch:9200
+    volumes:
+      - ./opensearch:/opt/sysarmor/opensearch:ro
 
   packages:
     image: nginx:alpine
@@ -79,6 +97,8 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully
     env_file:
       - ./manager/manager.env.example
     environment:
@@ -131,7 +151,9 @@ services:
       kafka:
         condition: service_healthy
       opensearch:
-        condition: service_started
+        condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully
     env_file:
       - ./worker/worker.env.example
     environment:

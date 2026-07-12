@@ -1,6 +1,6 @@
 package migrations
 
-const PostgresVersion = 2
+const PostgresVersion = 3
 
 type Migration struct {
 	Version int
@@ -297,9 +297,14 @@ const incidentReportsToOpenSearch = `
 SELECT 1 /* incident_reports_to_opensearch */;
 `
 
+const dropOperatorRoleBindings = `
+DROP TABLE IF EXISTS operator_role_bindings;
+`
+
 func Ordered() []Migration {
 	return []Migration{
 		{Version: 1, Name: "control_plane_baseline", SQL: PostgresSchema},
 		{Version: 2, Name: "incident_reports_to_opensearch", SQL: incidentReportsToOpenSearch},
+		{Version: 3, Name: "drop_operator_role_bindings", SQL: dropOperatorRoleBindings},
 	}
 }

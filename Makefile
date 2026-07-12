@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-binary test up deploy down status clean clean-bin pki release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-binary test test-opensearch-lifecycle up deploy down status clean clean-bin pki release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -54,6 +54,9 @@ build-binary: build-agent-binary
 
 test:
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go test ./...
+
+test-opensearch-lifecycle:
+	bash test/suites/product/platform/opensearch-alias-lifecycle.sh
 
 pki:
 	@if [ ! -f "$(PKI_RUNTIME_DIR)/gateway.pem" ] || [ ! -f "$(PKI_RUNTIME_DIR)/gateway-key.pem" ] || [ ! -f "$(PKI_RUNTIME_DIR)/ca.pem" ]; then \

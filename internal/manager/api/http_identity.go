@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
-	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -210,28 +208,4 @@ func (s *Server) rarityBaseline(w http.ResponseWriter, r *http.Request) {
 		"baseline": baseline,
 		"count":    baseline.Count(q.Get("workload"), q.Get("signal")),
 	})
-}
-
-func (s *Server) operatorRoleBindings(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, map[string]any{"bindings": s.store.ListOperatorRoleBindings(r.URL.Query().Get("actor"))})
-	case http.MethodPost:
-		if !s.requireOperator(w, r, "admin") {
-			return
-		}
-		var req operatorRoleBindingRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, fmt.Sprintf("decode operator role binding: %v", err), http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(req.Actor) == "" {
-			http.Error(w, "actor is required", http.StatusBadRequest)
-			return
-		}
-		binding := s.store.UpsertOperatorRoleBinding(store.OperatorRoleBinding{Actor: req.Actor, Roles: req.Roles})
-		writeJSON(w, binding)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
 }

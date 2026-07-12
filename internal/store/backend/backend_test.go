@@ -90,8 +90,8 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	if result.Migration.Version != 2 {
-		t.Fatalf("migration version = %d, want 2", result.Migration.Version)
+	if result.Migration.Version != 3 {
+		t.Fatalf("migration version = %d, want 3", result.Migration.Version)
 	}
 	if result.Store == nil || result.Store.Info().Backend != KindPostgres {
 		t.Fatalf("store info = %+v", result.Store.Info())
@@ -388,12 +388,6 @@ func TestOpenPostgresProjectsControlAuditTables(t *testing.T) {
 		Reason:        "test projection",
 		CreatedAt:     time.Unix(110, 0).UTC(),
 	})
-	result.Store.UpsertOperatorRoleBinding(store.OperatorRoleBinding{
-		Actor:     "alice",
-		Roles:     []string{"policy_admin", "responder"},
-		CreatedAt: time.Unix(111, 0).UTC(),
-		UpdatedAt: time.Unix(112, 0).UTC(),
-	})
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -405,10 +399,6 @@ func TestOpenPostgresProjectsControlAuditTables(t *testing.T) {
 		"policy-control-pg",
 		"assignment-control-pg",
 		"test projection",
-		"INSERT INTO operator_role_bindings",
-		"alice",
-		"policy_admin",
-		"responder",
 	} {
 		if !strings.Contains(execLog, want) {
 			t.Fatalf("postgres exec log missing %s:\n%s", want, execLog)

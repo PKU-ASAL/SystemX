@@ -268,9 +268,6 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	if err := projectPolicyAudits(ctx, tx, state.PolicyAudits); err != nil {
 		return err
 	}
-	if err := projectOperatorRoleBindings(ctx, tx, state.OperatorRoles); err != nil {
-		return err
-	}
 	if err := projectEnrollments(ctx, tx, state.Enrollments); err != nil {
 		return err
 	}
@@ -1294,43 +1291,6 @@ ON CONFLICT (tenant_id, audit_id) DO UPDATE SET
 	}
 	if err != nil {
 		return fmt.Errorf("project policy audit: %w", err)
-	}
-	return nil
-}
-
-func projectOperatorRoleBindings(ctx context.Context, db sqlExecutor, bindings []store.OperatorRoleBinding) error {
-	for _, binding := range bindings {
-		if binding.Actor == "" {
-			continue
-		}
-		data, err := json.Marshal(binding)
-		if err != nil {
-			return fmt.Errorf("encode operator role binding projection: %w", err)
-		}
-		createdAt := binding.CreatedAt
-		updatedAt := binding.UpdatedAt
-		if createdAt.IsZero() || updatedAt.IsZero() {
-			_, err = db.ExecContext(ctx, `
-INSERT INTO operator_role_bindings (tenant_id, actor, roles, data)
-VALUES ($1, $2, string_to_array($3, E'\x1f'), $4)
-ON CONFLICT (tenant_id, actor) DO UPDATE SET
-  roles = EXCLUDED.roles,
-  updated_at = now(),
-  data = EXCLUDED.data
-`, "default", binding.Actor, joinTextArray(binding.Roles), data)
-		} else {
-			_, err = db.ExecContext(ctx, `
-INSERT INTO operator_role_bindings (tenant_id, actor, roles, created_at, updated_at, data)
-VALUES ($1, $2, string_to_array($3, E'\x1f'), $4, $5, $6)
-ON CONFLICT (tenant_id, actor) DO UPDATE SET
-  roles = EXCLUDED.roles,
-  updated_at = EXCLUDED.updated_at,
-  data = EXCLUDED.data
-`, "default", binding.Actor, joinTextArray(binding.Roles), createdAt, updatedAt, data)
-		}
-		if err != nil {
-			return fmt.Errorf("project operator role binding: %w", err)
-		}
 	}
 	return nil
 }

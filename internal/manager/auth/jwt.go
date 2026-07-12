@@ -34,10 +34,18 @@ func (p Principal) HasRole(role string) bool {
 }
 
 type Verifier struct {
-	key      *rsa.PublicKey
+	keys     keyProvider
 	issuer   string
 	audience string
 }
+
+type keyProvider interface {
+	Key(*jwt.Token) (any, error)
+}
+
+type staticKeyProvider struct{ key *rsa.PublicKey }
+
+func (p staticKeyProvider) Key(*jwt.Token) (any, error) { return p.key, nil }
 
 func NewVerifierPEM(publicKey []byte, issuer, audience string) (*Verifier, error) {
 	block, _ := pem.Decode(publicKey)
@@ -55,16 +63,16 @@ func NewVerifierPEM(publicKey []byte, issuer, audience string) (*Verifier, error
 	if strings.TrimSpace(issuer) == "" || strings.TrimSpace(audience) == "" {
 		return nil, fmt.Errorf("JWT issuer and audience are required")
 	}
-	return &Verifier{key: key, issuer: issuer, audience: audience}, nil
+	return &Verifier{keys: staticKeyProvider{key: key}, issuer: strings.TrimSpace(issuer), audience: strings.TrimSpace(audience)}, nil
 }
 
 func (v *Verifier) Verify(raw string) (Principal, error) {
-	if v == nil || v.key == nil {
+	if v == nil || v.keys == nil {
 		return Principal{}, fmt.Errorf("JWT verifier is not configured")
 	}
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(raw, claims, func(token *jwt.Token) (any, error) {
-		return v.key, nil
+		return v.keys.Key(token)
 	}, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(v.issuer), jwt.WithAudience(v.audience), jwt.WithExpirationRequired())
 	if err != nil || !token.Valid {
 		return Principal{}, fmt.Errorf("verify JWT: %w", err)

@@ -44,6 +44,15 @@ func main() {
 		fmt.Println(version)
 		return
 	}
+	if len(args) >= 2 && args[0] == "auth" && args[1] == "token" {
+		token, err := issueLocalToken(args[2:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sysarmorctl: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(token)
+		return
+	}
 
 	if len(args) == 0 {
 		if *jsonOut {
@@ -124,8 +133,6 @@ func usage() {
   sysarmorctl [--manager-url URL] manager enrollments list
   sysarmorctl [--manager-url URL] manager enrollments create --agent-id AGENT --gateway-addr HOST:PORT [--channel stable] [--artifact-id ARTIFACT] [--ttl 24h]
   sysarmorctl [--manager-url URL] manager evidence pullbacks --create --agent-id AGENT --incident-id ID --label key=value
-  sysarmorctl [--manager-url URL] manager roles list [--actor ACTOR]
-  sysarmorctl [--manager-url URL] manager roles upsert --actor ACTOR --roles policy_admin,control_admin
 
 Global flags:
   --socket PATH        local agent Unix socket, default $SYSARMOR_AGENT_SOCK or /run/sysarmor/agent.sock
@@ -1253,31 +1260,6 @@ func queryManagerAPI(base string, args []string) ([]byte, error) {
 			}
 		}
 		return httpGet(base + "/api/v1/policy-audit?" + q.Encode())
-	case "operator-role-bindings":
-		q := url.Values{}
-		req := map[string]any{}
-		upsert := false
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--upsert":
-				upsert = true
-			case "--actor":
-				i++
-				if i < len(args) {
-					q.Set("actor", args[i])
-					req["actor"] = args[i]
-				}
-			case "--roles":
-				i++
-				if i < len(args) {
-					req["roles"] = splitCSV(args[i])
-				}
-			}
-		}
-		if upsert {
-			return httpPostJSON(base+"/api/v1/operator-role-bindings", req)
-		}
-		return httpGet(base + "/api/v1/operator-role-bindings?" + q.Encode())
 	case "policy-assignments":
 		q := url.Values{}
 		for i := 1; i < len(args); i++ {
@@ -1721,8 +1703,6 @@ func queryManager(base string, args []string) ([]byte, error) {
 		return queryManagerPolicies(base, args[1:])
 	case "control-commands":
 		return queryManagerControlCommands(base, args[1:])
-	case "roles":
-		return queryManagerRoles(base, args[1:])
 	case "responses":
 		return queryManagerAPI(base, append([]string{"responses"}, managerArgsAfterAction(args, "list")...))
 	case "response":
@@ -2088,20 +2068,6 @@ func managerPolicyAssign(base string, args []string) ([]byte, error) {
 		}
 	}
 	return httpPostJSON(base+"/api/v1/policy-assignments", req)
-}
-
-func queryManagerRoles(base string, args []string) ([]byte, error) {
-	if len(args) == 0 {
-		args = []string{"list"}
-	}
-	switch args[0] {
-	case "list":
-		return queryManagerAPI(base, append([]string{"operator-role-bindings"}, managerArgsAfterAction(args, "list")...))
-	case "upsert":
-		return queryManagerAPI(base, append([]string{"operator-role-bindings", "--upsert"}, args[1:]...))
-	default:
-		return nil, fmt.Errorf("unknown manager roles command %q", args[0])
-	}
 }
 
 func queryManagerArtifacts(base string, args []string) ([]byte, error) {

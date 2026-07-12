@@ -152,6 +152,38 @@ Services:
 - `kafka`: durable telemetry ingest log.
 - `redis`: gateway hot state.
 - `opensearch`: searchable events, signals, and evidence layer.
+- `opensearch-init`: one-shot versioned-index and alias initialization that must
+  complete before Manager and Worker start.
+
+Manager authentication is always enabled. Closed and development deployments
+use local JWT verification:
+
+```text
+SYSARMOR_AUTH_MODE=local
+SYSARMOR_JWT_PUBLIC_KEY_FILE=/etc/sysarmor/pki/manager-jwt-public.pem
+SYSARMOR_JWT_ISSUER=sysarmor-identity
+SYSARMOR_JWT_AUDIENCE=sysarmor-manager
+```
+
+Enterprise deployments may use an existing generic OIDC provider without
+adding an identity service to the SysArmor stack:
+
+```text
+SYSARMOR_AUTH_MODE=oidc
+SYSARMOR_OIDC_ISSUER_URL=https://identity.example.com/realms/security
+SYSARMOR_JWT_AUDIENCE=sysarmor-manager
+```
+
+The two modes are mutually exclusive. `sysarmorctl auth token` signs bounded
+local development tokens with an existing RSA private key; SysArmor does not
+store users or passwords.
+
+```bash
+sysarmorctl auth token \
+  --private-key deployments/pki/agent-plane-mtls/runtime/manager-jwt-private.pem \
+  --subject local-admin --tenant default --roles admin \
+  --issuer sysarmor-identity --audience sysarmor-manager --ttl 8h
+```
 
 Ports:
 

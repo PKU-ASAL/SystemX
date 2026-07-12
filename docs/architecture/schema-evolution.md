@@ -59,3 +59,6 @@ create a new physical index and use reindex plus an atomic alias switch.
 
 See `docs/operations/opensearch-schema-evolution.md` for the operational
 procedure.
+
+The exact legacy data-plane removal gate is documented in
+`docs/operations/data-plane-schema-retirement.md`.

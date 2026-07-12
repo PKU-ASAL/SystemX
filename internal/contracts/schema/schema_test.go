@@ -29,3 +29,21 @@ func TestValidateDataPlaneRejectsUnsupportedSchema(t *testing.T) {
 		t.Fatalf("version=%q", unsupported.Version)
 	}
 }
+
+func TestDataPlaneCompatibilityWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+		legacy, fails bool
+	}{
+		{"current", DataPlaneCurrent, false, false},
+		{"legacy empty", "", true, false},
+		{"unknown", "sysarmor.dataplane/v2", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			legacy, err := ValidateDataPlane(tc.version)
+			if legacy != tc.legacy || (err != nil) != tc.fails {
+				t.Fatalf("legacy=%t err=%v", legacy, err)
+			}
+		})
+	}
+}

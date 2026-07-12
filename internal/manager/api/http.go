@@ -77,7 +77,6 @@ type ManagerStore interface {
 	ListChannels(string) []store.ArtifactChannel
 	ListPolicies(string) []policymodel.Policy
 	ListPolicyAudits(string, string) []policymodel.AuditRecord
-	ListOperatorRoleBindings(string) []store.OperatorRoleBinding
 	ListResponses(string, string) []responsemodel.AuditRecord
 	ListRules(string) []policymodel.RuleContent
 	ListSignals(store.LabelSelector, string, bool) []*signalv1.Signal
@@ -92,7 +91,6 @@ type ManagerStore interface {
 	RecordAgentSessionSeen(string, string, time.Time) store.AgentSession
 	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession
 	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
-	OperatorRolesForActor(string) ([]string, bool)
 	RarityBaselineSnapshot() rarity.Baseline
 	RetryControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	ExpireControlCommand(string, string, string, string) (controlmodel.ControlCommand, bool)
@@ -101,7 +99,6 @@ type ManagerStore interface {
 	UpsertAgentHealth(agenthealth.AgentHealth)
 	UpsertArtifact(store.Artifact) store.Artifact
 	UpsertChannel(store.ArtifactChannel) store.ArtifactChannel
-	UpsertOperatorRoleBinding(store.OperatorRoleBinding) store.OperatorRoleBinding
 	UpsertPolicy(policymodel.Policy) policymodel.Policy
 }
 
@@ -131,11 +128,6 @@ type policyAssignmentRequest struct {
 	Reason    string `json:"reason,omitempty"`
 	Downlink  bool   `json:"downlink,omitempty"`
 	CommandID string `json:"command_id,omitempty"`
-}
-
-type operatorRoleBindingRequest struct {
-	Actor string   `json:"actor"`
-	Roles []string `json:"roles"`
 }
 
 type enrollmentRequest struct {
@@ -304,7 +296,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/policies", s.policies)
 	mux.HandleFunc("/api/v1/policy-publish", s.policyPublish)
 	mux.HandleFunc("/api/v1/policy-audit", s.policyAudit)
-	mux.HandleFunc("/api/v1/operator-role-bindings", s.operatorRoleBindings)
 	mux.HandleFunc("/api/v1/artifacts", s.artifacts)
 	mux.HandleFunc("/api/v1/artifacts/", s.artifactByID)
 	mux.HandleFunc("/api/v1/channels", s.channels)
