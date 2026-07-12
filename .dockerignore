@@ -1,0 +1,7 @@
+.git
+.cache
+.run
+.scratchpad
+**/.next
+**/node_modules
+test/.results

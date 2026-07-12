@@ -126,26 +126,10 @@ services:
     env_file:
       - ./manager-ui/manager-ui.env.example
     secrets:
-      - source: auth-secret
-        target: auth-secret
-        uid: "1000"
-        gid: "1000"
-        mode: 0400
-      - source: bootstrap-admin-username
-        target: bootstrap-admin-username
-        uid: "1000"
-        gid: "1000"
-        mode: 0400
-      - source: bootstrap-admin-password
-        target: bootstrap-admin-password
-        uid: "1000"
-        gid: "1000"
-        mode: 0400
-      - source: manager-jwt-private.pem
-        target: manager-jwt-private.pem
-        uid: "1000"
-        gid: "1000"
-        mode: 0400
+      - auth-secret
+      - bootstrap-admin-username
+      - bootstrap-admin-password
+      - manager-jwt-private.pem
     ports:
       - "${SYSARMOR_MANAGER_UI_PORT:-4173}:4173"
 
