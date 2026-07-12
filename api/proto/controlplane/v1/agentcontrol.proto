@@ -223,6 +223,23 @@ message HealthResponse {
   LocalStreamHealth streams = 16;
   TelemetryBatcherHealth telemetry_batcher = 17;
   DetectionRuntimeHealth detection = 18;
+  LocalStoreHealth local_store = 19;
+}
+
+message LocalStoreHealth {
+  string mode = 1;
+  string device_id = 2;
+  int64 storage_bytes = 3;
+  int64 storage_max_bytes = 4;
+  uint64 oldest_event_sequence = 5;
+  uint64 latest_event_sequence = 6;
+  uint64 signal_count = 7;
+  uint64 sealed_segment_count = 8;
+  int64 open_segment_bytes = 9;
+  uint64 upload_segment_id = 10;
+  int64 upload_record_offset = 11;
+  uint64 dropped_batches_storage = 12;
+  uint64 dropped_events_storage = 13;
 }
 
 message CapabilityRequest {

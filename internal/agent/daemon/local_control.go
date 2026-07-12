@@ -22,6 +22,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
@@ -130,7 +131,11 @@ func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.Hea
 	if err != nil {
 		return nil, err
 	}
-	return healthResponse(health), nil
+	response := healthResponse(health)
+	if s.runner.localStore != nil {
+		response.LocalStore, err = s.runner.localStoreHealth(ctx)
+	}
+	return response, err
 }
 
 func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
@@ -586,7 +591,11 @@ func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest,
 	}
 	if req.GetSnapshotOnly() {
 		if req.GetIncludeRecent() {
-			for _, frame := range s.bus.SnapshotEvents() {
+			frames, err := s.recentEvents(req)
+			if err != nil {
+				return err
+			}
+			for _, frame := range frames {
 				if err := send(controlEventFrame(s.runner.Config, frame)); err != nil {
 					return err
 				}
@@ -598,7 +607,11 @@ func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest,
 		return nil
 	}
 	if req.GetIncludeRecent() {
-		for _, frame := range s.bus.SnapshotEvents() {
+		frames, err := s.recentEvents(req)
+		if err != nil {
+			return err
+		}
+		for _, frame := range frames {
 			if err := send(controlEventFrame(s.runner.Config, frame)); err != nil {
 				return err
 			}
@@ -643,7 +656,11 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 	}
 	if req.GetSnapshotOnly() {
 		if req.GetIncludeRecent() {
-			for _, frame := range s.bus.SnapshotSignals() {
+			frames, err := s.recentSignals(req)
+			if err != nil {
+				return err
+			}
+			for _, frame := range frames {
 				if err := send(controlSignalFrame(s.runner.Config, frame)); err != nil {
 					return err
 				}
@@ -655,7 +672,11 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 		return nil
 	}
 	if req.GetIncludeRecent() {
-		for _, frame := range s.bus.SnapshotSignals() {
+		frames, err := s.recentSignals(req)
+		if err != nil {
+			return err
+		}
+		for _, frame := range frames {
 			if err := send(controlSignalFrame(s.runner.Config, frame)); err != nil {
 				return err
 			}
@@ -684,6 +705,16 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 }
 
 func (s *localControlServer) eventFrameByID(eventID string) (*controlplanev1.EventFrame, bool) {
+	if s.runner.localStore != nil {
+		frames, err := s.runner.localStore.QueryEvents(context.Background(), localstore.EventQuery{Limit: 1000})
+		if err == nil {
+			for _, frame := range frames {
+				if frame.GetEvent().GetId() == eventID {
+					return controlEventFrame(s.runner.Config, frame), true
+				}
+			}
+		}
+	}
 	for _, frame := range s.bus.SnapshotEvents() {
 		out := controlEventFrame(s.runner.Config, frame)
 		if out.GetEvent().GetId() == eventID {
@@ -691,6 +722,52 @@ func (s *localControlServer) eventFrameByID(eventID string) (*controlplanev1.Eve
 		}
 	}
 	return nil, false
+}
+
+func (s *localControlServer) recentEvents(req *controlplanev1.WatchEventsRequest) ([]*dataplanev1.EventFrame, error) {
+	if s.runner.localStore == nil {
+		return s.bus.SnapshotEvents(), nil
+	}
+	limit := int(req.GetLimit())
+	if limit == 0 {
+		limit = 100
+	}
+	return s.runner.localStore.QueryEvents(context.Background(), localstore.EventQuery{Behavior: req.GetBehavior(), AfterSequence: req.GetFilter().GetAfterSequence(), Limit: limit})
+}
+
+func (s *localControlServer) recentSignals(req *controlplanev1.WatchSignalsRequest) ([]*dataplanev1.SignalFrame, error) {
+	if s.runner.localStore == nil {
+		return s.bus.SnapshotSignals(), nil
+	}
+	limit := int(req.GetLimit())
+	if limit == 0 {
+		limit = 100
+	}
+	return s.runner.localStore.QuerySignals(context.Background(), localstore.SignalQuery{RuleID: req.GetRuleId(), Limit: limit})
+}
+
+func (r *AgentRuntime) localStoreHealth(ctx context.Context) (*controlplanev1.LocalStoreHealth, error) {
+	stats, err := r.localStore.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := r.localStore.DeviceIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	enrollment, err := r.localStore.Enrollment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	checkpoint, err := r.localStore.Checkpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &controlplanev1.LocalStoreHealth{Mode: string(enrollment.State), DeviceId: identity.DeviceID, StorageBytes: stats.StorageBytes,
+		StorageMaxBytes: stats.StorageMaxBytes, OldestEventSequence: stats.OldestEventSequence, LatestEventSequence: stats.LatestEventSequence,
+		SignalCount: stats.SignalCount, SealedSegmentCount: stats.SealedSegmentCount, OpenSegmentBytes: stats.OpenSegmentBytes,
+		UploadSegmentId: checkpoint.SegmentID, UploadRecordOffset: checkpoint.RecordOffset, DroppedBatchesStorage: stats.DroppedBatchesStorage,
+		DroppedEventsStorage: stats.DroppedEventsStorage}, nil
 }
 
 func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {
