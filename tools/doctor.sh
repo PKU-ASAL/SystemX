@@ -45,14 +45,17 @@ check_endpoints() {
 }
 
 check_login() {
-  local csrf login_status api_status
+  local csrf username password login_status api_status
   csrf="$(curl --noproxy '*' -sS -c "$COOKIE_JAR" "$UI_URL/api/auth/csrf" | jq -er '.csrfToken')"
-  login_status="$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
-    -X POST "$UI_URL/api/auth/callback/credentials" \
-    --data-urlencode "csrfToken=$csrf" \
-    --data-urlencode "username@$SECRET_DIR/bootstrap-admin-username" \
-    --data-urlencode "password@$SECRET_DIR/bootstrap-admin-password" \
-    --data-urlencode "redirectTo=$UI_URL/")"
+  username="$(<"$SECRET_DIR/bootstrap-admin-username")"
+  password="$(<"$SECRET_DIR/bootstrap-admin-password")"
+  login_status="$(printf '%s\n' \
+    "data-urlencode = \"csrfToken=$csrf\"" \
+    "data-urlencode = \"username=$username\"" \
+    "data-urlencode = \"password=$password\"" \
+    "data-urlencode = \"redirectTo=$UI_URL/\"" | \
+    curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+      -X POST "$UI_URL/api/auth/callback/credentials" --config -)"
   [[ "$login_status" == "302" || "$login_status" == "200" ]] || fail "bootstrap admin login"
   api_status="$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" "$UI_URL/api/manager/agents")"
   [[ "$api_status" == "200" ]] || fail "authenticated BFF to Manager"

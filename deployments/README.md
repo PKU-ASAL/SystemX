@@ -177,6 +177,8 @@ The initial username and password are stored as mode `0600` files under
 them. The UI is available at `http://127.0.0.1:4173`; its BFF is the only
 browser path to Manager APIs. Future OIDC providers attach to Auth.js and keep
 the same BFF-to-Manager contract; Manager does not implement an OIDC mode.
+When publishing the UI through a reverse proxy, restrict the accepted `Host`
+header to the configured SysArmor UI hostname.
 
 Ports:
 

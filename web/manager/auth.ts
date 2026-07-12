@@ -14,6 +14,7 @@ const limiter = new LoginLimiter();
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   secret: readProtectedSecret(process.env.AUTH_SECRET_FILE, "AUTH_SECRET_FILE"),
+  trustHost: true,
   pages: { signIn: "/login" },
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   providers: [Credentials({
