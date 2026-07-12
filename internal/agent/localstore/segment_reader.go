@@ -64,6 +64,9 @@ func (s *Store) recoverSegments(ctx context.Context) error {
 		if err := s.reconcileSegment(ctx, path, batches, open); err != nil {
 			return err
 		}
+		for _, batch := range batches {
+			s.batchPositions[batch.Position.BatchID] = batch.Position
+		}
 		if open {
 			if s.writer != nil {
 				return fmt.Errorf("multiple open segments")

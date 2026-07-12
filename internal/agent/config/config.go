@@ -23,14 +23,16 @@ type Config struct {
 	Policy    PolicyConfig
 	Content   ContentConfig
 	Resource  ResourceConfig
+	Storage   StorageConfig
 }
 
 type AgentConfig struct {
-	ID       string
-	HostID   string
-	TenantID string
-	Token    string
-	Labels   map[string]string
+	ID        string
+	HostID    string
+	TenantID  string
+	Token     string
+	Labels    map[string]string
+	StatePath string
 }
 
 type ManagerConfig struct {
@@ -129,6 +131,13 @@ type ResourceConfig struct {
 	MaxEventRefsPerSignal int
 }
 
+type StorageConfig struct {
+	MaxBytes         int64
+	MinFreeBytes     int64
+	EventSegmentSize int64
+	SignalMaxCount   int64
+}
+
 func LoadFile(path string) (Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -149,22 +158,21 @@ func (c Config) Validate() error {
 			missing = append(missing, path)
 		}
 	}
-	check("agent.id", c.Agent.ID)
-	check("agent.host_id", c.Agent.HostID)
-	check("agent.tenant_id", c.Agent.TenantID)
-	check("agent.token", c.Agent.Token)
-	if c.Manager.Transport != "local" {
+	check("agent.state_path", c.Agent.StatePath)
+	if c.Manager.Transport == "local" {
+		return fmt.Errorf("manager.transport local is legacy; omit manager configuration for standalone mode")
+	}
+	if c.Manager.Transport == "grpc" {
 		check("manager.address", c.Manager.Address)
 	}
-	check("manager.transport", c.Manager.Transport)
 	check("sensor.backend", c.Sensor.Backend)
 	check("sensor.mode", c.Sensor.Mode)
 	check("sensor.policy_path", c.Sensor.PolicyPath)
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
-	if c.Manager.Transport != "grpc" && c.Manager.Transport != "local" {
-		return fmt.Errorf("manager.transport must be grpc or local")
+	if c.Manager.Transport != "" && c.Manager.Transport != "grpc" {
+		return fmt.Errorf("manager.transport must be grpc when configured")
 	}
 	if !validMatcherStrategy(c.Runtime.FeatureFlags.MatcherStrategy) {
 		return fmt.Errorf("runtime.feature_flags.matcher_strategy must be linear or optimized")
@@ -228,6 +236,9 @@ func (c Config) Validate() error {
 	}
 	if c.DataPlane.MaxInflight < 0 {
 		return fmt.Errorf("data_plane.max_inflight must be non-negative")
+	}
+	if c.Storage.MaxBytes <= 0 || c.Storage.MinFreeBytes <= 0 || c.Storage.EventSegmentSize <= 0 || c.Storage.SignalMaxCount <= 0 {
+		return fmt.Errorf("storage limits must be positive")
 	}
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("health.interval must be positive")
@@ -341,7 +352,7 @@ func parse(r *os.File) (Config, error) {
 
 func defaults() Config {
 	return Config{
-		Manager:   ManagerConfig{Transport: "grpc"},
+		Agent:     AgentConfig{StatePath: "/var/lib/sysarmor/agent"},
 		Control:   ControlConfig{SocketPath: "/run/sysarmor/agent.sock"},
 		Runtime:   RuntimeConfig{FeatureFlags: RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
@@ -351,6 +362,7 @@ func defaults() Config {
 		Policy:    PolicyConfig{RefreshInterval: 30 * time.Second},
 		Content:   ContentConfig{Path: "/var/lib/sysarmor/agent/content"},
 		Resource:  ResourceConfig{MaxActiveCEPGroups: 4096, MaxEventRefsPerSignal: 128},
+		Storage:   StorageConfig{MaxBytes: 10 << 30, MinFreeBytes: 2 << 30, EventSegmentSize: 64 << 20, SignalMaxCount: 100_000},
 	}
 }
 
@@ -366,6 +378,8 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Agent.TenantID = value
 		case "token":
 			cfg.Agent.Token = value
+		case "state_path":
+			cfg.Agent.StatePath = value
 		default:
 			if labelKey, ok := strings.CutPrefix(key, "label."); ok {
 				labelKey = strings.TrimSpace(labelKey)
@@ -643,10 +657,57 @@ func assign(cfg *Config, section, key, value string) error {
 		default:
 			return unknown(section, key)
 		}
+	case "storage":
+		switch key {
+		case "max_bytes":
+			value, err := parseByteSize(value)
+			if err != nil {
+				return fmt.Errorf("storage.max_bytes: %w", err)
+			}
+			cfg.Storage.MaxBytes = value
+		case "min_free_bytes":
+			value, err := parseByteSize(value)
+			if err != nil {
+				return fmt.Errorf("storage.min_free_bytes: %w", err)
+			}
+			cfg.Storage.MinFreeBytes = value
+		case "event_segment_size":
+			value, err := parseByteSize(value)
+			if err != nil {
+				return fmt.Errorf("storage.event_segment_size: %w", err)
+			}
+			cfg.Storage.EventSegmentSize = value
+		case "signal_max_count":
+			value, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return fmt.Errorf("storage.signal_max_count: %w", err)
+			}
+			cfg.Storage.SignalMaxCount = value
+		default:
+			return unknown(section, key)
+		}
 	default:
 		return fmt.Errorf("unknown section %q", section)
 	}
 	return nil
+}
+
+func parseByteSize(raw string) (int64, error) {
+	units := []struct {
+		suffix     string
+		multiplier int64
+	}{{"GiB", 1 << 30}, {"MiB", 1 << 20}, {"KiB", 1 << 10}, {"B", 1}}
+	for _, unit := range units {
+		if strings.HasSuffix(raw, unit.suffix) {
+			value := strings.TrimSpace(strings.TrimSuffix(raw, unit.suffix))
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || parsed <= 0 {
+				return 0, fmt.Errorf("invalid byte size %q", raw)
+			}
+			return parsed * unit.multiplier, nil
+		}
+	}
+	return 0, fmt.Errorf("byte size %q requires B, KiB, MiB, or GiB", raw)
 }
 
 func unknown(section, key string) error {

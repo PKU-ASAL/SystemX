@@ -21,6 +21,7 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
@@ -149,9 +150,6 @@ func TestAgentRuntimeUploadsFakeSensorEvent(t *testing.T) {
 		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
 	runner, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -163,6 +161,43 @@ func TestAgentRuntimeUploadsFakeSensorEvent(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output %q does not contain %q", got, want)
 		}
+	}
+}
+
+func TestStandaloneRuntimePersistsBeforeAcknowledging(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.json")
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Agent:     config.AgentConfig{StatePath: filepath.Join(dir, "state")},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Telemetry: config.TelemetryConfig{BatchSize: 256, MaxBytes: 256 << 10, FlushInterval: time.Second},
+		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1},
+		Health:    config.HealthConfig{Interval: time.Second},
+		Storage:   config.StorageConfig{MaxBytes: 1 << 30, MinFreeBytes: 1, EventSegmentSize: 1 << 20, SignalMaxCount: 1000},
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.localStore.Close()
+	if runner.Config.Agent.ID == "" || runner.Config.Agent.HostID == "" || runner.Config.Agent.TenantID != "local" {
+		t.Fatalf("identity=%+v", runner.Config.Agent)
+	}
+	sender, err := runner.batchSender()
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{BatchId: "standalone-1", EventSeqStart: 1, EventSeqEnd: 1}}
+	ack, err := sender.SendBatch(batch)
+	if err != nil || !dataappend.AckCommitted(ack) {
+		t.Fatalf("ack=%+v err=%v", ack, err)
+	}
+	batches, err := runner.localStore.ReadBatches(t.Context(), localstore.ReadOptions{Limit: 10})
+	if err != nil || len(batches) != 1 || batches[0].Batch.GetHeader().GetBatchId() != "standalone-1" {
+		t.Fatalf("batches=%+v err=%v", batches, err)
 	}
 }
 

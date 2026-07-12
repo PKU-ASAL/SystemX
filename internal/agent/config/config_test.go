@@ -13,8 +13,8 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFile(agent.example.yaml) error = %v", err)
 	}
-	if cfg.Manager.Transport != "grpc" {
-		t.Fatalf("example manager transport = %q, want grpc", cfg.Manager.Transport)
+	if cfg.Manager.Transport != "" || cfg.Agent.StatePath != "/var/lib/sysarmor/agent" {
+		t.Fatalf("example is not standalone: manager=%+v agent=%+v", cfg.Manager, cfg.Agent)
 	}
 	if cfg.Sensor.EventSource != "" {
 		t.Fatalf("example event_source = %q, want managed mode empty source", cfg.Sensor.EventSource)
@@ -27,7 +27,7 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	}
 }
 
-func TestDefaultManagerTransportIsGRPC(t *testing.T) {
+func TestDefaultManagerTransportIsStandalone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
 agent:
@@ -60,8 +60,8 @@ health:
 	if err != nil {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
-	if cfg.Manager.Transport != "grpc" {
-		t.Fatalf("default manager transport = %q, want grpc", cfg.Manager.Transport)
+	if cfg.Manager.Transport != "" {
+		t.Fatalf("default manager transport = %q, want standalone", cfg.Manager.Transport)
 	}
 }
 
@@ -228,6 +228,57 @@ health:
 	_, err := LoadFile(path)
 	if err == nil || !strings.Contains(err.Error(), "runtime.feature_flags.matcher_strategy") {
 		t.Fatalf("LoadFile() error = %v, want matcher strategy validation error", err)
+	}
+}
+
+func TestLoadFileAcceptsStandaloneWithoutCloudIdentity(t *testing.T) {
+	dir := t.TempDir()
+	policy := filepath.Join(dir, "collection.json")
+	write(t, policy, `{"behaviors":["process.exec"],"observe_only":true}`)
+	path := filepath.Join(dir, "agent.yaml")
+	write(t, path, `
+agent:
+  state_path: `+filepath.Join(dir, "state")+`
+sensor:
+  backend: fake
+  mode: managed
+  policy_path: `+policy+`
+telemetry:
+data_plane:
+health:
+storage:
+  max_bytes: 1GiB
+  min_free_bytes: 128MiB
+  event_segment_size: 8MiB
+  signal_max_count: 1000
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.ID != "" || cfg.Manager.Address != "" || cfg.Manager.Transport != "" {
+		t.Fatalf("standalone config has cloud identity: %+v %+v", cfg.Agent, cfg.Manager)
+	}
+	if cfg.Storage.MaxBytes != 1<<30 || cfg.Storage.SignalMaxCount != 1000 {
+		t.Fatalf("storage=%+v", cfg.Storage)
+	}
+}
+
+func TestLoadFileRejectsLegacyLocalTransport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+manager:
+  transport: local
+sensor:
+  backend: fake
+  mode: managed
+  policy_path: /tmp/policy
+telemetry:
+data_plane:
+health:
+`)
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("error=%v", err)
 	}
 }
 
@@ -549,9 +600,9 @@ func TestLoadFileReportsMissingRequiredFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
 agent:
-  id: node-a
+  state_path: ""
 manager:
-  address: http://127.0.0.1:9443
+  transport: grpc
 sensor:
   backend: tetragon
   mode: managed
@@ -562,7 +613,7 @@ telemetry:
 	if err == nil {
 		t.Fatal("LoadFile() error = nil")
 	}
-	for _, want := range []string{"agent.host_id", "agent.tenant_id", "agent.token"} {
+	for _, want := range []string{"agent.state_path", "manager.address"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not contain %q", err, want)
 		}

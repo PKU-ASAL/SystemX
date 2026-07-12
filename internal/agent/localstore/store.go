@@ -27,11 +27,12 @@ type Options struct {
 }
 
 type Store struct {
-	db        *sql.DB
-	rootDir   string
-	opts      Options
-	segmentMu sync.Mutex
-	writer    *segmentWriter
+	db             *sql.DB
+	rootDir        string
+	opts           Options
+	segmentMu      sync.Mutex
+	writer         *segmentWriter
+	batchPositions map[string]Position
 }
 
 func Open(ctx context.Context, opts Options) (*Store, error) {
@@ -45,7 +46,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return nil, fmt.Errorf("open local state: %w", err)
 	}
 	db.SetMaxOpenConns(1)
-	store := &Store{db: db, rootDir: opts.RootDir, opts: opts}
+	store := &Store{db: db, rootDir: opts.RootDir, opts: opts, batchPositions: make(map[string]Position)}
 	if err := store.initialize(ctx, dbPath); err != nil {
 		_ = db.Close()
 		return nil, err

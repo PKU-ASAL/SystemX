@@ -37,6 +37,9 @@ func (s *Store) AppendBatch(ctx context.Context, batch *dataplanev1.DataBatch) (
 	}
 	s.segmentMu.Lock()
 	defer s.segmentMu.Unlock()
+	if position, ok := s.batchPositions[batch.GetHeader().GetBatchId()]; ok {
+		return position, nil
+	}
 	if err := s.ensureWriter(ctx); err != nil {
 		return Position{}, err
 	}
@@ -61,6 +64,7 @@ func (s *Store) AppendBatch(ctx context.Context, batch *dataplanev1.DataBatch) (
 	if err := s.upsertSegment(ctx, s.writer, "open", 0); err != nil {
 		return Position{}, err
 	}
+	s.batchPositions[position.BatchID] = position
 	return position, nil
 }
 

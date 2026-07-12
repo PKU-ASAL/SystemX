@@ -21,6 +21,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
@@ -48,6 +49,11 @@ func (localHealthReporter) Report(context.Context, agenthealth.AgentHealth) erro
 
 type localBatchSender struct{}
 
+type localStoreBatchSender struct {
+	store    *localstore.Store
+	onCommit func(*dataplanev1.DataBatch)
+}
+
 var newLocalBatchSender = func() dataappend.BatchSender {
 	return localBatchSender{}
 }
@@ -64,6 +70,22 @@ func (localBatchSender) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.Da
 	}, nil
 }
 
+func (s *localStoreBatchSender) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev1.DataAck, error) {
+	if batch == nil {
+		return nil, fmt.Errorf("data batch is required")
+	}
+	if _, err := s.store.AppendBatch(context.Background(), batch); err != nil {
+		return nil, err
+	}
+	if err := s.store.AppendSignals(context.Background(), batch.GetSignals()); err != nil {
+		return nil, err
+	}
+	if s.onCommit != nil {
+		s.onCommit(batch)
+	}
+	return &dataplanev1.DataAck{Accepted: true, Status: dataplanev1.DataAck_STATUS_ACCEPTED, BatchId: batch.GetHeader().GetBatchId(), CommittedCursor: batch.GetHeader().GetBatchId()}, nil
+}
+
 type Options struct {
 	Out io.Writer
 }
@@ -73,6 +95,7 @@ type AgentRuntime struct {
 	Sensor          contract.Sensor
 	Out             io.Writer
 	capability      contract.Capability
+	localStore      *localstore.Store
 	mu              sync.RWMutex
 	policy          policymodel.Policy
 	detection       *detection.Engine
@@ -101,7 +124,28 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags}, nil
+	var state *localstore.Store
+	if cfg.Manager.Transport == "" {
+		state, err = localstore.Open(context.Background(), localstore.Options{RootDir: cfg.Agent.StatePath, MaxBytes: cfg.Storage.MaxBytes, MinFreeBytes: cfg.Storage.MinFreeBytes, SegmentSize: cfg.Storage.EventSegmentSize, SignalMaxCount: cfg.Storage.SignalMaxCount})
+		if err != nil {
+			return nil, fmt.Errorf("open agent local store: %w", err)
+		}
+		identity, err := state.DeviceIdentity(context.Background())
+		if err != nil {
+			_ = state.Close()
+			return nil, fmt.Errorf("load device identity: %w", err)
+		}
+		if cfg.Agent.ID == "" {
+			cfg.Agent.ID = identity.DeviceID
+		}
+		if cfg.Agent.HostID == "" {
+			cfg.Agent.HostID = identity.HostID
+		}
+		if cfg.Agent.TenantID == "" {
+			cfg.Agent.TenantID = "local"
+		}
+	}
+	return &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state}, nil
 }
 
 func NewAgentRuntime(cfg config.Config) (*AgentRuntime, error) {
@@ -126,6 +170,9 @@ func applyRuntimeFeatureFlags(cfg config.Config) (agenthealth.RuntimeFeatureFlag
 }
 
 func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
+	if r.localStore != nil {
+		defer r.localStore.Close()
+	}
 	if opts.Out != nil {
 		r.Out = opts.Out
 	}
@@ -168,6 +215,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		return failStartup("data_plane", err)
 	}
 	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
+	if local, ok := appender.(*localStoreBatchSender); ok {
+		local.onCommit = bus.PublishBatch
+	}
 	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, r.Config.DataPlane.MaxInflight*64, r.Config.Telemetry.MaxBytes)
 	sender := &telemetry.Sender{
 		Appender:     appender,
@@ -232,7 +282,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 			if err != nil {
 				return err
 			}
-			bus.PublishBatch(batch)
+			if r.localStore == nil {
+				bus.PublishBatch(batch)
+			}
 			batcher.Add(batch)
 			if r.Out != nil {
 				fmt.Fprintf(r.Out, "agent daemon event: behavior=%s raw_ref=%s telemetry_events=%d telemetry_signals=%d\n", ev.SensorEvent.GetBehavior(), ev.RawRef, len(batch.GetEvents()), len(batch.GetSignals()))
@@ -252,7 +304,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				if err != nil {
 					return err
 				}
-				bus.PublishBatch(batch)
+				if r.localStore == nil {
+					bus.PublishBatch(batch)
+				}
 				batcher.Add(batch)
 				if r.Out != nil {
 					fmt.Fprintf(r.Out, "agent tamper signal: name=%s reason=%q\n", sig.GetName(), sig.GetEvidence().GetSummary())
@@ -742,6 +796,9 @@ func samePolicyRuntime(a, b policymodel.Policy) bool {
 }
 
 func (r *AgentRuntime) batchSender() (dataappend.BatchSender, error) {
+	if r.localStore != nil {
+		return &localStoreBatchSender{store: r.localStore}, nil
+	}
 	return newBatchSender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 }
 

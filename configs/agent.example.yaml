@@ -1,18 +1,6 @@
 agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
+  state_path: /var/lib/sysarmor/agent
   label.env: dev # optional metadata; tests can add label.workload or label.scenario
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-  tls_ca: "" # production: CA bundle used to verify manager gRPC
-  tls_cert: "" # production: agent client certificate
-  tls_key: "" # production: agent client private key
-  tls_server_name: "" # optional override for manager certificate SAN
-  tls_insecure: false
 
 control:
   socket_path: /run/sysarmor/agent.sock
@@ -62,3 +50,9 @@ content:
 resource:
   max_active_cep_groups: 4096
   max_event_refs_per_signal: 128
+
+storage:
+  max_bytes: 10GiB
+  min_free_bytes: 2GiB
+  event_segment_size: 64MiB
+  signal_max_count: 100000
