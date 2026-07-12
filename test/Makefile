@@ -20,8 +20,8 @@ EVALUATION_SCOPE ?= local
 
 .PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
-.PHONY: product-endpoint product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
-.PHONY: performance-endpoint performance-platform performance-modules performance-rule-engine performance-matcher
+.PHONY: product-endpoint product-endpoint-standalone product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
+.PHONY: performance-endpoint performance-local-store performance-platform performance-modules performance-rule-engine performance-matcher
 .PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
 .PHONY: capture-endpoint capture-topology report effectiveness-report
@@ -80,6 +80,9 @@ test-unit:
 product-endpoint:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash suites/product/endpoint/e2e-real-tetragon-owned-vm.sh
 
+product-endpoint-standalone:
+	bash suites/product/endpoint/standalone-local-store.sh
+
 product-endpoint-namespace-container:
 	bash suites/product/endpoint/e2e-namespace-self-container.sh
 
@@ -117,6 +120,9 @@ capture-topology:
 
 performance-endpoint:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint SYSARMOR_BENCH_PROFILE=$(SYSARMOR_BENCH_PROFILE) SYSARMOR_BENCH_WORKLOAD=$(SYSARMOR_BENCH_WORKLOAD) SYSARMOR_BENCH_SCENARIO=$(SYSARMOR_BENCH_SCENARIO) SYSARMOR_BENCH_POLICIES="$(SYSARMOR_BENCH_POLICIES)" bash suites/performance/endpoint/run.sh
+
+performance-local-store:
+	bash suites/performance/endpoint/local-store.sh
 
 performance-platform:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/performance/platform/run.sh

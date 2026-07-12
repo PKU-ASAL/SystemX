@@ -152,6 +152,7 @@ make -C test performance-matcher
 | Target | Purpose |
 |---|---|
 | `product-endpoint` | 验证单 VM agent 和 owned real Tetragon 基础能力；不是 smoke。 |
+| `product-endpoint-standalone` | 本地确定性验证 segment 恢复、容量、checkpoint、注册边界和网络 supervisor。 |
 | `product-platform` | 验证 manager/gateway/store/policy/response/control 本地合约和轻量 smoke。 |
 | `product-platform-smoke` | `product-platform` 的显式 smoke 别名。 |
 | `product-platform-full` | 使用 container 环境验证 gateway/worker/manager/Kafka/store 产品路径。 |
@@ -162,6 +163,7 @@ make -C test performance-matcher
 | Target | Purpose |
 |---|---|
 | `performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=...` | 单 VM endpoint 冒烟性能 benchmark。 |
+| `performance-local-store` | 运行 Event segment 写入基准，并要求吞吐不低于 1,000 EPS。 |
 | `performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=... SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local` | 单 VM endpoint 检测 + 性能关联。 |
 | `performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=...` | 单 VM endpoint 长窗口 CPU/RSS benchmark。 |
 | `performance-platform SYSARMOR_PLATFORM_PERF_DURATION=...` | 三 VM topology 中采 `mgr` 上 manager/gateway/worker/Kafka/Postgres/Redis/OpenSearch 资源。 |
