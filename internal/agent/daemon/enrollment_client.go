@@ -122,6 +122,10 @@ func validateEnrollmentCertificate(response enrollmentCertificate, key *ecdsa.Pr
 	if !ok || !public.Equal(&key.PublicKey) {
 		return fmt.Errorf("enrollment certificate does not match private key")
 	}
+	wantCN := fmt.Sprintf("tenant_id:%s,agent_id:%s", response.TenantID, response.AgentID)
+	if cert.Subject.CommonName != wantCN {
+		return fmt.Errorf("enrollment certificate identity mismatch")
+	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	_, err = cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})

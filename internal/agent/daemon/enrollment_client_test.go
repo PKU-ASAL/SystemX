@@ -1,11 +1,17 @@
 package daemon
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestEnrollmentCSRUsesRequiredIdentity(t *testing.T) {
@@ -20,6 +26,21 @@ func TestEnrollmentCSRUsesRequiredIdentity(t *testing.T) {
 	}
 	if csr.Subject.CommonName != "tenant_id:tenant-a,agent_id:agent-a" || csr.CheckSignature() != nil {
 		t.Fatalf("invalid CSR: %+v", csr.Subject)
+	}
+}
+
+func TestValidateEnrollmentCertificateRejectsWrongSubject(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	now := time.Now()
+	caTemplate := &x509.Certificate{SerialNumber: big.NewInt(1), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour)}
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	ca, _ := x509.ParseCertificate(caDER)
+	certTemplate := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "tenant_id:other,agent_id:other"}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour)}
+	certDER, _ := x509.CreateCertificate(rand.Reader, certTemplate, ca, &key.PublicKey, caKey)
+	response := enrollmentCertificate{TenantID: "tenant-a", AgentID: "agent-a", CAPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})), CertificatePEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}))}
+	if err := validateEnrollmentCertificate(response, key); err == nil {
+		t.Fatal("certificate with wrong subject accepted")
 	}
 }
 
