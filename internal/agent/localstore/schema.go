@@ -31,6 +31,42 @@ CREATE TABLE IF NOT EXISTS enrollment (
   upload_history INTEGER NOT NULL DEFAULT 0,
   managed_from_seq INTEGER,
   updated_at_ns INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS policy (
+  kind TEXT PRIMARY KEY,
+  version INTEGER NOT NULL,
+  document_json BLOB NOT NULL,
+  digest TEXT NOT NULL,
+  updated_at_ns INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS signals (
+  sequence INTEGER PRIMARY KEY,
+  signal_id TEXT NOT NULL UNIQUE,
+  observed_at_ns INTEGER NOT NULL,
+  rule_id TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  payload BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS signals_observed_at ON signals(observed_at_ns);
+CREATE INDEX IF NOT EXISTS signals_rule_time ON signals(rule_id, observed_at_ns);
+CREATE INDEX IF NOT EXISTS signals_severity_time ON signals(severity, observed_at_ns);
+CREATE TABLE IF NOT EXISTS segments (
+  segment_id INTEGER PRIMARY KEY,
+  path TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('open', 'sealed')),
+  first_sequence INTEGER NOT NULL,
+  last_sequence INTEGER NOT NULL,
+  record_count INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  created_at_ns INTEGER NOT NULL,
+  sealed_at_ns INTEGER
+);
+CREATE TABLE IF NOT EXISTS upload_checkpoint (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  segment_id INTEGER,
+  record_offset INTEGER NOT NULL,
+  last_batch_id TEXT,
+  updated_at_ns INTEGER NOT NULL
 );`
 
 func (s *Store) initialize(ctx context.Context, dbPath string) error {
