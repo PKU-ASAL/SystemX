@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
+	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -26,9 +29,10 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	socketPath := filepath.Join(dir, "agent.sock")
 	runner := &AgentRuntime{
 		Config: config.Config{
-			Agent:   config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
-			Control: config.ControlConfig{SocketPath: socketPath},
-			Sensor:  config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}},
+			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
+			Control:   config.ControlConfig{SocketPath: socketPath},
+			Sensor:    config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}},
+			Telemetry: config.DefaultTelemetryConfig(),
 		},
 		Sensor: &healthOnlySensor{health: contract.Health{
 			Backend:      "fake",
@@ -176,21 +180,14 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	client := newUnixControlClient(t, socketPath)
 	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
 		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-a"},
-		PolicyType: "agent-runtime",
+		PolicyType: "endpoint",
 		PolicyJson: `{
 			"policy_id":"local-policy",
 			"version":7,
-			"tenant_id":"default",
-			"detection":{
-				"policy_id":"local-detection",
-				"version":2,
-				"mode":"observe",
-				"rulesets":[{"ref":"ruleset:endpoint-linux-builtin","version":"1","enabled":true}],
-				"rule_overrides":[{"rule_id":"download_by_lolbin","enabled":false}]
-			},
-			"cloud_rules":[],
-			"mode":"observe",
-			"published":true
+			"collection":{"behaviors":["process.exec"]},
+			"detection":{},
+			"telemetry":{"max_batch_items":256,"max_batch_bytes":262144,"flush_interval":"1s"},
+			"response":{}
 		}`,
 	})
 	if err != nil {
@@ -247,11 +244,42 @@ func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 	if runner.Config.Manager.Transport != "grpc" || runner.Config.Manager.Address != "127.0.0.1:9443" {
 		t.Fatalf("manager config = %+v", runner.Config.Manager)
 	}
-	if runner.Config.Telemetry.MaxBatchItems != 64 || runner.Config.Telemetry.MaxBatchBytes != 131072 || runner.Config.Telemetry.FlushInterval != 2*time.Second {
-		t.Fatalf("telemetry config = %+v", runner.Config.Telemetry)
+	effective := runner.currentEffectiveTelemetry()
+	if effective.MaxBatchItems != 64 || effective.MaxBatchBytes != 131072 || effective.FlushInterval != 2*time.Second {
+		t.Fatalf("effective telemetry = %+v", effective)
+	}
+	if runner.Config.Telemetry.MaxBatchItems != 10 {
+		t.Fatalf("telemetry config baseline was mutated: %+v", runner.Config.Telemetry)
 	}
 	if runner.Config.Local.Export.RetryInitial != time.Second || runner.Config.Local.Export.RetryMax != 30*time.Second || runner.Config.Local.Export.RequestTimeout != 10*time.Second || runner.Config.Local.Export.MaxInflight != 1 {
 		t.Fatalf("export config changed by telemetry policy: %+v", runner.Config.Local.Export)
+	}
+}
+
+func TestApplyTelemetryPolicyPersistsUnifiedEndpointPolicy(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: filepath.Join(t.TempDir(), "state")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runner := &AgentRuntime{localStore: store, Config: config.Config{Telemetry: config.TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: time.Second}}}
+	runner.setEndpointPolicy(agentpolicy.EndpointPolicy{PolicyID: "endpoint-a", Version: 1})
+	ack := (&localControlServer{runner: runner}).applyTelemetryPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
+		PolicyType: "telemetry", PolicyJson: `{"max_batch_items":512,"max_batch_bytes":524288,"flush_interval":"2s"}`,
+	}, nil)
+	if ack.GetStatus() != "applied" {
+		t.Fatalf("ack=%+v", ack)
+	}
+	record, ok, err := store.Policy(t.Context(), "endpoint")
+	if err != nil || !ok {
+		t.Fatalf("policy ok=%t err=%v", ok, err)
+	}
+	var persisted agentpolicy.EndpointPolicy
+	if err := json.Unmarshal(record.Document, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Telemetry.MaxBatchItems != 512 || persisted.Version != 2 {
+		t.Fatalf("persisted=%+v", persisted.Telemetry)
 	}
 }
 

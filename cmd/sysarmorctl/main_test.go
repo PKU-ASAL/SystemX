@@ -341,21 +341,21 @@ func TestQueryLocalAgentPolicyApplyOverUnixSocket(t *testing.T) {
 	defer server.Stop()
 
 	policyFile := filepath.Join(t.TempDir(), "policy.json")
-	if err := os.WriteFile(policyFile, []byte(`{"policy_id":"local","version":2,"tenant_id":"default"}`), 0o644); err != nil {
+	if err := os.WriteFile(policyFile, []byte(`{"policy_id":"local","version":2,"collection":{},"detection":{},"telemetry":{},"response":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	body, err := queryLocalAgent(socketPath, []string{
 		"policy", "apply",
 		"--tenant-id", "default",
 		"--agent-id", "agent-a",
-		"--type", "agent-runtime",
+		"--type", "endpoint",
 		"--file", policyFile,
 		"--dry-run",
 	})
 	if err != nil {
 		t.Fatalf("queryLocalAgent() error = %v", err)
 	}
-	if fake.applyReq == nil || fake.applyReq.GetPolicyType() != "agent-runtime" || !fake.applyReq.GetDryRun() {
+	if fake.applyReq == nil || fake.applyReq.GetPolicyType() != "endpoint" || !fake.applyReq.GetDryRun() {
 		t.Fatalf("apply request = %+v", fake.applyReq)
 	}
 	if fake.applyReq.GetContext().GetAgentId() != "agent-a" || fake.applyReq.GetPolicyJson() == "" {

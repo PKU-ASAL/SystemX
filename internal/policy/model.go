@@ -71,6 +71,7 @@ type Policy struct {
 	Scope         ScopeSelector            `json:"scope,omitempty"`
 	Detection     *DetectionPolicy         `json:"detection,omitempty"`
 	Telemetry     *TelemetryPolicy         `json:"telemetry,omitempty"`
+	Collection    *CollectionPolicy        `json:"collection,omitempty"`
 	EndpointRules []string                 `json:"endpoint_rules,omitempty"`
 	CloudRules    []string                 `json:"cloud_rules,omitempty"`
 	Mode          string                   `json:"mode,omitempty"`
@@ -80,6 +81,61 @@ type Policy struct {
 	Published     bool                     `json:"published"`
 	CreatedAt     time.Time                `json:"created_at,omitempty"`
 	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
+}
+
+type EndpointPolicy struct {
+	PolicyID   string               `json:"policy_id"`
+	Version    uint64               `json:"version"`
+	Collection CollectionPolicy     `json:"collection"`
+	Detection  DetectionPolicy      `json:"detection"`
+	Telemetry  TelemetryPolicy      `json:"telemetry"`
+	Response   responsemodel.Policy `json:"response"`
+}
+
+type CollectionPolicy struct {
+	PolicyID       string                     `json:"policy_id,omitempty"`
+	Version        uint64                     `json:"version,omitempty"`
+	Behaviors      []string                   `json:"behaviors,omitempty"`
+	BehaviorSpecs  []CollectionBehaviorPolicy `json:"-"`
+	BinaryPrefixes []string                   `json:"binary_prefixes,omitempty"`
+	FilePrefixes   []string                   `json:"file_prefixes,omitempty"`
+	SocketFamilies []string                   `json:"socket_families,omitempty"`
+	SocketAddrs    []string                   `json:"socket_addrs,omitempty"`
+	SocketPorts    []string                   `json:"socket_ports,omitempty"`
+	ScopeType      string                     `json:"scope_type,omitempty"`
+	ScopeSelector  string                     `json:"scope_selector,omitempty"`
+	ObserveOnly    bool                       `json:"observe_only,omitempty"`
+}
+
+type CollectionBehaviorPolicy struct {
+	ID        string                      `json:"id"`
+	Enabled   *bool                       `json:"enabled,omitempty"`
+	Selectors CollectionBehaviorSelectors `json:"selectors,omitempty"`
+}
+
+type CollectionBehaviorSelectors struct {
+	Binary  BinarySelector  `json:"binary,omitempty"`
+	Process ProcessSelector `json:"process,omitempty"`
+	File    FileSelector    `json:"file,omitempty"`
+	Socket  SocketSelector  `json:"socket,omitempty"`
+}
+
+type BinarySelector struct {
+	Prefixes []string `json:"prefixes,omitempty"`
+}
+type ProcessSelector struct {
+	BinaryPrefixes []string `json:"binary_prefixes,omitempty"`
+}
+type FileSelector struct {
+	Prefixes   []string `json:"prefixes,omitempty"`
+	PrefixRefs []string `json:"prefix_refs,omitempty"`
+}
+type SocketSelector struct {
+	Families []string `json:"families,omitempty"`
+	Addrs    []string `json:"addrs,omitempty"`
+	AddrRefs []string `json:"addr_refs,omitempty"`
+	Ports    []string `json:"ports,omitempty"`
+	PortRefs []string `json:"port_refs,omitempty"`
 }
 
 type TelemetryPolicy struct {
@@ -176,6 +232,20 @@ func DefaultDetectionPolicy() *DetectionPolicy {
 			{Ref: "ioc:c2-control-port-feed", Version: "builtin"},
 		},
 	}
+}
+
+func (p Policy) EndpointPolicy() EndpointPolicy {
+	normalized := Normalize(p)
+	collection := CollectionPolicy{Behaviors: []string{"process.exec", "process.exit", "process.fork", "file.read", "file.write", "network.connect"}, ObserveOnly: true}
+	if normalized.Collection != nil {
+		collection = *normalized.Collection
+	}
+	telemetry := TelemetryPolicy{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: "1s"}
+	if normalized.Telemetry != nil {
+		telemetry = *normalized.Telemetry
+	}
+	return EndpointPolicy{PolicyID: normalized.PolicyID, Version: normalized.Version, Collection: collection,
+		Detection: *normalized.Detection, Telemetry: telemetry, Response: normalized.Response}
 }
 
 func (p Policy) DetectionPolicy() *policyv1.DetectionPolicy {

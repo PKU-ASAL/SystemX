@@ -7,39 +7,8 @@ import (
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
-
-func policyFromControlFrame(in *controlplanev1.CurrentPolicyResponse) (policymodel.Policy, error) {
-	if in == nil {
-		return policymodel.Policy{}, fmt.Errorf("control frame missing policy_update")
-	}
-	if strings.TrimSpace(in.GetRawJson()) != "" {
-		var policy policymodel.Policy
-		if err := json.Unmarshal([]byte(in.GetRawJson()), &policy); err != nil {
-			return policymodel.Policy{}, fmt.Errorf("decode control frame policy raw_json: %w", err)
-		}
-		if policy.PolicyID == "" {
-			return policymodel.Policy{}, fmt.Errorf("control frame policy missing policy_id")
-		}
-		return policymodel.Normalize(policy), nil
-	}
-	policy := policymodel.Policy{
-		PolicyID:      in.GetPolicyId(),
-		Version:       in.GetVersion(),
-		TenantID:      in.GetTenantId(),
-		Scope:         policymodel.ScopeSelector{Type: in.GetScope().GetType(), Selector: in.GetScope().GetSelector()},
-		EndpointRules: append([]string(nil), in.GetEndpointRules()...),
-		CloudRules:    append([]string(nil), in.GetCloudRules()...),
-		Mode:          in.GetMode(),
-		Published:     in.GetPublished(),
-	}
-	if policy.PolicyID == "" {
-		return policymodel.Policy{}, fmt.Errorf("control frame policy missing policy_id")
-	}
-	return policymodel.Normalize(policy), nil
-}
 
 func responseCommandFromControl(in *controlplanev1.ResponseCommand) (responsemodel.Command, error) {
 	if in == nil {

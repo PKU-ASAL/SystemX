@@ -14,6 +14,10 @@ type EffectiveTelemetry struct {
 	FlushInterval time.Duration
 }
 
+func DefaultTelemetryConfig() TelemetryConfig {
+	return TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: time.Second}
+}
+
 func ResolveTelemetry(baseline TelemetryConfig, policy *policymodel.TelemetryPolicy) (EffectiveTelemetry, error) {
 	effective := EffectiveTelemetry{MaxBatchItems: baseline.MaxBatchItems, MaxBatchBytes: baseline.MaxBatchBytes, FlushInterval: baseline.FlushInterval}
 	if policy != nil {

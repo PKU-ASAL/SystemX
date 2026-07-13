@@ -22,6 +22,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
+	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
@@ -746,7 +747,10 @@ func (s *contentUpdateControlServer) Connect(stream controlplanev1.AgentControlP
 		policy = policymodel.DefaultPolicy(tenantID)
 	}
 	policy.TenantID = tenantID
-	rawPolicy, _ := json.Marshal(policy)
+	endpointPolicy := agentpolicy.EndpointPolicy{PolicyID: policy.PolicyID, Version: policy.Version,
+		Collection: agentpolicy.CollectionPolicy{Behaviors: []string{"process.exec"}}, Detection: *policy.Detection,
+		Telemetry: policymodel.TelemetryPolicy{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: "1s"}, Response: policy.Response}
+	rawPolicy, _ := json.Marshal(endpointPolicy)
 	for _, frame := range []*controlplanev1.ControlFrame{{
 		Type:            "policy_update",
 		RequestId:       hello.GetRequestId(),

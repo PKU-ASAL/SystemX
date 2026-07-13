@@ -143,7 +143,7 @@ func (s *Server) controlCommandFromRequest(r *http.Request, req controlCommandRe
 			if !ok {
 				return controlmodel.ControlCommand{}, fmt.Errorf("policy not found")
 			}
-			raw, err := json.Marshal(policy)
+			raw, err := json.Marshal(policy.EndpointPolicy())
 			if err != nil {
 				return controlmodel.ControlCommand{}, fmt.Errorf("encode policy payload: %v", err)
 			}

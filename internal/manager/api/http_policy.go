@@ -179,7 +179,7 @@ func (s *Server) policyDownlinkCommand(r *http.Request, assignment policymodel.A
 	if !ok {
 		return controlmodel.ControlCommand{}, fmt.Errorf("policy not found for downlink")
 	}
-	payload, err := json.Marshal(policy)
+	payload, err := json.Marshal(policy.EndpointPolicy())
 	if err != nil {
 		return controlmodel.ControlCommand{}, fmt.Errorf("encode policy downlink payload: %v", err)
 	}

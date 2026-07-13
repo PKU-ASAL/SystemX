@@ -260,7 +260,13 @@ func runtimeStatsPayload(observedAt time.Time, label string) map[string]any {
 
 func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
 	policy := policymodel.Normalize(s.runner.activePolicy())
-	raw, err := json.Marshal(policy)
+	document := any(policy)
+	if endpoint := s.runner.currentEndpointPolicy(); endpoint.PolicyID != "" {
+		document = endpoint
+		policy.PolicyID = endpoint.PolicyID
+		policy.Version = endpoint.Version
+	}
+	raw, err := json.Marshal(document)
 	if err != nil {
 		return nil, err
 	}
@@ -285,52 +291,24 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 	}
 	policyType := strings.TrimSpace(req.GetPolicyType())
 	if policyType == "" {
-		policyType = "agent-runtime"
+		policyType = "endpoint"
 	}
 	if policyType == "collection" {
 		return s.applyCollectionPolicy(ctx, req), nil
 	}
 	if policyType == "detection" {
-		return s.applyDetectionPolicy(req), nil
+		return s.applyDetectionPolicy(ctx, req), nil
 	}
 	if policyType == "telemetry" {
-		return s.applyTelemetryPolicy(req, nil), nil
+		return s.applyTelemetryPolicy(ctx, req, nil), nil
 	}
-	if policyType != "agent-runtime" {
-		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("unsupported policy type %q", policyType)), nil
+	if policyType == "endpoint" {
+		return s.applyEndpointPolicy(ctx, req), nil
 	}
-	var next policymodel.Policy
-	if err := json.Unmarshal([]byte(req.GetPolicyJson()), &next); err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "policy", "invalid policy json: "+err.Error()), nil
-	}
-	next = policymodel.Normalize(next)
-	if next.TenantID == "" {
-		next.TenantID = s.runner.Config.Agent.TenantID
-	}
-	if next.TenantID != "" && next.TenantID != s.runner.Config.Agent.TenantID {
-		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("tenant mismatch: policy=%s agent=%s", next.TenantID, s.runner.Config.Agent.TenantID)), nil
-	}
-	telemetrySection, err := telemetryPolicyFromRequest(req, next.Telemetry)
-	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", err.Error()), nil
-	}
-	if telemetrySection != nil {
-		next.Telemetry = telemetrySection
-	}
-	if req.GetDryRun() {
-		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", telemetrySection != nil), nil
-	}
-	report, ok := s.runner.tryApplyRuntimePolicy(next)
-	if !ok {
-		return rejectedAck(s.runner.Config, req.GetContext(), "detection", "runtime policy rejected; detection rebuild failed: "+strings.Join(report.Details, "; ")), nil
-	}
-	if telemetrySection != nil {
-		s.runner.applyTelemetryConfig(*telemetrySection)
-	}
-	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", telemetrySection != nil), nil
+	return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("unsupported policy type %q", policyType)), nil
 }
 
-func (s *localControlServer) applyTelemetryPolicy(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.TelemetryPolicy) *controlplanev1.ControlAck {
+func (s *localControlServer) applyTelemetryPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.TelemetryPolicy) *controlplanev1.ControlAck {
 	if fallback == nil && strings.TrimSpace(req.GetPolicyJson()) != "" {
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(req.GetPolicyJson()), &raw); err != nil {
@@ -356,50 +334,24 @@ func (s *localControlServer) applyTelemetryPolicy(req *controlplanev1.ApplyPolic
 	if req.GetDryRun() {
 		return telemetryAck(s.runner.Config, req.GetContext(), "validated", "telemetry policy accepted in dry-run", *telemetryPolicy)
 	}
+	if err := s.runner.persistTelemetryPolicy(ctx, *telemetryPolicy); err != nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", err.Error())
+	}
 	s.runner.applyTelemetryConfig(*telemetryPolicy)
+	s.reconfigureTelemetryBatcher()
 	return telemetryAck(s.runner.Config, req.GetContext(), "applied", "telemetry policy applied", *telemetryPolicy)
+}
+
+func (s *localControlServer) reconfigureTelemetryBatcher() {
+	if s == nil || s.batcher == nil {
+		return
+	}
+	effective := s.runner.currentEffectiveTelemetry()
+	s.batcher.Reconfigure(telemetry.BatchSettings{MaxItems: effective.MaxBatchItems, MaxBytes: effective.MaxBatchBytes, FlushInterval: effective.FlushInterval})
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
 	return s.runner.applyContentUpdate(req), nil
-}
-
-func (r *AgentRuntime) applyPolicyUpdateFromControl(frame *controlplanev1.ControlFrame) *controlplanev1.ControlAck {
-	ctx := frame.GetContext()
-	if ctx == nil {
-		ctx = &controlplanev1.RequestContext{}
-	}
-	if ctx.RequestId == "" {
-		ctx.RequestId = frame.GetRequestId()
-	}
-	if err := r.validateControlContext(ctx); err != nil {
-		return rejectedAck(r.Config, ctx, "policy", err.Error())
-	}
-	policy, err := policyFromControlFrame(frame.GetPolicyUpdate())
-	if err != nil {
-		return rejectedAck(r.Config, ctx, "policy", err.Error())
-	}
-	if policy.TenantID == "" {
-		policy.TenantID = r.Config.Agent.TenantID
-	}
-	if policy.TenantID != "" && policy.TenantID != r.Config.Agent.TenantID {
-		return rejectedAck(r.Config, ctx, "policy", fmt.Sprintf("tenant mismatch: policy=%s agent=%s", policy.TenantID, r.Config.Agent.TenantID))
-	}
-	if samePolicyRuntime(r.activePolicy(), policy) {
-		return appliedAck(r.Config, ctx, policy, "applied", "runtime policy already active", false)
-	}
-	report, ok := r.tryApplyRuntimePolicy(policy)
-	if !ok {
-		return rejectedAck(r.Config, ctx, "detection", "runtime policy rejected; detection rebuild failed: "+strings.Join(report.Details, "; "))
-	}
-	if policy.Telemetry != nil {
-		r.applyTelemetryConfig(*policy.Telemetry)
-	}
-	message := "runtime policy applied"
-	if report.Status == "degraded" {
-		message = "runtime policy applied; detection dependencies degraded: " + strings.Join(report.Warnings, "; ")
-	}
-	return appliedAck(r.Config, ctx, policy, "applied", message, policy.Telemetry != nil)
 }
 
 func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentRequest) *controlplanev1.ControlAck {
@@ -537,6 +489,15 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	if err := s.runtime.Apply(ctx, intent); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "apply collection policy: "+err.Error())
 	}
+	if s.runner.localStore != nil {
+		next := s.runner.currentEndpointPolicy()
+		next.Collection = policy
+		next.Version++
+		if err := s.runner.persistEndpointPolicy(ctx, next); err != nil {
+			_ = s.runtime.Apply(ctx, s.runner.currentCollectionIntent())
+			return collectionAck(s.runner.Config, req.GetContext(), policy, "rejected", "persist collection policy: "+err.Error(), false, compileReport, nil)
+		}
+	}
 	s.runner.setCollectionIntent(intent)
 	active := policymodel.Normalize(s.runner.activePolicy())
 	engine, report := detection.NewWithRuntimeLimits(active.Detection, intent, s.runner.detectionContentSnapshot(), s.runner.detectionLimits())
@@ -547,7 +508,7 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false, compileReport, &report.Coverage)
 }
 
-func (s *localControlServer) applyDetectionPolicy(req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+func (s *localControlServer) applyDetectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
 	var envelope struct {
 		Detection *policymodel.DetectionPolicy `json:"detection"`
 	}
@@ -568,10 +529,37 @@ func (s *localControlServer) applyDetectionPolicy(req *controlplanev1.ApplyPolic
 		s.runner.setDetectionStatus(active, report, s.runner.contentStore().Snapshot())
 		return detectionAck(s.runner.Config, req.GetContext(), active, "rejected", "detection policy rejected: "+strings.Join(report.Details, "; "), false, report)
 	}
+	if s.runner.localStore != nil {
+		endpoint := s.runner.currentEndpointPolicy()
+		endpoint.Detection = next
+		endpoint.Version++
+		if err := s.runner.persistEndpointPolicy(ctx, endpoint); err != nil {
+			return detectionAck(s.runner.Config, req.GetContext(), active, "rejected", "persist detection policy: "+err.Error(), false, report)
+		}
+	}
 	s.runner.setPolicy(active)
 	s.runner.setDetection(engine)
 	s.runner.setDetectionStatus(active, report, s.runner.contentStore().Snapshot())
 	return detectionAck(s.runner.Config, req.GetContext(), active, report.Status, report.Message, false, report)
+}
+
+func (r *AgentRuntime) persistTelemetryPolicy(ctx context.Context, policy policymodel.TelemetryPolicy) error {
+	effective, err := config.ResolveTelemetry(r.Config.Telemetry, &policy)
+	if err != nil {
+		return err
+	}
+	if r.localStore == nil {
+		r.setEffectiveTelemetry(effective)
+		return nil
+	}
+	endpoint := r.currentEndpointPolicy()
+	endpoint.Telemetry = policy
+	endpoint.Version++
+	if err := r.persistEndpointPolicy(ctx, endpoint); err != nil {
+		return err
+	}
+	r.setEffectiveTelemetry(effective)
+	return nil
 }
 
 func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
@@ -840,43 +828,15 @@ func telemetryPolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback
 }
 
 func validateTelemetryPolicy(policy *policymodel.TelemetryPolicy) error {
-	if policy == nil {
-		return nil
-	}
-	if policy.MaxBatchItems < 0 {
-		return fmt.Errorf("telemetry.max_batch_items must be non-negative")
-	}
-	if policy.MaxBatchBytes < 0 {
-		return fmt.Errorf("telemetry.max_batch_bytes must be non-negative")
-	}
-	if strings.TrimSpace(policy.FlushInterval) != "" {
-		if _, err := time.ParseDuration(policy.FlushInterval); err != nil {
-			return fmt.Errorf("telemetry.flush_interval: %w", err)
-		}
-	}
-	return nil
+	_, err := config.ResolveTelemetry(config.DefaultTelemetryConfig(), policy)
+	return err
 }
 
 func (r *AgentRuntime) applyTelemetryConfig(telemetryPolicy policymodel.TelemetryPolicy) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if telemetryPolicy.MaxBatchItems > 0 {
-		r.Config.Telemetry.MaxBatchItems = telemetryPolicy.MaxBatchItems
+	effective, err := config.ResolveTelemetry(r.Config.Telemetry, &telemetryPolicy)
+	if err == nil {
+		r.setEffectiveTelemetry(effective)
 	}
-	if telemetryPolicy.MaxBatchBytes > 0 {
-		r.Config.Telemetry.MaxBatchBytes = telemetryPolicy.MaxBatchBytes
-	}
-	if d := parseOptionalDuration(telemetryPolicy.FlushInterval); d > 0 {
-		r.Config.Telemetry.FlushInterval = d
-	}
-}
-
-func parseOptionalDuration(value string) time.Duration {
-	if strings.TrimSpace(value) == "" {
-		return 0
-	}
-	d, _ := time.ParseDuration(value)
-	return d
 }
 
 func rejectedAck(cfg config.Config, req *controlplanev1.RequestContext, section, message string) *controlplanev1.ControlAck {

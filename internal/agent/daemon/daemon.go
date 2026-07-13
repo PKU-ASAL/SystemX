@@ -102,6 +102,8 @@ type AgentRuntime struct {
 	standaloneIdentity runtimeIdentity
 	normalizer         *normalize.Normalizer
 	managedControl     *TransportRuntime
+	endpointPolicy     policy.EndpointPolicy
+	effectiveTelemetry config.EffectiveTelemetry
 	policy             policymodel.Policy
 	detection          *detection.Engine
 	collection         contract.CollectionIntent
@@ -195,10 +197,11 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		return failStartup("probe", err)
 	}
 	r.capability = capability
-	intent, err := policy.LoadCollectionIntent(r.Config.Sensor.PolicyPath, r.Config.Sensor.ObserveOnly)
+	intent, effectivePolicy, effectiveTelemetry, err := r.loadStartupPolicy(ctx)
 	if err != nil {
 		return failStartup("policy", err)
 	}
+	r.setEffectiveTelemetry(effectiveTelemetry)
 	scope, err := r.Config.Sensor.EffectiveScope()
 	if err != nil {
 		return err
@@ -211,7 +214,6 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		return failStartup("apply", err)
 	}
 	longControl := r.Config.Manager.Transport == "grpc"
-	effectivePolicy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
 	r.setPolicy(effectivePolicy)
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
@@ -221,11 +223,11 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("data_plane", err)
 	}
-	bus := telemetry.NewBus(r.Config.Telemetry.MaxBatchItems * 16)
+	bus := telemetry.NewBus(effectiveTelemetry.MaxBatchItems * 16)
 	if local, ok := appender.(*localStoreBatchSender); ok {
 		local.onCommit = bus.PublishBatch
 	}
-	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.MaxBatchItems, r.Config.Telemetry.FlushInterval, r.Config.Local.Export.MaxInflight*64, r.Config.Telemetry.MaxBatchBytes)
+	batcher := telemetry.NewBatcher(r.newDataBatch, effectiveTelemetry.MaxBatchItems, effectiveTelemetry.FlushInterval, r.Config.Local.Export.MaxInflight*64, effectiveTelemetry.MaxBatchBytes)
 	sender := &telemetry.Sender{
 		Appender:     appender,
 		Batcher:      batcher,

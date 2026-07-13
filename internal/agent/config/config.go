@@ -346,7 +346,7 @@ func defaults() Config {
 		Control:   ControlConfig{SocketPath: "/run/sysarmor/agent/control.sock"},
 		Runtime:   RuntimeConfig{FeatureFlags: RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
-		Telemetry: TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 * 1024, FlushInterval: time.Second},
+		Telemetry: DefaultTelemetryConfig(),
 		Health:    HealthConfig{Interval: 10 * time.Second},
 		Policy:    PolicyConfig{Path: "/etc/sysarmor/agent/policy.json"},
 		Content:   ContentConfig{Path: "/var/lib/sysarmor/agent/content"},

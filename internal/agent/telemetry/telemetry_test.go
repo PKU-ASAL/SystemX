@@ -51,6 +51,22 @@ func TestBatcherFlushesByCount(t *testing.T) {
 	}
 }
 
+func TestBatcherReconfigureSealsPendingBatchAndUsesNewLimits(t *testing.T) {
+	batcher := NewBatcher(nil, 10, time.Hour, 4, 256<<10)
+	batcher.Add(&dataplanev1.DataBatch{Events: []*dataplanev1.EventFrame{eventFrame(1, "ev-1")}})
+	batcher.Reconfigure(BatchSettings{MaxItems: 2, MaxBytes: 128 << 10, FlushInterval: 2 * time.Second})
+	first := <-batcher.Batches()
+	if len(first.GetEvents()) != 1 {
+		t.Fatalf("sealed batch=%+v", first)
+	}
+	batcher.Add(&dataplanev1.DataBatch{Events: []*dataplanev1.EventFrame{eventFrame(2, "ev-2")}})
+	batcher.Add(&dataplanev1.DataBatch{Events: []*dataplanev1.EventFrame{eventFrame(3, "ev-3")}})
+	second := <-batcher.Batches()
+	if len(second.GetEvents()) != 2 || batcher.Stats().MaxBytes != 128<<10 {
+		t.Fatalf("reconfigured batch=%+v stats=%+v", second, batcher.Stats())
+	}
+}
+
 func TestSenderRecordsAcceptedBatch(t *testing.T) {
 	batcher := NewBatcher(nil, 10, time.Hour, 1)
 	appender := &recordingAppender{}

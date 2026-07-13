@@ -22,6 +22,12 @@ const (
 
 type BatchBuilder func(now time.Time) *dataplanev1.DataBatch
 
+type BatchSettings struct {
+	MaxItems      int
+	MaxBytes      int
+	FlushInterval time.Duration
+}
+
 type Batcher struct {
 	builder       BatchBuilder
 	batchSize     int
@@ -142,6 +148,18 @@ func (b *Batcher) Flush(reason string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.flushLocked(reason)
+}
+
+func (b *Batcher) Reconfigure(settings BatchSettings) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.flushLocked("policy")
+	b.batchSize = settings.MaxItems
+	b.maxBytes = settings.MaxBytes
+	b.flushInterval = settings.FlushInterval
 }
 
 func (b *Batcher) CloseAndFlush(reason string) {

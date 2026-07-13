@@ -7,57 +7,17 @@ import (
 	"strings"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
+	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
-type CollectionPolicy struct {
-	PolicyID       string                     `json:"policy_id,omitempty"`
-	Version        uint64                     `json:"version,omitempty"`
-	Behaviors      []string                   `json:"behaviors,omitempty"`
-	BehaviorSpecs  []CollectionBehaviorPolicy `json:"-"`
-	BinaryPrefixes []string                   `json:"binary_prefixes,omitempty"`
-	FilePrefixes   []string                   `json:"file_prefixes,omitempty"`
-	SocketFamilies []string                   `json:"socket_families,omitempty"`
-	SocketAddrs    []string                   `json:"socket_addrs,omitempty"`
-	SocketPorts    []string                   `json:"socket_ports,omitempty"`
-	ScopeType      string                     `json:"scope_type,omitempty"`
-	ScopeSelector  string                     `json:"scope_selector,omitempty"`
-	ObserveOnly    bool                       `json:"observe_only,omitempty"`
-}
-
-type CollectionBehaviorPolicy struct {
-	ID        string                      `json:"id"`
-	Enabled   *bool                       `json:"enabled,omitempty"`
-	Selectors CollectionBehaviorSelectors `json:"selectors,omitempty"`
-}
-
-type CollectionBehaviorSelectors struct {
-	Binary  BinarySelector  `json:"binary,omitempty"`
-	Process ProcessSelector `json:"process,omitempty"`
-	File    FileSelector    `json:"file,omitempty"`
-	Socket  SocketSelector  `json:"socket,omitempty"`
-}
-
-type BinarySelector struct {
-	Prefixes []string `json:"prefixes,omitempty"`
-}
-
-type ProcessSelector struct {
-	BinaryPrefixes []string `json:"binary_prefixes,omitempty"`
-}
-
-type FileSelector struct {
-	Prefixes   []string `json:"prefixes,omitempty"`
-	PrefixRefs []string `json:"prefix_refs,omitempty"`
-}
-
-type SocketSelector struct {
-	Families []string `json:"families,omitempty"`
-	Addrs    []string `json:"addrs,omitempty"`
-	AddrRefs []string `json:"addr_refs,omitempty"`
-	Ports    []string `json:"ports,omitempty"`
-	PortRefs []string `json:"port_refs,omitempty"`
-}
+type CollectionPolicy = policymodel.CollectionPolicy
+type CollectionBehaviorPolicy = policymodel.CollectionBehaviorPolicy
+type CollectionBehaviorSelectors = policymodel.CollectionBehaviorSelectors
+type BinarySelector = policymodel.BinarySelector
+type ProcessSelector = policymodel.ProcessSelector
+type FileSelector = policymodel.FileSelector
+type SocketSelector = policymodel.SocketSelector
 
 type CollectionContentSnapshot struct {
 	ContextSets map[string]CollectionValueSet

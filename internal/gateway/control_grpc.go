@@ -318,7 +318,7 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 }
 
 func currentPolicyFrame(policy policymodel.Policy) *controlplanev1.CurrentPolicyResponse {
-	raw, _ := json.Marshal(policy)
+	raw, _ := json.Marshal(policy.EndpointPolicy())
 	return &controlplanev1.CurrentPolicyResponse{
 		PolicyId:      policy.PolicyID,
 		Version:       policy.Version,
