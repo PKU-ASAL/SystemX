@@ -1,0 +1,22 @@
+{
+  "policy_id": "standalone-default",
+  "version": 1,
+  "collection": {
+    "behaviors": [
+      "process.exec",
+      "process.exit",
+      "process.fork",
+      "file.read",
+      "file.write",
+      "network.connect"
+    ],
+    "observe_only": true
+  },
+  "detection": {},
+  "telemetry": {
+    "max_batch_items": 256,
+    "max_batch_bytes": 262144,
+    "flush_interval": "1s"
+  },
+  "response": {}
+}

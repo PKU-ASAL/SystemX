@@ -8,6 +8,7 @@ VERSION="${SYSARMOR_AGENT_VERSION:-dev}"
 OS_NAME="${SYSARMOR_AGENT_OS:-linux}"
 ARCH="${SYSARMOR_AGENT_ARCH:-amd64}"
 AGENT_BIN="${SYSARMOR_AGENT_BIN:-$REPO/dist/bin/sysarmor-agent}"
+CTL_BIN="${SYSARMOR_CTL_BIN:-$REPO/dist/bin/sysarmorctl}"
 SERVICE_FILE="${SYSARMOR_AGENT_SERVICE:-$HERE/systemd/sysarmor-agent.service}"
 TETRAGON_ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
 SIGNING_KEY="${SYSARMOR_ARTIFACT_SIGNING_KEY:-}"
@@ -16,7 +17,7 @@ WORK=""
 
 usage() {
   cat <<EOF
-usage: package-agent.sh [--version VERSION] [--output FILE] [--agent-bin FILE]
+usage: package-agent.sh [--version VERSION] [--output FILE] [--agent-bin FILE] [--ctl-bin FILE]
                         [--tetragon-archive FILE] [--signing-key FILE]
 
 Build a signed SysArmor agent distribution tarball.
@@ -28,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="$2"; shift 2 ;;
     --output) OUT="$2"; shift 2 ;;
     --agent-bin) AGENT_BIN="$2"; shift 2 ;;
+    --ctl-bin) CTL_BIN="$2"; shift 2 ;;
     --tetragon-archive) TETRAGON_ARCHIVE="$2"; shift 2 ;;
     --signing-key) SIGNING_KEY="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -43,6 +45,7 @@ require_file() {
 }
 
 require_file "$AGENT_BIN"
+require_file "$CTL_BIN"
 require_file "$SERVICE_FILE"
 if [[ -z "$TETRAGON_ARCHIVE" && -f "$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz" ]]; then
   TETRAGON_ARCHIVE="$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz"
@@ -63,12 +66,13 @@ trap 'rm -rf "$WORK"' EXIT
 ROOT="$WORK/root"
 mkdir -p "$ROOT/bin" "$ROOT/systemd" "$ROOT/configs" "$ROOT/policies" "$ROOT/sensors/tetragon"
 install -m 0755 "$AGENT_BIN" "$ROOT/bin/sysarmor-agent"
+install -m 0755 "$CTL_BIN" "$ROOT/bin/sysarmorctl"
 install -m 0644 "$SERVICE_FILE" "$ROOT/systemd/sysarmor-agent.service"
 if [[ -f "$REPO/configs/agent.example.yaml" ]]; then
   install -m 0644 "$REPO/configs/agent.example.yaml" "$ROOT/configs/agent.example.yaml"
 fi
 install -m 0644 "$HERE/standalone.yaml" "$ROOT/configs/standalone.yaml"
-install -m 0644 "$HERE/standalone-collection.json" "$ROOT/policies/standalone-collection.json"
+install -m 0644 "$HERE/policy.json" "$ROOT/policies/policy.json"
 
 SYSARMOR_TETRAGON_ARCHIVE="$TETRAGON_ARCHIVE" \
   SYSARMOR_TETRAGON_BUNDLE_DIR="$ROOT/sensors/tetragon" \
@@ -94,9 +98,9 @@ cat > "$ROOT/manifest.json" <<EOF
   "systemd_unit": "systemd/sysarmor-agent.service",
   "install": {
     "agent_home": "/opt/sysarmor/agent",
-    "config_path": "/etc/sysarmor/agent.yaml",
-    "policy_dir": "/etc/sysarmor/policies",
-    "runtime_socket": "/run/sysarmor/agent.sock"
+    "config_path": "/etc/sysarmor/agent/agent.yaml",
+    "policy_path": "/etc/sysarmor/agent/policy.json",
+    "runtime_socket": "/run/sysarmor/agent/control.sock"
   },
   "sensors": [
     {
@@ -108,9 +112,10 @@ cat > "$ROOT/manifest.json" <<EOF
   ],
   "files": [
 $(file_json "bin/sysarmor-agent" "0755"),
+$(file_json "bin/sysarmorctl" "0755"),
 $(file_json "systemd/sysarmor-agent.service" "0644"),
 $(file_json "configs/standalone.yaml" "0644"),
-$(file_json "policies/standalone-collection.json" "0644"),
+$(file_json "policies/policy.json" "0644"),
 $(file_json "sensors/tetragon/bin/tetragon" "0755"),
 $(file_json "sensors/tetragon/bin/tetra" "0755"),
 $(file_json "sensors/tetragon/manifest.json" "0644")

@@ -23,7 +23,7 @@ func ParseEndpointPolicy(document []byte) (EndpointPolicy, error) {
 	var envelope struct {
 		PolicyID   string                       `json:"policy_id"`
 		Version    uint64                       `json:"version"`
-		Collection *CollectionPolicy            `json:"collection"`
+		Collection json.RawMessage              `json:"collection"`
 		Detection  *policymodel.DetectionPolicy `json:"detection"`
 		Telemetry  *policymodel.TelemetryPolicy `json:"telemetry"`
 		Response   *responsemodel.Policy        `json:"response"`
@@ -36,11 +36,19 @@ func ParseEndpointPolicy(document []byte) (EndpointPolicy, error) {
 	if strings.TrimSpace(envelope.PolicyID) == "" || envelope.Version == 0 {
 		return EndpointPolicy{}, fmt.Errorf("endpoint policy id and positive version are required")
 	}
-	if envelope.Collection == nil || envelope.Detection == nil || envelope.Telemetry == nil || envelope.Response == nil {
+	if len(envelope.Collection) == 0 || envelope.Detection == nil || envelope.Telemetry == nil || envelope.Response == nil {
 		return EndpointPolicy{}, fmt.Errorf("endpoint policy requires collection, detection, telemetry, and response sections")
 	}
-	return EndpointPolicy{PolicyID: envelope.PolicyID, Version: envelope.Version, Collection: *envelope.Collection,
-		Detection: policymodel.NormalizeDetectionPolicy(*envelope.Detection), Telemetry: *envelope.Telemetry, Response: *envelope.Response}, nil
+	collection, err := ParseCollectionPolicyJSON(envelope.Collection, true)
+	if err != nil {
+		return EndpointPolicy{}, err
+	}
+	response := *envelope.Response
+	if len(response.AllowedActions) == 0 && len(response.AllowedModes) == 0 {
+		response = responsemodel.DefaultPolicy()
+	}
+	return EndpointPolicy{PolicyID: envelope.PolicyID, Version: envelope.Version, Collection: collection,
+		Detection: policymodel.NormalizeDetectionPolicy(*envelope.Detection), Telemetry: *envelope.Telemetry, Response: response}, nil
 }
 
 func LoadEffectiveEndpointPolicy(ctx context.Context, store *localstore.Store, path string) (EndpointPolicy, error) {

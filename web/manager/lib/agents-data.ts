@@ -35,7 +35,7 @@ export function buildAgentUninstallCommand(agentId: string) {
   return `# ${agentId}
 sudo systemctl stop sysarmor-agent
 sudo systemctl disable sysarmor-agent
-sudo rm -f /etc/sysarmor/agent.yaml
+sudo rm -rf /etc/sysarmor/agent
 sudo rm -f /etc/systemd/system/sysarmor-agent.service
 sudo systemctl daemon-reload`;
 }

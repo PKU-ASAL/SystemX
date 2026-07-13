@@ -433,5 +433,5 @@ function placeholderCommand(mode: DeploymentMode) {
 }
 
 function placeholderEntrypointCommand() {
-  return "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml";
+  return "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml";
 }

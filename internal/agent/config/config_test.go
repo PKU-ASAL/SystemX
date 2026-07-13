@@ -80,7 +80,7 @@ func TestLoadFileRejectsLegacyRuntimeSections(t *testing.T) {
 	}
 }
 
-func TestDefaultManagerTransportIsStandalone(t *testing.T) {
+func TestLoadFileRejectsLegacyCloudIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
 agent:
@@ -105,12 +105,8 @@ telemetry:
 health:
   interval: 10s
 `)
-	cfg, err := LoadFile(path)
-	if err != nil {
-		t.Fatalf("LoadFile() error = %v", err)
-	}
-	if cfg.Manager.Transport != "" {
-		t.Fatalf("default manager transport = %q, want standalone", cfg.Manager.Transport)
+	if _, err := LoadFile(path); err == nil {
+		t.Fatal("legacy cloud identity accepted")
 	}
 }
 
@@ -121,7 +117,8 @@ func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
 	}
 	unit := string(data)
 	for _, want := range []string{
-		"ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml",
+		"ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml",
+		"RuntimeDirectory=sysarmor/agent",
 		"WorkingDirectory=/opt/sysarmor/agent",
 		"Restart=always",
 		"WantedBy=multi-user.target",
@@ -132,6 +129,38 @@ func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
 	}
 	if strings.Contains(unit, "network-online.target") {
 		t.Fatal("standalone service depends on network-online")
+	}
+}
+
+func TestInstallerUsesUnifiedLayoutAndStartsService(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "agent", "install-agent.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer := string(data)
+	for _, want := range []string{
+		`/etc/sysarmor/agent/agent.yaml`,
+		`/etc/sysarmor/agent/policy.json`,
+		`SYSARMOR_CTL_BIN`,
+		`systemctl enable --now sysarmor-agent`,
+		`systemctl is-active --quiet sysarmor-agent`,
+	} {
+		if !strings.Contains(installer, want) {
+			t.Fatalf("installer missing %q", want)
+		}
+	}
+}
+
+func TestReleaseBuilderPackagesAgentControlTool(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "packages", "build-release.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := string(data)
+	for _, want := range []string{`CTL_BIN=`, `--ctl-bin "$CTL_BIN"`} {
+		if !strings.Contains(builder, want) {
+			t.Fatalf("release builder missing %q", want)
+		}
 	}
 }
 
@@ -149,27 +178,13 @@ func TestLoadFileValidatesExampleShape(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
 agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
   label.scenario: apt-fileless-c2-managed
   label.env: test
   label.deployment: endpoint-refinement
 
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-  tls_ca: /etc/sysarmor/pki/ca.pem
-  tls_cert: /etc/sysarmor/pki/agent.pem
-  tls_key: /etc/sysarmor/pki/agent-key.pem
-  tls_server_name: manager.sysarmor.local
-  tls_insecure: false
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   btf_path: /tmp/vmlinux
   bpffs_path: /tmp/bpf
   require_btf: true
@@ -206,11 +221,8 @@ runtime:
 	if err != nil {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
-	if cfg.Agent.ID != "node-a" || cfg.Sensor.Backend != "tetragon" {
+	if cfg.Sensor.Backend != "tetragon" {
 		t.Fatalf("unexpected config: %+v", cfg)
-	}
-	if cfg.Manager.TLSCA != "/etc/sysarmor/pki/ca.pem" || cfg.Manager.TLSCert == "" || cfg.Manager.TLSKey == "" || cfg.Manager.TLSServerName != "manager.sysarmor.local" || cfg.Manager.TLSInsecure {
-		t.Fatalf("manager TLS config = %+v", cfg.Manager)
 	}
 	if cfg.Agent.Labels["env"] != "test" || cfg.Agent.Labels["deployment"] != "endpoint-refinement" || cfg.Agent.Labels["scenario"] != "apt-fileless-c2-managed" {
 		t.Fatalf("agent labels = %+v", cfg.Agent.Labels)
@@ -254,16 +266,6 @@ runtime:
 func TestLoadFileRejectsInvalidRuntimeFeatureFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 runtime:
   feature_flags:
     matcher_strategy: nope
@@ -271,7 +273,6 @@ runtime:
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
 
 health:
   interval: 10s
@@ -284,8 +285,6 @@ health:
 
 func TestLoadFileAcceptsStandaloneWithoutCloudIdentity(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "collection.json")
-	write(t, policy, `{"behaviors":["process.exec"],"observe_only":true}`)
 	path := filepath.Join(dir, "agent.yaml")
 	write(t, path, `
 local:
@@ -298,9 +297,8 @@ local:
 sensor:
   backend: fake
   mode: managed
-  policy_path: `+policy+`
 policy:
-  path: `+policy+`
+  path: /tmp/policy.json
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -322,69 +320,35 @@ manager:
 sensor:
   backend: fake
   mode: managed
-  policy_path: /tmp/policy
 `)
-	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "legacy") {
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "unknown section \"manager\"") {
 		t.Fatalf("error=%v", err)
 	}
 }
 
-func TestLoadFileAcceptsLegacyFlatScope(t *testing.T) {
+func TestLoadFileRejectsLegacyFlatScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: container
   scope_selector: abc123
 
 health:
   interval: 10s
 `)
-	cfg, err := LoadFile(path)
-	if err != nil {
-		t.Fatalf("LoadFile() error = %v", err)
-	}
-	if cfg.Sensor.ScopeType != "container" || cfg.Sensor.ScopeSelector != "abc123" {
-		t.Fatalf("scope = %q/%q", cfg.Sensor.ScopeType, cfg.Sensor.ScopeSelector)
-	}
-	scope, err := cfg.Sensor.EffectiveScope()
-	if err != nil {
-		t.Fatalf("EffectiveScope() error = %v", err)
-	}
-	if scope.Type != "container" || scope.Selector != "abc123" {
-		t.Fatalf("effective scope = %q/%q", scope.Type, scope.Selector)
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "sensor.scope_type") {
+		t.Fatalf("legacy flat scope error=%v", err)
 	}
 }
 
 func TestLoadFileAcceptsCanonicalNestedScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope:
     type: pod
     selector: pod-a
@@ -408,20 +372,9 @@ health:
 func TestLoadFileAcceptsNamespaceSelfScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope:
     type: namespace
     selector: self
@@ -445,20 +398,9 @@ health:
 func TestLoadFileRejectsNamespaceLegacySelector(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope:
     type: namespace
     selector: kubepods.slice/pod-a
@@ -475,21 +417,11 @@ health:
 func TestLoadFileRejectsInvalidScopeType(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
-  scope_type: vm
+  scope:
+    type: vm
 
 health:
   interval: 10s
@@ -503,21 +435,11 @@ health:
 func TestLoadFileRejectsMissingSelectorForNonHostScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
-  scope_type: container
+  scope:
+    type: container
 
 health:
   interval: 10s
@@ -531,22 +453,12 @@ health:
 func TestLoadFileRejectsSelectorForHostScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
-  scope_type: host
-  scope_selector: abc123
+  scope:
+    type: host
+    selector: abc123
 
 health:
   interval: 10s
@@ -560,20 +472,9 @@ health:
 func TestLoadFileRejectsConflictingLegacyContainerPrefix(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
-  id: node-a
-  host_id: node-a
-  tenant_id: default
-  token: dev-token
-
-manager:
-  address: http://10.66.0.10:9443
-  transport: grpc
-
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: container
   scope_selector: abc123
   container_id_prefix: def456
@@ -582,7 +483,7 @@ health:
   interval: 10s
 `)
 	_, err := LoadFile(path)
-	if err == nil || !strings.Contains(err.Error(), "sensor.scope_selector conflicts with sensor.container_id_prefix") {
+	if err == nil || !strings.Contains(err.Error(), "sensor.scope_type") {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
 }
@@ -592,8 +493,6 @@ func TestLoadFileReportsMissingRequiredFields(t *testing.T) {
 	write(t, path, `
 local:
   state_path: ""
-manager:
-  transport: grpc
 sensor:
   backend: tetragon
   mode: managed
@@ -604,7 +503,7 @@ policy:
 	if err == nil {
 		t.Fatal("LoadFile() error = nil")
 	}
-	for _, want := range []string{"local.state_path", "manager.address"} {
+	for _, want := range []string{"local.state_path"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not contain %q", err, want)
 		}

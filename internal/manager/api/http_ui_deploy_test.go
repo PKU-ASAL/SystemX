@@ -180,7 +180,7 @@ func TestUIDeployAgentCommandCreatesContainerProfileFromChannel(t *testing.T) {
 	if strings.Contains(body.InstallCommand, "sudo bash") {
 		t.Fatalf("container install command should not require sudo: %s", body.InstallCommand)
 	}
-	if body.EntrypointCommand != "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml" {
+	if body.EntrypointCommand != "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml" {
 		t.Fatalf("container entrypoint command = %q", body.EntrypointCommand)
 	}
 }

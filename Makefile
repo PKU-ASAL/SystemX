@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-binary test test-opensearch-lifecycle up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-agent-tools build-binary install-agent uninstall-agent test test-opensearch-lifecycle up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -45,6 +45,19 @@ build:
 build-agent-binary:
 	mkdir -p $(BIN_DIR)
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-agent ./cmd/sysarmor-agent
+
+build-agent-tools: build-agent-binary
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmorctl ./cmd/sysarmorctl
+
+install-agent: build-agent-tools
+	sudo SYSARMOR_AGENT_BIN=$(BIN_DIR)/sysarmor-agent SYSARMOR_CTL_BIN=$(BIN_DIR)/sysarmorctl deployments/agent/install-agent.sh
+
+uninstall-agent:
+	sudo systemctl disable --now sysarmor-agent 2>/dev/null || true
+	sudo rm -f /etc/systemd/system/sysarmor-agent.service /usr/local/bin/sysarmorctl
+	sudo rm -rf /opt/sysarmor/agent /run/sysarmor/agent
+	@if [ "$(PURGE)" = "1" ]; then sudo rm -rf /etc/sysarmor/agent /var/lib/sysarmor/agent; fi
+	sudo systemctl daemon-reload
 
 build-binary: build-agent-binary
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-gateway ./cmd/sysarmor-gateway
@@ -143,6 +156,8 @@ help:
 	@echo "  make api        generate protobuf code"
 	@echo "  make build SERVICE=manager  build a compose service image"
 	@echo "  make build-binary           build agent/gateway/manager/worker/sysarmorctl"
+	@echo "  make install-agent          build and install a standalone Agent plus sysarmorctl"
+	@echo "  make uninstall-agent        remove binaries; add PURGE=1 to remove config and local data"
 	@echo "  make test       run Go tests"
 	@echo "  make release    build signed agent release package and index"
 	@echo "  make up         build release and start local platform"

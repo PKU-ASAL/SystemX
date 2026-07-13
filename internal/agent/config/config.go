@@ -162,20 +162,11 @@ func (c Config) Validate() error {
 		}
 	}
 	check("local.state_path", c.Local.StatePath)
-	if c.Manager.Transport == "local" {
-		return fmt.Errorf("manager.transport local is legacy; omit manager configuration for standalone mode")
-	}
-	if c.Manager.Transport == "grpc" {
-		check("manager.address", c.Manager.Address)
-	}
 	check("sensor.backend", c.Sensor.Backend)
 	check("sensor.mode", c.Sensor.Mode)
 	check("policy.path", c.Policy.Path)
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
-	}
-	if c.Manager.Transport != "" && c.Manager.Transport != "grpc" {
-		return fmt.Errorf("manager.transport must be grpc when configured")
 	}
 	if !validMatcherStrategy(c.Runtime.FeatureFlags.MatcherStrategy) {
 		return fmt.Errorf("runtime.feature_flags.matcher_strategy must be linear or optimized")
@@ -357,29 +348,14 @@ func defaults() Config {
 func assign(cfg *Config, section, key, value string) error {
 	switch section {
 	case "agent":
-		switch key {
-		case "id":
-			cfg.Agent.ID = value
-		case "host_id":
-			cfg.Agent.HostID = value
-		case "tenant_id":
-			cfg.Agent.TenantID = value
-		case "token":
-			cfg.Agent.Token = value
-		default:
-			if labelKey, ok := strings.CutPrefix(key, "label."); ok {
-				labelKey = strings.TrimSpace(labelKey)
-				if labelKey == "" {
-					return fmt.Errorf("agent label key is empty")
-				}
-				if cfg.Agent.Labels == nil {
-					cfg.Agent.Labels = map[string]string{}
-				}
-				cfg.Agent.Labels[labelKey] = value
-				return nil
-			}
+		labelKey, ok := strings.CutPrefix(key, "label.")
+		if !ok || strings.TrimSpace(labelKey) == "" {
 			return unknown(section, key)
 		}
+		if cfg.Agent.Labels == nil {
+			cfg.Agent.Labels = map[string]string{}
+		}
+		cfg.Agent.Labels[strings.TrimSpace(labelKey)] = value
 	case "local":
 		if key != "state_path" {
 			return unknown(section, key)
@@ -389,29 +365,6 @@ func assign(cfg *Config, section, key, value string) error {
 		return assignLocalStorage(&cfg.Local.Storage, key, value)
 	case "local.export":
 		return assignLocalExport(&cfg.Local.Export, key, value)
-	case "manager":
-		switch key {
-		case "address":
-			cfg.Manager.Address = value
-		case "transport":
-			cfg.Manager.Transport = value
-		case "tls_ca":
-			cfg.Manager.TLSCA = value
-		case "tls_cert":
-			cfg.Manager.TLSCert = value
-		case "tls_key":
-			cfg.Manager.TLSKey = value
-		case "tls_server_name":
-			cfg.Manager.TLSServerName = value
-		case "tls_insecure":
-			b, err := strconv.ParseBool(value)
-			if err != nil {
-				return fmt.Errorf("manager.tls_insecure: %w", err)
-			}
-			cfg.Manager.TLSInsecure = b
-		default:
-			return unknown(section, key)
-		}
 	case "control":
 		switch key {
 		case "socket_path":
@@ -488,16 +441,8 @@ func assign(cfg *Config, section, key, value string) error {
 				return fmt.Errorf("sensor.require_bpffs: %w", err)
 			}
 			cfg.Sensor.RequireBPFFS = b
-		case "policy_path":
-			cfg.Sensor.PolicyPath = value
 		case "event_source":
 			cfg.Sensor.EventSource = value
-		case "scope_type":
-			cfg.Sensor.ScopeType = value
-		case "scope_selector":
-			cfg.Sensor.ScopeSelector = value
-		case "container_id_prefix":
-			cfg.Sensor.ContainerIDPrefix = value
 		case "fake_startup_events":
 			v, err := strconv.Atoi(value)
 			if err != nil {

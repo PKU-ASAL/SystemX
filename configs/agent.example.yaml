@@ -16,7 +16,7 @@ agent:
   label.env: dev # optional metadata; tests can add label.workload or label.scenario
 
 control:
-  socket_path: /run/sysarmor/agent.sock
+  socket_path: /run/sysarmor/agent/control.sock
 
 runtime:
   feature_flags:

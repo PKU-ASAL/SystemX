@@ -224,7 +224,7 @@ func defaultDeployGatewaySNI() string {
 }
 
 func defaultContainerEntrypointCommand() string {
-	return "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml"
+	return "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml"
 }
 
 func deployChannelMatchesProfile(profile string, channel string) bool {

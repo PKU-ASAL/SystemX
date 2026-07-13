@@ -353,22 +353,22 @@ func (s *Server) renderAgentInstallScript(r *http.Request, enrollment store.Enro
 	manifestEnv := renderManifestEnv(profile)
 	scopeConfig := renderInstallScopeConfig(profile)
 	serviceInstall := renderInstallServiceStep(profile)
-	certificateRequest := renderCertificateRequest(profile, token)
 	lifecycle := renderInstallLifecycle(profile, enrollment.EnrollmentID)
+	managerURL := strings.TrimSuffix(absoluteURL(r, "/api/v1/enrollment-certificate"), "/api/v1/enrollment-certificate")
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
 %s
 SYSARMOR_AGENT_BUNDLE_SHA256="${SYSARMOR_AGENT_BUNDLE_SHA256:-%s}"
-SYSARMOR_ENROLLMENT_CERT_URL="${SYSARMOR_ENROLLMENT_CERT_URL:-%s}"
 SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-%s}"
 AGENT_HOME="${SYSARMOR_AGENT_HOME:-/opt/sysarmor/agent}"
-CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent.yaml}"
+CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent/agent.yaml}"
+POLICY_DST="${SYSARMOR_POLICY_DST:-/etc/sysarmor/agent/policy.json}"
 SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/runtime" "$AGENT_HOME/cache" /etc/sysarmor/policies /etc/sysarmor/pki /run/sysarmor "$(dirname "$CONFIG_DST")"
+mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/runtime" "$AGENT_HOME/cache" "$(dirname "$CONFIG_DST")" /var/lib/sysarmor/agent
 %s
 curl -fsSL "$SYSARMOR_AGENT_BUNDLE_URL" -o "$tmp/sysarmor-agent.tar.gz"
 if [[ -n "$SYSARMOR_AGENT_BUNDLE_SHA256" ]]; then
@@ -394,57 +394,60 @@ if [[ -z "$DIST_ENTRYPOINT" || -z "$DIST_SYSTEMD_UNIT" ]]; then
   exit 1
 fi
 install -m 0755 "$tmp/$DIST_ENTRYPOINT" "$AGENT_HOME/bin/sysarmor-agent"
+install -m 0755 "$tmp/bin/sysarmorctl" "$AGENT_HOME/bin/sysarmorctl"
 %s
 if [[ -n "$DIST_SENSOR_BUNDLE" ]]; then
   mkdir -p "$AGENT_HOME/bundles" "$AGENT_HOME/$DIST_SENSOR_INSTALL_DIR"
   rm -rf "$AGENT_HOME/bundles/$DIST_SENSOR_NAME"
   cp -a "$tmp/$DIST_SENSOR_BUNDLE" "$AGENT_HOME/bundles/$DIST_SENSOR_NAME"
 fi
-openssl genrsa -out /etc/sysarmor/pki/agent-key.pem 2048 >/dev/null 2>&1
-chmod 0600 /etc/sysarmor/pki/agent-key.pem
-openssl req -new -key /etc/sysarmor/pki/agent-key.pem \
-  -subj "/CN=tenant_id:%s,agent_id:%s" \
-  -out "$tmp/agent.csr" >/dev/null 2>&1
-%s
-chmod 0644 /etc/sysarmor/pki/agent.pem /etc/sysarmor/pki/ca.pem
-
 cat > "$CONFIG_DST" <<'YAML'
-agent:
-  id: %s
-  host_id: %s
-  tenant_id: %s
-  token: %s
-%s
-manager:
-  address: %s
-  transport: grpc
-  tls_ca: "/etc/sysarmor/pki/ca.pem"
-  tls_cert: "/etc/sysarmor/pki/agent.pem"
-  tls_key: "/etc/sysarmor/pki/agent-key.pem"
-  tls_server_name: %s
-  tls_insecure: false
+local:
+  state_path: /var/lib/sysarmor/agent
+  storage:
+    max_bytes: 10GiB
+    min_free_bytes: 2GiB
+    segment_size: 64MiB
+    signal_max_count: 100000
+  export:
+    retry_initial: 1s
+    retry_max: 30s
+    request_timeout: 10s
+    max_inflight: 1
+    wire_compression: none
 
+agent:
+%s
 control:
-  socket_path: /run/sysarmor/agent.sock
+  socket_path: /run/sysarmor/agent/control.sock
 
 sensor:
   backend: tetragon
   mode: managed
   bundle_dir: /opt/sysarmor/agent/bundles/tetragon
   install_dir: /opt/sysarmor/agent/sensors
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   observe_only: true
 %s
-YAML
 
-if [[ ! -f /etc/sysarmor/policies/sysarmor-tetragon.yaml ]]; then
-  cat > /etc/sysarmor/policies/sysarmor-tetragon.yaml <<'JSON'
-{"behaviors":[{"id":"process.exec","enabled":true}],"observe_only":true}
-JSON
-fi
+telemetry:
+  max_batch_items: 256
+  max_batch_bytes: 256KiB
+  flush_interval: 1s
+
+policy:
+  path: /etc/sysarmor/agent/policy.json
+YAML
+install -m 0640 "$tmp/policies/policy.json" "$POLICY_DST"
 
 %s
-`, artifactLine, artifactSHA, absoluteURL(r, "/api/v1/enrollment-certificate"), profile, dependencies, publicKey, manifestCheck, manifestEnv, serviceInstall, defaultString(enrollment.TenantID, "default"), enrollment.AgentID, certificateRequest, yamlQuote(enrollment.AgentID), yamlQuote(enrollment.HostID), yamlQuote(defaultString(enrollment.TenantID, "default")), yamlQuote(token), labels, yamlQuote(enrollment.GatewayAddr), yamlQuote(enrollment.GatewaySNI), scopeConfig, lifecycle)
+
+for _ in $(seq 1 100); do
+  [[ -S /run/sysarmor/agent/control.sock ]] && break
+  sleep 0.1
+done
+"$AGENT_HOME/bin/sysarmorctl" --socket /run/sysarmor/agent/control.sock --manager-url %s enroll \
+  --token %s --tenant %s --agent-id %s --gateway %s --gateway-server-name %s
+`, artifactLine, artifactSHA, profile, dependencies, publicKey, manifestCheck, manifestEnv, serviceInstall, labels, scopeConfig, lifecycle, shellQuote(managerURL), shellQuote(token), shellQuote(defaultString(enrollment.TenantID, "default")), shellQuote(enrollment.AgentID), shellQuote(enrollment.GatewayAddr), shellQuote(enrollment.GatewaySNI))
 }
 
 func renderInstallDependencies(profile string) string {
@@ -535,37 +538,6 @@ DIST_SENSOR_NAME="tetragon"
 DIST_SENSOR_INSTALL_DIR="${DIST_SENSOR_INSTALL_DIR:-sensors}"`
 }
 
-func renderCertificateRequest(profile, token string) string {
-	if profile != "linux-container" {
-		return fmt.Sprintf(`python3 - "$SYSARMOR_ENROLLMENT_CERT_URL" "$tmp/agent.csr" %s > "$tmp/cert-response.json" <<'PY'
-import json, sys, urllib.request
-url, csr_path, token = sys.argv[1], sys.argv[2], sys.argv[3]
-payload = json.dumps({"token": token, "csr": open(csr_path).read()}).encode()
-req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-with urllib.request.urlopen(req, timeout=30) as resp:
-    sys.stdout.write(resp.read().decode())
-PY
-python3 - "$tmp/cert-response.json" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-open("/etc/sysarmor/pki/agent.pem", "w").write(data["certificate_pem"])
-open("/etc/sysarmor/pki/ca.pem", "w").write(data["ca_pem"])
-PY`, shellQuote(token))
-	}
-	return fmt.Sprintf(`csr_json="$(sed ':a;N;$!ba;s/\n/\\n/g' "$tmp/agent.csr")"
-curl -fsSL -X POST "$SYSARMOR_ENROLLMENT_CERT_URL" \
-  -H "Content-Type: application/json" \
-  -d '{"token":"%s","csr":"'"$csr_json"'"}' > "$tmp/cert-response.json"
-cert_pem="$(sed -n 's/.*"certificate_pem":"\([^"]*\)".*/\1/p' "$tmp/cert-response.json")"
-ca_pem="$(sed -n 's/.*"ca_pem":"\([^"]*\)".*/\1/p' "$tmp/cert-response.json")"
-if [[ -z "$cert_pem" || -z "$ca_pem" ]]; then
-  echo "[sysarmor-enroll][ERROR] certificate response missing PEM data" >&2
-  exit 1
-fi
-printf '%%b' "$cert_pem" > /etc/sysarmor/pki/agent.pem
-printf '%%b' "$ca_pem" > /etc/sysarmor/pki/ca.pem`, token)
-}
-
 func renderInstallScopeConfig(profile string) string {
 	if profile != "linux-container" {
 		return "  scope:\n    type: host"
@@ -587,7 +559,8 @@ systemctl enable --now sysarmor-agent
 echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"`, enrollmentID)
 	}
 	return fmt.Sprintf(`echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"
-echo "[sysarmor-enroll] start with: $AGENT_HOME/bin/sysarmor-agent run --config $CONFIG_DST"`, enrollmentID)
+"$AGENT_HOME/bin/sysarmor-agent" run --config "$CONFIG_DST" >"$AGENT_HOME/runtime/agent.log" 2>&1 &
+echo $! > "$AGENT_HOME/runtime/agent.pid"`, enrollmentID)
 }
 
 func renderAgentLabelConfig(labels map[string]string) string {

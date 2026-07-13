@@ -38,6 +38,23 @@ func TestParseEndpointPolicyRequiresAllSections(t *testing.T) {
 	}
 }
 
+func TestRepositoryDefaultEndpointPolicyParses(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "agent", "policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := ParseEndpointPolicy(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy.PolicyID != "standalone-default" || policy.Version != 1 {
+		t.Fatalf("policy=%+v", policy)
+	}
+	if len(policy.Collection.Behaviors) == 0 || policy.Telemetry.MaxBatchItems != 256 {
+		t.Fatalf("policy sections were not normalized: %+v", policy)
+	}
+}
+
 func writeEndpointPolicy(t *testing.T, path, document string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {

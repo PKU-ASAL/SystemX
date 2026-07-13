@@ -113,10 +113,10 @@ The generated `agent-install.sh` installs the agent into a stable agent home:
 /opt/sysarmor/agent/sensors
 /opt/sysarmor/agent/runtime
 /opt/sysarmor/agent/cache
-/etc/sysarmor/agent.yaml
-/etc/sysarmor/policies/...
+/etc/sysarmor/agent/agent.yaml
+/etc/sysarmor/agent/policy.json
 /etc/systemd/system/sysarmor-agent.service
-/run/sysarmor/agent.sock
+/run/sysarmor/agent/control.sock
 ```
 
 Enrollment install profiles:
@@ -128,7 +128,7 @@ Enrollment install profiles:
   prints the entrypoint command:
 
 ```bash
-/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml
+/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml
 ```
 
 Agent artifacts are signed distribution tarballs. The top-level

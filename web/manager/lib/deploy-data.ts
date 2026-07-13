@@ -140,7 +140,7 @@ function displayValue(value?: string) {
 function mockDeployCommand(request: DeployAgentCommandRequest): DeployAgentCommandResponse {
   const shellRunner = request.profile === "linux-container" ? "bash" : "sudo bash";
   const entrypointCommand = request.profile === "linux-container"
-    ? "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml"
+    ? "/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml"
     : undefined;
 
   return {

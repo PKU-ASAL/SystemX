@@ -162,9 +162,9 @@ sysarmorctl --mgr 127.0.0.1:9443 recompute --label scenario=benign-ci-noise --mo
 Endpoint policy explain and WAL health:
 
 ```bash
-sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/data/policies/collection-balanced.json
-sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json policy explain collection --file test/data/policies/collection-balanced.json --report-only
-sysarmorctl --agent-sock /var/run/sysarmor/agent.sock --json agent health
+sysarmorctl --socket /run/sysarmor/agent/control.sock --json policy explain collection --file test/data/policies/collection-balanced.json
+sysarmorctl --socket /run/sysarmor/agent/control.sock --json policy explain collection --file test/data/policies/collection-balanced.json --report-only
+sysarmorctl --socket /run/sysarmor/agent/control.sock --json agent health
 ```
 
 `policy explain collection` performs a dry-run compile: it resolves content refs, reports backend mappings, pushdown/agent-side selectors, unsupported selectors, and detection coverage gaps without applying the policy. `agent health` includes spool/WAL backlog, cursor, watcher, backpressure, and upload drain status.

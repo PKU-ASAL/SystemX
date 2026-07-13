@@ -81,7 +81,7 @@ func main() {
 func runDaemonCommand(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	configPath := fs.String("config", "/etc/sysarmor/agent.yaml", "agent config path")
+	configPath := fs.String("config", "/etc/sysarmor/agent/agent.yaml", "agent config path")
 	dryRun := fs.Bool("dry-run", false, "validate config and exit")
 	if err := fs.Parse(args); err != nil {
 		return err

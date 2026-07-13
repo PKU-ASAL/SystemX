@@ -2,8 +2,10 @@
 Description=SysArmor Agent
 [Service]
 Type=simple
-ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml
+ExecStart=/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml
 WorkingDirectory=/opt/sysarmor/agent
+RuntimeDirectory=sysarmor/agent
+RuntimeDirectoryMode=0750
 Restart=always
 RestartSec=5s
 LimitNOFILE=1048576

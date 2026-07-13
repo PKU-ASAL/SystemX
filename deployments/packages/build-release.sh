@@ -11,6 +11,7 @@ OUTPUT_DIR="$REPO/dist/release"
 BASE_URL="http://packages"
 CHANNELS="dev-agent linux-systemd-dev linux-container-dev"
 AGENT_BIN="$REPO/dist/bin/sysarmor-agent"
+CTL_BIN="$REPO/dist/bin/sysarmorctl"
 TETRAGON_ARCHIVE=""
 SIGNING_KEY="$REPO/deployments/pki/agent-plane-mtls/runtime/artifact-signing-key.pem"
 PUBLIC_KEY="$REPO/deployments/pki/agent-plane-mtls/runtime/artifact-public.pem"
@@ -19,7 +20,7 @@ usage() {
   cat <<EOF
 usage: build-release.sh [--version VERSION] [--os OS] [--arch ARCH]
                         [--output-dir DIR] [--base-url URL]
-                        [--channels "CHANNEL ..."] [--agent-bin FILE]
+                        [--channels "CHANNEL ..."] [--agent-bin FILE] [--ctl-bin FILE]
                         [--tetragon-archive FILE]
                         [--signing-key FILE] [--public-key FILE]
 
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --base-url) BASE_URL="$2"; shift 2 ;;
     --channels) CHANNELS="$2"; shift 2 ;;
     --agent-bin) AGENT_BIN="$2"; shift 2 ;;
+    --ctl-bin) CTL_BIN="$2"; shift 2 ;;
     --tetragon-archive) TETRAGON_ARCHIVE="$2"; shift 2 ;;
     --signing-key) SIGNING_KEY="$2"; shift 2 ;;
     --public-key) PUBLIC_KEY="$2"; shift 2 ;;
@@ -69,6 +71,7 @@ package_path="$OUTPUT_DIR/$package_file"
   --version "$VERSION" \
   --output "$package_path" \
   --agent-bin "$AGENT_BIN" \
+  --ctl-bin "$CTL_BIN" \
   --tetragon-archive "$TETRAGON_ARCHIVE" \
   --signing-key "$SIGNING_KEY" >/dev/null
 

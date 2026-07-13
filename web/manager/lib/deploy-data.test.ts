@@ -115,7 +115,7 @@ describe("deploy data", () => {
 
     expect(command.install_command).toContain("| bash");
     expect(command.install_command).not.toContain("sudo bash");
-    expect(command.entrypoint_command).toBe("/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml");
+    expect(command.entrypoint_command).toBe("/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml");
   });
 
   it("parses management labels from comma separated key value pairs", () => {

@@ -13,7 +13,7 @@ local:
     wire_compression: none
 
 control:
-  socket_path: /run/sysarmor/agent.sock
+  socket_path: /run/sysarmor/agent/control.sock
 
 sensor:
   backend: tetragon

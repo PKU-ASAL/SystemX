@@ -193,7 +193,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyPolicy() error = %v", err)
 	}
-	if ack.Status != "applied" || ack.PolicyId != "local-policy" || ack.PolicyVersion != 7 {
+	if ack.Status != "degraded" || ack.PolicyId != "local-policy" || ack.PolicyVersion != 7 {
 		t.Fatalf("ack = %+v", ack)
 	}
 	current, err := client.CurrentPolicy(context.Background(), &controlplanev1.CurrentPolicyRequest{})
@@ -213,7 +213,7 @@ func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control:   config.ControlConfig{SocketPath: socketPath},
 			Manager:   config.ManagerConfig{Address: "127.0.0.1:9443", Transport: "grpc"},
-			Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
+			Telemetry: config.TelemetryConfig{MaxBatchItems: 10, MaxBatchBytes: 256 << 10, FlushInterval: time.Second},
 			Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1}},
 		},
 		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},

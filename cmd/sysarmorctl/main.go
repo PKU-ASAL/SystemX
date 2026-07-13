@@ -127,7 +127,7 @@ func usage() {
   sysarmorctl [--manager-url URL] manager evidence pullbacks --create --agent-id AGENT --incident-id ID --label key=value
 
 Global flags:
-  --socket PATH        local agent Unix socket, default $SYSARMOR_AGENT_SOCK or /run/sysarmor/agent.sock
+  --socket PATH        local agent Unix socket, default $SYSARMOR_AGENT_SOCK or /run/sysarmor/agent/control.sock
   --manager-url URL    manager HTTP URL, default $SYSARMOR_MANAGER_URL or http://127.0.0.1:9443
   --json               emit JSON without extra formatting
 
@@ -146,7 +146,7 @@ func defaultAgentSock() string {
 	if v := strings.TrimSpace(os.Getenv("SYSARMOR_AGENT_SOCK")); v != "" {
 		return v
 	}
-	return "/run/sysarmor/agent.sock"
+	return "/run/sysarmor/agent/control.sock"
 }
 
 func isLocalAgentCommand(args []string) bool {

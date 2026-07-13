@@ -112,7 +112,8 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 		"    type: namespace",
 		"    selector: self",
 		"sha256sum -c",
-		"sysarmor-agent run --config",
+		`sysarmor-agent" run --config`,
+		"sysarmorctl\" --socket /run/sysarmor/agent/control.sock",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("container install script missing %q:\n%s", want, body)
@@ -542,9 +543,9 @@ func testAgentDistribution(t *testing.T) []byte {
   "systemd_unit": "systemd/sysarmor-agent.service",
   "install": {
     "agent_home": "/opt/sysarmor/agent",
-    "config_path": "/etc/sysarmor/agent.yaml",
-    "policy_dir": "/etc/sysarmor/policies",
-    "runtime_socket": "/run/sysarmor/agent.sock"
+    "config_path": "/etc/sysarmor/agent/agent.yaml",
+    "policy_path": "/etc/sysarmor/agent/policy.json",
+    "runtime_socket": "/run/sysarmor/agent/control.sock"
   },
   "sensors": [{"name":"tetragon","backend":"tetragon","bundle_dir":"sensors/tetragon","install_dir":"sensors"}],
   "files": [
