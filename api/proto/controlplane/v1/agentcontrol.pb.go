@@ -1095,37 +1095,29 @@ func (x *TelemetrySenderHealth) GetLastError() string {
 	return ""
 }
 
-type DataPlanePolicy struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Transport      string                 `protobuf:"bytes,1,opt,name=transport,proto3" json:"transport,omitempty"`
-	Endpoint       string                 `protobuf:"bytes,2,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
-	BatchSize      uint32                 `protobuf:"varint,3,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
-	FlushInterval  string                 `protobuf:"bytes,4,opt,name=flush_interval,json=flushInterval,proto3" json:"flush_interval,omitempty"`
-	RetryInitial   string                 `protobuf:"bytes,5,opt,name=retry_initial,json=retryInitial,proto3" json:"retry_initial,omitempty"`
-	RetryMax       string                 `protobuf:"bytes,6,opt,name=retry_max,json=retryMax,proto3" json:"retry_max,omitempty"`
-	RequestTimeout string                 `protobuf:"bytes,7,opt,name=request_timeout,json=requestTimeout,proto3" json:"request_timeout,omitempty"`
-	MaxInflight    uint32                 `protobuf:"varint,8,opt,name=max_inflight,json=maxInflight,proto3" json:"max_inflight,omitempty"`
-	Compression    string                 `protobuf:"bytes,9,opt,name=compression,proto3" json:"compression,omitempty"`
-	TlsProfile     string                 `protobuf:"bytes,10,opt,name=tls_profile,json=tlsProfile,proto3" json:"tls_profile,omitempty"`
-	MaxBytes       uint32                 `protobuf:"varint,11,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+type TelemetryPolicy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MaxBatchItems uint32                 `protobuf:"varint,1,opt,name=max_batch_items,json=maxBatchItems,proto3" json:"max_batch_items,omitempty"`
+	MaxBatchBytes uint32                 `protobuf:"varint,2,opt,name=max_batch_bytes,json=maxBatchBytes,proto3" json:"max_batch_bytes,omitempty"`
+	FlushInterval string                 `protobuf:"bytes,3,opt,name=flush_interval,json=flushInterval,proto3" json:"flush_interval,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DataPlanePolicy) Reset() {
-	*x = DataPlanePolicy{}
+func (x *TelemetryPolicy) Reset() {
+	*x = TelemetryPolicy{}
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DataPlanePolicy) String() string {
+func (x *TelemetryPolicy) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DataPlanePolicy) ProtoMessage() {}
+func (*TelemetryPolicy) ProtoMessage() {}
 
-func (x *DataPlanePolicy) ProtoReflect() protoreflect.Message {
+func (x *TelemetryPolicy) ProtoReflect() protoreflect.Message {
 	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1137,86 +1129,30 @@ func (x *DataPlanePolicy) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DataPlanePolicy.ProtoReflect.Descriptor instead.
-func (*DataPlanePolicy) Descriptor() ([]byte, []int) {
+// Deprecated: Use TelemetryPolicy.ProtoReflect.Descriptor instead.
+func (*TelemetryPolicy) Descriptor() ([]byte, []int) {
 	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *DataPlanePolicy) GetTransport() string {
+func (x *TelemetryPolicy) GetMaxBatchItems() uint32 {
 	if x != nil {
-		return x.Transport
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetEndpoint() string {
-	if x != nil {
-		return x.Endpoint
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetBatchSize() uint32 {
-	if x != nil {
-		return x.BatchSize
+		return x.MaxBatchItems
 	}
 	return 0
 }
 
-func (x *DataPlanePolicy) GetFlushInterval() string {
+func (x *TelemetryPolicy) GetMaxBatchBytes() uint32 {
+	if x != nil {
+		return x.MaxBatchBytes
+	}
+	return 0
+}
+
+func (x *TelemetryPolicy) GetFlushInterval() string {
 	if x != nil {
 		return x.FlushInterval
 	}
 	return ""
-}
-
-func (x *DataPlanePolicy) GetRetryInitial() string {
-	if x != nil {
-		return x.RetryInitial
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetRetryMax() string {
-	if x != nil {
-		return x.RetryMax
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetRequestTimeout() string {
-	if x != nil {
-		return x.RequestTimeout
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetMaxInflight() uint32 {
-	if x != nil {
-		return x.MaxInflight
-	}
-	return 0
-}
-
-func (x *DataPlanePolicy) GetCompression() string {
-	if x != nil {
-		return x.Compression
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetTlsProfile() string {
-	if x != nil {
-		return x.TlsProfile
-	}
-	return ""
-}
-
-func (x *DataPlanePolicy) GetMaxBytes() uint32 {
-	if x != nil {
-		return x.MaxBytes
-	}
-	return 0
 }
 
 type CEPHealth struct {
@@ -2909,7 +2845,7 @@ type ApplyPolicyRequest struct {
 	PolicyType    string                 `protobuf:"bytes,2,opt,name=policy_type,json=policyType,proto3" json:"policy_type,omitempty"`
 	PolicyJson    string                 `protobuf:"bytes,3,opt,name=policy_json,json=policyJson,proto3" json:"policy_json,omitempty"`
 	DryRun        bool                   `protobuf:"varint,4,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
-	DataPlane     *DataPlanePolicy       `protobuf:"bytes,5,opt,name=data_plane,json=dataPlane,proto3" json:"data_plane,omitempty"`
+	Telemetry     *TelemetryPolicy       `protobuf:"bytes,6,opt,name=telemetry,proto3" json:"telemetry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2972,9 +2908,9 @@ func (x *ApplyPolicyRequest) GetDryRun() bool {
 	return false
 }
 
-func (x *ApplyPolicyRequest) GetDataPlane() *DataPlanePolicy {
+func (x *ApplyPolicyRequest) GetTelemetry() *TelemetryPolicy {
 	if x != nil {
-		return x.DataPlane
+		return x.Telemetry
 	}
 	return nil
 }
@@ -4443,22 +4379,11 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x0fretried_batches\x18\x05 \x01(\x04R\x0eretriedBatches\x12\x18\n" +
 	"\adrained\x18\x06 \x01(\bR\adrained\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\a \x01(\tR\tlastError\"\xff\x02\n" +
-	"\x0fDataPlanePolicy\x12\x1c\n" +
-	"\ttransport\x18\x01 \x01(\tR\ttransport\x12\x1a\n" +
-	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12\x1d\n" +
-	"\n" +
-	"batch_size\x18\x03 \x01(\rR\tbatchSize\x12%\n" +
-	"\x0eflush_interval\x18\x04 \x01(\tR\rflushInterval\x12#\n" +
-	"\rretry_initial\x18\x05 \x01(\tR\fretryInitial\x12\x1b\n" +
-	"\tretry_max\x18\x06 \x01(\tR\bretryMax\x12'\n" +
-	"\x0frequest_timeout\x18\a \x01(\tR\x0erequestTimeout\x12!\n" +
-	"\fmax_inflight\x18\b \x01(\rR\vmaxInflight\x12 \n" +
-	"\vcompression\x18\t \x01(\tR\vcompression\x12\x1f\n" +
-	"\vtls_profile\x18\n" +
-	" \x01(\tR\n" +
-	"tlsProfile\x12\x1b\n" +
-	"\tmax_bytes\x18\v \x01(\rR\bmaxBytes\"\x92\x02\n" +
+	"last_error\x18\a \x01(\tR\tlastError\"\x88\x01\n" +
+	"\x0fTelemetryPolicy\x12&\n" +
+	"\x0fmax_batch_items\x18\x01 \x01(\rR\rmaxBatchItems\x12&\n" +
+	"\x0fmax_batch_bytes\x18\x02 \x01(\rR\rmaxBatchBytes\x12%\n" +
+	"\x0eflush_interval\x18\x03 \x01(\tR\rflushInterval\"\x92\x02\n" +
 	"\tCEPHealth\x12#\n" +
 	"\ractive_groups\x18\x01 \x01(\x04R\factiveGroups\x12%\n" +
 	"\x0eevicted_groups\x18\x02 \x01(\x04R\revictedGroups\x12%\n" +
@@ -4636,16 +4561,16 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x12#\n" +
 	"\revidence_json\x18\x06 \x01(\fR\fevidenceJson\x12\x1f\n" +
 	"\vobserved_at\x18\a \x01(\tR\n" +
-	"observedAt\"\xfd\x01\n" +
+	"observedAt\"\x8e\x02\n" +
 	"\x12ApplyPolicyRequest\x12B\n" +
 	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\x12\x1f\n" +
 	"\vpolicy_type\x18\x02 \x01(\tR\n" +
 	"policyType\x12\x1f\n" +
 	"\vpolicy_json\x18\x03 \x01(\tR\n" +
 	"policyJson\x12\x17\n" +
-	"\adry_run\x18\x04 \x01(\bR\x06dryRun\x12H\n" +
-	"\n" +
-	"data_plane\x18\x05 \x01(\v2).sysarmor.controlplane.v1.DataPlanePolicyR\tdataPlane\"\xbc\x01\n" +
+	"\adry_run\x18\x04 \x01(\bR\x06dryRun\x12G\n" +
+	"\ttelemetry\x18\x06 \x01(\v2).sysarmor.controlplane.v1.TelemetryPolicyR\ttelemetryJ\x04\b\x05\x10\x06R\n" +
+	"data_plane\"\xbc\x01\n" +
 	"\x13ApplyContentRequest\x12B\n" +
 	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\x12!\n" +
 	"\fcontent_json\x18\x02 \x01(\tR\vcontentJson\x12\x17\n" +
@@ -4804,7 +4729,7 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_goTypes = []any{
 	(*TelemetryBusHealth)(nil),           // 7: sysarmor.controlplane.v1.TelemetryBusHealth
 	(*TelemetryBatcherHealth)(nil),       // 8: sysarmor.controlplane.v1.TelemetryBatcherHealth
 	(*TelemetrySenderHealth)(nil),        // 9: sysarmor.controlplane.v1.TelemetrySenderHealth
-	(*DataPlanePolicy)(nil),              // 10: sysarmor.controlplane.v1.DataPlanePolicy
+	(*TelemetryPolicy)(nil),              // 10: sysarmor.controlplane.v1.TelemetryPolicy
 	(*CEPHealth)(nil),                    // 11: sysarmor.controlplane.v1.CEPHealth
 	(*DetectionContentRef)(nil),          // 12: sysarmor.controlplane.v1.DetectionContentRef
 	(*DetectionRuntimeHealth)(nil),       // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth
@@ -4884,7 +4809,7 @@ var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
 	48, // 32: sysarmor.controlplane.v1.ResponseCommand.labels:type_name -> sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
 	49, // 33: sysarmor.controlplane.v1.EvidencePullbackRequest.labels:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
 	3,  // 34: sysarmor.controlplane.v1.ApplyPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	10, // 35: sysarmor.controlplane.v1.ApplyPolicyRequest.data_plane:type_name -> sysarmor.controlplane.v1.DataPlanePolicy
+	10, // 35: sysarmor.controlplane.v1.ApplyPolicyRequest.telemetry:type_name -> sysarmor.controlplane.v1.TelemetryPolicy
 	3,  // 36: sysarmor.controlplane.v1.ApplyContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	3,  // 37: sysarmor.controlplane.v1.ListContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
 	30, // 38: sysarmor.controlplane.v1.ListContentResponse.records:type_name -> sysarmor.controlplane.v1.ContentRecord

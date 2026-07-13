@@ -194,7 +194,7 @@ func capabilityResponse(health agenthealth.AgentHealth) *controlplanev1.Capabili
 		TenantId:                 health.TenantID,
 		Scope:                    scopeMessage(health.Scope),
 		Sensor:                   capabilityMessage(health.Capability),
-		SupportedPolicySections:  []string{"collection", "detection", "data_plane"},
+		SupportedPolicySections:  []string{"collection", "detection", "telemetry"},
 		SupportedResponseActions: []string{"collect", "noop"},
 		CollectionBehaviors:      collectionBehaviorMessages(health.Capability.Collection),
 	}

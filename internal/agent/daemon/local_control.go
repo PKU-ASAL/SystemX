@@ -151,7 +151,7 @@ func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1
 			"detection",
 			"response",
 			"resource",
-			"data_plane",
+			"telemetry",
 		},
 		SupportedResponseActions: []string{
 			"collect_evidence",
@@ -293,8 +293,8 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 	if policyType == "detection" {
 		return s.applyDetectionPolicy(req), nil
 	}
-	if policyType == "data_plane" {
-		return s.applyDataPlanePolicy(req, nil), nil
+	if policyType == "telemetry" {
+		return s.applyTelemetryPolicy(req, nil), nil
 	}
 	if policyType != "agent-runtime" {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("unsupported policy type %q", policyType)), nil
@@ -310,54 +310,54 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 	if next.TenantID != "" && next.TenantID != s.runner.Config.Agent.TenantID {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("tenant mismatch: policy=%s agent=%s", next.TenantID, s.runner.Config.Agent.TenantID)), nil
 	}
-	dataPlaneSection, err := dataPlanePolicyFromRequest(req, next.DataPlane)
+	telemetrySection, err := telemetryPolicyFromRequest(req, next.Telemetry)
 	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", err.Error()), nil
+		return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", err.Error()), nil
 	}
-	if dataPlaneSection != nil {
-		next.DataPlane = dataPlaneSection
+	if telemetrySection != nil {
+		next.Telemetry = telemetrySection
 	}
 	if req.GetDryRun() {
-		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", dataPlaneSection != nil), nil
+		return appliedAck(s.runner.Config, req.GetContext(), next, "validated", "policy accepted in dry-run", telemetrySection != nil), nil
 	}
 	report, ok := s.runner.tryApplyRuntimePolicy(next)
 	if !ok {
 		return rejectedAck(s.runner.Config, req.GetContext(), "detection", "runtime policy rejected; detection rebuild failed: "+strings.Join(report.Details, "; ")), nil
 	}
-	if dataPlaneSection != nil {
-		s.runner.applyDataPlaneConfig(*dataPlaneSection)
+	if telemetrySection != nil {
+		s.runner.applyTelemetryConfig(*telemetrySection)
 	}
-	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", dataPlaneSection != nil), nil
+	return appliedAck(s.runner.Config, req.GetContext(), next, "applied", "runtime policy applied", telemetrySection != nil), nil
 }
 
-func (s *localControlServer) applyDataPlanePolicy(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.DataPlanePolicy) *controlplanev1.ControlAck {
+func (s *localControlServer) applyTelemetryPolicy(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.TelemetryPolicy) *controlplanev1.ControlAck {
 	if fallback == nil && strings.TrimSpace(req.GetPolicyJson()) != "" {
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(req.GetPolicyJson()), &raw); err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", "invalid data plane policy json: "+err.Error())
+			return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", "invalid telemetry policy json: "+err.Error())
 		}
 		payload := []byte(req.GetPolicyJson())
-		if nested, ok := raw["data_plane"]; ok {
+		if nested, ok := raw["telemetry"]; ok {
 			payload = nested
 		}
-		var dataPlane policymodel.DataPlanePolicy
-		if err := json.Unmarshal(payload, &dataPlane); err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", "invalid data plane policy json: "+err.Error())
+		var telemetry policymodel.TelemetryPolicy
+		if err := json.Unmarshal(payload, &telemetry); err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", "invalid telemetry policy json: "+err.Error())
 		}
-		fallback = &dataPlane
+		fallback = &telemetry
 	}
-	dataPlane, err := dataPlanePolicyFromRequest(req, fallback)
+	telemetryPolicy, err := telemetryPolicyFromRequest(req, fallback)
 	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", err.Error())
+		return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", err.Error())
 	}
-	if dataPlane == nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "data_plane", "data plane policy is required")
+	if telemetryPolicy == nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", "telemetry policy is required")
 	}
 	if req.GetDryRun() {
-		return dataPlaneAck(s.runner.Config, req.GetContext(), "validated", "data plane policy accepted in dry-run", true, *dataPlane)
+		return telemetryAck(s.runner.Config, req.GetContext(), "validated", "telemetry policy accepted in dry-run", *telemetryPolicy)
 	}
-	s.runner.applyDataPlaneConfig(*dataPlane)
-	return dataPlaneAck(s.runner.Config, req.GetContext(), "applied", "data plane policy applied; restart data batch dispatcher to take effect", true, *dataPlane)
+	s.runner.applyTelemetryConfig(*telemetryPolicy)
+	return telemetryAck(s.runner.Config, req.GetContext(), "applied", "telemetry policy applied", *telemetryPolicy)
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
@@ -392,14 +392,14 @@ func (r *AgentRuntime) applyPolicyUpdateFromControl(frame *controlplanev1.Contro
 	if !ok {
 		return rejectedAck(r.Config, ctx, "detection", "runtime policy rejected; detection rebuild failed: "+strings.Join(report.Details, "; "))
 	}
-	if policy.DataPlane != nil {
-		r.applyDataPlaneConfig(*policy.DataPlane)
+	if policy.Telemetry != nil {
+		r.applyTelemetryConfig(*policy.Telemetry)
 	}
 	message := "runtime policy applied"
 	if report.Status == "degraded" {
 		message = "runtime policy applied; detection dependencies degraded: " + strings.Join(report.Warnings, "; ")
 	}
-	return appliedAck(r.Config, ctx, policy, "applied", message, policy.DataPlane != nil)
+	return appliedAck(r.Config, ctx, policy, "applied", message, policy.Telemetry != nil)
 }
 
 func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentRequest) *controlplanev1.ControlAck {
@@ -817,117 +817,57 @@ func (r *AgentRuntime) validateControlContext(ctx *controlplanev1.RequestContext
 	return nil
 }
 
-func dataPlanePolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.DataPlanePolicy) (*policymodel.DataPlanePolicy, error) {
-	if req.GetDataPlane() != nil {
-		dataPlane := &policymodel.DataPlanePolicy{
-			Transport:      req.GetDataPlane().GetTransport(),
-			Endpoint:       req.GetDataPlane().GetEndpoint(),
-			BatchSize:      int(req.GetDataPlane().GetBatchSize()),
-			MaxBytes:       int(req.GetDataPlane().GetMaxBytes()),
-			FlushInterval:  req.GetDataPlane().GetFlushInterval(),
-			RetryInitial:   req.GetDataPlane().GetRetryInitial(),
-			RetryMax:       req.GetDataPlane().GetRetryMax(),
-			RequestTimeout: req.GetDataPlane().GetRequestTimeout(),
-			MaxInflight:    int(req.GetDataPlane().GetMaxInflight()),
-			Compression:    req.GetDataPlane().GetCompression(),
-			TLSProfile:     req.GetDataPlane().GetTlsProfile(),
+func telemetryPolicyFromRequest(req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.TelemetryPolicy) (*policymodel.TelemetryPolicy, error) {
+	if req.GetTelemetry() != nil {
+		telemetryPolicy := &policymodel.TelemetryPolicy{
+			MaxBatchItems: int(req.GetTelemetry().GetMaxBatchItems()),
+			MaxBatchBytes: int(req.GetTelemetry().GetMaxBatchBytes()),
+			FlushInterval: req.GetTelemetry().GetFlushInterval(),
 		}
-		if err := validateDataPlanePolicy(dataPlane); err != nil {
+		if err := validateTelemetryPolicy(telemetryPolicy); err != nil {
 			return nil, err
 		}
-		return dataPlane, nil
+		return telemetryPolicy, nil
 	}
 	if fallback == nil {
 		return nil, nil
 	}
-	dataPlane := *fallback
-	if err := validateDataPlanePolicy(&dataPlane); err != nil {
+	telemetryPolicy := *fallback
+	if err := validateTelemetryPolicy(&telemetryPolicy); err != nil {
 		return nil, err
 	}
-	return &dataPlane, nil
+	return &telemetryPolicy, nil
 }
 
-func validateDataPlanePolicy(policy *policymodel.DataPlanePolicy) error {
+func validateTelemetryPolicy(policy *policymodel.TelemetryPolicy) error {
 	if policy == nil {
 		return nil
 	}
-	switch strings.TrimSpace(policy.Transport) {
-	case "", "grpc", "local":
-	default:
-		return fmt.Errorf("unsupported data_plane.transport %q", policy.Transport)
+	if policy.MaxBatchItems < 0 {
+		return fmt.Errorf("telemetry.max_batch_items must be non-negative")
 	}
-	for name, value := range map[string]string{
-		"flush_interval":  policy.FlushInterval,
-		"retry_initial":   policy.RetryInitial,
-		"retry_max":       policy.RetryMax,
-		"request_timeout": policy.RequestTimeout,
-	} {
-		if strings.TrimSpace(value) == "" {
-			continue
-		}
-		if _, err := time.ParseDuration(value); err != nil {
-			return fmt.Errorf("data_plane.%s: %w", name, err)
-		}
+	if policy.MaxBatchBytes < 0 {
+		return fmt.Errorf("telemetry.max_batch_bytes must be non-negative")
 	}
-	if policy.BatchSize < 0 {
-		return fmt.Errorf("data_plane.batch_size must be non-negative")
-	}
-	if policy.MaxBytes < 0 {
-		return fmt.Errorf("data_plane.max_bytes must be non-negative")
-	}
-	if policy.MaxInflight < 0 {
-		return fmt.Errorf("data_plane.max_inflight must be non-negative")
-	}
-	switch strings.TrimSpace(policy.Compression) {
-	case "", "none", "gzip", "zstd":
-	default:
-		return fmt.Errorf("unsupported data_plane.compression %q", policy.Compression)
-	}
-	if policy.RetryInitial != "" && policy.RetryMax != "" {
-		initial, _ := time.ParseDuration(policy.RetryInitial)
-		maximum, _ := time.ParseDuration(policy.RetryMax)
-		if initial > maximum {
-			return fmt.Errorf("data_plane.retry_initial must be <= data_plane.retry_max")
+	if strings.TrimSpace(policy.FlushInterval) != "" {
+		if _, err := time.ParseDuration(policy.FlushInterval); err != nil {
+			return fmt.Errorf("telemetry.flush_interval: %w", err)
 		}
 	}
 	return nil
 }
 
-func (r *AgentRuntime) applyDataPlaneConfig(dataPlane policymodel.DataPlanePolicy) {
+func (r *AgentRuntime) applyTelemetryConfig(telemetryPolicy policymodel.TelemetryPolicy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if transport := strings.TrimSpace(dataPlane.Transport); transport != "" {
-		r.Config.Manager.Transport = transport
+	if telemetryPolicy.MaxBatchItems > 0 {
+		r.Config.Telemetry.BatchSize = telemetryPolicy.MaxBatchItems
 	}
-	if endpoint := strings.TrimSpace(dataPlane.Endpoint); endpoint != "" {
-		r.Config.Manager.Address = endpoint
+	if telemetryPolicy.MaxBatchBytes > 0 {
+		r.Config.Telemetry.MaxBytes = telemetryPolicy.MaxBatchBytes
 	}
-	if dataPlane.BatchSize > 0 {
-		r.Config.Telemetry.BatchSize = dataPlane.BatchSize
-	}
-	if dataPlane.MaxBytes > 0 {
-		r.Config.Telemetry.MaxBytes = dataPlane.MaxBytes
-	}
-	if d := parseOptionalDuration(dataPlane.FlushInterval); d > 0 {
+	if d := parseOptionalDuration(telemetryPolicy.FlushInterval); d > 0 {
 		r.Config.Telemetry.FlushInterval = d
-	}
-	if d := parseOptionalDuration(dataPlane.RetryInitial); d > 0 {
-		r.Config.DataPlane.RetryInitial = d
-	}
-	if d := parseOptionalDuration(dataPlane.RetryMax); d > 0 {
-		r.Config.DataPlane.RetryMax = d
-	}
-	if d := parseOptionalDuration(dataPlane.RequestTimeout); d > 0 {
-		r.Config.DataPlane.RequestTimeout = d
-	}
-	if dataPlane.MaxInflight > 0 {
-		r.Config.DataPlane.MaxInflight = dataPlane.MaxInflight
-	}
-	if compression := strings.TrimSpace(dataPlane.Compression); compression != "" {
-		r.Config.DataPlane.Compression = compression
-	}
-	if tlsProfile := strings.TrimSpace(dataPlane.TLSProfile); tlsProfile != "" {
-		r.Config.DataPlane.TLSProfile = tlsProfile
 	}
 }
 
@@ -954,8 +894,8 @@ func rejectedAck(cfg config.Config, req *controlplanev1.RequestContext, section,
 	}
 }
 
-func dataPlaneAck(cfg config.Config, req *controlplanev1.RequestContext, status, message string, requiresRestart bool, dataPlane policymodel.DataPlanePolicy) *controlplanev1.ControlAck {
-	report, _ := json.Marshal(map[string]any{"data_plane": dataPlane})
+func telemetryAck(cfg config.Config, req *controlplanev1.RequestContext, status, message string, telemetryPolicy policymodel.TelemetryPolicy) *controlplanev1.ControlAck {
+	report, _ := json.Marshal(map[string]any{"telemetry": telemetryPolicy})
 	return &controlplanev1.ControlAck{
 		RequestId: requestID(req),
 		TenantId:  cfg.Agent.TenantID,
@@ -963,10 +903,10 @@ func dataPlaneAck(cfg config.Config, req *controlplanev1.RequestContext, status,
 		Status:    status,
 		Message:   message,
 		Sections: []*controlplanev1.AppliedSection{{
-			Name:            "data_plane",
+			Name:            "telemetry",
 			Status:          status,
 			Message:         message,
-			RequiresRestart: requiresRestart,
+			RequiresRestart: false,
 			ReportJson:      string(report),
 		}},
 		ReportJson: string(report),
@@ -974,13 +914,11 @@ func dataPlaneAck(cfg config.Config, req *controlplanev1.RequestContext, status,
 }
 
 func appliedAck(cfg config.Config, req *controlplanev1.RequestContext, policy policymodel.Policy, status, message string, requiresRestart bool) *controlplanev1.ControlAck {
-	dataPlaneStatus := "unchanged"
-	dataPlaneMessage := "data plane policy unchanged"
-	dataPlaneRequiresRestart := requiresRestart
-	if policy.DataPlane != nil {
-		dataPlaneStatus = status
-		dataPlaneMessage = "data plane policy accepted; restart data batch dispatcher to take effect"
-		dataPlaneRequiresRestart = true
+	telemetryStatus := "unchanged"
+	telemetryMessage := "telemetry policy unchanged"
+	if policy.Telemetry != nil {
+		telemetryStatus = status
+		telemetryMessage = "telemetry policy accepted"
 	}
 	return &controlplanev1.ControlAck{
 		RequestId:     requestID(req),
@@ -994,7 +932,7 @@ func appliedAck(cfg config.Config, req *controlplanev1.RequestContext, policy po
 			{Name: "detection", Status: status, Message: "endpoint rules updated", RequiresRestart: false},
 			{Name: "response", Status: status, Message: "response policy updated", RequiresRestart: false},
 			{Name: "resource", Status: "unsupported", Message: "resource policy contract is reserved for the next phase", RequiresRestart: requiresRestart},
-			{Name: "data_plane", Status: dataPlaneStatus, Message: dataPlaneMessage, RequiresRestart: dataPlaneRequiresRestart},
+			{Name: "telemetry", Status: telemetryStatus, Message: telemetryMessage, RequiresRestart: false},
 			{Name: "collection", Status: "unsupported", Message: "collection hot reload requires compiler/runtime apply in the next phase", RequiresRestart: true},
 		},
 	}

@@ -70,7 +70,7 @@ type Policy struct {
 	TenantID      string                   `json:"tenant_id"`
 	Scope         ScopeSelector            `json:"scope,omitempty"`
 	Detection     *DetectionPolicy         `json:"detection,omitempty"`
-	DataPlane     *DataPlanePolicy         `json:"data_plane,omitempty"`
+	Telemetry     *TelemetryPolicy         `json:"telemetry,omitempty"`
 	EndpointRules []string                 `json:"endpoint_rules,omitempty"`
 	CloudRules    []string                 `json:"cloud_rules,omitempty"`
 	Mode          string                   `json:"mode,omitempty"`
@@ -82,18 +82,10 @@ type Policy struct {
 	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
 }
 
-type DataPlanePolicy struct {
-	Transport      string `json:"transport,omitempty"`
-	Endpoint       string `json:"endpoint,omitempty"`
-	BatchSize      int    `json:"batch_size,omitempty"`
-	MaxBytes       int    `json:"max_bytes,omitempty"`
-	FlushInterval  string `json:"flush_interval,omitempty"`
-	RetryInitial   string `json:"retry_initial,omitempty"`
-	RetryMax       string `json:"retry_max,omitempty"`
-	RequestTimeout string `json:"request_timeout,omitempty"`
-	MaxInflight    int    `json:"max_inflight,omitempty"`
-	Compression    string `json:"compression,omitempty"`
-	TLSProfile     string `json:"tls_profile,omitempty"`
+type TelemetryPolicy struct {
+	MaxBatchItems int    `json:"max_batch_items,omitempty"`
+	MaxBatchBytes int    `json:"max_batch_bytes,omitempty"`
+	FlushInterval string `json:"flush_interval,omitempty"`
 }
 
 type ScopeSelector struct {

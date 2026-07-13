@@ -145,18 +145,10 @@ message TelemetrySenderHealth {
   string last_error = 7;
 }
 
-message DataPlanePolicy {
-  string transport = 1;
-  string endpoint = 2;
-  uint32 batch_size = 3;
-  string flush_interval = 4;
-  string retry_initial = 5;
-  string retry_max = 6;
-  string request_timeout = 7;
-  uint32 max_inflight = 8;
-  string compression = 9;
-  string tls_profile = 10;
-  uint32 max_bytes = 11;
+message TelemetryPolicy {
+  uint32 max_batch_items = 1;
+  uint32 max_batch_bytes = 2;
+  string flush_interval = 3;
 }
 
 message CEPHealth {
@@ -352,11 +344,14 @@ message EvidencePullbackResult {
 }
 
 message ApplyPolicyRequest {
+  reserved 5;
+  reserved "data_plane";
+
   RequestContext context = 1;
   string policy_type = 2;
   string policy_json = 3;
   bool dry_run = 4;
-  DataPlanePolicy data_plane = 5;
+  TelemetryPolicy telemetry = 6;
 }
 
 message ApplyContentRequest {

@@ -208,7 +208,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	}
 }
 
-func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
+func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
 	runner := &AgentRuntime{
@@ -234,24 +234,24 @@ func TestLocalControlApplyDataPlanePolicyContract(t *testing.T) {
 
 	client := newUnixControlClient(t, socketPath)
 	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
-		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-data-plane"},
-		PolicyType: "data_plane",
-		PolicyJson: `{"transport":"grpc","endpoint":"manager:9443","batch_size":64,"flush_interval":"2s","retry_initial":"500ms","retry_max":"5s","request_timeout":"3s","max_inflight":2,"compression":"gzip","tls_profile":"mtls-prod"}`,
+		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-telemetry"},
+		PolicyType: "telemetry",
+		PolicyJson: `{"max_batch_items":64,"max_batch_bytes":131072,"flush_interval":"2s"}`,
 	})
 	if err != nil {
-		t.Fatalf("ApplyPolicy(data_plane) error = %v", err)
+		t.Fatalf("ApplyPolicy(telemetry) error = %v", err)
 	}
-	if ack.Status != "applied" || len(ack.Sections) != 1 || !ack.Sections[0].RequiresRestart {
+	if ack.Status != "applied" || len(ack.Sections) != 1 || ack.Sections[0].RequiresRestart {
 		t.Fatalf("ack = %+v", ack)
 	}
-	if runner.Config.Manager.Transport != "grpc" || runner.Config.Manager.Address != "manager:9443" {
+	if runner.Config.Manager.Transport != "grpc" || runner.Config.Manager.Address != "127.0.0.1:9443" {
 		t.Fatalf("manager config = %+v", runner.Config.Manager)
 	}
-	if runner.Config.Telemetry.BatchSize != 64 || runner.Config.Telemetry.FlushInterval != 2*time.Second {
+	if runner.Config.Telemetry.BatchSize != 64 || runner.Config.Telemetry.MaxBytes != 131072 || runner.Config.Telemetry.FlushInterval != 2*time.Second {
 		t.Fatalf("telemetry config = %+v", runner.Config.Telemetry)
 	}
-	if runner.Config.DataPlane.RetryInitial != 500*time.Millisecond || runner.Config.DataPlane.RetryMax != 5*time.Second || runner.Config.DataPlane.RequestTimeout != 3*time.Second || runner.Config.DataPlane.MaxInflight != 2 || runner.Config.DataPlane.Compression != "gzip" || runner.Config.DataPlane.TLSProfile != "mtls-prod" {
-		t.Fatalf("data plane config = %+v", runner.Config.DataPlane)
+	if runner.Config.DataPlane.RetryInitial != time.Second || runner.Config.DataPlane.RetryMax != 30*time.Second || runner.Config.DataPlane.RequestTimeout != 10*time.Second || runner.Config.DataPlane.MaxInflight != 1 {
+		t.Fatalf("export config changed by telemetry policy: %+v", runner.Config.DataPlane)
 	}
 }
 
