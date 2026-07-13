@@ -6,19 +6,19 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
 )
 
-type spoolUploader struct {
+type exportPipeline struct {
 	store        *localstore.Store
-	sender       dataappend.BatchSender
+	exporter     Exporter
 	fromSequence uint64
 }
 
-func (u *spoolUploader) Run(ctx context.Context) {
+func (u *exportPipeline) Run(ctx context.Context) {
+	defer u.exporter.Close()
 	backoff := time.Second
 	for {
-		err := u.uploadAvailable(ctx)
+		err := u.exportAvailable(ctx)
 		if ctx.Err() != nil {
 			return
 		}
@@ -42,9 +42,9 @@ func (u *spoolUploader) Run(ctx context.Context) {
 	}
 }
 
-func (u *spoolUploader) uploadAvailable(ctx context.Context) error {
-	if u == nil || u.store == nil || u.sender == nil {
-		return fmt.Errorf("spool uploader is not configured")
+func (u *exportPipeline) exportAvailable(ctx context.Context) error {
+	if u == nil || u.store == nil || u.exporter == nil {
+		return fmt.Errorf("export pipeline is not configured")
 	}
 	checkpoint, err := u.store.Checkpoint(ctx)
 	if err != nil {
@@ -58,12 +58,12 @@ func (u *spoolUploader) uploadAvailable(ctx context.Context) error {
 		if beforeCheckpoint(stored.Position, checkpoint) {
 			continue
 		}
-		ack, err := u.sender.SendBatch(stored.Batch)
+		result, err := u.exporter.Export(ctx, stored.Batch)
 		if err != nil {
 			return err
 		}
-		if !dataappend.AckCommitted(ack) {
-			return fmt.Errorf("batch %s not committed: %s", stored.Position.BatchID, ack.GetMessage())
+		if !result.Committed {
+			return fmt.Errorf("batch %s was not committed", stored.Position.BatchID)
 		}
 		if err := u.store.SaveCheckpoint(ctx, localstore.Checkpoint{SegmentID: stored.Position.SegmentID, RecordOffset: stored.Position.RecordOffset, LastBatchID: stored.Position.BatchID}); err != nil {
 			return err

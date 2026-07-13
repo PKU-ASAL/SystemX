@@ -836,7 +836,7 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
 	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
 	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.Local.Export.RequestTimeout, "", tlsCfg)
-	go (&spoolUploader{store: r.localStore, sender: sender, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
+	go (&exportPipeline{store: r.localStore, exporter: &cloudExporter{sender: sender}, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
 	if r.managedControl != nil {
 		r.managedControl.runControlFlowForEnrollment(ctx, enrollment, tlsCfg)
 	}

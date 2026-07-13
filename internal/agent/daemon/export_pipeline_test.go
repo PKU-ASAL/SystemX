@@ -9,7 +9,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 )
 
-func TestSpoolUploaderCheckpointsOnlyCommittedAck(t *testing.T) {
+func TestExportPipelineCheckpointsOnlyCommittedAck(t *testing.T) {
 	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: filepath.Join(t.TempDir(), "state")})
 	if err != nil {
 		t.Fatal(err)
@@ -24,8 +24,8 @@ func TestSpoolUploaderCheckpointsOnlyCommittedAck(t *testing.T) {
 		{Status: dataplanev1.DataAck_STATUS_ACCEPTED, Accepted: true},
 		{Status: dataplanev1.DataAck_STATUS_RETRYABLE},
 	}}
-	uploader := &spoolUploader{store: store, sender: sender}
-	if err := uploader.uploadAvailable(t.Context()); err == nil {
+	pipeline := &exportPipeline{store: store, exporter: &cloudExporter{sender: sender}}
+	if err := pipeline.exportAvailable(t.Context()); err == nil {
 		t.Fatal("retryable ack returned nil")
 	}
 	checkpoint, err := store.Checkpoint(t.Context())
@@ -37,7 +37,7 @@ func TestSpoolUploaderCheckpointsOnlyCommittedAck(t *testing.T) {
 	}
 }
 
-func TestSpoolUploaderReplaysCheckpointBatchAfterRestart(t *testing.T) {
+func TestExportPipelineReplaysCheckpointBatchAfterRestart(t *testing.T) {
 	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: filepath.Join(t.TempDir(), "state")})
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestSpoolUploaderReplaysCheckpointBatchAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	sender := &sequenceSender{acks: []*dataplanev1.DataAck{{Status: dataplanev1.DataAck_STATUS_DUPLICATE, Accepted: true}}}
-	if err := (&spoolUploader{store: store, sender: sender}).uploadAvailable(context.Background()); err != nil {
+	if err := (&exportPipeline{store: store, exporter: &cloudExporter{sender: sender}}).exportAvailable(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(sender.sent) != 1 || sender.sent[0] != "a" {
@@ -59,7 +59,7 @@ func TestSpoolUploaderReplaysCheckpointBatchAfterRestart(t *testing.T) {
 	}
 }
 
-func TestSpoolUploaderStartsAtEnrollmentBoundary(t *testing.T) {
+func TestExportPipelineStartsAtEnrollmentBoundary(t *testing.T) {
 	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: filepath.Join(t.TempDir(), "state")})
 	if err != nil {
 		t.Fatal(err)
@@ -72,8 +72,8 @@ func TestSpoolUploaderStartsAtEnrollmentBoundary(t *testing.T) {
 		}
 	}
 	sender := &sequenceSender{}
-	uploader := &spoolUploader{store: store, sender: sender, fromSequence: 3}
-	if err := uploader.uploadAvailable(t.Context()); err != nil {
+	pipeline := &exportPipeline{store: store, exporter: &cloudExporter{sender: sender}, fromSequence: 3}
+	if err := pipeline.exportAvailable(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if len(sender.sent) != 1 || sender.sent[0] != "c" {
