@@ -15,11 +15,11 @@ import (
 
 func (r *TransportRuntime) runControlFlow(ctx context.Context) {
 	runner := r.runner
-	backoff := runner.Config.DataPlane.RetryInitial
+	backoff := runner.Config.Local.Export.RetryInitial
 	if backoff <= 0 {
 		backoff = time.Second
 	}
-	maxBackoff := runner.Config.DataPlane.RetryMax
+	maxBackoff := runner.Config.Local.Export.RetryMax
 	if maxBackoff <= 0 {
 		maxBackoff = 30 * time.Second
 	}
@@ -52,7 +52,7 @@ func (r *TransportRuntime) RunControlChannel(ctx context.Context) error {
 
 func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token string, tlsCfg tlsconfig.ClientConfig, identity runtimeIdentity) error {
 	runner := r.runner
-	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.DataPlane.RequestTimeout)
+	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.Local.Export.RequestTimeout)
 	defer cancel()
 	session := NewControlChannel(manager, token, tlsCfg)
 	if err := session.Open(connectCtx); err != nil {

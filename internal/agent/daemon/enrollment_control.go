@@ -18,7 +18,7 @@ func (s *localControlServer) Enroll(ctx context.Context, req *controlplanev1.Enr
 	if err != nil {
 		return enrollmentAck(req.GetContext(), "rejected", err.Error(), s.runner.currentIdentity()), nil
 	}
-	paths, err := writeEnrollmentCredentials(s.runner.Config.Agent.StatePath, certificate, keyPEM)
+	paths, err := writeEnrollmentCredentials(s.runner.Config.Local.StatePath, certificate, keyPEM)
 	if err != nil {
 		return enrollmentAck(req.GetContext(), "rejected", fmt.Sprintf("write credentials: %v", err), s.runner.currentIdentity()), nil
 	}

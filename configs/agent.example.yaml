@@ -1,5 +1,18 @@
-agent:
+local:
   state_path: /var/lib/sysarmor/agent
+  storage:
+    max_bytes: 10GiB
+    min_free_bytes: 2GiB
+    segment_size: 64MiB
+    signal_max_count: 100000
+  export:
+    retry_initial: 1s
+    retry_max: 30s
+    request_timeout: 10s
+    max_inflight: 1
+    wire_compression: none
+
+agent:
   label.env: dev # optional metadata; tests can add label.workload or label.scenario
 
 control:
@@ -17,7 +30,6 @@ sensor:
   install_dir: /opt/sysarmor/agent/sensors
   tetra_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetra
   tetragon_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetragon
-  policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   event_source: "" # managed mode runs tetra getevents; set "-" only for stdin JSONL debugging
   scope:
     type: host # host | container | cgroup | namespace | pod
@@ -30,19 +42,15 @@ sensor:
   restart_window: 60s
 
 telemetry:
-  batch_size: 256
+  max_batch_items: 256
+  max_batch_bytes: 256KiB
   flush_interval: 1s
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
 
 policy:
-  refresh_interval: 30s
+  path: /etc/sysarmor/agent/policy.json
 
 content:
   trust_keys: "" # comma-separated key_id=base64_ed25519_public_key
@@ -50,9 +58,3 @@ content:
 resource:
   max_active_cep_groups: 4096
   max_event_refs_per_signal: 128
-
-storage:
-  max_bytes: 10GiB
-  min_free_bytes: 2GiB
-  event_segment_size: 64MiB
-  signal_max_count: 100000

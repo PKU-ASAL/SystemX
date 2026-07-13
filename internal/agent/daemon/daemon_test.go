@@ -91,7 +91,7 @@ func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Runtime:   config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "optimized"}},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
 	}
 	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestAgentRuntimeMatcherFeatureFlagTestOverride(t *testing.T) {
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Runtime:   config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
 	}
 	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestAgentRuntimeRejectsInvalidMatcherFeatureFlagOverride(t *testing.T) {
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Runtime:   config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: filepath.Join(dir, "collection.yaml"), ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
 	}
 	if err := os.WriteFile(cfg.Sensor.PolicyPath, []byte(testCollectionPolicyJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -163,8 +163,8 @@ func TestAgentRuntimeUploadsFakeSensorEvent(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
+		Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1}},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
@@ -188,12 +188,10 @@ func TestStandaloneRuntimePersistsBeforeAcknowledging(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Agent:     config.AgentConfig{StatePath: filepath.Join(dir, "state")},
+		Local:     config.LocalConfig{StatePath: filepath.Join(dir, "state"), Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1}, Storage: config.LocalStorageConfig{MaxBytes: 1 << 30, MinFreeBytes: 1, SegmentSize: 1 << 20, SignalMaxCount: 1000}},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 256, MaxBytes: 256 << 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: time.Second},
 		Health:    config.HealthConfig{Interval: time.Second},
-		Storage:   config.StorageConfig{MaxBytes: 1 << 30, MinFreeBytes: 1, EventSegmentSize: 1 << 20, SignalMaxCount: 1000},
 	}
 	runner, err := New(cfg)
 	if err != nil {
@@ -228,8 +226,8 @@ func TestAgentRuntimeUploadsConfiguredLabels(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "daemon-scenario"}},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, Scope: config.RuntimeScope{Type: "container", Selector: "abc123"}, ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
+		Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1}},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
@@ -253,8 +251,8 @@ func TestAgentRuntimeShutdownFlushesTelemetryBestEffort(t *testing.T) {
 		Config: config.Config{
 			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 			Sensor:    config.SensorConfig{Scope: config.RuntimeScope{Type: "host"}},
-			Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Hour},
-			DataPlane: config.DataPlaneConfig{RequestTimeout: 200 * time.Millisecond},
+			Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Hour},
+			Local:     config.LocalConfig{Export: config.LocalExportConfig{RequestTimeout: 200 * time.Millisecond, MaxInflight: 1}},
 		},
 		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
 		capability: contract.Capability{Backend: "fake", SupportsHealth: true},
@@ -392,10 +390,10 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 
 	runner := &AgentRuntime{
 		Config: config.Config{
-			Agent:     config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
-			Manager:   config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
-			DataPlane: config.DataPlaneConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second},
-			Health:    config.HealthConfig{Interval: 10 * time.Millisecond},
+			Agent:   config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
+			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
+			Local:   config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second, MaxInflight: 1}},
+			Health:  config.HealthConfig{Interval: 10 * time.Millisecond},
 		},
 		Sensor: &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3}},
 		capability: contract.Capability{
@@ -525,8 +523,8 @@ func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "tetragon", Mode: "managed", Version: "test", PolicyPath: policyPath, EventSource: eventPath, ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
+		Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1}},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
@@ -553,8 +551,8 @@ func TestAgentRuntimeTetragonRequiresEventSource(t *testing.T) {
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "tetragon", Mode: "managed", PolicyPath: policyPath, EventTransport: "tetra", ObserveOnly: true},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
+		Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: time.Second, RequestTimeout: time.Second, MaxInflight: 1}},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner, err := New(cfg)
@@ -574,8 +572,8 @@ func TestAgentRuntimeProcessesTamperSignalFromHealth(t *testing.T) {
 		Config: config.Config{
 			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 			Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true, RestartWindow: time.Hour},
-			Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Hour},
-			DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+			Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Hour},
+			Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond, MaxInflight: 1}},
 			Health:    config.HealthConfig{Interval: 5 * time.Millisecond},
 		},
 		Sensor: &healthOnlySensor{health: contract.Health{
@@ -634,8 +632,8 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 		Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token"},
 		Manager:   config.ManagerConfig{Address: "local", Transport: "local"},
 		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true, MaxParseErrors: 1, RestartWindow: time.Hour},
-		Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Hour},
-		DataPlane: config.DataPlaneConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Hour},
+		Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Hour, RetryMax: time.Hour, RequestTimeout: 5 * time.Millisecond, MaxInflight: 1}},
 		Health:    config.HealthConfig{Interval: time.Hour},
 	}
 	runner := &AgentRuntime{
@@ -656,7 +654,7 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 		t.Fatal(err)
 	}
 	bus := telemetry.NewBus(1024)
-	batcher := telemetry.NewBatcher(runner.newDataBatch, cfg.Telemetry.BatchSize, cfg.Telemetry.FlushInterval, 16)
+	batcher := telemetry.NewBatcher(runner.newDataBatch, cfg.Telemetry.MaxBatchItems, cfg.Telemetry.FlushInterval, 16)
 	sender := &telemetry.Sender{Appender: noopUploader{}, Batcher: batcher}
 	health, err := runner.collectHealth(context.Background(), rt, bus, batcher, sender, time.Now())
 	if err != nil {
@@ -815,10 +813,10 @@ func runTestControlChannel(t *testing.T, dir string, server *contentUpdateContro
 
 	runner := &AgentRuntime{
 		Config: config.Config{
-			Agent:     config.AgentConfig{ID: agentID, HostID: "host-" + agentID, TenantID: "default"},
-			Manager:   config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
-			DataPlane: config.DataPlaneConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second},
-			Health:    config.HealthConfig{Interval: time.Hour},
+			Agent:   config.AgentConfig{ID: agentID, HostID: "host-" + agentID, TenantID: "default"},
+			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
+			Local:   config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second, MaxInflight: 1}},
+			Health:  config.HealthConfig{Interval: time.Hour},
 		},
 		Sensor: &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, PolicyLoaded: true, EventsSeen: 3}},
 		capability: contract.Capability{

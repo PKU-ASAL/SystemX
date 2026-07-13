@@ -216,8 +216,8 @@ func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 			Agent:     config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default"},
 			Control:   config.ControlConfig{SocketPath: socketPath},
 			Manager:   config.ManagerConfig{Address: "127.0.0.1:9443", Transport: "grpc"},
-			Telemetry: config.TelemetryConfig{BatchSize: 10, FlushInterval: time.Second},
-			DataPlane: config.DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1},
+			Telemetry: config.TelemetryConfig{MaxBatchItems: 10, FlushInterval: time.Second},
+			Local:     config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1}},
 		},
 		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
 		capability: contract.Capability{Backend: "fake", SupportsExec: true},
@@ -247,11 +247,11 @@ func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 	if runner.Config.Manager.Transport != "grpc" || runner.Config.Manager.Address != "127.0.0.1:9443" {
 		t.Fatalf("manager config = %+v", runner.Config.Manager)
 	}
-	if runner.Config.Telemetry.BatchSize != 64 || runner.Config.Telemetry.MaxBytes != 131072 || runner.Config.Telemetry.FlushInterval != 2*time.Second {
+	if runner.Config.Telemetry.MaxBatchItems != 64 || runner.Config.Telemetry.MaxBatchBytes != 131072 || runner.Config.Telemetry.FlushInterval != 2*time.Second {
 		t.Fatalf("telemetry config = %+v", runner.Config.Telemetry)
 	}
-	if runner.Config.DataPlane.RetryInitial != time.Second || runner.Config.DataPlane.RetryMax != 30*time.Second || runner.Config.DataPlane.RequestTimeout != 10*time.Second || runner.Config.DataPlane.MaxInflight != 1 {
-		t.Fatalf("export config changed by telemetry policy: %+v", runner.Config.DataPlane)
+	if runner.Config.Local.Export.RetryInitial != time.Second || runner.Config.Local.Export.RetryMax != 30*time.Second || runner.Config.Local.Export.RequestTimeout != 10*time.Second || runner.Config.Local.Export.MaxInflight != 1 {
+		t.Fatalf("export config changed by telemetry policy: %+v", runner.Config.Local.Export)
 	}
 }
 

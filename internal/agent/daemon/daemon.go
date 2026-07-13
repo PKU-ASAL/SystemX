@@ -131,7 +131,7 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 	}
 	var state *localstore.Store
 	if cfg.Manager.Transport == "" {
-		state, err = localstore.Open(context.Background(), localstore.Options{RootDir: cfg.Agent.StatePath, MaxBytes: cfg.Storage.MaxBytes, MinFreeBytes: cfg.Storage.MinFreeBytes, SegmentSize: cfg.Storage.EventSegmentSize, SignalMaxCount: cfg.Storage.SignalMaxCount})
+		state, err = localstore.Open(context.Background(), localstore.Options{RootDir: cfg.Local.StatePath, MaxBytes: cfg.Local.Storage.MaxBytes, MinFreeBytes: cfg.Local.Storage.MinFreeBytes, SegmentSize: cfg.Local.Storage.SegmentSize, SignalMaxCount: cfg.Local.Storage.SignalMaxCount})
 		if err != nil {
 			return nil, fmt.Errorf("open agent local store: %w", err)
 		}
@@ -221,16 +221,16 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return failStartup("data_plane", err)
 	}
-	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
+	bus := telemetry.NewBus(r.Config.Telemetry.MaxBatchItems * 16)
 	if local, ok := appender.(*localStoreBatchSender); ok {
 		local.onCommit = bus.PublishBatch
 	}
-	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, r.Config.DataPlane.MaxInflight*64, r.Config.Telemetry.MaxBytes)
+	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.MaxBatchItems, r.Config.Telemetry.FlushInterval, r.Config.Local.Export.MaxInflight*64, r.Config.Telemetry.MaxBatchBytes)
 	sender := &telemetry.Sender{
 		Appender:     appender,
 		Batcher:      batcher,
-		RetryInitial: r.Config.DataPlane.RetryInitial,
-		RetryMax:     r.Config.DataPlane.RetryMax,
+		RetryInitial: r.Config.Local.Export.RetryInitial,
+		RetryMax:     r.Config.Local.Export.RetryMax,
 	}
 	stopLocalControl, err := r.startLocalControlServer(ctx, rt, bus, batcher, sender, startedAt)
 	if err != nil {
@@ -437,8 +437,8 @@ func (r *AgentRuntime) collectShutdownHealth(ctx context.Context, rt sensorrunti
 
 func shutdownDrainTimeout(cfg config.Config) time.Duration {
 	timeout := 5 * time.Second
-	if cfg.DataPlane.RequestTimeout > 0 && cfg.DataPlane.RequestTimeout < timeout {
-		timeout = cfg.DataPlane.RequestTimeout
+	if cfg.Local.Export.RequestTimeout > 0 && cfg.Local.Export.RequestTimeout < timeout {
+		timeout = cfg.Local.Export.RequestTimeout
 	}
 	return timeout
 }
@@ -606,10 +606,10 @@ func (r *AgentRuntime) healthTelemetryArgs(source any, rest ...any) (*telemetry.
 		}
 	}
 	if bus == nil {
-		bus = telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
+		bus = telemetry.NewBus(r.Config.Telemetry.MaxBatchItems * 16)
 	}
 	if batcher == nil {
-		batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBytes)
+		batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.MaxBatchItems, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBatchBytes)
 	}
 	if sender == nil {
 		sender = &telemetry.Sender{Appender: localBatchSender{}, Batcher: batcher}
@@ -818,7 +818,7 @@ func (r *AgentRuntime) batchSender() (dataappend.BatchSender, error) {
 	if r.localStore != nil {
 		return &localStoreBatchSender{store: r.localStore}, nil
 	}
-	return newBatchSender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.DataPlane.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
+	return newBatchSender(r.Config.Manager.Address, r.Config.Manager.Transport, r.Config.Local.Export.RequestTimeout, r.Config.Agent.Token, r.managerTLS())
 }
 
 func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
@@ -833,7 +833,7 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 
 func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
 	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
-	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.DataPlane.RequestTimeout, "", tlsCfg)
+	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.Local.Export.RequestTimeout, "", tlsCfg)
 	go (&spoolUploader{store: r.localStore, sender: sender, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
 	if r.managedControl != nil {
 		r.managedControl.runControlFlowForEnrollment(ctx, enrollment, tlsCfg)

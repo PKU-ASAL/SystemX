@@ -13,26 +13,45 @@ import (
 
 type Config struct {
 	Agent     AgentConfig
+	Local     LocalConfig
 	Manager   ManagerConfig
 	Control   ControlConfig
 	Runtime   RuntimeConfig
 	Sensor    SensorConfig
 	Telemetry TelemetryConfig
-	DataPlane DataPlaneConfig
 	Health    HealthConfig
 	Policy    PolicyConfig
 	Content   ContentConfig
 	Resource  ResourceConfig
-	Storage   StorageConfig
 }
 
 type AgentConfig struct {
-	ID        string
-	HostID    string
-	TenantID  string
-	Token     string
-	Labels    map[string]string
+	ID       string
+	HostID   string
+	TenantID string
+	Token    string
+	Labels   map[string]string
+}
+
+type LocalConfig struct {
 	StatePath string
+	Storage   LocalStorageConfig
+	Export    LocalExportConfig
+}
+
+type LocalStorageConfig struct {
+	MaxBytes       int64
+	MinFreeBytes   int64
+	SegmentSize    int64
+	SignalMaxCount int64
+}
+
+type LocalExportConfig struct {
+	RetryInitial    time.Duration
+	RetryMax        time.Duration
+	RequestTimeout  time.Duration
+	MaxInflight     int
+	WireCompression string
 }
 
 type ManagerConfig struct {
@@ -99,18 +118,9 @@ type RuntimeScope struct {
 }
 
 type TelemetryConfig struct {
-	BatchSize     int
-	MaxBytes      int
+	MaxBatchItems int
+	MaxBatchBytes int
 	FlushInterval time.Duration
-}
-
-type DataPlaneConfig struct {
-	RetryInitial   time.Duration
-	RetryMax       time.Duration
-	RequestTimeout time.Duration
-	MaxInflight    int
-	Compression    string
-	TLSProfile     string
 }
 
 type HealthConfig struct {
@@ -118,7 +128,7 @@ type HealthConfig struct {
 }
 
 type PolicyConfig struct {
-	RefreshInterval time.Duration
+	Path string
 }
 
 type ContentConfig struct {
@@ -129,13 +139,6 @@ type ContentConfig struct {
 type ResourceConfig struct {
 	MaxActiveCEPGroups    int
 	MaxEventRefsPerSignal int
-}
-
-type StorageConfig struct {
-	MaxBytes         int64
-	MinFreeBytes     int64
-	EventSegmentSize int64
-	SignalMaxCount   int64
 }
 
 func LoadFile(path string) (Config, error) {
@@ -158,7 +161,7 @@ func (c Config) Validate() error {
 			missing = append(missing, path)
 		}
 	}
-	check("agent.state_path", c.Agent.StatePath)
+	check("local.state_path", c.Local.StatePath)
 	if c.Manager.Transport == "local" {
 		return fmt.Errorf("manager.transport local is legacy; omit manager configuration for standalone mode")
 	}
@@ -167,7 +170,7 @@ func (c Config) Validate() error {
 	}
 	check("sensor.backend", c.Sensor.Backend)
 	check("sensor.mode", c.Sensor.Mode)
-	check("sensor.policy_path", c.Sensor.PolicyPath)
+	check("policy.path", c.Policy.Path)
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
 	}
@@ -219,32 +222,23 @@ func (c Config) Validate() error {
 	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
 		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")
 	}
-	if c.Telemetry.BatchSize <= 0 {
-		return fmt.Errorf("telemetry.batch_size must be positive")
+	if _, err := ResolveTelemetry(c.Telemetry, nil); err != nil {
+		return err
 	}
-	if c.Telemetry.MaxBytes < 0 {
-		return fmt.Errorf("telemetry.max_bytes must be non-negative")
+	if c.Local.Export.RetryInitial <= 0 || c.Local.Export.RetryMax <= 0 || c.Local.Export.RequestTimeout <= 0 {
+		return fmt.Errorf("local.export retry/request timeouts must be positive")
 	}
-	if c.Telemetry.FlushInterval <= 0 {
-		return fmt.Errorf("telemetry.flush_interval must be positive")
+	if c.Local.Export.RetryInitial > c.Local.Export.RetryMax {
+		return fmt.Errorf("local.export.retry_initial must be <= local.export.retry_max")
 	}
-	if c.DataPlane.RetryInitial <= 0 || c.DataPlane.RetryMax <= 0 || c.DataPlane.RequestTimeout <= 0 {
-		return fmt.Errorf("data_plane retry/request timeouts must be positive")
+	if c.Local.Export.MaxInflight != 1 {
+		return fmt.Errorf("local.export.max_inflight must be 1")
 	}
-	if c.DataPlane.RetryInitial > c.DataPlane.RetryMax {
-		return fmt.Errorf("data_plane.retry_initial must be <= data_plane.retry_max")
-	}
-	if c.DataPlane.MaxInflight < 0 {
-		return fmt.Errorf("data_plane.max_inflight must be non-negative")
-	}
-	if c.Storage.MaxBytes <= 0 || c.Storage.MinFreeBytes <= 0 || c.Storage.EventSegmentSize <= 0 || c.Storage.SignalMaxCount <= 0 {
-		return fmt.Errorf("storage limits must be positive")
+	if c.Local.Storage.MaxBytes <= 0 || c.Local.Storage.MinFreeBytes <= 0 || c.Local.Storage.SegmentSize <= 0 || c.Local.Storage.SignalMaxCount <= 0 {
+		return fmt.Errorf("local.storage limits must be positive")
 	}
 	if c.Health.Interval <= 0 {
 		return fmt.Errorf("health.interval must be positive")
-	}
-	if c.Policy.RefreshInterval < 0 {
-		return fmt.Errorf("policy.refresh_interval must be non-negative")
 	}
 	if c.Resource.MaxActiveCEPGroups < 0 {
 		return fmt.Errorf("resource.max_active_cep_groups must be non-negative")
@@ -299,7 +293,7 @@ func validMatcherStrategy(strategy string) bool {
 func parse(r *os.File) (Config, error) {
 	cfg := defaults()
 	scanner := bufio.NewScanner(r)
-	section := ""
+	root, nested := "", ""
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
@@ -307,28 +301,18 @@ func parse(r *os.File) (Config, error) {
 		if strings.TrimSpace(raw) == "" {
 			continue
 		}
-		if !strings.HasPrefix(raw, " ") && strings.HasSuffix(strings.TrimSpace(raw), ":") {
-			section = strings.TrimSuffix(strings.TrimSpace(raw), ":")
+		indent := len(raw) - len(strings.TrimLeft(raw, " "))
+		trimmed := strings.TrimSpace(raw)
+		if indent == 0 && strings.HasSuffix(trimmed, ":") {
+			root = strings.TrimSuffix(trimmed, ":")
+			nested = ""
 			continue
 		}
-		if section == "" {
+		if root == "" {
 			return Config{}, fmt.Errorf("line %d: key outside section", lineNo)
 		}
-		trimmed := strings.TrimSpace(raw)
-		if section == "runtime" && strings.HasSuffix(trimmed, ":") {
-			nested := strings.TrimSuffix(trimmed, ":")
-			if nested != "feature_flags" {
-				return Config{}, fmt.Errorf("line %d: unknown config key runtime.%s", lineNo, nested)
-			}
-			section = "runtime.feature_flags"
-			continue
-		}
-		if section == "sensor" && strings.HasSuffix(trimmed, ":") {
-			nested := strings.TrimSuffix(trimmed, ":")
-			if nested != "scope" {
-				return Config{}, fmt.Errorf("line %d: unknown config key sensor.%s", lineNo, nested)
-			}
-			section = "sensor.scope"
+		if indent == 2 && strings.HasSuffix(trimmed, ":") {
+			nested = root + "." + strings.TrimSuffix(trimmed, ":")
 			continue
 		}
 		key, value, ok := strings.Cut(trimmed, ":")
@@ -336,9 +320,11 @@ func parse(r *os.File) (Config, error) {
 			return Config{}, fmt.Errorf("line %d: expected key: value", lineNo)
 		}
 		key = strings.TrimSpace(key)
-		assignSection := section
-		if section == "sensor.scope" && key != "type" && key != "selector" {
-			assignSection = "sensor"
+		assignSection := root
+		if indent >= 4 && nested != "" {
+			assignSection = nested
+		} else if indent == 2 {
+			nested = ""
 		}
 		if err := assign(&cfg, assignSection, key, unquote(strings.TrimSpace(value))); err != nil {
 			return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
@@ -352,17 +338,19 @@ func parse(r *os.File) (Config, error) {
 
 func defaults() Config {
 	return Config{
-		Agent:     AgentConfig{StatePath: "/var/lib/sysarmor/agent"},
-		Control:   ControlConfig{SocketPath: "/run/sysarmor/agent.sock"},
+		Local: LocalConfig{
+			StatePath: "/var/lib/sysarmor/agent",
+			Storage:   LocalStorageConfig{MaxBytes: 10 << 30, MinFreeBytes: 2 << 30, SegmentSize: 64 << 20, SignalMaxCount: 100_000},
+			Export:    LocalExportConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, WireCompression: "none"},
+		},
+		Control:   ControlConfig{SocketPath: "/run/sysarmor/agent/control.sock"},
 		Runtime:   RuntimeConfig{FeatureFlags: RuntimeFeatureFlags{MatcherStrategy: "linear"}},
 		Sensor:    SensorConfig{Backend: "tetragon", Mode: "managed", EventTransport: "grpc", ServerAddress: "unix:///var/run/tetragon/tetragon.sock", ProcessCacheSize: 4096, DataCacheSize: 128, EventQueueSize: 1024, RBQueueSize: "8192", ObserveOnly: true, Restart: "always", MaxRestarts: 5, RestartWindow: time.Minute},
-		Telemetry: TelemetryConfig{BatchSize: 256, MaxBytes: 256 * 1024, FlushInterval: time.Second},
-		DataPlane: DataPlaneConfig{RetryInitial: time.Second, RetryMax: 30 * time.Second, RequestTimeout: 10 * time.Second, MaxInflight: 1, Compression: "none"},
+		Telemetry: TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 * 1024, FlushInterval: time.Second},
 		Health:    HealthConfig{Interval: 10 * time.Second},
-		Policy:    PolicyConfig{RefreshInterval: 30 * time.Second},
+		Policy:    PolicyConfig{Path: "/etc/sysarmor/agent/policy.json"},
 		Content:   ContentConfig{Path: "/var/lib/sysarmor/agent/content"},
 		Resource:  ResourceConfig{MaxActiveCEPGroups: 4096, MaxEventRefsPerSignal: 128},
-		Storage:   StorageConfig{MaxBytes: 10 << 30, MinFreeBytes: 2 << 30, EventSegmentSize: 64 << 20, SignalMaxCount: 100_000},
 	}
 }
 
@@ -378,8 +366,6 @@ func assign(cfg *Config, section, key, value string) error {
 			cfg.Agent.TenantID = value
 		case "token":
 			cfg.Agent.Token = value
-		case "state_path":
-			cfg.Agent.StatePath = value
 		default:
 			if labelKey, ok := strings.CutPrefix(key, "label."); ok {
 				labelKey = strings.TrimSpace(labelKey)
@@ -394,6 +380,15 @@ func assign(cfg *Config, section, key, value string) error {
 			}
 			return unknown(section, key)
 		}
+	case "local":
+		if key != "state_path" {
+			return unknown(section, key)
+		}
+		cfg.Local.StatePath = value
+	case "local.storage":
+		return assignLocalStorage(&cfg.Local.Storage, key, value)
+	case "local.export":
+		return assignLocalExport(&cfg.Local.Export, key, value)
 	case "manager":
 		switch key {
 		case "address":
@@ -555,57 +550,24 @@ func assign(cfg *Config, section, key, value string) error {
 		}
 	case "telemetry":
 		switch key {
-		case "batch_size":
+		case "max_batch_items":
 			v, err := strconv.Atoi(value)
 			if err != nil {
-				return fmt.Errorf("telemetry.batch_size: %w", err)
+				return fmt.Errorf("telemetry.max_batch_items: %w", err)
 			}
-			cfg.Telemetry.BatchSize = v
-		case "max_bytes":
-			v, err := strconv.Atoi(value)
+			cfg.Telemetry.MaxBatchItems = v
+		case "max_batch_bytes":
+			v, err := parseByteSize(value)
 			if err != nil {
-				return fmt.Errorf("telemetry.max_bytes: %w", err)
+				return fmt.Errorf("telemetry.max_batch_bytes: %w", err)
 			}
-			cfg.Telemetry.MaxBytes = v
+			cfg.Telemetry.MaxBatchBytes = int(v)
 		case "flush_interval":
 			d, err := time.ParseDuration(value)
 			if err != nil {
 				return fmt.Errorf("telemetry.flush_interval: %w", err)
 			}
 			cfg.Telemetry.FlushInterval = d
-		default:
-			return unknown(section, key)
-		}
-	case "data_plane":
-		switch key {
-		case "retry_initial":
-			d, err := time.ParseDuration(value)
-			if err != nil {
-				return fmt.Errorf("data_plane.retry_initial: %w", err)
-			}
-			cfg.DataPlane.RetryInitial = d
-		case "retry_max":
-			d, err := time.ParseDuration(value)
-			if err != nil {
-				return fmt.Errorf("data_plane.retry_max: %w", err)
-			}
-			cfg.DataPlane.RetryMax = d
-		case "request_timeout":
-			d, err := time.ParseDuration(value)
-			if err != nil {
-				return fmt.Errorf("data_plane.request_timeout: %w", err)
-			}
-			cfg.DataPlane.RequestTimeout = d
-		case "max_inflight":
-			v, err := strconv.Atoi(value)
-			if err != nil {
-				return fmt.Errorf("data_plane.max_inflight: %w", err)
-			}
-			cfg.DataPlane.MaxInflight = v
-		case "compression":
-			cfg.DataPlane.Compression = value
-		case "tls_profile":
-			cfg.DataPlane.TLSProfile = value
 		default:
 			return unknown(section, key)
 		}
@@ -622,12 +584,8 @@ func assign(cfg *Config, section, key, value string) error {
 		}
 	case "policy":
 		switch key {
-		case "refresh_interval":
-			d, err := time.ParseDuration(value)
-			if err != nil {
-				return fmt.Errorf("policy.refresh_interval: %w", err)
-			}
-			cfg.Policy.RefreshInterval = d
+		case "path":
+			cfg.Policy.Path = value
 		default:
 			return unknown(section, key)
 		}
@@ -657,35 +615,6 @@ func assign(cfg *Config, section, key, value string) error {
 		default:
 			return unknown(section, key)
 		}
-	case "storage":
-		switch key {
-		case "max_bytes":
-			value, err := parseByteSize(value)
-			if err != nil {
-				return fmt.Errorf("storage.max_bytes: %w", err)
-			}
-			cfg.Storage.MaxBytes = value
-		case "min_free_bytes":
-			value, err := parseByteSize(value)
-			if err != nil {
-				return fmt.Errorf("storage.min_free_bytes: %w", err)
-			}
-			cfg.Storage.MinFreeBytes = value
-		case "event_segment_size":
-			value, err := parseByteSize(value)
-			if err != nil {
-				return fmt.Errorf("storage.event_segment_size: %w", err)
-			}
-			cfg.Storage.EventSegmentSize = value
-		case "signal_max_count":
-			value, err := strconv.ParseInt(value, 10, 64)
-			if err != nil {
-				return fmt.Errorf("storage.signal_max_count: %w", err)
-			}
-			cfg.Storage.SignalMaxCount = value
-		default:
-			return unknown(section, key)
-		}
 	default:
 		return fmt.Errorf("unknown section %q", section)
 	}
@@ -708,6 +637,62 @@ func parseByteSize(raw string) (int64, error) {
 		}
 	}
 	return 0, fmt.Errorf("byte size %q requires B, KiB, MiB, or GiB", raw)
+}
+
+func assignLocalStorage(storage *LocalStorageConfig, key, raw string) error {
+	if key == "signal_max_count" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return fmt.Errorf("local.storage.signal_max_count: %w", err)
+		}
+		storage.SignalMaxCount = value
+		return nil
+	}
+	value, err := parseByteSize(raw)
+	if err != nil {
+		return fmt.Errorf("local.storage.%s: %w", key, err)
+	}
+	switch key {
+	case "max_bytes":
+		storage.MaxBytes = value
+	case "min_free_bytes":
+		storage.MinFreeBytes = value
+	case "segment_size":
+		storage.SegmentSize = value
+	default:
+		return unknown("local.storage", key)
+	}
+	return nil
+}
+
+func assignLocalExport(export *LocalExportConfig, key, raw string) error {
+	if key == "max_inflight" {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			return fmt.Errorf("local.export.max_inflight: %w", err)
+		}
+		export.MaxInflight = value
+		return nil
+	}
+	if key == "wire_compression" {
+		export.WireCompression = raw
+		return nil
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil {
+		return fmt.Errorf("local.export.%s: %w", key, err)
+	}
+	switch key {
+	case "retry_initial":
+		export.RetryInitial = value
+	case "retry_max":
+		export.RetryMax = value
+	case "request_timeout":
+		export.RequestTimeout = value
+	default:
+		return unknown("local.export", key)
+	}
+	return nil
 }
 
 func unknown(section, key string) error {

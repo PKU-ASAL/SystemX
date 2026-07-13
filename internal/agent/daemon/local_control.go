@@ -95,7 +95,7 @@ func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*tele
 			startedAt, _ = rest[2].(time.Time)
 		}
 		if batcher == nil {
-			batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBytes)
+			batcher = telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.MaxBatchItems, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBatchBytes)
 		}
 		if sender == nil {
 			sender = &telemetry.Sender{Appender: localBatchSender{}, Batcher: batcher}
@@ -108,8 +108,8 @@ func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*tele
 		}
 		return bus, batcher, sender, startedAt
 	}
-	bus := telemetry.NewBus(r.Config.Telemetry.BatchSize * 16)
-	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.BatchSize, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBytes)
+	bus := telemetry.NewBus(r.Config.Telemetry.MaxBatchItems * 16)
+	batcher := telemetry.NewBatcher(r.newDataBatch, r.Config.Telemetry.MaxBatchItems, r.Config.Telemetry.FlushInterval, 64, r.Config.Telemetry.MaxBatchBytes)
 	sender := &telemetry.Sender{Appender: localBatchSender{}, Batcher: batcher}
 	startedAt := time.Now().UTC()
 	return bus, batcher, sender, startedAt
@@ -861,10 +861,10 @@ func (r *AgentRuntime) applyTelemetryConfig(telemetryPolicy policymodel.Telemetr
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if telemetryPolicy.MaxBatchItems > 0 {
-		r.Config.Telemetry.BatchSize = telemetryPolicy.MaxBatchItems
+		r.Config.Telemetry.MaxBatchItems = telemetryPolicy.MaxBatchItems
 	}
 	if telemetryPolicy.MaxBatchBytes > 0 {
-		r.Config.Telemetry.MaxBytes = telemetryPolicy.MaxBatchBytes
+		r.Config.Telemetry.MaxBatchBytes = telemetryPolicy.MaxBatchBytes
 	}
 	if d := parseOptionalDuration(telemetryPolicy.FlushInterval); d > 0 {
 		r.Config.Telemetry.FlushInterval = d

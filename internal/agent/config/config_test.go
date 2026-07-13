@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestRepositoryExampleConfigLoads(t *testing.T) {
@@ -13,7 +12,7 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFile(agent.example.yaml) error = %v", err)
 	}
-	if cfg.Manager.Transport != "" || cfg.Agent.StatePath != "/var/lib/sysarmor/agent" {
+	if cfg.Manager.Transport != "" || cfg.Local.StatePath != "/var/lib/sysarmor/agent" {
 		t.Fatalf("example is not standalone: manager=%+v agent=%+v", cfg.Manager, cfg.Agent)
 	}
 	if cfg.Sensor.EventSource != "" {
@@ -24,6 +23,60 @@ func TestRepositoryExampleConfigLoads(t *testing.T) {
 	}
 	if cfg.Runtime.FeatureFlags.MatcherStrategy != "linear" {
 		t.Fatalf("example matcher strategy = %q, want linear", cfg.Runtime.FeatureFlags.MatcherStrategy)
+	}
+}
+
+func TestLoadFileParsesConvergedRuntimeConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+local:
+  state_path: /var/lib/sysarmor/agent
+  storage:
+    max_bytes: 10GiB
+    min_free_bytes: 2GiB
+    segment_size: 64MiB
+    signal_max_count: 100000
+  export:
+    retry_initial: 1s
+    retry_max: 30s
+    request_timeout: 10s
+    max_inflight: 1
+    wire_compression: none
+telemetry:
+  max_batch_items: 256
+  max_batch_bytes: 256KiB
+  flush_interval: 1s
+sensor:
+  backend: fake
+policy:
+  path: /etc/sysarmor/agent/policy.json
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Local.StatePath != "/var/lib/sysarmor/agent" || cfg.Local.Storage.SegmentSize != 64<<20 || cfg.Local.Export.MaxInflight != 1 {
+		t.Fatalf("local config=%+v", cfg.Local)
+	}
+	if cfg.Telemetry.MaxBatchItems != 256 || cfg.Telemetry.MaxBatchBytes != 256<<10 || cfg.Policy.Path == "" {
+		t.Fatalf("config=%+v", cfg)
+	}
+}
+
+func TestLoadFileRejectsLegacyRuntimeSections(t *testing.T) {
+	for name, document := range map[string]string{
+		"agent state path": "agent:\n  state_path: /tmp/state\n",
+		"storage":          "storage:\n  max_bytes: 1GiB\n",
+		"data plane":       "data_plane:\n  retry_initial: 1s\n",
+		"telemetry name":   "telemetry:\n  batch_size: 10\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "agent.yaml")
+			write(t, path, document)
+			if _, err := LoadFile(path); err == nil {
+				t.Fatal("legacy config accepted")
+			}
+		})
 	}
 }
 
@@ -45,13 +98,9 @@ sensor:
   policy_path: test/policies/collection.yaml
 
 telemetry:
-  batch_size: 256
+  max_batch_items: 256
+  max_batch_bytes: 256KiB
   flush_interval: 1s
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
@@ -91,7 +140,7 @@ func TestStandaloneDeploymentConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Manager.Transport != "" || cfg.Storage.MaxBytes != 10<<30 || cfg.Agent.StatePath == "" {
+	if cfg.Manager.Transport != "" || cfg.Local.Storage.MaxBytes != 10<<30 || cfg.Local.StatePath == "" {
 		t.Fatalf("config=%+v", cfg)
 	}
 }
@@ -135,19 +184,15 @@ sensor:
   max_dropped_events: 4
 
 telemetry:
-  batch_size: 256
+  max_batch_items: 256
+  max_batch_bytes: 256KiB
   flush_interval: 1s
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
 
 policy:
-  refresh_interval: 15s
+  path: /etc/sysarmor/agent/policy.json
 
 resource:
   max_active_cep_groups: 32
@@ -192,11 +237,11 @@ runtime:
 	if cfg.Sensor.BTFPath != "/tmp/vmlinux" || cfg.Sensor.BPFFSPath != "/tmp/bpf" || !cfg.Sensor.RequireBTF || !cfg.Sensor.RequireBPFFS {
 		t.Fatalf("capability config = %+v", cfg.Sensor)
 	}
-	if cfg.Telemetry.BatchSize != 256 {
-		t.Fatalf("batch size = %d", cfg.Telemetry.BatchSize)
+	if cfg.Telemetry.MaxBatchItems != 256 {
+		t.Fatalf("batch size = %d", cfg.Telemetry.MaxBatchItems)
 	}
-	if cfg.Policy.RefreshInterval != 15*time.Second {
-		t.Fatalf("policy refresh interval = %s", cfg.Policy.RefreshInterval)
+	if cfg.Policy.Path == "" {
+		t.Fatal("policy path is empty")
 	}
 	if cfg.Resource.MaxActiveCEPGroups != 32 || cfg.Resource.MaxEventRefsPerSignal != 8 {
 		t.Fatalf("resource config = %+v", cfg.Resource)
@@ -228,13 +273,6 @@ sensor:
   mode: managed
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
 
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
-
 health:
   interval: 10s
 `)
@@ -250,20 +288,19 @@ func TestLoadFileAcceptsStandaloneWithoutCloudIdentity(t *testing.T) {
 	write(t, policy, `{"behaviors":["process.exec"],"observe_only":true}`)
 	path := filepath.Join(dir, "agent.yaml")
 	write(t, path, `
-agent:
+local:
   state_path: `+filepath.Join(dir, "state")+`
+  storage:
+    max_bytes: 1GiB
+    min_free_bytes: 128MiB
+    segment_size: 8MiB
+    signal_max_count: 1000
 sensor:
   backend: fake
   mode: managed
   policy_path: `+policy+`
-telemetry:
-data_plane:
-health:
-storage:
-  max_bytes: 1GiB
-  min_free_bytes: 128MiB
-  event_segment_size: 8MiB
-  signal_max_count: 1000
+policy:
+  path: `+policy+`
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -272,8 +309,8 @@ storage:
 	if cfg.Agent.ID != "" || cfg.Manager.Address != "" || cfg.Manager.Transport != "" {
 		t.Fatalf("standalone config has cloud identity: %+v %+v", cfg.Agent, cfg.Manager)
 	}
-	if cfg.Storage.MaxBytes != 1<<30 || cfg.Storage.SignalMaxCount != 1000 {
-		t.Fatalf("storage=%+v", cfg.Storage)
+	if cfg.Local.Storage.MaxBytes != 1<<30 || cfg.Local.Storage.SignalMaxCount != 1000 {
+		t.Fatalf("storage=%+v", cfg.Local.Storage)
 	}
 }
 
@@ -286,9 +323,6 @@ sensor:
   backend: fake
   mode: managed
   policy_path: /tmp/policy
-telemetry:
-data_plane:
-health:
 `)
 	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "legacy") {
 		t.Fatalf("error=%v", err)
@@ -314,13 +348,6 @@ sensor:
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: container
   scope_selector: abc123
-
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
@@ -362,13 +389,6 @@ sensor:
     type: pod
     selector: pod-a
 
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
-
 health:
   interval: 10s
 `)
@@ -405,13 +425,6 @@ sensor:
   scope:
     type: namespace
     selector: self
-
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
@@ -450,13 +463,6 @@ sensor:
     type: namespace
     selector: kubepods.slice/pod-a
 
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
-
 health:
   interval: 10s
 `)
@@ -484,13 +490,6 @@ sensor:
   mode: managed
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: vm
-
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
@@ -520,13 +519,6 @@ sensor:
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: container
 
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
-
 health:
   interval: 10s
 `)
@@ -555,13 +547,6 @@ sensor:
   policy_path: /etc/sysarmor/policies/sysarmor-tetragon.yaml
   scope_type: host
   scope_selector: abc123
-
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
 
 health:
   interval: 10s
@@ -593,13 +578,6 @@ sensor:
   scope_selector: abc123
   container_id_prefix: def456
 
-telemetry:
-
-data_plane:
-  retry_initial: 1s
-  retry_max: 30s
-  request_timeout: 10s
-
 health:
   interval: 10s
 `)
@@ -612,21 +590,21 @@ health:
 func TestLoadFileReportsMissingRequiredFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	write(t, path, `
-agent:
+local:
   state_path: ""
 manager:
   transport: grpc
 sensor:
   backend: tetragon
   mode: managed
-  policy_path: /tmp/policy.yaml
-telemetry:
+policy:
+  path: /tmp/policy.yaml
 `)
 	_, err := LoadFile(path)
 	if err == nil {
 		t.Fatal("LoadFile() error = nil")
 	}
-	for _, want := range []string{"agent.state_path", "manager.address"} {
+	for _, want := range []string{"local.state_path", "manager.address"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not contain %q", err, want)
 		}
