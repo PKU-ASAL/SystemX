@@ -532,7 +532,7 @@ func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	var out bytes.Buffer
+	var out safeBuffer
 	runDaemonUntilOutput(t, runner, &out, "agent daemon event")
 	got := out.String()
 	for _, want := range []string{"sensor=tetragon", "agent daemon event"} {
@@ -1068,7 +1068,10 @@ func runDaemonUntilUploadedBatch(t *testing.T, runner *AgentRuntime, out *bytes.
 	}
 }
 
-func runDaemonUntilOutput(t *testing.T, runner *AgentRuntime, out *bytes.Buffer, want string) {
+func runDaemonUntilOutput(t *testing.T, runner *AgentRuntime, out interface {
+	Write([]byte) (int, error)
+	String() string
+}, want string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
