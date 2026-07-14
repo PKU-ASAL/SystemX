@@ -9,6 +9,17 @@ echo ">>> 构建 SysArmor binaries"
 make -C "$REPO" build
 
 RUNTIME_DIR="$ROOT/.results/container-runtime"
+PKI_DIR="$RUNTIME_DIR/pki"
+
+SYSARMOR_GATEWAY_IPS="10.66.0.14" \
+  "$REPO/tools/pki/gen-agent-plane-mtls.sh" "$PKI_DIR" default bootstrap gateway >/dev/null
+"$REPO/tools/auth/init-bootstrap-admin.sh" "$PKI_DIR" >/dev/null
+if [[ ! -f "$PKI_DIR/artifact-signing-key.pem" ]]; then
+  openssl genrsa -out "$PKI_DIR/artifact-signing-key.pem" 3072 >/dev/null 2>&1
+  openssl rsa -in "$PKI_DIR/artifact-signing-key.pem" -pubout -out "$PKI_DIR/artifact-public.pem" >/dev/null 2>&1
+  chmod 0600 "$PKI_DIR/artifact-signing-key.pem"
+  chmod 0644 "$PKI_DIR/artifact-public.pem"
+fi
 prepare_runtime_image() {
   local name="$1"
   local binary="$2"
@@ -39,7 +50,7 @@ done
 
 cd "$ROOT/environments/container"
 docker compose up -d --build --force-recreate postgres kafka redis opensearch mgr gateway worker
-docker compose up -d --build --force-recreate attacker node-a tetragon
+docker compose up -d --build --force-recreate attacker node-a
 
 echo ">>> 等待 manager health"
 manager_ready=0

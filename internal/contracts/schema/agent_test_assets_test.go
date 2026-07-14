@@ -54,6 +54,30 @@ func TestAgentTestAssetsUseCurrentSchema(t *testing.T) {
 	validateCoverageInventory(t, filepath.Join(testRoot, "contracts", "agent-test-coverage.tsv"))
 }
 
+func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "environments", "container", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(raw)
+	for _, want := range []string{
+		"  node-a:\n",
+		"    privileged: true",
+		"/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf:ro",
+		"/sys/fs/bpf:/sys/fs/bpf",
+		"SYSARMOR_AGENT_CA_CERT:",
+		"SYSARMOR_GRPC_REQUIRE_CLIENT_CERT: true",
+	} {
+		if !strings.Contains(document, want) {
+			t.Errorf("container topology missing %q", want)
+		}
+	}
+	if strings.Contains(document, "  tetragon:\n") {
+		t.Error("container topology still defines a Tetragon sidecar")
+	}
+}
+
 func validateCoverageInventory(t *testing.T, path string) {
 	t.Helper()
 	file, err := os.Open(path)

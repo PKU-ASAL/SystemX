@@ -1,4 +1,4 @@
-# 拓扑 A：容器拓扑（3 节点 + tetragon 传感器）
+# 拓扑 A：容器拓扑（Manager installer 保护 node-a）
 # 用法: cd test/environments/container && docker compose up -d
 # 清理: docker compose down -v
 #
@@ -11,9 +11,6 @@
 # kafka    10.66.0.21  telemetry ingest log
 # redis    10.66.0.22  hot state
 # opensearch 10.66.0.23 evidence/search layer
-# tetragon  10.66.0.12  eBPF 传感器 + sysarmor-agent stream smoke
-#
-# tetragon 通过 eBPF 在内核层采集，同时加入 sysarmor-net 以便 agent smoke 上传 gateway。
 
 services:
   attacker:
@@ -26,12 +23,16 @@ services:
   node-a:
     build: ./images/node-a
     container_name: node-a
+    privileged: true
+    cgroup: host
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.11
     volumes:
       - app-plugins:/var/lib/app/plugins
       - node-secrets:/var/run/secrets/kubernetes.io/serviceaccount
+      - /sys/kernel/btf/vmlinux:/var/lib/tetragon/btf:ro
+      - /sys/fs/bpf:/sys/fs/bpf
 
   mgr:
     build:
@@ -53,8 +54,17 @@ services:
       SYSARMOR_OPENSEARCH_URL: http://10.66.0.23:9200
       SYSARMOR_OPENSEARCH_USERNAME: admin
       SYSARMOR_OPENSEARCH_PASSWORD: admin
+      SYSARMOR_ARTIFACT_DIR: /var/lib/sysarmor/manager/artifacts
+      SYSARMOR_ARTIFACT_PUBLIC_KEY: /etc/sysarmor/pki/artifact-public.pem
+      SYSARMOR_AGENT_CA_CERT: /etc/sysarmor/pki/ca.pem
+      SYSARMOR_AGENT_CA_KEY: /etc/sysarmor/pki/ca-key.pem
+      SYSARMOR_JWT_PUBLIC_KEY_FILE: /etc/sysarmor/pki/manager-jwt-public.pem
+      SYSARMOR_JWT_ISSUER: sysarmor-test
+      SYSARMOR_JWT_AUDIENCE: sysarmor-manager
     volumes:
       - ../../../bin:/opt/sysarmor/bin:ro
+      - ../../.results/container-runtime/pki:/etc/sysarmor/pki:ro
+      - manager-artifacts:/var/lib/sysarmor/manager/artifacts
 
   gateway:
     build:
@@ -78,8 +88,13 @@ services:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_KAFKA_BROKERS: kafka:9092
       SYSARMOR_REDIS_ADDR: redis:6379
+      SYSARMOR_GRPC_TLS_CERT: /etc/sysarmor/pki/gateway.pem
+      SYSARMOR_GRPC_TLS_KEY: /etc/sysarmor/pki/gateway-key.pem
+      SYSARMOR_GRPC_CLIENT_CA: /etc/sysarmor/pki/ca.pem
+      SYSARMOR_GRPC_REQUIRE_CLIENT_CERT: true
     volumes:
       - ../../../bin:/opt/sysarmor/bin:ro
+      - ../../.results/container-runtime/pki:/etc/sysarmor/pki:ro
 
   worker:
     build:
@@ -193,20 +208,6 @@ services:
     volumes:
       - ../../../deployments/opensearch:/opt/sysarmor/opensearch:ro
 
-  tetragon:
-    image: quay.io/cilium/tetragon:v1.7.0
-    container_name: tetragon
-    pid: host
-    privileged: true
-    cgroup: host
-    networks:
-      sysarmor-net:
-        ipv4_address: 10.66.0.12
-    volumes:
-      - /sys/kernel/btf/vmlinux:/var/lib/tetragon/btf:ro
-      - /sys/fs/bpf:/sys/fs/bpf
-      - ../../../bin:/opt/sysarmor/bin:ro
-
 networks:
   sysarmor-net:
     driver: bridge
@@ -217,5 +218,6 @@ networks:
 volumes:
   app-plugins:
   node-secrets:
+  manager-artifacts:
   postgres-data:
   opensearch-data:

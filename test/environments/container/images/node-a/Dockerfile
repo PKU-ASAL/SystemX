@@ -5,7 +5,7 @@ FROM docker.1panel.live/library/ubuntu:22.04
 # 官方源被墙 → 换可达镜像 + 关 https 校验（容器无 ca 证书，测试环境可接受）
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://mirrors.edge.kernel.org/ubuntu|g' /etc/apt/sources.list && \
     printf 'Acquire::https::Verify-Peer "false";\n' > /etc/apt/apt.conf.d/99no-verify && \
-    apt-get update && apt-get install -y curl bash coreutils procps iproute2 strace tar && \
+    apt-get update && apt-get install -y curl bash coreutils procps iproute2 strace tar openssl && \
     rm -rf /var/lib/apt/lists/*
 # 共享落盘目录（apt-staged-drop 跨 lineage 共享 FILE 实体）
 RUN mkdir -p /var/lib/app/plugins
