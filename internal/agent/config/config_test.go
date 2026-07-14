@@ -61,6 +61,9 @@ policy:
 	if cfg.Telemetry.MaxBatchItems != 256 || cfg.Telemetry.MaxBatchBytes != 256<<10 || cfg.Policy.Path == "" {
 		t.Fatalf("config=%+v", cfg)
 	}
+	if cfg.Sensor.PolicyPath != cfg.Policy.Path {
+		t.Fatalf("sensor policy path = %q want %q", cfg.Sensor.PolicyPath, cfg.Policy.Path)
+	}
 }
 
 func TestLoadFileRejectsLegacyRuntimeSections(t *testing.T) {

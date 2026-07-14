@@ -69,11 +69,25 @@ func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, bus *telem
 func TestAgentRuntimeSwitchesBatchIdentityAfterEnrollment(t *testing.T) {
 	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "device-a", HostID: "host-a", TenantID: "local"}}}
 	runner.setRuntimeIdentity(runtimeIdentity{AgentID: "device-a", HostID: "host-a", TenantID: "local"})
+	runner.telemetryBatcher = telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 2)
+	runner.telemetryBatcher.Add(&dataplanev1.DataBatch{Events: []*dataplanev1.EventFrame{{Sequence: 1}}})
 
 	runner.applyEnrollmentIdentity(localstore.Enrollment{State: localstore.StateManaged, AgentID: "agent-a", TenantID: "tenant-a"})
+	boundary := <-runner.telemetryBatcher.Batches()
+	if boundary.GetHeader().GetAgentId() != "device-a" || boundary.GetHeader().GetTenantId() != "local" {
+		t.Fatalf("boundary batch identity = %+v", boundary.GetHeader())
+	}
 	managed := runner.newDataBatch(time.Now())
 	if managed.GetHeader().GetAgentId() != "agent-a" || managed.GetHeader().GetTenantId() != "tenant-a" {
 		t.Fatalf("managed batch identity = %+v", managed.GetHeader())
+	}
+	managedContext := &controlplanev1.RequestContext{AgentId: "agent-a", TenantId: "tenant-a"}
+	if err := runner.validateControlContext(managedContext); err != nil {
+		t.Fatalf("managed control context rejected: %v", err)
+	}
+	ack := runner.bindControlAckIdentity(&controlplanev1.ControlAck{AgentId: "device-a", TenantId: "local"})
+	if ack.GetAgentId() != "agent-a" || ack.GetTenantId() != "tenant-a" {
+		t.Fatalf("managed ack identity = %+v", ack)
 	}
 
 	runner.applyEnrollmentIdentity(localstore.Enrollment{State: localstore.StateStandalone})
@@ -647,6 +661,8 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 			ParseErrors:  2,
 		}},
 	}
+	runner.setRuntimeIdentity(runtimeIdentity{AgentID: "device-a", HostID: "host-a", TenantID: "local"})
+	runner.applyEnrollmentIdentity(localstore.Enrollment{State: localstore.StateManaged, AgentID: "managed-agent", TenantID: "managed-tenant"})
 	rt := sensorruntime.New(runner.Sensor)
 	if _, err := rt.Probe(context.Background()); err != nil {
 		t.Fatal(err)
@@ -663,6 +679,9 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 	}
 	if health.Status != "degraded" || health.Sensor.ParseErrors != 2 {
 		t.Fatalf("health = %+v", health)
+	}
+	if health.AgentID != "managed-agent" || health.TenantID != "managed-tenant" || health.HostID != "host-a" {
+		t.Fatalf("managed health identity = %+v", health)
 	}
 }
 

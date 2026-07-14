@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 )
@@ -9,6 +10,16 @@ type runtimeIdentity struct {
 	AgentID  string
 	HostID   string
 	TenantID string
+}
+
+func (r *AgentRuntime) bindControlAckIdentity(ack *controlplanev1.ControlAck) *controlplanev1.ControlAck {
+	if ack == nil {
+		return nil
+	}
+	identity := r.currentIdentity()
+	ack.AgentId = identity.AgentID
+	ack.TenantId = identity.TenantID
+	return ack
 }
 
 func (r *AgentRuntime) setRuntimeIdentity(identity runtimeIdentity) {
@@ -37,6 +48,9 @@ func (r *AgentRuntime) applyEnrollmentIdentity(enrollment localstore.Enrollment)
 	if enrollment.State == localstore.StateManaged {
 		identity.AgentID = enrollment.AgentID
 		identity.TenantID = enrollment.TenantID
+	}
+	if identity != r.currentIdentity() && r.telemetryBatcher != nil {
+		r.telemetryBatcher.Flush("identity")
 	}
 	r.setRuntimeIdentity(identity)
 }

@@ -162,6 +162,7 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		ack := (&localControlServer{runner: runner, runtime: r.sensor, batcher: r.batcher}).applyEndpointPolicy(ctx, &controlplanev1.ApplyPolicyRequest{
 			Context: requestContext, PolicyType: "endpoint", PolicyJson: frame.GetPolicyUpdate().GetRawJson(),
 		})
+		ack = runner.bindControlAckIdentity(ack)
 		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
 		}
@@ -172,6 +173,7 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 	case "content_update":
 		req := contentUpdateFromControlFrame(frame)
 		ack := runner.applyContentUpdate(req)
+		ack = runner.bindControlAckIdentity(ack)
 		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
 		}

@@ -151,6 +151,7 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	cfg.Sensor.PolicyPath = cfg.Policy.Path
 	return cfg, cfg.Validate()
 }
 

@@ -66,13 +66,17 @@ func TestExportPipelineStartsAtEnrollmentBoundary(t *testing.T) {
 	}
 	defer store.Close()
 	for sequence := uint64(1); sequence <= 3; sequence++ {
-		batch := &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{BatchId: string(rune('a' + sequence - 1)), EventSeqStart: sequence}}
+		tenantID, agentID := "local", "device-a"
+		if sequence == 3 {
+			tenantID, agentID = "default", "agent-a"
+		}
+		batch := &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{BatchId: string(rune('a' + sequence - 1)), EventSeqStart: sequence, TenantId: tenantID, AgentId: agentID}}
 		if _, err := store.AppendBatch(t.Context(), batch); err != nil {
 			t.Fatal(err)
 		}
 	}
 	sender := &sequenceSender{}
-	pipeline := &exportPipeline{store: store, exporter: &cloudExporter{sender: sender}, fromSequence: 3}
+	pipeline := &exportPipeline{store: store, exporter: &cloudExporter{sender: sender}, fromSequence: 2, tenantID: "default", agentID: "agent-a"}
 	if err := pipeline.exportAvailable(t.Context()); err != nil {
 		t.Fatal(err)
 	}

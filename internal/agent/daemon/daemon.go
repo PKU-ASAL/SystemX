@@ -101,6 +101,7 @@ type AgentRuntime struct {
 	identity           runtimeIdentity
 	standaloneIdentity runtimeIdentity
 	normalizer         *normalize.Normalizer
+	telemetryBatcher   *telemetry.Batcher
 	managedControl     *TransportRuntime
 	endpointPolicy     policy.EndpointPolicy
 	effectiveTelemetry config.EffectiveTelemetry
@@ -228,6 +229,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 		local.onCommit = bus.PublishBatch
 	}
 	batcher := telemetry.NewBatcher(r.newDataBatch, effectiveTelemetry.MaxBatchItems, effectiveTelemetry.FlushInterval, r.Config.Local.Export.MaxInflight*64, effectiveTelemetry.MaxBatchBytes)
+	r.telemetryBatcher = batcher
 	sender := &telemetry.Sender{
 		Appender:     appender,
 		Batcher:      batcher,
@@ -496,10 +498,11 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 		status = "degraded"
 	}
 	now := time.Now().UTC()
+	identity := r.currentIdentity()
 	return agenthealth.AgentHealth{
-		AgentID:       r.Config.Agent.ID,
-		HostID:        r.Config.Agent.HostID,
-		TenantID:      r.Config.Agent.TenantID,
+		AgentID:       identity.AgentID,
+		HostID:        identity.HostID,
+		TenantID:      identity.TenantID,
 		Scope:         r.runtimeScope(),
 		Status:        status,
 		PolicyID:      r.activePolicy().PolicyID,
@@ -836,7 +839,7 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
 	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
 	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.Local.Export.RequestTimeout, "", tlsCfg)
-	go (&exportPipeline{store: r.localStore, exporter: &cloudExporter{sender: sender}, fromSequence: enrollment.ManagedFromSequence}).Run(ctx)
+	go (&exportPipeline{store: r.localStore, exporter: &cloudExporter{sender: sender}, fromSequence: enrollment.ManagedFromSequence, tenantID: enrollment.TenantID, agentID: enrollment.AgentID}).Run(ctx)
 	if r.managedControl != nil {
 		r.managedControl.runControlFlowForEnrollment(ctx, enrollment, tlsCfg)
 	}

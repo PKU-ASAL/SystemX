@@ -12,6 +12,8 @@ type exportPipeline struct {
 	store        *localstore.Store
 	exporter     Exporter
 	fromSequence uint64
+	tenantID     string
+	agentID      string
 }
 
 func (u *exportPipeline) Run(ctx context.Context) {
@@ -58,6 +60,12 @@ func (u *exportPipeline) exportAvailable(ctx context.Context) error {
 		if beforeCheckpoint(stored.Position, checkpoint) {
 			continue
 		}
+		if u.tenantID != "" && (stored.Batch.GetHeader().GetTenantId() != u.tenantID || stored.Batch.GetHeader().GetAgentId() != u.agentID) {
+			if err := u.saveCheckpoint(ctx, stored.Position); err != nil {
+				return err
+			}
+			continue
+		}
 		result, err := u.exporter.Export(ctx, stored.Batch)
 		if err != nil {
 			return err
@@ -65,11 +73,15 @@ func (u *exportPipeline) exportAvailable(ctx context.Context) error {
 		if !result.Committed {
 			return fmt.Errorf("batch %s was not committed", stored.Position.BatchID)
 		}
-		if err := u.store.SaveCheckpoint(ctx, localstore.Checkpoint{SegmentID: stored.Position.SegmentID, RecordOffset: stored.Position.RecordOffset, LastBatchID: stored.Position.BatchID}); err != nil {
+		if err := u.saveCheckpoint(ctx, stored.Position); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (u *exportPipeline) saveCheckpoint(ctx context.Context, position localstore.Position) error {
+	return u.store.SaveCheckpoint(ctx, localstore.Checkpoint{SegmentID: position.SegmentID, RecordOffset: position.RecordOffset, LastBatchID: position.BatchID})
 }
 
 func beforeCheckpoint(position localstore.Position, checkpoint localstore.Checkpoint) bool {

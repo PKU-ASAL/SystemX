@@ -796,11 +796,12 @@ func (r *AgentRuntime) validateControlContext(ctx *controlplanev1.RequestContext
 	if ctx == nil {
 		return nil
 	}
-	if tenantID := strings.TrimSpace(ctx.GetTenantId()); tenantID != "" && tenantID != r.Config.Agent.TenantID {
-		return fmt.Errorf("tenant mismatch: request=%s agent=%s", tenantID, r.Config.Agent.TenantID)
+	identity := r.currentIdentity()
+	if tenantID := strings.TrimSpace(ctx.GetTenantId()); tenantID != "" && tenantID != identity.TenantID {
+		return fmt.Errorf("tenant mismatch: request=%s agent=%s", tenantID, identity.TenantID)
 	}
-	if agentID := strings.TrimSpace(ctx.GetAgentId()); agentID != "" && agentID != r.Config.Agent.ID {
-		return fmt.Errorf("agent mismatch: request=%s agent=%s", agentID, r.Config.Agent.ID)
+	if agentID := strings.TrimSpace(ctx.GetAgentId()); agentID != "" && agentID != identity.AgentID {
+		return fmt.Errorf("agent mismatch: request=%s agent=%s", agentID, identity.AgentID)
 	}
 	return nil
 }
