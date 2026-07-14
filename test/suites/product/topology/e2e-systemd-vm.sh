@@ -46,6 +46,7 @@ fi
   --version topology-test \
   --output "$TMP/sysarmor-agent-linux-amd64.tar.gz" \
   --agent-bin "$REPO/dist/bin/sysarmor-agent" \
+  --ctl-bin "$REPO/dist/bin/sysarmorctl" \
   --tetragon-archive "$TETRAGON_ARCHIVE" \
   --signing-key "$SIGNING_KEY" >/dev/null
 vagrant upload "$TMP/sysarmor-agent-linux-amd64.tar.gz" /tmp/sysarmor-agent-linux-amd64.tar.gz mgr >/dev/null
@@ -71,7 +72,7 @@ PY
 )"
 
 echo "[e2e-agent-systemd-vm] installing agent from manager enrollment"
-vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /opt/sysarmor/agent /etc/sysarmor/agent.yaml /etc/systemd/system/sysarmor-agent.service /etc/sysarmor/pki/agent.pem /etc/sysarmor/pki/agent-key.pem; sudo mkdir -p /etc/sysarmor/policies; printf '%s\n' '{\"policy_id\":\"topology-product-agent\",\"version\":1,\"behaviors\":[{\"id\":\"process.exec\",\"enabled\":true}],\"observe_only\":true}' | sudo tee /etc/sysarmor/policies/sysarmor-tetragon.yaml >/dev/null; curl -fsSL '$INSTALL_URL' | sudo bash" >/dev/null
+vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /opt/sysarmor/agent /etc/sysarmor/agent /var/lib/sysarmor/agent /etc/systemd/system/sysarmor-agent.service; curl -fsSL '$INSTALL_URL' | sudo bash" >/dev/null
 
 wait_contains() {
   local name="$1"

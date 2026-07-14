@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Fresh deployments only; do not add production or test compatibility for old config keys.
-- Agent startup is standalone first; cloud tests enroll through the local Unix socket.
+- Standalone tests start locally; cloud, topology, and systemd tests only execute the Manager-provided `install_url`.
 - Tests use current four-section EndpointPolicy documents.
 - Tests query Agent state through `sysarmorctl`, not SQLite.
 - Preserve assertion coverage before deleting or merging scripts.
@@ -210,14 +210,13 @@ git commit -m "test(agent): converge local product scenarios"
 - Modify: `test/contracts/agent-test-coverage.tsv`
 
 **Interfaces:**
-- VM sync installs the current package/config/policy, waits for the control
-  socket, and enrolls only for topology tests.
+- VM sync installs the current package/config/policy and remains standalone.
 - Enrolled lifecycle runner parameterizes `steady`, `restart`, and `recover`.
 
 - [ ] **Step 1: Migrate VM sync and verify standalone startup**
 
-The generated runtime config contains no cloud identity. Topology mode creates
-an enrollment through Manager and calls `sysarmorctl enroll` after readiness.
+The generated runtime config contains no cloud identity. Topology tests do not
+use VM sync; they create a Manager enrollment and execute its `install_url`.
 
 - [ ] **Step 2: Migrate real sensor and namespace runners**
 
@@ -267,9 +266,8 @@ response.
 
 - [ ] **Step 2: Migrate systemd and Gateway tests**
 
-Systemd uses the release package and Manager installer. Gateway tests start
-standalone, create enrollment, enroll locally, and then assert upload and query
-behavior.
+Systemd, Gateway, and topology tests create a Manager enrollment and execute the
+returned `install_url`. They do not call `sysarmorctl enroll` directly.
 
 - [ ] **Step 3: Update public Make targets and delete covered scripts**
 

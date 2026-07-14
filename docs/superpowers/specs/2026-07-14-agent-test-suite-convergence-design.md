@@ -7,10 +7,11 @@ coverage, not file identity. Replace duplicated configuration and lifecycle
 code with four narrow shared helpers, parameterize equivalent scenarios, and
 delete an old script only after every assertion has a passing replacement.
 
-The test suite must use the same product path as a real deployment:
+Standalone and managed tests use two explicit product paths:
 
 ```text
-install standalone Agent -> wait for Unix socket -> optionally enroll -> test -> inspect
+standalone: install Agent -> wait for Unix socket -> test local behavior
+managed: Manager enrollment -> execute install_url -> assert registered behavior
 ```
 
 No test-only compatibility parser, legacy schema converter, direct SQLite
@@ -90,10 +91,11 @@ Owns installation, runtime layout, process lifecycle, and readiness. It:
 
 ### `enroll.sh`
 
-Owns the optional cloud transition. It creates or consumes an enrollment token
-and invokes `sysarmorctl enroll` through the Agent Unix socket. Unenrollment is
-performed through the same local API. Tests must not write Agent credentials or
-certificate files themselves.
+Owns explicit enroll and unenroll transitions in standalone Agent tests. Cloud,
+topology, and systemd product tests do not call this helper; they execute the
+Manager-provided installer and treat its Unix-socket enrollment as an internal
+implementation detail. Tests never write Agent credentials or certificate
+files themselves.
 
 ### `policy.sh`
 
@@ -165,7 +167,8 @@ different system boundaries.
    temporary directories and fake commands.
 3. Migrate local fake-sensor and capability scenarios.
 4. Migrate real Tetragon, namespace, restart, and recovery scenarios.
-5. Migrate enrollment, Gateway, Manager, topology, and systemd scenarios.
+5. Migrate Gateway, Manager, topology, and systemd scenarios to the Manager
+   `install_url` path.
 6. Migrate performance, capture, diagnosis, and recorder tooling.
 7. Delete fully covered scripts, regenerate the VM deployment mirror, and run
    the complete test matrix.
