@@ -22,7 +22,7 @@ Smoke script groups:
 | `go test ./internal/agent/daemon` | in-process Agent | daemon, labels, parse/drop health, tamper Signal. |
 | `go test ./internal/sensors/linux/tetragon` | sensor process | restart, recovery, capability, and parsing. |
 | `capability.sh` | real Agent process | bundle, BTF, and bpffs startup rejection. |
-| `e2e-managed-*.sh` | enrolled fake sensor | managed lifecycle and cloud visibility. |
+| `e2e-systemd-vm.sh`, `e2e-namespace-self-container.sh` | Manager installer | managed installation and cloud visibility. |
 | `e2e-real-tetragon-owned-*.sh` | real Tetragon | owned sensor path. |
 
 Run the current public endpoint entrypoint with:
