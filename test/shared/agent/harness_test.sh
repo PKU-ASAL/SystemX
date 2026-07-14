@@ -21,6 +21,7 @@ sa_agent_write_config "$CONFIG" "$STATE" "$SOCKET" "$POLICY" $'  backend: fake\n
 
 grep -Fq "state_path: $STATE" "$CONFIG"
 grep -Fq "socket_path: $SOCKET" "$CONFIG"
+grep -Fq "path: $STATE/content" "$CONFIG"
 grep -Fq "path: $POLICY" "$CONFIG"
 if grep -Eq '^(manager|data_plane):|^  (id|token|batch_size|policy_path):' "$CONFIG"; then
   echo "legacy field written to Agent config" >&2

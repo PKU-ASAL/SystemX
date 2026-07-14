@@ -12,6 +12,9 @@ local:
 control:
   socket_path: $socket
 
+content:
+  path: $state/content
+
 sensor:
 $sensor
 

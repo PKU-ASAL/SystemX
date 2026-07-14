@@ -7,9 +7,9 @@ test/shared/vm/sync-agent.sh	lifecycle	VM install starts Agent-owned Tetragon an
 test/suites/performance/endpoint/lifecycle.sh	operations	performance lifecycle starts stops and reports Agent state	test/suites/performance/endpoint/lifecycle.sh	legacy
 test/suites/performance/endpoint/run.sh	operations	endpoint benchmark preserves throughput resource and restart measurements	test/suites/performance/endpoint/run.sh	legacy
 test/suites/product/endpoint/README.md	operations	product endpoint documentation names the current startup path	test/suites/product/endpoint/README.md	legacy
-test/suites/product/endpoint/e2e-capability.sh	lifecycle	unsupported sensor capability causes explicit startup failure	test/suites/product/endpoint/capability.sh	legacy
-test/suites/product/endpoint/e2e-capability-btf.sh	lifecycle	missing required BTF causes explicit startup failure	test/suites/product/endpoint/capability.sh	legacy
-test/suites/product/endpoint/e2e-capability-bpffs.sh	lifecycle	missing required bpffs causes explicit startup failure	test/suites/product/endpoint/capability.sh	legacy
+test/suites/product/endpoint/e2e-capability.sh	lifecycle	unsupported sensor capability causes explicit startup failure	test/suites/product/endpoint/capability.sh	covered
+test/suites/product/endpoint/e2e-capability-btf.sh	lifecycle	missing required BTF causes explicit startup failure	test/suites/product/endpoint/capability.sh	covered
+test/suites/product/endpoint/e2e-capability-bpffs.sh	lifecycle	missing required bpffs causes explicit startup failure	test/suites/product/endpoint/capability.sh	covered
 test/suites/product/endpoint/e2e-daemon-container.sh	data	container daemon exports normalized events and health	test/suites/product/endpoint/e2e-daemon-container.sh	legacy
 test/suites/product/endpoint/e2e-daemon.sh	data	fake sensor daemon exports events signals labels and health	test/suites/product/endpoint/e2e-daemon.sh	legacy
 test/suites/product/endpoint/e2e-dropped-health.sh	data	dropped sensor events degrade health and emit terminal signal	test/suites/product/endpoint/e2e-dropped-health.sh	legacy

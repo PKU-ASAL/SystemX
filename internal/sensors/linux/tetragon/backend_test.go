@@ -178,6 +178,23 @@ func TestCapabilityFailsWhenRequiredBTFMissing(t *testing.T) {
 	}
 }
 
+func TestCapabilityFailsWhenRequiredBPFFSMissing(t *testing.T) {
+	backend := NewBackend("policy.yaml", "events.jsonl", "test")
+	backend.BPFFSPath = filepath.Join(t.TempDir(), "missing-bpffs")
+	backend.RequireBPFFS = true
+	_, err := backend.Capability(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "bpffs unavailable") {
+		t.Fatalf("Capability() error = %v, want bpffs unavailable", err)
+	}
+	health, healthErr := backend.Health(context.Background())
+	if healthErr != nil {
+		t.Fatalf("Health() error = %v", healthErr)
+	}
+	if !strings.Contains(health.LastError, "bpffs unavailable") {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
 func TestCapabilityFailsWhenConfiguredBinaryNotExecutable(t *testing.T) {
 	dir := t.TempDir()
 	tetraPath := filepath.Join(dir, "tetra")
