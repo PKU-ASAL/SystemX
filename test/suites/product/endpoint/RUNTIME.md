@@ -1,8 +1,8 @@
 # Agent Runtime Smoke
 
-This folder still contains focused agent runtime smoke scripts. They are useful
-for fast local gates, but they do not replace `product-endpoint`, performance
-benchmarks, or detection effectiveness tests.
+Agent runtime smoke coverage lives primarily in focused Go tests. Shell runners
+are retained only when they exercise a real process, container, VM, or sensor
+boundary that cannot be expressed clearly in-process.
 
 It validates:
 
@@ -12,21 +12,18 @@ It validates:
 - sensor parse/drop health degradation;
 - container and VM managed fake sensor startup/restart/recovery behavior.
 
-This suite may start a memory manager and query it with `sysarmorctl manager`
-when a runtime smoke needs manager-visible health or session state. It should
-not own cloud analytics, incident semantics, storage projection, or VM real
-Tetragon benchmarks.
+Standalone tests query the local Unix socket. Cloud-visible health and session
+state are tested only after enrollment through a product platform scenario.
 
 Smoke script groups:
 
-| Scripts | Smoke | Sensor | Purpose |
+| Entry | Boundary | Purpose |
 |---|---|---|---|
-| `e2e-daemon*.sh` | yes | fake input | agent daemon startup and local health. |
-| `e2e-sensor-*.sh` | yes | fake sensor process | restart/recovery health semantics. |
-| `e2e-capability*.sh` | yes | broken/fake bundle | startup capability failure semantics. |
-| `e2e-parse-health.sh`, `e2e-dropped-health.sh` | yes | malformed/fake input | health degradation on parse/drop errors. |
-| `e2e-managed-*.sh` | yes | fake Tetragon bundle | managed sensor lifecycle. |
-| `e2e-real-tetragon-owned-*.sh` | no | owned real Tetragon | real owned sensor path. |
+| `go test ./internal/agent/daemon` | in-process Agent | daemon, labels, parse/drop health, tamper Signal. |
+| `go test ./internal/sensors/linux/tetragon` | sensor process | restart, recovery, capability, and parsing. |
+| `capability.sh` | real Agent process | bundle, BTF, and bpffs startup rejection. |
+| `e2e-managed-*.sh` | enrolled fake sensor | managed lifecycle and cloud visibility. |
+| `e2e-real-tetragon-owned-*.sh` | real Tetragon | owned sensor path. |
 
 Run the current public endpoint entrypoint with:
 

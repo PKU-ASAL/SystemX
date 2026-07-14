@@ -69,7 +69,7 @@ endpoint 目录里还保留一组 runtime smoke，用于快速验证 agent 生�
 
 | 子脚本类型 | Smoke | Sensor | 说明 |
 |---|---|---|---|
-| `e2e-daemon*`、`e2e-sensor-*`、`e2e-capability*`、`e2e-parse-health*`、`e2e-dropped-health*` | 是 | 构造数据 / fake 输入 | 本地 agent runtime、health、异常语义。 |
+| `go test ./internal/agent/daemon ./internal/sensors/linux/tetragon`、`capability.sh` | 是 | 构造数据 / fake 输入 | 本地 Agent runtime、health、异常语义。 |
 | `e2e-managed-*` | 是 | fake Tetragon bundle | 验证 agent 托管 sensor 的启动、重启、恢复。 |
 | `e2e-real-tetragon-owned-*` | 否 | owned real Tetragon | 验证真实 Tetragon owned sensor 路径。 |
 | `e2e-namespace-self-container.sh` | 否 | manager-installed real Tetragon | 验证 manager 分发安装容器内 agent，以及 namespace/self 内核态过滤路径。 |
