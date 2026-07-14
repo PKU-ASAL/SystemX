@@ -356,7 +356,7 @@ wait_contains() {
 }
 
 curl -sf -X POST "$MANAGER_URL/api/v1/reset?label=scenario=$SCENARIO" >/dev/null
-docker exec "$OWNED_CONTAINER" sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent.yaml > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
+docker exec "$OWNED_CONTAINER" sh -c "rm -f '$WORK/agent.log'; /opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml > '$WORK/agent.log' 2>&1 & echo \$! > '$WORK/agent.pid'"
 
 wait_contains "agent-health backend" '"backend":"tetragon"' "$RESULTS/e2e-agent-namespace-self-container.health.json" \
   curl -sf "$MANAGER_URL/api/v1/agent-health?agent_id=$AGENT_ID&tenant_id=default"
