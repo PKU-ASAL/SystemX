@@ -1,0 +1,18 @@
+{
+  "policy_id": "test-default",
+  "version": 1,
+  "collection": {
+    "behaviors": [
+      "process.exec",
+      "process.exit",
+      "process.fork",
+      "file.read",
+      "file.write",
+      "network.connect"
+    ],
+    "observe_only": true
+  },
+  "detection": {},
+  "telemetry": {},
+  "response": {}
+}

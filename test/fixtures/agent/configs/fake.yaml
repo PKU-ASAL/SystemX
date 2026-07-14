@@ -1,0 +1,12 @@
+local:
+  state_path: /tmp/sysarmor-agent/state
+
+control:
+  socket_path: /tmp/sysarmor-agent/control.sock
+
+sensor:
+  backend: fake
+  mode: managed
+
+policy:
+  path: /tmp/sysarmor-agent/policy.json

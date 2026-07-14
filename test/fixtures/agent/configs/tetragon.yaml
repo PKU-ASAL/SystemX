@@ -1,0 +1,14 @@
+local:
+  state_path: /var/lib/sysarmor/agent
+
+control:
+  socket_path: /run/sysarmor/agent/control.sock
+
+sensor:
+  backend: tetragon
+  mode: managed
+  bundle_dir: /opt/sysarmor/agent/bundles/tetragon
+  install_dir: /opt/sysarmor/agent/sensors
+
+policy:
+  path: /etc/sysarmor/agent/policy.json
