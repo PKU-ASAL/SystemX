@@ -1,0 +1,31 @@
+source	capability	assertion	replacement	status
+test/shared/diagnostics/capture-container.sh	operations	managed and replay capture retain event signal and incident counts	test/shared/diagnostics/capture-container.sh	legacy
+test/shared/diagnostics/capture-vm.sh	operations	VM capture verifies health capability events signals and report	test/shared/diagnostics/capture-vm.sh	legacy
+test/shared/diagnostics/diagnose-tetragon-vm.sh	operations	diagnosis captures health profiles process state and signals	test/shared/diagnostics/diagnose-tetragon-vm.sh	legacy
+test/shared/recorder/recorder-vm.sh	operations	recorder start mark stop and report preserve local telemetry	test/shared/recorder/recorder-vm.sh	legacy
+test/shared/vm/sync-agent.sh	lifecycle	VM install starts Agent-owned Tetragon and local control	test/shared/vm/sync-agent.sh	legacy
+test/suites/performance/endpoint/lifecycle.sh	operations	performance lifecycle starts stops and reports Agent state	test/suites/performance/endpoint/lifecycle.sh	legacy
+test/suites/performance/endpoint/run.sh	operations	endpoint benchmark preserves throughput resource and restart measurements	test/suites/performance/endpoint/run.sh	legacy
+test/suites/product/endpoint/README.md	operations	product endpoint documentation names the current startup path	test/suites/product/endpoint/README.md	legacy
+test/suites/product/endpoint/e2e-capability.sh	lifecycle	unsupported sensor capability causes explicit startup failure	test/suites/product/endpoint/capability.sh	legacy
+test/suites/product/endpoint/e2e-capability-btf.sh	lifecycle	missing required BTF causes explicit startup failure	test/suites/product/endpoint/capability.sh	legacy
+test/suites/product/endpoint/e2e-capability-bpffs.sh	lifecycle	missing required bpffs causes explicit startup failure	test/suites/product/endpoint/capability.sh	legacy
+test/suites/product/endpoint/e2e-daemon-container.sh	data	container daemon exports normalized events and health	test/suites/product/endpoint/e2e-daemon-container.sh	legacy
+test/suites/product/endpoint/e2e-daemon.sh	data	fake sensor daemon exports events signals labels and health	test/suites/product/endpoint/e2e-daemon.sh	legacy
+test/suites/product/endpoint/e2e-dropped-health.sh	data	dropped sensor events degrade health and emit terminal signal	test/suites/product/endpoint/e2e-dropped-health.sh	legacy
+test/suites/product/endpoint/e2e-managed-container.sh	cloud	enrolled container installs sensor and exports one session	test/suites/product/endpoint/enrolled-container-lifecycle.sh	legacy
+test/suites/product/endpoint/e2e-managed-recover-container.sh	cloud	enrolled container recovers sensor and resumes export	test/suites/product/endpoint/enrolled-container-lifecycle.sh	legacy
+test/suites/product/endpoint/e2e-managed-restart-container.sh	cloud	enrolled container restarts sensor once and remains healthy	test/suites/product/endpoint/enrolled-container-lifecycle.sh	legacy
+test/suites/product/endpoint/e2e-managed-vm.sh	cloud	enrolled VM installs sensor and exports health	test/suites/product/endpoint/enrolled-vm-lifecycle.sh	legacy
+test/suites/product/endpoint/e2e-managed-recover-vm.sh	cloud	enrolled VM recovers sensor and resumes health	test/suites/product/endpoint/enrolled-vm-lifecycle.sh	legacy
+test/suites/product/endpoint/e2e-namespace-self-container.sh	data	namespace self scope includes owned events and excludes neighbors	test/suites/product/endpoint/e2e-namespace-self-container.sh	legacy
+test/suites/product/endpoint/e2e-parse-health.sh	data	parse errors degrade Agent health and remain queryable	test/suites/product/endpoint/e2e-parse-health.sh	legacy
+test/suites/product/endpoint/e2e-real-tetragon-owned-container.sh	data	real container Tetragon produces local and cloud telemetry and restarts	test/suites/product/endpoint/e2e-real-tetragon-owned-container.sh	legacy
+test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh	data	real VM Tetragon applies content policy and emits local detections	test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh	legacy
+test/suites/product/endpoint/e2e-sensor-recover.sh	lifecycle	failed sensor process recovers and resumes events	test/suites/product/endpoint/sensor-lifecycle.sh	legacy
+test/suites/product/endpoint/e2e-sensor-restart.sh	lifecycle	sensor process restarts once and health recovers	test/suites/product/endpoint/sensor-lifecycle.sh	legacy
+test/suites/product/platform/e2e-gateway-local-ingest.sh	cloud	standalone Agent enrolls and Gateway commits telemetry	test/suites/product/platform/e2e-gateway-local-ingest.sh	legacy
+test/suites/product/topology/e2e-scenario-apt-container.sh	cloud	apt scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	legacy
+test/suites/product/topology/e2e-scenario-benign-container.sh	cloud	benign scenario produces events without signals incidents or terminal state	test/suites/product/topology/scenario-container.sh	legacy
+test/suites/product/topology/e2e-scenario-staged-container.sh	cloud	staged scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	legacy
+test/suites/product/topology/e2e-systemd-vm.sh	lifecycle	signed package installs enrolls restarts and preserves systemd service	test/suites/product/topology/e2e-systemd-vm.sh	legacy
