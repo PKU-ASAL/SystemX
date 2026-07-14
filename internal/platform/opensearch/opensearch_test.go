@@ -68,7 +68,7 @@ func TestHTTPIndexerClassifiesBulkItemErrors(t *testing.T) {
 		name   string
 		status int
 		class  ErrorClass
-	}{{"throttled", 429, ErrorTransient}, {"mapping", 400, ErrorPermanent}} {
+	}{{"throttled", 429, ErrorTransient}, {"mapping", 400, ErrorPermanent}, {"index missing", 404, ErrorPermanent}} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = fmt.Fprintf(w, `{"errors":true,"items":[{"index":{"status":%d,"error":{"type":"failure","reason":"broken"}}}]}`, tc.status)
@@ -165,7 +165,7 @@ func TestHTTPIndexerSearchPushesFilters(t *testing.T) {
 		Offset:    50,
 		Query:     "credential access",
 		Labels:    map[string]string{"scenario": "apt-staged-drop"},
-		Exact:     map[string]string{"where": "SIGNAL_WHERE_CLOUD"},
+		Exact:     map[string]string{"tenant_id": "default", "where": "SIGNAL_WHERE_CLOUD"},
 		Bool:      map[string]bool{"terminal": true},
 		TimeField: "@timestamp",
 		TimeFrom:  "2026-07-08T21:00:00Z",
@@ -180,13 +180,19 @@ func TestHTTPIndexerSearchPushesFilters(t *testing.T) {
 		`"size":25`,
 		`"from":50`,
 		`"labels.scenario.keyword":"apt-staged-drop"`,
-		`"where.keyword":"SIGNAL_WHERE_CLOUD"`,
+		`"tenant_id":"default"`,
+		`"where":"SIGNAL_WHERE_CLOUD"`,
 		`"terminal":true`,
 		`"query":"credential access"`,
 		`"@timestamp":{"gte":"2026-07-08T21:00:00Z","lte":"2026-07-08T21:10:00Z"}`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("search body missing %s: %s", want, got)
+		}
+	}
+	for _, unwanted := range []string{`"tenant_id.keyword"`, `"where.keyword"`} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("exact keyword field unexpectedly gained .keyword suffix %s: %s", unwanted, got)
 		}
 	}
 }

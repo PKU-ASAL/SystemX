@@ -300,7 +300,8 @@ func batchDocuments(batch *dataplanev1.DataBatch, fallback time.Time) ([]platfor
 		documents = append(documents, decorateDocument(platformopensearch.Document{Index: platformopensearch.EventsWriteAlias, ID: ev.GetId(), Body: raw}, batch.GetHeader().GetTenantId(), frameTime(frame.GetObservedAt(), fallback)))
 	}
 	for _, frame := range batch.GetSignals() {
-		doc, err := signalDocument(frame.GetSignal())
+		sig := frame.GetSignal()
+		doc, err := batchSignalDocument(sig, batch.GetHeader().GetTenantId(), batch.GetHeader().GetAgentId())
 		if err != nil {
 			return nil, err
 		}
@@ -335,6 +336,17 @@ func incidentDocuments(inc *incidentv1.Incident) ([]platformopensearch.Document,
 
 func signalDocument(sig *signalv1.Signal) (platformopensearch.Document, error) {
 	id := SignalDocumentID(sig)
+	return signalDocumentWithID(sig, id)
+}
+
+func batchSignalDocument(sig *signalv1.Signal, tenantID, agentID string) (platformopensearch.Document, error) {
+	if sig != nil && sig.GetWhere() == signalv1.SignalWhere_SIGNAL_WHERE_ENDPOINT {
+		return signalDocumentWithID(sig, EndpointSignalDocumentID(tenantID, agentID, sig.GetId()))
+	}
+	return signalDocument(sig)
+}
+
+func signalDocumentWithID(sig *signalv1.Signal, id string) (platformopensearch.Document, error) {
 	if id == "" {
 		return platformopensearch.Document{}, nil
 	}
@@ -343,6 +355,14 @@ func signalDocument(sig *signalv1.Signal) (platformopensearch.Document, error) {
 		return platformopensearch.Document{}, fmt.Errorf("marshal signal %q: %w", id, err)
 	}
 	return platformopensearch.Document{Index: platformopensearch.SignalsWriteAlias, ID: id, Body: raw}, nil
+}
+
+func EndpointSignalDocumentID(tenantID, agentID, signalID string) string {
+	if strings.TrimSpace(signalID) == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(tenantID + "\x00" + agentID + "\x00" + signalID))
+	return "endpoint-signal:" + hex.EncodeToString(sum[:16])
 }
 
 func SignalDocumentID(sig *signalv1.Signal) string {

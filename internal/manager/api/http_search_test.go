@@ -71,6 +71,11 @@ func TestSearchTelemetryReturnsDiscoverRows(t *testing.T) {
 	if searcher.requests[0].Index != "sysarmor-events-read" || searcher.requests[1].Index != "sysarmor-signals-read" {
 		t.Fatalf("search indexes = %#v", searcher.requests)
 	}
+	for _, request := range searcher.requests {
+		if request.Exact["host.name.keyword"] != "prod-api-01" || request.Exact["host.name"] != "" {
+			t.Fatalf("search exact fields = %#v", request.Exact)
+		}
+	}
 }
 
 func TestSearchTelemetryRejectsUnsupportedField(t *testing.T) {
@@ -85,6 +90,27 @@ func TestSearchTelemetryRejectsUnsupportedField(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "unsupported search field") {
 		t.Fatalf("search error mismatch: %s", rec.Body.String())
+	}
+}
+
+func TestIncidentsSearchUsesTopLevelTenantField(t *testing.T) {
+	searcher := &recordingSearcher{docs: map[string][]json.RawMessage{
+		platformopensearch.IncidentsReadAlias: {
+			json.RawMessage(`{"id":"inc-a","tenant_id":"default","labels":{"scenario":"apt-fileless-c2-managed"}}`),
+		},
+	}}
+	handler := NewServerWithSearch(&store.Store{}, searcher).Handler()
+	rec := get(t, handler, "/api/v1/incidents?tenant_id=default&label=scenario=apt-fileless-c2-managed")
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"inc-a"`) {
+		t.Fatalf("incidents status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(searcher.requests) != 1 {
+		t.Fatalf("search requests = %d, want 1", len(searcher.requests))
+	}
+	request := searcher.requests[0]
+	if request.Exact["tenant_id"] != "default" || request.Labels["tenant_id"] != "" {
+		t.Fatalf("incident tenant filters = exact:%v labels:%v", request.Exact, request.Labels)
 	}
 }
 

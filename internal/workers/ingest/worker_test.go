@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
@@ -128,6 +129,72 @@ func TestIncidentDocumentIDUsesStableReportIdentity(t *testing.T) {
 	if IncidentDocumentID(first) != IncidentDocumentID(second) {
 		t.Fatalf("report id changed with report content")
 	}
+}
+
+func TestEndpointSignalDocumentIDIsStableAndAgentScoped(t *testing.T) {
+	first := EndpointSignalDocumentID("default", "agent-a", "sig-1")
+	if first == "" {
+		t.Fatal("endpoint signal document ID is empty")
+	}
+	if first != EndpointSignalDocumentID("default", "agent-a", "sig-1") {
+		t.Fatal("endpoint signal document ID is not deterministic")
+	}
+	if first == EndpointSignalDocumentID("default", "agent-b", "sig-1") {
+		t.Fatal("endpoint signal document IDs collide across agents")
+	}
+	if first == EndpointSignalDocumentID("tenant-b", "agent-a", "sig-1") {
+		t.Fatal("endpoint signal document IDs collide across tenants")
+	}
+}
+
+func TestBatchDocumentsUsesScopedSignalID(t *testing.T) {
+	batch := dataBatch("batch-signal-projection", nil, []*signalv1.Signal{
+		workerSignal("sig-1", "payload_dropped", "lin-a", map[string]string{"scenario": "upgrade"}, workerFile("/tmp/payload")),
+	})
+	docs, err := batchDocuments(batch, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("signal projection documents = %d, want scoped index only", len(docs))
+	}
+	wantID := EndpointSignalDocumentID(batch.GetHeader().GetTenantId(), batch.GetHeader().GetAgentId(), "sig-1")
+	if docs[0].ID != wantID {
+		t.Fatalf("scoped signal document = %+v, want id %q", docs[0], wantID)
+	}
+}
+
+func TestProcessorDoesNotDeleteCollidingLegacySignalIDs(t *testing.T) {
+	first := dataBatch("batch-agent-a", nil, []*signalv1.Signal{
+		workerSignal("sig-1", "payload_dropped", "lin-a", nil, workerFile("/tmp/a")),
+	})
+	second := dataBatch("batch-agent-b", nil, []*signalv1.Signal{
+		workerSignal("sig-1", "payload_dropped", "lin-b", nil, workerFile("/tmp/b")),
+	})
+	second.Header.AgentId = "agent-b"
+	projector := &phasedProjector{}
+	processor := NewProcessor(&store.Store{}, projector)
+	for _, batch := range []*dataplanev1.DataBatch{first, second} {
+		if _, err := processor.Process(context.Background(), batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(projector.calls) != 2 || projector.calls[0][0].ID == projector.calls[1][0].ID {
+		t.Fatalf("colliding legacy IDs were not independently scoped: %+v", projector.calls)
+	}
+}
+
+type phasedProjector struct {
+	calls  [][]platformopensearch.Document
+	failAt int
+}
+
+func (p *phasedProjector) BulkIndex(_ context.Context, docs []platformopensearch.Document) error {
+	p.calls = append(p.calls, append([]platformopensearch.Document(nil), docs...))
+	if len(p.calls) == p.failAt {
+		return errors.New("projection failed")
+	}
+	return nil
 }
 
 func TestProcessorWritesFormalIncidentIdentity(t *testing.T) {

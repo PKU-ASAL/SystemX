@@ -28,7 +28,11 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant_id is required", http.StatusBadRequest)
 		return
 	}
-	labels["tenant_id"] = tenantID
+	exact := incidentExactFilter(q.Get("incident_id"))
+	if exact == nil {
+		exact = map[string]string{}
+	}
+	exact["tenant_id"] = tenantID
 	limit := parseUint(q.Get("limit"))
 	offset := parseUint(q.Get("offset"))
 	raw, err := s.searchTelemetry(r.Context(), platformopensearch.SearchRequest{
@@ -36,7 +40,7 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 		Size:   searchLimit(limit),
 		Offset: int(offset),
 		Labels: labels,
-		Exact:  incidentExactFilter(q.Get("incident_id")),
+		Exact:  exact,
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("query incidents: %v", err), http.StatusBadGateway)

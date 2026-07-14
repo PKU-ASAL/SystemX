@@ -180,7 +180,7 @@ func (s *Server) searchTelemetryDocuments(r *http.Request, req telemetrySearchRe
 			Size:      limit,
 			Offset:    max(req.Offset, 0),
 			Query:     strings.Join(freeText, " "),
-			Exact:     exact,
+			Exact:     opensearchExactFields(exact),
 			TimeField: req.Time.Field,
 			TimeFrom:  req.Time.From,
 			TimeTo:    req.Time.To,
@@ -230,6 +230,17 @@ func addIndex(indexes *[]string, seen map[string]bool, index string) {
 		*indexes = append(*indexes, index)
 		seen[index] = true
 	}
+}
+
+func opensearchExactFields(exact map[string]string) map[string]string {
+	out := make(map[string]string, len(exact))
+	for field, value := range exact {
+		if field != "@timestamp" {
+			field += ".keyword"
+		}
+		out[field] = value
+	}
+	return out
 }
 
 func parseTelemetryQuery(query string) (map[string]string, []string, error) {

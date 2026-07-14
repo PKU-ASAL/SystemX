@@ -3,12 +3,14 @@ package ingestworker
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
 type recordingSearcher struct {
@@ -38,6 +40,35 @@ func TestOpenSearchHistoryReadsTenantScopeAndWindow(t *testing.T) {
 		if request.Exact["tenant_id"] != "tenant-a" || request.Labels["scenario"] != "a" || request.TimeField != "@timestamp" || request.TimeFrom == "" || request.TimeTo == "" {
 			t.Fatalf("unbounded request = %+v", request)
 		}
+	}
+	if got := searcher.requests[1].Exact["where"]; got != "SIGNAL_WHERE_ENDPOINT" {
+		t.Fatalf("signal history layer = %q, want endpoint enum", got)
+	}
+}
+
+func TestProcessorCorrelatesStagedSignalsAcrossOpenSearchHistory(t *testing.T) {
+	labels := map[string]string{"scenario": "staged-history"}
+	searcher := &recordingSearcher{docs: map[string][]json.RawMessage{}}
+	indexer := &recordingIndexer{}
+	processor := NewProcessorWithHistory(&store.Store{}, indexer, NewOpenSearchHistory(searcher))
+
+	mustProcess(t, processor, dataBatch("batch-drop", nil, []*signalv1.Signal{
+		workerSignal("sig-drop", "payload_dropped", "lin-drop", labels, workerFile("/var/lib/app/plugins/helper")),
+	}))
+	searcher.docs[platformopensearch.SignalsReadAlias] = []json.RawMessage{json.RawMessage(
+		`{"id":"sig-drop","name":"payload_dropped","where":"SIGNAL_WHERE_ENDPOINT","labels":{"scenario":"staged-history"},"lineageId":"lin-drop","entities":[{"kind":"file","key":"/var/lib/app/plugins/helper","role":"object"}]}`,
+	)}
+
+	mustProcess(t, processor, dataBatch("batch-connect", nil, []*signalv1.Signal{
+		workerSignal("sig-connect", "suspicious_exec_connect", "lin-connect", labels, workerFile("/var/lib/app/plugins/helper"), workerSocket("10.66.0.99:443")),
+	}))
+	cloud := lastDoc(indexer.docs, platformopensearch.SignalsWriteAlias)
+	incident := lastDoc(indexer.docs, platformopensearch.IncidentsWriteAlias)
+	if !strings.Contains(string(cloud.Body), `"name":"dropped_payload_executed_and_connects"`) || !strings.Contains(string(cloud.Body), `"crossLineage":true`) {
+		t.Fatalf("cross-lineage cloud signal missing: %s", cloud.Body)
+	}
+	if incident.ID == "" {
+		t.Fatal("cross-lineage incident document missing")
 	}
 }
 

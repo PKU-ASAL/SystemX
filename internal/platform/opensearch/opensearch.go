@@ -304,7 +304,7 @@ func searchQuery(search SearchRequest) map[string]any {
 	}
 	for field, value := range search.Exact {
 		if field = strings.TrimSpace(field); field != "" {
-			filters = append(filters, termFilter(field+".keyword", value))
+			filters = append(filters, termFilter(field, value))
 		}
 	}
 	for field, value := range search.Bool {
