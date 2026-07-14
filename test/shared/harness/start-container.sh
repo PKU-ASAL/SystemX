@@ -6,7 +6,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 
 echo ">>> 构建 SysArmor binaries"
-make -C "$REPO" build
+make -C "$REPO" build-binary
 
 RUNTIME_DIR="$ROOT/.results/container-runtime"
 PKI_DIR="$RUNTIME_DIR/pki"
@@ -85,7 +85,7 @@ fi
 echo ">>> 等待 opensearch health"
 opensearch_ready=0
 for i in $(seq 1 60); do
-  if docker exec sysarmor-opensearch curl -sf http://127.0.0.1:9200 >/dev/null; then
+  if docker exec sysarmor-test-opensearch curl -sf http://127.0.0.1:9200 >/dev/null; then
     opensearch_ready=1
     break
   fi
@@ -93,10 +93,10 @@ for i in $(seq 1 60); do
 done
 if [[ "$opensearch_ready" != "1" ]]; then
   echo "[start-container][ERROR] opensearch health did not become ready" >&2
-  docker logs sysarmor-opensearch --tail 120 >&2 2>/dev/null || true
+  docker logs sysarmor-test-opensearch --tail 120 >&2 2>/dev/null || true
   exit 1
 fi
-docker exec sysarmor-opensearch curl -sf -X DELETE 'http://127.0.0.1:9200/sysarmor-events-v*,sysarmor-signals-v*,sysarmor-incidents-v*,sysarmor-evidence-v*' >/dev/null 2>&1 || true
+docker exec sysarmor-test-opensearch curl -sf -X DELETE 'http://127.0.0.1:9200/sysarmor-events-v*,sysarmor-signals-v*,sysarmor-incidents-v*,sysarmor-evidence-v*' >/dev/null 2>&1 || true
 docker compose run --rm opensearch-init >/dev/null
 
 echo "[start-container] done"

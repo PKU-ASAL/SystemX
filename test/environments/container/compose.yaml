@@ -48,13 +48,14 @@ services:
       sysarmor-net:
         ipv4_address: 10.66.0.10
     ports:
-      - "19443:9443"
+      - "${SYSARMOR_TEST_MANAGER_PORT:-29443}:9443"
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_OPENSEARCH_URL: http://10.66.0.23:9200
       SYSARMOR_OPENSEARCH_USERNAME: admin
       SYSARMOR_OPENSEARCH_PASSWORD: admin
       SYSARMOR_ARTIFACT_DIR: /var/lib/sysarmor/manager/artifacts
+      TMPDIR: /var/lib/sysarmor/manager/artifacts
       SYSARMOR_ARTIFACT_PUBLIC_KEY: /etc/sysarmor/pki/artifact-public.pem
       SYSARMOR_AGENT_CA_CERT: /etc/sysarmor/pki/ca.pem
       SYSARMOR_AGENT_CA_KEY: /etc/sysarmor/pki/ca-key.pem
@@ -82,8 +83,8 @@ services:
       sysarmor-net:
         ipv4_address: 10.66.0.14
     ports:
-      - "19444:9444"
-      - "19445:9445"
+      - "${SYSARMOR_TEST_GATEWAY_PORT:-29444}:9444"
+      - "${SYSARMOR_TEST_GATEWAY_HEALTH_PORT:-29445}:9445"
     environment:
       SYSARMOR_POSTGRES_DSN: postgres://sysarmor:sysarmor@postgres:5432/sysarmor?sslmode=disable
       SYSARMOR_KAFKA_BROKERS: kafka:9092
@@ -124,7 +125,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: sysarmor-postgres
+    container_name: sysarmor-test-postgres
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.20
@@ -143,7 +144,7 @@ services:
   kafka:
     image: apache/kafka:latest
     pull_policy: never
-    container_name: sysarmor-kafka
+    container_name: sysarmor-test-kafka
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.21
@@ -169,7 +170,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: sysarmor-redis
+    container_name: sysarmor-test-redis
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.22
@@ -177,7 +178,7 @@ services:
   opensearch:
     image: sysarmor-opensearch:latest
     pull_policy: never
-    container_name: sysarmor-opensearch
+    container_name: sysarmor-test-opensearch
     networks:
       sysarmor-net:
         ipv4_address: 10.66.0.23
@@ -196,7 +197,7 @@ services:
   opensearch-init:
     image: sysarmor-opensearch:latest
     pull_policy: never
-    container_name: sysarmor-opensearch-init
+    container_name: sysarmor-test-opensearch-init
     depends_on:
       opensearch:
         condition: service_healthy

@@ -2,11 +2,41 @@ package schema
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestOpenSearchExactFieldsUseKeywordMappings(t *testing.T) {
+	root := repositoryRoot(t)
+	for file, fields := range map[string][]string{
+		"events-v1.json":    {"behavior", "tenant_id"},
+		"incidents-v1.json": {"id", "tenant_id"},
+		"signals-v1.json":   {"tenant_id", "where"},
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, "deployments", "opensearch", "mappings", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document struct {
+			Mappings struct {
+				Properties map[string]struct {
+					Type string `json:"type"`
+				} `json:"properties"`
+			} `json:"mappings"`
+		}
+		if err := json.Unmarshal(raw, &document); err != nil {
+			t.Fatalf("decode %s: %v", file, err)
+		}
+		for _, field := range fields {
+			if got := document.Mappings.Properties[field].Type; got != "keyword" {
+				t.Errorf("%s field %s type = %q, want keyword", file, field, got)
+			}
+		}
+	}
+}
 
 var legacyAgentTestPatterns = []string{
 	"/etc/sysarmor/agent.yaml",
@@ -75,6 +105,26 @@ func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
 	}
 	if strings.Contains(document, "  tetragon:\n") {
 		t.Error("container topology still defines a Tetragon sidecar")
+	}
+	runner, err := os.ReadFile(filepath.Join(root, "test", "suites", "product", "topology", "scenario-container.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(runner), `--profile linux-container`) || !strings.Contains(string(runner), `--artifact-id "$artifact_id"`) {
+		t.Error("container topology does not install the Manager-bound linux-container artifact")
+	}
+	if strings.Contains(string(runner), "--artifact-url") {
+		t.Error("container topology bypasses Manager artifact binding")
+	}
+	for _, want := range []string{
+		`EVENT_BEHAVIOR=`,
+		`--behavior "$EVENT_BEHAVIOR" --limit 100`,
+		`POLICY_ID="default-edr-policy"`,
+		`--label policy_id="$POLICY_ID"`,
+	} {
+		if !strings.Contains(string(runner), want) {
+			t.Errorf("container topology event readiness query missing %q", want)
+		}
 	}
 }
 

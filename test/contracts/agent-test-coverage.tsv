@@ -25,7 +25,7 @@ test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh	data	real VM Tetragon
 test/suites/product/endpoint/e2e-sensor-recover.sh	lifecycle	failed sensor process recovers and resumes events	internal/sensors/linux/tetragon/backend_test.go	covered
 test/suites/product/endpoint/e2e-sensor-restart.sh	lifecycle	sensor process restarts once and health recovers	internal/sensors/linux/tetragon/backend_test.go	covered
 test/suites/product/platform/e2e-gateway-local-ingest.sh	cloud	standalone Agent enrolls and Gateway commits telemetry	test/suites/product/platform/e2e-gateway-local-ingest.sh	legacy
-test/suites/product/topology/e2e-scenario-apt-container.sh	cloud	apt scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	legacy
-test/suites/product/topology/e2e-scenario-benign-container.sh	cloud	benign scenario produces events without signals incidents or terminal state	test/suites/product/topology/scenario-container.sh	legacy
-test/suites/product/topology/e2e-scenario-staged-container.sh	cloud	staged scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	legacy
+test/suites/product/topology/e2e-scenario-apt-container.sh	cloud	apt scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	covered
+test/suites/product/topology/e2e-scenario-benign-container.sh	cloud	benign scenario produces events without signals incidents or terminal state	test/suites/product/topology/scenario-container.sh	covered
+test/suites/product/topology/e2e-scenario-staged-container.sh	cloud	staged scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	covered
 test/suites/product/topology/e2e-systemd-vm.sh	lifecycle	signed package installs enrolls restarts and preserves systemd service	test/suites/product/topology/e2e-systemd-vm.sh	legacy
