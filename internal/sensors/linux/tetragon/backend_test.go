@@ -1096,6 +1096,60 @@ func TestBackendRestartsManagedSensorProcess(t *testing.T) {
 	}
 }
 
+func TestBackendRecoversManagedSensorAndContinuesEvents(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed sensor recovery test requires /bin/sh")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	countPath := filepath.Join(dir, "count")
+	tetragonPath := filepath.Join(dir, "tetragon")
+	tetragonScript := "#!/bin/sh\nCOUNT='" + countPath + "'\nn=0\nif [ -f \"$COUNT\" ]; then n=$(cat \"$COUNT\"); fi\nn=$((n+1))\nprintf '%s' \"$n\" > \"$COUNT\"\nif [ \"$n\" -eq 1 ]; then exit 7; fi\nsleep 20\n"
+	if err := os.WriteFile(tetragonPath, []byte(tetragonScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/sbin/init","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
+	tetraPath := filepath.Join(dir, "tetra")
+	tetraScript := "#!/bin/sh\nif [ \"$1 $2\" = \"tracingpolicy add\" ] || [ \"$1 $2\" = \"tracingpolicy delete\" ]; then exit 0; fi\nif [ \"$1 $2\" = \"tracingpolicy list\" ]; then printf '%s\\n' 'sysarmor-runtime-collection'; exit 0; fi\nprintf '%s\\n' '" + raw + "'\nsleep 20\n"
+	if err := os.WriteFile(tetraPath, []byte(tetraScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithOptions(policyPath, "", "test", BundleConfig{TetraPath: tetraPath, TetragonPath: tetragonPath}, ProcessRestartPolicy{
+		Enabled: true, MaxRestarts: 3, Delay: 10 * time.Millisecond,
+	})
+	backend.EventTransport = "tetra"
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := backend.Subscribe(ctx, contract.CollectionIntent{Behaviors: []string{"process.exec"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForBackendHealth(t, backend, func(health contract.Health) bool {
+		data, _ := os.ReadFile(countPath)
+		return string(data) == "2" && health.Running && health.RestartCount >= 3
+	})
+	select {
+	case event := <-events:
+		if event.SensorEvent.GetBehavior() != "process.exec" {
+			t.Fatalf("event=%+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for event after sensor recovery")
+	}
+	data, err := os.ReadFile(countPath)
+	if err != nil || string(data) != "2" {
+		t.Fatalf("sensor starts=%q err=%v", data, err)
+	}
+	cancel()
+	select {
+	case <-events:
+	case <-time.After(time.Second):
+		t.Fatal("event stream did not stop after cancellation")
+	}
+}
+
 func TestBackendRequiresPolicy(t *testing.T) {
 	backend := NewBackend(filepath.Join(t.TempDir(), "missing.yaml"), "-", "test")
 	if _, err := backend.Subscribe(context.Background(), contract.CollectionIntent{}); err == nil {
