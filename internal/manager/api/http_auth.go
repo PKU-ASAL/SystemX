@@ -64,7 +64,7 @@ func requireProductionPrincipal(next http.Handler) http.Handler {
 }
 
 func isEnrollmentTokenEndpoint(path string) bool {
-	return path == "/api/v1/enrollment-certificate" || path == "/api/v1/agent-install.sh"
+	return path == "/api/v1/enrollment-artifact" || path == "/api/v1/enrollment-certificate" || path == "/api/v1/agent-install.sh"
 }
 
 func bindJSONTenant(w http.ResponseWriter, r *http.Request, tenantID string) bool {

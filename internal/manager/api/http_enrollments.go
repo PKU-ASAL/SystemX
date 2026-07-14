@@ -108,6 +108,29 @@ func (s *Server) agentInstallScript(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(s.renderAgentInstallScript(r, enrollment, token)))
 }
 
+func (s *Server) enrollmentArtifact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	enrollment, ok := s.store.GetEnrollmentByTokenHash(enrollmentTokenHash(token))
+	if token == "" || !ok || enrollment.Status != "active" || enrollment.ArtifactID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !enrollment.ExpiresAt.IsZero() && time.Now().UTC().After(enrollment.ExpiresAt) {
+		http.Error(w, "enrollment expired", http.StatusGone)
+		return
+	}
+	artifact, ok := s.store.GetArtifact(enrollment.TenantID, enrollment.ArtifactID)
+	if !ok || artifact.Status != "active" {
+		http.NotFound(w, r)
+		return
+	}
+	s.downloadArtifact(w, r, enrollment.TenantID, enrollment.ArtifactID)
+}
+
 func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -340,6 +363,9 @@ func absoluteURL(r *http.Request, path string) string {
 
 func (s *Server) renderAgentInstallScript(r *http.Request, enrollment store.Enrollment, token string) string {
 	artifactDefault := enrollment.ArtifactURL
+	if enrollment.ArtifactID != "" {
+		artifactDefault = absoluteURL(r, "/api/v1/enrollment-artifact?token="+url.QueryEscape(token))
+	}
 	artifactLine := fmt.Sprintf("SYSARMOR_AGENT_BUNDLE_URL=\"${SYSARMOR_AGENT_BUNDLE_URL:-}\"\nif [[ -z \"$SYSARMOR_AGENT_BUNDLE_URL\" ]]; then\n  SYSARMOR_AGENT_BUNDLE_URL=%s\nfi\n", shellQuote(artifactDefault))
 	if artifactDefault == "" {
 		artifactLine = ": \"${SYSARMOR_AGENT_BUNDLE_URL:?set SYSARMOR_AGENT_BUNDLE_URL to a sysarmor-agent tarball URL}\"\n"

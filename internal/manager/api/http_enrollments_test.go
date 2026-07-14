@@ -131,6 +131,7 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 	t.Setenv("SYSARMOR_ARTIFACT_DIR", t.TempDir())
 	st := &store.Store{}
 	handler := newAdminTestServer(st).Handler()
+	distribution := testAgentDistribution(t)
 
 	req := multipartArtifactRequest(t, "/api/v1/artifacts", map[string]string{
 		"name":    "sysarmor-agent",
@@ -139,7 +140,7 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 		"os":      "linux",
 		"arch":    "amd64",
 		"status":  "active",
-	}, testAgentDistribution(t))
+	}, distribution)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -173,14 +174,25 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 		t.Fatalf("create artifact enrollment status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	var created struct {
-		Token string `json:"token"`
+		Token      string `json:"token"`
+		InstallURL string `json:"install_url"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
 	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), uploaded.Artifact.SHA256) || !strings.Contains(rec.Body.String(), "/api/v1/artifacts/"+uploaded.Artifact.ArtifactID+"/download") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), uploaded.Artifact.SHA256) || !strings.Contains(rec.Body.String(), "/api/v1/enrollment-artifact?token=") {
 		t.Fatalf("artifact install script status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = get(t, handler, "/api/v1/enrollment-artifact?token="+created.Token)
+	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), distribution) {
+		t.Fatalf("enrollment artifact status = %d size=%d", rec.Code, rec.Body.Len())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/enrollment-artifact?token=invalid", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("invalid enrollment artifact status = %d", rec.Code)
 	}
 }
 
@@ -239,7 +251,7 @@ func TestArtifactFeedSeedsExternalArtifactAndChannel(t *testing.T) {
 	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK ||
-		!strings.Contains(body, "https://artifacts.example/sysarmor-agent-linux-amd64-dev.tar.gz") ||
+		!strings.Contains(body, "/api/v1/enrollment-artifact?token=") ||
 		strings.Contains(body, "/api/v1/artifacts/art-feed-linux-amd64-dev/download") {
 		t.Fatalf("feed install script status = %d body=%s", rec.Code, body)
 	}
@@ -331,7 +343,9 @@ func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
 	}
 
 	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "http://127.0.0.1:18080/releases/sysarmor-agent-linux-amd64-dev.tar.gz") {
+	if rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), "/api/v1/enrollment-artifact?token=") ||
+		strings.Contains(rec.Body.String(), "http://127.0.0.1:18080/releases/sysarmor-agent-linux-amd64-dev.tar.gz") {
 		t.Fatalf("systemd install script status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

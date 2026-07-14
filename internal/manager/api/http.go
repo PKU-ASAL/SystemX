@@ -300,6 +300,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/artifacts/", s.artifactByID)
 	mux.HandleFunc("/api/v1/channels", s.channels)
 	mux.HandleFunc("/api/v1/enrollments", s.enrollments)
+	mux.HandleFunc("/api/v1/enrollment-artifact", s.enrollmentArtifact)
 	mux.HandleFunc("/api/v1/enrollment-certificate", s.enrollmentCertificate)
 	mux.HandleFunc("/api/v1/agent-install.sh", s.agentInstallScript)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
