@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"sort"
 	"time"
 
@@ -105,6 +106,30 @@ type CollectionPolicy struct {
 	ScopeType      string                     `json:"scope_type,omitempty"`
 	ScopeSelector  string                     `json:"scope_selector,omitempty"`
 	ObserveOnly    bool                       `json:"observe_only,omitempty"`
+}
+
+func (p CollectionPolicy) MarshalJSON() ([]byte, error) {
+	var behaviors any
+	if len(p.BehaviorSpecs) > 0 {
+		behaviors = p.BehaviorSpecs
+	} else if len(p.Behaviors) > 0 {
+		behaviors = p.Behaviors
+	}
+	type collectionPolicyWire struct {
+		PolicyID       string   `json:"policy_id,omitempty"`
+		Version        uint64   `json:"version,omitempty"`
+		Behaviors      any      `json:"behaviors,omitempty"`
+		BinaryPrefixes []string `json:"binary_prefixes,omitempty"`
+		FilePrefixes   []string `json:"file_prefixes,omitempty"`
+		SocketFamilies []string `json:"socket_families,omitempty"`
+		SocketAddrs    []string `json:"socket_addrs,omitempty"`
+		SocketPorts    []string `json:"socket_ports,omitempty"`
+		ScopeType      string   `json:"scope_type,omitempty"`
+		ScopeSelector  string   `json:"scope_selector,omitempty"`
+		ObserveOnly    bool     `json:"observe_only,omitempty"`
+	}
+	return json.Marshal(collectionPolicyWire{p.PolicyID, p.Version, behaviors, p.BinaryPrefixes, p.FilePrefixes,
+		p.SocketFamilies, p.SocketAddrs, p.SocketPorts, p.ScopeType, p.ScopeSelector, p.ObserveOnly})
 }
 
 type CollectionBehaviorPolicy struct {

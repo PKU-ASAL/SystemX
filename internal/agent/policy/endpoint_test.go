@@ -1,11 +1,14 @@
 package policy
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
+	policyModel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 )
 
 func TestLoadEffectiveEndpointPolicyBootstrapsAndRestoresSQLite(t *testing.T) {
@@ -29,6 +32,46 @@ func TestLoadEffectiveEndpointPolicyBootstrapsAndRestoresSQLite(t *testing.T) {
 	}
 	if first.PolicyID != "bootstrap" || second.PolicyID != "bootstrap" || second.Version != 1 {
 		t.Fatalf("first=%+v second=%+v", first, second)
+	}
+}
+
+func TestEffectiveEndpointPolicyPreservesStructuredCollectionBehaviors(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	policy, err := ParseEndpointPolicy([]byte(`{
+		"policy_id":"structured","version":1,
+		"collection":{"behaviors":[{"id":"process.exec","selectors":{"process":{"binary_prefixes":["/bin/"]}}}]},
+		"detection":{},"telemetry":{},"response":{}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveEffectiveEndpointPolicy(t.Context(), store, policy); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := LoadEffectiveEndpointPolicy(t.Context(), store, filepath.Join(t.TempDir(), "unused.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := CollectionPolicyIntent(restored.Collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(intent.Behaviors) != 1 || intent.Behaviors[0] != "process.exec" || len(intent.BehaviorFilters[0].BinaryPrefixes) != 1 {
+		t.Fatalf("restored collection intent = %+v", intent)
+	}
+}
+
+func TestCollectionPolicyMarshalOmitsAbsentBehaviors(t *testing.T) {
+	raw, err := json.Marshal(policyModel.CollectionPolicy{PolicyID: "empty"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"behaviors"`) {
+		t.Fatalf("empty collection policy encoded behaviors: %s", raw)
 	}
 }
 
