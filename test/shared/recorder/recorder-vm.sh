@@ -64,7 +64,7 @@ start_remote_sampler() {
 #!/usr/bin/env bash
 set -euo pipefail
 DUR=\"\${1:-3600}\"
-AGENT_SOCK=\"\${2:-/run/sysarmor/agent.sock}\"
+AGENT_SOCK=\"\${2:-/run/sysarmor/agent/control.sock}\"
 AGENT_ID=\"\${3:-vm-owned-tetragon}\"
 TENANT_ID=\"\${4:-default}\"
 LABELS=\"\${5:-}\"
@@ -78,8 +78,6 @@ STOP=\"\$STATE_DIR/stop\"
 HEALTH_JSON=\"\$STATE_DIR/health.json\"
 EVENTS_NDJSON=\"\$STATE_DIR/events.ndjson\"
 SIGNALS_NDJSON=\"\$STATE_DIR/signals.ndjson\"
-CURSOR_EVENTS_NDJSON=\"\$STATE_DIR/cursor-events.ndjson\"
-CURSOR_SIGNALS_NDJSON=\"\$STATE_DIR/cursor-signals.ndjson\"
 WATCH_PIDS=\"\$STATE_DIR/watch-pids\"
 EVENT_WATCH_ERR=\"\$STATE_DIR/event-watch.err\"
 SIGNAL_WATCH_ERR=\"\$STATE_DIR/signal-watch.err\"
@@ -157,15 +155,30 @@ line_count() {
   local file=\"\$1\"
   awk 'NF {n++} END {print n+0}' \"\$file\" 2>/dev/null || echo 0
 }
-sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" || true
-sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --include-recent --snapshot --limit \"\$WATCH_LIMIT\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout 1s >\"\$CURSOR_SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" || true
-EVENT_CURSOR=\"\$(max_sequence \"\$CURSOR_EVENTS_NDJSON\")\"
-SIGNAL_CURSOR=\"\$(max_sequence \"\$CURSOR_SIGNALS_NDJSON\")\"
+sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\"
+EVENT_CURSOR=\"\$(num_json streams.eventNewestSequence \"\$HEALTH_JSON\")\"
+SIGNAL_CURSOR=\"\$(num_json streams.signalNewestSequence \"\$HEALTH_JSON\")\"
 start_watchers() {
-  sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --after-seq \"\$EVENT_CURSOR\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout \"\$WATCH_TIMEOUT\" >\"\$EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" &
-  echo \"\$!\" >>\"\$WATCH_PIDS\"
-  sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --after-seq \"\$SIGNAL_CURSOR\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout \"\$WATCH_TIMEOUT\" >\"\$SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" &
-  echo \"\$!\" >>\"\$WATCH_PIDS\"
+  sysarmorctl --socket \"\$AGENT_SOCK\" --json event watch --after-seq \"\$EVENT_CURSOR\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout \"\$WATCH_TIMEOUT\" >>\"\$EVENTS_NDJSON\" 2>\"\$EVENT_WATCH_ERR\" &
+  EVENT_WATCH_PID=\"\$!\"
+  echo \"\$EVENT_WATCH_PID\" >>\"\$WATCH_PIDS\"
+  sysarmorctl --socket \"\$AGENT_SOCK\" --json signal watch --after-seq \"\$SIGNAL_CURSOR\" --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" --timeout \"\$WATCH_TIMEOUT\" >>\"\$SIGNALS_NDJSON\" 2>\"\$SIGNAL_WATCH_ERR\" &
+  SIGNAL_WATCH_PID=\"\$!\"
+  echo \"\$SIGNAL_WATCH_PID\" >>\"\$WATCH_PIDS\"
+}
+ensure_watchers() {
+  if kill -0 \"\$EVENT_WATCH_PID\" 2>/dev/null && kill -0 \"\$SIGNAL_WATCH_PID\" 2>/dev/null; then
+    return
+  fi
+  kill \"\$EVENT_WATCH_PID\" \"\$SIGNAL_WATCH_PID\" 2>/dev/null || true
+  wait \"\$EVENT_WATCH_PID\" 2>/dev/null || true
+  wait \"\$SIGNAL_WATCH_PID\" 2>/dev/null || true
+  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || return
+  runtime_event_cursor=\"\$(num_json streams.eventNewestSequence \"\$HEALTH_JSON\")\"
+  runtime_signal_cursor=\"\$(num_json streams.signalNewestSequence \"\$HEALTH_JSON\")\"
+  if [ \"\$runtime_event_cursor\" -lt \"\$EVENT_CURSOR\" ]; then EVENT_CURSOR=0; fi
+  if [ \"\$runtime_signal_cursor\" -lt \"\$SIGNAL_CURSOR\" ]; then SIGNAL_CURSOR=0; fi
+  start_watchers
 }
 stop_watchers() {
   [ -f \"\$WATCH_PIDS\" ] || return 0
@@ -233,6 +246,7 @@ policy_id=\"\"
 policy_version=\"\"
 while [ \"\$elapsed\" -le \"\$DUR\" ]; do
   [ -f \"\$STOP\" ] && break
+  ensure_watchers
   ts=\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
   sample_epoch=\"\$(date +%s)\"
   agent_pids=\"\$(pid_list 'sysarmor-agent')\"

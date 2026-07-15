@@ -128,6 +128,83 @@ func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
 	}
 }
 
+func TestEndpointPerformanceBuildsAllBinaries(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "suites", "performance", "endpoint", "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := string(raw)
+	if !strings.Contains(runner, `make -C "$REPO" build-binary`) {
+		t.Error("endpoint performance runner does not use the all-binary build target")
+	}
+	if strings.Contains(runner, `make -C "$REPO" build`+"\n") {
+		t.Error("endpoint performance runner still uses the service-specific build target")
+	}
+}
+
+func TestVMPerformanceInstallerSuppliesCtlBinary(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "shared", "vm", "sync-agent.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload") {
+		t.Error("VM Agent sync does not bind the uploaded sysarmorctl binary to the installer")
+	}
+}
+
+func TestEndpointPerformanceDiscoversRuntimeIdentity(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "suites", "performance", "endpoint", "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := string(raw)
+	for _, want := range []string{`agent health`, `.agentId // .agent_id`, `.tenantId // .tenant_id`} {
+		if !strings.Contains(runner, want) {
+			t.Errorf("endpoint performance runner does not discover runtime identity with %q", want)
+		}
+	}
+}
+
+func TestVMRecorderUsesRuntimeStreamCursors(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "shared", "recorder", "recorder-vm.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := string(raw)
+	for _, want := range []string{
+		`AGENT_SOCK=\"\${2:-/run/sysarmor/agent/control.sock}\"`,
+		"streams.eventNewestSequence",
+		"streams.signalNewestSequence",
+		"ensure_watchers",
+	} {
+		if !strings.Contains(recorder, want) {
+			t.Errorf("VM recorder does not satisfy runtime watcher contract %q", want)
+		}
+	}
+}
+
+func TestEndpointPerformancePropagatesWorkloadFailures(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "suites", "performance", "endpoint", "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := string(raw)
+	for _, legacy := range []string{
+		`> "$policy_out/workload.out" 2>"$policy_out/workload.err" || true`,
+		`> "$policy_out/scenario.out" 2>"$policy_out/scenario.err" || true`,
+		`wait "$workload_pid" || true`,
+	} {
+		if strings.Contains(runner, legacy) {
+			t.Errorf("endpoint performance runner still suppresses failure with %q", legacy)
+		}
+	}
+}
+
 func validateCoverageInventory(t *testing.T, path string) {
 	t.Helper()
 	file, err := os.Open(path)

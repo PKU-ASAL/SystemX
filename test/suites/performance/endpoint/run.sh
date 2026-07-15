@@ -10,7 +10,7 @@ RESULTS="$ROOT/.results"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUT_DIR="$RESULTS/performance-endpoint/$RUN_ID"
 BENCH_PROFILE="${SYSARMOR_BENCH_PROFILE:-quick}"
-AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent.sock}"
+AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent/control.sock}"
 AGENT_ID="${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}"
 TENANT_ID="${SYSARMOR_BENCH_TENANT_ID:-default}"
 if [[ -v SYSARMOR_BENCH_WORKLOAD ]]; then
@@ -115,6 +115,18 @@ wait_agent_socket() {
   done
 }
 
+resolve_agent_identity() {
+  local health
+  health="$(vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health")"
+  AGENT_ID="$(jq -r '.agentId // .agent_id // empty' <<<"$health")"
+  TENANT_ID="$(jq -r '.tenantId // .tenant_id // empty' <<<"$health")"
+  if [[ -z "$AGENT_ID" || -z "$TENANT_ID" ]]; then
+    echo "[performance-endpoint][ERROR] Agent health did not expose runtime identity: $health" >&2
+    exit 1
+  fi
+  echo "[performance-endpoint] runtime identity: tenant=$TENANT_ID agent=$AGENT_ID"
+}
+
 set_agent_labels() {
   local bench_run="$1"
   local policy_name="$2"
@@ -142,7 +154,7 @@ import base64
 import json
 import os
 from pathlib import Path
-p = Path('/etc/sysarmor/agent.yaml')
+p = Path('/etc/sysarmor/agent/agent.yaml')
 lines = p.read_text().splitlines()
 labels = json.loads(base64.b64decode(os.environ['SYSARMOR_LABELS_B64']).decode())
 out = []
@@ -203,7 +215,7 @@ set_runtime_feature_flags() {
 import os
 from pathlib import Path
 
-p = Path('/etc/sysarmor/agent.yaml')
+p = Path('/etc/sysarmor/agent/agent.yaml')
 strategy = os.environ['SYSARMOR_MATCHER_STRATEGY']
 lines = p.read_text().splitlines()
 out = []
@@ -378,11 +390,11 @@ run_workload() {
   if [[ -f "$ROOT/data/workloads/vm/$workload_name/run.sh" ]]; then
     vagrant upload "$ROOT/data/workloads/vm/$workload_name/run.sh" /tmp/sysarmor-workload-run.sh node-a >/dev/null
     vagrant ssh node-a -c "sudo bash -c 'DURATION=$WORKLOAD_SECONDS REPEAT=$WORKLOAD_REPEAT C2=$WORKLOAD_C2 bash /tmp/sysarmor-workload-run.sh'" \
-      > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
+      > "$policy_out/workload.out" 2>"$policy_out/workload.err"
   elif [[ -f "$ROOT/data/scenarios/vm/$workload_name/attack.sh" ]]; then
     vagrant upload "$ROOT/data/scenarios/vm/$workload_name/attack.sh" /tmp/sysarmor-scenario-attack.sh node-a >/dev/null
     vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /tmp/sysarmor-scenario-attack.sh'" \
-      > "$policy_out/workload.out" 2>"$policy_out/workload.err" || true
+      > "$policy_out/workload.out" 2>"$policy_out/workload.err"
   else
     echo "[performance-endpoint][ERROR] workload not found: $workload_name" >&2
     exit 1
@@ -414,7 +426,7 @@ run_scenario() {
   fi
   vagrant upload "$ROOT/data/scenarios/vm/$scenario_name/attack.sh" /tmp/sysarmor-scenario-attack.sh node-a >/dev/null
   vagrant ssh node-a -c "sudo bash -c 'GAP=1 C2=$WORKLOAD_C2 bash /tmp/sysarmor-scenario-attack.sh'" \
-    > "$policy_out/scenario.out" 2>"$policy_out/scenario.err" || true
+    > "$policy_out/scenario.out" 2>"$policy_out/scenario.err"
 }
 
 run_case_activity() {
@@ -452,7 +464,7 @@ run_case_activity() {
   fi
 
   if [[ -n "$workload_pid" ]]; then
-    wait "$workload_pid" || true
+    wait "$workload_pid"
   fi
 }
 
@@ -464,7 +476,7 @@ echo "[performance-endpoint] sync_vm_agent: $SYNC_VM_AGENT"
 echo "[performance-endpoint] profile_agent: $PROFILE_ENABLED types=${PROFILE_TYPES:-none} phases=${PROFILE_PHASES:-none}"
 if [[ "$BUILD_BINARIES" == "1" ]]; then
   echo "[performance-endpoint] building current SysArmor binaries"
-  make -C "$REPO" build
+  make -C "$REPO" build-binary
 else
   echo "[performance-endpoint] binary build disabled"
 fi
@@ -484,6 +496,7 @@ else
   echo "[performance-endpoint] VM agent sync disabled"
 fi
 wait_agent_socket
+resolve_agent_identity
 set_runtime_feature_flags "$MATCHER_STRATEGY"
 
 echo "[performance-endpoint] uploading content packs and policies"
