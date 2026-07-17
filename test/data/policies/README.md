@@ -1,6 +1,8 @@
 # Test Policies
 
-结论：`test/data/policies/` 保存测试用 policy/content 契约样例。benchmark 最常用的是 collection JSON；完整 manager 下发、版本化、启停、audit 闭环仍由 platform/topology 测试逐步覆盖。
+`test/data/policies/` 保存测试使用的 policy 和 content 样例。collection
+JSON 用于 endpoint benchmark；Manager 下发、版本、启停和 audit 由
+platform/topology 产品测试验证。
 
 ## 文件说明
 

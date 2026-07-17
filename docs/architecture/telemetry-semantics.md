@@ -40,7 +40,7 @@ An incident is a reproducible report assembled from related signals and evidence
 - Storage: OpenSearch only; PostgreSQL does not persist incident reports
 - Rule: report IDs and tenant labels must be stable so retries update the same report instead of creating duplicates
 
-Human triage state is intentionally outside the report model. If case management is added later, a PostgreSQL `IncidentCase` will reference report IDs without changing report ownership.
+Human triage and case-management state are outside the current report model.
 
 ## Query Ownership
 

@@ -36,14 +36,15 @@ make -C test performance-endpoint \
 test/.results/performance-endpoint/<run-id>/
   manifest.json
   matrix.csv
-  <policy>/
-    timeline.csv
-    markers.ndjson
-    events.ndjson
-    signals.ndjson
-    summary.json
-    raw/
-    profiles/
+
+test/.results/recordings/performance-endpoint/<run-id>/<policy>/
+  timeline.csv
+  markers.ndjson
+  events.ndjson
+  signals.ndjson
+  summary.json
+  raw/
+  profiles/
 ```
 
 profiling 默认关闭。需要解释某个阶段 CPU 高时再显式开启 `SYSARMOR_BENCH_PROFILE_AGENT=1`。

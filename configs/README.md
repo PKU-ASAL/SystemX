@@ -1,25 +1,15 @@
-# SysArmor Configs
+# Product Content
 
-This directory contains the default v3 rule/policy content pack.
-
-Current status:
-
-- Endpoint rule execution still lives in `internal/endpoint/fastpath`.
-- Cloud convergence still lives in `internal/analytics/ingest`.
-- The manager can now store policies, assignments, and expose an effective policy API.
-- Rule content files are metadata and enable/disable references for the current hardcoded rules.
-
-Layout:
+`configs/` contains reference policy and rule metadata. The current runtime
+does not discover or load this directory automatically; executable detection
+behavior remains in Go code and explicitly applied content packs.
 
 ```text
-configs/
-  policies/
-    default-edr-policy.json
-  rules/
-    endpoint/
-      *.json
-    cloud/
-      *.json
+policies/default-edr-policy.json   default policy metadata
+rules/endpoint/                    endpoint detection content
+rules/cloud/                       platform correlation content
 ```
 
-Keep cross-component data contracts in `api/proto`; configs should reference those contracts rather than defining new schemas ad hoc.
+Wire contracts belong in `api/proto/`; Agent runtime defaults belong in
+`deployments/agent/`; executable test content belongs in `test/data/`. Do not
+treat these files as deployed policy without an explicit loader or apply path.

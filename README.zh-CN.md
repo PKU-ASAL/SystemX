@@ -112,6 +112,8 @@ make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
 ## 文档
 
 - [仓库结构](docs/architecture/repo-layout.md)
+- [Agent 运行时](docs/architecture/agent-runtime.md)
+- [平台运行时](docs/architecture/platform-runtime.md)
 - [部署与注册](deployments/README.md)
 - [测试指南](test/README.md)
 - [测试环境与报告细节](test/DETAILS.md)

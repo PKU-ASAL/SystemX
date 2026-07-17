@@ -118,6 +118,8 @@ artifacts. Review the test documentation before running them.
 ## Documentation
 
 - [Repository layout](docs/architecture/repo-layout.md)
+- [Agent runtime](docs/architecture/agent-runtime.md)
+- [Platform runtime](docs/architecture/platform-runtime.md)
 - [Deployment and enrollment](deployments/README.md)
 - [Test guide](test/README.md)
 - [Detailed test environments and reports](test/DETAILS.md)

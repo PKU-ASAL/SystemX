@@ -1,237 +1,142 @@
-# SysArmor Deployments
+# Deployments
 
-This directory contains production-shaped deployment assets. Test fixtures may
-reuse these assets, but topology-specific setup belongs under `test/`.
+This directory contains the Agent installer and the production-shaped local
+platform. Test-only provisioning belongs under `test/`.
 
-## Layout
+## Standalone Agent
 
-- `agent/`: endpoint agent install script and systemd unit.
-- `gateway/`: agent-facing gRPC gateway image and example environment.
-- `manager/`: operator-facing HTTP API image and example environment.
-- `worker/`: telemetry ingest worker image and example environment.
-- `infra/`: local Postgres, Kafka, Redis, and OpenSearch images.
-- `sensors/`: sensor bundles and installers used by the agent.
-- `pki/`: sample agent-plane mTLS material and examples.
-
-## Local Platform
-
-Generate local agent-plane mTLS material first:
+On a systemd-based x86_64 Linux endpoint:
 
 ```bash
-SYSARMOR_GATEWAY_IPS=127.0.0.1 \
-  tools/pki/gen-agent-plane-mtls.sh deployments/pki/agent-plane-mtls/runtime default agent-prod-001 localhost
-```
-
-Start the standard local platform:
-
-```bash
-make deploy
-```
-
-For the VM topology harness, use the VM override so manager/gateway are exposed
-on their in-VM standard ports:
-
-```bash
-docker compose \
-  -f deployments/compose.platform.yaml \
-  -f deployments/compose.vm-topology.yaml \
-  up -d --build
-```
-
-Runtime shape:
-
-```text
-agent -> gateway:9444 -> kafka -> worker -> postgres/opensearch
-operator -> manager:9443 -> postgres/opensearch
-gateway -> postgres/redis/kafka
-```
-
-## Agent Install And Enrollment
-
-New packages install and start in standalone mode. The Agent immediately
-collects into its bounded local store and makes no Manager or Gateway
-connection. The default state is under `/var/lib/sysarmor/agent`; inspect it
-through the local Unix socket:
-
-```bash
-sudo deployments/agent/install-agent.sh
+make install-agent
 sudo sysarmorctl agent health
 ```
 
-Enrollment is an explicit later operation. Manager creates a one-time token
-and stores only its hash. Run the returned command on the endpoint; the Agent
-generates its private key locally, obtains and validates the certificate, then
-atomically changes its SQLite enrollment state to managed:
-
-```bash
-sysarmorctl --manager-url http://127.0.0.1:19443 --json \
-  manager artifacts upload \
-  --file dist/sysarmor-agent-linux-amd64-v1.tar.gz \
-  --name sysarmor-agent \
-  --kind agent \
-  --version v1 \
-  --os linux \
-  --arch amd64 \
-  --status active
-
-sysarmorctl --manager-url http://127.0.0.1:19443 --json \
-  manager channels upsert \
-  --channel stable \
-  --artifact-id art_...
-
-sysarmorctl --manager-url http://127.0.0.1:19443 --json \
-  manager enrollments create \
-  --agent-id node-a \
-  --gateway-addr 127.0.0.1:19444 \
-  --gateway-sni localhost \
-  --ttl 24h \
-  --channel stable
-
-sudo sysarmorctl \
-  --manager-url http://127.0.0.1:19443 \
-  enroll \
-  --token '<one-time-token>' \
-  --tenant default \
-  --agent-id node-a \
-  --gateway 127.0.0.1:19444 \
-  --gateway-server-name localhost
-```
-
-Registration uploads only batches created from the enrollment boundary.
-Add `--upload-history` only when pre-enrollment telemetry must be uploaded.
-Return to fully local operation without stopping the sensor:
-
-```bash
-sudo sysarmorctl unenroll
-```
-
-The generated `agent-install.sh` installs the agent into a stable agent home:
+Installation writes:
 
 ```text
-/opt/sysarmor/agent/bin/sysarmor-agent
-/opt/sysarmor/agent/bundles/tetragon
-/opt/sysarmor/agent/sensors
-/opt/sysarmor/agent/runtime
-/opt/sysarmor/agent/cache
-/etc/sysarmor/agent/agent.yaml
-/etc/sysarmor/agent/policy.json
-/etc/systemd/system/sysarmor-agent.service
-/run/sysarmor/agent/control.sock
+/opt/sysarmor/agent/                 Agent and managed Tetragon assets
+/etc/sysarmor/agent/agent.yaml      runtime configuration
+/etc/sysarmor/agent/policy.json     endpoint policy
+/var/lib/sysarmor/agent/            local identity and bounded state
+/run/sysarmor/agent/control.sock    local control API
 ```
 
-Enrollment install profiles:
+The Agent starts in standalone mode and makes no platform connection. See
+[Agent Runtime](../docs/architecture/agent-runtime.md) for the state and policy
+model.
 
-- `linux-systemd` is the default Linux bare-metal/VM profile. It writes the
-  systemd unit and runs `systemctl enable --now sysarmor-agent`.
-- `linux-container` is the Linux in-container profile. It skips systemd,
-  writes `sensor.scope.type=namespace` and `sensor.scope.selector=self`, and
-  prints the entrypoint command:
+## Local Platform
 
-```bash
-/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml
-```
-
-Agent artifacts are signed distribution tarballs. The top-level
-`manifest.json` describes the entrypoint, systemd unit, sensor bundles, and
-file checksums; `manifest.sig` signs that manifest. The manager verifies the
-artifact at upload time when `SYSARMOR_ARTIFACT_PUBLIC_KEY` is configured, and
-the bootstrap script verifies the same manifest before installing.
-
-Local deploy also builds an agent release:
+`make deploy` builds binaries and a signed Agent release, initializes local
+PKI and bootstrap credentials, builds service images, and starts Compose:
 
 ```bash
-make release
 make deploy
-```
-
-`make release` writes the signed agent package and package index under
-`dist/release/`. The compose stack serves that directory from the
-`sysarmor-packages` container, and the manager imports
-`SYSARMOR_AGENT_PACKAGE_INDEX_URL=http://packages/index.json` on startup. This
-keeps the production shape clear: the packages service hosts immutable bytes,
-while the manager owns artifact metadata, channel selection, enrollment, and
-install script rendering. A production deployment can replace `packages` with
-S3, MinIO, OSS, GCS, or a CDN as long as it exposes the same package index
-schema.
-
-The manager uses two URLs for this path:
-
-- `SYSARMOR_AGENT_PACKAGE_INDEX_URL`: manager-side package index discovery URL.
-  In compose this is the internal service URL `http://packages/index.json`.
-- `SYSARMOR_AGENT_PACKAGE_DOWNLOAD_BASE_URL`: agent-side download base URL for
-  non-container profiles. In local compose this defaults to
-  `http://127.0.0.1:18080`. Container profile enrollments keep the internal
-  `http://packages/...` URL because the agent container joins the compose
-  network.
-
-The default gateway path requires agent-plane mTLS. The Agent enrollment RPC
-generates the endpoint private key locally, submits a CSR with the enrollment
-token, and stores the manager-issued certificate under its state directory.
-The gateway validates the certificate URI SAN against the reported
-`tenant_id/agent_id`.
-
-Services:
-
-- `manager`: operator-facing control, audit, policy, and query API.
-- `packages`: static file service for signed agent packages and package index.
-- `gateway`: agent-facing data/control gRPC endpoint.
-- `worker`: Kafka ingest consumer for detection, incident projection, and indexing.
-- `postgres`: control, state, and audit store.
-- `kafka`: durable telemetry ingest log.
-- `redis`: gateway hot state.
-- `opensearch`: searchable events, signals, and evidence layer.
-- `opensearch-init`: one-shot versioned-index and alias initialization that must
-  complete before Manager and Worker start.
-
-Manager authentication is always enabled. Manager trusts only short-lived JWTs
-signed by the Manager UI BFF:
-
-```text
-SYSARMOR_JWT_PUBLIC_KEY_FILE=/etc/sysarmor/pki/manager-jwt-public.pem
-SYSARMOR_JWT_ISSUER=sysarmor-bff
-SYSARMOR_JWT_AUDIENCE=sysarmor-manager
-```
-
-Initialize the one bootstrap admin and deploy the platform:
-
-```bash
-make auth-init
-make deploy
+make status
 make doctor
 ```
 
-The initial username and password are stored as mode `0600` files under
-`deployments/pki/agent-plane-mtls/runtime/`. Initialization never overwrites
-them. The UI is available at `http://127.0.0.1:4173`; its BFF is the only
-browser path to Manager APIs. Future OIDC providers attach to Auth.js and keep
-the same BFF-to-Manager contract; Manager does not implement an OIDC mode.
-When publishing the UI through a reverse proxy, restrict the accepted `Host`
-header to the configured SysArmor UI hostname.
+The standard path is:
 
-Ports:
+```text
+Agent -> Gateway -> Kafka -> Worker -> PostgreSQL / OpenSearch
+Browser -> Manager Console BFF -> Manager
+```
 
-- Manager HTTP: `19443`
-- Manager UI: `4173`
-- Gateway gRPC: `19444`
-- Gateway health HTTP: `19445`
-- Postgres: `15432`
-- Kafka: `19092`
-- Redis: `16379`
-- OpenSearch: `29200`
+| Service | Host port | Purpose |
+|---|---:|---|
+| Manager Console | `4173` | Browser UI and authenticated BFF |
+| Manager | `19443` | Operator HTTP API |
+| Gateway | `19444` | Agent mTLS gRPC |
+| Gateway health | `19445` | Health endpoint |
+| PostgreSQL | `15432` | Control-plane state |
+| Kafka | `19092` | Durable telemetry handoff |
+| Redis | `16379` | Gateway hot state |
+| OpenSearch | `29200` | Telemetry and report projections |
 
-Manager-hosted artifacts are stored under
-`/var/lib/sysarmor/manager/artifacts`; the compose deployment persists this path
-with the `manager-artifacts` volume. Override it with
-`SYSARMOR_ARTIFACT_DIR` when running the manager directly.
-
-Host ports can be overridden when a local machine already has a service bound:
+Host ports may be overridden, for example:
 
 ```bash
 SYSARMOR_OPENSEARCH_PORT=39200 make deploy
 ```
 
-The platform services still talk to each other through compose service names
-such as `opensearch:9200`; these overrides only affect host access.
+Use `make down` to stop services. `make reset` is destructive: it recreates
+data volumes and the platform while preserving generated PKI.
 
-`gateway --local-ingest` is intentionally not used by this compose file. It is a
-development and smoke-test fixture, not the standard platform path.
+## Authentication
+
+`make auth-init` creates one local bootstrap administrator and Manager JWT
+keys under `deployments/pki/agent-plane-mtls/runtime/`. Existing credentials
+are not overwritten.
+
+The browser holds an encrypted Auth.js session. Only the server-side BFF signs
+short-lived RS256 Manager JWTs. Manager does not trust browser identity headers
+or expose an alternate unauthenticated operator mode.
+
+## Agent Distribution And Enrollment
+
+`make release` writes a signed package and index to `dist/release/`. In the
+local platform, the `packages` service hosts immutable bytes while Manager owns
+artifact metadata, channels, enrollment, and installer rendering.
+
+The enrollment sequence is:
+
+```text
+upload artifact -> bind channel -> create one-time enrollment
+-> endpoint downloads and verifies installer/package
+-> endpoint generates key and CSR
+-> Manager issues tenant/Agent-bound certificate
+-> Agent enables Gateway upload and control
+```
+
+Manager stores only the enrollment-token hash. The private key remains on the
+endpoint. The Gateway verifies the certificate URI against the tenant and
+Agent ID in each frame.
+
+Use the Manager Console Deploy page to select an artifact and channel and
+create an enrollment. For a new endpoint, run the installer command displayed
+by the Console. It contains the one-time enrollment URL and installs the
+selected signed artifact.
+
+Direct enrollment of an already installed standalone Agent requires an
+authenticated operator API flow. The current Console does not expose a
+standalone enrollment command, so this document does not present manual token
+extraction as a supported workflow.
+
+By default, enrollment uploads only data created after the enrollment
+boundary. Add `--upload-history` only when local history should be uploaded.
+Return to standalone mode with:
+
+```bash
+sudo sysarmorctl unenroll
+```
+
+## Installation Profiles
+
+- `linux-systemd` installs and enables the systemd service for a host or VM.
+- `linux-container` skips systemd, sets `sensor.scope` to `namespace/self`, and
+  returns this entrypoint:
+
+```bash
+/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml
+```
+
+Both profiles install the same signed Agent distribution. Profile choice
+changes lifecycle and sensor scope, not Agent identity or data contracts.
+
+## Deployment Assets
+
+| Path | Purpose |
+|---|---|
+| `agent/` | Installer, defaults, policy, and systemd unit |
+| `packages/` | Signed release builder |
+| `gateway/`, `manager/`, `worker/` | Service images and example environment |
+| `manager-ui/` | Console image and runtime entrypoint |
+| `infra/` | Kafka, PostgreSQL, Redis, and OpenSearch images |
+| `opensearch/` | Versioned mappings and alias initialization |
+| `pki/` | Local Agent-plane mTLS examples |
+| `sensors/` | Managed sensor bundle installer |
+
+`gateway --local-ingest` is a smoke-test fixture and is not used by the
+standard Compose deployment.
