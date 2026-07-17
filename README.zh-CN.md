@@ -24,13 +24,17 @@ SysArmor 是一个面向 Linux 的端点安全与检测平台。它由默认独�
 ## 架构
 
 ```text
-Linux sensor -> Agent -> 本地 signal 与有界存储
-                       -> Gateway -> Kafka -> Worker -> PostgreSQL / OpenSearch
-                                                   -> Manager API 与 Web UI
+Linux 主机
+  -> Agent 采集并分析主机行为
+  -> 事件和检测结果可在本地查询
+  -> 已注册端点将选定数据发送到管理平台
+  -> 安全人员通过 Web 界面查询和调查
 ```
 
 Agent 在 standalone 模式下即可独立使用。注册只增加集中上传和控制能力，
-不会在端点创建第二条数据通路。
+不会在端点创建第二条数据通路。管理平台内部由 Gateway 接收 Agent 数据，
+Kafka 提供可靠传输，Worker 完成进一步分析，PostgreSQL 和 OpenSearch
+分别保存管理数据与安全数据。
 
 ## 环境要求
 

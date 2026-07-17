@@ -6,17 +6,18 @@ to enrolled Agents. It does not replace the Agent's local runtime.
 ## Data Flow
 
 ```text
-Agent -> Gateway -> Kafka -> Worker -> OpenSearch
-                    |         |       searchable telemetry and reports
-                    |         +-----> PostgreSQL control-plane reads
-                    +---------------> Redis connection state
-
-Browser -> Manager Console BFF -> Manager -> PostgreSQL / OpenSearch
+Enrolled endpoint
+  -> sends selected events and detections
+  -> platform receives and analyzes them reliably
+  -> security data becomes searchable
+  -> operators investigate and manage endpoints through the console
 ```
 
-Gateway authenticates Agent mTLS identity and accepts data/control traffic.
-Kafka is the durable handoff. Worker performs bounded correlation and
-idempotent projections. Manager is the operator-facing API.
+The implementation separates those responsibilities: Gateway authenticates
+Agent identity and receives data; Kafka provides a durable handoff; Worker
+correlates and projects security data; Manager serves operator workflows;
+PostgreSQL, OpenSearch, and Redis hold control, searchable, and short-lived
+connection state respectively.
 
 ## Storage Ownership
 

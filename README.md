@@ -27,13 +27,18 @@ before a stable release.
 ## Architecture
 
 ```text
-Linux sensor -> Agent -> local signals and bounded storage
-                       -> Gateway -> Kafka -> Worker -> PostgreSQL / OpenSearch
-                                                   -> Manager API and web UI
+Linux host
+  -> Agent observes and analyzes host activity
+  -> Events and detections remain available locally
+  -> Enrolled endpoints send selected data to the management platform
+  -> Security operators investigate through the web console
 ```
 
 The Agent remains useful in standalone mode. Enrollment adds centralized
-upload and control without creating a second endpoint data path.
+upload and control without creating a second endpoint data path. Inside the
+management platform, Gateway receives Agent data, Kafka carries it reliably,
+Worker performs further analysis, and PostgreSQL and OpenSearch store
+management data and security data respectively.
 
 ## Prerequisites
 
