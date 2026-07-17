@@ -1,176 +1,140 @@
-# SysArmor Next
+# SysArmor
 
-SysArmor Next is a Go prototype for an EDR/XDR platform. The current repository
-keeps product source, deployment assets, tests, and future packaging/UI work in
-separate top-level areas.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-Current product path:
+SysArmor is an endpoint security and detection platform for Linux. It combines
+a standalone-first Agent with an optional management plane for centralized
+enrollment, telemetry processing, investigation, and response.
 
-```text
-agent-owned sensor runtime
-  -> sysarmor-agent normalize + endpoint detection
-  -> local sysarmorctl control/watch during endpoint refinement
-  -> AgentDataPlaneService.AppendBatch + AgentControlPlaneService.Connect
-  -> incident, evidence, response, and benchmark workflows
-```
+The project is under active development. It is suitable for development,
+evaluation, and testing; interfaces and deployment procedures may change
+before a stable release.
 
-## Components
+## Core Capabilities
 
-- `cmd/sysarmor-agent`: owns endpoint runtime, sensor lifecycle, normalization, local detection, local control, and data append.
-- `cmd/sysarmor-manager`: platform control/query prototype for agents, policies, responses, incidents, evidence, and metrics.
-- `cmd/sysarmor-gateway`: agent-facing access layer for data/control plane traffic.
-- `cmd/sysarmor-worker`: platform analytics and indexing worker.
-- `cmd/sysarmorctl`: CLI/control boundary used by local agent workflows and tests.
-- `api/proto`: source of truth for generated protobuf contracts.
-- `internal/endpoint`: normalizer, detection engine, ring buffers, upload clients.
-- `internal/sensors`: sensor contracts and platform-specific sensor adapters.
-- `internal/manager/api`: operator-facing manager HTTP API.
-- `internal/analytics`: entity, evidence, correlation, convergence, and incident logic.
-- `internal/store`: platform state store prototypes and Postgres foundations.
-- `packages`: product distribution package definitions for agent/sensor bundles.
-- `deployments`: compose, Docker, systemd, PKI, and sensor deployment assets.
-- `web`: reserved for future operator-facing UI projects.
-- `test`: unit, endpoint, topology, and platform test scopes.
+- **Standalone endpoint operation:** the Agent starts locally without a
+  Manager dependency and owns sensor lifecycle, collection, detection, and
+  bounded local storage.
+- **Explicit enrollment:** an endpoint connects to the management plane only
+  after enrollment, using tenant- and Agent-bound mTLS identity.
+- **Endpoint detection:** events are normalized and evaluated locally, with
+  signals available through the Agent control socket.
+- **Central analysis:** Gateway, Worker, and Manager services support durable
+  ingestion, correlation, incidents, evidence, policy, and response workflows.
+- **Reproducible validation:** container and VM suites cover product behavior,
+  detection effectiveness, and endpoint or platform performance.
 
-Core docs:
-
-- `docs/architecture/repo-layout.md`
-- `test/README.md`
-- `test/DETAILS.md`
-
-## Build And Test
-
-```bash
-make api
-make build-binary
-make release
-make test
-```
-
-`make api` requires `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc` on `PATH` or under `$(go env GOPATH)/bin`.
-
-`make build-binary` writes static binaries to `dist/bin/`. `make release`
-writes the signed agent package and package index to `dist/release/`. Both
-directories are ignored because they are regenerated.
-
-## Test Suites
-
-Run from `test/`:
-
-```bash
-make test-unit
-make product-endpoint
-make product-topology SCENARIO=apt-fileless-c2
-make product-platform
-
-make performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal
-make performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'
-make performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal
-make effectiveness-topology ENV=vm-topology
-```
-
-Environment choices:
-
-- `container`: lightweight manager/platform checks.
-- `vm-endpoint`: one fresh endpoint VM per benchmark run; source of truth for agent/sensor CPU and memory conclusions.
-- `vm-topology`: three VMs (`mgr`, `node-a`, `attacker`) for manager-agent-C2 product path checks.
-
-Performance/effectiveness reports use these standard phases: `startup`, `steady`,
-`workload`, `activity`, `persistence`, and `overall`.
-
-`test/.results/` contains regenerated captures and summary JSON/CSV files and is ignored. `vm-topology` deployment input cache lives under `test/environments/vm-topology/deploy/`, split into a lightweight platform bundle and a reusable Docker image bundle.
-
-## Data And Control Plane Contract
-
-Production agent-to-manager traffic is split into two gRPC services:
-
-- `AgentDataPlaneService.AppendBatch(DataBatch)`: agent to manager data flow. Events and signals are appended as durable `DataBatch` units from the agent spool/WAL. A `DataAck` commits the batch cursor only when its status is `STATUS_ACCEPTED` or `STATUS_DUPLICATE`.
-- `AgentControlPlaneService.Connect`: bidirectional control flow. Agent frames carry health, capability, response acks, and evidence results. Server frames carry policy updates, resume cursors, response commands, evidence pullbacks, and structured rejected acks.
-
-The contract envelope is intentionally explicit. `Connect` uses `contract_version=1`, a required `request_id`, and per-stream sequence numbers starting at `1`; replayed frames are rejected as `AlreadyExists`, and sequence gaps are rejected as `FailedPrecondition`. Reusing the same `request_id` with a new valid sequence is idempotent and replays the prior response without re-running the command. `DataAck` uses stable status and reason classes: invalid payloads are terminal `invalid_data_batch` rejections, while transient server/storage/capacity failures are `STATUS_RETRYABLE` with `retry_after_ms`.
-
-Both services share the same production mTLS identity model. The preferred agent certificate identity is:
+## Architecture
 
 ```text
-spiffe://sysarmor.local/tenant/<tenant_id>/agent/<agent_id>
+Linux sensor -> Agent -> local signals and bounded storage
+                       -> Gateway -> Kafka -> Worker -> PostgreSQL / OpenSearch
+                                                   -> Manager API and web UI
 ```
 
-The manager checks the certificate identity against `DataBatch.header.tenant_id/agent_id` and `ControlFrame.context.tenant_id/agent_id`, then binds the certificate principal into the agent registry. A later connection for the same tenant/agent with a different certificate principal is rejected.
+The Agent remains useful in standalone mode. Enrollment adds centralized
+upload and control without creating a second endpoint data path.
 
-`sysarmorctl --socket ...` is the local operator/debug boundary. It talks to the
-Agent over Unix socket gRPC; the Agent alone reads its SQLite state and segment
-spool. `sysarmorctl enroll` passes a one-time Manager token to that local RPC,
-but never handles the generated private key. Cloud communication starts only
-after enrollment and uses `AgentDataPlaneService.AppendBatch` plus
-`AgentControlPlaneService.Connect`; local ctl is not a second production data
-plane.
+## Prerequisites
 
-The API/protobuf contracts under `api/proto/` are the source of truth for this
-boundary.
+The current development workflow targets systemd-based x86_64 Linux hosts.
 
-## Manager Authentication
+- Go 1.26 or newer
+- `make`, `curl`, and root access for Agent installation
+- Docker with Docker Compose and `openssl` for the local platform
+- KVM/libvirt and Vagrant only for VM-based test suites
 
-The browser signs in to the Manager UI with the single deployment bootstrap
-admin. Auth.js keeps an encrypted HttpOnly cookie session, and the server-side
-Next.js BFF signs a five-minute `RS256` JWT for each Manager request. The
-browser never receives that JWT or the Manager internal address.
+Regenerating API bindings with `make api` additionally requires `protoc`,
+`protoc-gen-go`, and `protoc-gen-go-grpc` on `PATH` or under
+`$(go env GOPATH)/bin`.
 
-Manager trusts only the BFF public key and converts verified `sub`, `tenant_id`,
-and `roles` claims into a request-scoped Principal. Caller-provided identity
-headers are never trusted. Run `make auth-init` once to create local secrets;
-no user or session tables are created.
+Some build and installation commands download Go modules, OS packages, or the
+Tetragon sensor bundle.
 
-## Analytics Persistence
+## Quick Start
 
-Production Worker analysis is stateless across Kafka messages. For each scope it
-loads a tenant-bound 15-minute Event and endpoint Signal window from OpenSearch,
-merges the current batch by deterministic ID, and submits one Bulk projection.
-Kafka offsets are committed only after every Bulk item succeeds. Transient
-failures are retried; permanent payload or projection errors are committed only
-after a dead-letter message is durably published.
+### Standalone Agent
 
-PostgreSQL owns control-plane state and uses ordered transactional migrations.
-Legacy Incident tables are never dropped automatically; the operator-run cleanup
-SQL is `internal/store/migrations/legacy_incident_cleanup.sql`.
-
-## Useful Debug Commands
-
-Container manager:
+Build and install the Agent, CLI, default policy, and managed Tetragon bundle:
 
 ```bash
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 status --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 signals --label scenario=apt-fileless-c2 --layer endpoint --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 incidents --label scenario=apt-fileless-c2 --json
-docker exec mgr /opt/sysarmor/bin/sysarmorctl --mgr 127.0.0.1:9443 metrics --json
+make install-agent
+sudo sysarmorctl agent health
 ```
 
-VM topology manager:
+The Agent stores local state under `/var/lib/sysarmor/agent` and exposes its
+control API at `/run/sysarmor/agent/control.sock`.
+
+Remove the installation while retaining configuration and local data:
 
 ```bash
-cd test/environments/vm-topology
-vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 status --json"
-vagrant ssh mgr -c "/tmp/sysarmorctl --mgr 127.0.0.1:9443 incidents --label scenario=apt-staged-drop --json"
+make uninstall-agent
 ```
 
-Control recompute checks do not mutate the store:
+Use `make uninstall-agent PURGE=1` only when configuration and local data
+should also be removed.
+
+### Local Platform
+
+Build the binaries and release package, initialize local credentials, and
+start the platform:
 
 ```bash
-sysarmorctl --mgr 127.0.0.1:9443 recompute --label scenario=apt-staged-drop --disable cloud.cross_lineage --json
-sysarmorctl --mgr 127.0.0.1:9443 recompute --label scenario=benign-ci-noise --mode additive_threshold --json
+make deploy
+make status
+make doctor
 ```
 
-Endpoint policy explain and WAL health:
+Stop the platform with `make down`. See [deployment documentation](deployments/README.md)
+for service layout, enrollment, mTLS, configuration, and operational commands.
+
+## Development
+
+Common repository commands:
 
 ```bash
-sysarmorctl --socket /run/sysarmor/agent/control.sock --json policy explain collection --file test/data/policies/collection-balanced.json
-sysarmorctl --socket /run/sysarmor/agent/control.sock --json policy explain collection --file test/data/policies/collection-balanced.json --report-only
-sysarmorctl --socket /run/sysarmor/agent/control.sock --json agent health
+make build-binary  # build Agent, Gateway, Manager, Worker, and sysarmorctl
+make test          # run Go tests
+make api           # regenerate protobuf bindings
+make release       # build the signed Agent release package and index
 ```
 
-`policy explain collection` performs a dry-run compile: it resolves content refs, reports backend mappings, pushdown/agent-side selectors, unsupported selectors, and detection coverage gaps without applying the policy. `agent health` includes spool/WAL backlog, cursor, watcher, backpressure, and upload drain status.
+The generated binaries are written to `dist/bin/`; release artifacts are
+written to `dist/release/`. Both directories are reproducible and ignored by
+Git.
 
-## Notes
+For product, effectiveness, and performance suites:
 
-- Container e2e runs `sysarmor-manager` in the `mgr` container and streams live Tetragon output through `sysarmor-agent` inside the Tetragon container.
-- `vm-endpoint` runs only `node-a` and is the preferred environment for endpoint refinement and resource profiling.
-- `vm-topology` runs `sysarmor-manager`/`sysarmorctl` inside the `mgr` VM and the agent on `node-a`.
+```bash
+make -C test help
+make -C test product-endpoint-standalone
+make -C test product-topology
+make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
+```
+
+VM suites create privileged local infrastructure and may download large
+artifacts. Review the test documentation before running them.
+
+## Documentation
+
+- [Repository layout](docs/architecture/repo-layout.md)
+- [Deployment and enrollment](deployments/README.md)
+- [Test guide](test/README.md)
+- [Detailed test environments and reports](test/DETAILS.md)
+- [Telemetry semantics](docs/architecture/telemetry-semantics.md)
+- [Schema evolution](docs/architecture/schema-evolution.md)
+- [Manager UI API contract](docs/architecture/manager-ui-api-contract.md)
+
+The protobuf definitions under `api/proto/` are the source of truth for wire
+contracts.
+
+## Contributing
+
+The project does not yet publish a formal contribution guide. Before starting
+a substantial change, coordinate the scope with the maintainers and keep
+changes focused, tested, and documented.
+
+## License
+
+This repository does not currently include a license file. No open-source
+license grant should be assumed until one is published.
