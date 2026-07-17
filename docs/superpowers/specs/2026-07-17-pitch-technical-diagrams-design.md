@@ -47,15 +47,15 @@
 
 #### 4. 跨批次关联与证据投影
 
-Worker 以受影响的租户和终端作用域为边界，读取当前 batch 与 OpenSearch 中 15 分钟历史事件及 Endpoint Signal，重新计算 Cloud Signal、Incident 和 Evidence。
+Worker 以 tenant 和受影响的分析标签为边界，读取当前 batch 与 OpenSearch 中 15 分钟历史事件及 Endpoint Signal，重新计算 Cloud Signal、Incident 和 Evidence。
 
 已实现约束：Endpoint Signal 文档标识按 `tenant + agent + signal` 隔离；派生文档使用稳定标识；必需写入成功后才提交 Kafka offset。
 
-#### 5. 调查与响应
+#### 5. 查询与调查基础
 
-Manager API 和 Web 提供终端、事件、Signal 与 Incident 查询。Incident 是可复现的分析报告，Evidence 保留报告与底层事件之间的关系。
+Manager API 和 Web 提供终端、事件与 Signal 查询，Manager API 提供 Incident 与 Evidence 查询。Incident 是可重复计算的分析报告，Evidence 保留报告与贡献 Signal 和实体之间的关系。
 
-当前边界：概览、部署、终端和事件检索已接入；完整 Incident 页面仍在产品化。
+当前边界：概览、部署、终端和事件检索已接入；完整 Incident 页面作为虚线规划能力标识。
 
 ### 规划研究支线
 
@@ -79,23 +79,23 @@ Manager API 和 Web 提供终端、事件、Signal 与 Incident 查询。Inciden
 
 #### 1. 作用域隔离与时间对齐
 
-先按 tenant 和 Agent/工作负载标签限定分析边界，再合并当前数据与历史窗口。该步骤防止不同组织或不同终端的同名 Signal、进程或文件被错误拼接。
+先按 tenant 和分析标签（case type、scenario 或 workload）限定分析边界，再合并当前数据与历史窗口。该步骤防止不同组织或不同分析作用域的数据被错误拼接；Endpoint Signal 的平台文档身份另按 tenant、Agent 和 Signal ID 隔离。
 
-#### 2. 行为关系构建
+#### 2. Signal 视图与实体聚合
 
-将实体表达为节点，将父子进程、文件读写、网络连接、执行和身份关系表达为边。Endpoint Signal 作为已判断的局部安全语义锚点，与对应实体和原始事件连接。
+按名称组织 Endpoint Signal，汇总 lineage、terminal 和实体引用，形成后续规则可以检查的 Signal 视图与局部实体证据。
 
-#### 3. 候选攻击路径生成
+#### 3. 规则化 Signal 组合
 
-基于检测规则、lineage、实体关系、时间邻近性和历史 Signal 组合局部行为。staged 场景允许攻击步骤分布在不同 batch，只要它们处于同一分析作用域和历史窗口内。
+Cloud Rule 和 Converge Policy 检查 Signal 组合、terminal 和 cross-lineage 条件，输出 Cloud Signal 或 Incident 判定。staged 场景允许所需 Signal 分布在不同 batch，只要它们处于同一分析作用域和历史窗口内。
 
 #### 4. 关联收敛与稳定投影
 
 对受影响作用域重新计算派生结果，以 correlation key 和 analysis version 收敛到稳定 Incident；Signal、Incident 和 Evidence 使用确定性文档标识，使重试或重复处理更新同一逻辑结果。
 
-#### 5. 根因表达
+#### 5. 结构化 Incident 表达
 
-当前实现输出结构化摘要、攻击阶段、关键实体和证据子图，保持“结论 -> 证据关系 -> 原始事件”的回溯链。自然语言增强、候选路径排序和分析员反馈学习标为“规划/验证中”。
+当前实现输出摘要、lineage、terminal、贡献 Signal 和 Evidence 实体图。时间关系推理、候选攻击路径排序、攻击阶段归纳、自然语言增强和分析员反馈学习统一标为“规划/验证中”；这些增强不能修改原始事件或既有 Evidence。
 
 ### 图中示例
 
@@ -104,17 +104,17 @@ Manager API 和 Web 提供终端、事件、Signal 与 Incident 查询。Inciden
 ```text
 Batch N：下载或落地可疑载荷 -> Endpoint Signal A
 Batch N+1：载荷执行并建立外联 -> Endpoint Signal B
-历史窗口合并：A + B + 共享实体/lineage -> Incident + Evidence
+历史窗口合并：A + B + 满足 Signal 组合/terminal 策略 -> Incident + Evidence
 ```
 
-示例旁标注：关联成立依赖作用域、时间窗口、规则条件和证据关系，不表示任意时间相邻事件都会被合并。
+示例旁标注：关联成立依赖分析作用域、时间窗口和策略条件；实体与 lineage 作为 Incident 上下文保留，而非通用关联前提。
 
 ### 可验证性质
 
-- 隔离性：不同 tenant 或 Agent 的同名 Signal 不冲突、不串联。
+- 隔离性：Endpoint Signal 文档标识在不同 tenant 或 Agent 间不冲突；关联数据不跨 tenant 或分析作用域串联。
 - 连续性：同一作用域内分批到达的阶段可以通过历史窗口关联。
 - 幂等性：重复 batch 和 Worker 重试不会产生新的逻辑 Incident。
-- 可解释性：Incident 中的关键判断能够回到 Evidence 和原始事件。
+- 可解释性：Incident 保留贡献 Signal 与 Evidence；从 Evidence 进一步回到原始事件的完整产品体验仍需继续验证和产品化。
 - 边界性：超出窗口、作用域或策略条件的数据不参与该次关联。
 
 ## 文档集成

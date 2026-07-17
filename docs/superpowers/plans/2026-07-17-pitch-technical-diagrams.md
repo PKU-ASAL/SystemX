@@ -32,7 +32,7 @@
 
 - [ ] **Step 1: Create the Draw.io source**
 
-Create one landscape page with four horizontal bands: scientific/engineering problems; five numbered processing stages; implemented constraints and a dashed planned feedback branch; outputs and three validation systems. Use the exact stage titles `端点行为获取`, `本地实时判断与有界保存`, `可信传输与可靠交接`, `跨批次关联与证据投影`, and `调查与响应`.
+Create one landscape page with four horizontal bands: scientific/engineering problems; five numbered processing stages; implemented constraints and a dashed planned feedback branch; outputs and three validation systems. Use the exact stage titles `端点行为获取`, `本地实时判断与有界保存`, `可信传输与可靠交接`, `跨批次关联与证据投影`, and `查询与调查基础`.
 
 - [ ] **Step 2: Validate the Draw.io XML**
 
@@ -77,11 +77,11 @@ Expected: both commands exit 0 with no output; the Pitch contains one valid rela
 
 - [ ] **Step 1: Create the Draw.io source**
 
-Create one landscape page with inputs on the left, five numbered method stages in the center, and verifiable outputs on the right. Include the staged example `Batch N -> Batch N+1 -> 历史窗口合并`, the isolation key `tenant + agent/workload`, the endpoint Signal document identity `tenant + agent + signal`, and the traceability chain `结论 -> Evidence -> 原始事件`.
+Create one landscape page with inputs on the left, five numbered method stages in the center, and verifiable outputs on the right. Include the staged example `Batch N -> Batch N+1 -> 历史窗口合并`, the analysis boundary `tenant + case_type/scenario/workload`, the endpoint Signal document identity `tenant + agent + signal`, and the implemented relationship `Incident -> contributing Signals + Evidence`.
 
 - [ ] **Step 2: Mark method boundaries**
 
-Use solid shapes for scope isolation, history merge, relationship construction, candidate path generation, stable projection, and structured root-cause output. Put natural-language enhancement, candidate ranking, and analyst-feedback learning in one dashed area labeled `规划/验证中`; show that feedback cannot mutate raw events or existing evidence.
+Use solid shapes for scope isolation, history merge, Signal/entity aggregation, rule-based Signal composition, stable projection, and structured Incident output. Put temporal reasoning, candidate path ranking, attack-stage inference, natural-language enhancement, and analyst-feedback learning in one dashed area labeled `规划/验证中`; show that feedback cannot mutate raw events or existing evidence.
 
 - [ ] **Step 3: Create and validate the matching SVG**
 
@@ -95,7 +95,7 @@ Expected: exit code 0 with no output.
 
 - [ ] **Step 4: Add the Pitch reference and maintenance inventory**
 
-In section 5, add the `correlation-method.svg` image and explain that the method scopes by tenant and endpoint before merging current and historical data. Update `docs/business/diagrams/README.md` to list all five diagram pairs and state that Draw.io and SVG visible labels must be reviewed together.
+In section 5, add the `correlation-method.svg` image and explain that the method scopes by tenant and analysis labels (`case_type`, `scenario`, or `workload`) before merging current and historical data. State that complete raw-event traceability is planned rather than implemented. Update `docs/business/diagrams/README.md` to list all five diagram pairs and state that Draw.io and SVG visible labels must be reviewed together.
 
 - [ ] **Step 5: Run repository-level documentation checks**
 
