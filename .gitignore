@@ -1,5 +1,6 @@
 # scratchpad
 .scratchpad/
+.superpowers/
 
 # test results (large, regenerated)
 test/.results/
