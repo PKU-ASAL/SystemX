@@ -44,17 +44,21 @@ content:
 sensor:
   backend: fake
   mode: managed
-  policy_path: $TMP/policy.yaml
   observe_only: true
 
 telemetry:
-  batch_size: 1
+  max_batch_items: 1
   flush_interval: 100ms
 
-data_plane:
-  retry_initial: 50ms
-  retry_max: 100ms
-  request_timeout: 2s
+local:
+  state_path: $TMP/state
+  export:
+    retry_initial: 50ms
+    retry_max: 100ms
+    request_timeout: 2s
+
+policy:
+  path: $TMP/policy.yaml
 
 health:
   interval: 100ms

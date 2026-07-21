@@ -15,10 +15,12 @@ SYSARMOR_BENCH_WORKLOAD ?= business-normal
 SYSARMOR_BENCH_SCENARIO ?=
 SYSARMOR_BENCH_POLICIES ?=
 EVALUATION_SCOPE ?= local
+TETRAGON_ARCHIVE ?= $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(firstword $(wildcard ../.cache/tetragon-v1.7.0-amd64.tar.gz ../.scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz)))
+export SYSARMOR_TETRAGON_ARCHIVE := $(TETRAGON_ARCHIVE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
+.PHONY: doctor up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
 .PHONY: product-endpoint product-endpoint-standalone product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
 .PHONY: performance-endpoint performance-local-store performance-platform performance-modules performance-rule-engine performance-matcher
@@ -27,6 +29,52 @@ EVALUATION_SCOPE ?= local
 .PHONY: capture-endpoint capture-topology report effectiveness-report
 
 # Environment lifecycle -------------------------------------------------------
+
+doctor:
+	@failed=0; \
+	for tool in go docker vagrant virsh; do \
+		if command -v "$$tool" >/dev/null 2>&1; then \
+			echo "[doctor][OK] $$tool"; \
+		else \
+			echo "[doctor][ERROR] 缺少 $$tool" >&2; \
+			echo "  修复: 安装 $$tool 并确保它位于 PATH 中" >&2; \
+			failed=1; \
+		fi; \
+	done; \
+	if command -v vagrant >/dev/null 2>&1; then \
+		plugins="$$(vagrant plugin list 2>&1)" || { \
+			echo "[doctor][ERROR] 无法读取 Vagrant 插件: $$plugins" >&2; \
+			echo "  修复: 确保 VAGRANT_HOME 可写，或取消指向空目录的 VAGRANT_HOME" >&2; \
+			failed=1; \
+			plugins=""; \
+		}; \
+		if [ -z "$$plugins" ]; then :; \
+		elif echo "$$plugins" | grep -q 'vagrant-libvirt'; then \
+			echo "[doctor][OK] vagrant-libvirt"; \
+		else \
+			echo "[doctor][ERROR] 缺少 vagrant-libvirt provider" >&2; \
+			echo "  修复: 运行 vagrant plugin install vagrant-libvirt" >&2; \
+			failed=1; \
+		fi; \
+	fi; \
+	if ! command -v virsh >/dev/null 2>&1; then :; \
+	elif virsh -c "$${LIBVIRT_DEFAULT_URI:-qemu:///system}" list >/dev/null 2>&1; then \
+		echo "[doctor][OK] libvirt $${LIBVIRT_DEFAULT_URI:-qemu:///system}"; \
+	else \
+		echo "[doctor][ERROR] 无法连接 libvirt $${LIBVIRT_DEFAULT_URI:-qemu:///system}" >&2; \
+		echo "  修复: 启动 libvirtd，并确认当前用户属于 libvirt 组" >&2; \
+		failed=1; \
+	fi; \
+	if [ -n "$(TETRAGON_ARCHIVE)" ] && [ -f "$(TETRAGON_ARCHIVE)" ]; then \
+		echo "[doctor][OK] Tetragon archive: $(TETRAGON_ARCHIVE)"; \
+	else \
+		echo "[doctor][ERROR] 未找到 Tetragon archive" >&2; \
+		echo "  修复: 设置 SYSARMOR_TETRAGON_ARCHIVE=/path/to/tetragon-v1.7.0-amd64.tar.gz" >&2; \
+		echo "  或放置到 .cache/ 或 .scratchpad/.cache/ 目录" >&2; \
+		failed=1; \
+	fi; \
+	if [ "$$failed" -ne 0 ]; then exit 1; fi; \
+	echo "[doctor] all checks passed"
 
 up:
 	$(call require_env)
@@ -77,7 +125,7 @@ clean:
 test-unit:
 	cd .. && go test ./...
 
-product-endpoint:
+product-endpoint: doctor
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash suites/product/endpoint/e2e-real-tetragon-owned-vm.sh
 
 product-endpoint-standalone:
@@ -86,7 +134,7 @@ product-endpoint-standalone:
 product-endpoint-namespace-container:
 	bash suites/product/endpoint/e2e-namespace-self-container.sh
 
-product-topology:
+product-topology: doctor
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/product/topology/e2e-systemd-vm.sh
 
 product-platform:
@@ -110,15 +158,15 @@ test-all: test-unit product-endpoint product-topology product-platform
 
 # Capture ---------------------------------------------------------------------
 
-capture-endpoint:
+capture-endpoint: doctor
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
-capture-topology:
+capture-topology: doctor
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
 # Performance and effectiveness ----------------------------------------------
 
-performance-endpoint:
+performance-endpoint: doctor
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint SYSARMOR_BENCH_PROFILE=$(SYSARMOR_BENCH_PROFILE) SYSARMOR_BENCH_WORKLOAD=$(SYSARMOR_BENCH_WORKLOAD) SYSARMOR_BENCH_SCENARIO=$(SYSARMOR_BENCH_SCENARIO) SYSARMOR_BENCH_POLICIES="$(SYSARMOR_BENCH_POLICIES)" bash suites/performance/endpoint/run.sh
 
 performance-local-store:
@@ -161,6 +209,7 @@ report:
 
 help:
 	@echo "SysArmor test suites:"
+	@echo "  doctor           verify tools, libvirt provider, connection, and Tetragon archive"
 	@echo "  test-unit        local Go tests"
 	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
 	@echo "  product-endpoint-namespace-container container agent with namespace/self Tetragon scope"

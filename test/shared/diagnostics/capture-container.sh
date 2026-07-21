@@ -34,7 +34,7 @@ if [[ "$CAPTURE_MODE" == "managed" ]]; then
   TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
   TETRA_PATH="$(docker exec tetragon sh -c 'command -v tetra' | tr -d '\r' | tail -1)"
   docker exec tetragon sh -c "tetra tracingpolicy delete sysarmor-syscall-capture 2>/dev/null || true; tetra tracingpolicy delete sysarmor-runtime-collection 2>/dev/null || true"
-  docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p"
+  docker exec tetragon sh -c "rm -rf '$WORK'; mkdir -p '$WORK'"
   docker exec tetragon sh -c "cat > '$WORK/policy.yaml' <<'EOF'
 {"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
 EOF
@@ -54,7 +54,6 @@ sensor:
   backend: tetragon
   mode: managed
   tetra_path: $TETRA_PATH
-  policy_path: $WORK/policy.yaml
   scope:
     type: container
     selector: $NODE_A_DOCKER
@@ -64,13 +63,18 @@ sensor:
   restart_window: 1h
 
 telemetry:
-  batch_size: 256
+  max_batch_items: 256
   flush_interval: 200ms
 
-data_plane:
-  retry_initial: 100ms
-  retry_max: 500ms
-  request_timeout: 2s
+local:
+  state_path: $WORK/state
+  export:
+    retry_initial: 100ms
+    retry_max: 500ms
+    request_timeout: 2s
+
+policy:
+  path: $WORK/policy.yaml
 
 health:
   interval: 500ms
@@ -117,7 +121,7 @@ PY
     docker exec tetragon cat "$WORK/agent.log" >&2 2>/dev/null || true
     exit 1
   fi
-  echo "[capture-container] managed data_plane: events=$EVENTS endpoint=$ENDPOINT_SIGNALS cloud=$CLOUD_SIGNALS incidents=$INCIDENTS"
+  echo "[capture-container] managed export: events=$EVENTS endpoint=$ENDPOINT_SIGNALS cloud=$CLOUD_SIGNALS incidents=$INCIDENTS"
   exit 0
 fi
 

@@ -51,7 +51,7 @@ TETRAGON_BUNDLE_DIR="${TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon
 TETRAGON_INSTALL_DIR="${TETRAGON_INSTALL_DIR:-/opt/sysarmor/agent/sensors}"
 TETRA_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetra"
 TETRAGON_PATH="$TETRAGON_INSTALL_DIR/tetragon/current/bin/tetragon"
-AGENT_SOCK="/run/sysarmor/agent.sock"
+AGENT_SOCK="/run/sysarmor/agent/control.sock"
 
 vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo systemctl disable sysarmor-agent 2>/dev/null || true; sudo systemctl reset-failed sysarmor-agent 2>/dev/null || true; sudo systemctl stop tetragon 2>/dev/null || true; sudo systemctl disable tetragon 2>/dev/null || true; sudo pkill -x sysarmor-agent 2>/dev/null || true; sudo pkill -x tetragon 2>/dev/null || true; sudo pkill -x tetra 2>/dev/null || true" >/dev/null
 
@@ -104,7 +104,6 @@ sensor:
   mode: managed
   bundle_dir: $TETRAGON_BUNDLE_DIR
   install_dir: $TETRAGON_INSTALL_DIR
-  policy_path: /etc/sysarmor/policies/sysarmor-owned-tetragon.yaml
   scope:
     type: host
   observe_only: true
@@ -118,13 +117,18 @@ sensor:
   rb_queue_size: $TETRAGON_RB_QUEUE_SIZE
 
 telemetry:
-  batch_size: 256
+  max_batch_items: 256
   flush_interval: 200ms
 
-data_plane:
-  retry_initial: 100ms
-  retry_max: 500ms
-  request_timeout: 2s
+local:
+  state_path: /var/lib/sysarmor/agent/telemetry-owned-tetragon
+  export:
+    retry_initial: 100ms
+    retry_max: 500ms
+    request_timeout: 2s
+
+policy:
+  path: /etc/sysarmor/policies/sysarmor-owned-tetragon.yaml
 
 health:
   interval: 500ms

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-agent-tools build-binary install-agent uninstall-agent test test-opensearch-lifecycle up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-agent-tools build-binary install-agent uninstall-agent test test-help test-doctor test-unit test-performance test-opensearch-lifecycle up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -15,7 +15,12 @@ RELEASE_CHANNELS ?= dev-agent linux-systemd-dev linux-container-dev
 RELEASE_AGENT_BIN ?= $(BIN_DIR)/sysarmor-agent
 RELEASE_SIGNING_KEY ?= $(PKI_RUNTIME_DIR)/artifact-signing-key.pem
 RELEASE_PUBLIC_KEY ?= $(PKI_RUNTIME_DIR)/artifact-public.pem
-TETRAGON_ARCHIVE ?= $(firstword $(wildcard .cache/tetragon-v1.7.0-amd64.tar.gz .scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz))
+TETRAGON_ARCHIVE_CANDIDATE := $(firstword $(wildcard .cache/tetragon-v1.7.0-amd64.tar.gz .scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz))
+TETRAGON_ARCHIVE ?= $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(if $(TETRAGON_ARCHIVE_CANDIDATE),$(abspath $(TETRAGON_ARCHIVE_CANDIDATE))))
+PROFILE ?= quick
+WORKLOAD ?= business-normal
+SCENARIO ?=
+POLICIES ?=
 COMPOSE ?= docker compose
 PLATFORM_COMPOSE ?= deployments/compose.platform.yaml
 PKI_RUNTIME_DIR ?= deployments/pki/agent-plane-mtls/runtime
@@ -67,6 +72,23 @@ build-binary: build-agent-binary
 
 test:
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go test ./...
+
+test-help:
+	$(MAKE) -C test help
+
+test-doctor:
+	$(MAKE) -C test doctor SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+
+test-unit:
+	$(MAKE) -C test test-unit
+
+test-performance:
+	$(MAKE) -C test performance-endpoint \
+		SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)" \
+		SYSARMOR_BENCH_PROFILE=$(PROFILE) \
+		SYSARMOR_BENCH_WORKLOAD=$(WORKLOAD) \
+		SYSARMOR_BENCH_SCENARIO=$(SCENARIO) \
+		SYSARMOR_BENCH_POLICIES="$(POLICIES)"
 
 test-opensearch-lifecycle:
 	bash test/suites/product/platform/opensearch-alias-lifecycle.sh
@@ -183,4 +205,7 @@ help:
 	@echo "  WEB_DEV_FLAGS= make web-dev  use Next.js default dev bundler"
 	@echo ""
 	@echo "Test suites:"
-	@echo "  make -C test help"
+	@echo "  make test-help         show all test suite commands"
+	@echo "  make test-doctor       verify the complete test environment"
+	@echo "  make test-unit         run local Go tests"
+	@echo "  make test-performance PROFILE=medium WORKLOAD=business-normal SCENARIO=apt-fileless-c2-local POLICIES='test/data/policies/collection-balanced.json'"

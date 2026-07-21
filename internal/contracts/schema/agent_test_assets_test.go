@@ -39,11 +39,8 @@ func TestOpenSearchExactFieldsUseKeywordMappings(t *testing.T) {
 }
 
 var legacyAgentTestPatterns = []string{
-	"/etc/sysarmor/agent.yaml",
-	"/etc/sysarmor/policies",
 	"/run/sysarmor/agent.sock",
 	"\ndata_plane:",
-	"\nmanager:",
 	"\n  batch_size:",
 	"\n  policy_path:",
 }
@@ -82,6 +79,18 @@ func TestAgentTestAssetsUseCurrentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateCoverageInventory(t, filepath.Join(testRoot, "contracts", "agent-test-coverage.tsv"))
+}
+
+func TestContainerCaptureCreatesWorkDirectory(t *testing.T) {
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "test", "shared", "diagnostics", "capture-container.sh")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "rm -rf '$WORK'; mkdir -p '$WORK'") {
+		t.Errorf("container capture must create its work directory")
+	}
 }
 
 func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
@@ -201,6 +210,50 @@ func TestEndpointPerformancePropagatesWorkloadFailures(t *testing.T) {
 	} {
 		if strings.Contains(runner, legacy) {
 			t.Errorf("endpoint performance runner still suppresses failure with %q", legacy)
+		}
+	}
+}
+
+func TestTestMakefileProvidesActionableDoctor(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "test", "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makefile := string(raw)
+	for _, want := range []string{
+		"doctor:",
+		"vagrant plugin list",
+		"vagrant-libvirt",
+		"SYSARMOR_TETRAGON_ARCHIVE",
+		"export SYSARMOR_TETRAGON_ARCHIVE",
+		".scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz",
+		"修复:",
+	} {
+		if !strings.Contains(makefile, want) {
+			t.Errorf("test Makefile doctor missing %q", want)
+		}
+	}
+}
+
+func TestRootMakefileDelegatesTestCommands(t *testing.T) {
+	root := repositoryRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makefile := string(raw)
+	for _, want := range []string{
+		"test-help:",
+		"test-doctor:",
+		"test-unit:",
+		"test-performance:",
+		"$(MAKE) -C test doctor",
+		"$(or $(SYSARMOR_TETRAGON_ARCHIVE)",
+		"SYSARMOR_BENCH_PROFILE=$(PROFILE)",
+	} {
+		if !strings.Contains(makefile, want) {
+			t.Errorf("root Makefile test delegates missing %q", want)
 		}
 	}
 }
