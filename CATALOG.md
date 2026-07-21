@@ -47,9 +47,8 @@
 
 | 文档 | 职责 |
 |---|---|
-| `docs/business/sysarmor-overview.zh-CN.md` | 产品白皮书，引用正式架构文档 |
-| `docs/business/sysarmor-investor-pitch.zh-CN.md` | 投资叙事与尽调口径，技术事实引用正式文档 |
-| `docs/business/diagrams/README.md` | 商业图表源文件与交付图管理规则 |
+| `docs/business/sysarmor-project-proposal.zh-CN.md` | 面向政府与国有企业的主机安全技术研究及平台建设项目建议书 |
+| `docs/business/diagrams/README.md` | 项目建议书及既有商业图表的 Draw.io 源文件与 SVG 交付资产清单 |
 
 ## 事实来源
 
