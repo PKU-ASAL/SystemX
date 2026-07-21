@@ -1,0 +1,146 @@
+# 开发指南
+
+本文说明代码归属、构建入口和变更规则。测试方法独立维护在[测试指南](testing.md)。
+
+## 开发入口
+
+```bash
+make help
+make build-binary
+make test-unit
+```
+
+前端依赖统一使用 pnpm：
+
+```bash
+make web-install
+make web-build
+```
+
+后端为 Go，不在仓库中维护手工下载的生成代码或二进制；构建产物写入 `dist/`。
+
+## 仓库边界
+
+| 目录 | 负责内容 |
+|---|---|
+| `cmd/` | 薄可执行入口和依赖组装 |
+| `api/proto/` | Agent 数据面与控制面 wire contract |
+| `internal/agent/` | 配置、本地状态、注册、Policy 和 daemon 生命周期 |
+| `internal/endpoint/` | 事件规范化、匹配和端侧检测 |
+| `internal/sensors/` | Sensor contract 与平台适配器 |
+| `internal/gateway/` | Agent-facing mTLS gRPC |
+| `internal/workers/` | 持久遥测消费、分析和投影 |
+| `internal/manager/` | Operator API、鉴权和控制面流程 |
+| `internal/store/` | PostgreSQL 控制面持久化 |
+| `internal/platform/` | Kafka、Redis、OpenSearch adapter |
+| `deployments/` | 安装器、镜像、Compose、PKI 和运行配置 |
+| `web/manager/` | Manager Console 与认证 BFF |
+| `configs/` | Policy/rule 元数据示例，不自动加载 |
+| `test/` | Product、Effectiveness、Performance 验证 |
+
+边界规则：
+
+- `cmd/` 只组装服务，业务逻辑进入对应 `internal/` package。
+- Endpoint 不直接读取平台数据库；端云交互只经过已定义协议。
+- 浏览器调用同源 BFF，不直接调用 Manager。
+- protobuf 是 Agent wire contract 的事实来源。
+- test-only topology 留在 `test/`，正式运行资产留在 `deployments/`。
+- `configs/` 文件只有通过明确 loader/apply 路径后才具有运行效果。
+
+## 常用构建命令
+
+| 命令 | 结果 |
+|---|---|
+| `make api` | 从 `api/proto/*.proto` 生成 Go protobuf 和 gRPC 代码 |
+| `make build-agent-binary` | 构建 `dist/bin/sysarmor-agent` |
+| `make build-agent-tools` | 构建 Agent 和 `sysarmorctl` |
+| `make build-binary` | 构建 Agent、Gateway、Manager、Worker、CLI |
+| `make build SERVICE=manager` | 构建指定 Compose service image |
+| `make release` | 创建签名 Agent release 与 index |
+| `make deploy` | 构建二进制和镜像并启动本地平台 |
+| `make clean-bin` | 删除 `dist/bin` |
+
+`make build` 必须显式传 `SERVICE`。Package 服务使用 `nginx:alpine`，没有本地 image build。
+
+## 修改协议
+
+1. 先确定变化属于 `schema_version`、`analysis_version` 还是 OpenSearch mapping。
+2. 修改 `api/proto/`；不得复用字段编号或名称。
+3. 运行 `make api`，不要手工编辑 `*.pb.go`。
+4. 同步 producer、consumer、兼容性检查和契约测试。
+5. 按[API 参考](../reference/api.md)的 consumer-first 顺序规划发布。
+
+Manager HTTP 字段变化还必须同步 `internal/manager/api/` handler 测试与 `web/manager/lib/api/` typed client。页面组件不拼接 Manager URL 或授权 header。
+
+## 修改 Agent 配置
+
+Agent 配置解析器位于 `internal/agent/config/`，采用严格 key 校验。新增字段需要同时完成：
+
+1. 配置结构、默认值、解析和 Validate 规则。
+2. 正常值、边界值、未知值和冲突值测试。
+3. `deployments/agent/standalone.yaml` 或 `configs/agent.example.yaml` 示例。
+4. [配置参考](../reference/configuration.md)的字段说明。
+
+不要为尚无调用方的配置项预留抽象或开关。
+
+## Manager Console
+
+`web/manager` 是 Next.js + React 项目，包管理器为 pnpm。推荐从仓库根目录运行：
+
+```bash
+make web-install
+make auth-init
+make deploy
+make doctor
+```
+
+Compose 在 `http://127.0.0.1:4173` 提供 Console。前台热更新：
+
+```bash
+make web-dev
+```
+
+默认地址为 `http://127.0.0.1:5173`。生产构建和前台预览：
+
+```bash
+make web-build
+make web-preview
+```
+
+后台预览使用 `make web-up`、`make web-status`、`make web-stop`。开发服务器仍需要与 Compose 相同的 secret file 和 Manager origin 环境变量。
+
+## 部署资产
+
+| 路径 | 作用 |
+|---|---|
+| `deployments/agent/` | Agent installer、默认配置、Policy、systemd unit |
+| `deployments/packages/` | release builder |
+| `deployments/{gateway,manager,worker}/` | 服务镜像和环境示例 |
+| `deployments/manager-ui/` | Console image 和运行入口 |
+| `deployments/infra/` | Kafka、PostgreSQL、Redis、OpenSearch image |
+| `deployments/opensearch/` | versioned mapping 和 alias 初始化 |
+| `deployments/pki/` | 本地 PKI 工具和运行时材料目录 |
+| `deployments/sensors/` | managed sensor bundle installer |
+
+私钥、密码、运行结果和生成二进制不得提交。示例配置不得包含可用于非本地环境的真实密钥。
+
+## 提交前验证
+
+按改动范围选择最小但充分的验证：
+
+```bash
+make test-unit
+make web-build                 # UI 变更
+make test-doctor               # VM/真实链路测试前
+git diff --check
+```
+
+涉及协议、共享存储、Agent 生命周期或用户主流程时，应进一步运行对应 Product/Effectiveness/Performance suite。新增测试命令进入 `test/Makefile help`，测试方法进入 `docs/development/testing.md`，不要在 suite 子目录新增重复 README。
+
+## 代码与文档规则
+
+- 遵循现有风格、KISS、DRY、SOLID 和 YAGNI；单个函数超过 50 行或文件超过 500 行时评估拆分。
+- 对外部输入执行校验，错误显式返回，不静默降级。
+- 同一个契约只在 Reference 定义，Guide 通过链接引用。
+- 当前能力、实验能力和规划能力必须清楚区分。
+- Commit 使用 Conventional Commits，保持一个提交一个关注点；功能和修复分支从 `dev` 发起并通过 PR 合并。

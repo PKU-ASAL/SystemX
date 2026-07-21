@@ -1,138 +1,86 @@
 # SysArmor
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
-SysArmor 是一个面向 Linux 的端点安全与检测平台。它由默认独立运行的 Agent
-和可选的管理平面组成，可提供集中注册、遥测处理、调查与响应能力。
+SysArmor 是面向 Linux 的端点安全与关联分析系统。Agent 默认独立运行，在主机本地管理采集、检测和有界保存；接入管理平台后，系统增加集中策略、可靠上传、实体图关联、调查和响应编排能力。
 
-项目目前处于活跃开发阶段，适合开发、评估和测试；在稳定版本发布前，接口与
-部署流程仍可能调整。
+项目处于活跃开发阶段，适合开发、评估和测试；稳定版本发布前，接口与部署流程仍可能变化。
 
-## 核心能力
+## 设计原则
 
-- **独立端点运行：** Agent 无需依赖 Manager 即可在本地启动，并负责传感器
-  生命周期、数据采集、检测和有界本地存储。
-- **显式注册：** 端点仅在用户执行注册后连接管理平面，并使用与 tenant 和
-  Agent 绑定的 mTLS 身份。
-- **端点检测：** 事件在本地完成标准化和检测，signal 可通过 Agent 控制
-  socket 查询。
-- **集中分析：** Gateway、Worker 和 Manager 支持可靠接入、关联分析、
-  incident、evidence、policy 和 response 工作流。
-- **可复现验证：** 容器和虚拟机测试覆盖产品行为、检测效果，以及端侧和
-  平台性能。
+- **动态博弈：** collection、detection、telemetry、response 通过统一控制平面持续调整，为受约束的 Agentic 策略奠定基础。
+- **效能平衡：** Event、Signal、Evidence、Incident 分层保留安全信息，在行为粒度与 CPU、内存、磁盘、网络成本之间建立可测量边界。
+- **端云协同：** 端侧完成低延迟过滤和检测，云侧在 tenant、作用域和时间窗口约束下进行历史与实体图关联。
 
-## 架构
+完整定义、当前基础和目标能力边界见[设计原则](docs/design-principles.zh-CN.md)。
 
-```text
-Linux 主机
-  -> Agent 采集并分析主机行为
-  -> 事件和检测结果可在本地查询
-  -> 已注册端点将选定数据发送到管理平台
-  -> 安全人员通过 Web 界面查询和调查
+## 系统结构
+
+```mermaid
+flowchart LR
+  subgraph Endpoint["Linux 端点"]
+    Sensor["托管 Sensor"] --> Agent["SysArmor Agent"]
+    Agent --> Local["Event + Endpoint Signal<br/>有界本地状态"]
+  end
+
+  subgraph Platform["管理平台"]
+    Gateway["身份认证 Gateway"] --> Kafka
+    Kafka --> Worker
+    Worker --> Search["OpenSearch<br/>Event / Signal / Evidence / Incident"]
+    Search -->|"查询"| Manager["Manager API"]
+    Console["Web Console"] --> Manager
+    Manager --> ControlDB["PostgreSQL<br/>控制面状态"]
+    ControlDB -.->|"待下发控制"| Gateway
+  end
+
+  Agent -->|"DataBatch / mTLS"| Gateway
+  Gateway -->|"控制流"| Agent
 ```
 
-Agent 在 standalone 模式下即可独立使用。注册只增加集中上传和控制能力，
-不会在端点创建第二条数据通路。管理平台内部由 Gateway 接收 Agent 数据，
-Kafka 提供可靠传输，Worker 完成进一步分析，PostgreSQL 和 OpenSearch
-分别保存管理数据与安全数据。
-
-## 环境要求
-
-当前开发流程面向使用 systemd 的 x86_64 Linux 主机。
-
-- Go 1.26 或更高版本
-- `make`、`curl`，以及安装 Agent 所需的 root 权限
-- 本地平台需要 Docker、Docker Compose 和 `openssl`
-- 仅基于虚拟机的测试需要 KVM/libvirt 和 Vagrant
-
-使用 `make api` 重新生成 API binding 还需要将 `protoc`、
-`protoc-gen-go` 和 `protoc-gen-go-grpc` 放在 `PATH` 或
-`$(go env GOPATH)/bin` 下。
-
-部分构建和安装命令会下载 Go module、操作系统软件包或 Tetragon 传感器包。
+Agent 未注册或断网时仍可本地采集、检测和查询。注册只增加上传与控制能力，不会创建第二条端点数据路径。详见[系统架构](docs/architecture.md)。
 
 ## 快速开始
 
-### Standalone Agent
-
-构建并安装 Agent、CLI、默认 policy 和由 Agent 管理的 Tetragon bundle：
+在使用 systemd 的 x86_64 Linux 主机上：
 
 ```bash
 make install-agent
 sudo sysarmorctl agent health
+sudo sysarmorctl event watch --include-recent
+sudo sysarmorctl signal watch --include-recent
 ```
 
-Agent 将本地状态保存在 `/var/lib/sysarmor/agent`，并通过
-`/run/sysarmor/agent/control.sock` 提供控制 API。
+完整前置条件、验证步骤和下一步见[快速开始](docs/quickstart.md)。
 
-卸载程序但保留配置和本地数据：
+## 开发与测试
 
 ```bash
-make uninstall-agent
+make build-binary
+make test-unit
+make test-doctor
+make test-performance PROFILE=medium
+make test-help
 ```
 
-仅在确定需要同时删除配置和本地数据时，使用
-`make uninstall-agent PURGE=1`。
-
-### 本地平台
-
-构建二进制和 release package、初始化本地凭据并启动平台：
-
-```bash
-make deploy
-make status
-make doctor
-```
-
-使用 `make down` 停止平台。服务布局、注册、mTLS、配置和运维命令见
-[部署文档](deployments/README.md)。
-
-## 开发
-
-常用仓库命令：
-
-```bash
-make build-binary  # 构建 Agent、Gateway、Manager、Worker 和 sysarmorctl
-make test          # 运行 Go 测试
-make api           # 重新生成 protobuf binding
-make release       # 构建签名的 Agent release package 和索引
-```
-
-生成的二进制位于 `dist/bin/`，release artifact 位于 `dist/release/`。这两个
-目录均可重新生成，并已被 Git 忽略。
-
-运行产品、效果和性能测试：
-
-```bash
-make -C test help
-make -C test product-endpoint-standalone
-make -C test product-topology
-make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
-```
-
-虚拟机测试会创建本地特权基础设施，并可能下载较大的 artifact。运行前请先
-阅读测试文档。
+Product、Effectiveness 和 Performance 测试回答不同问题，不应互相替代。详见[测试指南](docs/development/testing.md)。
 
 ## 文档
 
-- [仓库结构](docs/architecture/repo-layout.md)
-- [Agent 运行时](docs/architecture/agent-runtime.md)
-- [平台运行时](docs/architecture/platform-runtime.md)
-- [部署与注册](deployments/README.md)
-- [测试指南](test/README.md)
-- [测试环境与报告细节](test/DETAILS.md)
-- [遥测语义](docs/architecture/telemetry-semantics.md)
-- [Schema 演进](docs/architecture/schema-evolution.md)
-- [Manager UI API 契约](docs/architecture/manager-ui-api-contract.md)
+- [文档首页](docs/index.md)
+- [设计原则](docs/design-principles.zh-CN.md)
+- [系统架构](docs/architecture.md)
+- [策略指南](docs/guides/policy.md)
+- [Agent 管理](docs/guides/agent-management.md)
+- [调查指南](docs/guides/investigation.md)
+- [部署指南](docs/operations/deployment.md)
+- [配置参考](docs/reference/configuration.md)
+- [API 参考](docs/reference/api.md)
+- [CLI 参考](docs/reference/cli.md)
+- [开发指南](docs/development/development.md)
+- [测试指南](docs/development/testing.md)
 
-`api/proto/` 下的 protobuf 定义是 wire contract 的事实来源。
-
-## 参与贡献
-
-项目目前尚未发布正式的贡献指南。开始较大改动前，请先与维护者协调范围，
-并保持改动聚焦、经过测试且有相应文档。
+完整文档职责和维护规则见 [CATALOG](CATALOG.md)。
 
 ## 许可证
 
-仓库目前尚未包含许可证文件。在正式发布许可证前，不应假定已获得任何开源
-许可证授权。
+SysArmor 使用[木兰宽松许可证，第 2 版](LICENSE)（`MulanPSL-2.0`）。第三方组件仍适用其各自的许可证。

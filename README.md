@@ -1,147 +1,86 @@
 # SysArmor
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
-SysArmor is an endpoint security and detection platform for Linux. It combines
-a standalone-first Agent with an optional management plane for centralized
-enrollment, telemetry processing, investigation, and response.
+SysArmor is an endpoint security and correlation system for Linux. The Agent runs standalone by default and owns local collection, detection, and bounded persistence. After enrollment, the management platform adds centralized policy, durable upload, entity-graph correlation, investigation, and response orchestration.
 
-The project is under active development. It is suitable for development,
-evaluation, and testing; interfaces and deployment procedures may change
-before a stable release.
+The project is under active development and is intended for development, evaluation, and testing. Interfaces and deployment procedures may change before a stable release.
 
-## Core Capabilities
+## Design Principles
 
-- **Standalone endpoint operation:** the Agent starts locally without a
-  Manager dependency and owns sensor lifecycle, collection, detection, and
-  bounded local storage.
-- **Explicit enrollment:** an endpoint connects to the management plane only
-  after enrollment, using tenant- and Agent-bound mTLS identity.
-- **Endpoint detection:** events are normalized and evaluated locally, with
-  signals available through the Agent control socket.
-- **Central analysis:** Gateway, Worker, and Manager services support durable
-  ingestion, correlation, incidents, evidence, policy, and response workflows.
-- **Reproducible validation:** container and VM suites cover product behavior,
-  detection effectiveness, and endpoint or platform performance.
+- **Dynamic defense:** one control plane adjusts collection, detection, telemetry, and response as the threat and environment change.
+- **Efficiency balance:** Event, Signal, Evidence, and Incident progressively retain security meaning under explicit CPU, memory, disk, and network budgets.
+- **Endpoint-cloud collaboration:** the endpoint performs low-latency filtering and detection; the platform correlates history and entity graphs within tenant, scope, and time boundaries.
+
+The canonical principles and current-versus-target boundaries are documented in [Design Principles](docs/design-principles.zh-CN.md).
 
 ## Architecture
 
-```text
-Linux host
-  -> Agent observes and analyzes host activity
-  -> Events and detections remain available locally
-  -> Enrolled endpoints send selected data to the management platform
-  -> Security operators investigate through the web console
+```mermaid
+flowchart LR
+  subgraph Endpoint["Linux endpoint"]
+    Sensor["Managed sensor"] --> Agent["SysArmor Agent"]
+    Agent --> Local["Event + Endpoint Signal<br/>Bounded local state"]
+  end
+
+  subgraph Platform["Management platform"]
+    Gateway["Authenticated Gateway"] --> Kafka
+    Kafka --> Worker
+    Worker --> Search["OpenSearch<br/>Event / Signal / Evidence / Incident"]
+    Search -->|"Queries"| Manager["Manager API"]
+    Console["Web Console"] --> Manager
+    Manager --> ControlDB["PostgreSQL<br/>Control-plane state"]
+    ControlDB -.->|"Pending control"| Gateway
+  end
+
+  Agent -->|"DataBatch / mTLS"| Gateway
+  Gateway -->|"Control stream"| Agent
 ```
 
-The Agent remains useful in standalone mode. Enrollment adds centralized
-upload and control without creating a second endpoint data path. Inside the
-management platform, Gateway receives Agent data, Kafka carries it reliably,
-Worker performs further analysis, and PostgreSQL and OpenSearch store
-management data and security data respectively.
+The Agent continues local collection, detection, and queries while unenrolled or disconnected. Enrollment adds upload and control without creating a second endpoint data path. See [System Architecture](docs/architecture.md).
 
-## Prerequisites
+## Quickstart
 
-The current development workflow targets systemd-based x86_64 Linux hosts.
-
-- Go 1.26 or newer
-- `make`, `curl`, and root access for Agent installation
-- Docker with Docker Compose and `openssl` for the local platform
-- KVM/libvirt and Vagrant only for VM-based test suites
-
-Regenerating API bindings with `make api` additionally requires `protoc`,
-`protoc-gen-go`, and `protoc-gen-go-grpc` on `PATH` or under
-`$(go env GOPATH)/bin`.
-
-Some build and installation commands download Go modules, OS packages, or the
-Tetragon sensor bundle.
-
-## Quick Start
-
-### Standalone Agent
-
-Build and install the Agent, CLI, default policy, and managed Tetragon bundle:
+On a systemd-based x86_64 Linux host:
 
 ```bash
 make install-agent
 sudo sysarmorctl agent health
+sudo sysarmorctl event watch --include-recent
+sudo sysarmorctl signal watch --include-recent
 ```
 
-The Agent stores local state under `/var/lib/sysarmor/agent` and exposes its
-control API at `/run/sysarmor/agent/control.sock`.
+See [Quickstart](docs/quickstart.md) for prerequisites, verification, and next steps.
 
-Remove the installation while retaining configuration and local data:
+## Development And Testing
 
 ```bash
-make uninstall-agent
+make build-binary
+make test-unit
+make test-doctor
+make test-performance PROFILE=medium
+make test-help
 ```
 
-Use `make uninstall-agent PURGE=1` only when configuration and local data
-should also be removed.
-
-### Local Platform
-
-Build the binaries and release package, initialize local credentials, and
-start the platform:
-
-```bash
-make deploy
-make status
-make doctor
-```
-
-Stop the platform with `make down`. See [deployment documentation](deployments/README.md)
-for service layout, enrollment, mTLS, configuration, and operational commands.
-
-## Development
-
-Common repository commands:
-
-```bash
-make build-binary  # build Agent, Gateway, Manager, Worker, and sysarmorctl
-make test          # run Go tests
-make api           # regenerate protobuf bindings
-make release       # build the signed Agent release package and index
-```
-
-The generated binaries are written to `dist/bin/`; release artifacts are
-written to `dist/release/`. Both directories are reproducible and ignored by
-Git.
-
-For product, effectiveness, and performance suites:
-
-```bash
-make -C test help
-make -C test product-endpoint-standalone
-make -C test product-topology
-make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
-```
-
-VM suites create privileged local infrastructure and may download large
-artifacts. Review the test documentation before running them.
+Product, Effectiveness, and Performance suites answer different questions and do not substitute for each other. See [Testing](docs/development/testing.md).
 
 ## Documentation
 
-- [Repository layout](docs/architecture/repo-layout.md)
-- [Agent runtime](docs/architecture/agent-runtime.md)
-- [Platform runtime](docs/architecture/platform-runtime.md)
-- [Deployment and enrollment](deployments/README.md)
-- [Test guide](test/README.md)
-- [Detailed test environments and reports](test/DETAILS.md)
-- [Telemetry semantics](docs/architecture/telemetry-semantics.md)
-- [Schema evolution](docs/architecture/schema-evolution.md)
-- [Manager UI API contract](docs/architecture/manager-ui-api-contract.md)
+- [Documentation home](docs/index.md)
+- [Design principles](docs/design-principles.zh-CN.md)
+- [System architecture](docs/architecture.md)
+- [Policy guide](docs/guides/policy.md)
+- [Agent management](docs/guides/agent-management.md)
+- [Investigation guide](docs/guides/investigation.md)
+- [Deployment](docs/operations/deployment.md)
+- [Configuration reference](docs/reference/configuration.md)
+- [API reference](docs/reference/api.md)
+- [CLI reference](docs/reference/cli.md)
+- [Development](docs/development/development.md)
+- [Testing](docs/development/testing.md)
 
-The protobuf definitions under `api/proto/` are the source of truth for wire
-contracts.
-
-## Contributing
-
-The project does not yet publish a formal contribution guide. Before starting
-a substantial change, coordinate the scope with the maintainers and keep
-changes focused, tested, and documented.
+See [CATALOG](CATALOG.md) for document ownership and maintenance rules.
 
 ## License
 
-This repository does not currently include a license file. No open-source
-license grant should be assumed until one is published.
+SysArmor is licensed under the [Mulan Permissive Software License, Version 2](LICENSE) (`MulanPSL-2.0`). Third-party components remain subject to their respective licenses.

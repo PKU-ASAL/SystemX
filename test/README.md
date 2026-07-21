@@ -1,50 +1,23 @@
-# SysArmor Tests
+# SysArmor 测试入口
 
-SysArmor separates three questions because one test cannot answer all of them:
+正式测试方法、环境说明和结果判定见
+[测试指南](../docs/development/testing.md)，测试数据契约见
+[数据说明](data/README.md)。
 
-| Suite | Question | Primary entrypoint |
-|---|---|---|
-| Product | Does the component or product path work? | `make -C test product-*` |
-| Effectiveness | Do malicious and benign scenarios produce the expected security results? | `make -C test effectiveness-topology` |
-| Performance | What does the endpoint or platform cost under a stated workload? | `make -C test performance-*` |
-
-`make -C test help` is the authoritative command list.
-
-## Environments
-
-| Environment | Shape | Use |
-|---|---|---|
-| `container` | Local Docker Compose | Fast platform contracts and container product paths |
-| `vm-endpoint` | One protected VM | Real Agent/sensor behavior and endpoint CPU/RSS |
-| `vm-topology` | `mgr`, `node-a`, `attacker` VMs | Distribution, enrollment, mTLS, end-to-end detection, and platform cost |
-
-VM tests require KVM/libvirt and Vagrant. They create privileged infrastructure
-and may download large images and sensor bundles.
-
-## Recommended Checks
+从仓库根目录开始：
 
 ```bash
-make test
-make -C test product-endpoint-standalone
-make -C test product-platform
-make -C test product-topology
-make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick
-make -C test effectiveness-topology
+make test-doctor
+make test-unit
+make test-performance PROFILE=medium \
+  WORKLOAD=business-normal \
+  SCENARIO=apt-fileless-c2-local \
+  POLICIES='test/data/policies/collection-balanced.json'
+make test-help
 ```
 
-Use `quick` only to verify benchmark wiring. Resource conclusions require a
-fresh, comparable `medium` or `long` run. Detection conclusions require the
-truth-labelled effectiveness suite; product smoke tests are not evidence of
-recall or precision.
+测试实现位于 `suites/`，运行环境位于 `environments/`，复用机制位于
+`shared/`，输入数据位于 `data/`。生成结果统一写入 `.results/`，不得提交。
 
-## Inputs And Outputs
-
-Reusable policies, workloads, and scenarios live under `test/data/`. Generated
-captures and reports live under `test/.results/` and are ignored by Git.
-
-Every reported result must identify its environment, policy, workload,
-scenario, duration, and run ID. Compare runs only when those inputs and VM
-lifecycle are equivalent.
-
-See [Test Details](DETAILS.md) for lifecycle, result files, phase semantics,
-and pass/fail boundaries.
+`quick` 只验证性能测试链路；资源结论使用可比的 `medium` 或 `long` 运行。
+Product 测试只证明产品链路可用，检测结论以 Effectiveness 测试为准。
