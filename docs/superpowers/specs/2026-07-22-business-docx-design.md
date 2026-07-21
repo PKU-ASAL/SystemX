@@ -91,7 +91,7 @@
 构建时将四张 SVG 转为高分辨率 PNG，再由 Pandoc 嵌入 DOCX：
 
 - 横向专题图：输出宽度 2400 px，在文档中显示宽度 15.4 cm；
-- 纵向总体图：输出宽度 2400 px，在文档中显示宽度 14 cm；
+- 纵向总体图：输出宽度 2400 px，在文档中显示宽度 12 cm；
 - 保持宽高比，不裁剪，不拉伸；
 - PNG 仅作为构建中间文件，不提交仓库；
 - SVG 与 Draw.io 继续作为正式源资产。
@@ -114,10 +114,10 @@ Markdown 中已有的五张核心表增加明确表题：现有方案能力边�
 
 新增 `tools/docs/build-business-docx.sh`，职责如下：
 
-1. 检查 `pandoc`、`python3`、`ffmpeg`、`zip`、`unzip` 和 `xmllint`；
+1. 检查 `pandoc`、`python3`、`ffmpeg`、`zip`、`unzip`、`xmllint`、LibreOffice 和 `python3-uno`；
 2. 创建临时工作目录和 `dist/docs/`；
 3. 将四张 SVG 转为 2400 px 宽 PNG；
-4. 从 Pandoc 默认模板生成临时中文公文式 reference DOCX；
+4. 使用仓库内已审查的中文公文式 reference DOCX；
 5. 使用 Lua 过滤器处理重复标题、前置部分分节、图片尺寸和图题样式；
 6. 使用 Markdown reader 编译，确保 YAML 元数据不进入正文；
 7. 验证输出 DOCX 的结构、页面、字体、图片和页码；
@@ -127,7 +127,7 @@ Markdown 中已有的五张核心表增加明确表题：现有方案能力边�
 
 ### OpenXML 模板生成器
 
-新增仅使用 Python 标准库的 `tools/docs/build_docx_reference.py`。它从 Pandoc 默认 reference DOCX 生成临时模板，结构化修改：
+新增仅使用 Python 标准库的 `tools/docs/business_docx.py`。它从 Pandoc 默认 reference DOCX 生成并维护仓库模板，结构化修改：
 
 - `word/styles.xml`：中文字体、字号、段落、目录、表格和题注样式；
 - `word/document.xml`：A4 页面、页边距、文档网格和正文页码起始值；
@@ -154,11 +154,12 @@ Markdown 中已有的五张核心表增加明确表题：现有方案能力边�
 必需依赖：
 
 - Pandoc 2.9 或更高版本；
-- Python 3，仅使用标准库；
+- Python 3；OpenXML 处理仅使用标准库；
 - FFmpeg，必须启用 SVG/librsvg 输入；
 - zip、unzip、xmllint。
+- LibreOffice Writer 和 `python3-uno`，用于生成并保存非空中文目录。
 
-LibreOffice 不是生成 DOCX 的必需依赖，只用于本地验收时将 DOCX 转为 PDF。成品以 Microsoft Word 和 WPS 的 DOCX 兼容性为优先目标。
+LibreOffice 是生成已填充中文目录的必需依赖，也用于本地验收时将 DOCX 转为 PDF。成品以 Microsoft Word 和 WPS 的 DOCX 兼容性为优先目标。
 
 ## 验收标准
 
@@ -172,7 +173,7 @@ LibreOffice 不是生成 DOCX 的必需依赖，只用于本地验收时将 DOCX
 6. 页脚 XML 包含动态 PAGE 域和两侧破折号。
 7. 文档正文不出现 YAML 键名、英文 `Table of Contents` 或重复项目名称标题。
 8. 文档包含“目　录”、四个连续图号和五个核心表号。
-9. 所有中间 PNG 和临时 reference DOCX 均不进入 Git。
+9. 所有中间 PNG、DOCX 和 PDF 均不进入 Git；已审查的 reference DOCX 作为构建输入提交。
 
 ### 视觉检查
 
