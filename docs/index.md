@@ -9,6 +9,7 @@ SysArmor 是面向 Linux 的端点安全与关联分析系统。Agent 可以独�
 | 运行第一个 Agent 并查看 Signal | [快速开始](quickstart.md) |
 | 理解系统为什么这样设计 | [设计原则](design-principles.zh-CN.md) |
 | 理解 Agent、平台和数据流 | [系统架构](architecture.md) |
+| 了解当前建设重点和退出标准 | [技术路线图](roadmap.md) |
 | 配置 collection、detection、telemetry、response | [策略指南](guides/policy.md) |
 | 安装、注册和管理 Agent | [Agent 管理](guides/agent-management.md) |
 | 调查 Event、Signal、Evidence 和 Incident | [调查指南](guides/investigation.md) |
@@ -27,6 +28,6 @@ SysArmor 是面向 Linux 的端点安全与关联分析系统。Agent 可以独�
 
 ## 文档边界
 
-公开技术文档描述可验证的当前事实和明确标注的目标能力。商业材料位于 `docs/business/`，不作为工程事实来源。文档的唯一职责、事实来源和维护规则见仓库根目录的 [CATALOG](../CATALOG.md)。
+公开技术文档描述可验证的当前事实和明确标注的目标能力。非公开材料不属于仓库事实来源。文档的唯一职责、事实来源和维护规则见仓库根目录的 [CATALOG](../CATALOG.md)。
 
 protobuf 是 wire contract 的事实来源；Makefile 和 CLI `--help` 是命令事实来源；Reference 文档解释稳定字段和使用边界。

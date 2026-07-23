@@ -19,6 +19,7 @@
 | 教程 | [快速开始](docs/quickstart.md) | 如何从零运行 Agent 并看到第一个 Signal？ |
 | 原理 | [设计原则](docs/design-principles.zh-CN.md) | 为什么采用动态博弈、效能平衡和端云协同？ |
 | 原理 | [系统架构](docs/architecture.md) | Agent、控制平面、数据平面和云侧分析如何协作？ |
+| 规划 | [技术路线图](docs/roadmap.md) | 当前优先解决什么问题，各阶段如何验收？ |
 | 指南 | [策略](docs/guides/policy.md) | 如何理解和调整四层统一策略？ |
 | 指南 | [Agent 管理](docs/guides/agent-management.md) | 如何安装、注册、管理和取消注册 Agent？ |
 | 指南 | [调查](docs/guides/investigation.md) | 如何从 Event、Signal 和 Evidence 调查 Incident？ |
@@ -41,20 +42,16 @@
 | `test/README.md` | 测试目录的最短入口，只链接正式测试指南 |
 | `test/data/README.md` | Policy、Workload、Scenario、Expected 和 Content 数据契约 |
 
-## 商业材料
+## 非公开材料
 
-商业材料不进入技术文档主导航，也不作为工程事实来源。
-
-| 文档 | 职责 |
-|---|---|
-| `docs/business/sysarmor-project-proposal.zh-CN.md` | 面向政府与国有企业的主机安全技术研究及平台建设项目建议书 |
-| `docs/business/diagrams/README.md` | 项目建议书及既有商业图表的 Draw.io 源文件与 SVG 交付资产清单 |
+商业材料、过程性设计和个人工作记录不进入仓库文档目录，也不作为工程事实来源。
 
 ## 事实来源
 
 | 主题 | 唯一事实来源 |
 |---|---|
 | 三项设计原则 | `docs/design-principles.zh-CN.md` |
+| 中长期建设重点与阶段退出标准 | `docs/roadmap.md` |
 | Event、Signal、Evidence、Incident | `docs/architecture.md` |
 | Agent 与平台运行边界 | `docs/architecture.md` |
 | 四层策略模型 | `docs/guides/policy.md` |
@@ -74,4 +71,5 @@
 - 新测试 fixture 格式进入 `test/data/README.md`。
 - 图表必须同时维护 `.drawio` 源文件和 `.svg` 交付图。
 - 性能数字和一次性测试输出留在 `.results/` 或发布材料，不写入长期指南。
+- 路线图状态只依据退出标准和可重复验证证据更新，不使用完成百分比。
 - 商业材料引用技术文档，不反向定义工程能力。
