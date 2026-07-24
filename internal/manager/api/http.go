@@ -49,6 +49,7 @@ type ManagerStore interface {
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
 	CreateEnrollment(store.Enrollment) store.Enrollment
+	CommitEnrollmentIssue(string, string, store.Enrollment, store.AgentCertificate) (store.Enrollment, store.EnrollmentIssueResult, error)
 	MarkEnrollmentUsed(string, time.Time) (store.Enrollment, bool)
 	RecordAgentCertificate(store.AgentCertificate) store.AgentCertificate
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
@@ -59,6 +60,8 @@ type ManagerStore interface {
 	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
 	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
 	GetEnrollmentByTokenHash(string) (store.Enrollment, bool)
+	GetEnrollmentByBootstrapTokenHash(string) (store.Enrollment, bool)
+	ConsumeEnrollmentBootstrap(string, string, string, time.Time) (store.Enrollment, bool, error)
 	GetArtifact(string, string) (store.Artifact, bool)
 	GetChannel(string, string) (store.ArtifactChannel, bool)
 	GetPolicy(string, string, uint64) (policymodel.Policy, bool)

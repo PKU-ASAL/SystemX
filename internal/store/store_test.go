@@ -13,6 +13,59 @@ import (
 	"time"
 )
 
+func TestCommitEnrollmentIssueIsBoundToOneKey(t *testing.T) {
+	st := &Store{}
+	created := st.CreateEnrollment(Enrollment{
+		EnrollmentID: "enr-a", TenantID: "default", AgentID: "agent-a",
+		TokenHash: "token-hash", GatewayAddr: "gateway:9444", Status: "active",
+	})
+	proposed := created
+	proposed.IssuedCertificatePEM = "certificate-a"
+	proposed.IssuedSerialNumber = "1"
+	proposed.IssuedAt = time.Now().UTC()
+
+	issued, result, err := st.CommitEnrollmentIssue("token-hash", "key-a", proposed, AgentCertificate{
+		TenantID: "default", AgentID: "agent-a", SerialNumber: "1",
+	})
+	if err != nil || result != EnrollmentIssued || issued.IssuedKeySHA256 != "key-a" {
+		t.Fatalf("first issue result=%q enrollment=%+v err=%v", result, issued, err)
+	}
+	replayed, result, err := st.CommitEnrollmentIssue("token-hash", "key-a", Enrollment{}, AgentCertificate{})
+	if err != nil || result != EnrollmentIssueReplay || replayed.IssuedSerialNumber != "1" {
+		t.Fatalf("replay result=%q enrollment=%+v err=%v", result, replayed, err)
+	}
+	if _, result, err = st.CommitEnrollmentIssue("token-hash", "key-b", Enrollment{}, AgentCertificate{}); err != nil || result != EnrollmentIssueConflict {
+		t.Fatalf("different key result=%q err=%v", result, err)
+	}
+}
+
+func TestConsumeEnrollmentBootstrapRotatesTokenOnce(t *testing.T) {
+	st := &Store{}
+	st.CreateEnrollment(Enrollment{
+		EnrollmentID:       "enr-bootstrap",
+		TenantID:           "default",
+		AgentID:            "agent-a",
+		TokenHash:          "old-enrollment-hash",
+		BootstrapTokenHash: "bootstrap-hash",
+		Status:             "active",
+		ExpiresAt:          time.Now().UTC().Add(time.Hour),
+	})
+	fetchedAt := time.Now().UTC()
+	consumed, ok, err := st.ConsumeEnrollmentBootstrap("bootstrap-hash", "new-enrollment-hash", "enr_...new", fetchedAt)
+	if err != nil || !ok {
+		t.Fatalf("first consume enrollment=%+v ok=%t err=%v", consumed, ok, err)
+	}
+	if consumed.TokenHash != "new-enrollment-hash" || !consumed.BootstrapFetchedAt.Equal(fetchedAt) {
+		t.Fatalf("consumed enrollment=%+v", consumed)
+	}
+	if _, ok := st.GetEnrollmentByTokenHash("old-enrollment-hash"); ok {
+		t.Fatal("old enrollment token remained valid")
+	}
+	if _, ok, err := st.ConsumeEnrollmentBootstrap("bootstrap-hash", "another-hash", "enr_...other", fetchedAt.Add(time.Second)); err != nil || ok {
+		t.Fatalf("second consume ok=%t err=%v", ok, err)
+	}
+}
+
 func TestListSignalsFiltersLabelsLayerAndTerminal(t *testing.T) {
 	st := &Store{}
 	st.AddSignal(&signalv1.Signal{

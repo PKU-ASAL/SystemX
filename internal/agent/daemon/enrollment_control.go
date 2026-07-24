@@ -14,33 +14,45 @@ func (s *localControlServer) Enroll(ctx context.Context, req *controlplanev1.Enr
 	if s.runner.localStore == nil {
 		return enrollmentAck(req.GetContext(), "rejected", "local store is unavailable", runtimeIdentity{}), nil
 	}
-	certificate, keyPEM, err := requestEnrollmentCertificate(ctx, req.GetManagerUrl(), req.GetEnrollmentToken(), req.GetTenantId(), req.GetAgentId())
+	certificate, keyPEM, pendingKeyPath, err := requestEnrollmentCertificate(
+		ctx, req.GetManagerUrl(), req.GetEnrollmentToken(), s.runner.Config.Local.StatePath,
+	)
 	if err != nil {
 		return enrollmentAck(req.GetContext(), "rejected", err.Error(), s.runner.currentIdentity()), nil
 	}
-	paths, err := writeEnrollmentCredentials(s.runner.Config.Local.StatePath, certificate, keyPEM)
+	paths, credentialsCreated, err := writeEnrollmentCredentials(s.runner.Config.Local.StatePath, certificate, keyPEM)
 	if err != nil {
 		return enrollmentAck(req.GetContext(), "rejected", fmt.Sprintf("write credentials: %v", err), s.runner.currentIdentity()), nil
 	}
 	stats, err := s.runner.localStore.Stats(ctx)
 	if err != nil {
-		removeCredentials(paths)
+		err = rollbackEnrollmentFailure(paths, credentialsCreated, err)
 		return enrollmentAck(req.GetContext(), "rejected", err.Error(), s.runner.currentIdentity()), nil
 	}
 	fromSequence := stats.LatestEventSequence + 1
 	if req.GetUploadHistory() {
 		fromSequence = stats.OldestEventSequence
 	}
-	enrollment := localstore.Enrollment{State: localstore.StateManaged, TenantID: req.GetTenantId(), AgentID: req.GetAgentId(), GatewayAddress: req.GetGatewayAddress(), TLSCAPath: paths.CA, TLSCertPath: paths.Certificate, TLSKeyPath: paths.Key, TLSServerName: req.GetGatewayServerName(), UploadHistory: req.GetUploadHistory(), ManagedFromSequence: fromSequence}
+	enrollment := localstore.Enrollment{State: localstore.StateManaged, TenantID: certificate.TenantID, AgentID: certificate.AgentID, GatewayAddress: certificate.GatewayAddress, TLSCAPath: paths.CA, TLSCertPath: paths.Certificate, TLSKeyPath: paths.Key, TLSServerName: certificate.GatewayServerName, UploadHistory: req.GetUploadHistory(), ManagedFromSequence: fromSequence}
 	if err := s.runner.localStore.SetManaged(ctx, enrollment); err != nil {
-		removeCredentials(paths)
+		err = rollbackEnrollmentFailure(paths, credentialsCreated, err)
 		return enrollmentAck(req.GetContext(), "rejected", err.Error(), s.runner.currentIdentity()), nil
 	}
 	s.runner.applyEnrollmentIdentity(enrollment)
 	if s.runner.network != nil {
 		s.runner.network.ApplyEnrollment(enrollment)
 	}
+	if err := os.Remove(pendingKeyPath); err != nil && !os.IsNotExist(err) && s.runner.Out != nil {
+		fmt.Fprintf(s.runner.Out, "remove pending enrollment key: %v\n", err)
+	}
 	return enrollmentAck(req.GetContext(), "applied", "agent enrolled", s.runner.currentIdentity()), nil
+}
+
+func rollbackEnrollmentFailure(paths credentialPaths, created bool, cause error) error {
+	if err := rollbackEnrollmentCredentials(paths, created); err != nil {
+		return fmt.Errorf("%w; rollback credentials: %v", cause, err)
+	}
+	return cause
 }
 
 func (s *localControlServer) Unenroll(ctx context.Context, req *controlplanev1.UnenrollRequest) (*controlplanev1.ControlAck, error) {

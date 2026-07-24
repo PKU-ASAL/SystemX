@@ -6,8 +6,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
-	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -23,74 +24,124 @@ import (
 const maxEnrollmentResponseBytes = 1 << 20
 
 type enrollmentCertificate struct {
-	TenantID       string `json:"tenant_id"`
-	AgentID        string `json:"agent_id"`
-	CertificatePEM string `json:"certificate_pem"`
-	CAPEM          string `json:"ca_pem"`
+	SchemaVersion     string `json:"schema_version"`
+	EnrollmentID      string `json:"enrollment_id"`
+	TenantID          string `json:"tenant_id"`
+	AgentID           string `json:"agent_id"`
+	GatewayAddress    string `json:"gateway_address"`
+	GatewayServerName string `json:"gateway_server_name"`
+	CertificatePEM    string `json:"certificate_pem"`
+	CAPEM             string `json:"ca_pem"`
 }
 
 type credentialPaths struct {
 	CA, Certificate, Key string
 }
 
-func requestEnrollmentCertificate(ctx context.Context, managerURL, token, tenantID, agentID string) (enrollmentCertificate, []byte, error) {
-	key, csr, keyPEM, err := createEnrollmentCSR(tenantID, agentID)
+func requestEnrollmentCertificate(ctx context.Context, managerURL, token, statePath string) (enrollmentCertificate, []byte, string, error) {
+	key, keyPEM, pendingPath, err := loadOrCreatePendingEnrollmentKey(statePath, token)
 	if err != nil {
-		return enrollmentCertificate{}, nil, err
+		return enrollmentCertificate{}, nil, "", err
+	}
+	csr, err := createEnrollmentCSR(key)
+	if err != nil {
+		return enrollmentCertificate{}, nil, "", err
 	}
 	endpoint, err := enrollmentEndpoint(managerURL)
 	if err != nil {
-		return enrollmentCertificate{}, nil, err
+		return enrollmentCertificate{}, nil, "", err
 	}
 	body, _ := json.Marshal(map[string]string{"token": token, "csr": string(csr)})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return enrollmentCertificate{}, nil, err
+		return enrollmentCertificate{}, nil, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return enrollmentCertificate{}, nil, fmt.Errorf("request enrollment certificate: %w", err)
+		return enrollmentCertificate{}, nil, "", fmt.Errorf("request enrollment certificate: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxEnrollmentResponseBytes+1))
 	if err != nil || len(raw) > maxEnrollmentResponseBytes {
-		return enrollmentCertificate{}, nil, fmt.Errorf("read enrollment response")
+		return enrollmentCertificate{}, nil, "", fmt.Errorf("read enrollment response")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return enrollmentCertificate{}, nil, fmt.Errorf("manager rejected enrollment: HTTP %d", resp.StatusCode)
+		return enrollmentCertificate{}, nil, "", fmt.Errorf("manager rejected enrollment: HTTP %d", resp.StatusCode)
 	}
 	var certificate enrollmentCertificate
 	if err := json.Unmarshal(raw, &certificate); err != nil {
-		return enrollmentCertificate{}, nil, fmt.Errorf("decode enrollment response: %w", err)
+		return enrollmentCertificate{}, nil, "", fmt.Errorf("decode enrollment response: %w", err)
 	}
-	if certificate.TenantID != tenantID || certificate.AgentID != agentID {
-		return enrollmentCertificate{}, nil, fmt.Errorf("enrollment identity mismatch")
+	if certificate.SchemaVersion != "sysarmor.enrollment/v2" || certificate.EnrollmentID == "" ||
+		certificate.TenantID == "" || certificate.AgentID == "" || certificate.GatewayAddress == "" {
+		return enrollmentCertificate{}, nil, "", fmt.Errorf("enrollment response is incomplete")
 	}
 	if err := validateEnrollmentCertificate(certificate, key); err != nil {
-		return enrollmentCertificate{}, nil, err
+		return enrollmentCertificate{}, nil, "", err
 	}
-	return certificate, keyPEM, nil
+	return certificate, keyPEM, pendingPath, nil
 }
 
-func createEnrollmentCSR(tenantID, agentID string) (*ecdsa.PrivateKey, []byte, []byte, error) {
-	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(agentID) == "" {
-		return nil, nil, nil, fmt.Errorf("tenant_id and agent_id are required")
+func createEnrollmentCSR(key *ecdsa.PrivateKey) ([]byte, error) {
+	if key == nil {
+		return nil, fmt.Errorf("enrollment private key is required")
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}), nil
+}
+
+func loadOrCreatePendingEnrollmentKey(statePath, token string) (*ecdsa.PrivateKey, []byte, string, error) {
+	if strings.TrimSpace(statePath) == "" || strings.TrimSpace(token) == "" {
+		return nil, nil, "", fmt.Errorf("state path and enrollment token are required")
+	}
+	dir := filepath.Join(statePath, "credentials", "pending")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, nil, "", err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, nil, "", err
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	path := filepath.Join(dir, hex.EncodeToString(sum[:])+".pem")
+	if data, err := os.ReadFile(path); err == nil {
+		key, parseErr := parseEnrollmentKey(data)
+		return key, data, path, parseErr
+	} else if !os.IsNotExist(err) {
+		return nil, nil, "", err
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-	cn := fmt.Sprintf("tenant_id:%s,agent_id:%s", tenantID, agentID)
-	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: cn}}, key)
-	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, "", err
 	}
-	return key, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), nil
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	if err := writeAtomicFile(path, keyPEM, 0o600); err != nil {
+		return nil, nil, "", err
+	}
+	return key, keyPEM, path, nil
+}
+
+func parseEnrollmentKey(data []byte) (*ecdsa.PrivateKey, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("pending enrollment key is invalid PEM")
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse pending enrollment key: %w", err)
+	}
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("pending enrollment key is not ECDSA")
+	}
+	return key, nil
 }
 
 func enrollmentEndpoint(base string) (string, error) {
@@ -135,23 +186,84 @@ func validateEnrollmentCertificate(response enrollmentCertificate, key *ecdsa.Pr
 	return nil
 }
 
-func writeEnrollmentCredentials(statePath string, certificate enrollmentCertificate, keyPEM []byte) (credentialPaths, error) {
-	dir := filepath.Join(statePath, "credentials")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return credentialPaths{}, err
+func writeEnrollmentCredentials(statePath string, certificate enrollmentCertificate, keyPEM []byte) (credentialPaths, bool, error) {
+	if certificate.EnrollmentID == "" || filepath.Base(certificate.EnrollmentID) != certificate.EnrollmentID {
+		return credentialPaths{}, false, fmt.Errorf("invalid enrollment id")
 	}
+	root := filepath.Join(statePath, "credentials")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return credentialPaths{}, false, err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		return credentialPaths{}, false, err
+	}
+	dir := filepath.Join(root, certificate.EnrollmentID)
 	paths := credentialPaths{CA: filepath.Join(dir, "ca.pem"), Certificate: filepath.Join(dir, "agent.pem"), Key: filepath.Join(dir, "agent-key.pem")}
+	if _, err := os.Stat(dir); err == nil {
+		if err := verifyCredentialDirectory(dir, paths, certificate, keyPEM); err != nil {
+			return credentialPaths{}, false, err
+		}
+		return paths, false, nil
+	} else if !os.IsNotExist(err) {
+		return credentialPaths{}, false, err
+	}
+	tmp, err := os.MkdirTemp(root, ".credentials-")
+	if err != nil {
+		return credentialPaths{}, false, err
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Chmod(tmp, 0o700); err != nil {
+		return credentialPaths{}, false, err
+	}
 	for _, file := range []struct {
+		name string
+		data []byte
+		mode os.FileMode
+	}{{"ca.pem", []byte(certificate.CAPEM), 0o644}, {"agent.pem", []byte(certificate.CertificatePEM), 0o644}, {"agent-key.pem", keyPEM, 0o600}} {
+		if err := writeAtomicFile(filepath.Join(tmp, file.name), file.data, file.mode); err != nil {
+			return credentialPaths{}, false, err
+		}
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		return credentialPaths{}, false, err
+	}
+	return paths, true, nil
+}
+
+func verifyCredentialDirectory(dir string, paths credentialPaths, certificate enrollmentCertificate, keyPEM []byte) error {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		return fmt.Errorf("existing credential directory is invalid")
+	}
+	for _, expected := range []struct {
 		path string
 		data []byte
 		mode os.FileMode
-	}{{paths.CA, []byte(certificate.CAPEM), 0o644}, {paths.Certificate, []byte(certificate.CertificatePEM), 0o644}, {paths.Key, keyPEM, 0o600}} {
-		if err := writeAtomicFile(file.path, file.data, file.mode); err != nil {
-			removeCredentials(paths)
-			return credentialPaths{}, err
+	}{
+		{paths.CA, []byte(certificate.CAPEM), 0o644},
+		{paths.Certificate, []byte(certificate.CertificatePEM), 0o644},
+		{paths.Key, keyPEM, 0o600},
+	} {
+		data, err := os.ReadFile(expected.path)
+		if err != nil || !bytes.Equal(data, expected.data) {
+			return fmt.Errorf("existing credential file %s does not match enrollment", filepath.Base(expected.path))
+		}
+		info, err := os.Stat(expected.path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != expected.mode {
+			return fmt.Errorf("existing credential file %s has invalid permissions", filepath.Base(expected.path))
 		}
 	}
-	return paths, nil
+	return nil
+}
+
+func rollbackEnrollmentCredentials(paths credentialPaths, created bool) error {
+	if !created {
+		return nil
+	}
+	if paths.Key == "" {
+		return fmt.Errorf("credential key path is empty")
+	}
+	return os.RemoveAll(filepath.Dir(paths.Key))
 }
 
 func writeAtomicFile(path string, data []byte, mode os.FileMode) error {

@@ -146,9 +146,9 @@ function mockDeployCommand(request: DeployAgentCommandRequest): DeployAgentComma
   return {
     enrollment_id: "enr-mock",
     token_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    install_command: `curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_mock' | ${shellRunner}`,
+    install_command: `curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?ticket=enr_mock' | ${shellRunner}`,
     entrypoint_command: entrypointCommand,
-    script_url: "http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_mock",
+    script_url: "http://127.0.0.1:19443/api/v1/agent-install.sh?ticket=enr_mock",
     artifact: {
       artifact_id: request.artifact_id,
       download_url: "/api/v1/artifacts/art-linux-amd64/download",

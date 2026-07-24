@@ -107,7 +107,7 @@ func TestUIDeployAgentCommandCreatesEnrollmentCommand(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.EnrollmentID == "" || !strings.Contains(body.InstallCommand, "/api/v1/agent-install.sh?token=") || body.ScriptURL == "" {
+	if body.EnrollmentID == "" || !strings.Contains(body.InstallCommand, "/api/v1/agent-install.sh?ticket=") || body.ScriptURL == "" {
 		t.Fatalf("deploy command missing command fields: %+v", body)
 	}
 	if body.Artifact.SHA256 != artifact.SHA256 || !strings.Contains(body.Artifact.DownloadURL, "/api/v1/artifacts/art-linux-amd64/download") {

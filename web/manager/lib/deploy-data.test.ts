@@ -56,8 +56,8 @@ describe("deploy data", () => {
       post: vi.fn(async () => ({
         enrollment_id: "enr-new",
         token_expires_at: "2026-07-10T07:00:00Z",
-        install_command: "curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_x' | sudo bash",
-        script_url: "http://127.0.0.1:19443/api/v1/agent-install.sh?token=enr_x",
+        install_command: "curl -fsSL 'http://127.0.0.1:19443/api/v1/agent-install.sh?ticket=enr_x' | sudo bash",
+        script_url: "http://127.0.0.1:19443/api/v1/agent-install.sh?ticket=enr_x",
         artifact: {
           artifact_id: "art-linux-amd64",
           download_url: "/api/v1/artifacts/art-linux-amd64/download",

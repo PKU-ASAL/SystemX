@@ -110,7 +110,7 @@ func usage() {
   sysarmorctl [--socket PATH] debug profile cpu --seconds 10 --output agent.cpu.pb.gz
   sysarmorctl [--socket PATH] event watch --include-recent --limit 10
   sysarmorctl [--socket PATH] signal watch --include-events --limit 10
-  sysarmorctl [--socket PATH] [--manager-url URL] enroll --token TOKEN --tenant TENANT --agent-id AGENT --gateway HOST:PORT [--gateway-server-name NAME] [--upload-history]
+  sysarmorctl [--socket PATH] enroll --manager-url URL (--token TOKEN | --token-file PATH) [--upload-history]
   sysarmorctl [--socket PATH] unenroll
 
   sysarmorctl [--manager-url URL] manager agents list
@@ -432,26 +432,6 @@ func queryLocalAgentWithManager(socketPath, managerURL string, args []string) ([
 	default:
 		return nil, fmt.Errorf("unsupported local agent command %q", strings.Join(args, " "))
 	}
-}
-
-func enrollLocalAgent(ctx context.Context, client controlplanev1.AgentControlPlaneServiceClient, reqCtx *controlplanev1.RequestContext, managerURL string, args []string) ([]byte, error) {
-	token := flagValue(args, "--token")
-	tenantID := flagValue(args, "--tenant")
-	agentID := flagValue(args, "--agent-id")
-	gateway := flagValue(args, "--gateway")
-	if token == "" || tenantID == "" || agentID == "" || gateway == "" {
-		return nil, fmt.Errorf("enroll requires --token, --tenant, --agent-id, and --gateway")
-	}
-	resp, err := client.Enroll(ctx, &controlplanev1.EnrollRequest{Context: reqCtx, ManagerUrl: managerURL,
-		EnrollmentToken: token, TenantId: tenantID, AgentId: agentID, GatewayAddress: gateway,
-		GatewayServerName: flagValue(args, "--gateway-server-name"), UploadHistory: hasFlag(args, "--upload-history")})
-	if err != nil {
-		return nil, err
-	}
-	if resp.GetStatus() != "applied" {
-		return nil, fmt.Errorf("enrollment rejected: %s", resp.GetMessage())
-	}
-	return marshalProtoJSON(resp)
 }
 
 func collectEventFrames(stream controlplanev1.AgentControlPlaneService_WatchEventsClient) ([]byte, error) {

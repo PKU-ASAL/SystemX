@@ -160,6 +160,76 @@ func (b *tableBackend) GetEnrollmentByTokenHash(ctx context.Context, tokenHash s
 	return queryEnrollmentByTokenHash(ctx, b.db, tokenHash)
 }
 
+func (b *tableBackend) GetEnrollmentByBootstrapTokenHash(ctx context.Context, tokenHash string) (store.Enrollment, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryEnrollmentByBootstrapTokenHash(ctx, b.db, tokenHash, false)
+}
+
+func (b *tableBackend) ConsumeEnrollmentBootstrap(ctx context.Context, bootstrapHash, enrollmentHash, enrollmentPreview string, fetchedAt time.Time) (store.Enrollment, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.Enrollment{}, false, err
+	}
+	defer tx.Rollback()
+	enrollment, ok, err := queryEnrollmentByBootstrapTokenHash(ctx, tx, bootstrapHash, true)
+	if err != nil || !ok {
+		return store.Enrollment{}, false, err
+	}
+	if enrollment.Status != "active" || !enrollment.BootstrapFetchedAt.IsZero() ||
+		(!enrollment.ExpiresAt.IsZero() && fetchedAt.After(enrollment.ExpiresAt)) {
+		return store.Enrollment{}, false, nil
+	}
+	enrollment.TokenHash = enrollmentHash
+	enrollment.TokenPreview = enrollmentPreview
+	enrollment.BootstrapFetchedAt = fetchedAt
+	if err := upsertEnrollment(ctx, tx, enrollment); err != nil {
+		return store.Enrollment{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return store.Enrollment{}, false, err
+	}
+	return enrollment, true, nil
+}
+
+func (b *tableBackend) CommitEnrollmentIssue(ctx context.Context, tokenHash, keyHash string, proposed store.Enrollment, cert store.AgentCertificate) (store.Enrollment, store.EnrollmentIssueResult, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.Enrollment{}, store.EnrollmentIssueMissing, err
+	}
+	defer tx.Rollback()
+	current, ok, err := queryEnrollmentByTokenHashForUpdate(ctx, tx, tokenHash)
+	if err != nil || !ok {
+		return store.Enrollment{}, store.EnrollmentIssueMissing, err
+	}
+	if current.Status == "issued" {
+		if current.IssuedKeySHA256 == keyHash {
+			return current, store.EnrollmentIssueReplay, tx.Commit()
+		}
+		return store.Enrollment{}, store.EnrollmentIssueConflict, nil
+	}
+	if current.Status != "active" || (!current.ExpiresAt.IsZero() && time.Now().UTC().After(current.ExpiresAt)) {
+		return store.Enrollment{}, store.EnrollmentIssueConflict, nil
+	}
+	proposed.TokenHash = current.TokenHash
+	proposed.Status = "issued"
+	proposed.IssuedKeySHA256 = keyHash
+	if err := upsertEnrollment(ctx, tx, proposed); err != nil {
+		return store.Enrollment{}, store.EnrollmentIssueMissing, err
+	}
+	if err := upsertAgentCertificate(ctx, tx, cert); err != nil {
+		return store.Enrollment{}, store.EnrollmentIssueMissing, err
+	}
+	if err := tx.Commit(); err != nil {
+		return store.Enrollment{}, store.EnrollmentIssueMissing, err
+	}
+	return proposed, store.EnrollmentIssued, nil
+}
+
 func (b *tableBackend) ListArtifacts(ctx context.Context, tenantID, kind, status string) ([]store.Artifact, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
@@ -807,6 +877,52 @@ LIMIT 1
 	var enrollment store.Enrollment
 	if err := json.Unmarshal(raw, &enrollment); err != nil {
 		return store.Enrollment{}, false, fmt.Errorf("decode postgres enrollment by token: %w", err)
+	}
+	return enrollment, true, nil
+}
+
+func queryEnrollmentByTokenHashForUpdate(ctx context.Context, db sqlExecutor, tokenHash string) (store.Enrollment, bool, error) {
+	row := db.QueryRowContext(ctx, `
+SELECT data FROM enrollments
+WHERE token_hash = $1
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE
+`, tokenHash)
+	var raw []byte
+	if err := row.Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return store.Enrollment{}, false, nil
+		}
+		return store.Enrollment{}, false, fmt.Errorf("lock postgres enrollment by token: %w", err)
+	}
+	var enrollment store.Enrollment
+	if err := json.Unmarshal(raw, &enrollment); err != nil {
+		return store.Enrollment{}, false, fmt.Errorf("decode locked postgres enrollment: %w", err)
+	}
+	return enrollment, true, nil
+}
+
+func queryEnrollmentByBootstrapTokenHash(ctx context.Context, db sqlExecutor, tokenHash string, forUpdate bool) (store.Enrollment, bool, error) {
+	query := `
+SELECT data FROM enrollments
+WHERE data->>'bootstrap_token_hash' = $1
+ORDER BY created_at DESC
+LIMIT 1`
+	if forUpdate {
+		query += " FOR UPDATE"
+	}
+	row := db.QueryRowContext(ctx, query, tokenHash)
+	var raw []byte
+	if err := row.Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return store.Enrollment{}, false, nil
+		}
+		return store.Enrollment{}, false, fmt.Errorf("query postgres enrollment by bootstrap token: %w", err)
+	}
+	var enrollment store.Enrollment
+	if err := json.Unmarshal(raw, &enrollment); err != nil {
+		return store.Enrollment{}, false, fmt.Errorf("decode postgres bootstrap enrollment: %w", err)
 	}
 	return enrollment, true, nil
 }

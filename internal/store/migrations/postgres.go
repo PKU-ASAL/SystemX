@@ -260,6 +260,7 @@ CREATE INDEX IF NOT EXISTS idx_policy_assignments_scope ON policy_assignments (t
 CREATE INDEX IF NOT EXISTS idx_policy_audit_policy ON policy_audit (tenant_id, policy_id);
 CREATE INDEX IF NOT EXISTS idx_policy_audit_actor ON policy_audit (tenant_id, actor);
 CREATE INDEX IF NOT EXISTS idx_enrollments_token_hash ON enrollments (token_hash);
+CREATE INDEX IF NOT EXISTS idx_enrollments_bootstrap_token_hash ON enrollments ((data->>'bootstrap_token_hash'));
 CREATE INDEX IF NOT EXISTS idx_enrollments_status ON enrollments (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_artifacts_lookup ON artifacts (tenant_id, artifact_kind, status);
 CREATE INDEX IF NOT EXISTS idx_artifacts_version ON artifacts (tenant_id, artifact_name, artifact_version);

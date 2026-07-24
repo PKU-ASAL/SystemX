@@ -101,25 +101,34 @@ type AgentSession struct {
 }
 
 type Enrollment struct {
-	EnrollmentID   string            `json:"enrollment_id"`
-	TenantID       string            `json:"tenant_id"`
-	AgentID        string            `json:"agent_id,omitempty"`
-	HostID         string            `json:"host_id,omitempty"`
-	TokenHash      string            `json:"token_hash,omitempty"`
-	TokenPreview   string            `json:"token_preview,omitempty"`
-	GatewayAddr    string            `json:"gateway_addr"`
-	GatewaySNI     string            `json:"gateway_sni,omitempty"`
-	Profile        string            `json:"profile,omitempty"`
-	Channel        string            `json:"channel,omitempty"`
-	ArtifactID     string            `json:"artifact_id,omitempty"`
-	ArtifactSHA256 string            `json:"artifact_sha256,omitempty"`
-	ArtifactURL    string            `json:"artifact_url,omitempty"`
-	Labels         map[string]string `json:"labels,omitempty"`
-	Status         string            `json:"status"`
-	CreatedAt      time.Time         `json:"created_at"`
-	ExpiresAt      time.Time         `json:"expires_at"`
-	CreatedBy      string            `json:"created_by,omitempty"`
-	UsedAt         time.Time         `json:"used_at,omitempty"`
+	EnrollmentID          string            `json:"enrollment_id"`
+	TenantID              string            `json:"tenant_id"`
+	AgentID               string            `json:"agent_id,omitempty"`
+	HostID                string            `json:"host_id,omitempty"`
+	TokenHash             string            `json:"token_hash,omitempty"`
+	TokenPreview          string            `json:"token_preview,omitempty"`
+	BootstrapTokenHash    string            `json:"bootstrap_token_hash,omitempty"`
+	BootstrapTokenPreview string            `json:"bootstrap_token_preview,omitempty"`
+	BootstrapFetchedAt    time.Time         `json:"bootstrap_fetched_at,omitempty"`
+	GatewayAddr           string            `json:"gateway_addr"`
+	GatewaySNI            string            `json:"gateway_sni,omitempty"`
+	Profile               string            `json:"profile,omitempty"`
+	Channel               string            `json:"channel,omitempty"`
+	ArtifactID            string            `json:"artifact_id,omitempty"`
+	ArtifactSHA256        string            `json:"artifact_sha256,omitempty"`
+	ArtifactURL           string            `json:"artifact_url,omitempty"`
+	Labels                map[string]string `json:"labels,omitempty"`
+	Status                string            `json:"status"`
+	CreatedAt             time.Time         `json:"created_at"`
+	ExpiresAt             time.Time         `json:"expires_at"`
+	CreatedBy             string            `json:"created_by,omitempty"`
+	UsedAt                time.Time         `json:"used_at,omitempty"`
+	IssuedKeySHA256       string            `json:"issued_key_sha256,omitempty"`
+	IssuedCertificatePEM  string            `json:"issued_certificate_pem,omitempty"`
+	IssuedCAPEM           string            `json:"issued_ca_pem,omitempty"`
+	IssuedSerialNumber    string            `json:"issued_serial_number,omitempty"`
+	IssuedNotAfter        time.Time         `json:"issued_not_after,omitempty"`
+	IssuedAt              time.Time         `json:"issued_at,omitempty"`
 }
 
 type ArtifactChannel struct {

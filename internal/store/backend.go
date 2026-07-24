@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
@@ -30,6 +31,9 @@ type Backend interface {
 	EffectivePolicy(ctx context.Context, tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error)
 	ListEnrollments(ctx context.Context, tenantID, status string) ([]Enrollment, error)
 	GetEnrollmentByTokenHash(ctx context.Context, tokenHash string) (Enrollment, bool, error)
+	GetEnrollmentByBootstrapTokenHash(ctx context.Context, tokenHash string) (Enrollment, bool, error)
+	ConsumeEnrollmentBootstrap(ctx context.Context, bootstrapHash, enrollmentHash, enrollmentPreview string, fetchedAt time.Time) (Enrollment, bool, error)
+	CommitEnrollmentIssue(ctx context.Context, tokenHash, keyHash string, proposed Enrollment, cert AgentCertificate) (Enrollment, EnrollmentIssueResult, error)
 	ListArtifacts(ctx context.Context, tenantID, kind, status string) ([]Artifact, error)
 	GetArtifact(ctx context.Context, tenantID, artifactID string) (Artifact, bool, error)
 	ListChannels(ctx context.Context, tenantID string) ([]ArtifactChannel, error)

@@ -219,9 +219,9 @@ ensure_manager_install_profile_support() {
   curl -sf -X POST "http://127.0.0.1:$MANAGER_PORT/api/v1/enrollments" \
     -H "Content-Type: application/json" \
     -d '{"tenant_id":"default","agent_id":"namespace-profile-probe","gateway_addr":"127.0.0.1:9444","artifact_url":"https://example.invalid/sysarmor-agent.tar.gz","profile":"linux-container","ttl":"5m"}' >"$probe_json"
-  local token
-  token="$(json_value "$probe_json" token)"
-  curl -sf "http://127.0.0.1:$MANAGER_PORT/api/v1/agent-install.sh?token=$token" >"$probe_script"
+  local install_url
+  install_url="$(json_value "$probe_json" install_url)"
+  curl -sf "$install_url" >"$probe_script"
   if ! grep -Fq 'SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-linux-container}"' "$probe_script" || grep -Fq 'python3' "$probe_script" || ! grep -Fq 'BEGIN PUBLIC KEY' "$probe_script" || ! grep -Fq '},[[:space:]]*{' "$probe_script"; then
     echo "[e2e-agent-namespace-self-container] running manager does not expose current linux-container installer; running make deploy"
     make -C "$REPO" deploy

@@ -40,10 +40,14 @@ printf '%s\n' "$@" >"${FAKE_CTL_ARGS:?}"
 SH
 chmod +x "$TMP/sysarmorctl"
 FAKE_CTL_ARGS="$TMP/ctl.args" sa_agent_enroll "$TMP/sysarmorctl" "$SOCKET" \
-  "https://manager.test" secret-token default agent-a gateway.test:9444 gateway.test
+  "https://manager.test" secret-token
 grep -Fxq -- "--socket" "$TMP/ctl.args"
 grep -Fxq -- "enroll" "$TMP/ctl.args"
 grep -Fxq -- "secret-token" "$TMP/ctl.args"
+if grep -Eq -- '--tenant|--agent-id|--gateway' "$TMP/ctl.args"; then
+  echo "legacy enrollment identity argument used" >&2
+  exit 1
+fi
 
 touch "$SOCKET"
 sa_agent_wait_ready socket test -e "$SOCKET"
