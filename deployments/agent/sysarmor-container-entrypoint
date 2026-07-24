@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENT_BIN="${SYSARMOR_AGENT_BIN:-/opt/sysarmor/agent/bin/sysarmor-agent}"
+CTL_BIN="${SYSARMOR_CTL_BIN:-/usr/local/bin/sysarmorctl}"
+CONFIG="${SYSARMOR_AGENT_CONFIG:-/etc/sysarmor/agent/agent.yaml}"
+SOCKET="${SYSARMOR_AGENT_SOCKET:-/run/sysarmor/agent/control.sock}"
+READY_TIMEOUT="${SYSARMOR_AGENT_READY_TIMEOUT:-60}"
+STOP_TIMEOUT="${SYSARMOR_STOP_TIMEOUT:-10}"
+AGENT_PID=""
+WORKLOAD_PID=""
+
+group_alive() {
+  [[ -n "$1" ]] && kill -0 -- "-$1" 2>/dev/null
+}
+
+signal_groups() {
+  local signal="$1"
+  shift
+  local pid
+  for pid in "$@"; do
+    [[ -n "$pid" ]] || continue
+    kill "-$signal" -- "-$pid" 2>/dev/null || true
+  done
+}
+
+stop_groups() {
+  local deadline=$((SECONDS + STOP_TIMEOUT))
+  local pid alive
+  signal_groups TERM "$@"
+  while true; do
+    alive=0
+    for pid in "$@"; do
+      group_alive "$pid" && alive=1
+    done
+    (( alive == 0 )) && break
+    (( SECONDS >= deadline )) && { signal_groups KILL "$@"; break; }
+    sleep 0.1
+  done
+  for pid in "$@"; do
+    [[ -z "$pid" ]] || wait "$pid" 2>/dev/null || true
+  done
+}
+
+stop_children() {
+  trap - TERM INT
+  stop_groups "$WORKLOAD_PID" "$AGENT_PID"
+}
+
+handle_term() {
+  local status="$1"
+  stop_children
+  exit "$status"
+}
+
+wait_for_agent() {
+  local deadline=$((SECONDS + READY_TIMEOUT))
+  until "$CTL_BIN" --socket "$SOCKET" --json agent health >/dev/null 2>&1; do
+    if ! kill -0 "$AGENT_PID" 2>/dev/null; then
+      wait "$AGENT_PID" || true
+      echo "[sysarmor-entrypoint][ERROR] Agent 在就绪前退出" >&2
+      return 1
+    fi
+    if (( SECONDS >= deadline )); then
+      echo "[sysarmor-entrypoint][ERROR] Agent 未在 ${READY_TIMEOUT} 秒内就绪" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
+[[ $# -gt 0 ]] || {
+  echo "[sysarmor-entrypoint][ERROR] 缺少容器业务命令" >&2
+  exit 2
+}
+[[ -x "$AGENT_BIN" ]] || {
+  echo "[sysarmor-entrypoint][ERROR] Agent 不可执行: $AGENT_BIN" >&2
+  exit 1
+}
+[[ "$STOP_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
+  echo "[sysarmor-entrypoint][ERROR] SYSARMOR_STOP_TIMEOUT 必须为正整数" >&2
+  exit 2
+}
+command -v setsid >/dev/null 2>&1 || {
+  echo "[sysarmor-entrypoint][ERROR] 缺少 setsid，请安装 util-linux" >&2
+  exit 1
+}
+
+trap 'handle_term 143' TERM
+trap 'handle_term 130' INT
+
+setsid "$AGENT_BIN" run --config "$CONFIG" &
+AGENT_PID=$!
+if ! wait_for_agent; then
+  stop_children
+  exit 1
+fi
+
+setsid "$@" &
+WORKLOAD_PID=$!
+set +e
+wait -n "$AGENT_PID" "$WORKLOAD_PID"
+FIRST_STATUS=$?
+set -e
+
+if ! kill -0 "$AGENT_PID" 2>/dev/null; then
+  stop_children
+  [[ "$FIRST_STATUS" -ne 0 ]] && exit "$FIRST_STATUS"
+  echo "[sysarmor-entrypoint][ERROR] Agent 意外退出" >&2
+  exit 1
+fi
+
+stop_groups "$AGENT_PID"
+wait "$WORKLOAD_PID" 2>/dev/null || true
+exit "$FIRST_STATUS"

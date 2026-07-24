@@ -32,6 +32,8 @@ SYSARMOR_TETRAGON_SHA256="$(sha256sum "$WORK/tetragon.tar.gz" | awk '{print $1}'
 mkdir -p "$WORK/release"
 tar -xzf "$archive" -C "$WORK/release"
 test -x "$WORK/release/install.sh"
+test -x "$WORK/release/container/sysarmor-container-entrypoint"
+test -f "$WORK/release/configs/standalone-container.yaml"
 grep -Fq 'Mulan Permissive Software License' "$WORK/release/LICENSE"
 
 install_env=(
@@ -52,6 +54,10 @@ test -x "$WORK/root/opt/sysarmor/agent/bin/sysarmor-agent"
 test -x "$WORK/root/usr/local/bin/sysarmorctl"
 test -x "$WORK/root/opt/sysarmor/agent/bundles/tetragon/bin/tetragon"
 grep -Fq 'state_path: /var/lib/sysarmor/agent' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+if grep -Eq '^[[:space:]]*(tetra_path|tetragon_path):' "$WORK/root/etc/sysarmor/agent/agent.yaml"; then
+  echo "[standalone-release-package][ERROR] host config points at the bundle before activation" >&2
+  exit 1
+fi
 
 printf 'preserved-config\n' >"$WORK/root/etc/sysarmor/agent/agent.yaml"
 printf 'preserved-policy\n' >"$WORK/root/etc/sysarmor/agent/policy.json"
@@ -60,6 +66,34 @@ grep -Fxq 'preserved-config' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 grep -Fxq 'preserved-policy' "$WORK/root/etc/sysarmor/agent/policy.json"
 
 echo "[standalone-release-package] ok"
+
+container_install_env=(
+  SYSARMOR_AGENT_HOME="$WORK/container-root/opt/sysarmor/agent"
+  SYSARMOR_CTL_DST="$WORK/container-root/usr/local/bin/sysarmorctl"
+  SYSARMOR_SERVICE_DST="$WORK/container-root/etc/systemd/system/sysarmor-agent.service"
+  SYSARMOR_CONFIG_DST="$WORK/container-root/etc/sysarmor/agent/agent.yaml"
+  SYSARMOR_POLICY_DST="$WORK/container-root/etc/sysarmor/agent/policy.json"
+  SYSARMOR_STATE_DIR="$WORK/container-root/var/lib/sysarmor/agent"
+  SYSARMOR_RUNTIME_DIR="$WORK/container-root/run/sysarmor/agent"
+  SYSARMOR_TETRAGON_BUNDLE_DIR="$WORK/container-root/opt/sysarmor/agent/bundles/tetragon"
+  SYSARMOR_TETRAGON_INSTALL_DIR="$WORK/container-root/opt/sysarmor/agent/sensors"
+  SYSARMOR_CONTAINER_ENTRYPOINT_DST="$WORK/container-root/usr/local/bin/sysarmor-container-entrypoint"
+)
+env "${container_install_env[@]}" "$WORK/release/install.sh" --profile linux-container >/dev/null
+test -x "$WORK/container-root/usr/local/bin/sysarmor-container-entrypoint"
+grep -Fq 'type: namespace' "$WORK/container-root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'selector: self' "$WORK/container-root/etc/sysarmor/agent/agent.yaml"
+if grep -Eq '^[[:space:]]*(tetra_path|tetragon_path):' "$WORK/container-root/etc/sysarmor/agent/agent.yaml"; then
+  echo "[standalone-release-package][ERROR] container config points at the bundle before activation" >&2
+  exit 1
+fi
+test ! -e "$WORK/container-root/etc/systemd/system/sysarmor-agent.service"
+if env "${container_install_env[@]}" "$WORK/release/install.sh" --profile unsupported >/dev/null 2>&1; then
+  echo "[standalone-release-package][ERROR] unsupported install profile was accepted" >&2
+  exit 1
+fi
+
+echo "[standalone-release-package] linux-container profile ok"
 
 thin_archive="$WORK/sysarmor-agent-linux-amd64-thin.tar.gz"
 "$REPO/deployments/agent/package-agent.sh" \
@@ -89,5 +123,25 @@ if SYSARMOR_TETRAGON_URL="file://$WORK/tetragon.tar.gz" \
   exit 1
 fi
 grep -Fxq keep "$WORK/root/opt/sysarmor/agent/bundles/tetragon/existing-marker"
+
+thin_container_env=(
+  SYSARMOR_AGENT_HOME="$WORK/thin-container-root/opt/sysarmor/agent"
+  SYSARMOR_CTL_DST="$WORK/thin-container-root/usr/local/bin/sysarmorctl"
+  SYSARMOR_SERVICE_DST="$WORK/thin-container-root/etc/systemd/system/sysarmor-agent.service"
+  SYSARMOR_CONFIG_DST="$WORK/thin-container-root/etc/sysarmor/agent/agent.yaml"
+  SYSARMOR_POLICY_DST="$WORK/thin-container-root/etc/sysarmor/agent/policy.json"
+  SYSARMOR_STATE_DIR="$WORK/thin-container-root/var/lib/sysarmor/agent"
+  SYSARMOR_RUNTIME_DIR="$WORK/thin-container-root/run/sysarmor/agent"
+  SYSARMOR_TETRAGON_BUNDLE_DIR="$WORK/thin-container-root/opt/sysarmor/agent/bundles/tetragon"
+  SYSARMOR_TETRAGON_INSTALL_DIR="$WORK/thin-container-root/opt/sysarmor/agent/sensors"
+  SYSARMOR_CONTAINER_ENTRYPOINT_DST="$WORK/thin-container-root/usr/local/bin/sysarmor-container-entrypoint"
+)
+SYSARMOR_TETRAGON_URL="file://$WORK/tetragon.tar.gz" \
+SYSARMOR_TETRAGON_SHA256="$(sha256sum "$WORK/tetragon.tar.gz" | awk '{print $1}')" \
+SYSARMOR_TETRAGON_ARCHIVE= \
+  env "${thin_container_env[@]}" "$WORK/thin-release/install.sh" --profile linux-container >/dev/null
+test -x "$WORK/thin-container-root/opt/sysarmor/agent/bundles/tetragon/bin/tetragon"
+grep -Fq 'type: namespace' "$WORK/thin-container-root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'selector: self' "$WORK/thin-container-root/etc/sysarmor/agent/agent.yaml"
 
 echo "[standalone-release-package] thin package ok"

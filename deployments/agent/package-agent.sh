@@ -76,9 +76,10 @@ require_file "$SIGNING_KEY"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 ROOT="$WORK/root"
-mkdir -p "$ROOT/bin" "$ROOT/systemd" "$ROOT/configs" "$ROOT/policies" "$ROOT/sensors/tetragon"
+mkdir -p "$ROOT/bin" "$ROOT/container" "$ROOT/systemd" "$ROOT/configs" "$ROOT/policies" "$ROOT/sensors/tetragon"
 install -m 0755 "$AGENT_BIN" "$ROOT/bin/sysarmor-agent"
 install -m 0755 "$CTL_BIN" "$ROOT/bin/sysarmorctl"
+install -m 0755 "$HERE/sysarmor-container-entrypoint" "$ROOT/container/sysarmor-container-entrypoint"
 install -m 0644 "$SERVICE_FILE" "$ROOT/systemd/sysarmor-agent.service"
 install -m 0755 "$INSTALLER_FILE" "$ROOT/install.sh"
 install -m 0644 "$REPO/LICENSE" "$ROOT/LICENSE"
@@ -86,6 +87,7 @@ if [[ -f "$REPO/configs/agent.example.yaml" ]]; then
   install -m 0644 "$REPO/configs/agent.example.yaml" "$ROOT/configs/agent.example.yaml"
 fi
 install -m 0644 "$HERE/standalone.yaml" "$ROOT/configs/standalone.yaml"
+install -m 0644 "$HERE/standalone-container.yaml" "$ROOT/configs/standalone-container.yaml"
 install -m 0644 "$HERE/policy.json" "$ROOT/policies/policy.json"
 
 if [[ "$TETRAGON_MODE" == "bundled" ]]; then
@@ -142,8 +144,10 @@ $(file_json "LICENSE" "0644"),
 $(file_json "install.sh" "0755"),
 $(file_json "bin/sysarmor-agent" "0755"),
 $(file_json "bin/sysarmorctl" "0755"),
+$(file_json "container/sysarmor-container-entrypoint" "0755"),
 $(file_json "systemd/sysarmor-agent.service" "0644"),
 $(file_json "configs/standalone.yaml" "0644"),
+$(file_json "configs/standalone-container.yaml" "0644"),
 $(file_json "policies/policy.json" "0644"),
 $sensor_files
   ]

@@ -21,7 +21,8 @@ sensor:
   bundle_dir: /opt/sysarmor/agent/bundles/tetragon
   install_dir: /opt/sysarmor/agent/sensors
   scope:
-    type: host
+    type: namespace
+    selector: self
   observe_only: true
   restart: always
   max_restarts: 5
