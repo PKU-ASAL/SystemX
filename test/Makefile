@@ -22,7 +22,7 @@ export SYSARMOR_TETRAGON_ARCHIVE := $(TETRAGON_ARCHIVE)
 
 .PHONY: doctor up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
 .PHONY: test-unit test-all
-.PHONY: product-endpoint product-endpoint-standalone product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
+.PHONY: product-endpoint product-endpoint-standalone product-endpoint-release-container product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
 .PHONY: performance-endpoint performance-local-store performance-platform performance-modules performance-rule-engine performance-matcher
 .PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
@@ -131,8 +131,13 @@ product-endpoint: doctor
 product-endpoint-standalone:
 	bash suites/product/endpoint/standalone-local-store.sh
 	bash suites/product/endpoint/standalone-release-package.sh
+	bash suites/product/endpoint/container-entrypoint.sh
 	bash suites/product/endpoint/standalone-github-assets.sh
 	bash suites/product/endpoint/dev-prerelease-workflow.sh
+	bash release/test-contract.sh
+
+product-endpoint-release-container:
+	$(MAKE) -C release test
 
 product-endpoint-namespace-container:
 	bash suites/product/endpoint/e2e-namespace-self-container.sh
@@ -216,6 +221,7 @@ help:
 	@echo "  test-unit        local Go tests"
 	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
 	@echo "  product-endpoint-standalone local state and standalone release package contracts"
+	@echo "  product-endpoint-release-container public release install and namespace/self container matrix"
 	@echo "  product-endpoint-namespace-container container agent with namespace/self Tetragon scope"
 	@echo "  product-topology multi-VM manager artifact/enrollment install path"
 	@echo "  product-platform local platform contracts/smoke"
