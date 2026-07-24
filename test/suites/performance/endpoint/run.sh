@@ -259,6 +259,19 @@ recorder() {
     bash "$ROOT/shared/recorder/recorder-vm.sh" "$@"
 }
 
+ACTIVE_REC_RUN_ID=""
+ACTIVE_REC_LABELS=""
+cleanup_active_recorder() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$ACTIVE_REC_RUN_ID" ]]; then
+    echo "[performance-endpoint][WARN] stopping recorder after early exit: $ACTIVE_REC_RUN_ID" >&2
+    recorder "$ACTIVE_REC_RUN_ID" "$ACTIVE_REC_LABELS" stop >/dev/null 2>&1 || true
+  fi
+  exit "$status"
+}
+trap cleanup_active_recorder EXIT
+
 mark() {
   local rec_run_id="$1"
   local phase="$2"
@@ -501,6 +514,7 @@ set_runtime_feature_flags "$MATCHER_STRATEGY"
 
 echo "[performance-endpoint] uploading content packs and policies"
 vagrant upload "$REPO/$CONTENT_DIR" /tmp/sysarmor-bench-content node-a >/dev/null
+vagrant upload "$REPO/deployments/agent/policy.json" /tmp/sysarmor-bench-baseline.policy node-a >/dev/null
 if [[ "$APPLY_DETECTION" == "1" && ! -f "$REPO/$DETECTION_POLICY" ]]; then
   echo "[performance-endpoint][ERROR] detection policy not found: $DETECTION_POLICY" >&2
   exit 1
@@ -509,19 +523,53 @@ if [[ "$APPLY_DETECTION" == "1" ]]; then
   vagrant upload "$REPO/$DETECTION_POLICY" /tmp/sysarmor-bench-detection.policy node-a >/dev/null
 fi
 
-apply_content_and_detection() {
+apply_content() {
   local policy_out="$1"
+  local content_name
   for content in "$REPO/$CONTENT_DIR"/*.json; do
-    name="$(basename "$content")"
-    vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
-      > "$policy_out/content.$name.apply.json" \
-      2>"$policy_out/content.$name.apply.err" || {
-        echo "[performance-endpoint][ERROR] content apply failed: $name" >&2
-        cat "$policy_out/content.$name.apply.err" >&2 2>/dev/null || true
+    content_name="$(basename "$content")"
+    vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-bench-content/$content_name' --allow-unsigned --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
+      > "$policy_out/content.$content_name.apply.json" \
+      2>"$policy_out/content.$content_name.apply.err" || {
+        echo "[performance-endpoint][ERROR] content apply failed: $content_name" >&2
+        cat "$policy_out/content.$content_name.apply.err" >&2 2>/dev/null || true
         exit 1
       }
   done
+}
 
+reset_endpoint_policy() {
+  local policy_out="$1"
+  echo "[performance-endpoint] restoring baseline endpoint policy"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply --file /tmp/sysarmor-bench-baseline.policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
+    > "$policy_out/baseline-apply.json" \
+    2>"$policy_out/baseline-apply.err" || {
+      echo "[performance-endpoint][ERROR] baseline endpoint policy apply failed" >&2
+      cat "$policy_out/baseline-apply.err" >&2 2>/dev/null || true
+      exit 1
+    }
+  if ! jq -e '.status == "applied" or .status == "degraded"' "$policy_out/baseline-apply.json" >/dev/null; then
+    echo "[performance-endpoint][ERROR] baseline endpoint policy was rejected" >&2
+    cat "$policy_out/baseline-apply.json" >&2 2>/dev/null || true
+    exit 1
+  fi
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy current" \
+    > "$policy_out/baseline-current.json" \
+    2>"$policy_out/baseline-current.err" || {
+      echo "[performance-endpoint][ERROR] failed to read current baseline endpoint policy" >&2
+      cat "$policy_out/baseline-current.err" >&2 2>/dev/null || true
+      exit 1
+    }
+  if ! jq -e '.policyId == "standalone-default" and (.version | tostring) == "1"' "$policy_out/baseline-current.json" >/dev/null; then
+    echo "[performance-endpoint][ERROR] current endpoint policy does not match the baseline" >&2
+    cat "$policy_out/baseline-current.json" >&2 2>/dev/null || true
+    exit 1
+  fi
+  sleep "$POLICY_SETTLE_SECONDS"
+}
+
+apply_detection() {
+  local policy_out="$1"
   if [[ "$APPLY_DETECTION" == "1" ]]; then
     echo "[performance-endpoint] applying detection policy: $DETECTION_POLICY"
     vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply --type detection --file /tmp/sysarmor-bench-detection.policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
@@ -531,8 +579,8 @@ apply_content_and_detection() {
         cat "$policy_out/detection-apply.err" >&2 2>/dev/null || true
         exit 1
       }
-    if grep -Fq '"status":"rejected"' "$policy_out/detection-apply.json"; then
-      echo "[performance-endpoint][ERROR] detection policy rejected: $DETECTION_POLICY" >&2
+    if ! jq -e '.status == "applied"' "$policy_out/detection-apply.json" >/dev/null; then
+      echo "[performance-endpoint][ERROR] detection policy was not fully applied: $DETECTION_POLICY" >&2
       cat "$policy_out/detection-apply.json" >&2 2>/dev/null || true
       exit 1
     fi
@@ -580,6 +628,7 @@ for policy in $POLICIES_RAW; do
   "recorder_run_id": "$rec_run_id",
   "policy_profile": "$name",
   "policy_file": "$policy",
+  "baseline_policy_file": "deployments/agent/policy.json",
   "workload": "$case_workload",
   "scenario": "$case_scenario",
   "variant": "$VARIANT",
@@ -653,8 +702,11 @@ EOF
 
   echo "[performance-endpoint] recording policy=$name workload=${case_workload:-none} scenario=${case_scenario:-none}"
   set_agent_labels "$RUN_ID" "$name" "$case_workload" "$case_scenario"
-  apply_content_and_detection "$policy_out"
+  reset_endpoint_policy "$policy_out"
+  apply_content "$policy_out"
   SYSARMOR_RECORDER_DURATION="$RECORDER_DURATION_SECONDS" recorder "$rec_run_id" "$rec_labels" start
+  ACTIVE_REC_RUN_ID="$rec_run_id"
+  ACTIVE_REC_LABELS="$rec_labels"
   if (( HOST_BASELINE_SECONDS > 0 )); then
     mark "$rec_run_id" host_baseline_start "$name"
     sleep "$HOST_BASELINE_SECONDS"
@@ -687,6 +739,7 @@ EOF
   echo "[performance-endpoint] waiting ${POLICY_SETTLE_SECONDS}s for sensor BPF reload"
   sleep "$POLICY_SETTLE_SECONDS"
   finish_agent_profile_window "$policy_out" policy_apply "$rec_run_id"
+  apply_detection "$policy_out"
 
   mark "$rec_run_id" settle_start "$name"
   sleep "$SETTLE_SECONDS"
@@ -702,6 +755,8 @@ EOF
   mark "$rec_run_id" cooldown_done "$name"
 
   recorder "$rec_run_id" "$rec_labels" stop
+  ACTIVE_REC_RUN_ID=""
+  ACTIVE_REC_LABELS=""
   recorder "$rec_run_id" "$rec_labels" report
 
   cp "$rec_dir/timeline.csv" "$policy_out/timeline.csv"

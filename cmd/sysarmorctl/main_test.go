@@ -66,15 +66,49 @@ func TestLocalEnrollmentCommandsUseAgentSocket(t *testing.T) {
 	go server.Serve(lis)
 	defer server.Stop()
 
-	args := []string{"enroll", "--token", "secret", "--tenant", "default", "--agent-id", "agent-a", "--gateway", "gateway:9444", "--upload-history"}
-	if _, err := queryLocalAgentWithManager(socketPath, "https://manager.example", args); err != nil {
+	args := []string{"enroll", "--manager-url", "https://manager.example", "--token", "secret", "--upload-history"}
+	if _, err := queryLocalAgentWithManager(socketPath, "", args); err != nil {
 		t.Fatal(err)
 	}
 	if fake.enrollReq.GetManagerUrl() != "https://manager.example" || fake.enrollReq.GetEnrollmentToken() != "secret" || !fake.enrollReq.GetUploadHistory() {
 		t.Fatalf("enroll request=%+v", fake.enrollReq)
 	}
+	if fake.enrollReq.GetTenantId() != "" || fake.enrollReq.GetAgentId() != "" || fake.enrollReq.GetGatewayAddress() != "" {
+		t.Fatalf("client supplied Manager-owned enrollment fields: %+v", fake.enrollReq)
+	}
 	if _, err := queryLocalAgentWithManager(socketPath, "", []string{"unenroll"}); err != nil || fake.unenrollReq == nil {
 		t.Fatalf("unenroll err=%v req=%+v", err, fake.unenrollReq)
+	}
+}
+
+func TestLocalEnrollmentReadsTokenFile(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("secret-from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := parseEnrollmentArgs("", []string{
+		"enroll", "--manager-url", "https://manager.example", "--token-file", tokenPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.managerURL != "https://manager.example" || opts.token != "secret-from-file" {
+		t.Fatalf("enrollment options = %+v", opts)
+	}
+	if _, err := parseEnrollmentArgs("", []string{
+		"enroll", "--manager-url", "https://manager.example", "--token", "a", "--token-file", tokenPath,
+	}); err == nil {
+		t.Fatal("combined --token and --token-file accepted")
+	}
+}
+
+func TestLocalEnrollmentRejectsManagerOwnedIdentityFlags(t *testing.T) {
+	_, err := parseEnrollmentArgs("", []string{
+		"enroll", "--manager-url", "https://manager.example", "--token", "secret",
+		"--agent-id", "agent-a",
+	})
+	if err == nil || !strings.Contains(err.Error(), "configured by the Manager enrollment") {
+		t.Fatalf("legacy enrollment flag error = %v", err)
 	}
 }
 

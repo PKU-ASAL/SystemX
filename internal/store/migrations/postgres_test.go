@@ -35,6 +35,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"idx_policy_assignments_agent",
 		"idx_policy_audit_policy",
 		"idx_enrollments_token_hash",
+		"idx_enrollments_bootstrap_token_hash",
 		"idx_artifacts_lookup",
 		"idx_events_labels",
 		"idx_signals_labels_layer",

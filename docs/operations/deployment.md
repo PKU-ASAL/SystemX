@@ -135,11 +135,14 @@ make release RELEASE_VERSION=v1.0.0
 
 ```text
 构建并签名 artifact -> 绑定 channel -> 创建一次性 enrollment
--> 下载并校验安装器和包 -> 端点生成私钥与 CSR
+-> 用一次性 bootstrap ticket 获取安装器 -> 下载并校验包
+-> 端点生成私钥与 CSR
 -> Manager 签发 tenant/Agent 绑定证书 -> Agent 连接 Gateway
 ```
 
-Manager 只保存 enrollment token 的哈希，端点私钥不离开端点。默认只上传 enrollment 边界之后的数据；只有明确需要历史数据时才启用 `--upload-history`。
+安装 URL 中只包含一次性 bootstrap ticket。ticket 首次读取安装脚本后失效，Manager 同时轮换 enrollment token；安装器将 token 写入临时 `0600` 文件，并通过 Authorization header 下载受保护 artifact，避免凭据进入 URL、代理访问日志和进程参数。
+
+Manager 只保存 token 哈希，并以 enrollment 中的 tenant、Agent ID、Gateway 和 TLS server name 为准。端点私钥不离开端点；同一 token 的重试绑定同一公钥和证书。默认只上传 enrollment 边界之后的数据；只有明确需要历史数据时才启用 `--upload-history`。
 
 安装 profile：
 

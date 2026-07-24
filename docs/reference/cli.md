@@ -73,17 +73,22 @@ profile 会带来额外开销，只在有限时间内启用，并妥善处理可
 已安装 Agent 的显式注册命令：
 
 ```bash
-sudo sysarmorctl \
+sudo sysarmorctl enroll \
   --manager-url https://manager.example \
-  enroll \
-  --token TOKEN \
-  --tenant default \
-  --agent-id agent-001 \
-  --gateway gateway.example:9444 \
-  --gateway-server-name gateway.example
+  --token TOKEN
 ```
 
-只有确实需要上传注册边界前的本地历史时才添加 `--upload-history`。token 为一次性机密，不要写入 shell history、日志或仓库。退出平台并保留 standalone 能力：
+tenant、Agent ID、Gateway 地址和 TLS server name 均由 Manager 的 enrollment 下发，端点命令不重复声明。只有确实需要上传注册边界前的本地历史时才添加 `--upload-history`。
+
+交互操作可使用 `--token`；自动化应使用权限为 `0600` 的 token 文件，避免凭据进入进程参数和 shell history：
+
+```bash
+sudo sysarmorctl enroll \
+  --manager-url https://manager.example \
+  --token-file /run/secrets/sysarmor-enrollment
+```
+
+同一 token 的网络重试会复用端点待签发私钥；Manager 只允许它绑定同一公钥。token 是短期机密，不要写入日志或仓库。退出平台并保留 standalone 能力：
 
 ```bash
 sudo sysarmorctl unenroll

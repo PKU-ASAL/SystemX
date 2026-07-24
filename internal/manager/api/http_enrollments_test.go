@@ -16,6 +16,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -52,19 +53,170 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	if created.Token == "" || created.InstallURL == "" || created.Enrollment.TokenHash != "" {
 		t.Fatalf("create enrollment response leaked or missed fields: %+v", created)
 	}
+	if strings.Contains(created.InstallURL, created.Token) {
+		t.Fatalf("install URL leaked enrollment token: %s", created.InstallURL)
+	}
 
 	rec = get(t, handler, "/api/v1/enrollments?tenant_id=default")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"agent_id":"agent-a"`) || strings.Contains(rec.Body.String(), "token_hash") {
 		t.Fatalf("list enrollments response = %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	rec = getInstallScript(t, handler, created.InstallURL)
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "127.0.0.1:19444") {
+	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") {
 		t.Fatalf("install script response = %d body=%s", rec.Code, body)
 	}
 	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, "systemctl enable --now sysarmor-agent") {
 		t.Fatalf("default install profile/script mismatch: profile=%q body=%s", created.Enrollment.Profile, body)
+	}
+}
+
+func TestBootstrapTicketCanFetchInstallScriptOnce(t *testing.T) {
+	st := &store.Store{}
+	handler := newAdminTestServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-ticket",
+		"gateway_addr":"gateway:9444",
+		"artifact_url":"https://example.invalid/agent.tar.gz"
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var created struct {
+		Token      string `json:"token"`
+		InstallURL string `json:"install_url"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	installURL, err := url.Parse(created.InstallURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		req = httptest.NewRequest(http.MethodGet, installURL.RequestURI(), nil)
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if attempt == 1 && rec.Code != http.StatusOK {
+			t.Fatalf("first ticket fetch status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		if attempt == 1 {
+			body := rec.Body.String()
+			if !strings.Contains(body, "--token-file") || strings.Contains(body, "--tenant") ||
+				strings.Contains(body, "--agent-id") || strings.Contains(body, "--gateway") {
+				t.Fatalf("install script uses legacy enrollment arguments: %s", body)
+			}
+			if strings.Contains(body, "/api/v1/enrollment-artifact?token=") {
+				t.Fatalf("install script exposes artifact enrollment token in URL: %s", body)
+			}
+		}
+		if attempt == 2 && rec.Code == http.StatusOK {
+			t.Fatalf("bootstrap ticket was reusable: %s", rec.Body.String())
+		}
+	}
+}
+
+func TestEnrollmentTokenIsRejectedInURLs(t *testing.T) {
+	st := &store.Store{}
+	handler := newAdminTestServer(st).Handler()
+	token := createTestEnrollment(t, handler, "agent-no-url-token")
+	artifact := st.UpsertArtifact(store.Artifact{
+		ArtifactID: "art-no-url-token", TenantID: "default", Kind: "agent", Status: "active",
+	})
+	enrollment, ok := st.GetEnrollmentByTokenHash(enrollmentTokenHash(token))
+	if !ok {
+		t.Fatal("created enrollment not found")
+	}
+	enrollment.ArtifactID = artifact.ArtifactID
+	st.CreateEnrollment(enrollment)
+
+	for _, target := range []string{
+		"/api/v1/agent-install.sh?token=" + url.QueryEscape(token),
+		"/api/v1/enrollment-artifact?token=" + url.QueryEscape(token),
+	} {
+		t.Run(target, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code == http.StatusOK {
+				t.Fatalf("enrollment token was accepted in URL %s", target)
+			}
+		})
+	}
+}
+
+func TestEnrollmentInstallURLUsesConfiguredPublicURL(t *testing.T) {
+	t.Setenv("SYSARMOR_PUBLIC_URL", "https://manager.public.example/base")
+	st := &store.Store{}
+	handler := newAdminTestServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollments", strings.NewReader(`{
+		"tenant_id":"default",
+		"agent_id":"agent-public-url",
+		"gateway_addr":"gateway:9444"
+	}`))
+	req.Host = "manager.internal"
+	req.Header.Set("X-Forwarded-Host", "attacker.example")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var created struct {
+		InstallURL string `json:"install_url"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(created.InstallURL, "https://manager.public.example/base/") {
+		t.Fatalf("install URL=%q", created.InstallURL)
+	}
+}
+
+func TestNewEnrollmentRejectsInvalidGateway(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		sni     string
+	}{
+		{name: "missing port", address: "gateway.example"},
+		{name: "invalid port", address: "gateway.example:70000"},
+		{name: "sni contains port", address: "gateway.example:9444", sni: "gateway.example:9444"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, _, err := newEnrollment(enrollmentRequest{
+				TenantID: "default", AgentID: "agent-a", GatewayAddr: tt.address, GatewaySNI: tt.sni,
+			}, "tester")
+			if err == nil {
+				t.Fatalf("newEnrollment() accepted address=%q sni=%q", tt.address, tt.sni)
+			}
+		})
+	}
+}
+
+func TestNewEnrollmentRejectsInvalidCertificateIdentity(t *testing.T) {
+	tests := []enrollmentRequest{
+		{TenantID: "tenant-a/agent/victim", AgentID: "agent-a", GatewayAddr: "gateway.example:9444"},
+		{TenantID: "default", AgentID: "agent-a?tenant=victim", GatewayAddr: "gateway.example:9444"},
+		{TenantID: "default", AgentID: "agent-a,tenant_id:victim", GatewayAddr: "gateway.example:9444"},
+	}
+	for _, req := range tests {
+		if _, _, _, err := newEnrollment(req, "tester"); err == nil {
+			t.Fatalf("newEnrollment() accepted tenant=%q agent=%q", req.TenantID, req.AgentID)
+		}
+	}
+}
+
+func TestPublicEnrollmentRedactsInternalBindingData(t *testing.T) {
+	public := publicEnrollment(store.Enrollment{
+		TokenHash:            "token-hash",
+		BootstrapTokenHash:   "bootstrap-hash",
+		IssuedKeySHA256:      "key-hash",
+		IssuedCertificatePEM: "certificate",
+		IssuedCAPEM:          "ca",
+	})
+	if public.TokenHash != "" || public.BootstrapTokenHash != "" ||
+		public.IssuedKeySHA256 != "" || public.IssuedCertificatePEM != "" || public.IssuedCAPEM != "" {
+		t.Fatalf("public enrollment leaked internal binding data: %+v", public)
 	}
 }
 
@@ -100,7 +252,7 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 		t.Fatalf("container enrollment profile = %q", created.Enrollment.Profile)
 	}
 
-	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	rec = getInstallScript(t, handler, created.InstallURL)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("container install script status = %d body=%s", rec.Code, body)
@@ -180,15 +332,21 @@ func TestArtifactUploadDownloadAndEnrollmentBinding(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), uploaded.Artifact.SHA256) || !strings.Contains(rec.Body.String(), "/api/v1/enrollment-artifact?token=") {
-		t.Fatalf("artifact install script status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	rec = get(t, handler, "/api/v1/enrollment-artifact?token="+created.Token)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/enrollment-artifact", nil)
+	req.Header.Set("Authorization", "Enrollment "+created.Token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), distribution) {
 		t.Fatalf("enrollment artifact status = %d size=%d", rec.Code, rec.Body.Len())
 	}
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/enrollment-artifact?token=invalid", nil)
+	rec = getInstallScript(t, handler, created.InstallURL)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), uploaded.Artifact.SHA256) ||
+		!strings.Contains(rec.Body.String(), `Authorization: Enrollment`) ||
+		strings.Contains(rec.Body.String(), "/api/v1/enrollment-artifact?token=") {
+		t.Fatalf("artifact install script status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/enrollment-artifact", nil)
+	req.Header.Set("Authorization", "Enrollment invalid")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -243,15 +401,16 @@ func TestArtifactFeedSeedsExternalArtifactAndChannel(t *testing.T) {
 		t.Fatalf("create feed enrollment status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	var created struct {
-		Token string `json:"token"`
+		InstallURL string `json:"install_url"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	rec = getInstallScript(t, handler, created.InstallURL)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK ||
-		!strings.Contains(body, "/api/v1/enrollment-artifact?token=") ||
+		!strings.Contains(body, `Authorization: Enrollment`) ||
+		strings.Contains(body, "/api/v1/enrollment-artifact?token=") ||
 		strings.Contains(body, "/api/v1/artifacts/art-feed-linux-amd64-dev/download") {
 		t.Fatalf("feed install script status = %d body=%s", rec.Code, body)
 	}
@@ -332,7 +491,7 @@ func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
 		t.Fatalf("create systemd enrollment status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	var created struct {
-		Token      string           `json:"token"`
+		InstallURL string           `json:"install_url"`
 		Enrollment store.Enrollment `json:"enrollment"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
@@ -342,9 +501,10 @@ func TestEnrollmentUsesPackageDownloadBaseURLForSystemdProfile(t *testing.T) {
 		t.Fatalf("systemd artifact url = %q want %q", got, want)
 	}
 
-	rec = get(t, handler, "/api/v1/agent-install.sh?token="+created.Token)
+	rec = getInstallScript(t, handler, created.InstallURL)
 	if rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), "/api/v1/enrollment-artifact?token=") ||
+		!strings.Contains(rec.Body.String(), `Authorization: Enrollment`) ||
+		strings.Contains(rec.Body.String(), "/api/v1/enrollment-artifact?token=") ||
 		strings.Contains(rec.Body.String(), "http://127.0.0.1:18080/releases/sysarmor-agent-linux-amd64-dev.tar.gz") {
 		t.Fatalf("systemd install script status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -399,7 +559,7 @@ func TestEnrollmentKeepsPackageInternalURLForContainerProfile(t *testing.T) {
 	}
 }
 
-func TestEnrollmentCertificateConsumesToken(t *testing.T) {
+func TestEnrollmentCertificateIsIdempotentForSameCSR(t *testing.T) {
 	st := &store.Store{}
 	srv := newAdminTestServer(st)
 	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
@@ -411,39 +571,71 @@ func TestEnrollmentCertificateConsumesToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"certificate_pem"`) {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("certificate status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	enrollments := st.ListEnrollments("default", "used")
-	if len(enrollments) != 1 || enrollments[0].UsedAt.IsZero() {
-		t.Fatalf("used enrollments = %+v", enrollments)
+	var first struct {
+		SchemaVersion  string `json:"schema_version"`
+		SerialNumber   string `json:"serial_number"`
+		GatewayAddress string `json:"gateway_address"`
+		CertificatePEM string `json:"certificate_pem"`
+		CAPEM          string `json:"ca_pem"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.SchemaVersion != "sysarmor.enrollment/v2" || first.SerialNumber == "" ||
+		first.GatewayAddress != "127.0.0.1:19444" || first.CertificatePEM == "" || first.CAPEM == "" {
+		t.Fatalf("first enrollment bundle = %+v", first)
 	}
 
+	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("second certificate status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var second struct {
+		SerialNumber   string `json:"serial_number"`
+		CertificatePEM string `json:"certificate_pem"`
+		CAPEM          string `json:"ca_pem"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.SerialNumber != first.SerialNumber || second.CertificatePEM != first.CertificatePEM || second.CAPEM != first.CAPEM {
+		t.Fatalf("retry bundle differs after CA rotation: first=%+v second=%+v", first, second)
+	}
+	enrollments := st.ListEnrollments("default", "issued")
+	if len(enrollments) != 1 || enrollments[0].IssuedAt.IsZero() {
+		t.Fatalf("issued enrollments = %+v", enrollments)
 	}
 }
 
-func TestEnrollmentCertificateRejectsMismatchedCSR(t *testing.T) {
+func TestEnrollmentCertificateRejectsDifferentKeyAfterIssue(t *testing.T) {
 	st := &store.Store{}
 	srv := newAdminTestServer(st)
 	srv.caCertPEM, srv.caCert, srv.caKey = testCA(t)
 	handler := srv.Handler()
 
 	token := createTestEnrollment(t, handler, "agent-cert")
-	csr := testCSR(t, "tenant_id:default,agent_id:other-agent")
+	csr := testCSR(t, "client-supplied-subject-is-ignored")
 	body := `{"token":` + strconvQuote(token) + `,"csr":` + strconvQuote(csr) + `}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "does not match enrollment") {
-		t.Fatalf("mismatched csr status = %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"agent_id":"agent-cert"`) {
+		t.Fatalf("first csr status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := st.ListEnrollments("default", "used"); len(got) != 0 {
-		t.Fatalf("mismatched CSR consumed enrollment: %+v", got)
+
+	otherCSR := testCSR(t, "tenant_id:default,agent_id:agent-cert")
+	otherBody := `{"token":` + strconvQuote(token) + `,"csr":` + strconvQuote(otherCSR) + `}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(otherBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("different key status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -467,6 +659,15 @@ func createTestEnrollment(t *testing.T, handler http.Handler, agentID string) st
 		t.Fatal(err)
 	}
 	return created.Token
+}
+
+func getInstallScript(t *testing.T, handler http.Handler, installURL string) *httptest.ResponseRecorder {
+	t.Helper()
+	parsed, err := url.Parse(installURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return get(t, handler, parsed.RequestURI())
 }
 
 func testCA(t *testing.T) ([]byte, *x509.Certificate, *rsa.PrivateKey) {

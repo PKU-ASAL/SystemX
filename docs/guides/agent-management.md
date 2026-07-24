@@ -38,13 +38,22 @@ sudo sysarmorctl agent health
 发布签名 artifact
 -> 绑定 release channel
 -> 创建一次性 enrollment
+-> Console 生成只能兑换一次的安装 URL
 -> 端点下载并验证包
 -> 端点生成私钥和 CSR
 -> Manager 颁发 tenant/Agent 绑定证书
 -> Agent 启用 Gateway 上传和控制通道
 ```
 
-私钥始终在端点生成。Manager 只保存 enrollment token 的哈希；Gateway 校验证书 URI 与每个 frame 中的 tenant 和 Agent ID。
+已安装 standalone Agent 也可直接注册：
+
+```bash
+sudo sysarmorctl enroll --manager-url https://manager.example --token TOKEN
+```
+
+Manager enrollment 是 tenant、Agent ID、Gateway 和 TLS server name 的唯一事实来源。私钥始终在端点生成；同一 token 重试复用待签发私钥，Manager 对同一公钥返回同一证书，对不同公钥拒绝签发。凭据先写入独立版本目录，随后才切换本地 managed 状态，失败不会覆盖当前有效身份。
+
+Console 安装 URL 携带的是一次性 bootstrap ticket，不是 enrollment token。ticket 首次获取脚本时即失效，同时生成仅写入临时 `0600` 文件的 enrollment token；artifact 下载通过 Authorization header 携带该 token，URL 和访问日志不包含凭据。Gateway 校验证书 URI 与每个 frame 中的 tenant 和 Agent ID。
 
 默认只上传注册边界之后生成的数据。只有明确要求本地历史时才启用 history upload。
 
@@ -101,6 +110,7 @@ sudo sysarmorctl unenroll
 ## 故障边界
 
 - 注册失败不能破坏已有 standalone 身份和本地数据。
+- 注册重试不能生成新的端点私钥或重复签发不同证书。
 - 策略编译失败不能替换当前有效策略。
 - Gateway 未确认 batch 时不能推进上传 checkpoint。
 - 重复确认和重试必须收敛到同一批次状态。

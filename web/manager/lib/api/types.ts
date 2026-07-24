@@ -53,6 +53,11 @@ export type DeployEnrollment = {
   created_at?: string;
   expires_at?: string;
   used_at?: string;
+  bootstrap_token_preview?: string;
+  bootstrap_fetched_at?: string;
+  issued_serial_number?: string;
+  issued_not_after?: string;
+  issued_at?: string;
 };
 
 export type DeployOptionsResponse = {

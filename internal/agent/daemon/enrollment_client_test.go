@@ -14,8 +14,9 @@ import (
 	"time"
 )
 
-func TestEnrollmentCSRUsesRequiredIdentity(t *testing.T) {
-	_, csrPEM, _, err := createEnrollmentCSR("tenant-a", "agent-a")
+func TestEnrollmentCSRDoesNotClaimManagerIdentity(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	csrPEM, err := createEnrollmentCSR(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,8 +25,26 @@ func TestEnrollmentCSRUsesRequiredIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if csr.Subject.CommonName != "tenant_id:tenant-a,agent_id:agent-a" || csr.CheckSignature() != nil {
+	if csr.Subject.CommonName != "" || csr.CheckSignature() != nil {
 		t.Fatalf("invalid CSR: %+v", csr.Subject)
+	}
+}
+
+func TestPendingEnrollmentKeyIsReusedForToken(t *testing.T) {
+	statePath := t.TempDir()
+	first, firstPEM, firstPath, err := loadOrCreatePendingEnrollmentKey(statePath, "enr_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, secondPEM, secondPath, err := loadOrCreatePendingEnrollmentKey(statePath, "enr_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.PublicKey.Equal(&second.PublicKey) || string(firstPEM) != string(secondPEM) || firstPath != secondPath {
+		t.Fatal("pending enrollment key was not reused")
+	}
+	if info, err := os.Stat(firstPath); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("pending key mode=%v err=%v", info.Mode().Perm(), err)
 	}
 }
 
@@ -46,9 +65,14 @@ func TestValidateEnrollmentCertificateRejectsWrongSubject(t *testing.T) {
 
 func TestWriteEnrollmentCredentialsProtectsPrivateKey(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state")
-	paths, err := writeEnrollmentCredentials(statePath, enrollmentCertificate{CAPEM: "ca", CertificatePEM: "cert"}, []byte("key"))
+	paths, created, err := writeEnrollmentCredentials(statePath, enrollmentCertificate{
+		EnrollmentID: "enr-a", CAPEM: "ca", CertificatePEM: "cert",
+	}, []byte("key"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("credential directory was not reported as new")
 	}
 	info, err := os.Stat(paths.Key)
 	if err != nil {
@@ -59,6 +83,50 @@ func TestWriteEnrollmentCredentialsProtectsPrivateKey(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Dir(paths.Key)); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("credentials directory mode=%v err=%v", info.Mode().Perm(), err)
+	}
+	if got, want := filepath.Dir(paths.Key), filepath.Join(statePath, "credentials", "enr-a"); got != want {
+		t.Fatalf("credential directory=%q want %q", got, want)
+	}
+}
+
+func TestWriteEnrollmentCredentialsRejectsConflictingExistingDirectory(t *testing.T) {
+	statePath := t.TempDir()
+	certificate := enrollmentCertificate{
+		EnrollmentID:   "enr-existing",
+		CAPEM:          "ca-data",
+		CertificatePEM: "certificate-data",
+	}
+	paths, _, err := writeEnrollmentCredentials(statePath, certificate, []byte("key-data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Certificate, []byte("corrupted"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := writeEnrollmentCredentials(statePath, certificate, []byte("key-data")); err == nil {
+		t.Fatal("conflicting credential directory was accepted")
+	}
+}
+
+func TestRollbackEnrollmentCredentialsOnlyRemovesNewDirectory(t *testing.T) {
+	root := t.TempDir()
+	newDir := filepath.Join(root, "enr-new")
+	existingDir := filepath.Join(root, "enr-existing")
+	for _, dir := range []string{newDir, existingDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rollbackEnrollmentCredentials(credentialPaths{Key: filepath.Join(newDir, "agent-key.pem")}, true)
+	rollbackEnrollmentCredentials(credentialPaths{Key: filepath.Join(existingDir, "agent-key.pem")}, false)
+
+	if _, err := os.Stat(newDir); !os.IsNotExist(err) {
+		t.Fatalf("new credential directory still exists: %v", err)
+	}
+	if _, err := os.Stat(existingDir); err != nil {
+		t.Fatalf("existing credential directory was removed: %v", err)
 	}
 }
 

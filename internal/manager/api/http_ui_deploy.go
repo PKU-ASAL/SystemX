@@ -113,54 +113,22 @@ func (s *Server) uiDeployAgentCommand(w http.ResponseWriter, r *http.Request) {
 		TTL:         req.TTL,
 		Actor:       req.Actor,
 	}
-	enrollment, token, err := newEnrollment(enrollmentReq, s.actorFromRequest(r, req.Actor))
+	created, err := s.createEnrollment(r, enrollmentReq, s.actorFromRequest(r, req.Actor), true)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeEnrollmentCreationError(w, err)
 		return
 	}
+	enrollment := created.Enrollment
 	artifactResponse := deployCommandArtifact{}
-	artifactID := strings.TrimSpace(req.ArtifactID)
-	if strings.TrimSpace(req.Channel) != "" {
-		channel, ok := s.store.GetChannel(enrollment.TenantID, req.Channel)
-		if !ok {
-			if artifactID == "" {
-				http.Error(w, "channel not found", http.StatusBadRequest)
-				return
-			}
-		} else {
-			if !deployChannelMatchesProfile(enrollment.Profile, channel.Channel) {
-				http.Error(w, "channel profile mismatch", http.StatusBadRequest)
-				return
-			}
-			artifactID = channel.ArtifactID
-			enrollment.Channel = channel.Channel
-		}
-	}
-	if artifactID != "" {
-		artifact, ok := s.store.GetArtifact(enrollment.TenantID, artifactID)
-		if !ok || artifact.Status != "active" {
-			http.Error(w, "active artifact not found", http.StatusBadRequest)
-			return
-		}
-		enrollment.ArtifactID = artifact.ArtifactID
-		enrollment.ArtifactSHA256 = artifact.SHA256
-		enrollment.ArtifactURL = artifactInstallURLForProfile(r, artifact, enrollment.Profile)
+	if created.Artifact != nil {
+		artifact := *created.Artifact
 		artifactResponse = deployCommandArtifact{
 			ArtifactID:  artifact.ArtifactID,
 			DownloadURL: enrollment.ArtifactURL,
 			SHA256:      artifact.SHA256,
 		}
 	}
-	enrollment = s.store.CreateEnrollment(enrollment)
-	if enrollment.EnrollmentID == "" {
-		http.Error(w, "create enrollment failed", http.StatusBadRequest)
-		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
-		return
-	}
-	scriptURL := installURL(r, token)
+	scriptURL := installURL(r, created.BootstrapTicket)
 	installCommand := "curl -fsSL " + shellQuote(scriptURL) + " | sudo bash"
 	entrypointCommand := ""
 	if defaultString(enrollment.Profile, "linux-systemd") == "linux-container" {
