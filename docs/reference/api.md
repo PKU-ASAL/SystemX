@@ -13,7 +13,7 @@ sysarmorctl -> local Agent Unix gRPC 或 Manager HTTP API
 - 浏览器不直接访问 Manager，也不持有 Manager JWT。
 - BFF 验证 Auth.js session，签发短期 RS256 JWT；Manager 从 JWT principal 获取 tenant 和 role。
 - Operator API 不信任身份 header；显式 tenant 与 principal 冲突时拒绝请求。
-- enrollment artifact、certificate 和 install script 使用一次性 token，不使用 Operator JWT。
+- install script 使用只能兑换一次的 bootstrap ticket；enrollment artifact 和 certificate 使用短期 enrollment token，不使用 Operator JWT。
 - Agent 数据面和控制面通过证书 URI SAN 绑定 tenant 与 Agent ID。
 
 ## Manager HTTP API
@@ -66,6 +66,8 @@ Manager 默认监听容器端口 `9443`，本地 Compose 映射为 `19443`。除
 | `GET` | `/api/v1/data-resume` | Agent 上传续传 cursor |
 
 测试和维护接口 `/api/v1/reset`、`/api/v1/recompute` 不应作为稳定产品集成契约。
+
+创建 enrollment 会同时返回手工注册 token 和 `install_url`。`install_url` 中的 bootstrap ticket 只能读取一次；兑换时 Manager 轮换 enrollment token，因此创建响应中的手工 token 随即失效。安装脚本通过 `Authorization: Enrollment <token>` 获取受保护 artifact，并用 token 与 CSR 请求证书。相同 token 与相同公钥的证书请求幂等返回原证书，不同公钥返回冲突。tenant、Agent ID、Gateway 和 TLS server name 只取 Manager enrollment，CSR subject 不参与授权。
 
 查询规则：tenant 以 principal 为准；字段、alias、时间范围和分页受 handler 白名单及上限约束；精确 ID 和 label 使用 exact-match；空结果是成功，依赖失败必须保留 HTTP 状态和结构化错误。
 
