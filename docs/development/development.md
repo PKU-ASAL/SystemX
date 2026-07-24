@@ -62,6 +62,20 @@ make web-build
 
 `make build` 必须显式传 `SERVICE`。Package 服务使用 `nginx:alpine`，没有本地 image build。
 
+### GitHub 开发预发布
+
+`.github/workflows/dev-prerelease.yml` 只能从 `dev` 手动触发。工作流运行 Go 和 standalone
+发行包契约测试，构建 Linux x86_64 thin 包，生成 `install.sh` 与 `SHA256SUMS`，使用 GitHub
+OIDC 记录 build provenance，最后创建绑定精确 commit 的 Pre-release。版本格式为
+`v<major>.<minor>.<patch>-dev.<UTC timestamp>+<commit>`。
+
+GitHub-hosted runner 不具备本项目要求的 libvirt/eBPF 环境，因此该工作流不宣称验证真实采集和检测。
+正式触发预发布前，维护者仍需在校内测试机运行：
+
+```bash
+make -C test product-endpoint
+```
+
 ## 修改协议
 
 1. 先确定变化属于 `schema_version`、`analysis_version` 还是 OpenSearch mapping。

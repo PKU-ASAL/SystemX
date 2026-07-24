@@ -105,8 +105,8 @@ Product Suite 证明“系统通不通”。
 
 | 入口 | 边界 | Sensor/输入 |
 |---|---|---|
-| `product-endpoint-standalone` | 本地身份、策略、Event、Signal、重启和有界存储 | 本地 Agent |
-| `product-endpoint` | 单 VM Agent 管理真实 Tetragon | owned real Tetragon |
+| `product-endpoint-standalone` | 本地身份、有界存储、standalone 发行包和安装契约 | fake binary/本地契约 |
+| `product-endpoint` | 安装 standalone Agent，验证真实 Event、Signal、关联引用和重启恢复 | owned real Tetragon |
 | `product-endpoint-namespace-container` | 容器 Agent 的 `namespace/self` 隔离 | Manager 分发的容器 Agent |
 | `product-platform` | Manager、Gateway、Worker、Store、Policy、Response 合约 | 构造或 fake 输入 |
 | `product-platform-smoke` | `product-platform` 的显式别名 | 构造或 fake 输入 |

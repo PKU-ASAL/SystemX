@@ -50,6 +50,10 @@ sudo sysarmorctl event watch --include-recent
 sudo sysarmorctl signal watch --include-recent
 ```
 
+You can also select a development pre-release on GitHub Releases and run the exact install command shown
+on that release. Public pre-releases install in standalone mode by default. See [Deployment](docs/operations/deployment.md)
+for verification, platform limits, and offline distribution constraints.
+
 See [Quickstart](docs/quickstart.md) for prerequisites, verification, and next steps.
 
 ## Development And Testing
