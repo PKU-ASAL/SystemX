@@ -25,6 +25,7 @@ case "$MODE" in
     until inspect_snapshot positive >/dev/null 2>&1; do
       if (( SECONDS >= deadline )); then
         echo "[release-assert][ERROR] 未观察到 marker Event 或 web_runtime_spawns_shell Signal: $MARKER" >&2
+        inspect_snapshot positive >&2 || true
         exit 1
       fi
       sleep 1
