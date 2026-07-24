@@ -2,10 +2,11 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENABLE_SERVICE="${SYSARMOR_ENABLE_SERVICE:-1}"
+PROFILE="${SYSARMOR_INSTALL_PROFILE:-linux-systemd}"
 AGENT_HOME="${SYSARMOR_AGENT_HOME:-/opt/sysarmor/agent}"
 AGENT_DST="${SYSARMOR_AGENT_DST:-$AGENT_HOME/bin/sysarmor-agent}"
 CTL_DST="${SYSARMOR_CTL_DST:-/usr/local/bin/sysarmorctl}"
+CONTAINER_ENTRYPOINT_DST="${SYSARMOR_CONTAINER_ENTRYPOINT_DST:-/usr/local/bin/sysarmor-container-entrypoint}"
 SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}"
 CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent/agent.yaml}"
 POLICY_DST="${SYSARMOR_POLICY_DST:-/etc/sysarmor/agent/policy.json}"
@@ -14,6 +15,10 @@ RUNTIME_DIR="${SYSARMOR_RUNTIME_DIR:-/run/sysarmor/agent}"
 BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-$AGENT_HOME/bundles/tetragon}"
 INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-$AGENT_HOME/sensors}"
 SOCKET_PATH="${SYSARMOR_AGENT_SOCKET:-/run/sysarmor/agent/control.sock}"
+
+usage() {
+  echo "usage: install.sh [--profile linux-systemd|linux-container]"
+}
 
 fail() {
   echo "[sysarmor-install][ERROR] $*" >&2
@@ -30,6 +35,27 @@ install_if_absent() {
   if [[ ! -e "$target" ]]; then
     install -D -m 0644 "$source" "$target"
   fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        [[ $# -ge 2 ]] || fail "--profile 缺少参数"
+        PROFILE="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *) fail "不支持的参数: $1" ;;
+    esac
+  done
+  case "$PROFILE" in
+    linux-systemd|linux-container) ;;
+    *) fail "不支持的安装 profile: $PROFILE；可选值为 linux-systemd、linux-container" ;;
+  esac
 }
 
 verify_platform() {
@@ -79,8 +105,17 @@ install_sensor_bundle() {
   rm -rf "$backup"
 }
 
+parse_args "$@"
+if [[ "$PROFILE" == "linux-container" ]]; then
+  ENABLE_SERVICE=0
+  CONFIG_SOURCE="$HERE/configs/standalone-container.yaml"
+else
+  ENABLE_SERVICE="${SYSARMOR_ENABLE_SERVICE:-1}"
+  CONFIG_SOURCE="$HERE/configs/standalone.yaml"
+fi
+
 verify_platform
-for file in bin/sysarmor-agent bin/sysarmorctl systemd/sysarmor-agent.service configs/standalone.yaml policies/policy.json sensors/tetragon/install-bundle.sh sensors/tetragon/bundle.env; do
+for file in bin/sysarmor-agent bin/sysarmorctl systemd/sysarmor-agent.service configs/standalone.yaml configs/standalone-container.yaml container/sysarmor-container-entrypoint policies/policy.json sensors/tetragon/install-bundle.sh sensors/tetragon/bundle.env; do
   require_file "$HERE/$file"
 done
 
@@ -93,8 +128,12 @@ install -d -m 0750 "$(dirname "$CONFIG_DST")" "$RUNTIME_DIR"
 install -d -m 0700 "$STATE_DIR"
 install -m 0755 "$HERE/bin/sysarmor-agent" "$AGENT_DST"
 install -m 0755 "$HERE/bin/sysarmorctl" "$CTL_DST"
-install -m 0644 "$HERE/systemd/sysarmor-agent.service" "$SERVICE_DST"
-install_if_absent "$HERE/configs/standalone.yaml" "$CONFIG_DST"
+if [[ "$PROFILE" == "linux-container" ]]; then
+  install -D -m 0755 "$HERE/container/sysarmor-container-entrypoint" "$CONTAINER_ENTRYPOINT_DST"
+else
+  install -m 0644 "$HERE/systemd/sysarmor-agent.service" "$SERVICE_DST"
+fi
+install_if_absent "$CONFIG_SOURCE" "$CONFIG_DST"
 install_if_absent "$HERE/policies/policy.json" "$POLICY_DST"
 install_sensor_bundle
 
@@ -105,4 +144,8 @@ if [[ "$ENABLE_SERVICE" == "1" ]]; then
 fi
 
 echo "[sysarmor-install] standalone Agent 安装完成"
-echo "[sysarmor-install] 健康检查: sudo sysarmorctl agent health"
+if [[ "$PROFILE" == "linux-container" ]]; then
+  echo "[sysarmor-install] 容器入口: $CONTAINER_ENTRYPOINT_DST"
+else
+  echo "[sysarmor-install] 健康检查: sudo sysarmorctl agent health"
+fi

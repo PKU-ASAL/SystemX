@@ -25,27 +25,28 @@ import (
 const runtimeTracingPolicyName = "sysarmor-runtime-collection"
 
 type Backend struct {
-	PolicyPath        string
-	EventSource       string
-	EventTransport    string
-	ServerAddress     string
-	Version           string
-	Bundle            BundleConfig
-	Restart           ProcessRestartPolicy
-	CgroupRate        string
-	PprofAddress      string
-	GopsAddress       string
-	ProcessCacheSize  int
-	DataCacheSize     int
-	EventQueueSize    int
-	RBQueueSize       string
-	ScopeType         string
-	ScopeSelector     string
-	ContainerIDPrefix string
-	BTFPath           string
-	BPFFSPath         string
-	RequireBTF        bool
-	RequireBPFFS      bool
+	PolicyPath               string
+	EventSource              string
+	EventTransport           string
+	ServerAddress            string
+	Version                  string
+	Bundle                   BundleConfig
+	Restart                  ProcessRestartPolicy
+	CgroupRate               string
+	PprofAddress             string
+	GopsAddress              string
+	ProcessCacheSize         int
+	DataCacheSize            int
+	EventQueueSize           int
+	RBQueueSize              string
+	ScopeType                string
+	ScopeSelector            string
+	ContainerIDPrefix        string
+	namespaceSelfContainerID string
+	BTFPath                  string
+	BPFFSPath                string
+	RequireBTF               bool
+	RequireBPFFS             bool
 
 	mu                   sync.Mutex
 	intent               contract.CollectionIntent
@@ -427,11 +428,17 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 		b.setError(err)
 		return err
 	}
+	selfContainerID, err := resolveNamespaceSelfContainerID(normalized)
+	if err != nil {
+		b.setError(err)
+		return err
+	}
 	if _, err := os.Stat(b.PolicyPath); err != nil {
 		b.setError(err)
 		return fmt.Errorf("verify tetragon policy: %w", err)
 	}
 	b.mu.Lock()
+	b.namespaceSelfContainerID = selfContainerID
 	loaded := b.policyLoaded
 	oldIntent := b.intent
 	oldRuntimePolicyApplied := b.runtimePolicyApplied
@@ -1419,9 +1426,13 @@ func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
 	case "namespace":
 		b.mu.Lock()
 		hasNamespaceSelectors := len(b.intent.NamespaceSelectors) > 0
+		selfContainerID := b.namespaceSelfContainerID
 		b.mu.Unlock()
 		if scopeSelector == "self" && hasNamespaceSelectors {
-			return true
+			if selfContainerID == "" {
+				return event.GetContainerId() == ""
+			}
+			return containerIDsMatch(event.GetContainerId(), selfContainerID)
 		}
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
 	case "pod":

@@ -106,6 +106,7 @@ Product Suite 证明“系统通不通”。
 | 入口 | 边界 | Sensor/输入 |
 |---|---|---|
 | `product-endpoint-standalone` | 本地身份、有界存储、standalone 发行包和安装契约 | fake binary/本地契约 |
+| `product-endpoint-release-container` | 公开发行包在三种基础镜像中的 Event、Signal、namespace/self 与恢复 | owned real Tetragon |
 | `product-endpoint` | 安装 standalone Agent，验证真实 Event、Signal、关联引用和重启恢复 | owned real Tetragon |
 | `product-endpoint-namespace-container` | 容器 Agent 的 `namespace/self` 隔离 | Manager 分发的容器 Agent |
 | `product-platform` | Manager、Gateway、Worker、Store、Policy、Response 合约 | 构造或 fake 输入 |
@@ -117,6 +118,7 @@ Product Suite 证明“系统通不通”。
 
 ```bash
 make -C test product-endpoint
+make -C test product-endpoint-release-container
 make -C test product-platform
 make -C test product-platform-full
 make -C test product-topology
