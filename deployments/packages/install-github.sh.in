@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="@VERSION@"
+PACKAGE="@PACKAGE@"
+EXPECTED_SHA256="@SHA256@"
+DEFAULT_BASE_URL="https://github.com/@REPOSITORY@/releases/download/$VERSION"
+BASE_URL="${SYSARMOR_RELEASE_BASE_URL:-$DEFAULT_BASE_URL}"
+
+fail() {
+  echo "[sysarmor-bootstrap][ERROR] $*" >&2
+  exit 1
+}
+
+for command in curl sha256sum tar; do
+  command -v "$command" >/dev/null 2>&1 || fail "缺少命令: $command"
+done
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+archive="$work/$PACKAGE"
+mkdir -p "$work/release"
+
+echo "[sysarmor-bootstrap] 下载 $PACKAGE"
+curl -fsSL "${BASE_URL%/}/$PACKAGE" -o "$archive" || fail "下载失败，请检查网络和版本号 $VERSION"
+printf '%s  %s\n' "$EXPECTED_SHA256" "$archive" | sha256sum -c - >/dev/null || fail "SHA-256 校验失败，请勿安装该文件"
+tar -xzf "$archive" -C "$work/release" || fail "发行包解压失败"
+[[ -x "$work/release/install.sh" ]] || fail "发行包缺少可执行 install.sh"
+
+"$work/release/install.sh" "$@"

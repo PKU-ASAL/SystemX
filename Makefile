@@ -114,7 +114,7 @@ auth-init: pki
 doctor:
 	@PLATFORM_COMPOSE="$(PLATFORM_COMPOSE)" PKI_RUNTIME_DIR="$(PKI_RUNTIME_DIR)" bash tools/doctor.sh
 
-release: build-agent-binary pki
+release: build-agent-tools pki
 	bash deployments/packages/build-release.sh \
 	  --version "$(RELEASE_VERSION)" \
 	  --os "$(RELEASE_OS)" \

@@ -9,6 +9,7 @@ BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-/opt/sysarmor/agent/bundles/tetragon
 ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
 URL="${SYSARMOR_TETRAGON_URL:-$TETRAGON_URL}"
 VERSION="${SYSARMOR_TETRAGON_VERSION:-$TETRAGON_VERSION}"
+EXPECTED_SHA256="${SYSARMOR_TETRAGON_SHA256:-$TETRAGON_SHA256}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -31,6 +32,11 @@ else
   need_cmd curl
   curl -fsSL "$URL" -o "$tmp/tetragon.tar.gz"
 fi
+
+printf '%s  %s\n' "$EXPECTED_SHA256" "$tmp/tetragon.tar.gz" | sha256sum -c - >/dev/null || {
+  echo "[install-tetragon-bundle][ERROR] Tetragon archive SHA-256 mismatch" >&2
+  exit 1
+}
 
 tar xzf "$tmp/tetragon.tar.gz" -C "$tmp"
 

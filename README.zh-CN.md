@@ -50,6 +50,9 @@ sudo sysarmorctl event watch --include-recent
 sudo sysarmorctl signal watch --include-recent
 ```
 
+也可以从 GitHub Releases 选择一个开发预发布版本，执行其页面提供的一键安装命令。公开预发布包
+默认安装为 standalone；详细的校验、平台限制和离线分发边界见[部署指南](docs/operations/deployment.md)。
+
 完整前置条件、验证步骤和下一步见[快速开始](docs/quickstart.md)。
 
 ## 开发与测试

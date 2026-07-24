@@ -1,0 +1,142 @@
+name: Dev standalone pre-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: Semantic version without the leading v
+        required: true
+        default: 0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-standalone-prerelease
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - name: Require dev branch
+        if: ${{ github.ref != 'refs/heads/dev' }}
+        run: |
+          echo "This workflow must be dispatched from the dev branch." >&2
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: |
+          go test ./...
+          bash test/suites/product/endpoint/standalone-release-package.sh
+          bash test/suites/product/endpoint/standalone-github-assets.sh
+          bash test/suites/product/endpoint/dev-prerelease-workflow.sh
+
+      - name: Build standalone release assets
+        id: build
+        env:
+          BASE_VERSION: ${{ inputs.base_version }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "base_version must use MAJOR.MINOR.PATCH" >&2
+            exit 2
+          }
+          version="v${BASE_VERSION}-dev.$(date -u +%Y%m%d%H%M)+${GITHUB_SHA::8}"
+          asset_dir="$GITHUB_WORKSPACE/dist/github-release"
+          package="$asset_dir/sysarmor-agent-linux-amd64-$version.tar.gz"
+          mkdir -p "$GITHUB_WORKSPACE/dist/bin" "$asset_dir" "$RUNNER_TEMP/sysarmor-release"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "asset_dir=$asset_dir" >>"$GITHUB_OUTPUT"
+          echo "package=$package" >>"$GITHUB_OUTPUT"
+
+          CGO_ENABLED=0 go build -o dist/bin/sysarmor-agent ./cmd/sysarmor-agent
+          CGO_ENABLED=0 go build -o dist/bin/sysarmorctl ./cmd/sysarmorctl
+          openssl genrsa -out "$RUNNER_TEMP/sysarmor-release/manifest-key.pem" 3072 >/dev/null 2>&1
+
+          deployments/agent/package-agent.sh \
+            --version "$version" \
+            --output "$package" \
+            --agent-bin dist/bin/sysarmor-agent \
+            --ctl-bin dist/bin/sysarmorctl \
+            --tetragon-mode download \
+            --signing-key "$RUNNER_TEMP/sysarmor-release/manifest-key.pem"
+          deployments/packages/build-github-assets.sh \
+            --version "$version" \
+            --repository "$GITHUB_REPOSITORY" \
+            --package "$package" \
+            --output-dir "$asset_dir"
+          (cd "$asset_dir" && sha256sum -c SHA256SUMS)
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            ${{ steps.build.outputs.package }}
+            ${{ steps.build.outputs.asset_dir }}/install.sh
+            ${{ steps.build.outputs.asset_dir }}/SHA256SUMS
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-release
+          path: |
+            ${{ steps.build.outputs.package }}
+            ${{ steps.build.outputs.asset_dir }}/install.sh
+            ${{ steps.build.outputs.asset_dir }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: standalone-release
+          path: dist/github-release
+
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          ASSET_DIR: ${{ github.workspace }}/dist/github-release
+        run: |
+          cat >"$RUNNER_TEMP/release-notes.md" <<EOF
+          Development build from commit \`$GITHUB_SHA\`.
+
+          Online installation:
+
+          \`\`\`bash
+          curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/install.sh | sudo bash
+          \`\`\`
+
+          Verify build provenance:
+
+          \`\`\`bash
+          gh attestation verify sysarmor-agent-linux-amd64-$VERSION.tar.gz --repo $GITHUB_REPOSITORY
+          \`\`\`
+          EOF
+          gh release create "$VERSION" "$ASSET_DIR"/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "SysArmor $VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease

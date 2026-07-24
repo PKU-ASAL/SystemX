@@ -130,6 +130,9 @@ product-endpoint: doctor
 
 product-endpoint-standalone:
 	bash suites/product/endpoint/standalone-local-store.sh
+	bash suites/product/endpoint/standalone-release-package.sh
+	bash suites/product/endpoint/standalone-github-assets.sh
+	bash suites/product/endpoint/dev-prerelease-workflow.sh
 
 product-endpoint-namespace-container:
 	bash suites/product/endpoint/e2e-namespace-self-container.sh
@@ -212,6 +215,7 @@ help:
 	@echo "  doctor           verify tools, libvirt provider, connection, and Tetragon archive"
 	@echo "  test-unit        local Go tests"
 	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
+	@echo "  product-endpoint-standalone local state and standalone release package contracts"
 	@echo "  product-endpoint-namespace-container container agent with namespace/self Tetragon scope"
 	@echo "  product-topology multi-VM manager artifact/enrollment install path"
 	@echo "  product-platform local platform contracts/smoke"
