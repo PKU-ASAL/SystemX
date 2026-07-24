@@ -54,7 +54,8 @@ sudo sysarmorctl agent health
 curl -fsSL https://github.com/PKU-ASAL/sysarmor/releases/download/<version>/install.sh | sudo bash
 ```
 
-开发预发布只支持 Linux x86_64 和 systemd。版本号同时包含构建时间与 Git commit，例如
+开发预发布支持 Linux x86_64；默认 `linux-systemd` profile 安装主机服务，
+`linux-container` profile 用于容器镜像。版本号同时包含构建时间与 Git commit，例如
 `v0.1.0-dev.20260724+097acdae`。安装脚本下载同一 Release 的归档，校验固定 SHA-256，
 安装后等待 Agent 健康检查通过。重复安装会更新程序和 systemd unit，但保留已有配置、策略和本地数据。
 
@@ -67,6 +68,44 @@ SHA-256，从而避免在第三方许可证清单完成前重新分发其二进�
 ```bash
 gh attestation verify sysarmor-agent-linux-amd64-<version>.tar.gz --repo PKU-ASAL/sysarmor
 ```
+
+### 安装到容器镜像
+
+容器 profile 在 Docker build 阶段只安装文件并写入 `namespace/self` 配置，不启动 eBPF。
+容器运行时由 `/usr/local/bin/sysarmor-container-entrypoint` 先启动 Agent，等待健康后再执行
+Dockerfile 的业务命令：
+
+```dockerfile
+FROM ubuntu:22.04
+
+ARG SYSARMOR_INSTALL_URL
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl util-linux \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL "$SYSARMOR_INSTALL_URL" \
+    | bash -s -- --profile linux-container
+
+ENTRYPOINT ["/usr/local/bin/sysarmor-container-entrypoint"]
+CMD ["sleep", "infinity"]
+```
+
+运行容器时必须提供 eBPF 所需权限与宿主机资源，并配置容器级恢复：
+
+```bash
+docker run -d --name sysarmor-endpoint \
+  --privileged --cgroupns=host --restart unless-stopped \
+  -v /sys/kernel/btf/vmlinux:/sys/kernel/btf/vmlinux:ro \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  <image>
+```
+
+入口脚本原样执行其参数。改造 Vulhub 等已有镜像时，必须把原 `ENTRYPOINT` 及参数作为
+SysArmor 入口的业务命令显式保留，否则可能跳过配置展开、权限切换、数据库初始化或漏洞环境准备。
+不同 Vulhub 镜像的入口语义并不统一，应逐镜像验证，不能假设通用 Dockerfile 自动兼容。
+
+容器内 root 仍可 kill Agent；入口脚本会让容器异常退出，Docker restart policy 负责恢复，避免业务
+在 Agent 消失后静默继续运行。这是故障可见与恢复机制，不是防篡改边界。需要抵抗容器内高权限攻击者时，
+应由宿主机 Agent 与 eBPF LSM 提供外部保护。
 
 ## 启动本地平台
 
@@ -147,7 +186,7 @@ Manager 只保存 token 哈希，并以 enrollment 中的 tenant、Agent ID、Ga
 安装 profile：
 
 - `linux-systemd`：安装并启用 systemd 服务，适用于主机或 VM。
-- `linux-container`：不使用 systemd，scope 为 `namespace/self`，容器入口为 `/opt/sysarmor/agent/bin/sysarmor-agent run --config /etc/sysarmor/agent/agent.yaml`。
+- `linux-container`：不使用 systemd，scope 为 `namespace/self`；Manager 安装器在本次 enrollment 中启动 Agent，业务镜像仍需显式集成容器入口与原业务命令。
 
 ## 生命周期命令
 
