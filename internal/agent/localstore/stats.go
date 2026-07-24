@@ -36,6 +36,11 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	if err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MIN(first_sequence),0),COALESCE(MAX(last_sequence),0) FROM segments").Scan(&stats.OldestEventSequence, &stats.LatestEventSequence); err != nil {
 		return Stats{}, err
 	}
+	cursor, err := s.SequenceCursor(ctx)
+	if err != nil {
+		return Stats{}, err
+	}
+	stats.LatestEventSequence = cursor.Event
 	err = s.db.QueryRowContext(ctx, `SELECT dropped_batches_storage,dropped_events_storage FROM runtime_counters WHERE singleton=1`).Scan(
 		&stats.DroppedBatchesStorage, &stats.DroppedEventsStorage,
 	)

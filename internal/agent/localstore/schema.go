@@ -72,7 +72,13 @@ CREATE TABLE IF NOT EXISTS runtime_counters (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   dropped_batches_storage INTEGER NOT NULL DEFAULT 0,
   dropped_events_storage INTEGER NOT NULL DEFAULT 0
-);`
+);
+CREATE TABLE IF NOT EXISTS sequence_cursor (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  event_sequence INTEGER NOT NULL DEFAULT 0,
+  signal_sequence INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO sequence_cursor(singleton,event_sequence,signal_sequence) VALUES (1,0,0);`
 
 func (s *Store) initialize(ctx context.Context, dbPath string) error {
 	for _, statement := range []string{

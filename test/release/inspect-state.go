@@ -51,26 +51,29 @@ func inspect(ctx context.Context, opts options) error {
 	if err != nil {
 		return fmt.Errorf("query events: %w", err)
 	}
-	var matched *eventv1.CanonicalEvent
+	var matched []*eventv1.CanonicalEvent
 	for _, frame := range events {
 		if eventHasMarker(frame.GetEvent(), opts.marker) {
-			matched = frame.GetEvent()
-			break
+			matched = append(matched, frame.GetEvent())
 		}
 	}
 	if opts.mode == "absent" {
-		if matched != nil {
-			return fmt.Errorf("namespace/self captured marker %q: %s", opts.marker, eventSummary(matched))
+		if len(matched) > 0 {
+			return fmt.Errorf("namespace/self captured marker %q: %s", opts.marker, eventSummary(matched[0]))
 		}
 		return nil
 	}
 	if opts.mode != "positive" {
 		return fmt.Errorf("unsupported mode %q", opts.mode)
 	}
-	if matched == nil {
+	if len(matched) == 0 {
 		return fmt.Errorf("event marker %q not found in %d recent events", opts.marker, len(events))
 	}
-	return requireSignal(ctx, store, opts.signalRule, matched.GetId())
+	eventIDs := make([]string, 0, len(matched))
+	for _, event := range matched {
+		eventIDs = append(eventIDs, event.GetId())
+	}
+	return requireSignal(ctx, store, opts.signalRule, eventIDs)
 }
 
 func eventSummary(event *eventv1.CanonicalEvent) string {
@@ -80,33 +83,37 @@ func eventSummary(event *eventv1.CanonicalEvent) string {
 		proc.GetBinary(), proc.GetArgv(), event.GetContainerId(), scope.GetType(), scope.GetSelector())
 }
 
-func requireSignal(ctx context.Context, store *localstore.Store, rule, eventID string) error {
+func requireSignal(ctx context.Context, store *localstore.Store, rule string, eventIDs []string) error {
 	signals, err := store.QuerySignals(ctx, localstore.SignalQuery{RuleID: rule, Severity: "high", Limit: 1000})
 	if err != nil {
 		return fmt.Errorf("query signals: %w", err)
 	}
+	var observedRefs []string
 	for _, frame := range signals {
-		if signalMatchesEvent(frame.GetSignal(), eventID) {
+		observedRefs = append(observedRefs, frame.GetSignal().GetEventRefs()...)
+		if signalMatchesAnyEvent(frame.GetSignal(), eventIDs) {
 			return nil
 		}
 	}
-	return fmt.Errorf("high signal rule %q does not reference event %q", rule, eventID)
+	return fmt.Errorf("high signal rule %q refs %v do not reference marker exec events %v", rule, observedRefs, eventIDs)
 }
 
-func signalMatchesEvent(signal *signalv1.Signal, eventID string) bool {
-	if signal == nil || signal.GetSeverity() != "high" || eventID == "" {
+func signalMatchesAnyEvent(signal *signalv1.Signal, eventIDs []string) bool {
+	if signal == nil || signal.GetSeverity() != "high" {
 		return false
 	}
 	for _, ref := range signal.GetEventRefs() {
-		if ref == eventID {
-			return true
+		for _, eventID := range eventIDs {
+			if eventID != "" && ref == eventID {
+				return true
+			}
 		}
 	}
 	return false
 }
 
 func eventHasMarker(event *eventv1.CanonicalEvent, marker string) bool {
-	if event == nil || event.GetSubjectProc() == nil {
+	if event == nil || event.GetBehavior() != "process.exec" || event.GetSubjectProc() == nil {
 		return false
 	}
 	return strings.Contains(strings.Join(event.GetSubjectProc().GetArgv(), " "), marker)

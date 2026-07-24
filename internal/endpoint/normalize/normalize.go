@@ -30,10 +30,11 @@ type Identity struct {
 }
 
 type Options struct {
-	TenantID      string
-	ScopeType     string
-	ScopeSelector string
-	Labels        map[string]string
+	TenantID        string
+	ScopeType       string
+	ScopeSelector   string
+	Labels          map[string]string
+	InitialSequence uint64
 }
 
 func New(agentID, hostID string, table *endpointctx.Table) *Normalizer {
@@ -53,6 +54,7 @@ func NewWithOptions(agentID, hostID string, table *endpointctx.Table, opts Optio
 		labels:        cloneLabels(opts.Labels),
 		table:         table,
 	}
+	n.seq.Store(opts.InitialSequence)
 	n.SetIdentity(agentID, hostID, opts.TenantID)
 	return n
 }

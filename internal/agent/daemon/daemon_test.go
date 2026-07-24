@@ -26,6 +26,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
@@ -228,6 +229,75 @@ func TestStandaloneRuntimePersistsBeforeAcknowledging(t *testing.T) {
 	batches, err := runner.localStore.ReadBatches(t.Context(), localstore.ReadOptions{Limit: 10})
 	if err != nil || len(batches) != 1 || batches[0].Batch.GetHeader().GetBatchId() != "standalone-1" {
 		t.Fatalf("batches=%+v err=%v", batches, err)
+	}
+}
+
+func TestStandaloneRuntimeResumesPersistentSequences(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state")
+	store := openSequenceStore(t, statePath)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := standaloneTestConfig(t, dir, statePath)
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.localStore.Close()
+	if runner.eventSeq != 41 || runner.signalSeq != 17 {
+		t.Fatalf("eventSeq=%d signalSeq=%d, want 41/17", runner.eventSeq, runner.signalSeq)
+	}
+}
+
+func TestEndpointSignalIDsContinueAcrossDetectionReplacement(t *testing.T) {
+	runner := &AgentRuntime{signalSeq: 17}
+	event := &eventv1.CanonicalEvent{
+		Id: "event-a", Behavior: "process.exec", ParentStableId: "parent",
+		SubjectProc: &eventv1.ProcessRef{Binary: "/bin/bash"},
+	}
+	firstEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
+	secondEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
+	first := runner.dataBatchForEvent(event, firstEngine.Process(event)).GetSignals()[0]
+	second := runner.dataBatchForEvent(event, secondEngine.Process(event)).GetSignals()[0]
+	if first.GetSequence() != 18 || first.GetSignal().GetId() != "sig-00000000000000000018" {
+		t.Fatalf("first signal=%+v", first)
+	}
+	if second.GetSequence() != 19 || second.GetSignal().GetId() != "sig-00000000000000000019" {
+		t.Fatalf("second signal=%+v", second)
+	}
+}
+
+func openSequenceStore(t *testing.T, statePath string) *localstore.Store {
+	t.Helper()
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: statePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signal := &dataplanev1.SignalFrame{Sequence: 17, ObservedAt: "2026-07-24T00:00:00Z", Signal: &signalv1.Signal{Id: "sig-00000000000000000017"}}
+	batch := &dataplanev1.DataBatch{
+		Header:  &dataplanev1.BatchHeader{BatchId: "seed", EventSeqStart: 41, EventSeqEnd: 41, SignalSeqStart: 17, SignalSeqEnd: 17},
+		Signals: []*dataplanev1.SignalFrame{signal},
+	}
+	if _, err := store.AppendBatch(t.Context(), batch); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendSignals(t.Context(), []*dataplanev1.SignalFrame{signal}); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func standaloneTestConfig(t *testing.T, dir, statePath string) config.Config {
+	t.Helper()
+	policyPath := filepath.Join(dir, "collection.json")
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return config.Config{
+		Local:     config.LocalConfig{StatePath: statePath, Storage: config.LocalStorageConfig{MaxBytes: 1 << 30, MinFreeBytes: 1, SegmentSize: 1 << 20, SignalMaxCount: 1000}},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: time.Second},
 	}
 }
 

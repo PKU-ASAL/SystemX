@@ -111,6 +111,7 @@ type AgentRuntime struct {
 	content            *agentcontent.Store
 	featureFlags       agenthealth.RuntimeFeatureFlags
 	detectionStatus    agenthealth.DetectionHealth
+	eventSeq           uint64
 	signalSeq          uint64
 	telemetrySeq       uint64
 }
@@ -152,6 +153,14 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 		if cfg.Agent.TenantID == "" {
 			cfg.Agent.TenantID = "local"
 		}
+		cursor, err := state.SequenceCursor(context.Background())
+		if err != nil {
+			_ = state.Close()
+			return nil, fmt.Errorf("load local sequence cursor: %w", err)
+		}
+		runtime := &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state, eventSeq: cursor.Event, signalSeq: cursor.Signal}
+		runtime.setRuntimeIdentity(runtimeIdentity{AgentID: cfg.Agent.ID, HostID: cfg.Agent.HostID, TenantID: cfg.Agent.TenantID})
+		return runtime, nil
 	}
 	runtime := &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state}
 	runtime.setRuntimeIdentity(runtimeIdentity{AgentID: cfg.Agent.ID, HostID: cfg.Agent.HostID, TenantID: cfg.Agent.TenantID})
@@ -245,10 +254,11 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	dataPlaneCtx, cancelDataPlane := context.WithCancel(ctx)
 	defer cancelDataPlane()
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
-		TenantID:      r.Config.Agent.TenantID,
-		ScopeType:     scopeType,
-		ScopeSelector: scopeSelector,
-		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
+		TenantID:        r.Config.Agent.TenantID,
+		ScopeType:       scopeType,
+		ScopeSelector:   scopeSelector,
+		Labels:          r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
+		InitialSequence: r.eventSeq,
 	})
 	r.setNormalizer(norm)
 	endpointRuntime := NewEndpointRuntime(r, norm)
@@ -952,13 +962,25 @@ func (r *AgentRuntime) dataBatchForEvent(event *eventv1.CanonicalEvent, signals 
 		})
 	}
 	for _, sig := range signals {
+		sequence := r.nextSignalSequence()
+		setEndpointSignalID(sig, sequence)
 		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{
-			Sequence:   r.nextSignalSequence(),
+			Sequence:   sequence,
 			ObservedAt: now.Format(time.RFC3339Nano),
 			Signal:     sig,
 		})
 	}
 	return batch
+}
+
+func setEndpointSignalID(signal *signalv1.Signal, sequence uint64) {
+	if signal == nil {
+		return
+	}
+	signal.Id = fmt.Sprintf("sig-%020d", sequence)
+	if signal.Evidence != nil {
+		signal.Evidence.Id = "evb-" + signal.Id
+	}
 }
 
 func (r *AgentRuntime) dataBatchForSignals(signals []*signalv1.Signal) *dataplanev1.DataBatch {
