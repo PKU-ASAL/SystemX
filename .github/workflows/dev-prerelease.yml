@@ -43,8 +43,10 @@ jobs:
         run: |
           go test ./...
           bash test/suites/product/endpoint/standalone-release-package.sh
+          bash test/suites/product/endpoint/container-entrypoint.sh
           bash test/suites/product/endpoint/standalone-github-assets.sh
           bash test/suites/product/endpoint/dev-prerelease-workflow.sh
+          bash test/release/test-contract.sh
 
       - name: Build standalone release assets
         id: build
@@ -127,6 +129,17 @@ jobs:
           \`\`\`bash
           curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/install.sh | sudo bash
           \`\`\`
+
+          Container image installation:
+
+          \`\`\`dockerfile
+          RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates util-linux
+          RUN curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/install.sh \\
+              | bash -s -- --profile linux-container
+          ENTRYPOINT ["/usr/local/bin/sysarmor-container-entrypoint"]
+          \`\`\`
+
+          Run the container with privileged mode, host cgroup namespace, host BTF/bpffs mounts, and a restart policy.
 
           Verify build provenance:
 
