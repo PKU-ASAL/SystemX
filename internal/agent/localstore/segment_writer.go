@@ -64,6 +64,10 @@ func (s *Store) AppendBatch(ctx context.Context, batch *dataplanev1.DataBatch) (
 	if err := s.upsertSegment(ctx, s.writer, "open", 0); err != nil {
 		return Position{}, err
 	}
+	s.advanceSequenceCursor(batch)
+	if err := s.persistSequenceCursor(ctx); err != nil {
+		return Position{}, err
+	}
 	s.batchPositions[position.BatchID] = position
 	return position, nil
 }

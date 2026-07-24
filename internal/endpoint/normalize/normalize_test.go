@@ -103,3 +103,11 @@ func TestNormalizerSwitchesIdentityWithoutResettingSequence(t *testing.T) {
 		t.Fatalf("sequence reset across identity switch: first=%d second=%d", first.GetSeq(), second.GetSeq())
 	}
 }
+
+func TestNormalizerStartsAfterPersistedSequence(t *testing.T) {
+	n := NewWithOptions("device-a", "host-a", nil, Options{InitialSequence: 41})
+	event := n.Normalize(&sensorv1.SensorEvent{Proc: &sensorv1.RawProcess{Pid: 1}})
+	if event.GetSeq() != 42 {
+		t.Fatalf("sequence=%d, want 42", event.GetSeq())
+	}
+}

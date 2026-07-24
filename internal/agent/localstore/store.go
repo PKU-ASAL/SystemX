@@ -33,6 +33,7 @@ type Store struct {
 	segmentMu      sync.Mutex
 	writer         *segmentWriter
 	batchPositions map[string]Position
+	cursor         SequenceCursor
 }
 
 func Open(ctx context.Context, opts Options) (*Store, error) {
