@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -342,6 +343,39 @@ func TestBackendFiltersByNamespaceScope(t *testing.T) {
 	}
 	if len(got) != 1 || got[0] != "process.exec" {
 		t.Fatalf("got behaviors %v, want one process.exec", got)
+	}
+}
+
+func TestBackendNamespaceSelfFiltersSiblingContainer(t *testing.T) {
+	backend := &Backend{
+		ScopeType:                "namespace",
+		ScopeSelector:            "self",
+		namespaceSelfContainerID: "abcdef0123456789",
+		intent: contract.CollectionIntent{NamespaceSelectors: []contract.NamespaceSelector{
+			{Namespace: "Pid", Values: []string{"4026533001"}},
+		}},
+	}
+	self := &sensorv1.SensorEvent{ContainerId: "abcdef0123456789"}
+	sibling := &sensorv1.SensorEvent{ContainerId: "fedcba9876543210"}
+	if !backend.matchesScope(self) {
+		t.Fatal("namespace/self rejected its own container event")
+	}
+	if backend.matchesScope(sibling) {
+		t.Fatal("namespace/self accepted a sibling container event")
+	}
+}
+
+func TestContainerIDFromCgroup(t *testing.T) {
+	tests := map[string]string{
+		"docker systemd": "0::/system.slice/docker-2e13a1fa7bec4aa1882f1b1e6645ca7135186249de2e955eaa2705391ae1927f.scope\n",
+		"containerd":     "0::/kubepods.slice/cri-containerd-a4e1ca8ef3d4c02c7b28d835a97fa4e59e0be83f23443138bcaa1234567890ab.scope\n",
+	}
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := containerIDFromCgroup(data); len(got) != 64 {
+				t.Fatalf("containerIDFromCgroup() = %q, want 64-character ID", got)
+			}
+		})
 	}
 }
 
