@@ -84,7 +84,7 @@ IR 与外部 YAML/JSON 语法分离。未来 DSL、图查询语言或可视化�
 - contextset 和 iocpack 引用；
 - path、IP、port、process identity 等规范类型。
 
-捕获与关系原语：
+捕获与关系原语（现有 `same_as + step + step_field` 已具备跨步骤字段比较，本轮先完成严格校验和规则迁移）：
 
 - 捕获某一步的字段值；
 - 当前 Event 字段与历史步骤字段比较；
@@ -180,7 +180,7 @@ Provider API 禁止使用 `webshell`、`reverse-shell` 等具体威胁命名。�
 
 迁移按风险和依赖分阶段进行：
 
-1. 建立字段目录、IR 版本、跨步骤字段比较和统一 Runtime State Store；
+1. 建立字段目录和 IR 版本，严格校验现有跨步骤字段比较，并逐步统一 Runtime State Store；
 2. 先迁移 `web_runtime_spawns_shell`，验证 parent 关系与完整双 Event 引用；
 3. 迁移 `download_by_lolbin`、`payload_dropped` 和 `credential_file_read` 等单事件或低状态规则；
 4. 补齐 count、absence、suppress 等原语；
