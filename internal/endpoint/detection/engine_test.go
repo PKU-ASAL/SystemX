@@ -233,6 +233,32 @@ func countSignals(signals []*signalv1.Signal, name string) int {
 	return count
 }
 
+func TestWebRuntimeShellUsesObservedParentBinary(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine.Process(execEvent("node", "lin-web", "stable-runtime", "init", "/usr/bin/node", []string{"/usr/bin/node", "/srv/server.js"}))
+	shell := execEvent("shell", "lin-web", "stable-shell", "stable-runtime", "/bin/sh", []string{"/bin/sh", "-c", "id"})
+	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 1 {
+		t.Fatalf("web runtime shell signals = %d, want 1", got)
+	}
+}
+
+func TestWebRuntimeShellRejectsRuntimeTokenOnlyInArgv(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	shell := execEvent("shell", "lin-fake", "stable-shell", "opaque-parent", "/bin/sh", []string{"/bin/sh", "-c", ": # node marker"})
+	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 0 {
+		t.Fatalf("forged argv web runtime signals = %d, want 0", got)
+	}
+}
+
+func TestWebRuntimeShellRejectsObservedNonWebParent(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine.Process(execEvent("worker", "lin-worker", "stable-worker", "init", "/usr/bin/sleep", []string{"/usr/bin/sleep", "infinity"}))
+	shell := execEvent("shell", "lin-worker", "stable-shell", "stable-worker", "/bin/sh", []string{"/bin/sh", "-c", "id"})
+	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 0 {
+		t.Fatalf("non-web parent signals = %d, want 0", got)
+	}
+}
+
 func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 	policy := policymodel.DefaultDetectionPolicy()
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{

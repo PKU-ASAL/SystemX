@@ -166,6 +166,7 @@ type lineageState struct {
 	reverseShellSeen        bool
 	payloadLifecycleEmitted bool
 	lastExecByStableID      map[string]string
+	processBinaryByStableID map[string]string
 }
 
 type ApplyReport struct {
@@ -362,10 +363,11 @@ func (e *Engine) lineage(id string) *lineageState {
 	st, ok := e.state[id]
 	if !ok {
 		st = &lineageState{
-			payloads:           make(map[string]bool),
-			payloadExecStable:  make(map[string]bool),
-			lastWriterByPath:   make(map[string]string),
-			lastExecByStableID: make(map[string]string),
+			payloads:                make(map[string]bool),
+			payloadExecStable:       make(map[string]bool),
+			lastWriterByPath:        make(map[string]string),
+			lastExecByStableID:      make(map[string]string),
+			processBinaryByStableID: make(map[string]string),
 		}
 		e.state[id] = st
 	}
@@ -379,6 +381,7 @@ func (s *lineageState) remember(ev *eventv1.CanonicalEvent) {
 	stableID := ev.GetSubjectProc().GetStableId()
 	if eventBehavior(ev) == eventmodel.BehaviorProcessExec.String() && stableID != "" {
 		s.lastExecByStableID[stableID] = ev.GetId()
+		s.processBinaryByStableID[stableID] = ev.GetSubjectProc().GetBinary()
 	}
 }
 
@@ -387,8 +390,7 @@ func (e *Engine) detectWebRuntimeShell(ev *eventv1.CanonicalEvent, st *lineageSt
 	if !ok || !isShell(binaryBase(ev)) {
 		return nil
 	}
-	argv := strings.Join(ev.GetSubjectProc().GetArgv(), " ")
-	if !looksLikeWebRuntime(ev.GetParentStableId(), ev.GetSubjectProc().GetBinary(), argv) {
+	if !looksLikeWebRuntime(st.processBinaryByStableID[ev.GetParentStableId()]) {
 		return nil
 	}
 	st.webShellExecRefs = appendUnique(st.webShellExecRefs, ev.GetId())
@@ -1410,14 +1412,13 @@ func isShell(bin string) bool {
 	}
 }
 
-func looksLikeWebRuntime(parentStableID, binary, argv string) bool {
-	text := strings.ToLower(parentStableID + " " + binary + " " + argv)
-	for _, token := range []string{"nginx", "apache", "httpd", "php-fpm", "gunicorn", "uwsgi", "tomcat", "node"} {
-		if strings.Contains(text, token) {
-			return true
-		}
+func looksLikeWebRuntime(binary string) bool {
+	switch strings.ToLower(filepath.Base(binary)) {
+	case "nginx", "apache2", "httpd", "php-fpm", "gunicorn", "uwsgi", "tomcat", "node", "nodejs":
+		return true
+	default:
+		return false
 	}
-	return parentStableID == "parent"
 }
 
 func isTrustedBinary(path string, trusted []string) bool {
