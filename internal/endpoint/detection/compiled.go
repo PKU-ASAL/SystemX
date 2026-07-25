@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,6 +97,7 @@ const (
 	fieldLineageID
 	fieldProcessStableID
 	fieldProcessBinary
+	fieldProcessBinaryName
 	fieldProcessArgv
 	fieldProcessUID
 	fieldParentStableID
@@ -110,25 +112,26 @@ const (
 )
 
 type eventView struct {
-	ev              *eventv1.CanonicalEvent
-	eventID         string
-	behavior        string
-	lineageID       string
-	processStableID string
-	processBinary   string
-	processArgv     string
-	processUID      string
-	parentStableID  string
-	filePath        string
-	socketAddr      string
-	socketPort      string
-	socket          string
-	scopeType       string
-	scopeSelector   string
-	containerID     string
-	cgroup          string
-	occurredAtNs    uint64
-	monoNs          uint64
+	ev                *eventv1.CanonicalEvent
+	eventID           string
+	behavior          string
+	lineageID         string
+	processStableID   string
+	processBinary     string
+	processBinaryName string
+	processArgv       string
+	processUID        string
+	parentStableID    string
+	filePath          string
+	socketAddr        string
+	socketPort        string
+	socket            string
+	scopeType         string
+	scopeSelector     string
+	containerID       string
+	cgroup            string
+	occurredAtNs      uint64
+	monoNs            uint64
 }
 
 func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRuntime {
@@ -405,7 +408,7 @@ func contentValuesFromSnapshot(content ContentSnapshot, ref string) []string {
 	if item, ok := content.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return nil
+	return builtinContentValues(ref)
 }
 
 func compileFields(fields []string) []fieldID {
@@ -431,6 +434,8 @@ func compileField(field string) fieldID {
 		return fieldProcessStableID
 	case "process.binary", "binary":
 		return fieldProcessBinary
+	case "process.binary_name", "binary_name":
+		return fieldProcessBinaryName
 	case "process.argv", "argv":
 		return fieldProcessArgv
 	case "process.uid", "uid":
@@ -507,6 +512,7 @@ func newEventView(ev *eventv1.CanonicalEvent) eventView {
 	if proc := ev.GetSubjectProc(); proc != nil {
 		view.processStableID = proc.GetStableId()
 		view.processBinary = proc.GetBinary()
+		view.processBinaryName = filepath.Base(proc.GetBinary())
 		view.processArgv = strings.Join(proc.GetArgv(), " ")
 		view.processUID = strconv.FormatUint(uint64(proc.GetUid()), 10)
 	}
@@ -539,6 +545,8 @@ func (v eventView) field(field fieldID) string {
 		return v.processStableID
 	case fieldProcessBinary:
 		return v.processBinary
+	case fieldProcessBinaryName:
+		return v.processBinaryName
 	case fieldProcessArgv:
 		return v.processArgv
 	case fieldProcessUID:
@@ -653,6 +661,8 @@ func fieldName(field fieldID) string {
 		return "process.stable_id"
 	case fieldProcessBinary:
 		return "process.binary"
+	case fieldProcessBinaryName:
+		return "process.binary_name"
 	case fieldProcessArgv:
 		return "process.argv"
 	case fieldProcessUID:

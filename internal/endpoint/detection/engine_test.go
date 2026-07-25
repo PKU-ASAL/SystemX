@@ -428,6 +428,47 @@ func TestCEPRuntimeExprRuleUsesContentRef(t *testing.T) {
 	}
 }
 
+func TestRuntimeUsesBuiltinProcessBinaryContext(t *testing.T) {
+	content := ContentSnapshot{Rules: []RuleSpec{processBinaryContextRule()}}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	event := execEvent("node", "lin-web", "node-stable", "init", "/usr/bin/node", nil)
+	if got := countSignals(engine.Process(event), "process_binary_context"); got != 1 {
+		t.Fatalf("signals = %d, want builtin node context match", got)
+	}
+}
+
+func TestRuntimeContentOverridesBuiltinProcessBinaryContext(t *testing.T) {
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:web-runtime-binaries": {Ref: "ctx:web-runtime-binaries", Version: "v2", Values: []string{"custom-web"}},
+		},
+		Rules: []RuleSpec{processBinaryContextRule()},
+	}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(execEvent("node", "lin-node", "node-stable", "init", "/usr/bin/node", nil)), "process_binary_context"); got != 0 {
+		t.Fatalf("default context signals = %d, want dynamic context replacement", got)
+	}
+	if got := countSignals(engine.Process(execEvent("custom", "lin-custom", "custom-stable", "init", "/opt/custom-web", nil)), "process_binary_context"); got != 1 {
+		t.Fatalf("custom context signals = %d, want 1", got)
+	}
+}
+
+func processBinaryContextRule() RuleSpec {
+	return RuleSpec{
+		RuleID: "process_binary_context", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+		RequiredBehaviors: []string{"process.exec"},
+		Expr: ExprSpec{Conditions: []ConditionSpec{{
+			Field: "process.binary_name", Op: "in", Ref: "ctx:web-runtime-binaries",
+		}}},
+	}
+}
+
 func TestCEPRuntimeSequenceRuleEmitsMultipleEventRefs(t *testing.T) {
 	enabled := true
 	policy := &policymodel.DetectionPolicy{
