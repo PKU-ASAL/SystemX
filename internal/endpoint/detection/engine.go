@@ -229,7 +229,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		engine.rules[rule.spec.RuleID] = rule
 		report.RuleIDs = append(report.RuleIDs, rule.spec.RuleID)
 	}
-	if errs := validateEffectiveRules(engine.rules); len(errs) > 0 {
+	if errs := append(validateEffectiveRules(engine.rules), validateRuleSpecs(rules)...); len(errs) > 0 {
 		report.Status = "rejected"
 		report.Message = "detection policy rejected"
 		report.Details = append(report.Details, errs...)

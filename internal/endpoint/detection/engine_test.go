@@ -3,6 +3,7 @@ package detection
 import (
 	"strings"
 	"testing"
+	"time"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -176,6 +177,45 @@ func TestDependencyCheckUsesCollectionCapabilityFields(t *testing.T) {
 	}, content)
 	if report.Status != "degraded" || !containsWarning(report.Warnings, "socket.port") {
 		t.Fatalf("report = %+v, want capability missing socket.port", report)
+	}
+}
+
+func TestRuleValidationRejectsUnknownFieldsAndOperators(t *testing.T) {
+	tests := []struct {
+		name string
+		cond ConditionSpec
+		want string
+	}{
+		{name: "field", cond: ConditionSpec{Field: "process.unknown", Op: "eq", Value: "x"}, want: "unsupported field"},
+		{name: "operator", cond: ConditionSpec{Field: "process.binary", Op: "magic", Value: "x"}, want: "unsupported operator"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_" + tt.name, RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+				Expr: ExprSpec{Conditions: []ConditionSpec{tt.cond}},
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuleValidationRejectsInvalidSequenceReferences(t *testing.T) {
+	content := ContentSnapshot{Rules: []RuleSpec{{
+		RuleID: "invalid_sequence", RuleSetRef: "ruleset:cep", RuntimeType: "sequence",
+		Sequence: SequenceSpec{Within: time.Minute, Steps: []StepSpec{
+			{ID: "runtime", Behavior: "process.exec"},
+			{ID: "shell", Behavior: "process.exec", Conditions: []ConditionSpec{{
+				Field: "parent.stable_id", Op: "same_as", Step: "missing", StepField: "process.stable_id",
+			}}},
+		}},
+	}}}
+	_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "rejected" || !containsWarning(report.Details, "unknown prior step") {
+		t.Fatalf("report = %+v, want rejected unknown prior step", report)
 	}
 }
 
