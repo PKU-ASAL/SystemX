@@ -289,6 +289,29 @@ func TestWebRuntimeShellUsesObservedParentBinary(t *testing.T) {
 	}
 }
 
+func TestWebRuntimeRuleDeclaresSensorSourceFields(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "web_runtime_spawns_shell" {
+			continue
+		}
+		fields := rule.RequiredEvents[0].Fields
+		if !slices.Contains(fields, "process.binary") || slices.Contains(fields, "process.binary_name") {
+			t.Fatalf("required fields = %v, want sensor process.binary without derived binary_name", fields)
+		}
+		return
+	}
+	t.Fatal("web_runtime_spawns_shell rule not found")
+}
+
+func TestWebRuntimeShellKeepsAshCompatibility(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine.Process(execEvent("node", "lin-ash", "runtime", "init", "/usr/bin/node", nil))
+	signals := engine.Process(execEvent("ash", "lin-ash", "shell", "runtime", "/bin/ash", nil))
+	if got := countSignals(signals, "web_runtime_spawns_shell"); got != 1 {
+		t.Fatalf("ash web runtime shell signals = %d, want 1", got)
+	}
+}
+
 func TestWebRuntimeShellRejectsRuntimeTokenOnlyInArgv(t *testing.T) {
 	engine, _ := New(policymodel.DefaultDetectionPolicy())
 	shell := execEvent("shell", "lin-fake", "stable-shell", "opaque-parent", "/bin/sh", []string{"/bin/sh", "-c", ": # node marker"})

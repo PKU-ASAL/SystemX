@@ -43,7 +43,7 @@
               "events": [
                 {
                   "behavior": "process.exec",
-                  "fields": ["process.binary_name", "process.stable_id", "parent.stable_id", "lineage_id"]
+                  "fields": ["process.binary", "process.stable_id", "parent.stable_id", "lineage_id"]
                 }
               ],
               "context": {

@@ -7,6 +7,6 @@
   },
   "spec": {
     "value_type": "process_binary_name",
-    "values": ["bash", "dash", "ksh", "sh", "zsh"]
+    "values": ["ash", "bash", "dash", "ksh", "sh", "zsh"]
   }
 }

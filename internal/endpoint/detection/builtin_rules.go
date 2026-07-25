@@ -14,7 +14,7 @@ func builtinRules() []RuleSpec {
 		{
 			RuleID: "web_runtime_spawns_shell", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high",
 			RuntimeType: "sequence", Terminal: &nonTerminal,
-			RequiredEvents: []RequiredEventSpec{{Behavior: eventmodel.BehaviorProcessExec.String(), Fields: []string{"process.binary_name", "process.stable_id", "parent.stable_id", "lineage_id"}}},
+			RequiredEvents: []RequiredEventSpec{{Behavior: eventmodel.BehaviorProcessExec.String(), Fields: []string{"process.binary", "process.stable_id", "parent.stable_id", "lineage_id"}}},
 			ContextRefs:    []string{"ctx:web-runtime-binaries", "ctx:shell-binaries"},
 			Sequence: SequenceSpec{Within: 30 * time.Second, By: []string{"lineage_id"}, Steps: []StepSpec{
 				{ID: "runtime", Behavior: eventmodel.BehaviorProcessExec.String(), Conditions: []ConditionSpec{{Field: "process.binary_name", Op: "in", Ref: "ctx:web-runtime-binaries"}}},

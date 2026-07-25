@@ -2,7 +2,7 @@ package detection
 
 var builtinContextValues = map[string][]string{
 	"ctx:web-runtime-binaries": {"nginx", "apache2", "httpd", "php-fpm", "gunicorn", "uwsgi", "tomcat", "node", "nodejs"},
-	"ctx:shell-binaries":       {"sh", "bash", "dash", "zsh", "ksh"},
+	"ctx:shell-binaries":       {"sh", "bash", "dash", "zsh", "ksh", "ash"},
 }
 
 func builtinContentValues(ref string) []string {
