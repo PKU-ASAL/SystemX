@@ -3,7 +3,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
-source "$HERE/common.sh"
+source "$HERE/config.sh"
 
 failed=0
 check_command() {
@@ -20,9 +20,23 @@ check_command() {
 
 check_command docker "安装 Docker Engine，并将当前用户加入 docker 组"
 check_command curl "安装 curl（Ubuntu/Debian: sudo apt-get install curl）"
-check_command python3 "安装 Python 3（Ubuntu/Debian: sudo apt-get install python3）"
-check_command go "安装 go.mod 指定版本的 Go 工具链"
+check_command jq "安装 jq（Ubuntu/Debian: sudo apt-get install jq）"
 check_command mountpoint "安装 util-linux（Ubuntu/Debian: sudo apt-get install util-linux）"
+
+if [[ ! -x "$ATTACK_SCRIPT" ]]; then
+  echo "[release-doctor][ERROR] 攻击脚本不存在或不可执行: $ATTACK_SCRIPT" >&2
+  echo "  修复: 设置 ATTACK_SCRIPT=<可执行脚本路径>，或执行 chmod +x $ATTACK_SCRIPT" >&2
+  failed=1
+fi
+
+for setting in RESTART_TEST FRESH_DOWNLOAD; do
+  value="${!setting}"
+  if [[ "$value" != "0" && "$value" != "1" ]]; then
+    echo "[release-doctor][ERROR] $setting 必须为 0 或 1，当前值: $value" >&2
+    echo "  修复: 设置 $setting=1 启用，或 $setting=0 禁用" >&2
+    failed=1
+  fi
+done
 
 if command -v docker >/dev/null 2>&1; then
   if docker info >/dev/null 2>&1; then
@@ -51,12 +65,12 @@ else
 fi
 
 if (( failed == 0 )); then
-  install_url="$(resolve_install_url)"
-  if curl -fsSL "$install_url" -o /dev/null; then
+  source_url="$(resolve_install_url)"
+  if install_url="$(resolve_download_url "$source_url")"; then
     echo "[release-doctor][OK] install URL: $install_url"
   else
-    echo "[release-doctor][ERROR] 无法下载 $install_url" >&2
-    echo "  修复: 检查网络，或设置 SYSARMOR_INSTALL_URL=<可访问的 install.sh URL>" >&2
+    echo "[release-doctor][ERROR] 无法下载公开安装器" >&2
+    echo "  修复: 检查网络，或设置 URL=<可访问的 install.sh URL> / RELEASE_PROXY_URL=<代理地址>" >&2
     failed=1
   fi
 fi

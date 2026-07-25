@@ -134,7 +134,7 @@ product-endpoint-standalone:
 	bash suites/product/endpoint/container-entrypoint.sh
 	bash suites/product/endpoint/standalone-github-assets.sh
 	bash suites/product/endpoint/dev-prerelease-workflow.sh
-	bash release/test-contract.sh
+	bash suites/product/endpoint/release-container-e2e-contract.sh
 
 product-endpoint-release-container:
 	$(MAKE) -C release test

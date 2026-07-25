@@ -3,17 +3,14 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_ROOT="$(cd "$HERE/.." && pwd)"
-REPO="$(cd "$TEST_ROOT/.." && pwd)"
 # shellcheck source=/dev/null
-source "$HERE/common.sh"
+source "$HERE/config.sh"
 
-IMAGES="${IMAGES:-ubuntu2204 ubuntu2404 debian12}"
-RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RESULT_ROOT="$TEST_ROOT/.results/release/$RUN_ID"
-INSTALL_URL="$(resolve_install_url)"
+INSTALL_URL="$(resolve_download_url "$(resolve_install_url)")"
+ASSERT="$HERE/assert.sh"
 ACTIVE_CONTAINER=""
 ACTIVE_RESULT_DIR=""
-INSPECTOR="$RESULT_ROOT/inspect-state"
 
 cleanup() {
   if [[ -n "$ACTIVE_CONTAINER" ]]; then
@@ -25,112 +22,62 @@ cleanup() {
 }
 trap cleanup EXIT
 
-wait_for_health() {
-  local container="$1"
-  local output="$2"
-  local deadline=$((SECONDS + 90))
-  until docker exec "$container" sysarmorctl --json agent health >"$output" 2>"$output.err"; do
-    if (( SECONDS >= deadline )); then
-      echo "[release-test][ERROR] Agent 未在 90 秒内就绪: $container" >&2
-      docker logs "$container" >&2 2>/dev/null || true
-      return 1
-    fi
-    sleep 1
-  done
-}
-
-wait_for_stopped() {
-  local container="$1"
-  local deadline=$((SECONDS + 20))
-  while [[ "$(docker inspect "$container" --format '{{.State.Running}}')" == "true" ]]; do
-    if (( SECONDS >= deadline )); then
-      echo "[release-test][ERROR] Agent 退出后容器仍在运行: $container" >&2
-      return 1
-    fi
-    sleep 0.2
-  done
-}
-
 build_image() {
-  local image="$1"
-  local tag="$2"
-  local result_dir="$3"
-  docker build --network host \
-    --build-arg "SYSARMOR_INSTALL_URL=$INSTALL_URL" \
-    -t "$tag" "$HERE/images/$image" >"$result_dir/build.log" 2>&1
+  local args=(--network host --build-arg "SYSARMOR_INSTALL_URL=$INSTALL_URL")
+  if [[ "$FRESH_DOWNLOAD" == "1" ]]; then
+    args+=(--no-cache)
+  fi
+  docker build "${args[@]}" -t "$2" "$HERE/images/$1" >"$3/build.log" 2>&1
 }
 
 start_container() {
-  local name="$1"
-  local tag="$2"
-  docker run -d \
-    --name "$name" \
-    --privileged \
-    --cgroupns=host \
+  docker run -d --name "$1" --privileged --cgroupns=host \
     -v /sys/kernel/btf/vmlinux:/sys/kernel/btf/vmlinux:ro \
-    -v /sys/fs/bpf:/sys/fs/bpf \
-    "$tag" >/dev/null
+    -v /sys/fs/bpf:/sys/fs/bpf "$2" >/dev/null
 }
 
-assert_scope() {
-  local container="$1"
-  docker exec "$container" grep -Fq 'type: namespace' /etc/sysarmor/agent/agent.yaml
-  docker exec "$container" grep -Fq 'selector: self' /etc/sysarmor/agent/agent.yaml
+run_attack_in_container() {
+  docker exec -i "$1" /bin/bash -s -- "$2" <"$ATTACK_SCRIPT"
 }
 
-record_state() {
-  local container="$1"
-  local result_dir="$2"
-  docker exec "$container" sqlite3 -header /var/lib/sysarmor/agent/agent.db \
-    "SELECT rule_id,severity,COUNT(*) AS count FROM signals GROUP BY rule_id,severity;" >"$result_dir/signals.txt"
-  docker exec "$container" sqlite3 -header /var/lib/sysarmor/agent/agent.db \
-    "SELECT state,COUNT(*) AS count,SUM(record_count) AS records FROM segments GROUP BY state;" >"$result_dir/segments.txt"
-  docker logs "$container" >"$result_dir/container.log" 2>&1
+run_attack_in_sibling() {
+  docker run --rm -i --entrypoint /bin/bash "$1" -s -- "$2" <"$ATTACK_SCRIPT" >/dev/null
 }
 
-assert_collection_and_scope() {
-  local image="$1"
-  local tag="$2"
-  local container="$3"
-  local positive="sysarmor-positive-$image-$(date +%s%N)"
-  docker exec "$container" /bin/sh -c "/bin/sh -c ': # node $positive'"
-  "$HERE/assert-state.sh" positive "$container" "$positive"
-
-  local sibling="sysarmor-sibling-$image-$(date +%s%N)"
-  docker run --rm --entrypoint /bin/sh "$tag" -c "/bin/sh -c ': # $sibling'" >/dev/null
-  local host="sysarmor-host-$image-$(date +%s%N)"
-  /bin/sh -c ": # $host"
-  sleep 3
-  "$HERE/assert-state.sh" absent "$container" "$sibling"
-  "$HERE/assert-state.sh" absent "$container" "$host"
+run_attack_on_host() {
+  /bin/bash "$ATTACK_SCRIPT" "$1"
 }
 
-assert_restart_recovery() {
-  local image="$1"
-  local container="$2"
-  local result_dir="$3"
-  local agent_pid exit_code
+verify_collection_and_scope() {
+  local image="$1" tag="$2" container="$3" result_dir="$4" marker
+  marker="sysarmor-positive-$image-$(date +%s%N)"
+  run_attack_in_container "$container" "$marker"
+  "$ASSERT" detected "$container" "$marker" "$result_dir/detected-initial.jsonl"
+
+  marker="sysarmor-sibling-$image-$(date +%s%N)"
+  run_attack_in_sibling "$tag" "$marker"
+  "$ASSERT" absent "$container" "$marker" "$result_dir/events-sibling.jsonl"
+
+  marker="sysarmor-host-$image-$(date +%s%N)"
+  run_attack_on_host "$marker"
+  "$ASSERT" absent "$container" "$marker" "$result_dir/events-host.jsonl"
+}
+
+verify_restart_recovery() {
+  local image="$1" container="$2" result_dir="$3" agent_pid marker
   agent_pid="$(docker exec "$container" pgrep -o -f '^/opt/sysarmor/agent/bin/sysarmor-agent run')"
   docker exec "$container" kill "$agent_pid"
-  wait_for_stopped "$container"
-  exit_code="$(docker inspect "$container" --format '{{.State.ExitCode}}')"
-  [[ "$exit_code" -ne 0 ]] || {
-    echo "[release-test][ERROR] Agent 异常退出后容器退出码为 0" >&2
-    return 1
-  }
-
+  "$ASSERT" stopped-nonzero "$container"
   docker start "$container" >/dev/null
-  wait_for_health "$container" "$result_dir/health-after-restart.json"
-  local recovered="sysarmor-recovered-$image-$(date +%s%N)"
-  docker exec "$container" /bin/sh -c "/bin/sh -c ': # node $recovered'"
-  "$HERE/assert-state.sh" positive "$container" "$recovered"
+  "$ASSERT" ready "$container" "$result_dir/health-after-restart.json"
+  marker="sysarmor-recovered-$image-$(date +%s%N)"
+  run_attack_in_container "$container" "$marker"
+  "$ASSERT" detected "$container" "$marker" "$result_dir/detected-after-restart.jsonl"
 }
 
 run_image() {
-  local image="$1"
-  local result_dir="$RESULT_ROOT/$image"
-  local tag="sysarmor-release-test:$image-$RUN_ID"
-  local container="sysarmor-release-$image-$RUN_ID"
+  local image="$1" result_dir="$RESULT_ROOT/$1"
+  local tag="sysarmor-release-test:$image-$RUN_ID" container="sysarmor-release-$image-$RUN_ID"
   mkdir -p "$result_dir"
   ACTIVE_CONTAINER="$container"
   ACTIVE_RESULT_DIR="$result_dir"
@@ -139,11 +86,12 @@ run_image() {
   echo "[release-test] building $image from $INSTALL_URL"
   build_image "$image" "$tag" "$result_dir"
   start_container "$container" "$tag"
-  wait_for_health "$container" "$result_dir/health.json"
-  assert_scope "$container"
-  assert_collection_and_scope "$image" "$tag" "$container"
-  assert_restart_recovery "$image" "$container" "$result_dir"
-  record_state "$container" "$result_dir"
+  "$ASSERT" ready "$container" "$result_dir/health.json"
+  verify_collection_and_scope "$image" "$tag" "$container" "$result_dir"
+  if [[ "$RESTART_TEST" == "1" ]]; then
+    verify_restart_recovery "$image" "$container" "$result_dir"
+  fi
+  docker logs "$container" >"$result_dir/container.log" 2>&1
 
   docker rm -f "$container" >/dev/null
   ACTIVE_CONTAINER=""
@@ -152,8 +100,6 @@ run_image() {
 }
 
 mkdir -p "$RESULT_ROOT"
-(cd "$REPO" && GOCACHE="$RESULT_ROOT/go-build-cache" go build -o "$INSPECTOR" ./test/release)
-export SYSARMOR_STATE_INSPECTOR="$INSPECTOR"
 printf '%s\n' "$INSTALL_URL" >"$RESULT_ROOT/install-url.txt"
 for image in $IMAGES; do
   case "$image" in
