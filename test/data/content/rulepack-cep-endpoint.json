@@ -12,6 +12,49 @@
         "version": "v1",
         "rules": [
           {
+            "rule_id": "web_runtime_spawns_shell",
+            "version": 2,
+            "severity": "high",
+            "runtime": {
+              "type": "sequence",
+              "sequence": {
+                "within": "30s",
+                "by": ["lineage_id"],
+                "steps": [
+                  {
+                    "id": "runtime",
+                    "event": "process.exec",
+                    "conditions": [
+                      {"field": "process.binary_name", "op": "in", "ref": "ctx:web-runtime-binaries"}
+                    ]
+                  },
+                  {
+                    "id": "shell",
+                    "event": "process.exec",
+                    "conditions": [
+                      {"field": "process.binary_name", "op": "in", "ref": "ctx:shell-binaries"},
+                      {"field": "parent.stable_id", "op": "same_as", "step": "runtime", "step_field": "process.stable_id"}
+                    ]
+                  }
+                ]
+              }
+            },
+            "requires": {
+              "events": [
+                {
+                  "behavior": "process.exec",
+                  "fields": ["process.binary_name", "process.stable_id", "parent.stable_id", "lineage_id"]
+                }
+              ],
+              "context": {
+                "required": ["ctx:web-runtime-binaries", "ctx:shell-binaries"]
+              }
+            },
+            "output": {
+              "terminal": false
+            }
+          },
+          {
             "rule_id": "download_by_lolbin",
             "version": 1,
             "severity": "medium",

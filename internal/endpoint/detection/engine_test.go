@@ -466,6 +466,48 @@ func TestRuntimeContentOverridesBuiltinProcessBinaryContext(t *testing.T) {
 	}
 }
 
+func TestDynamicWebRuntimeSequenceUsesContentContexts(t *testing.T) {
+	enabled := true
+	nonTerminal := false
+	policy := &policymodel.DetectionPolicy{
+		PolicyID: "dynamic-web", Version: 1, Mode: "observe",
+		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:dynamic-web", Enabled: &enabled}},
+	}
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:web-runtime-binaries": {Ref: "ctx:web-runtime-binaries", Version: "v2", Values: []string{"custom-web"}},
+			"ctx:shell-binaries":       {Ref: "ctx:shell-binaries", Version: "v2", Values: []string{"custom-shell"}},
+		},
+		Rules: []RuleSpec{webRuntimeSequenceRule("ruleset:dynamic-web", &nonTerminal)},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	engine.Process(execEvent("runtime", "lin-web", "runtime-stable", "init", "/opt/custom-web", nil))
+	signals := engine.Process(execEvent("shell", "lin-web", "shell-stable", "runtime-stable", "/opt/custom-shell", nil))
+	if len(signals) != 1 || signals[0].GetName() != "web_runtime_spawns_shell" {
+		t.Fatalf("signals = %+v", signals)
+	}
+	if signals[0].GetTerminal() || !slices.Equal(signals[0].GetEventRefs(), []string{"runtime", "shell"}) {
+		t.Fatalf("signal = %+v, want non-terminal with parent and shell refs", signals[0])
+	}
+}
+
+func webRuntimeSequenceRule(ruleSet string, terminal *bool) RuleSpec {
+	return RuleSpec{
+		RuleID: "web_runtime_spawns_shell", RuleSetRef: ruleSet, RuntimeType: "sequence", Terminal: terminal,
+		ContextRefs: []string{"ctx:web-runtime-binaries", "ctx:shell-binaries"},
+		Sequence: SequenceSpec{Within: time.Minute, By: []string{"lineage_id"}, Steps: []StepSpec{
+			{ID: "runtime", Behavior: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary_name", Op: "in", Ref: "ctx:web-runtime-binaries"}}},
+			{ID: "shell", Behavior: "process.exec", Conditions: []ConditionSpec{
+				{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
+				{Field: "parent.stable_id", Op: "same_as", Step: "runtime", StepField: "process.stable_id"},
+			}},
+		}},
+	}
+}
+
 func processBinaryContextRule() RuleSpec {
 	return RuleSpec{
 		RuleID: "process_binary_context", RuleSetRef: "ruleset:cep", RuntimeType: "expr",

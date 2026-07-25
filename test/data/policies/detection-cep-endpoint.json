@@ -19,6 +19,14 @@
       "version": "builtin"
     },
     {
+      "ref": "ctx:web-runtime-binaries",
+      "version": "2026.07.26.1"
+    },
+    {
+      "ref": "ctx:shell-binaries",
+      "version": "2026.07.26.1"
+    },
+    {
       "ref": "ctx:persistence-path-prefixes",
       "version": "builtin"
     }

@@ -131,7 +131,8 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 					]
 				}
 			},
-			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]}
+			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]},
+			"output":{"terminal":false}
 		}]}]}
 	}`
 	if _, err := store.Apply(raw, true, false); err != nil {
@@ -143,5 +144,8 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 	}
 	if rules[0].Sequence.Steps[1].Conditions[0].Step != "drop" {
 		t.Fatalf("sequence condition = %+v", rules[0].Sequence.Steps[1].Conditions[0])
+	}
+	if rules[0].Terminal == nil || *rules[0].Terminal {
+		t.Fatalf("terminal = %v, want explicit false", rules[0].Terminal)
 	}
 }

@@ -1083,6 +1083,7 @@ func detectionContentSnapshotFromContent(snapshot agentcontent.Snapshot) detecti
 				Confidence: rule.ResponseIntent.Confidence,
 				Reason:     rule.ResponseIntent.Reason,
 			},
+			Terminal: rule.Terminal,
 		})
 	}
 	return out

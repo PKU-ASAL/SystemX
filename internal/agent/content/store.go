@@ -81,6 +81,7 @@ type Rule struct {
 	ContextRefs    []string
 	IOCRefs        []string
 	ResponseIntent ResponseIntent
+	Terminal       *bool
 }
 
 type RuntimeExpr struct {
@@ -578,6 +579,7 @@ func parseRulePack(record Record) ([]Rule, error) {
 				} `json:"requires"`
 				Output struct {
 					ResponseIntent ResponseIntent `json:"response_intent"`
+					Terminal       *bool          `json:"terminal,omitempty"`
 				} `json:"output"`
 			} `json:"rules"`
 		} `json:"rulesets"`
@@ -601,6 +603,7 @@ func parseRulePack(record Record) ([]Rule, error) {
 				ContextRefs:    append(append([]string(nil), rule.Requires.Context.Required...), rule.Requires.Context.Optional...),
 				IOCRefs:        append(append([]string(nil), rule.Requires.IOC.Required...), rule.Requires.IOC.Optional...),
 				ResponseIntent: rule.Output.ResponseIntent,
+				Terminal:       rule.Output.Terminal,
 			})
 		}
 	}
