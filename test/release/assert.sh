@@ -14,7 +14,7 @@ fail() {
 
 query_events() {
   docker exec "$1" sysarmorctl --json event watch --snapshot --include-recent \
-    --behavior "$EXPECTED_BEHAVIOR" --limit 1000
+    --behavior process.exec --limit 1000
 }
 
 query_signals_with_events() {

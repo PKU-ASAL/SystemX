@@ -26,19 +26,26 @@ for image in ubuntu2204 ubuntu2404 debian12; do
   grep -Fq 'CMD ["node", "/opt/sysarmor-release-test/web-app/server.js"]' "$dockerfile"
 done
 
+if rg -n "require\\([\"']node:" "$RELEASE/fixtures" >/dev/null; then
+  echo "release fixtures must support Ubuntu 22.04 Node.js 12" >&2
+  exit 1
+fi
+
 grep -Fq 'assert.sh' "$RELEASE/run.sh"
 grep -Fq 'FRESH_DOWNLOAD="${FRESH_DOWNLOAD:-1}"' "$RELEASE/config.sh"
-grep -Fq 'RESTART_TEST="${RESTART_TEST:-0}"' "$RELEASE/config.sh"
 grep -Fq 'RELEASE_PROXY_URL="${RELEASE_PROXY_URL-https://gh-proxy.org}"' "$RELEASE/config.sh"
 grep -Fq -- '--no-cache' "$RELEASE/run.sh"
 grep -Fq -- '--privileged' "$RELEASE/run.sh"
 grep -Fq -- '--cgroupns=host' "$RELEASE/run.sh"
 grep -Fq '/sys/kernel/btf/vmlinux:/sys/kernel/btf/vmlinux:ro' "$RELEASE/run.sh"
 grep -Fq '/sys/fs/bpf:/sys/fs/bpf' "$RELEASE/run.sh"
-grep -Fq 'run_attack_in_container' "$RELEASE/run.sh"
-grep -Fq 'run_attack_in_sibling' "$RELEASE/run.sh"
-grep -Fq 'run_attack_on_host' "$RELEASE/run.sh"
-grep -Fq 'verify_restart_recovery' "$RELEASE/run.sh"
+grep -Fq 'prepare_result_root' "$RELEASE/run.sh"
+grep -Fq 'docker network create' "$RELEASE/run.sh"
+grep -Fq 'payload-server/server.js' "$RELEASE/run.sh"
+grep -Fq 'http://127.0.0.1:3000/healthz' "$RELEASE/run.sh"
+grep -Fq 'release_scenarios' "$RELEASE/run.sh"
+grep -Fq 'scenario_attack' "$RELEASE/run.sh"
+grep -Fq 'run_isolation_checks' "$RELEASE/run.sh"
 grep -Fq -- '--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT"' "$RELEASE/config.sh"
 grep -Fq 'sysarmorctl --json event watch' "$RELEASE/assert.sh"
 grep -Fq 'sysarmorctl --json signal watch' "$RELEASE/assert.sh"
@@ -53,6 +60,11 @@ grep -Fq 'payload_lifecycle' "$RELEASE/scenarios.sh"
 grep -Fq "'file.write process.exec network.connect'" "$RELEASE/scenarios.sh"
 grep -Fq "'8080 8443'" "$RELEASE/scenarios.sh"
 
+if rg -n 'RESTART_TEST|verify_restart_recovery|stopped-nonzero' "$RELEASE" >/dev/null; then
+  echo "release tests must not contain restart test logic" >&2
+  exit 1
+fi
+
 if grep -Eq 'sysarmorctl|jq ' "$RELEASE/run.sh"; then
   echo "run.sh must orchestrate without Event/Signal assertions" >&2
   exit 1
@@ -60,6 +72,22 @@ fi
 
 for obsolete in common.sh inspect-state.go inspect_state_test.go test-contract.sh; do
   test ! -e "$RELEASE/$obsolete"
+done
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+# shellcheck source=/dev/null
+source "$RELEASE/run.sh"
+mkdir -p "$tmp/results/repeat-run"
+printf '%s\n' stale >"$tmp/results/repeat-run/stale.txt"
+prepare_result_root "$tmp/results" repeat-run
+test ! -e "$tmp/results/repeat-run/stale.txt"
+test "$RESULT_ROOT" = "$tmp/results/repeat-run"
+for invalid_run_id in '../escape' '/tmp/escape' 'bad id'; do
+  if prepare_result_root "$tmp/results" "$invalid_run_id" >/dev/null 2>&1; then
+    echo "invalid RUN_ID accepted: $invalid_run_id" >&2
+    exit 1
+  fi
 done
 
 echo "[release-container-e2e-contract] ok"

@@ -1,9 +1,9 @@
 "use strict";
 
-const http = require("node:http");
-const fs = require("node:fs");
-const { spawn } = require("node:child_process");
-const { URL } = require("node:url");
+const http = require("http");
+const fs = require("fs");
+const { spawn } = require("child_process");
+const { URL } = require("url");
 
 const port = Number(process.env.WEB_PORT || 3000);
 const attackHost = process.env.ATTACK_HOST || "sysarmor-release-attacker";

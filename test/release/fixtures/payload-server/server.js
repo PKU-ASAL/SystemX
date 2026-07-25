@@ -1,7 +1,7 @@
 "use strict";
 
-const http = require("node:http");
-const { URL } = require("node:url");
+const http = require("http");
+const { URL } = require("url");
 
 const downloadPort = Number(process.env.DOWNLOAD_PORT || 8080);
 const controlPort = Number(process.env.CONTROL_PORT || 8443);

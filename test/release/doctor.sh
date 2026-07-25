@@ -23,20 +23,11 @@ check_command curl "安装 curl（Ubuntu/Debian: sudo apt-get install curl）"
 check_command jq "安装 jq（Ubuntu/Debian: sudo apt-get install jq）"
 check_command mountpoint "安装 util-linux（Ubuntu/Debian: sudo apt-get install util-linux）"
 
-if [[ ! -x "$ATTACK_SCRIPT" ]]; then
-  echo "[release-doctor][ERROR] 攻击脚本不存在或不可执行: $ATTACK_SCRIPT" >&2
-  echo "  修复: 设置 ATTACK_SCRIPT=<可执行脚本路径>，或执行 chmod +x $ATTACK_SCRIPT" >&2
+if [[ "$FRESH_DOWNLOAD" != "0" && "$FRESH_DOWNLOAD" != "1" ]]; then
+  echo "[release-doctor][ERROR] FRESH_DOWNLOAD 必须为 0 或 1，当前值: $FRESH_DOWNLOAD" >&2
+  echo "  修复: 设置 FRESH_DOWNLOAD=1 启用，或 FRESH_DOWNLOAD=0 禁用" >&2
   failed=1
 fi
-
-for setting in RESTART_TEST FRESH_DOWNLOAD; do
-  value="${!setting}"
-  if [[ "$value" != "0" && "$value" != "1" ]]; then
-    echo "[release-doctor][ERROR] $setting 必须为 0 或 1，当前值: $value" >&2
-    echo "  修复: 设置 $setting=1 启用，或 $setting=0 禁用" >&2
-    failed=1
-  fi
-done
 
 if command -v docker >/dev/null 2>&1; then
   if docker info >/dev/null 2>&1; then

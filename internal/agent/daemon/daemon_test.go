@@ -252,12 +252,18 @@ func TestStandaloneRuntimeResumesPersistentSequences(t *testing.T) {
 
 func TestEndpointSignalIDsContinueAcrossDetectionReplacement(t *testing.T) {
 	runner := &AgentRuntime{signalSeq: 17}
+	parent := &eventv1.CanonicalEvent{
+		Id: "event-parent", Behavior: "process.exec",
+		SubjectProc: &eventv1.ProcessRef{StableId: "node-parent", Binary: "/usr/bin/node"},
+	}
 	event := &eventv1.CanonicalEvent{
-		Id: "event-a", Behavior: "process.exec", ParentStableId: "parent",
-		SubjectProc: &eventv1.ProcessRef{Binary: "/bin/bash"},
+		Id: "event-a", Behavior: "process.exec", ParentStableId: "node-parent",
+		SubjectProc: &eventv1.ProcessRef{StableId: "shell-child", Binary: "/bin/bash"},
 	}
 	firstEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	secondEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
+	firstEngine.Process(parent)
+	secondEngine.Process(parent)
 	first := runner.dataBatchForEvent(event, firstEngine.Process(event)).GetSignals()[0]
 	second := runner.dataBatchForEvent(event, secondEngine.Process(event)).GetSignals()[0]
 	if first.GetSequence() != 18 || first.GetSignal().GetId() != "sig-00000000000000000018" {
