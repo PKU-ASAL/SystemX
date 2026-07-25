@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -277,8 +278,14 @@ func TestWebRuntimeShellUsesObservedParentBinary(t *testing.T) {
 	engine, _ := New(policymodel.DefaultDetectionPolicy())
 	engine.Process(execEvent("node", "lin-web", "stable-runtime", "init", "/usr/bin/node", []string{"/usr/bin/node", "/srv/server.js"}))
 	shell := execEvent("shell", "lin-web", "stable-shell", "stable-runtime", "/bin/sh", []string{"/bin/sh", "-c", "id"})
-	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 1 {
+	signals := engine.Process(shell)
+	if got := countSignals(signals, "web_runtime_spawns_shell"); got != 1 {
 		t.Fatalf("web runtime shell signals = %d, want 1", got)
+	}
+	for _, signal := range signals {
+		if signal.GetName() == "web_runtime_spawns_shell" && !slices.Equal(signal.GetEventRefs(), []string{"node", "shell"}) {
+			t.Fatalf("event refs = %v, want parent and shell events", signal.GetEventRefs())
+		}
 	}
 }
 

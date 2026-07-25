@@ -107,6 +107,7 @@ type RuleSpec struct {
 	ContextRefs       []string
 	IOCRefs           []string
 	ResponseIntent    *policymodel.ResponseIntentRef
+	Terminal          *bool
 }
 
 type RequiredEventSpec struct {
@@ -153,7 +154,6 @@ type cepGroupState struct {
 }
 
 type lineageState struct {
-	webShellExecRefs        []string
 	downloadRefs            []string
 	payloadRefs             []string
 	payloadExecRefs         []string
@@ -166,7 +166,6 @@ type lineageState struct {
 	reverseShellSeen        bool
 	payloadLifecycleEmitted bool
 	lastExecByStableID      map[string]string
-	processBinaryByStableID map[string]string
 }
 
 type ApplyReport struct {
@@ -320,7 +319,6 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 	var out []*signalv1.Signal
 	switch behavior {
 	case eventmodel.BehaviorProcessExec.String():
-		out = append(out, e.detectWebRuntimeShell(ev, state)...)
 		out = append(out, e.detectPayloadExec(ev, state)...)
 	case eventmodel.BehaviorNetworkConnect.String():
 		out = append(out, e.detectDownloadByLOLBin(ev, state)...)
@@ -363,11 +361,10 @@ func (e *Engine) lineage(id string) *lineageState {
 	st, ok := e.state[id]
 	if !ok {
 		st = &lineageState{
-			payloads:                make(map[string]bool),
-			payloadExecStable:       make(map[string]bool),
-			lastWriterByPath:        make(map[string]string),
-			lastExecByStableID:      make(map[string]string),
-			processBinaryByStableID: make(map[string]string),
+			payloads:           make(map[string]bool),
+			payloadExecStable:  make(map[string]bool),
+			lastWriterByPath:   make(map[string]string),
+			lastExecByStableID: make(map[string]string),
 		}
 		e.state[id] = st
 	}
@@ -381,20 +378,7 @@ func (s *lineageState) remember(ev *eventv1.CanonicalEvent) {
 	stableID := ev.GetSubjectProc().GetStableId()
 	if eventBehavior(ev) == eventmodel.BehaviorProcessExec.String() && stableID != "" {
 		s.lastExecByStableID[stableID] = ev.GetId()
-		s.processBinaryByStableID[stableID] = ev.GetSubjectProc().GetBinary()
 	}
-}
-
-func (e *Engine) detectWebRuntimeShell(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("web_runtime_spawns_shell")
-	if !ok || !isShell(binaryBase(ev)) {
-		return nil
-	}
-	if !looksLikeWebRuntime(st.processBinaryByStableID[ev.GetParentStableId()]) {
-		return nil
-	}
-	st.webShellExecRefs = appendUnique(st.webShellExecRefs, ev.GetId())
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev))}
 }
 
 func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
@@ -440,7 +424,6 @@ func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState
 		return nil
 	}
 	refs := []string{ev.GetId()}
-	refs = appendRefs(refs, st.webShellExecRefs...)
 	refs = appendRefs(refs, st.downloadRefs...)
 	st.reverseShellSeen = true
 	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
@@ -705,6 +688,13 @@ func (r effectiveRule) runtimeType() string {
 	}
 }
 
+func (r effectiveRule) terminal(defaultValue bool) bool {
+	if r.spec.Terminal == nil {
+		return defaultValue
+	}
+	return *r.spec.Terminal
+}
+
 func (e *Engine) detectSequenceRule(view eventView, rule compiledRule) *signalv1.Signal {
 	return e.detectSequenceCandidate(view, compiledSequenceCandidate{rule: rule, firstStep: true})
 }
@@ -783,7 +773,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 	refs := appendRefs(nil, st.Refs...)
 	e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 	delete(ruleState.Groups, groupKey)
-	return e.signal(view.ev, rule.rule, refs, true, eventEntities(view.ev)...)
+	return e.signal(view.ev, rule.rule, refs, rule.rule.terminal(true), eventEntities(view.ev)...)
 }
 
 func (e *Engine) activateSequenceWait(ruleID, behavior string) {
@@ -1143,19 +1133,6 @@ func resolveRules(policy *policymodel.DetectionPolicy, content ContentSnapshot) 
 	return out
 }
 
-func builtinRules() []RuleSpec {
-	collect := &policymodel.ResponseIntentRef{Action: "collect_evidence", Confidence: 80, Reason: "terminal endpoint signal"}
-	return []RuleSpec{
-		{RuleID: "web_runtime_spawns_shell", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String()}},
-		{RuleID: "download_by_lolbin", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-download-port-feed"}},
-		{RuleID: "payload_dropped", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
-		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
-		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
-		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
-		{RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileRead.String()}, ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"}},
-	}
-}
-
 func CheckDependencies(policy *policymodel.DetectionPolicy, collection contract.CollectionIntent) []string {
 	return CheckDependenciesWithContent(policy, collection, ContentSnapshot{})
 }
@@ -1406,15 +1383,6 @@ func binaryBase(ev *eventv1.CanonicalEvent) string {
 func isShell(bin string) bool {
 	switch bin {
 	case "sh", "bash", "dash", "zsh", "ksh", "ash":
-		return true
-	default:
-		return false
-	}
-}
-
-func looksLikeWebRuntime(binary string) bool {
-	switch strings.ToLower(filepath.Base(binary)) {
-	case "nginx", "apache2", "httpd", "php-fpm", "gunicorn", "uwsgi", "tomcat", "node", "nodejs":
 		return true
 	default:
 		return false
