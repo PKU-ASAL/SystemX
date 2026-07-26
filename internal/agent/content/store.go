@@ -39,6 +39,7 @@ type Integrity struct {
 }
 
 type Options struct {
+	DefaultDir  string
 	Dir         string
 	TrustedKeys map[string]ed25519.PublicKey
 }
@@ -157,14 +158,15 @@ type Store struct {
 	dir         string
 	trustedKeys map[string]ed25519.PublicKey
 	records     map[string]Record
+	defaultRefs map[string]bool
 }
 
 func NewStore() *Store {
-	return &Store{records: make(map[string]Record)}
+	return &Store{records: make(map[string]Record), defaultRefs: make(map[string]bool)}
 }
 
 func NewStoreWithOptions(opts Options) (*Store, error) {
-	store := &Store{dir: strings.TrimSpace(opts.Dir), trustedKeys: opts.TrustedKeys, records: make(map[string]Record)}
+	store := &Store{dir: strings.TrimSpace(opts.Dir), trustedKeys: opts.TrustedKeys, records: make(map[string]Record), defaultRefs: make(map[string]bool)}
 	if store.dir == "" {
 		return store, nil
 	}
@@ -257,6 +259,9 @@ func (s *Store) Prepare(raw string, allowUnsigned bool) (Record, Snapshot, error
 	env, err := Parse(raw)
 	if err != nil {
 		return Record{}, Snapshot{}, err
+	}
+	if s.IsDefaultRef(env.Metadata.ID) {
+		return Record{}, Snapshot{}, fmt.Errorf("default content ref %s is read-only", env.Metadata.ID)
 	}
 	if err := s.Validate(env, allowUnsigned); err != nil {
 		return Record{}, Snapshot{}, err
