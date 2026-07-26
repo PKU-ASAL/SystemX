@@ -77,14 +77,25 @@ type Rule struct {
 	RuntimeEntry   string
 	Expr           RuntimeExpr
 	Sequence       RuntimeSequence
+	Correlate      RuntimeCorrelate
+	Suppression    RuntimeSuppression
 	RequiredEvents []RequiredEvent
 	ContextRefs    []string
 	IOCRefs        []string
 	ResponseIntent ResponseIntent
+	Terminal       *bool
 }
 
 type RuntimeExpr struct {
-	Conditions []RuntimeCondition `json:"conditions"`
+	Conditions     []RuntimeCondition    `json:"conditions"`
+	ConditionGroup *RuntimeConditionNode `json:"condition_group,omitempty"`
+}
+
+type RuntimeConditionNode struct {
+	All       []RuntimeConditionNode `json:"all,omitempty"`
+	Any       []RuntimeConditionNode `json:"any,omitempty"`
+	Not       *RuntimeConditionNode  `json:"not,omitempty"`
+	Condition *RuntimeCondition      `json:"condition,omitempty"`
 }
 
 type RuntimeSequence struct {
@@ -93,11 +104,31 @@ type RuntimeSequence struct {
 	Steps  []RuntimeStep `json:"steps"`
 }
 
+type RuntimeCorrelate struct {
+	Within string        `json:"within"`
+	By     []string      `json:"by"`
+	Facts  []RuntimeFact `json:"facts"`
+}
+
+type RuntimeFact struct {
+	ID             string                `json:"id"`
+	Event          string                `json:"event,omitempty"`
+	Events         []string              `json:"events,omitempty"`
+	Conditions     []RuntimeCondition    `json:"conditions"`
+	ConditionGroup *RuntimeConditionNode `json:"condition_group,omitempty"`
+}
+
+type RuntimeSuppression struct {
+	Within string   `json:"within"`
+	By     []string `json:"by"`
+}
+
 type RuntimeStep struct {
-	ID         string             `json:"id"`
-	Behavior   string             `json:"behavior,omitempty"`
-	Event      string             `json:"event,omitempty"`
-	Conditions []RuntimeCondition `json:"conditions"`
+	ID             string                `json:"id"`
+	Behavior       string                `json:"behavior,omitempty"`
+	Event          string                `json:"event,omitempty"`
+	Conditions     []RuntimeCondition    `json:"conditions"`
+	ConditionGroup *RuntimeConditionNode `json:"condition_group,omitempty"`
 }
 
 type RuntimeCondition struct {
@@ -560,11 +591,13 @@ func parseRulePack(record Record) ([]Rule, error) {
 				Version  uint64 `json:"version"`
 				Severity string `json:"severity"`
 				Runtime  struct {
-					Type       string          `json:"type"`
-					Entrypoint string          `json:"entrypoint"`
-					Expr       RuntimeExpr     `json:"expr"`
-					Sequence   RuntimeSequence `json:"sequence"`
+					Type       string           `json:"type"`
+					Entrypoint string           `json:"entrypoint"`
+					Expr       RuntimeExpr      `json:"expr"`
+					Sequence   RuntimeSequence  `json:"sequence"`
+					Correlate  RuntimeCorrelate `json:"correlate"`
 				} `json:"runtime"`
+				Suppress RuntimeSuppression `json:"suppress"`
 				Requires struct {
 					Events  []RequiredEvent `json:"events"`
 					Context struct {
@@ -578,6 +611,7 @@ func parseRulePack(record Record) ([]Rule, error) {
 				} `json:"requires"`
 				Output struct {
 					ResponseIntent ResponseIntent `json:"response_intent"`
+					Terminal       *bool          `json:"terminal,omitempty"`
 				} `json:"output"`
 			} `json:"rules"`
 		} `json:"rulesets"`
@@ -597,10 +631,13 @@ func parseRulePack(record Record) ([]Rule, error) {
 				RuntimeEntry:   rule.Runtime.Entrypoint,
 				Expr:           rule.Runtime.Expr,
 				Sequence:       rule.Runtime.Sequence,
+				Correlate:      rule.Runtime.Correlate,
+				Suppression:    rule.Suppress,
 				RequiredEvents: rule.Requires.Events,
 				ContextRefs:    append(append([]string(nil), rule.Requires.Context.Required...), rule.Requires.Context.Optional...),
 				IOCRefs:        append(append([]string(nil), rule.Requires.IOC.Required...), rule.Requires.IOC.Optional...),
 				ResponseIntent: rule.Output.ResponseIntent,
+				Terminal:       rule.Output.Terminal,
 			})
 		}
 	}

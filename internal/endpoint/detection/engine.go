@@ -2,7 +2,6 @@ package detection
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,23 +16,21 @@ import (
 const builtinRuleSetRef = "ruleset:endpoint-linux-builtin"
 const defaultMaxCEPGroups = 4096
 const defaultMaxCEPRefs = 128
-const credentialReadSuppressWindow = 5 * time.Minute
 const maxSuppressionKeys = 8192
 
 type Engine struct {
 	nextID      uint64
 	rules       map[string]effectiveRule
-	state       map[string]*lineageState
 	cep         map[string]*cepRuleState
 	cepActive   map[string]map[string]int
+	correlate   map[string]*correlateRuleState
 	suppression map[string]time.Time
 	limits      EngineLimits
 	metrics     Metrics
-	ctx         ContextSnapshot
-	ioc         IOCSnapshot
 	refs        ContentSnapshot
 	compiled    compiledRuntime
 	sequence    compiledSequenceRuntime
+	correlation compiledCorrelateRuntime
 }
 
 type EngineLimits struct {
@@ -42,32 +39,21 @@ type EngineLimits struct {
 }
 
 type Metrics struct {
-	EventsProcessed     uint64
-	EventsByBehavior    map[string]uint64
-	CEPRulesScanned     uint64
-	CEPRulesEvaluated   uint64
-	ConditionsEvaluated uint64
-	ConditionsMatched   uint64
-	FieldReads          uint64
-	ProcessNanosTotal   uint64
-	ActiveCEPGroups     uint64
-	EvictedCEPGroups    uint64
-	ExpiredCEPGroups    uint64
-	DroppedEventRefs    uint64
-	CEPEvalErrors       uint64
-	EmittedSignals      uint64
-}
-
-type ContextSnapshot struct {
-	CredentialPathPrefixes []string
-	PayloadPathPrefixes    []string
-	TrustedAdminBinaries   []string
-}
-
-type IOCSnapshot struct {
-	C2DownloadPorts []string
-	C2ControlPorts  []string
-	C2Addrs         []string
+	EventsProcessed      uint64
+	EventsByBehavior     map[string]uint64
+	CEPRulesScanned      uint64
+	CEPRulesEvaluated    uint64
+	ConditionsEvaluated  uint64
+	ConditionsMatched    uint64
+	FieldReads           uint64
+	ProcessNanosTotal    uint64
+	ActiveCEPGroups      uint64
+	EvictedCEPGroups     uint64
+	ExpiredCEPGroups     uint64
+	DroppedEventRefs     uint64
+	SuppressionEvictions uint64
+	CEPEvalErrors        uint64
+	EmittedSignals       uint64
 }
 
 type ContentSnapshot struct {
@@ -102,11 +88,14 @@ type RuleSpec struct {
 	RuntimeType       string
 	Expr              ExprSpec
 	Sequence          SequenceSpec
+	Correlate         CorrelateSpec
+	Suppression       SuppressionSpec
 	RequiredEvents    []RequiredEventSpec
 	RequiredBehaviors []string
 	ContextRefs       []string
 	IOCRefs           []string
 	ResponseIntent    *policymodel.ResponseIntentRef
+	Terminal          *bool
 }
 
 type RequiredEventSpec struct {
@@ -115,7 +104,15 @@ type RequiredEventSpec struct {
 }
 
 type ExprSpec struct {
-	Conditions []ConditionSpec
+	Conditions     []ConditionSpec
+	ConditionGroup *ConditionNodeSpec
+}
+
+type ConditionNodeSpec struct {
+	All       []ConditionNodeSpec
+	Any       []ConditionNodeSpec
+	Not       *ConditionNodeSpec
+	Condition *ConditionSpec
 }
 
 type SequenceSpec struct {
@@ -124,10 +121,31 @@ type SequenceSpec struct {
 	Steps  []StepSpec
 }
 
+type CorrelateSpec struct {
+	Within     time.Duration
+	WithinText string
+	By         []string
+	Facts      []FactSpec
+}
+
+type FactSpec struct {
+	ID             string
+	Event          string
+	Events         []string
+	Conditions     []ConditionSpec
+	ConditionGroup *ConditionNodeSpec
+}
+
+type SuppressionSpec struct {
+	Within time.Duration
+	By     []string
+}
+
 type StepSpec struct {
-	ID         string
-	Behavior   string
-	Conditions []ConditionSpec
+	ID             string
+	Behavior       string
+	Conditions     []ConditionSpec
+	ConditionGroup *ConditionNodeSpec
 }
 
 type ConditionSpec struct {
@@ -147,25 +165,10 @@ type cepRuleState struct {
 type cepGroupState struct {
 	StepIndex       int
 	Refs            []string
+	Entities        []*signalv1.EntityRef
 	Values          map[string]map[string]string
 	ExpiresAt       uint64
 	WaitingBehavior string
-}
-
-type lineageState struct {
-	webShellExecRefs        []string
-	downloadRefs            []string
-	payloadRefs             []string
-	payloadExecRefs         []string
-	reverseConnectRefs      []string
-	reverseSocketAddr       string
-	payloads                map[string]bool
-	payloadExecStable       map[string]bool
-	lastWriterByPath        map[string]string
-	stagedPayloadSeen       bool
-	reverseShellSeen        bool
-	payloadLifecycleEmitted bool
-	lastExecByStableID      map[string]string
 }
 
 type ApplyReport struct {
@@ -213,13 +216,11 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 	limits = normalizeLimits(limits)
 	engine := &Engine{
 		rules:       make(map[string]effectiveRule),
-		state:       make(map[string]*lineageState),
 		cep:         make(map[string]*cepRuleState),
 		cepActive:   make(map[string]map[string]int),
+		correlate:   make(map[string]*correlateRuleState),
 		suppression: make(map[string]time.Time),
 		limits:      limits,
-		ctx:         resolveContext(normalized.ContextRefs, content),
-		ioc:         resolveIOC(normalized.IOCRefs, content),
 		refs:        content,
 	}
 	report := ApplyReport{Status: "applied", Message: "detection policy applied"}
@@ -228,7 +229,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		engine.rules[rule.spec.RuleID] = rule
 		report.RuleIDs = append(report.RuleIDs, rule.spec.RuleID)
 	}
-	if errs := validateEffectiveRules(engine.rules); len(errs) > 0 {
+	if errs := append(validateEffectiveRules(engine.rules), validateRuleSpecs(rules)...); len(errs) > 0 {
 		report.Status = "rejected"
 		report.Message = "detection policy rejected"
 		report.Details = append(report.Details, errs...)
@@ -237,6 +238,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 	}
 	engine.compiled = compileRuntime(rules, content)
 	engine.sequence = compileSequenceRuntime(rules, content)
+	engine.correlation = compileCorrelateRuntime(rules, content)
 	report.Coverage = CheckCoverageWithContent(normalized, collection, content)
 	report.Warnings = append(report.Warnings, report.Coverage.Warnings...)
 	if len(report.Warnings) > 0 {
@@ -252,11 +254,11 @@ func validateEffectiveRules(rules map[string]effectiveRule) []string {
 	for _, rule := range rules {
 		runtimeType := rule.runtimeType()
 		switch runtimeType {
-		case "", "builtin", "expr", "sequence":
+		case "", "builtin", "expr", "sequence", "correlate":
 		default:
 			out = append(out, fmt.Sprintf("rule %s has unsupported runtime type %q", rule.spec.RuleID, runtimeType))
 		}
-		if runtimeType == "expr" && len(rule.spec.Expr.Conditions) == 0 {
+		if runtimeType == "expr" && len(rule.spec.Expr.Conditions) == 0 && rule.spec.Expr.ConditionGroup == nil {
 			out = append(out, fmt.Sprintf("rule %s expr runtime requires conditions", rule.spec.RuleID))
 		}
 		if runtimeType == "sequence" {
@@ -271,6 +273,9 @@ func validateEffectiveRules(rules map[string]effectiveRule) []string {
 					out = append(out, fmt.Sprintf("rule %s sequence step %s behavior is required", rule.spec.RuleID, step.ID))
 				}
 			}
+		}
+		if runtimeType == "correlate" && len(rule.spec.Correlate.Facts) == 0 {
+			out = append(out, fmt.Sprintf("rule %s correlate runtime requires facts", rule.spec.RuleID))
 		}
 	}
 	return out
@@ -298,6 +303,9 @@ func (e *Engine) Metrics() Metrics {
 	for _, ruleState := range e.cep {
 		active += uint64(len(ruleState.Groups))
 	}
+	for _, ruleState := range e.correlate {
+		active += uint64(len(ruleState.Groups))
+	}
 	metrics.ActiveCEPGroups = active
 	return metrics
 }
@@ -314,23 +322,7 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 		e.metrics.EventsByBehavior = make(map[string]uint64)
 	}
 	e.metrics.EventsByBehavior[behavior]++
-	state := e.lineage(ev.GetLineageId())
-	state.remember(ev)
-	var out []*signalv1.Signal
-	switch behavior {
-	case eventmodel.BehaviorProcessExec.String():
-		out = append(out, e.detectWebRuntimeShell(ev, state)...)
-		out = append(out, e.detectPayloadExec(ev, state)...)
-	case eventmodel.BehaviorNetworkConnect.String():
-		out = append(out, e.detectDownloadByLOLBin(ev, state)...)
-		out = append(out, e.detectReverseShell(ev, state)...)
-		out = append(out, e.detectPayloadConnect(ev, state)...)
-	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String():
-		out = append(out, e.detectCredentialRead(ev)...)
-	case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
-		out = append(out, e.detectPayloadDrop(ev, state)...)
-	}
-	out = append(out, e.detectCEPRules(view)...)
+	out := e.detectCEPRules(view)
 	out = compact(out)
 	e.metrics.EmittedSignals += uint64(len(out))
 	e.metrics.ProcessNanosTotal += uint64(time.Since(start).Nanoseconds())
@@ -355,170 +347,6 @@ func eventBehavior(ev *eventv1.CanonicalEvent) string {
 	return ""
 }
 
-func (e *Engine) lineage(id string) *lineageState {
-	if id == "" {
-		id = "unknown"
-	}
-	st, ok := e.state[id]
-	if !ok {
-		st = &lineageState{
-			payloads:           make(map[string]bool),
-			payloadExecStable:  make(map[string]bool),
-			lastWriterByPath:   make(map[string]string),
-			lastExecByStableID: make(map[string]string),
-		}
-		e.state[id] = st
-	}
-	return st
-}
-
-func (s *lineageState) remember(ev *eventv1.CanonicalEvent) {
-	if ev.GetSubjectProc() == nil {
-		return
-	}
-	stableID := ev.GetSubjectProc().GetStableId()
-	if eventBehavior(ev) == eventmodel.BehaviorProcessExec.String() && stableID != "" {
-		s.lastExecByStableID[stableID] = ev.GetId()
-	}
-}
-
-func (e *Engine) detectWebRuntimeShell(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("web_runtime_spawns_shell")
-	if !ok || !isShell(binaryBase(ev)) {
-		return nil
-	}
-	argv := strings.Join(ev.GetSubjectProc().GetArgv(), " ")
-	if !looksLikeWebRuntime(ev.GetParentStableId(), ev.GetSubjectProc().GetBinary(), argv) {
-		return nil
-	}
-	st.webShellExecRefs = appendUnique(st.webShellExecRefs, ev.GetId())
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev))}
-}
-
-func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	path := ev.GetSubjectProc().GetBinary()
-	if path == "" {
-		return nil
-	}
-	payloadPath := path
-	if !st.payloads[payloadPath] && !hasAnyPrefix(payloadPath, e.ctx.PayloadPathPrefixes) {
-		payloadPath = payloadPathFromArgv(ev.GetSubjectProc().GetArgv(), e.ctx.PayloadPathPrefixes)
-	}
-	if payloadPath != "" && (st.payloads[payloadPath] || hasAnyPrefix(payloadPath, e.ctx.PayloadPathPrefixes)) {
-		st.payloads[payloadPath] = true
-		st.payloadExecStable[ev.GetSubjectProc().GetStableId()] = true
-		st.payloadExecRefs = appendUnique(st.payloadExecRefs, ev.GetId())
-		if hasAnyPrefix(payloadPath, []string{"/var/lib/app/plugins/"}) {
-			st.stagedPayloadSeen = true
-		}
-		return e.detectPayloadLifecycle(ev, st)
-	}
-	return nil
-}
-
-func (e *Engine) detectDownloadByLOLBin(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("download_by_lolbin")
-	if !ok {
-		return nil
-	}
-	bin := binaryBase(ev)
-	if bin != "curl" && bin != "wget" {
-		return nil
-	}
-	if !e.ioc.isDownloadSocket(ev.GetObject().GetSocketAddr()) {
-		return nil
-	}
-	st.downloadRefs = appendUnique(st.downloadRefs, ev.GetId())
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), socketEntity(ev))}
-}
-
-func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("reverse_shell_pattern")
-	if !ok || !isShell(binaryBase(ev)) || !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
-		return nil
-	}
-	refs := []string{ev.GetId()}
-	refs = appendRefs(refs, st.webShellExecRefs...)
-	refs = appendRefs(refs, st.downloadRefs...)
-	st.reverseShellSeen = true
-	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
-	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-	out := []*signalv1.Signal{e.signal(ev, rule, refs, true, processEntity(ev), socketEntity(ev))}
-	out = append(out, e.detectPayloadLifecycle(ev, st)...)
-	return out
-}
-
-func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	if !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
-		return nil
-	}
-	proc := ev.GetSubjectProc()
-	argv := strings.Join(proc.GetArgv(), " ")
-	payloadProc := st.payloadExecStable[proc.GetStableId()] ||
-		st.payloadExecStable[ev.GetParentStableId()] ||
-		(len(st.payloadRefs) > 0 && len(st.payloadExecRefs) > 0) ||
-		strings.Contains(argv, "helper") ||
-		hasAnyPrefix(proc.GetBinary(), e.ctx.PayloadPathPrefixes)
-	if !payloadProc {
-		return nil
-	}
-	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
-	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-	var out []*signalv1.Signal
-	if rule, ok := e.rule("suspicious_exec_connect"); ok {
-		sigRefs := appendRefs(nil, st.payloadExecRefs...)
-		sigRefs = appendUnique(sigRefs, ev.GetId())
-		out = append(out, e.signal(ev, rule, sigRefs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketEntity(ev)))
-	}
-	out = append(out, e.detectPayloadLifecycle(ev, st)...)
-	return out
-}
-
-func (e *Engine) detectPayloadLifecycle(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	if st.payloadLifecycleEmitted || len(st.payloadRefs) == 0 || len(st.payloadExecRefs) == 0 || len(st.reverseConnectRefs) == 0 {
-		return nil
-	}
-	rule, ok := e.rule("payload_lifecycle")
-	if !ok {
-		return nil
-	}
-	refs := appendRefs(nil, st.downloadRefs...)
-	refs = appendRefs(refs, st.payloadRefs...)
-	refs = appendRefs(refs, st.payloadExecRefs...)
-	refs = appendRefs(refs, st.reverseConnectRefs...)
-	if len(refs) < 3 {
-		return nil
-	}
-	st.payloadLifecycleEmitted = true
-	return []*signalv1.Signal{
-		e.signal(ev, rule, refs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketAddrEntity(st.reverseSocketAddr)),
-	}
-}
-
-func (e *Engine) detectCredentialRead(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
-	rule, ok := e.rule("credential_file_read")
-	if !ok {
-		return nil
-	}
-	path := ev.GetObject().GetFilePath()
-	if !hasAnyPrefix(path, e.ctx.CredentialPathPrefixes) {
-		return nil
-	}
-	if isTrustedBinary(ev.GetSubjectProc().GetBinary(), e.ctx.TrustedAdminBinaries) {
-		return nil
-	}
-	if e.suppressSignal("credential_file_read:"+credentialReadKey(ev, path), eventWallTime(ev), credentialReadSuppressWindow) {
-		return nil
-	}
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), fileEntity(path, "object"))}
-}
-
-func credentialReadKey(ev *eventv1.CanonicalEvent, path string) string {
-	proc := ev.GetSubjectProc()
-	processKey := firstNonEmpty(proc.GetStableId(), proc.GetBinary(), ev.GetLineageId(), "unknown-process")
-	return processKey + "|" + path
-}
-
 func eventWallTime(ev *eventv1.CanonicalEvent) time.Time {
 	if ev.GetOccurredAtNs() > 0 {
 		return time.Unix(0, int64(ev.GetOccurredAtNs())).UTC()
@@ -533,34 +361,25 @@ func (e *Engine) suppressSignal(key string, now time.Time, window time.Duration)
 	if e == nil || key == "" || window <= 0 {
 		return false
 	}
-	if last, ok := e.suppression[key]; ok && now.Sub(last) < window {
+	if expiresAt, ok := e.suppression[key]; ok && now.Before(expiresAt) {
 		return true
 	}
 	if len(e.suppression) >= maxSuppressionKeys {
-		cutoff := now.Add(-window)
-		for got, last := range e.suppression {
-			if last.Before(cutoff) {
+		for got, expiresAt := range e.suppression {
+			if !expiresAt.After(now) {
 				delete(e.suppression, got)
 			}
 		}
 	}
-	e.suppression[key] = now
+	for len(e.suppression) >= maxSuppressionKeys {
+		for got := range e.suppression {
+			delete(e.suppression, got)
+			e.metrics.SuppressionEvictions++
+			break
+		}
+	}
+	e.suppression[key] = now.Add(window)
 	return false
-}
-
-func (e *Engine) detectPayloadDrop(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("payload_dropped")
-	if !ok {
-		return nil
-	}
-	path := ev.GetObject().GetFilePath()
-	if path == "" || !hasAnyPrefix(path, e.ctx.PayloadPathPrefixes) {
-		return nil
-	}
-	st.payloads[path] = true
-	st.payloadRefs = appendUnique(st.payloadRefs, ev.GetId())
-	st.lastWriterByPath[path] = ev.GetSubjectProc().GetStableId()
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), fileEntity(path, "object"))}
 }
 
 func (e *Engine) rule(id string) (effectiveRule, bool) {
@@ -664,8 +483,11 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 		e.metrics.CEPRulesEvaluated++
 		switch rule.kind {
 		case compiledRuleExpr:
-			if e.matchCompiledConditions(view, rule.expr.conditions, nil) {
-				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, false, eventEntities(view.ev)...))
+			if e.matchCompiledConditions(view, rule.expr.conditions, nil) && e.matchCompiledConditionNode(view, rule.expr.conditionGroup, nil) {
+				if e.suppressCompiledRule(view, rule) {
+					continue
+				}
+				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, rule.rule.terminal(false), eventEntities(view.ev)...))
 			}
 		}
 	}
@@ -679,12 +501,33 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 			out = append(out, sig)
 		}
 	}
+	for _, rule := range e.correlation.rulesForBehavior(view.behavior) {
+		e.metrics.CEPRulesScanned++
+		e.metrics.CEPRulesEvaluated++
+		if sig := e.detectCorrelateRule(view, rule); sig != nil {
+			out = append(out, sig)
+		}
+	}
 	return out
+}
+
+func (e *Engine) suppressCompiledRule(view eventView, rule compiledRule) bool {
+	suppression := rule.expr.suppression
+	if suppression.within <= 0 || len(suppression.by) == 0 {
+		return false
+	}
+	parts := make([]string, 0, len(suppression.by)+1)
+	parts = append(parts, "rule="+rule.rule.spec.RuleID)
+	for _, field := range suppression.by {
+		e.metrics.FieldReads++
+		parts = append(parts, fieldName(field)+"="+view.field(field))
+	}
+	return e.suppressSignal(strings.Join(parts, "|"), eventWallTime(view.ev), suppression.within)
 }
 
 func (r effectiveRule) isCEP() bool {
 	switch r.runtimeType() {
-	case "expr", "sequence":
+	case "expr", "sequence", "correlate":
 		return true
 	default:
 		return false
@@ -696,11 +539,18 @@ func (r effectiveRule) runtimeType() string {
 		return strings.ToLower(strings.TrimSpace(r.spec.RuntimeType))
 	}
 	switch strings.ToLower(strings.TrimSpace(r.spec.Runtime)) {
-	case "expr", "sequence":
+	case "expr", "sequence", "correlate":
 		return strings.ToLower(strings.TrimSpace(r.spec.Runtime))
 	default:
 		return ""
 	}
+}
+
+func (r effectiveRule) terminal(defaultValue bool) bool {
+	if r.spec.Terminal == nil {
+		return defaultValue
+	}
+	return *r.spec.Terminal
 }
 
 func (e *Engine) detectSequenceRule(view eventView, rule compiledRule) *signalv1.Signal {
@@ -738,6 +588,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		st.StepIndex = 0
 		st.Refs = nil
+		st.Entities = nil
 		st.Values = make(map[string]map[string]string)
 		st.WaitingBehavior = ""
 	}
@@ -750,6 +601,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		st.StepIndex = 0
 		st.Refs = nil
+		st.Entities = nil
 		st.Values = make(map[string]map[string]string)
 		st.WaitingBehavior = ""
 	}
@@ -758,6 +610,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		return nil
 	}
 	st.Refs = appendUnique(st.Refs, view.eventID)
+	st.Entities = appendUniqueEntities(st.Entities, eventEntities(view.ev)...)
 	if len(st.Refs) > e.limits.MaxCEPRefs {
 		e.metrics.DroppedEventRefs += uint64(len(st.Refs) - e.limits.MaxCEPRefs)
 		st.Refs = st.Refs[len(st.Refs)-e.limits.MaxCEPRefs:]
@@ -781,7 +634,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 	refs := appendRefs(nil, st.Refs...)
 	e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 	delete(ruleState.Groups, groupKey)
-	return e.signal(view.ev, rule.rule, refs, true, eventEntities(view.ev)...)
+	return e.signal(view.ev, rule.rule, refs, rule.rule.terminal(true), st.Entities...)
 }
 
 func (e *Engine) activateSequenceWait(ruleID, behavior string) {
@@ -926,7 +779,7 @@ func (e *Engine) contentValues(ref string) []string {
 	if item, ok := e.refs.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return nil
+	return builtinContentValues(ref)
 }
 
 func (e *Engine) sequenceGroupKey(ev *eventv1.CanonicalEvent, fields []string) string {
@@ -1013,6 +866,9 @@ func eventField(ev *eventv1.CanonicalEvent, field string) string {
 
 func eventEntities(ev *eventv1.CanonicalEvent) []*signalv1.EntityRef {
 	entities := []*signalv1.EntityRef{processEntity(ev)}
+	if eventBehavior(ev) == eventmodel.BehaviorProcessExec.String() && ev.GetSubjectProc().GetBinary() != "" {
+		entities = append(entities, fileEntity(ev.GetSubjectProc().GetBinary(), "subject"))
+	}
 	if path := ev.GetObject().GetFilePath(); path != "" {
 		entities = append(entities, fileEntity(path, "object"))
 	}
@@ -1139,19 +995,6 @@ func resolveRules(policy *policymodel.DetectionPolicy, content ContentSnapshot) 
 		}
 	}
 	return out
-}
-
-func builtinRules() []RuleSpec {
-	collect := &policymodel.ResponseIntentRef{Action: "collect_evidence", Confidence: 80, Reason: "terminal endpoint signal"}
-	return []RuleSpec{
-		{RuleID: "web_runtime_spawns_shell", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String()}},
-		{RuleID: "download_by_lolbin", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-download-port-feed"}},
-		{RuleID: "payload_dropped", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
-		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
-		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
-		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
-		{RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileRead.String()}, ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"}},
-	}
 }
 
 func CheckDependencies(policy *policymodel.DetectionPolicy, collection contract.CollectionIntent) []string {
@@ -1296,87 +1139,6 @@ func availableFieldsFromCapabilities(collection contract.CollectionIntent) map[s
 	return fields
 }
 
-func resolveContext(refs []policymodel.ContentRef, content ContentSnapshot) ContextSnapshot {
-	out := ContextSnapshot{
-		CredentialPathPrefixes: []string{"/root/.ssh/", "/home/", "/var/run/secrets/", "/run/secrets/", "/etc/kubernetes/"},
-		PayloadPathPrefixes:    []string{"/dev/shm/", "/tmp/.sysarmor-attack/", "/var/tmp/.sysarmor-attack/", "/var/lib/app/plugins/"},
-		TrustedAdminBinaries:   []string{"/usr/bin/vim", "/usr/bin/vi", "/usr/bin/nano"},
-	}
-	for _, ref := range refs {
-		item, ok := content.ContextRefs[ref.Ref]
-		if !ok {
-			continue
-		}
-		switch ref.Ref {
-		case "ctx:credential-path-prefixes":
-			out.CredentialPathPrefixes = append([]string(nil), item.Values...)
-		case "ctx:payload-path-prefixes":
-			out.PayloadPathPrefixes = append([]string(nil), item.Values...)
-		case "ctx:trusted-admin-binaries":
-			out.TrustedAdminBinaries = append([]string(nil), item.Values...)
-		}
-	}
-	return out
-}
-
-func resolveIOC(refs []policymodel.ContentRef, content ContentSnapshot) IOCSnapshot {
-	out := IOCSnapshot{
-		C2DownloadPorts: []string{"8080"},
-		C2ControlPorts:  []string{"443", "8443"},
-	}
-	for _, ref := range refs {
-		item, ok := content.IOCRefs[ref.Ref]
-		if !ok {
-			continue
-		}
-		switch ref.Ref {
-		case "ioc:c2-port-feed":
-			out.C2ControlPorts = append([]string(nil), item.Values...)
-		case "ioc:c2-download-port-feed":
-			out.C2DownloadPorts = append([]string(nil), item.Values...)
-		case "ioc:c2-control-port-feed":
-			out.C2ControlPorts = append([]string(nil), item.Values...)
-		case "ioc:c2-ip-feed":
-			out.C2Addrs = append([]string(nil), item.Values...)
-		}
-	}
-	return out
-}
-
-func (i IOCSnapshot) isDownloadSocket(socket string) bool {
-	return i.socketMatches(socket, i.C2DownloadPorts)
-}
-
-func (i IOCSnapshot) isControlSocket(socket string) bool {
-	return i.socketMatches(socket, i.C2ControlPorts)
-}
-
-func (i IOCSnapshot) socketMatches(socket string, ports []string) bool {
-	addr, port, ok := strings.Cut(socket, ":")
-	if !ok {
-		return false
-	}
-	portMatched := false
-	for _, candidate := range ports {
-		if port == candidate {
-			portMatched = true
-			break
-		}
-	}
-	if !portMatched {
-		return false
-	}
-	if len(i.C2Addrs) == 0 {
-		return true
-	}
-	for _, candidate := range i.C2Addrs {
-		if addr == candidate {
-			return true
-		}
-	}
-	return false
-}
-
 func processEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {
 	key := ""
 	if ev.GetSubjectProc() != nil {
@@ -1389,70 +1151,8 @@ func socketEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {
 	return &signalv1.EntityRef{Kind: "socket", Key: ev.GetObject().GetSocketAddr(), Role: "object"}
 }
 
-func socketAddrEntity(addr string) *signalv1.EntityRef {
-	return &signalv1.EntityRef{Kind: "socket", Key: addr, Role: "object"}
-}
-
 func fileEntity(path, role string) *signalv1.EntityRef {
 	return &signalv1.EntityRef{Kind: "file", Key: path, Role: role}
-}
-
-func binaryBase(ev *eventv1.CanonicalEvent) string {
-	return filepath.Base(ev.GetSubjectProc().GetBinary())
-}
-
-func isShell(bin string) bool {
-	switch bin {
-	case "sh", "bash", "dash", "zsh", "ksh", "ash":
-		return true
-	default:
-		return false
-	}
-}
-
-func looksLikeWebRuntime(parentStableID, binary, argv string) bool {
-	text := strings.ToLower(parentStableID + " " + binary + " " + argv)
-	for _, token := range []string{"nginx", "apache", "httpd", "php-fpm", "gunicorn", "uwsgi", "tomcat", "node"} {
-		if strings.Contains(text, token) {
-			return true
-		}
-	}
-	return parentStableID == "parent"
-}
-
-func isTrustedBinary(path string, trusted []string) bool {
-	for _, candidate := range trusted {
-		if path == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func hasAnyPrefix(value string, prefixes []string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(value, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func payloadPathFromArgv(argv []string, prefixes []string) string {
-	for _, arg := range argv {
-		arg = strings.Trim(arg, `"'`)
-		if hasAnyPrefix(arg, prefixes) {
-			return arg
-		}
-	}
-	return ""
-}
-
-func firstPayloadPath(st *lineageState) string {
-	for path := range st.payloads {
-		return path
-	}
-	return "/var/lib/app/plugins/helper"
 }
 
 func riskForSeverity(severity string) uint32 {

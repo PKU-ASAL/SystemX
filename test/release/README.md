@@ -1,6 +1,6 @@
 # 公开发行包容器测试
 
-该目录验证公开 standalone 发行包在 Ubuntu 22.04、Ubuntu 24.04 和 Debian 12 中的真实安装与运行链路。测试覆盖 Agent/Tetragon 健康、Event、内置 Signal、`namespace/self` 隔离，以及 Agent 异常退出后的容器级恢复。
+该目录验证公开 standalone 发行包在 Ubuntu 22.04、Ubuntu 24.04 和 Debian 12 中的真实安装与运行链路。测试运行真实 Node.js HTTP 业务，覆盖 Agent/Tetragon 健康、三条内置检测规则的完整 Event/Signal 证据和 `namespace/self` 隔离。
 
 ```bash
 make -C test/release doctor
@@ -11,16 +11,31 @@ make -C test/release test
 
 ```bash
 make -C test/release test \
-  SYSARMOR_INSTALL_URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh
+  URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh
 ```
 
 开发中的未发布构建可以通过本地 HTTP 地址测试，但这不替代公开链接验收。正式发布验收必须显式传入
-新 tag 的完整 `SYSARMOR_INSTALL_URL`，避免误测其他 pre-release。测试结果保存在 `test/.results/release/<run-id>/`。
+新 tag 的完整 `URL`，避免误测其他 pre-release。测试结果保存在 `test/.results/release/<run-id>/`。
+
+测试参数集中在 `config.sh`。可以通过 Make 参数覆盖镜像和下载行为：
+
+```bash
+make -C test/release test \
+  URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh \
+  IMAGES="ubuntu2204 debian12" \
+  FRESH_DOWNLOAD=1
+```
+
+`FRESH_DOWNLOAD=1` 为默认值，会使用 `docker build --no-cache`，确保每次正式验收都重新执行公开下载。仅在调试测试脚本时使用 `FRESH_DOWNLOAD=0` 复用本地镜像层。
+
+测试依次验证 `web_runtime_spawns_shell`、`download_by_lolbin`、`reverse_shell_pattern`、`suspicious_exec_connect` 和 `payload_lifecycle`。其中反向 Shell 场景由 Bash 直接建立控制连接，exec-connect 和 lifecycle 场景会真实下载并执行 payload。GitHub 直连失败时默认尝试 `https://gh-proxy.org`，也可以通过 `RELEASE_PROXY_URL=` 禁用或指定其他代理。
+
+`run.sh` 只负责容器生命周期和场景调度；`fixtures/` 提供真实业务与本地攻击服务器；`attacks/` 负责调用业务入口；`assert.sh` 通过容器内 `sysarmorctl` 查询 Event/Signal，并使用 `jq` 验证关联关系与 namespace 隔离。
 
 ## 运行条件
 
 容器必须使用 `--privileged --cgroupns=host`，并挂载宿主机 BTF 与 bpffs。测试按镜像串行执行，避免多个 Tetragon 实例竞争同一宿主机的 eBPF 资源。
-生产运行还应配置 `--restart unless-stopped` 或等价编排策略；测试会 kill Agent，确认入口使容器失败退出，再显式重启并验证恢复。
+生产运行还应配置 `--restart unless-stopped` 或等价编排策略。Agent 异常退出、业务退出和信号转发由独立的容器入口测试覆盖，不属于本 Release 矩阵。
 
 ## Vulhub 边界
 

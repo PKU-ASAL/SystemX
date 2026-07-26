@@ -244,6 +244,8 @@ func DefaultDetectionPolicy() *DetectionPolicy {
 			{Ref: "ctx:credential-path-prefixes", Version: "builtin"},
 			{Ref: "ctx:payload-path-prefixes", Version: "builtin"},
 			{Ref: "ctx:trusted-admin-binaries", Version: "builtin"},
+			{Ref: "ctx:web-runtime-binaries", Version: "builtin"},
+			{Ref: "ctx:shell-binaries", Version: "builtin"},
 		},
 		RuleOverrides: []RuleOverride{
 			{

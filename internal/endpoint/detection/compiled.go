@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +38,14 @@ type compiledRule struct {
 }
 
 type compiledExpr struct {
-	conditions []compiledCondition
+	conditions     []compiledCondition
+	conditionGroup *compiledConditionNode
+	suppression    compiledSuppression
+}
+
+type compiledSuppression struct {
+	within time.Duration
+	by     []fieldID
 }
 
 type compiledSequence struct {
@@ -47,10 +55,11 @@ type compiledSequence struct {
 }
 
 type compiledStep struct {
-	id         string
-	behavior   string
-	conditions []compiledCondition
-	saveFields []fieldID
+	id             string
+	behavior       string
+	conditions     []compiledCondition
+	conditionGroup *compiledConditionNode
+	saveFields     []fieldID
 }
 
 type compiledSequenceCandidate struct {
@@ -96,6 +105,7 @@ const (
 	fieldLineageID
 	fieldProcessStableID
 	fieldProcessBinary
+	fieldProcessBinaryName
 	fieldProcessArgv
 	fieldProcessUID
 	fieldParentStableID
@@ -110,25 +120,26 @@ const (
 )
 
 type eventView struct {
-	ev              *eventv1.CanonicalEvent
-	eventID         string
-	behavior        string
-	lineageID       string
-	processStableID string
-	processBinary   string
-	processArgv     string
-	processUID      string
-	parentStableID  string
-	filePath        string
-	socketAddr      string
-	socketPort      string
-	socket          string
-	scopeType       string
-	scopeSelector   string
-	containerID     string
-	cgroup          string
-	occurredAtNs    uint64
-	monoNs          uint64
+	ev                *eventv1.CanonicalEvent
+	eventID           string
+	behavior          string
+	lineageID         string
+	processStableID   string
+	processBinary     string
+	processBinaryName string
+	processArgv       string
+	processUID        string
+	parentStableID    string
+	filePath          string
+	socketAddr        string
+	socketPort        string
+	socket            string
+	scopeType         string
+	scopeSelector     string
+	containerID       string
+	cgroup            string
+	occurredAtNs      uint64
+	monoNs            uint64
 }
 
 func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRuntime {
@@ -191,15 +202,23 @@ func compileRule(rule effectiveRule, content ContentSnapshot) compiledRule {
 		return compiledRule{
 			rule: rule,
 			kind: compiledRuleExpr,
-			expr: compiledExpr{conditions: compileConditions(rule.spec.Expr.Conditions, content)},
+			expr: compiledExpr{
+				conditions:     compileConditions(rule.spec.Expr.Conditions, content),
+				conditionGroup: compileConditionNode(rule.spec.Expr.ConditionGroup, content),
+				suppression: compiledSuppression{
+					within: rule.spec.Suppression.Within,
+					by:     compileFields(rule.spec.Suppression.By),
+				},
+			},
 		}
 	case "sequence":
 		steps := make([]compiledStep, 0, len(rule.spec.Sequence.Steps))
 		for _, step := range rule.spec.Sequence.Steps {
 			steps = append(steps, compiledStep{
-				id:         strings.TrimSpace(step.ID),
-				behavior:   eventmodel.NormalizeBehavior(step.Behavior).String(),
-				conditions: compileConditions(step.Conditions, content),
+				id:             strings.TrimSpace(step.ID),
+				behavior:       eventmodel.NormalizeBehavior(step.Behavior).String(),
+				conditions:     compileConditions(step.Conditions, content),
+				conditionGroup: compileConditionNode(step.ConditionGroup, content),
 			})
 		}
 		steps = attachSequenceSaveFields(steps)
@@ -229,7 +248,9 @@ func attachSequenceSaveFields(steps []compiledStep) []compiledStep {
 		seen[i] = map[fieldID]bool{}
 	}
 	for _, step := range steps {
-		for _, cond := range step.conditions {
+		conditions := append([]compiledCondition(nil), step.conditions...)
+		conditions = appendCompiledNodeConditions(conditions, step.conditionGroup)
+		for _, cond := range conditions {
 			if cond.op != opSameAs || cond.step == "" {
 				continue
 			}
@@ -336,6 +357,14 @@ func compileConditions(conditions []ConditionSpec, content ContentSnapshot) []co
 	return out
 }
 
+func compileCondition(cond ConditionSpec, content ContentSnapshot) compiledCondition {
+	compiled := compileConditions([]ConditionSpec{cond}, content)
+	if len(compiled) == 0 {
+		return compiledCondition{}
+	}
+	return compiled[0]
+}
+
 func conditionCost(cond compiledCondition) int {
 	cost := 10
 	switch cond.op {
@@ -405,7 +434,7 @@ func contentValuesFromSnapshot(content ContentSnapshot, ref string) []string {
 	if item, ok := content.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return nil
+	return builtinContentValues(ref)
 }
 
 func compileFields(fields []string) []fieldID {
@@ -431,6 +460,8 @@ func compileField(field string) fieldID {
 		return fieldProcessStableID
 	case "process.binary", "binary":
 		return fieldProcessBinary
+	case "process.binary_name", "binary_name":
+		return fieldProcessBinaryName
 	case "process.argv", "argv":
 		return fieldProcessArgv
 	case "process.uid", "uid":
@@ -507,6 +538,7 @@ func newEventView(ev *eventv1.CanonicalEvent) eventView {
 	if proc := ev.GetSubjectProc(); proc != nil {
 		view.processStableID = proc.GetStableId()
 		view.processBinary = proc.GetBinary()
+		view.processBinaryName = filepath.Base(proc.GetBinary())
 		view.processArgv = strings.Join(proc.GetArgv(), " ")
 		view.processUID = strconv.FormatUint(uint64(proc.GetUid()), 10)
 	}
@@ -539,6 +571,8 @@ func (v eventView) field(field fieldID) string {
 		return v.processStableID
 	case fieldProcessBinary:
 		return v.processBinary
+	case fieldProcessBinaryName:
+		return v.processBinaryName
 	case fieldProcessArgv:
 		return v.processArgv
 	case fieldProcessUID:
@@ -577,7 +611,7 @@ func (e *Engine) matchCompiledStep(view eventView, step compiledStep, st *cepGro
 	if step.behavior != "" && view.behavior != step.behavior {
 		return false
 	}
-	return e.matchCompiledConditions(view, step.conditions, st)
+	return e.matchCompiledConditions(view, step.conditions, st) && e.matchCompiledConditionNode(view, step.conditionGroup, st)
 }
 
 func (e *Engine) matchCompiledConditions(view eventView, conditions []compiledCondition, st *cepGroupState) bool {
@@ -653,6 +687,8 @@ func fieldName(field fieldID) string {
 		return "process.stable_id"
 	case fieldProcessBinary:
 		return "process.binary"
+	case fieldProcessBinaryName:
+		return "process.binary_name"
 	case fieldProcessArgv:
 		return "process.argv"
 	case fieldProcessUID:

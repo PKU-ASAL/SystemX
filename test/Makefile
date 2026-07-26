@@ -15,7 +15,7 @@ SYSARMOR_BENCH_WORKLOAD ?= business-normal
 SYSARMOR_BENCH_SCENARIO ?=
 SYSARMOR_BENCH_POLICIES ?=
 EVALUATION_SCOPE ?= local
-TETRAGON_ARCHIVE ?= $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(firstword $(wildcard ../.cache/tetragon-v1.7.0-amd64.tar.gz ../.scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz)))
+TETRAGON_ARCHIVE ?= $(abspath $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(firstword $(wildcard ../.cache/tetragon-v1.7.0-amd64.tar.gz ../.scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz))))
 export SYSARMOR_TETRAGON_ARCHIVE := $(TETRAGON_ARCHIVE)
 
 .DEFAULT_GOAL := help
@@ -134,7 +134,7 @@ product-endpoint-standalone:
 	bash suites/product/endpoint/container-entrypoint.sh
 	bash suites/product/endpoint/standalone-github-assets.sh
 	bash suites/product/endpoint/dev-prerelease-workflow.sh
-	bash release/test-contract.sh
+	bash suites/product/endpoint/release-container-e2e-contract.sh
 
 product-endpoint-release-container:
 	$(MAKE) -C release test

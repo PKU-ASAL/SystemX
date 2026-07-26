@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -131,7 +132,9 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 					]
 				}
 			},
-			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]}
+			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]},
+			"output":{"terminal":false},
+			"suppress":{"within":"5m","by":["process.stable_id","file.path"]}
 		}]}]}
 	}`
 	if _, err := store.Apply(raw, true, false); err != nil {
@@ -143,5 +146,80 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 	}
 	if rules[0].Sequence.Steps[1].Conditions[0].Step != "drop" {
 		t.Fatalf("sequence condition = %+v", rules[0].Sequence.Steps[1].Conditions[0])
+	}
+	if rules[0].Terminal == nil || *rules[0].Terminal {
+		t.Fatalf("terminal = %v, want explicit false", rules[0].Terminal)
+	}
+	if rules[0].Suppression.Within != "5m" || !slices.Equal(rules[0].Suppression.By, []string{"process.stable_id", "file.path"}) {
+		t.Fatalf("suppression = %+v", rules[0].Suppression)
+	}
+}
+
+func TestStoreParsesConditionTree(t *testing.T) {
+	store := NewStore()
+	raw := `{
+		"api_version":"sysarmor.content/v1",
+		"kind":"rulepack",
+		"metadata":{"id":"rulepack:condition-tree","version":"v1"},
+		"spec":{"rulesets":[{"id":"ruleset:condition-tree","version":"v1","rules":[{
+			"rule_id":"neutral_boolean_rule","version":1,"severity":"medium",
+			"runtime":{"type":"expr","expr":{"condition_group":{"all":[
+				{"any":[
+					{"condition":{"field":"process.binary_name","op":"in","ref":"ctx:test-tools"}},
+					{"condition":{"field":"process.argv","op":"contains","ref":"ctx:test-markers"}}
+				]},
+				{"not":{"condition":{"field":"socket.port","op":"in","values":["80"]}}}
+			]}}},
+			"requires":{"events":[{"behavior":"network.connect","fields":["process.binary","process.argv","socket.port"]}]}
+		}]}]}
+	}`
+	if _, err := store.Apply(raw, true, false); err != nil {
+		t.Fatal(err)
+	}
+	rules := store.Snapshot().Rules
+	if len(rules) != 1 {
+		t.Fatalf("rules = %+v", rules)
+	}
+	group := rules[0].Expr.ConditionGroup
+	if group == nil || len(group.All) != 2 || len(group.All[0].Any) != 2 || group.All[1].Not == nil {
+		t.Fatalf("condition group = %+v", group)
+	}
+	if got := group.All[0].Any[1].Condition; got == nil || got.Field != "process.argv" || got.Ref != "ctx:test-markers" {
+		t.Fatalf("condition leaf = %+v", got)
+	}
+}
+
+func TestStoreParsesCorrelateRule(t *testing.T) {
+	store := NewStore()
+	raw := `{
+		"api_version":"sysarmor.content/v1","kind":"rulepack",
+		"metadata":{"id":"rulepack:correlate","version":"v1"},
+		"spec":{"rulesets":[{"id":"ruleset:correlate","version":"v1","rules":[{
+			"rule_id":"neutral_correlate_rule","version":1,"severity":"high",
+			"runtime":{"type":"correlate","correlate":{
+				"within":"2m","by":["lineage_id"],"facts":[
+					{"id":"change","events":["file.write","file.chmod"],"conditions":[{"field":"file.path","op":"prefix","value":"/tmp/test/"}]},
+					{"id":"run","event":"process.exec","condition_group":{"any":[
+						{"condition":{"field":"process.binary","op":"prefix","value":"/tmp/test/"}},
+						{"condition":{"field":"process.argv","op":"contains","value":"/tmp/test/"}}
+					]}}
+				]
+			}},
+			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]}
+		}]}]}
+	}`
+	if _, err := store.Apply(raw, true, false); err != nil {
+		t.Fatal(err)
+	}
+	rules := store.Snapshot().Rules
+	if len(rules) != 1 {
+		t.Fatalf("rules = %+v", rules)
+	}
+	correlate := rules[0].Correlate
+	if correlate.Within != "2m" || !slices.Equal(correlate.By, []string{"lineage_id"}) || len(correlate.Facts) != 2 {
+		t.Fatalf("correlate = %+v", correlate)
+	}
+	if !slices.Equal(correlate.Facts[0].Events, []string{"file.write", "file.chmod"}) || correlate.Facts[1].Event != "process.exec" || correlate.Facts[1].ConditionGroup == nil {
+		t.Fatalf("facts = %+v", correlate.Facts)
 	}
 }

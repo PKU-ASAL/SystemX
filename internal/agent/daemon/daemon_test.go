@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
@@ -39,6 +41,58 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
 )
+
+func TestDetectionSuppressionConversion(t *testing.T) {
+	got := detectionSuppression(agentcontent.RuntimeSuppression{
+		Within: "5m",
+		By:     []string{"process.stable_id", "file.path"},
+	})
+	if got.Within != 5*time.Minute || !slices.Equal(got.By, []string{"process.stable_id", "file.path"}) {
+		t.Fatalf("suppression = %+v", got)
+	}
+}
+
+func TestDetectionConditionTreeConversion(t *testing.T) {
+	node := &agentcontent.RuntimeConditionNode{Any: []agentcontent.RuntimeConditionNode{
+		{Condition: &agentcontent.RuntimeCondition{Field: "process.binary_name", Op: "in", Ref: "ctx:test-tools"}},
+		{Not: &agentcontent.RuntimeConditionNode{Condition: &agentcontent.RuntimeCondition{Field: "socket.port", Op: "in", Values: []string{"80"}}}},
+		{All: []agentcontent.RuntimeConditionNode{
+			{Condition: &agentcontent.RuntimeCondition{Field: "behavior", Op: "eq", Value: "process.exec"}},
+		}},
+	}}
+	got := detectionConditionNode(node)
+	if got == nil || len(got.Any) != 3 || got.Any[0].Condition == nil || got.Any[1].Not == nil || len(got.Any[2].All) != 1 {
+		t.Fatalf("condition tree = %+v", got)
+	}
+	if got.All != nil || got.Not != nil || got.Condition != nil {
+		t.Fatalf("any node gained unrelated kinds: %+v", got)
+	}
+	if got.Any[0].All != nil || got.Any[0].Any != nil || got.Any[0].Not != nil {
+		t.Fatalf("condition leaf gained unrelated kinds: %+v", got.Any[0])
+	}
+	if got.Any[0].Condition.Ref != "ctx:test-tools" || !slices.Equal(got.Any[1].Not.Condition.Values, []string{"80"}) {
+		t.Fatalf("condition tree leaves = %+v", got)
+	}
+	if got.Any[2].Any != nil || got.Any[2].Not != nil || got.Any[2].Condition != nil {
+		t.Fatalf("all node gained unrelated kinds: %+v", got.Any[2])
+	}
+}
+
+func TestDetectionCorrelateConversion(t *testing.T) {
+	got := detectionCorrelate(agentcontent.RuntimeCorrelate{
+		Within: "2m", By: []string{"lineage_id"},
+		Facts: []agentcontent.RuntimeFact{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}},
+			{ID: "run", Event: "process.exec", Conditions: []agentcontent.RuntimeCondition{{Field: "process.binary", Op: "exists"}}},
+		},
+	})
+	if got.Within != 2*time.Minute || got.WithinText != "2m" || !slices.Equal(got.By, []string{"lineage_id"}) || len(got.Facts) != 2 {
+		t.Fatalf("correlate = %+v", got)
+	}
+	if !slices.Equal(got.Facts[0].Events, []string{"file.write", "file.chmod"}) || got.Facts[1].Event != "process.exec" || len(got.Facts[1].Conditions) != 1 {
+		t.Fatalf("facts = %+v", got.Facts)
+	}
+}
 
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
@@ -252,12 +306,18 @@ func TestStandaloneRuntimeResumesPersistentSequences(t *testing.T) {
 
 func TestEndpointSignalIDsContinueAcrossDetectionReplacement(t *testing.T) {
 	runner := &AgentRuntime{signalSeq: 17}
+	parent := &eventv1.CanonicalEvent{
+		Id: "event-parent", Behavior: "process.exec",
+		SubjectProc: &eventv1.ProcessRef{StableId: "node-parent", Binary: "/usr/bin/node"},
+	}
 	event := &eventv1.CanonicalEvent{
-		Id: "event-a", Behavior: "process.exec", ParentStableId: "parent",
-		SubjectProc: &eventv1.ProcessRef{Binary: "/bin/bash"},
+		Id: "event-a", Behavior: "process.exec", ParentStableId: "node-parent",
+		SubjectProc: &eventv1.ProcessRef{StableId: "shell-child", Binary: "/bin/bash"},
 	}
 	firstEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
 	secondEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
+	firstEngine.Process(parent)
+	secondEngine.Process(parent)
 	first := runner.dataBatchForEvent(event, firstEngine.Process(event)).GetSignals()[0]
 	second := runner.dataBatchForEvent(event, secondEngine.Process(event)).GetSignals()[0]
 	if first.GetSequence() != 18 || first.GetSignal().GetId() != "sig-00000000000000000018" {

@@ -895,6 +895,9 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	if got := frame.GetSignal().GetEventRefs(); len(got) != 4 {
 		t.Fatalf("event refs = %v, want 4", got)
 	}
+	if frame.GetSignal().GetTerminal() {
+		t.Fatalf("signal = %+v, want rulepack terminal=false", frame.GetSignal())
+	}
 	health, err := client.Health(context.Background(), &controlplanev1.HealthRequest{Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"}})
 	if err != nil {
 		t.Fatalf("Health() error = %v", err)
@@ -951,7 +954,8 @@ func cepRulePackJSON() string {
 				{"behavior":"file.chmod","fields":["file.path","lineage_id"]},
 				{"behavior":"process.exec","fields":["process.binary","lineage_id"]},
 				{"behavior":"network.connect","fields":["socket.port","lineage_id"]}
-			]}
+			]},
+			"output":{"terminal":false}
 		}]}]}
 	}`
 }

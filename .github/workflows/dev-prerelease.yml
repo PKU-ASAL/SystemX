@@ -46,7 +46,7 @@ jobs:
           bash test/suites/product/endpoint/container-entrypoint.sh
           bash test/suites/product/endpoint/standalone-github-assets.sh
           bash test/suites/product/endpoint/dev-prerelease-workflow.sh
-          bash test/release/test-contract.sh
+          bash test/suites/product/endpoint/release-container-e2e-contract.sh
 
       - name: Build standalone release assets
         id: build

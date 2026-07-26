@@ -12,32 +12,88 @@
         "version": "v1",
         "rules": [
           {
+            "rule_id": "web_runtime_spawns_shell",
+            "version": 2,
+            "severity": "high",
+            "runtime": {
+              "type": "sequence",
+              "sequence": {
+                "within": "30s",
+                "by": ["lineage_id"],
+                "steps": [
+                  {
+                    "id": "runtime",
+                    "event": "process.exec",
+                    "conditions": [
+                      {"field": "process.binary_name", "op": "in", "ref": "ctx:web-runtime-binaries"}
+                    ]
+                  },
+                  {
+                    "id": "shell",
+                    "event": "process.exec",
+                    "conditions": [
+                      {"field": "process.binary_name", "op": "in", "ref": "ctx:shell-binaries"},
+                      {"field": "parent.stable_id", "op": "same_as", "step": "runtime", "step_field": "process.stable_id"}
+                    ]
+                  }
+                ]
+              }
+            },
+            "requires": {
+              "events": [
+                {
+                  "behavior": "process.exec",
+                  "fields": ["process.binary", "process.stable_id", "parent.stable_id", "lineage_id"]
+                }
+              ],
+              "context": {
+                "required": ["ctx:web-runtime-binaries", "ctx:shell-binaries"]
+              }
+            },
+            "output": {
+              "terminal": false
+            }
+          },
+          {
             "rule_id": "download_by_lolbin",
-            "version": 1,
+            "version": 2,
             "severity": "medium",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.download_by_lolbin"
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "process.binary_name", "op": "in", "ref": "ctx:download-client-binaries"},
+                  {"field": "socket.port", "op": "in", "ref": "ioc:c2-download-port-feed"}
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["socket.port", "process.binary"]
                 }
               ],
+              "context": {
+                "required": ["ctx:download-client-binaries"]
+              },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-download-port-feed"]
+                "required": ["ioc:c2-download-port-feed"]
               }
             }
           },
           {
             "rule_id": "payload_dropped",
-            "version": 1,
+            "version": 2,
             "severity": "high",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.payload_dropped"
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "behavior", "op": "in", "values": ["file.write", "file.chmod"]},
+                  {"field": "file.path", "op": "prefix", "ref": "ctx:payload-path-prefixes"}
+                ]
+              }
             },
             "requires": {
               "events": [
@@ -51,34 +107,68 @@
                 }
               ],
               "context": {
-                "optional": ["ctx:payload-path-prefixes"]
+                "required": ["ctx:payload-path-prefixes"]
               }
             }
           },
           {
-            "rule_id": "reverse_shell_pattern",
-            "version": 1,
-            "severity": "critical",
+            "rule_id": "credential_file_read",
+            "version": 2,
+            "severity": "medium",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.reverse_shell_pattern"
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "file.path", "op": "prefix", "ref": "ctx:credential-path-prefixes"},
+                  {"field": "process.binary", "op": "not_in", "ref": "ctx:trusted-admin-binaries"}
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
-                  "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "parent.stable_id", "lineage_id"]
-                },
-                {
-                  "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "behavior": "file.read",
+                  "fields": ["file.path", "process.binary", "process.stable_id"]
                 }
               ],
+              "context": {
+                "required": ["ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"]
+              }
+            },
+            "suppress": {
+              "within": "5m",
+              "by": ["process.stable_id", "file.path"]
+            }
+          },
+          {
+            "rule_id": "reverse_shell_pattern",
+            "version": 2,
+            "severity": "critical",
+            "runtime": {
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "process.binary_name", "op": "in", "ref": "ctx:shell-binaries"},
+                  {"field": "socket.port", "op": "in", "ref": "ioc:c2-control-port-feed"}
+                ]
+              }
+            },
+            "requires": {
+              "events": [
+                {
+                  "behavior": "network.connect",
+                  "fields": ["socket.port", "process.binary"]
+                }
+              ],
+              "context": {
+                "required": ["ctx:shell-binaries"]
+              },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
+                "required": ["ioc:c2-control-port-feed"]
               }
             },
             "output": {
+			  "terminal": true,
               "response_intent": {
                 "action": "collect_evidence",
                 "confidence": 80,
@@ -88,61 +178,124 @@
           },
           {
             "rule_id": "suspicious_exec_connect",
-            "version": 1,
+            "version": 2,
             "severity": "high",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.suspicious_exec_connect"
+              "type": "sequence",
+              "sequence": {
+                "within": "2m",
+                "by": ["lineage_id"],
+                "steps": [
+                  {
+                    "id": "exec",
+                    "event": "process.exec",
+                    "condition_group": {
+                      "any": [
+                        {"condition": {"field": "process.binary", "op": "prefix", "ref": "ctx:payload-path-prefixes"}},
+                        {"condition": {"field": "process.argv", "op": "contains", "ref": "ctx:payload-path-prefixes"}}
+                      ]
+                    }
+                  },
+                  {
+                    "id": "connect",
+                    "event": "network.connect",
+                    "conditions": [
+                      {"field": "socket.port", "op": "in", "ref": "ioc:c2-control-port-feed"}
+                    ],
+                    "condition_group": {
+                      "any": [
+                        {"condition": {"field": "process.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}},
+                        {"condition": {"field": "parent.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}}
+                      ]
+                    }
+                  }
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
                   "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "parent.stable_id", "lineage_id"]
+                  "fields": ["process.binary", "process.argv", "process.stable_id", "lineage_id"]
                 },
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["socket.port", "process.stable_id", "parent.stable_id", "lineage_id"]
                 }
               ],
               "context": {
-                "optional": ["ctx:payload-path-prefixes"]
+                "required": ["ctx:payload-path-prefixes"]
               },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
+                "required": ["ioc:c2-control-port-feed"]
               }
-            }
+            },
+            "output": {"terminal": false}
           },
           {
             "rule_id": "payload_lifecycle",
-            "version": 1,
+            "version": 2,
             "severity": "high",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.payload_lifecycle"
+              "type": "correlate",
+              "correlate": {
+                "within": "2m",
+                "by": ["lineage_id"],
+                "facts": [
+                  {
+                    "id": "drop",
+                    "events": ["file.write", "file.chmod"],
+                    "conditions": [
+                      {"field": "file.path", "op": "prefix", "ref": "ctx:payload-path-prefixes"}
+                    ]
+                  },
+                  {
+                    "id": "exec",
+                    "event": "process.exec",
+                    "condition_group": {
+                      "any": [
+                        {"condition": {"field": "process.binary", "op": "prefix", "ref": "ctx:payload-path-prefixes"}},
+                        {"condition": {"field": "process.argv", "op": "contains", "ref": "ctx:payload-path-prefixes"}}
+                      ]
+                    }
+                  },
+                  {
+                    "id": "connect",
+                    "event": "network.connect",
+                    "conditions": [
+                      {"field": "socket.port", "op": "in", "ref": "ioc:c2-control-port-feed"}
+                    ]
+                  }
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
                   "behavior": "file.write",
-                  "fields": ["file.path", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["file.path", "lineage_id"]
+                },
+                {
+                  "behavior": "file.chmod",
+                  "fields": ["file.path", "lineage_id"]
                 },
                 {
                   "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "parent.stable_id", "lineage_id"]
+                  "fields": ["process.binary", "process.argv", "lineage_id"]
                 },
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["socket.port", "lineage_id"]
                 }
               ],
               "context": {
-                "optional": ["ctx:payload-path-prefixes"]
+                "required": ["ctx:payload-path-prefixes"]
               },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
+                "required": ["ioc:c2-control-port-feed"]
               }
-            }
+            },
+            "output": {"terminal": false}
           }
         ]
       }

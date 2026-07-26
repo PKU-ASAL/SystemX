@@ -1,14 +1,38 @@
 package detection
 
 import (
+	"fmt"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
+
+func TestEngineHasNoRuleSpecificLineageDetectors(t *testing.T) {
+	source, err := os.ReadFile("engine.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, symbol := range []string{
+		"lineageState",
+		"observeDownloadEvidence",
+		"observeControlConnection",
+		"observePayloadEvidence",
+		"detectPayloadExec",
+		"detectPayloadConnect",
+	} {
+		if strings.Contains(string(source), symbol) {
+			t.Errorf("engine.go still contains rule-specific symbol %q", symbol)
+		}
+	}
+}
 
 func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
 	engine, report := New(policymodel.DefaultDetectionPolicy())
@@ -33,13 +57,71 @@ func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"e1", "e2", "e3", "e4"} {
+	for _, want := range []string{"e2", "e3", "e4"} {
 		if !contains(lifecycleRefs, want) {
 			t.Fatalf("payload_lifecycle refs = %v, want %s", lifecycleRefs, want)
 		}
 	}
+	if len(lifecycleRefs) != 3 || contains(lifecycleRefs, "e1") {
+		t.Fatalf("payload_lifecycle refs = %v, want latest evidence for each fact", lifecycleRefs)
+	}
 	if lifecycleRuleVersion != 1 || lifecycleRuleSet != "ruleset:endpoint-linux-builtin" {
 		t.Fatalf("payload_lifecycle rule metadata version=%d ruleset=%q", lifecycleRuleVersion, lifecycleRuleSet)
+	}
+}
+
+func TestPayloadLifecycleUsesCorrelateRule(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "payload_lifecycle" {
+			continue
+		}
+		if rule.RuntimeType != "correlate" || len(rule.Correlate.Facts) != 3 {
+			t.Fatalf("rule = %+v, want three-fact correlate", rule)
+		}
+		return
+	}
+	t.Fatal("payload_lifecycle rule not found")
+}
+
+func TestPayloadLifecycleCorrelateUsesDynamicContent(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "v2", Values: []string{"/opt/payloads/"}},
+		},
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
+		},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	events := []*eventv1.CanonicalEvent{
+		connectEventWithParent("connect", "lin-a", "payload", "init", "/bin/other", "10.0.0.1:9443"),
+		writeEvent("drop", "lin-a", "writer", "/bin/tool", "/opt/payloads/tool"),
+		execEvent("exec", "lin-a", "payload", "init", "/bin/sh", []string{"/bin/sh", "/opt/payloads/tool"}),
+	}
+	var signals []*signalv1.Signal
+	for _, event := range events {
+		signals = append(signals, engine.Process(event)...)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "payload_lifecycle" {
+			signal = candidate
+		}
+	}
+	if signal == nil || len(signal.GetEventRefs()) != 3 || len(signal.GetEntities()) < 3 {
+		t.Fatalf("signal = %+v, want three facts and aggregated entities", signal)
+	}
+	for _, id := range []string{"drop", "exec", "connect"} {
+		if !contains(signal.GetEventRefs(), id) {
+			t.Fatalf("refs = %v, missing %s", signal.GetEventRefs(), id)
+		}
+	}
+	if len(signal.GetContextRefs()) != 1 || len(signal.GetIocRefs()) != 1 {
+		t.Fatalf("content refs = context:%v ioc:%v", signal.GetContextRefs(), signal.GetIocRefs())
 	}
 }
 
@@ -87,10 +169,13 @@ func TestBuiltinRuleSetPayloadLifecycleToleratesShellReexecParentMismatch(t *tes
 			}
 		}
 	}
-	for _, want := range []string{"e1", "e2", "e3", "e4"} {
+	for _, want := range []string{"e2", "e3", "e4"} {
 		if !contains(lifecycleRefs, want) {
 			t.Fatalf("payload_lifecycle refs = %v, want %s", lifecycleRefs, want)
 		}
+	}
+	if len(lifecycleRefs) != 3 || contains(lifecycleRefs, "e1") {
+		t.Fatalf("payload_lifecycle refs = %v, want latest evidence for each fact", lifecycleRefs)
 	}
 }
 
@@ -179,6 +264,364 @@ func TestDependencyCheckUsesCollectionCapabilityFields(t *testing.T) {
 	}
 }
 
+func TestRuleValidationRejectsUnknownFieldsAndOperators(t *testing.T) {
+	tests := []struct {
+		name string
+		cond ConditionSpec
+		want string
+	}{
+		{name: "field", cond: ConditionSpec{Field: "process.unknown", Op: "eq", Value: "x"}, want: "unsupported field"},
+		{name: "operator", cond: ConditionSpec{Field: "process.binary", Op: "magic", Value: "x"}, want: "unsupported operator"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_" + tt.name, RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+				Expr: ExprSpec{Conditions: []ConditionSpec{tt.cond}},
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuleValidationRejectsInvalidSequenceReferences(t *testing.T) {
+	content := ContentSnapshot{Rules: []RuleSpec{{
+		RuleID: "invalid_sequence", RuleSetRef: "ruleset:cep", RuntimeType: "sequence",
+		Sequence: SequenceSpec{Within: time.Minute, Steps: []StepSpec{
+			{ID: "runtime", Behavior: "process.exec"},
+			{ID: "shell", Behavior: "process.exec", Conditions: []ConditionSpec{{
+				Field: "parent.stable_id", Op: "same_as", Step: "missing", StepField: "process.stable_id",
+			}}},
+		}},
+	}}}
+	_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "rejected" || !containsWarning(report.Details, "unknown prior step") {
+		t.Fatalf("report = %+v, want rejected unknown prior step", report)
+	}
+}
+
+func TestRuleValidationRejectsInvalidSuppression(t *testing.T) {
+	tests := []struct {
+		name        string
+		suppression SuppressionSpec
+		want        string
+	}{
+		{name: "zero window", suppression: SuppressionSpec{By: []string{"process.stable_id"}}, want: "suppression window"},
+		{name: "excessive window", suppression: SuppressionSpec{Within: 25 * time.Hour, By: []string{"process.stable_id"}}, want: "suppression window"},
+		{name: "missing key", suppression: SuppressionSpec{Within: time.Minute}, want: "suppression by field"},
+		{name: "unknown field", suppression: SuppressionSpec{Within: time.Minute, By: []string{"process.unknown"}}, want: "unsupported suppression by field"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_suppression", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+				Expr:        ExprSpec{Conditions: []ConditionSpec{{Field: "file.path", Op: "exists"}}},
+				Suppression: tt.suppression,
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuleValidationRejectsInvalidConditionTree(t *testing.T) {
+	leaf := conditionLeaf(ConditionSpec{Field: "file.path", Op: "exists"})
+	tests := []struct {
+		name string
+		node *ConditionNodeSpec
+		want string
+	}{
+		{name: "empty", node: &ConditionNodeSpec{}, want: "condition node must set exactly one kind"},
+		{name: "multiple kinds", node: &ConditionNodeSpec{All: []ConditionNodeSpec{leaf}, Condition: leaf.Condition}, want: "condition node must set exactly one kind"},
+		{name: "empty any", node: &ConditionNodeSpec{Any: []ConditionNodeSpec{}}, want: "any requires children"},
+		{name: "empty not", node: &ConditionNodeSpec{Not: &ConditionNodeSpec{}}, want: "condition node must set exactly one kind"},
+		{name: "unknown field", node: ptrConditionNode(conditionLeaf(ConditionSpec{Field: "file.unknown", Op: "exists"})), want: "unsupported field"},
+	}
+	deep := conditionLeaf(ConditionSpec{Field: "file.path", Op: "exists"})
+	for i := 0; i < 9; i++ {
+		deep = ConditionNodeSpec{Not: ptrConditionNode(deep)}
+	}
+	tests = append(tests, struct {
+		name string
+		node *ConditionNodeSpec
+		want string
+	}{name: "too deep", node: &deep, want: "maximum depth"})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_tree", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+				Expr: ExprSpec{Conditions: []ConditionSpec{{Field: "file.path", Op: "exists"}}, ConditionGroup: tt.node},
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestExprRuleEvaluatesGenericConditionTree(t *testing.T) {
+	rule := RuleSpec{
+		RuleID: "neutral_boolean_rule", RuleSetRef: "ruleset:cep", RuntimeType: "expr", RequiredBehaviors: []string{"network.connect"},
+		ContextRefs: []string{"ctx:test-tools", "ctx:test-markers"}, IOCRefs: []string{"ioc:test-ports"},
+		Expr: ExprSpec{
+			ConditionGroup: &ConditionNodeSpec{All: []ConditionNodeSpec{
+				{Any: []ConditionNodeSpec{
+					conditionLeaf(ConditionSpec{Field: "process.binary_name", Op: "in", Ref: "ctx:test-tools"}),
+					conditionLeaf(ConditionSpec{Field: "process.argv", Op: "contains", Ref: "ctx:test-markers"}),
+				}},
+				conditionLeaf(ConditionSpec{Field: "socket.port", Op: "in", Ref: "ioc:test-ports"}),
+				{Not: ptrConditionNode(conditionLeaf(ConditionSpec{Field: "process.binary_name", Op: "eq", Value: "blocked"}))},
+			}},
+		},
+	}
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:test-tools":   {Ref: "ctx:test-tools", Values: []string{"fetcher"}},
+			"ctx:test-markers": {Ref: "ctx:test-markers", Values: []string{"--probe"}},
+		},
+		IOCRefs: map[string]ContentRef{"ioc:test-ports": {Ref: "ioc:test-ports", Values: []string{"9443"}}},
+		Rules:   []RuleSpec{rule},
+	}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	tests := []struct {
+		name  string
+		event *eventv1.CanonicalEvent
+		want  int
+	}{
+		{name: "binary branch", event: connectEventWithParent("binary", "lin-a", "p1", "parent", "/opt/fetcher", "10.0.0.1:9443"), want: 1},
+		{name: "wrong port", event: connectEventWithParent("port", "lin-b", "p2", "parent", "/opt/fetcher", "10.0.0.1:80"), want: 0},
+		{name: "blocked", event: connectEventWithParent("blocked", "lin-c", "p3", "parent", "/opt/blocked", "10.0.0.1:9443"), want: 0},
+	}
+	argvEvent := connectEventWithParent("argv", "lin-d", "p4", "parent", "/opt/other", "10.0.0.1:9443")
+	argvEvent.SubjectProc.Argv = []string{"/opt/other", "--probe"}
+	tests = append(tests, struct {
+		name  string
+		event *eventv1.CanonicalEvent
+		want  int
+	}{name: "argv branch", event: argvEvent, want: 1})
+	for _, tt := range tests {
+		if got := countSignals(engine.Process(tt.event), "neutral_boolean_rule"); got != tt.want {
+			t.Fatalf("%s signals = %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestRuleValidationRejectsInvalidCorrelate(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*CorrelateSpec)
+		want   string
+	}{
+		{name: "invalid duration", mutate: func(spec *CorrelateSpec) { spec.Within = 0; spec.WithinText = "bad" }, want: "invalid correlate window"},
+		{name: "zero window", mutate: func(spec *CorrelateSpec) { spec.Within = 0 }, want: "correlate window"},
+		{name: "excessive window", mutate: func(spec *CorrelateSpec) { spec.Within = 25 * time.Hour }, want: "correlate window"},
+		{name: "empty by", mutate: func(spec *CorrelateSpec) { spec.By = nil }, want: "correlate by field is required"},
+		{name: "unknown by", mutate: func(spec *CorrelateSpec) { spec.By = []string{"process.unknown"} }, want: "unsupported correlate by field"},
+		{name: "duplicate fact", mutate: func(spec *CorrelateSpec) { spec.Facts[1].ID = spec.Facts[0].ID }, want: "duplicate fact"},
+		{name: "event conflict", mutate: func(spec *CorrelateSpec) { spec.Facts[0].Event = "file.write" }, want: "exactly one of event or events"},
+		{name: "empty behaviors", mutate: func(spec *CorrelateSpec) { spec.Facts[0].Events = nil }, want: "exactly one of event or events"},
+		{name: "blank behavior", mutate: func(spec *CorrelateSpec) { spec.Facts[0].Events = []string{" "} }, want: "behavior is required"},
+		{name: "one fact", mutate: func(spec *CorrelateSpec) { spec.Facts = spec.Facts[:1] }, want: "at least two facts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := neutralCorrelateSpec()
+			tt.mutate(&spec)
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_correlate", RuleSetRef: "ruleset:cep", RuntimeType: "correlate", Correlate: spec,
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuleValidationAcceptsValidCorrelate(t *testing.T) {
+	content := ContentSnapshot{Rules: []RuleSpec{{
+		RuleID: "neutral_correlate", RuleSetRef: "ruleset:cep", RuntimeType: "correlate", Correlate: neutralCorrelateSpec(),
+	}}}
+	_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v, want applied", report)
+	}
+}
+
+func neutralCorrelateSpec() CorrelateSpec {
+	return CorrelateSpec{
+		Within: 2 * time.Minute,
+		By:     []string{"lineage_id"},
+		Facts: []FactSpec{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}, Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: "/tmp/test/"}}},
+			{ID: "run", Event: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary", Op: "prefix", Value: "/tmp/test/"}}},
+		},
+	}
+}
+
+func TestCorrelateRuntimeMatchesAllFactPermutations(t *testing.T) {
+	permutations := [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}
+	for _, order := range permutations {
+		name := fmt.Sprintf("%d%d%d", order[0], order[1], order[2])
+		t.Run(name, func(t *testing.T) {
+			engine, report := newNeutralCorrelateEngine(EngineLimits{})
+			if report.Status != "applied" {
+				t.Fatalf("report = %+v", report)
+			}
+			events := neutralCorrelateEvents("lin-a", 1)
+			var signals []*signalv1.Signal
+			for _, index := range order {
+				signals = append(signals, engine.Process(events[index])...)
+			}
+			if got := countSignals(signals, "neutral_three_fact"); got != 1 {
+				t.Fatalf("signals = %d, want 1; all=%+v", got, signals)
+			}
+			for _, id := range []string{"change", "run", "access"} {
+				if !contains(signals[0].GetEventRefs(), id) {
+					t.Fatalf("refs = %v, missing %s", signals[0].GetEventRefs(), id)
+				}
+			}
+		})
+	}
+}
+
+func TestCorrelateRuntimeReplacesDuplicateFactEvidence(t *testing.T) {
+	engine, _ := newNeutralCorrelateEngine(EngineLimits{})
+	engine.Process(writeEventAt("change-old", "lin-a", "p1", "/bin/tool", "/tmp/test/item", 1))
+	engine.Process(writeEventAt("change-new", "lin-a", "p1", "/bin/tool", "/tmp/test/item", 2))
+	engine.Process(execEventAt("run", "lin-a", "p2", "parent", "/tmp/test/item", nil, 3))
+	signals := engine.Process(connectEventAt("access", "lin-a", "p2", "parent", "/tmp/test/item", "10.0.0.1:9443", 4))
+	if len(signals) != 1 || contains(signals[0].GetEventRefs(), "change-old") || !contains(signals[0].GetEventRefs(), "change-new") {
+		t.Fatalf("signals = %+v, want latest fact evidence", signals)
+	}
+}
+
+func TestCorrelateRuntimeExpiresAndIsolatesGroups(t *testing.T) {
+	engine, _ := newNeutralCorrelateEngine(EngineLimits{})
+	engine.Process(writeEventAt("change-a", "lin-a", "p1", "/bin/tool", "/tmp/test/a", 1))
+	engine.Process(execEventAt("run-b", "lin-b", "p2", "parent", "/tmp/test/b", nil, 2))
+	if signals := engine.Process(connectEventAt("access-a", "lin-a", "p1", "parent", "/tmp/test/a", "10.0.0.1:9443", 3)); len(signals) != 0 {
+		t.Fatalf("cross-group signals = %+v", signals)
+	}
+	late := uint64((3 * time.Minute).Nanoseconds())
+	if signals := engine.Process(execEventAt("run-a-late", "lin-a", "p1", "parent", "/tmp/test/a", nil, late)); len(signals) != 0 {
+		t.Fatalf("expired signals = %+v", signals)
+	}
+	if engine.Metrics().ExpiredCEPGroups == 0 {
+		t.Fatalf("metrics = %+v, want expired correlate group", engine.Metrics())
+	}
+}
+
+func TestCorrelateRuntimeEnforcesGroupAndRefLimits(t *testing.T) {
+	engine, _ := newNeutralCorrelateEngine(EngineLimits{MaxCEPGroups: 2, MaxCEPRefs: 2})
+	for _, lineage := range []string{"lin-a", "lin-b", "lin-c"} {
+		engine.Process(writeEventAt("change-"+lineage, lineage, "p1", "/bin/tool", "/tmp/test/"+lineage, 1))
+	}
+	if engine.Metrics().EvictedCEPGroups == 0 {
+		t.Fatalf("metrics = %+v, want correlate eviction", engine.Metrics())
+	}
+	for _, event := range neutralCorrelateEvents("lin-c", 2)[1:] {
+		signals := engine.Process(event)
+		if len(signals) == 1 {
+			if len(signals[0].GetEventRefs()) != 2 || engine.Metrics().DroppedEventRefs == 0 {
+				t.Fatalf("signal=%+v metrics=%+v, want bounded refs", signals[0], engine.Metrics())
+			}
+		}
+	}
+}
+
+func newNeutralCorrelateEngine(limits EngineLimits) (*Engine, ApplyReport) {
+	rule := RuleSpec{
+		RuleID: "neutral_three_fact", RuleSetRef: "ruleset:cep", RuntimeType: "correlate",
+		RequiredBehaviors: []string{"file.write", "file.chmod", "process.exec", "network.connect"},
+		Correlate: CorrelateSpec{Within: 2 * time.Minute, By: []string{"lineage_id"}, Facts: []FactSpec{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}, Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: "/tmp/test/"}}},
+			{ID: "run", Event: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary", Op: "prefix", Value: "/tmp/test/"}}},
+			{ID: "access", Event: "network.connect", Conditions: []ConditionSpec{{Field: "socket.port", Op: "in", Values: []string{"9443"}}}},
+		}},
+	}
+	return NewWithRuntimeLimits(cepPolicy(), contract.CollectionIntent{}, ContentSnapshot{Rules: []RuleSpec{rule}}, limits)
+}
+
+func neutralCorrelateEvents(lineage string, start uint64) []*eventv1.CanonicalEvent {
+	return []*eventv1.CanonicalEvent{
+		writeEventAt("change", lineage, "p1", "/bin/tool", "/tmp/test/item", start),
+		execEventAt("run", lineage, "p2", "parent", "/tmp/test/item", nil, start+1),
+		connectEventAt("access", lineage, "p2", "parent", "/tmp/test/item", "10.0.0.1:9443", start+2),
+	}
+}
+
+func conditionLeaf(condition ConditionSpec) ConditionNodeSpec {
+	return ConditionNodeSpec{Condition: &condition}
+}
+
+func ptrConditionNode(node ConditionNodeSpec) *ConditionNodeSpec {
+	return &node
+}
+
+func TestExprRuleSuppressesByDeclaredFieldsWithinWindow(t *testing.T) {
+	rule := RuleSpec{
+		RuleID: "suppressed_read", RuleSetRef: "ruleset:cep", RuntimeType: "expr", RequiredBehaviors: []string{"file.open"},
+		Expr:        ExprSpec{Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: "/secrets/"}}},
+		Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
+	}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, ContentSnapshot{Rules: []RuleSpec{rule}})
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	events := []struct {
+		event *eventv1.CanonicalEvent
+		want  int
+	}{
+		{event: openEventAt("first", "lin-a", "proc-a", "/bin/cat", "/secrets/token", time.Second), want: 1},
+		{event: openEventAt("duplicate", "lin-a", "proc-a", "/bin/cat", "/secrets/token", 2*time.Second), want: 0},
+		{event: openEventAt("different-process", "lin-a", "proc-b", "/bin/cat", "/secrets/token", 3*time.Second), want: 1},
+		{event: openEventAt("different-path", "lin-a", "proc-a", "/bin/cat", "/secrets/other", 4*time.Second), want: 1},
+		{event: openEventAt("expired", "lin-a", "proc-a", "/bin/cat", "/secrets/token", 6*time.Minute), want: 1},
+	}
+	for _, item := range events {
+		if got := countSignals(engine.Process(item.event), "suppressed_read"); got != item.want {
+			t.Fatalf("%s signals = %d, want %d", item.event.GetId(), got, item.want)
+		}
+	}
+}
+
+func TestSuppressionEvictsAtKeyLimit(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	now := time.Unix(100, 0)
+	for i := 0; i <= maxSuppressionKeys; i++ {
+		engine.suppressSignal("key-"+strconv.Itoa(i), now, time.Hour)
+	}
+	if got := len(engine.suppression); got > maxSuppressionKeys {
+		t.Fatalf("suppression keys = %d, want <= %d", got, maxSuppressionKeys)
+	}
+	if engine.Metrics().SuppressionEvictions == 0 {
+		t.Fatalf("metrics = %+v, want suppression eviction", engine.Metrics())
+	}
+}
+
+func TestSuppressionCleanupRespectsOriginalWindows(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	start := time.Unix(100, 0)
+	engine.suppressSignal("long-window", start, 5*time.Minute)
+	for i := 0; i < maxSuppressionKeys-1; i++ {
+		engine.suppressSignal("short-"+strconv.Itoa(i), start.Add(2*time.Minute), time.Minute)
+	}
+	engine.suppressSignal("overflow", start.Add(2*time.Minute), time.Minute)
+	if suppressed := engine.suppressSignal("long-window", start.Add(3*time.Minute), 5*time.Minute); !suppressed {
+		t.Fatal("long-window key was expired using another rule's shorter window")
+	}
+}
+
 func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
 	engine, _ := New(policymodel.DefaultDetectionPolicy())
 	var gotContext bool
@@ -204,22 +647,122 @@ func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
 	}
 }
 
+func TestPayloadDroppedUsesDynamicExprSemantics(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:custom-payload"}}
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:custom-payload-paths": {Ref: "ctx:custom-payload-paths", Version: "v2", Values: []string{"/opt/payloads/"}},
+		},
+		Rules: []RuleSpec{{
+			RuleID: "payload_dropped", Version: 2, RuleSetRef: "ruleset:custom-payload", Severity: "high", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: "file.write", Fields: []string{"file.path"}},
+				{Behavior: "file.chmod", Fields: []string{"file.path"}},
+			},
+			ContextRefs: []string{"ctx:custom-payload-paths"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "behavior", Op: "in", Values: []string{"file.write", "file.chmod"}},
+				{Field: "file.path", Op: "prefix", Ref: "ctx:custom-payload-paths"},
+			}},
+		}},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(writeEvent("default", "lin-default", "p1", "/usr/bin/curl", "/dev/shm/x")), "payload_dropped"); got != 0 {
+		t.Fatalf("default path signals = %d, want none under dynamic expr", got)
+	}
+	for _, event := range []*eventv1.CanonicalEvent{
+		writeEvent("write", "lin-write", "p2", "/usr/bin/curl", "/opt/payloads/write.sh"),
+		chmodEvent("chmod", "lin-chmod", "p3", "/usr/bin/chmod", "/opt/payloads/chmod.sh"),
+	} {
+		signals := engine.Process(event)
+		if got := countSignals(signals, "payload_dropped"); got != 1 {
+			t.Fatalf("%s signals = %d, want 1", event.GetId(), got)
+		}
+		var signal *signalv1.Signal
+		for _, candidate := range signals {
+			if candidate.GetName() == "payload_dropped" {
+				signal = candidate
+				break
+			}
+		}
+		if !slices.Equal(signal.GetEventRefs(), []string{event.GetId()}) || len(signal.GetEntities()) != 2 {
+			t.Fatalf("%s evidence = %+v, want event plus process/file entities", event.GetId(), signal)
+		}
+		if len(signal.GetContextRefs()) != 1 || signal.GetContextRefs()[0].GetRef() != "ctx:custom-payload-paths" || signal.GetContextRefs()[0].GetVersion() != "v2" {
+			t.Fatalf("%s context refs = %+v", event.GetId(), signal.GetContextRefs())
+		}
+	}
+}
+
 func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	enabled := true
 	policy := policymodel.DefaultDetectionPolicy()
 	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
 	engine, _ := New(policy)
-	first := openEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
-	second := openEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	first := readEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	second := readEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
 	if got := countSignals(engine.Process(first), "credential_file_read"); got != 1 {
 		t.Fatalf("first credential signal count = %d, want 1", got)
 	}
 	if got := countSignals(engine.Process(second), "credential_file_read"); got != 0 {
 		t.Fatalf("duplicate credential signal count = %d, want 0", got)
 	}
-	third := openEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
+	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
 	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
 		t.Fatalf("different path credential signal count = %d, want 1", got)
+	}
+}
+
+func TestCredentialReadUsesDynamicExprSemantics(t *testing.T) {
+	enabled := true
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:custom-credential"}}
+	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:custom-credential-paths": {Ref: "ctx:custom-credential-paths", Version: "v2", Values: []string{"/opt/secrets/"}},
+			"ctx:custom-trusted-binaries": {Ref: "ctx:custom-trusted-binaries", Version: "v2", Values: []string{"/opt/admin"}},
+		},
+		Rules: []RuleSpec{{
+			RuleID: "credential_file_read", Version: 2, RuleSetRef: "ruleset:custom-credential", Severity: "medium", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: "file.read", Fields: []string{"file.path", "process.binary", "process.stable_id"}},
+			},
+			ContextRefs: []string{"ctx:custom-credential-paths", "ctx:custom-trusted-binaries"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "file.path", Op: "prefix", Ref: "ctx:custom-credential-paths"},
+				{Field: "process.binary", Op: "not_in", Ref: "ctx:custom-trusted-binaries"},
+			}},
+			Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
+		}},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(readEvent("default", "lin-default", "p1", "/bin/cat", "/root/.ssh/id_rsa")), "credential_file_read"); got != 0 {
+		t.Fatalf("default path signals = %d, want none under dynamic expr", got)
+	}
+	if got := countSignals(engine.Process(readEvent("trusted", "lin-trusted", "p2", "/opt/admin", "/opt/secrets/token")), "credential_file_read"); got != 0 {
+		t.Fatalf("trusted binary signals = %d, want none", got)
+	}
+	signals := engine.Process(readEvent("read", "lin-read", "p3", "/bin/cat", "/opt/secrets/token"))
+	if got := countSignals(signals, "credential_file_read"); got != 1 {
+		t.Fatalf("credential signals = %d, want 1", got)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "credential_file_read" {
+			signal = candidate
+			break
+		}
+	}
+	if !slices.Equal(signal.GetEventRefs(), []string{"read"}) || len(signal.GetEntities()) != 2 || len(signal.GetContextRefs()) != 2 {
+		t.Fatalf("signal = %+v, want event, process/file entities and contexts", signal)
 	}
 }
 
@@ -231,6 +774,74 @@ func countSignals(signals []*signalv1.Signal, name string) int {
 		}
 	}
 	return count
+}
+
+func TestWebRuntimeShellUsesObservedParentBinary(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine.Process(execEvent("node", "lin-web", "stable-runtime", "init", "/usr/bin/node", []string{"/usr/bin/node", "/srv/server.js"}))
+	shell := execEvent("shell", "lin-web", "stable-shell", "stable-runtime", "/bin/sh", []string{"/bin/sh", "-c", "id"})
+	signals := engine.Process(shell)
+	if got := countSignals(signals, "web_runtime_spawns_shell"); got != 1 {
+		t.Fatalf("web runtime shell signals = %d, want 1", got)
+	}
+	for _, signal := range signals {
+		if signal.GetName() == "web_runtime_spawns_shell" && !slices.Equal(signal.GetEventRefs(), []string{"node", "shell"}) {
+			t.Fatalf("event refs = %v, want parent and shell events", signal.GetEventRefs())
+		}
+	}
+}
+
+func TestWebRuntimeRuleDeclaresSensorSourceFields(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "web_runtime_spawns_shell" {
+			continue
+		}
+		fields := rule.RequiredEvents[0].Fields
+		if !slices.Contains(fields, "process.binary") || slices.Contains(fields, "process.binary_name") {
+			t.Fatalf("required fields = %v, want sensor process.binary without derived binary_name", fields)
+		}
+		return
+	}
+	t.Fatal("web_runtime_spawns_shell rule not found")
+}
+
+func TestCredentialReadDeclaresCollectedReadBehavior(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "credential_file_read" {
+			continue
+		}
+		if len(rule.RequiredEvents) != 1 || rule.RequiredEvents[0].Behavior != "file.read" {
+			t.Fatalf("required events = %+v, want only file.read", rule.RequiredEvents)
+		}
+		return
+	}
+	t.Fatal("credential_file_read rule not found")
+}
+
+func TestWebRuntimeShellKeepsAshCompatibility(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine.Process(execEvent("node", "lin-ash", "runtime", "init", "/usr/bin/node", nil))
+	signals := engine.Process(execEvent("ash", "lin-ash", "shell", "runtime", "/bin/ash", nil))
+	if got := countSignals(signals, "web_runtime_spawns_shell"); got != 1 {
+		t.Fatalf("ash web runtime shell signals = %d, want 1", got)
+	}
+}
+
+func TestWebRuntimeShellRejectsRuntimeTokenOnlyInArgv(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	shell := execEvent("shell", "lin-fake", "stable-shell", "opaque-parent", "/bin/sh", []string{"/bin/sh", "-c", ": # node marker"})
+	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 0 {
+		t.Fatalf("forged argv web runtime signals = %d, want 0", got)
+	}
+}
+
+func TestWebRuntimeShellRejectsObservedNonWebParent(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine.Process(execEvent("worker", "lin-worker", "stable-worker", "init", "/usr/bin/sleep", []string{"/usr/bin/sleep", "infinity"}))
+	shell := execEvent("shell", "lin-worker", "stable-shell", "stable-worker", "/bin/sh", []string{"/bin/sh", "-c", "id"})
+	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 0 {
+		t.Fatalf("non-web parent signals = %d, want 0", got)
+	}
 }
 
 func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
@@ -261,6 +872,102 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 	}
 	if gotVersion != "local-test" {
 		t.Fatalf("ioc ref version = %q, want local-test", gotVersion)
+	}
+}
+
+func TestReverseShellExprUsesDynamicContentAndPreciseEvidence(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:shell-binaries": {Ref: "ctx:shell-binaries", Version: "v2", Values: []string{"custom-shell"}},
+		},
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
+		},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	engine.Process(connectEventWithParent("download", "lin-a", "curl", "parent", "/usr/bin/curl", "10.0.0.1:8080"))
+	if got := countSignals(engine.Process(connectEventWithParent("bash", "lin-a", "bash", "parent", "/bin/bash", "10.0.0.1:9443")), "reverse_shell_pattern"); got != 0 {
+		t.Fatalf("bash signals = %d, want none after shell context replacement", got)
+	}
+	signals := engine.Process(connectEventWithParent("connect", "lin-a", "custom", "parent", "/opt/custom-shell", "10.0.0.1:9443"))
+	if got := countSignals(signals, "reverse_shell_pattern"); got != 1 {
+		t.Fatalf("custom shell signals = %d, want 1", got)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "reverse_shell_pattern" {
+			signal = candidate
+			break
+		}
+	}
+	if !slices.Equal(signal.GetEventRefs(), []string{"connect"}) || len(signal.GetEntities()) != 2 || !signal.GetTerminal() {
+		t.Fatalf("signal = %+v, want precise terminal evidence", signal)
+	}
+	if signal.GetResponseIntent().GetResponseIntent() != "collect_evidence" || len(signal.GetContextRefs()) != 1 || len(signal.GetIocRefs()) != 1 {
+		t.Fatalf("signal metadata = %+v", signal)
+	}
+}
+
+func TestSuspiciousExecConnectUsesSequenceRule(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "suspicious_exec_connect" {
+			continue
+		}
+		if rule.RuntimeType != "sequence" || len(rule.Sequence.Steps) != 2 {
+			t.Fatalf("rule = %+v, want two-step sequence", rule)
+		}
+		return
+	}
+	t.Fatal("suspicious_exec_connect rule not found")
+}
+
+func TestSuspiciousExecConnectSequencePreservesAssociations(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "v2", Values: []string{"/opt/payloads/"}},
+		},
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
+		},
+	}
+	tests := []struct {
+		name          string
+		connectStable string
+		parentStable  string
+		want          int
+	}{
+		{name: "direct", connectStable: "payload", parentStable: "init", want: 1},
+		{name: "parent", connectStable: "child", parentStable: "payload", want: 1},
+		{name: "unrelated", connectStable: "other", parentStable: "init", want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+			if report.Status != "applied" {
+				t.Fatalf("report = %+v", report)
+			}
+			engine.Process(execEvent("exec", "lin-a", "payload", "init", "/opt/payloads/tool", nil))
+			signals := engine.Process(connectEventWithParent("connect", "lin-a", tt.connectStable, tt.parentStable, "/bin/other", "10.0.0.1:9443"))
+			if got := countSignals(signals, "suspicious_exec_connect"); got != tt.want {
+				t.Fatalf("signals = %d, want %d; all=%+v", got, tt.want, signals)
+			}
+			if tt.want == 1 {
+				var signal *signalv1.Signal
+				for _, candidate := range signals {
+					if candidate.GetName() == "suspicious_exec_connect" {
+						signal = candidate
+					}
+				}
+				if !slices.Equal(signal.GetEventRefs(), []string{"exec", "connect"}) || len(signal.GetEntities()) < 3 {
+					t.Fatalf("signal = %+v, want exec/connect evidence and process/file/socket entities", signal)
+				}
+			}
+		})
 	}
 }
 
@@ -296,14 +1003,54 @@ func TestDownloadByLOLBinRequiresDownloadSocket(t *testing.T) {
 	}
 }
 
-func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
+func TestDownloadByLOLBinUsesDynamicClientContext(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:download-client-binaries": {
+				Ref:     "ctx:download-client-binaries",
+				Version: "v2",
+				Values:  []string{"fetcher"},
+			},
+		},
+	})
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(connectEventWithParent("curl", "lin-curl", "curl-proc", "parent", "/usr/bin/curl", "10.66.0.99:8080")), "download_by_lolbin"); got != 0 {
+		t.Fatalf("curl signals = %d, want none after dynamic context replacement", got)
+	}
+	signals := engine.Process(connectEventWithParent("fetch", "lin-fetch", "fetch-proc", "parent", "/opt/fetcher", "10.66.0.99:8080"))
+	if got := countSignals(signals, "download_by_lolbin"); got != 1 {
+		t.Fatalf("fetcher signals = %d, want 1", got)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "download_by_lolbin" {
+			signal = candidate
+			break
+		}
+	}
+	if !slices.Equal(signal.GetEventRefs(), []string{"fetch"}) || len(signal.GetEntities()) != 2 {
+		t.Fatalf("signal evidence = %+v, want event plus process/socket entities", signal)
+	}
+	if len(signal.GetContextRefs()) != 1 || signal.GetContextRefs()[0].GetRef() != "ctx:download-client-binaries" || signal.GetContextRefs()[0].GetVersion() != "v2" {
+		t.Fatalf("context refs = %+v, want dynamic client context", signal.GetContextRefs())
+	}
+	if len(signal.GetIocRefs()) != 1 || signal.GetIocRefs()[0].GetRef() != "ioc:c2-download-port-feed" {
+		t.Fatalf("ioc refs = %+v, want download port feed", signal.GetIocRefs())
+	}
+}
+
+func TestRuntimeRulePackMetadataOverridesDefaultRule(t *testing.T) {
 	enabled := true
 	policy := &policymodel.DetectionPolicy{
-		PolicyID: "rulepack-test",
-		Version:  1,
-		Mode:     "observe",
-		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:test", Version: "v1", Enabled: &enabled}},
-		IOCRefs:  []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "builtin"}},
+		PolicyID:    "rulepack-test",
+		Version:     1,
+		Mode:        "observe",
+		RuleSets:    []policymodel.RuleSetRef{{Ref: "ruleset:test", Version: "v1", Enabled: &enabled}},
+		ContextRefs: []policymodel.ContentRef{{Ref: "ctx:shell-binaries", Version: "builtin"}},
+		IOCRefs:     []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "builtin"}},
 	}
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
 		Rules: []RuleSpec{{
@@ -311,9 +1058,14 @@ func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 			Version:           7,
 			RuleSetRef:        "ruleset:test",
 			Severity:          "critical",
-			Runtime:           "builtin.reverse_shell_pattern",
+			RuntimeType:       "expr",
 			RequiredBehaviors: []string{"network.connect"},
+			ContextRefs:       []string{"ctx:shell-binaries"},
 			IOCRefs:           []string{"ioc:c2-control-port-feed"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
+				{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
+			}},
 		}},
 	})
 	for _, sig := range engine.Process(connectEventWithParent("e1", "lin-a", "p1", "parent", "/bin/bash", "10.66.0.99:443")) {
@@ -359,6 +1111,89 @@ func TestCEPRuntimeExprRuleUsesContentRef(t *testing.T) {
 	}
 	if signals[0].GetRuleVersion() != 3 || signals[0].GetContextRefs()[0].GetVersion() != "v1" {
 		t.Fatalf("signal metadata = %+v", signals[0])
+	}
+}
+
+func TestRuntimeUsesBuiltinProcessBinaryContext(t *testing.T) {
+	content := ContentSnapshot{Rules: []RuleSpec{processBinaryContextRule()}}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	event := execEvent("node", "lin-web", "node-stable", "init", "/usr/bin/node", nil)
+	if got := countSignals(engine.Process(event), "process_binary_context"); got != 1 {
+		t.Fatalf("signals = %d, want builtin node context match", got)
+	}
+}
+
+func TestRuntimeContentOverridesBuiltinProcessBinaryContext(t *testing.T) {
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:web-runtime-binaries": {Ref: "ctx:web-runtime-binaries", Version: "v2", Values: []string{"custom-web"}},
+		},
+		Rules: []RuleSpec{processBinaryContextRule()},
+	}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(execEvent("node", "lin-node", "node-stable", "init", "/usr/bin/node", nil)), "process_binary_context"); got != 0 {
+		t.Fatalf("default context signals = %d, want dynamic context replacement", got)
+	}
+	if got := countSignals(engine.Process(execEvent("custom", "lin-custom", "custom-stable", "init", "/opt/custom-web", nil)), "process_binary_context"); got != 1 {
+		t.Fatalf("custom context signals = %d, want 1", got)
+	}
+}
+
+func TestDynamicWebRuntimeSequenceUsesContentContexts(t *testing.T) {
+	enabled := true
+	nonTerminal := false
+	policy := &policymodel.DetectionPolicy{
+		PolicyID: "dynamic-web", Version: 1, Mode: "observe",
+		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:dynamic-web", Enabled: &enabled}},
+	}
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:web-runtime-binaries": {Ref: "ctx:web-runtime-binaries", Version: "v2", Values: []string{"custom-web"}},
+			"ctx:shell-binaries":       {Ref: "ctx:shell-binaries", Version: "v2", Values: []string{"custom-shell"}},
+		},
+		Rules: []RuleSpec{webRuntimeSequenceRule("ruleset:dynamic-web", &nonTerminal)},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	engine.Process(execEvent("runtime", "lin-web", "runtime-stable", "init", "/opt/custom-web", nil))
+	signals := engine.Process(execEvent("shell", "lin-web", "shell-stable", "runtime-stable", "/opt/custom-shell", nil))
+	if len(signals) != 1 || signals[0].GetName() != "web_runtime_spawns_shell" {
+		t.Fatalf("signals = %+v", signals)
+	}
+	if signals[0].GetTerminal() || !slices.Equal(signals[0].GetEventRefs(), []string{"runtime", "shell"}) {
+		t.Fatalf("signal = %+v, want non-terminal with parent and shell refs", signals[0])
+	}
+}
+
+func webRuntimeSequenceRule(ruleSet string, terminal *bool) RuleSpec {
+	return RuleSpec{
+		RuleID: "web_runtime_spawns_shell", RuleSetRef: ruleSet, RuntimeType: "sequence", Terminal: terminal,
+		ContextRefs: []string{"ctx:web-runtime-binaries", "ctx:shell-binaries"},
+		Sequence: SequenceSpec{Within: time.Minute, By: []string{"lineage_id"}, Steps: []StepSpec{
+			{ID: "runtime", Behavior: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary_name", Op: "in", Ref: "ctx:web-runtime-binaries"}}},
+			{ID: "shell", Behavior: "process.exec", Conditions: []ConditionSpec{
+				{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
+				{Field: "parent.stable_id", Op: "same_as", Step: "runtime", StepField: "process.stable_id"},
+			}},
+		}},
+	}
+}
+
+func processBinaryContextRule() RuleSpec {
+	return RuleSpec{
+		RuleID: "process_binary_context", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+		RequiredBehaviors: []string{"process.exec"},
+		Expr: ExprSpec{Conditions: []ConditionSpec{{
+			Field: "process.binary_name", Op: "in", Ref: "ctx:web-runtime-binaries",
+		}}},
 	}
 }
 
@@ -499,6 +1334,12 @@ func openEvent(id, lineage, stable, bin, file string) *eventv1.CanonicalEvent {
 	}
 }
 
+func readEvent(id, lineage, stable, bin, file string) *eventv1.CanonicalEvent {
+	ev := openEvent(id, lineage, stable, bin, file)
+	ev.Behavior = "file.read"
+	return ev
+}
+
 func writeEventAt(id, lineage, stable, bin, file string, ts uint64) *eventv1.CanonicalEvent {
 	ev := writeEvent(id, lineage, stable, bin, file)
 	ev.OccurredAtNs = ts
@@ -508,6 +1349,12 @@ func writeEventAt(id, lineage, stable, bin, file string, ts uint64) *eventv1.Can
 func chmodEventAt(id, lineage, stable, bin, file string, ts uint64) *eventv1.CanonicalEvent {
 	ev := chmodEvent(id, lineage, stable, bin, file)
 	ev.OccurredAtNs = ts
+	return ev
+}
+
+func openEventAt(id, lineage, stable, bin, file string, ts time.Duration) *eventv1.CanonicalEvent {
+	ev := openEvent(id, lineage, stable, bin, file)
+	ev.OccurredAtNs = uint64(ts.Nanoseconds())
 	return ev
 }
 
