@@ -106,26 +106,46 @@ install_sensor_bundle() {
   rm -rf "$backup"
 }
 
-install_default_content() {
-  local source parent stage backup
+install_release_config_and_content() {
+  local source parent stage config_parent config_stage
   source="$HERE/content/default"
   parent="$(dirname "$DEFAULT_CONTENT_DIR")"
+  config_parent="$(dirname "$CONFIG_DST")"
   install -d -m 0755 "$parent"
+  install -d -m 0750 "$config_parent"
   stage="$(mktemp -d "$parent/.default.XXXXXX")"
+  config_stage="$(mktemp "$config_parent/.agent.yaml.XXXXXX")"
   cp -a "$source/." "$stage/"
+  install -m 0644 "$CONFIG_SOURCE" "$config_stage"
   if ! validate_default_content "$stage"; then
     rm -rf "$stage"
+    rm -f "$config_stage"
     return 1
   fi
-  backup="$parent/.default.previous.$$"
+  commit_release_config_and_content "$stage" "$config_stage"
+}
+
+commit_release_config_and_content() {
+  local stage="$1" config_stage="$2" parent config_parent content_backup config_backup
+  parent="$(dirname "$DEFAULT_CONTENT_DIR")"
+  config_parent="$(dirname "$CONFIG_DST")"
+  content_backup="$parent/.default.previous.$$"
+  config_backup="$config_parent/.agent.yaml.previous.$$"
   if [[ -e "$DEFAULT_CONTENT_DIR" ]]; then
-    mv "$DEFAULT_CONTENT_DIR" "$backup"
+    mv "$DEFAULT_CONTENT_DIR" "$content_backup"
   fi
-  if ! mv "$stage" "$DEFAULT_CONTENT_DIR"; then
-    [[ ! -e "$backup" ]] || mv "$backup" "$DEFAULT_CONTENT_DIR"
+  if [[ -e "$CONFIG_DST" ]]; then
+    mv "$CONFIG_DST" "$config_backup"
+  fi
+  if ! mv "$config_stage" "$CONFIG_DST" || ! mv "$stage" "$DEFAULT_CONTENT_DIR"; then
+    rm -f "$CONFIG_DST"
+    rm -rf "$DEFAULT_CONTENT_DIR"
+    [[ ! -e "$config_backup" ]] || mv "$config_backup" "$CONFIG_DST"
+    [[ ! -e "$content_backup" ]] || mv "$content_backup" "$DEFAULT_CONTENT_DIR"
     return 1
   fi
-  rm -rf "$backup"
+  rm -f "$config_backup"
+  rm -rf "$content_backup"
 }
 
 validate_default_content() {
@@ -170,9 +190,8 @@ if [[ "$PROFILE" == "linux-container" ]]; then
 else
   install -m 0644 "$HERE/systemd/sysarmor-agent.service" "$SERVICE_DST"
 fi
-install_if_absent "$CONFIG_SOURCE" "$CONFIG_DST"
 install_if_absent "$HERE/policies/policy.json" "$POLICY_DST"
-install_default_content
+install_release_config_and_content
 install_sensor_bundle
 
 if [[ "$ENABLE_SERVICE" == "1" ]]; then

@@ -79,6 +79,7 @@ if grep -Eq '^[[:space:]]*(tetra_path|tetragon_path):' "$WORK/root/etc/sysarmor/
 fi
 
 printf 'keep-old-default\n' >"$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
+printf 'keep-old-config\n' >"$WORK/root/etc/sysarmor/agent/agent.yaml"
 cp "$WORK/release/content/default/context-shell-binaries.json" "$WORK/context-shell-binaries.original.json"
 jq '.metadata.version = "tampered"' "$WORK/context-shell-binaries.original.json" >"$WORK/release/content/default/context-shell-binaries.json"
 if env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null 2>&1; then
@@ -86,14 +87,15 @@ if env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null 2>&1; then
   exit 1
 fi
 grep -Fxq keep-old-default "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
+grep -Fxq keep-old-config "$WORK/root/etc/sysarmor/agent/agent.yaml"
 mv "$WORK/context-shell-binaries.original.json" "$WORK/release/content/default/context-shell-binaries.json"
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 test ! -e "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
+grep -Fq 'trust_keys: "release-test=' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 
-printf 'preserved-config\n' >"$WORK/root/etc/sysarmor/agent/agent.yaml"
 printf 'preserved-policy\n' >"$WORK/root/etc/sysarmor/agent/policy.json"
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
-grep -Fxq 'preserved-config' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'trust_keys: "release-test=' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 grep -Fxq 'preserved-policy' "$WORK/root/etc/sysarmor/agent/policy.json"
 
 echo "[standalone-release-package] ok"
