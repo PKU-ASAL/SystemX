@@ -794,6 +794,43 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 	}
 }
 
+func TestReverseShellExprUsesDynamicContentAndPreciseEvidence(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:shell-binaries": {Ref: "ctx:shell-binaries", Version: "v2", Values: []string{"custom-shell"}},
+		},
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
+		},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	engine.Process(connectEventWithParent("download", "lin-a", "curl", "parent", "/usr/bin/curl", "10.0.0.1:8080"))
+	if got := countSignals(engine.Process(connectEventWithParent("bash", "lin-a", "bash", "parent", "/bin/bash", "10.0.0.1:9443")), "reverse_shell_pattern"); got != 0 {
+		t.Fatalf("bash signals = %d, want none after shell context replacement", got)
+	}
+	signals := engine.Process(connectEventWithParent("connect", "lin-a", "custom", "parent", "/opt/custom-shell", "10.0.0.1:9443"))
+	if got := countSignals(signals, "reverse_shell_pattern"); got != 1 {
+		t.Fatalf("custom shell signals = %d, want 1", got)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "reverse_shell_pattern" {
+			signal = candidate
+			break
+		}
+	}
+	if !slices.Equal(signal.GetEventRefs(), []string{"connect"}) || len(signal.GetEntities()) != 2 || !signal.GetTerminal() {
+		t.Fatalf("signal = %+v, want precise terminal evidence", signal)
+	}
+	if signal.GetResponseIntent().GetResponseIntent() != "collect_evidence" || len(signal.GetContextRefs()) != 1 || len(signal.GetIocRefs()) != 1 {
+		t.Fatalf("signal metadata = %+v", signal)
+	}
+}
+
 func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
 	policy := policymodel.DefaultDetectionPolicy()
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
@@ -865,14 +902,15 @@ func TestDownloadByLOLBinUsesDynamicClientContext(t *testing.T) {
 	}
 }
 
-func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
+func TestRuntimeRulePackMetadataOverridesDefaultRule(t *testing.T) {
 	enabled := true
 	policy := &policymodel.DetectionPolicy{
-		PolicyID: "rulepack-test",
-		Version:  1,
-		Mode:     "observe",
-		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:test", Version: "v1", Enabled: &enabled}},
-		IOCRefs:  []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "builtin"}},
+		PolicyID:    "rulepack-test",
+		Version:     1,
+		Mode:        "observe",
+		RuleSets:    []policymodel.RuleSetRef{{Ref: "ruleset:test", Version: "v1", Enabled: &enabled}},
+		ContextRefs: []policymodel.ContentRef{{Ref: "ctx:shell-binaries", Version: "builtin"}},
+		IOCRefs:     []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "builtin"}},
 	}
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
 		Rules: []RuleSpec{{
@@ -880,9 +918,14 @@ func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 			Version:           7,
 			RuleSetRef:        "ruleset:test",
 			Severity:          "critical",
-			Runtime:           "builtin.reverse_shell_pattern",
+			RuntimeType:       "expr",
 			RequiredBehaviors: []string{"network.connect"},
+			ContextRefs:       []string{"ctx:shell-binaries"},
 			IOCRefs:           []string{"ioc:c2-control-port-feed"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
+				{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
+			}},
 		}},
 	})
 	for _, sig := range engine.Process(connectEventWithParent("e1", "lin-a", "p1", "parent", "/bin/bash", "10.66.0.99:443")) {

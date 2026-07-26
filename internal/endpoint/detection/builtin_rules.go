@@ -46,7 +46,18 @@ func builtinRules() []RuleSpec {
 				{Field: "file.path", Op: "prefix", Ref: "ctx:payload-path-prefixes"},
 			}},
 		},
-		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
+		{
+			RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{{Behavior: eventmodel.BehaviorNetworkConnect.String(), Fields: []string{"process.binary", "socket.port"}}},
+			ContextRefs:    []string{"ctx:shell-binaries"},
+			IOCRefs:        []string{"ioc:c2-control-port-feed"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
+				{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
+			}},
+			Terminal:       boolPtr(true),
+			ResponseIntent: collect,
+		},
 		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
 		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
 		{
@@ -62,4 +73,8 @@ func builtinRules() []RuleSpec {
 			Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
 		},
 	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

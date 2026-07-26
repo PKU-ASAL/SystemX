@@ -142,28 +142,33 @@
           },
           {
             "rule_id": "reverse_shell_pattern",
-            "version": 1,
+            "version": 2,
             "severity": "critical",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.reverse_shell_pattern"
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "process.binary_name", "op": "in", "ref": "ctx:shell-binaries"},
+                  {"field": "socket.port", "op": "in", "ref": "ioc:c2-control-port-feed"}
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
-                  "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "parent.stable_id", "lineage_id"]
-                },
-                {
                   "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["socket.port", "process.binary"]
                 }
               ],
+              "context": {
+                "required": ["ctx:shell-binaries"]
+              },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
+                "required": ["ioc:c2-control-port-feed"]
               }
             },
             "output": {
+			  "terminal": true,
               "response_intent": {
                 "action": "collect_evidence",
                 "confidence": 80,

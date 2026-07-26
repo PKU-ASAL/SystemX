@@ -8,6 +8,7 @@ var builtinContextValues = map[string][]string{
 	"ctx:credential-path-prefixes": {"/root/.ssh/", "/home/", "/var/run/secrets/", "/run/secrets/", "/etc/kubernetes/"},
 	"ctx:trusted-admin-binaries":   {"/usr/bin/vim", "/usr/bin/vi", "/usr/bin/nano"},
 	"ioc:c2-download-port-feed":    {"8080"},
+	"ioc:c2-control-port-feed":     {"443", "8443"},
 }
 
 func builtinContentValues(ref string) []string {

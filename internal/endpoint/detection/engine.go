@@ -361,7 +361,7 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 		out = append(out, e.detectPayloadExec(ev, state)...)
 	case eventmodel.BehaviorNetworkConnect.String():
 		e.observeDownloadEvidence(ev, state)
-		out = append(out, e.detectReverseShell(ev, state)...)
+		e.observeControlConnection(ev, state)
 		out = append(out, e.detectPayloadConnect(ev, state)...)
 	case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
 		e.observePayloadEvidence(ev, state)
@@ -446,19 +446,12 @@ func (e *Engine) observeDownloadEvidence(ev *eventv1.CanonicalEvent, st *lineage
 	st.downloadRefs = appendUnique(st.downloadRefs, ev.GetId())
 }
 
-func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("reverse_shell_pattern")
-	if !ok || !isShell(binaryBase(ev)) || !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
-		return nil
+func (e *Engine) observeControlConnection(ev *eventv1.CanonicalEvent, st *lineageState) {
+	if !containsString(e.contentValues("ctx:shell-binaries"), binaryBase(ev)) || !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
+		return
 	}
-	refs := []string{ev.GetId()}
-	refs = appendRefs(refs, st.downloadRefs...)
-	st.reverseShellSeen = true
 	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
 	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-	out := []*signalv1.Signal{e.signal(ev, rule, refs, true, processEntity(ev), socketEntity(ev))}
-	out = append(out, e.detectPayloadLifecycle(ev, st)...)
-	return out
 }
 
 func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
@@ -658,7 +651,7 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 				if e.suppressCompiledRule(view, rule) {
 					continue
 				}
-				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, false, eventEntities(view.ev)...))
+				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, rule.rule.terminal(false), eventEntities(view.ev)...))
 			}
 		}
 	}
