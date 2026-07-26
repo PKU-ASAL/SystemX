@@ -28,7 +28,7 @@ make -C test/release test \
 
 `FRESH_DOWNLOAD=1` 为默认值，会使用 `docker build --no-cache`，确保每次正式验收都重新执行公开下载。仅在调试测试脚本时使用 `FRESH_DOWNLOAD=0` 复用本地镜像层。
 
-测试依次验证 `web_runtime_spawns_shell`、`download_by_lolbin` 和 `payload_lifecycle`。GitHub 直连失败时默认尝试 `https://gh-proxy.org`，也可以通过 `RELEASE_PROXY_URL=` 禁用或指定其他代理。
+测试依次验证 `web_runtime_spawns_shell`、`download_by_lolbin`、`reverse_shell_pattern`、`suspicious_exec_connect` 和 `payload_lifecycle`。其中反向 Shell 场景由 Bash 直接建立控制连接，exec-connect 和 lifecycle 场景会真实下载并执行 payload。GitHub 直连失败时默认尝试 `https://gh-proxy.org`，也可以通过 `RELEASE_PROXY_URL=` 禁用或指定其他代理。
 
 `run.sh` 只负责容器生命周期和场景调度；`fixtures/` 提供真实业务与本地攻击服务器；`attacks/` 负责调用业务入口；`assert.sh` 通过容器内 `sysarmorctl` 查询 Event/Signal，并使用 `jq` 验证关联关系与 namespace 隔离。
 

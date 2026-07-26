@@ -6,12 +6,14 @@ RELEASE="$REPO/test/release"
 
 for file in Makefile README.md config.sh doctor.sh run.sh assert.sh scenarios.sh test-assert.sh \
   attacks/web-runtime-shell.sh attacks/download-by-lolbin.sh attacks/payload-lifecycle.sh \
+  attacks/reverse-shell.sh attacks/suspicious-exec-connect.sh \
   fixtures/web-app/server.js fixtures/payload-server/server.js fixtures/test-fixtures.sh; do
   test -f "$RELEASE/$file"
 done
 
 for file in doctor.sh run.sh assert.sh scenarios.sh test-assert.sh fixtures/test-fixtures.sh \
-  attacks/web-runtime-shell.sh attacks/download-by-lolbin.sh attacks/payload-lifecycle.sh; do
+  attacks/web-runtime-shell.sh attacks/download-by-lolbin.sh attacks/payload-lifecycle.sh \
+  attacks/reverse-shell.sh attacks/suspicious-exec-connect.sh; do
   test -x "$RELEASE/$file"
 done
 
@@ -53,12 +55,16 @@ grep -Fq -- '--include-events' "$RELEASE/assert.sh"
 grep -Fq '.missingEventRefs // []' "$RELEASE/assert.sh"
 grep -Fq '.eventFrames[]?' "$RELEASE/assert.sh"
 grep -Fq '.signalFrame.signal.severity == $severity' "$RELEASE/assert.sh"
+grep -Fq '(.signalFrame.signal.terminal // false) == $terminal' "$RELEASE/assert.sh"
 grep -Fq 'jq ' "$RELEASE/assert.sh"
 grep -Fq 'web_runtime_spawns_shell' "$RELEASE/scenarios.sh"
 grep -Fq 'download_by_lolbin' "$RELEASE/scenarios.sh"
 grep -Fq 'payload_lifecycle' "$RELEASE/scenarios.sh"
+grep -Fq 'reverse_shell_pattern' "$RELEASE/scenarios.sh"
+grep -Fq 'suspicious_exec_connect' "$RELEASE/scenarios.sh"
+grep -Fq 'scenario_terminal' "$RELEASE/scenarios.sh"
 grep -Fq "'file.write process.exec network.connect'" "$RELEASE/scenarios.sh"
-grep -Fq "'8080 8443'" "$RELEASE/scenarios.sh"
+grep -Eq 'payload-lifecycle\).*8443' "$RELEASE/scenarios.sh"
 
 if rg -n 'RESTART_TEST|verify_restart_recovery|stopped-nonzero' "$RELEASE" >/dev/null; then
   echo "release tests must not contain restart test logic" >&2

