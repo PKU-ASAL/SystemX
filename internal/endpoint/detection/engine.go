@@ -435,7 +435,7 @@ func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState)
 		if hasAnyPrefix(payloadPath, []string{"/var/lib/app/plugins/"}) {
 			st.stagedPayloadSeen = true
 		}
-		return e.detectPayloadLifecycle(ev, st)
+		return nil
 	}
 	return nil
 }
@@ -471,28 +471,7 @@ func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageSta
 	}
 	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
 	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-	return e.detectPayloadLifecycle(ev, st)
-}
-
-func (e *Engine) detectPayloadLifecycle(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	if st.payloadLifecycleEmitted || len(st.payloadRefs) == 0 || len(st.payloadExecRefs) == 0 || len(st.reverseConnectRefs) == 0 {
-		return nil
-	}
-	rule, ok := e.rule("payload_lifecycle")
-	if !ok {
-		return nil
-	}
-	refs := appendRefs(nil, st.downloadRefs...)
-	refs = appendRefs(refs, st.payloadRefs...)
-	refs = appendRefs(refs, st.payloadExecRefs...)
-	refs = appendRefs(refs, st.reverseConnectRefs...)
-	if len(refs) < 3 {
-		return nil
-	}
-	st.payloadLifecycleEmitted = true
-	return []*signalv1.Signal{
-		e.signal(ev, rule, refs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketAddrEntity(st.reverseSocketAddr)),
-	}
+	return nil
 }
 
 func eventWallTime(ev *eventv1.CanonicalEvent) time.Time {

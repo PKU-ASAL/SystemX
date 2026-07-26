@@ -78,7 +78,28 @@ func builtinRules() []RuleSpec {
 				}}},
 			}},
 		},
-		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
+		{
+			RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", RuntimeType: "correlate",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: eventmodel.BehaviorFileWrite.String(), Fields: []string{"file.path", "lineage_id"}},
+				{Behavior: eventmodel.BehaviorFileChmod.String(), Fields: []string{"file.path", "lineage_id"}},
+				{Behavior: eventmodel.BehaviorProcessExec.String(), Fields: []string{"process.binary", "process.argv", "lineage_id"}},
+				{Behavior: eventmodel.BehaviorNetworkConnect.String(), Fields: []string{"socket.port", "lineage_id"}},
+			},
+			ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}, Terminal: &nonTerminal,
+			Correlate: CorrelateSpec{Within: 2 * time.Minute, By: []string{"lineage_id"}, Facts: []FactSpec{
+				{ID: "drop", Events: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}, Conditions: []ConditionSpec{
+					{Field: "file.path", Op: "prefix", Ref: "ctx:payload-path-prefixes"},
+				}},
+				{ID: "exec", Event: eventmodel.BehaviorProcessExec.String(), ConditionGroup: &ConditionNodeSpec{Any: []ConditionNodeSpec{
+					conditionNode(ConditionSpec{Field: "process.binary", Op: "prefix", Ref: "ctx:payload-path-prefixes"}),
+					conditionNode(ConditionSpec{Field: "process.argv", Op: "contains", Ref: "ctx:payload-path-prefixes"}),
+				}}},
+				{ID: "connect", Event: eventmodel.BehaviorNetworkConnect.String(), Conditions: []ConditionSpec{
+					{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
+				}},
+			}},
+		},
 		{
 			RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", RuntimeType: "expr",
 			RequiredEvents: []RequiredEventSpec{

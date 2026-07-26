@@ -37,13 +37,71 @@ func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"e1", "e2", "e3", "e4"} {
+	for _, want := range []string{"e2", "e3", "e4"} {
 		if !contains(lifecycleRefs, want) {
 			t.Fatalf("payload_lifecycle refs = %v, want %s", lifecycleRefs, want)
 		}
 	}
+	if len(lifecycleRefs) != 3 || contains(lifecycleRefs, "e1") {
+		t.Fatalf("payload_lifecycle refs = %v, want latest evidence for each fact", lifecycleRefs)
+	}
 	if lifecycleRuleVersion != 1 || lifecycleRuleSet != "ruleset:endpoint-linux-builtin" {
 		t.Fatalf("payload_lifecycle rule metadata version=%d ruleset=%q", lifecycleRuleVersion, lifecycleRuleSet)
+	}
+}
+
+func TestPayloadLifecycleUsesCorrelateRule(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "payload_lifecycle" {
+			continue
+		}
+		if rule.RuntimeType != "correlate" || len(rule.Correlate.Facts) != 3 {
+			t.Fatalf("rule = %+v, want three-fact correlate", rule)
+		}
+		return
+	}
+	t.Fatal("payload_lifecycle rule not found")
+}
+
+func TestPayloadLifecycleCorrelateUsesDynamicContent(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "v2", Values: []string{"/opt/payloads/"}},
+		},
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
+		},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	events := []*eventv1.CanonicalEvent{
+		connectEventWithParent("connect", "lin-a", "payload", "init", "/bin/other", "10.0.0.1:9443"),
+		writeEvent("drop", "lin-a", "writer", "/bin/tool", "/opt/payloads/tool"),
+		execEvent("exec", "lin-a", "payload", "init", "/bin/sh", []string{"/bin/sh", "/opt/payloads/tool"}),
+	}
+	var signals []*signalv1.Signal
+	for _, event := range events {
+		signals = append(signals, engine.Process(event)...)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "payload_lifecycle" {
+			signal = candidate
+		}
+	}
+	if signal == nil || len(signal.GetEventRefs()) != 3 || len(signal.GetEntities()) < 3 {
+		t.Fatalf("signal = %+v, want three facts and aggregated entities", signal)
+	}
+	for _, id := range []string{"drop", "exec", "connect"} {
+		if !contains(signal.GetEventRefs(), id) {
+			t.Fatalf("refs = %v, missing %s", signal.GetEventRefs(), id)
+		}
+	}
+	if len(signal.GetContextRefs()) != 1 || len(signal.GetIocRefs()) != 1 {
+		t.Fatalf("content refs = context:%v ioc:%v", signal.GetContextRefs(), signal.GetIocRefs())
 	}
 }
 
@@ -91,10 +149,13 @@ func TestBuiltinRuleSetPayloadLifecycleToleratesShellReexecParentMismatch(t *tes
 			}
 		}
 	}
-	for _, want := range []string{"e1", "e2", "e3", "e4"} {
+	for _, want := range []string{"e2", "e3", "e4"} {
 		if !contains(lifecycleRefs, want) {
 			t.Fatalf("payload_lifecycle refs = %v, want %s", lifecycleRefs, want)
 		}
+	}
+	if len(lifecycleRefs) != 3 || contains(lifecycleRefs, "e1") {
+		t.Fatalf("payload_lifecycle refs = %v, want latest evidence for each fact", lifecycleRefs)
 	}
 }
 
