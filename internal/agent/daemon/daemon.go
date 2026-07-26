@@ -1181,15 +1181,18 @@ func detectionConditionNode(node *agentcontent.RuntimeConditionNode) *detection.
 	if node == nil {
 		return nil
 	}
-	out := &detection.ConditionNodeSpec{
-		All: make([]detection.ConditionNodeSpec, 0, len(node.All)),
-		Any: make([]detection.ConditionNodeSpec, 0, len(node.Any)),
+	out := &detection.ConditionNodeSpec{}
+	if node.All != nil {
+		out.All = make([]detection.ConditionNodeSpec, 0, len(node.All))
+		for i := range node.All {
+			out.All = append(out.All, *detectionConditionNode(&node.All[i]))
+		}
 	}
-	for i := range node.All {
-		out.All = append(out.All, *detectionConditionNode(&node.All[i]))
-	}
-	for i := range node.Any {
-		out.Any = append(out.Any, *detectionConditionNode(&node.Any[i]))
+	if node.Any != nil {
+		out.Any = make([]detection.ConditionNodeSpec, 0, len(node.Any))
+		for i := range node.Any {
+			out.Any = append(out.Any, *detectionConditionNode(&node.Any[i]))
+		}
 	}
 	out.Not = detectionConditionNode(node.Not)
 	if node.Condition != nil {

@@ -56,13 +56,25 @@ func TestDetectionConditionTreeConversion(t *testing.T) {
 	node := &agentcontent.RuntimeConditionNode{Any: []agentcontent.RuntimeConditionNode{
 		{Condition: &agentcontent.RuntimeCondition{Field: "process.binary_name", Op: "in", Ref: "ctx:test-tools"}},
 		{Not: &agentcontent.RuntimeConditionNode{Condition: &agentcontent.RuntimeCondition{Field: "socket.port", Op: "in", Values: []string{"80"}}}},
+		{All: []agentcontent.RuntimeConditionNode{
+			{Condition: &agentcontent.RuntimeCondition{Field: "behavior", Op: "eq", Value: "process.exec"}},
+		}},
 	}}
 	got := detectionConditionNode(node)
-	if got == nil || len(got.Any) != 2 || got.Any[0].Condition == nil || got.Any[1].Not == nil {
+	if got == nil || len(got.Any) != 3 || got.Any[0].Condition == nil || got.Any[1].Not == nil || len(got.Any[2].All) != 1 {
 		t.Fatalf("condition tree = %+v", got)
+	}
+	if got.All != nil || got.Not != nil || got.Condition != nil {
+		t.Fatalf("any node gained unrelated kinds: %+v", got)
+	}
+	if got.Any[0].All != nil || got.Any[0].Any != nil || got.Any[0].Not != nil {
+		t.Fatalf("condition leaf gained unrelated kinds: %+v", got.Any[0])
 	}
 	if got.Any[0].Condition.Ref != "ctx:test-tools" || !slices.Equal(got.Any[1].Not.Condition.Values, []string{"80"}) {
 		t.Fatalf("condition tree leaves = %+v", got)
+	}
+	if got.Any[2].Any != nil || got.Any[2].Not != nil || got.Any[2].Condition != nil {
+		t.Fatalf("all node gained unrelated kinds: %+v", got.Any[2])
 	}
 }
 
