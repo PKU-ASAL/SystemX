@@ -108,6 +108,7 @@ const (
 	fieldProcessBinaryName
 	fieldProcessArgv
 	fieldProcessUID
+	fieldProcessPID
 	fieldParentStableID
 	fieldFilePath
 	fieldSocketAddr
@@ -129,6 +130,7 @@ type eventView struct {
 	processBinaryName string
 	processArgv       string
 	processUID        string
+	processPID        string
 	parentStableID    string
 	filePath          string
 	socketAddr        string
@@ -434,7 +436,7 @@ func contentValuesFromSnapshot(content ContentSnapshot, ref string) []string {
 	if item, ok := content.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return builtinContentValues(ref)
+	return nil
 }
 
 func compileFields(fields []string) []fieldID {
@@ -466,6 +468,8 @@ func compileField(field string) fieldID {
 		return fieldProcessArgv
 	case "process.uid", "uid":
 		return fieldProcessUID
+	case "process.pid", "pid":
+		return fieldProcessPID
 	case "parent.stable_id", "parent.id":
 		return fieldParentStableID
 	case "file.path", "object.file_path":
@@ -541,6 +545,9 @@ func newEventView(ev *eventv1.CanonicalEvent) eventView {
 		view.processBinaryName = filepath.Base(proc.GetBinary())
 		view.processArgv = strings.Join(proc.GetArgv(), " ")
 		view.processUID = strconv.FormatUint(uint64(proc.GetUid()), 10)
+		if proc.GetPid() != 0 {
+			view.processPID = strconv.FormatUint(uint64(proc.GetPid()), 10)
+		}
 	}
 	if obj := ev.GetObject(); obj != nil {
 		view.filePath = obj.GetFilePath()
@@ -577,6 +584,8 @@ func (v eventView) field(field fieldID) string {
 		return v.processArgv
 	case fieldProcessUID:
 		return v.processUID
+	case fieldProcessPID:
+		return v.processPID
 	case fieldParentStableID:
 		return v.parentStableID
 	case fieldFilePath:
@@ -693,6 +702,8 @@ func fieldName(field fieldID) string {
 		return "process.argv"
 	case fieldProcessUID:
 		return "process.uid"
+	case fieldProcessPID:
+		return "process.pid"
 	case fieldParentStableID:
 		return "parent.stable_id"
 	case fieldFilePath:

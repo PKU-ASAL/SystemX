@@ -13,7 +13,6 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
-const builtinRuleSetRef = "ruleset:endpoint-linux-builtin"
 const defaultMaxCEPGroups = 4096
 const defaultMaxCEPRefs = 128
 const maxSuppressionKeys = 8192
@@ -224,12 +223,26 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		refs:        content,
 	}
 	report := ApplyReport{Status: "applied", Message: "detection policy applied"}
+	if len(normalized.RuleSets) == 0 {
+		report.Status = "rejected"
+		report.Message = "detection policy rejected: explicit ruleset is required"
+		report.Details = []string{"detection policy requires at least one explicit ruleset"}
+		return engine, report
+	}
+	if errs := validateRuleSelection(normalized, content); len(errs) > 0 {
+		report.Status = "rejected"
+		report.Message = "detection policy rejected"
+		report.Details = errs
+		return engine, report
+	}
 	rules := resolveRules(normalized, content)
 	for _, rule := range rules {
 		engine.rules[rule.spec.RuleID] = rule
 		report.RuleIDs = append(report.RuleIDs, rule.spec.RuleID)
 	}
-	if errs := append(validateEffectiveRules(engine.rules), validateRuleSpecs(rules)...); len(errs) > 0 {
+	errs := append(validateEffectiveRules(engine.rules), validateRuleSpecs(rules)...)
+	errs = append(errs, validateContentRefs(rules, content)...)
+	if len(errs) > 0 {
 		report.Status = "rejected"
 		report.Message = "detection policy rejected"
 		report.Details = append(report.Details, errs...)
@@ -249,12 +262,51 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 	return engine, report
 }
 
+func validateContentRefs(rules []effectiveRule, content ContentSnapshot) []string {
+	var errs []string
+	for _, rule := range rules {
+		for _, ref := range rule.spec.ContextRefs {
+			if _, ok := content.ContextRefs[ref]; !ok {
+				errs = append(errs, fmt.Sprintf("rule %s requires missing context ref %s", rule.spec.RuleID, ref))
+			}
+		}
+		for _, ref := range rule.spec.IOCRefs {
+			if _, ok := content.IOCRefs[ref]; !ok {
+				errs = append(errs, fmt.Sprintf("rule %s requires missing IOC ref %s", rule.spec.RuleID, ref))
+			}
+		}
+	}
+	return errs
+}
+
+func validateRuleSelection(policy *policymodel.DetectionPolicy, content ContentSnapshot) []string {
+	specs := content.Rules
+	available := make(map[string]bool)
+	for _, spec := range specs {
+		available[spec.RuleSetRef] = true
+	}
+	var errs []string
+	for _, ref := range policy.RuleSets {
+		if ref.Ref != "" && (ref.Enabled == nil || *ref.Enabled) && !available[ref.Ref] {
+			errs = append(errs, fmt.Sprintf("ruleset %s is not available", ref.Ref))
+		}
+	}
+	seen := make(map[string]bool)
+	for _, rule := range resolveRules(policy, content) {
+		if seen[rule.spec.RuleID] {
+			errs = append(errs, fmt.Sprintf("duplicate rule id %s", rule.spec.RuleID))
+		}
+		seen[rule.spec.RuleID] = true
+	}
+	return errs
+}
+
 func validateEffectiveRules(rules map[string]effectiveRule) []string {
 	var out []string
 	for _, rule := range rules {
 		runtimeType := rule.runtimeType()
 		switch runtimeType {
-		case "", "builtin", "expr", "sequence", "correlate":
+		case "", "expr", "sequence", "correlate":
 		default:
 			out = append(out, fmt.Sprintf("rule %s has unsupported runtime type %q", rule.spec.RuleID, runtimeType))
 		}
@@ -464,10 +516,7 @@ func (e *Engine) signalContentRefs(refs []string, resolved map[string]ContentRef
 		if strings.TrimSpace(ref) == "" {
 			continue
 		}
-		item, ok := resolved[ref]
-		if !ok {
-			item = ContentRef{Ref: ref, Version: "builtin"}
-		}
+		item := resolved[ref]
 		out = append(out, &signalv1.ContentRef{Ref: item.Ref, Version: item.Version, Digest: item.Digest})
 	}
 	return out
@@ -779,7 +828,7 @@ func (e *Engine) contentValues(ref string) []string {
 	if item, ok := e.refs.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return builtinContentValues(ref)
+	return nil
 }
 
 func (e *Engine) sequenceGroupKey(ev *eventv1.CanonicalEvent, fields []string) string {
@@ -803,7 +852,7 @@ func eventTime(ev *eventv1.CanonicalEvent) uint64 {
 func eventFieldMap(ev *eventv1.CanonicalEvent) map[string]string {
 	fields := []string{
 		"event.id", "event.kind", "lineage_id", "process.stable_id", "process.binary",
-		"process.argv", "process.uid", "parent.stable_id", "file.path", "socket.addr",
+		"process.argv", "process.uid", "process.pid", "parent.stable_id", "file.path", "socket.addr",
 		"socket.port", "scope.type", "scope.selector", "container.id", "cgroup",
 	}
 	out := make(map[string]string, len(fields))
@@ -833,6 +882,11 @@ func eventField(ev *eventv1.CanonicalEvent, field string) string {
 		return strings.Join(ev.GetSubjectProc().GetArgv(), " ")
 	case "process.uid", "uid":
 		return strconv.FormatUint(uint64(ev.GetSubjectProc().GetUid()), 10)
+	case "process.pid", "pid":
+		if ev.GetSubjectProc().GetPid() == 0 {
+			return ""
+		}
+		return strconv.FormatUint(uint64(ev.GetSubjectProc().GetPid()), 10)
 	case "parent.stable_id", "parent.id":
 		return ev.GetParentStableId()
 	case "file.path", "object.file_path":
@@ -942,7 +996,7 @@ func confidenceForRule(rule effectiveRule) uint32 {
 }
 
 func resolveRules(policy *policymodel.DetectionPolicy, content ContentSnapshot) []effectiveRule {
-	specs := append(builtinRules(), content.Rules...)
+	specs := content.Rules
 	enabledRuleSets := map[string]bool{}
 	for _, ref := range policy.RuleSets {
 		if ref.Ref == "" {
@@ -953,9 +1007,6 @@ func resolveRules(policy *policymodel.DetectionPolicy, content ContentSnapshot) 
 			enabled = *ref.Enabled
 		}
 		enabledRuleSets[ref.Ref] = enabled
-	}
-	if len(enabledRuleSets) == 0 {
-		enabledRuleSets[builtinRuleSetRef] = true
 	}
 	overrides := map[string]policymodel.RuleOverride{}
 	for _, override := range policy.RuleOverrides {
@@ -1084,7 +1135,7 @@ func availableFieldsForCollection(collection contract.CollectionIntent) map[stri
 		"cgroup":         true,
 	}
 	addProcess := func() {
-		for _, field := range []string{"process.stable_id", "process.id", "process.binary", "process.argv", "process.uid", "parent.stable_id", "parent.id"} {
+		for _, field := range []string{"process.stable_id", "process.id", "process.binary", "process.argv", "process.uid", "process.pid", "pid", "parent.stable_id", "parent.id"} {
 			fields[field] = true
 		}
 	}

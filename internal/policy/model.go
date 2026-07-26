@@ -229,35 +229,10 @@ func DefaultPolicy(tenantID string) Policy {
 }
 
 func DefaultDetectionPolicy() *DetectionPolicy {
-	enabled := true
-	disabled := false
 	return &DetectionPolicy{
 		PolicyID: "default-endpoint-detection",
 		Version:  1,
 		Mode:     "observe",
-		RuleSets: []RuleSetRef{{
-			Ref:     "ruleset:endpoint-linux-builtin",
-			Version: "1",
-			Enabled: &enabled,
-		}},
-		ContextRefs: []ContentRef{
-			{Ref: "ctx:credential-path-prefixes", Version: "builtin"},
-			{Ref: "ctx:payload-path-prefixes", Version: "builtin"},
-			{Ref: "ctx:trusted-admin-binaries", Version: "builtin"},
-			{Ref: "ctx:web-runtime-binaries", Version: "builtin"},
-			{Ref: "ctx:shell-binaries", Version: "builtin"},
-		},
-		RuleOverrides: []RuleOverride{
-			{
-				RuleID:  "credential_file_read",
-				Enabled: &disabled,
-				Reason:  "credential file reads are collected by deep or triggered policies, not the long-running balanced baseline",
-			},
-		},
-		IOCRefs: []ContentRef{
-			{Ref: "ioc:c2-download-port-feed", Version: "builtin"},
-			{Ref: "ioc:c2-control-port-feed", Version: "builtin"},
-		},
 	}
 }
 

@@ -134,7 +134,7 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 }
 
 func CollectionCapabilities() []contract.CollectionBehaviorCapability {
-	commonProcess := []string{"event.id", "event.behavior", "lineage_id", "process.stable_id", "process.binary", "process.argv", "process.uid", "parent.stable_id", "scope.type", "scope.selector", "container.id", "cgroup"}
+	commonProcess := []string{"event.id", "event.behavior", "lineage_id", "process.stable_id", "process.binary", "process.argv", "process.uid", "process.pid", "parent.stable_id", "scope.type", "scope.selector", "container.id", "cgroup"}
 	agentSideScope := []string{"scope.container", "scope.cgroup", "scope.pod"}
 	with := func(base []string, fields ...string) []string {
 		out := append([]string(nil), base...)

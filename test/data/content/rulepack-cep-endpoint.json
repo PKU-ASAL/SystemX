@@ -205,7 +205,8 @@
                     "condition_group": {
                       "any": [
                         {"condition": {"field": "process.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}},
-                        {"condition": {"field": "parent.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}}
+                        {"condition": {"field": "parent.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}},
+                        {"condition": {"field": "process.pid", "op": "same_as", "step": "exec", "step_field": "process.pid"}}
                       ]
                     }
                   }
@@ -216,11 +217,11 @@
               "events": [
                 {
                   "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "process.stable_id", "lineage_id"]
+                  "fields": ["process.binary", "process.argv", "process.stable_id", "process.pid", "lineage_id"]
                 },
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.port", "process.stable_id", "parent.stable_id", "lineage_id"]
+                  "fields": ["socket.port", "process.stable_id", "process.pid", "parent.stable_id", "lineage_id"]
                 }
               ],
               "context": {

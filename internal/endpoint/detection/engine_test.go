@@ -34,8 +34,39 @@ func TestEngineHasNoRuleSpecificLineageDetectors(t *testing.T) {
 	}
 }
 
-func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
-	engine, report := New(policymodel.DefaultDetectionPolicy())
+func TestDetectionRejectsPolicyWithoutExplicitRuleSet(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = nil
+	_, report := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{})
+	if report.Status != "rejected" || !strings.Contains(report.Message, "ruleset") {
+		t.Fatalf("report = %+v, want rejected missing ruleset", report)
+	}
+}
+
+func TestDetectionRejectsUnknownRuleSet(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:missing"}}
+	_, report := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{})
+	if report.Status != "rejected" || !strings.Contains(strings.Join(report.Details, " "), "ruleset:missing") {
+		t.Fatalf("report = %+v, want rejected unknown ruleset", report)
+	}
+}
+
+func TestDetectionRejectsDuplicateRuleID(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:test"}}
+	content := ContentSnapshot{Rules: []RuleSpec{
+		{RuleID: "duplicate", RuleSetRef: "ruleset:test", RuntimeType: "expr"},
+		{RuleID: "duplicate", RuleSetRef: "ruleset:test", RuntimeType: "expr"},
+	}}
+	_, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "rejected" || !strings.Contains(strings.Join(report.Details, " "), "duplicate rule id") {
+		t.Fatalf("report = %+v, want rejected duplicate rule id", report)
+	}
+}
+
+func TestContentRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
+	engine, report := newTestEngine(t)
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -65,13 +96,13 @@ func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
 	if len(lifecycleRefs) != 3 || contains(lifecycleRefs, "e1") {
 		t.Fatalf("payload_lifecycle refs = %v, want latest evidence for each fact", lifecycleRefs)
 	}
-	if lifecycleRuleVersion != 1 || lifecycleRuleSet != "ruleset:endpoint-linux-builtin" {
+	if lifecycleRuleVersion != 2 || lifecycleRuleSet != testRuleSetRef {
 		t.Fatalf("payload_lifecycle rule metadata version=%d ruleset=%q", lifecycleRuleVersion, lifecycleRuleSet)
 	}
 }
 
 func TestPayloadLifecycleUsesCorrelateRule(t *testing.T) {
-	for _, rule := range builtinRules() {
+	for _, rule := range testContentSnapshot(t).Rules {
 		if rule.RuleID != "payload_lifecycle" {
 			continue
 		}
@@ -84,7 +115,7 @@ func TestPayloadLifecycleUsesCorrelateRule(t *testing.T) {
 }
 
 func TestPayloadLifecycleCorrelateUsesDynamicContent(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
+	policy := testDetectionPolicy()
 	content := ContentSnapshot{
 		ContextRefs: map[string]ContentRef{
 			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "v2", Values: []string{"/opt/payloads/"}},
@@ -93,7 +124,7 @@ func TestPayloadLifecycleCorrelateUsesDynamicContent(t *testing.T) {
 			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
 		},
 	}
-	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, content))
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -125,8 +156,8 @@ func TestPayloadLifecycleCorrelateUsesDynamicContent(t *testing.T) {
 	}
 }
 
-func TestBuiltinRuleSetTreatsShellScriptArgAsPayloadExec(t *testing.T) {
-	engine, report := New(policymodel.DefaultDetectionPolicy())
+func TestContentRuleSetTreatsShellScriptArgAsPayloadExec(t *testing.T) {
+	engine, report := newTestEngine(t)
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -150,8 +181,8 @@ func TestBuiltinRuleSetTreatsShellScriptArgAsPayloadExec(t *testing.T) {
 	}
 }
 
-func TestBuiltinRuleSetPayloadLifecycleToleratesShellReexecParentMismatch(t *testing.T) {
-	engine, report := New(policymodel.DefaultDetectionPolicy())
+func TestContentRuleSetPayloadLifecycleToleratesShellReexecParentMismatch(t *testing.T) {
+	engine, report := newTestEngine(t)
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -179,11 +210,11 @@ func TestBuiltinRuleSetPayloadLifecycleToleratesShellReexecParentMismatch(t *tes
 	}
 }
 
-func TestRuleOverrideDisablesBuiltinRule(t *testing.T) {
+func TestRuleOverrideDisablesContentRule(t *testing.T) {
 	disabled := false
-	policy := policymodel.DefaultDetectionPolicy()
+	policy := testDetectionPolicy()
 	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "payload_dropped", Enabled: &disabled})
-	engine, _ := New(policy)
+	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, testContentSnapshot(t))
 	signals := engine.Process(writeEvent("e1", "lin-a", "p1", "/usr/bin/curl", "/dev/shm/x.sh"))
 	for _, sig := range signals {
 		if sig.GetName() == "payload_dropped" {
@@ -193,8 +224,8 @@ func TestRuleOverrideDisablesBuiltinRule(t *testing.T) {
 }
 
 func TestDependencyCheckReportsMissingCollectionInput(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
-	_, report := NewWithInputs(policy, contract.CollectionIntent{Behaviors: []string{"process.exec"}})
+	policy := testDetectionPolicy()
+	_, report := NewWithRuntime(policy, contract.CollectionIntent{Behaviors: []string{"process.exec"}}, testContentSnapshot(t))
 	if report.Status != "degraded" || len(report.Warnings) == 0 {
 		t.Fatalf("report = %+v, want degraded with warnings", report)
 	}
@@ -596,7 +627,7 @@ func TestExprRuleSuppressesByDeclaredFieldsWithinWindow(t *testing.T) {
 }
 
 func TestSuppressionEvictsAtKeyLimit(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	now := time.Unix(100, 0)
 	for i := 0; i <= maxSuppressionKeys; i++ {
 		engine.suppressSignal("key-"+strconv.Itoa(i), now, time.Hour)
@@ -610,7 +641,7 @@ func TestSuppressionEvictsAtKeyLimit(t *testing.T) {
 }
 
 func TestSuppressionCleanupRespectsOriginalWindows(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	start := time.Unix(100, 0)
 	engine.suppressSignal("long-window", start, 5*time.Minute)
 	for i := 0; i < maxSuppressionKeys-1; i++ {
@@ -623,7 +654,7 @@ func TestSuppressionCleanupRespectsOriginalWindows(t *testing.T) {
 }
 
 func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	var gotContext bool
 	var gotIOC bool
 	for _, sig := range engine.Process(writeEvent("e1", "lin-a", "p1", "/usr/bin/curl", "/dev/shm/x.sh")) {
@@ -700,18 +731,18 @@ func TestPayloadDroppedUsesDynamicExprSemantics(t *testing.T) {
 
 func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	enabled := true
-	policy := policymodel.DefaultDetectionPolicy()
+	policy := testDetectionPolicy()
 	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
-	engine, _ := New(policy)
-	first := readEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
-	second := readEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, testContentSnapshot(t))
+	first := readEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/etc/shadow")
+	second := readEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/etc/shadow")
 	if got := countSignals(engine.Process(first), "credential_file_read"); got != 1 {
 		t.Fatalf("first credential signal count = %d, want 1", got)
 	}
 	if got := countSignals(engine.Process(second), "credential_file_read"); got != 0 {
 		t.Fatalf("duplicate credential signal count = %d, want 0", got)
 	}
-	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
+	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/etc/passwd")
 	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
 		t.Fatalf("different path credential signal count = %d, want 1", got)
 	}
@@ -719,7 +750,7 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 
 func TestCredentialReadUsesDynamicExprSemantics(t *testing.T) {
 	enabled := true
-	policy := policymodel.DefaultDetectionPolicy()
+	policy := testDetectionPolicy()
 	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:custom-credential"}}
 	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
 	content := ContentSnapshot{
@@ -740,7 +771,7 @@ func TestCredentialReadUsesDynamicExprSemantics(t *testing.T) {
 			Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
 		}},
 	}
-	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, content))
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -777,7 +808,7 @@ func countSignals(signals []*signalv1.Signal, name string) int {
 }
 
 func TestWebRuntimeShellUsesObservedParentBinary(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	engine.Process(execEvent("node", "lin-web", "stable-runtime", "init", "/usr/bin/node", []string{"/usr/bin/node", "/srv/server.js"}))
 	shell := execEvent("shell", "lin-web", "stable-shell", "stable-runtime", "/bin/sh", []string{"/bin/sh", "-c", "id"})
 	signals := engine.Process(shell)
@@ -792,7 +823,7 @@ func TestWebRuntimeShellUsesObservedParentBinary(t *testing.T) {
 }
 
 func TestWebRuntimeRuleDeclaresSensorSourceFields(t *testing.T) {
-	for _, rule := range builtinRules() {
+	for _, rule := range testContentSnapshot(t).Rules {
 		if rule.RuleID != "web_runtime_spawns_shell" {
 			continue
 		}
@@ -806,7 +837,7 @@ func TestWebRuntimeRuleDeclaresSensorSourceFields(t *testing.T) {
 }
 
 func TestCredentialReadDeclaresCollectedReadBehavior(t *testing.T) {
-	for _, rule := range builtinRules() {
+	for _, rule := range testContentSnapshot(t).Rules {
 		if rule.RuleID != "credential_file_read" {
 			continue
 		}
@@ -819,7 +850,7 @@ func TestCredentialReadDeclaresCollectedReadBehavior(t *testing.T) {
 }
 
 func TestWebRuntimeShellKeepsAshCompatibility(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	engine.Process(execEvent("node", "lin-ash", "runtime", "init", "/usr/bin/node", nil))
 	signals := engine.Process(execEvent("ash", "lin-ash", "shell", "runtime", "/bin/ash", nil))
 	if got := countSignals(signals, "web_runtime_spawns_shell"); got != 1 {
@@ -828,7 +859,7 @@ func TestWebRuntimeShellKeepsAshCompatibility(t *testing.T) {
 }
 
 func TestWebRuntimeShellRejectsRuntimeTokenOnlyInArgv(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	shell := execEvent("shell", "lin-fake", "stable-shell", "opaque-parent", "/bin/sh", []string{"/bin/sh", "-c", ": # node marker"})
 	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 0 {
 		t.Fatalf("forged argv web runtime signals = %d, want 0", got)
@@ -836,7 +867,7 @@ func TestWebRuntimeShellRejectsRuntimeTokenOnlyInArgv(t *testing.T) {
 }
 
 func TestWebRuntimeShellRejectsObservedNonWebParent(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	engine.Process(execEvent("worker", "lin-worker", "stable-worker", "init", "/usr/bin/sleep", []string{"/usr/bin/sleep", "infinity"}))
 	shell := execEvent("shell", "lin-worker", "stable-shell", "stable-worker", "/bin/sh", []string{"/bin/sh", "-c", "id"})
 	if got := countSignals(engine.Process(shell), "web_runtime_spawns_shell"); got != 0 {
@@ -845,8 +876,8 @@ func TestWebRuntimeShellRejectsObservedNonWebParent(t *testing.T) {
 }
 
 func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
-	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
+	policy := testDetectionPolicy()
+	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, ContentSnapshot{
 		IOCRefs: map[string]ContentRef{
 			"ioc:c2-control-port-feed": {
 				Ref:     "ioc:c2-control-port-feed",
@@ -855,7 +886,7 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 				Values:  []string{"9443"},
 			},
 		},
-	})
+	}))
 	if signals := engine.Process(connectEventWithParent("e1", "lin-a", "p1", "parent", "/bin/bash", "10.66.0.99:443")); len(signals) != 0 {
 		t.Fatalf("443 signals = %+v, want none after IOC override", signals)
 	}
@@ -876,7 +907,7 @@ func TestRuntimeContentSnapshotOverridesIOC(t *testing.T) {
 }
 
 func TestReverseShellExprUsesDynamicContentAndPreciseEvidence(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
+	policy := testDetectionPolicy()
 	content := ContentSnapshot{
 		ContextRefs: map[string]ContentRef{
 			"ctx:shell-binaries": {Ref: "ctx:shell-binaries", Version: "v2", Values: []string{"custom-shell"}},
@@ -885,7 +916,7 @@ func TestReverseShellExprUsesDynamicContentAndPreciseEvidence(t *testing.T) {
 			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
 		},
 	}
-	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, content))
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -913,7 +944,7 @@ func TestReverseShellExprUsesDynamicContentAndPreciseEvidence(t *testing.T) {
 }
 
 func TestSuspiciousExecConnectUsesSequenceRule(t *testing.T) {
-	for _, rule := range builtinRules() {
+	for _, rule := range testContentSnapshot(t).Rules {
 		if rule.RuleID != "suspicious_exec_connect" {
 			continue
 		}
@@ -926,7 +957,7 @@ func TestSuspiciousExecConnectUsesSequenceRule(t *testing.T) {
 }
 
 func TestSuspiciousExecConnectSequencePreservesAssociations(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
+	policy := testDetectionPolicy()
 	content := ContentSnapshot{
 		ContextRefs: map[string]ContentRef{
 			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "v2", Values: []string{"/opt/payloads/"}},
@@ -939,20 +970,28 @@ func TestSuspiciousExecConnectSequencePreservesAssociations(t *testing.T) {
 		name          string
 		connectStable string
 		parentStable  string
+		samePID       bool
 		want          int
 	}{
 		{name: "direct", connectStable: "payload", parentStable: "init", want: 1},
 		{name: "parent", connectStable: "child", parentStable: "payload", want: 1},
+		{name: "same pid reexec", connectStable: "reexec", parentStable: "init", samePID: true, want: 1},
 		{name: "unrelated", connectStable: "other", parentStable: "init", want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+			engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, content))
 			if report.Status != "applied" {
 				t.Fatalf("report = %+v", report)
 			}
-			engine.Process(execEvent("exec", "lin-a", "payload", "init", "/opt/payloads/tool", nil))
-			signals := engine.Process(connectEventWithParent("connect", "lin-a", tt.connectStable, tt.parentStable, "/bin/other", "10.0.0.1:9443"))
+			exec := execEvent("exec", "lin-a", "payload", "init", "/opt/payloads/tool", nil)
+			connect := connectEventWithParent("connect", "lin-a", tt.connectStable, tt.parentStable, "/bin/other", "10.0.0.1:9443")
+			if tt.samePID {
+				exec.SubjectProc.Pid = 42
+				connect.SubjectProc.Pid = 42
+			}
+			engine.Process(exec)
+			signals := engine.Process(connect)
 			if got := countSignals(signals, "suspicious_exec_connect"); got != tt.want {
 				t.Fatalf("signals = %d, want %d; all=%+v", got, tt.want, signals)
 			}
@@ -972,8 +1011,8 @@ func TestSuspiciousExecConnectSequencePreservesAssociations(t *testing.T) {
 }
 
 func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
-	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
+	policy := testDetectionPolicy()
+	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, ContentSnapshot{
 		IOCRefs: map[string]ContentRef{
 			"ioc:c2-ip-feed": {
 				Ref:    "ioc:c2-ip-feed",
@@ -984,7 +1023,7 @@ func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
 				Values: []string{"443", "8443"},
 			},
 		},
-	})
+	}))
 	engine.Process(writeEvent("drop", "lin-a", "payload-proc", "/usr/bin/curl", "/var/lib/app/plugins/helper"))
 	for _, sig := range engine.Process(connectEventWithParent("download", "lin-a", "curl-proc", "payload-proc", "/usr/bin/curl", "10.66.0.99:8080")) {
 		if sig.GetName() == "suspicious_exec_connect" || sig.GetName() == "payload_lifecycle" || sig.GetName() == "reverse_shell_pattern" {
@@ -994,7 +1033,7 @@ func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
 }
 
 func TestDownloadByLOLBinRequiresDownloadSocket(t *testing.T) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	engine, _ := newTestEngine(t)
 	if got := countSignals(engine.Process(connectEventWithParent("download", "lin-a", "curl-proc", "parent", "/usr/bin/curl", "10.66.0.99:8080")), "download_by_lolbin"); got != 1 {
 		t.Fatalf("download_by_lolbin on download port = %d, want 1", got)
 	}
@@ -1004,8 +1043,8 @@ func TestDownloadByLOLBinRequiresDownloadSocket(t *testing.T) {
 }
 
 func TestDownloadByLOLBinUsesDynamicClientContext(t *testing.T) {
-	policy := policymodel.DefaultDetectionPolicy()
-	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
+	policy := testDetectionPolicy()
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, ContentSnapshot{
 		ContextRefs: map[string]ContentRef{
 			"ctx:download-client-binaries": {
 				Ref:     "ctx:download-client-binaries",
@@ -1013,7 +1052,7 @@ func TestDownloadByLOLBinUsesDynamicClientContext(t *testing.T) {
 				Values:  []string{"fetcher"},
 			},
 		},
-	})
+	}))
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -1049,25 +1088,25 @@ func TestRuntimeRulePackMetadataOverridesDefaultRule(t *testing.T) {
 		Version:     1,
 		Mode:        "observe",
 		RuleSets:    []policymodel.RuleSetRef{{Ref: "ruleset:test", Version: "v1", Enabled: &enabled}},
-		ContextRefs: []policymodel.ContentRef{{Ref: "ctx:shell-binaries", Version: "builtin"}},
-		IOCRefs:     []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "builtin"}},
+		ContextRefs: []policymodel.ContentRef{{Ref: "ctx:shell-binaries", Version: "test"}},
+		IOCRefs:     []policymodel.ContentRef{{Ref: "ioc:c2-control-port-feed", Version: "test"}},
 	}
-	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
-		Rules: []RuleSpec{{
-			RuleID:            "reverse_shell_pattern",
-			Version:           7,
-			RuleSetRef:        "ruleset:test",
-			Severity:          "critical",
-			RuntimeType:       "expr",
-			RequiredBehaviors: []string{"network.connect"},
-			ContextRefs:       []string{"ctx:shell-binaries"},
-			IOCRefs:           []string{"ioc:c2-control-port-feed"},
-			Expr: ExprSpec{Conditions: []ConditionSpec{
-				{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
-				{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
-			}},
+	content := testContentSnapshot(t)
+	content.Rules = []RuleSpec{{
+		RuleID:            "reverse_shell_pattern",
+		Version:           7,
+		RuleSetRef:        "ruleset:test",
+		Severity:          "critical",
+		RuntimeType:       "expr",
+		RequiredBehaviors: []string{"network.connect"},
+		ContextRefs:       []string{"ctx:shell-binaries"},
+		IOCRefs:           []string{"ioc:c2-control-port-feed"},
+		Expr: ExprSpec{Conditions: []ConditionSpec{
+			{Field: "process.binary_name", Op: "in", Ref: "ctx:shell-binaries"},
+			{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
 		}},
-	})
+	}}
+	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, content)
 	for _, sig := range engine.Process(connectEventWithParent("e1", "lin-a", "p1", "parent", "/bin/bash", "10.66.0.99:443")) {
 		if sig.GetName() == "reverse_shell_pattern" && sig.GetRuleVersion() == 7 && sig.GetRulesetRef() == "ruleset:test" {
 			return
@@ -1114,19 +1153,16 @@ func TestCEPRuntimeExprRuleUsesContentRef(t *testing.T) {
 	}
 }
 
-func TestRuntimeUsesBuiltinProcessBinaryContext(t *testing.T) {
+func TestRuntimeRejectsMissingProcessBinaryContext(t *testing.T) {
 	content := ContentSnapshot{Rules: []RuleSpec{processBinaryContextRule()}}
 	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
-	if report.Status != "applied" {
-		t.Fatalf("report = %+v", report)
+	if report.Status != "rejected" {
+		t.Fatalf("report = %+v, want missing context rejection", report)
 	}
-	event := execEvent("node", "lin-web", "node-stable", "init", "/usr/bin/node", nil)
-	if got := countSignals(engine.Process(event), "process_binary_context"); got != 1 {
-		t.Fatalf("signals = %d, want builtin node context match", got)
-	}
+	_ = engine
 }
 
-func TestRuntimeContentOverridesBuiltinProcessBinaryContext(t *testing.T) {
+func TestRuntimeUsesExplicitProcessBinaryContext(t *testing.T) {
 	content := ContentSnapshot{
 		ContextRefs: map[string]ContentRef{
 			"ctx:web-runtime-binaries": {Ref: "ctx:web-runtime-binaries", Version: "v2", Values: []string{"custom-web"}},
@@ -1159,7 +1195,7 @@ func TestDynamicWebRuntimeSequenceUsesContentContexts(t *testing.T) {
 		},
 		Rules: []RuleSpec{webRuntimeSequenceRule("ruleset:dynamic-web", &nonTerminal)},
 	}
-	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, mergeTestContent(t, content))
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
@@ -1191,6 +1227,7 @@ func processBinaryContextRule() RuleSpec {
 	return RuleSpec{
 		RuleID: "process_binary_context", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
 		RequiredBehaviors: []string{"process.exec"},
+		ContextRefs:       []string{"ctx:web-runtime-binaries"},
 		Expr: ExprSpec{Conditions: []ConditionSpec{{
 			Field: "process.binary_name", Op: "in", Ref: "ctx:web-runtime-binaries",
 		}}},
