@@ -24,7 +24,16 @@ func builtinRules() []RuleSpec {
 				}},
 			}},
 		},
-		{RuleID: "download_by_lolbin", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-download-port-feed"}},
+		{
+			RuleID: "download_by_lolbin", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{{Behavior: eventmodel.BehaviorNetworkConnect.String(), Fields: []string{"process.binary", "socket.port"}}},
+			ContextRefs:    []string{"ctx:download-client-binaries"},
+			IOCRefs:        []string{"ioc:c2-download-port-feed"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "process.binary_name", Op: "in", Ref: "ctx:download-client-binaries"},
+				{Field: "socket.port", Op: "in", Ref: "ioc:c2-download-port-feed"},
+			}},
+		},
 		{RuleID: "payload_dropped", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
 		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
 		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},

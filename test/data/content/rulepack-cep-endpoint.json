@@ -56,21 +56,29 @@
           },
           {
             "rule_id": "download_by_lolbin",
-            "version": 1,
+            "version": 2,
             "severity": "medium",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.download_by_lolbin"
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "process.binary_name", "op": "in", "ref": "ctx:download-client-binaries"},
+                  {"field": "socket.port", "op": "in", "ref": "ioc:c2-download-port-feed"}
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["socket.port", "process.binary"]
                 }
               ],
+              "context": {
+                "required": ["ctx:download-client-binaries"]
+              },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-download-port-feed"]
+                "required": ["ioc:c2-download-port-feed"]
               }
             }
           },

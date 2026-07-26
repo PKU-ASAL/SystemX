@@ -321,7 +321,7 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 	case eventmodel.BehaviorProcessExec.String():
 		out = append(out, e.detectPayloadExec(ev, state)...)
 	case eventmodel.BehaviorNetworkConnect.String():
-		out = append(out, e.detectDownloadByLOLBin(ev, state)...)
+		e.observeDownloadEvidence(ev, state)
 		out = append(out, e.detectReverseShell(ev, state)...)
 		out = append(out, e.detectPayloadConnect(ev, state)...)
 	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String():
@@ -402,20 +402,11 @@ func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState)
 	return nil
 }
 
-func (e *Engine) detectDownloadByLOLBin(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("download_by_lolbin")
-	if !ok {
-		return nil
-	}
-	bin := binaryBase(ev)
-	if bin != "curl" && bin != "wget" {
-		return nil
-	}
-	if !e.ioc.isDownloadSocket(ev.GetObject().GetSocketAddr()) {
-		return nil
+func (e *Engine) observeDownloadEvidence(ev *eventv1.CanonicalEvent, st *lineageState) {
+	if !containsString(e.contentValues("ctx:download-client-binaries"), binaryBase(ev)) || !e.ioc.isDownloadSocket(ev.GetObject().GetSocketAddr()) {
+		return
 	}
 	st.downloadRefs = appendUnique(st.downloadRefs, ev.GetId())
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), socketEntity(ev))}
 }
 
 func (e *Engine) detectReverseShell(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
@@ -918,7 +909,7 @@ func (e *Engine) contentValues(ref string) []string {
 	if item, ok := e.refs.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return nil
+	return builtinContentValues(ref)
 }
 
 func (e *Engine) sequenceGroupKey(ev *eventv1.CanonicalEvent, fields []string) string {

@@ -392,6 +392,45 @@ func TestDownloadByLOLBinRequiresDownloadSocket(t *testing.T) {
 	}
 }
 
+func TestDownloadByLOLBinUsesDynamicClientContext(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:download-client-binaries": {
+				Ref:     "ctx:download-client-binaries",
+				Version: "v2",
+				Values:  []string{"fetcher"},
+			},
+		},
+	})
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(connectEventWithParent("curl", "lin-curl", "curl-proc", "parent", "/usr/bin/curl", "10.66.0.99:8080")), "download_by_lolbin"); got != 0 {
+		t.Fatalf("curl signals = %d, want none after dynamic context replacement", got)
+	}
+	signals := engine.Process(connectEventWithParent("fetch", "lin-fetch", "fetch-proc", "parent", "/opt/fetcher", "10.66.0.99:8080"))
+	if got := countSignals(signals, "download_by_lolbin"); got != 1 {
+		t.Fatalf("fetcher signals = %d, want 1", got)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "download_by_lolbin" {
+			signal = candidate
+			break
+		}
+	}
+	if !slices.Equal(signal.GetEventRefs(), []string{"fetch"}) || len(signal.GetEntities()) != 2 {
+		t.Fatalf("signal evidence = %+v, want event plus process/socket entities", signal)
+	}
+	if len(signal.GetContextRefs()) != 1 || signal.GetContextRefs()[0].GetRef() != "ctx:download-client-binaries" || signal.GetContextRefs()[0].GetVersion() != "v2" {
+		t.Fatalf("context refs = %+v, want dynamic client context", signal.GetContextRefs())
+	}
+	if len(signal.GetIocRefs()) != 1 || signal.GetIocRefs()[0].GetRef() != "ioc:c2-download-port-feed" {
+		t.Fatalf("ioc refs = %+v, want download port feed", signal.GetIocRefs())
+	}
+}
+
 func TestRuntimeRulePackMetadataOverridesBuiltinRule(t *testing.T) {
 	enabled := true
 	policy := &policymodel.DetectionPolicy{
