@@ -11,6 +11,7 @@
 ### 目标
 
 - 新增和调整三条多事件规则时不更新 Agent 二进制。
+- 新增其他满足“单 Agent、有限事实、有限窗口、明确关联键”边界的规则时，同样只更新 Collection/Detection Policy 和 Content；通用 runtime 测试不得使用三条首批迁移规则的专用名称或语义。
 - 保留现有 `payload_lifecycle` 对事件乱序的容忍能力。
 - 同一 Rule ID 只有一个权威 Signal 生成路径。
 - Signal 的严重度、terminal、响应意图、实体和必要 Event refs 与规则语义一致。
