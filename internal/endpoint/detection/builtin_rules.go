@@ -58,7 +58,26 @@ func builtinRules() []RuleSpec {
 			Terminal:       boolPtr(true),
 			ResponseIntent: collect,
 		},
-		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
+		{
+			RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", RuntimeType: "sequence",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: eventmodel.BehaviorProcessExec.String(), Fields: []string{"process.binary", "process.argv", "process.stable_id", "lineage_id"}},
+				{Behavior: eventmodel.BehaviorNetworkConnect.String(), Fields: []string{"socket.port", "process.stable_id", "parent.stable_id", "lineage_id"}},
+			},
+			ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}, Terminal: &nonTerminal,
+			Sequence: SequenceSpec{Within: 2 * time.Minute, By: []string{"lineage_id"}, Steps: []StepSpec{
+				{ID: "exec", Behavior: eventmodel.BehaviorProcessExec.String(), ConditionGroup: &ConditionNodeSpec{Any: []ConditionNodeSpec{
+					conditionNode(ConditionSpec{Field: "process.binary", Op: "prefix", Ref: "ctx:payload-path-prefixes"}),
+					conditionNode(ConditionSpec{Field: "process.argv", Op: "contains", Ref: "ctx:payload-path-prefixes"}),
+				}}},
+				{ID: "connect", Behavior: eventmodel.BehaviorNetworkConnect.String(), Conditions: []ConditionSpec{
+					{Field: "socket.port", Op: "in", Ref: "ioc:c2-control-port-feed"},
+				}, ConditionGroup: &ConditionNodeSpec{Any: []ConditionNodeSpec{
+					conditionNode(ConditionSpec{Field: "process.stable_id", Op: "same_as", Step: "exec", StepField: "process.stable_id"}),
+					conditionNode(ConditionSpec{Field: "parent.stable_id", Op: "same_as", Step: "exec", StepField: "process.stable_id"}),
+				}}},
+			}},
+		},
 		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
 		{
 			RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", RuntimeType: "expr",
@@ -77,4 +96,8 @@ func builtinRules() []RuleSpec {
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func conditionNode(condition ConditionSpec) ConditionNodeSpec {
+	return ConditionNodeSpec{Condition: &condition}
 }

@@ -831,6 +831,65 @@ func TestReverseShellExprUsesDynamicContentAndPreciseEvidence(t *testing.T) {
 	}
 }
 
+func TestSuspiciousExecConnectUsesSequenceRule(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "suspicious_exec_connect" {
+			continue
+		}
+		if rule.RuntimeType != "sequence" || len(rule.Sequence.Steps) != 2 {
+			t.Fatalf("rule = %+v, want two-step sequence", rule)
+		}
+		return
+	}
+	t.Fatal("suspicious_exec_connect rule not found")
+}
+
+func TestSuspiciousExecConnectSequencePreservesAssociations(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:payload-path-prefixes": {Ref: "ctx:payload-path-prefixes", Version: "v2", Values: []string{"/opt/payloads/"}},
+		},
+		IOCRefs: map[string]ContentRef{
+			"ioc:c2-control-port-feed": {Ref: "ioc:c2-control-port-feed", Version: "v2", Values: []string{"9443"}},
+		},
+	}
+	tests := []struct {
+		name          string
+		connectStable string
+		parentStable  string
+		want          int
+	}{
+		{name: "direct", connectStable: "payload", parentStable: "init", want: 1},
+		{name: "parent", connectStable: "child", parentStable: "payload", want: 1},
+		{name: "unrelated", connectStable: "other", parentStable: "init", want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+			if report.Status != "applied" {
+				t.Fatalf("report = %+v", report)
+			}
+			engine.Process(execEvent("exec", "lin-a", "payload", "init", "/opt/payloads/tool", nil))
+			signals := engine.Process(connectEventWithParent("connect", "lin-a", tt.connectStable, tt.parentStable, "/bin/other", "10.0.0.1:9443"))
+			if got := countSignals(signals, "suspicious_exec_connect"); got != tt.want {
+				t.Fatalf("signals = %d, want %d; all=%+v", got, tt.want, signals)
+			}
+			if tt.want == 1 {
+				var signal *signalv1.Signal
+				for _, candidate := range signals {
+					if candidate.GetName() == "suspicious_exec_connect" {
+						signal = candidate
+					}
+				}
+				if !slices.Equal(signal.GetEventRefs(), []string{"exec", "connect"}) || len(signal.GetEntities()) < 3 {
+					t.Fatalf("signal = %+v, want exec/connect evidence and process/file/socket entities", signal)
+				}
+			}
+		})
+	}
+}
+
 func TestC2SocketRequiresConfiguredControlPort(t *testing.T) {
 	policy := policymodel.DefaultDetectionPolicy()
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, ContentSnapshot{

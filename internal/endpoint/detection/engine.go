@@ -179,6 +179,7 @@ type cepRuleState struct {
 type cepGroupState struct {
 	StepIndex       int
 	Refs            []string
+	Entities        []*signalv1.EntityRef
 	Values          map[string]map[string]string
 	ExpiresAt       uint64
 	WaitingBehavior string
@@ -470,14 +471,7 @@ func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageSta
 	}
 	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
 	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-	var out []*signalv1.Signal
-	if rule, ok := e.rule("suspicious_exec_connect"); ok {
-		sigRefs := appendRefs(nil, st.payloadExecRefs...)
-		sigRefs = appendUnique(sigRefs, ev.GetId())
-		out = append(out, e.signal(ev, rule, sigRefs, false, processEntity(ev), fileEntity(firstPayloadPath(st), "subject"), socketEntity(ev)))
-	}
-	out = append(out, e.detectPayloadLifecycle(ev, st)...)
-	return out
+	return e.detectPayloadLifecycle(ev, st)
 }
 
 func (e *Engine) detectPayloadLifecycle(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
@@ -752,6 +746,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		st.StepIndex = 0
 		st.Refs = nil
+		st.Entities = nil
 		st.Values = make(map[string]map[string]string)
 		st.WaitingBehavior = ""
 	}
@@ -764,6 +759,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 		st.StepIndex = 0
 		st.Refs = nil
+		st.Entities = nil
 		st.Values = make(map[string]map[string]string)
 		st.WaitingBehavior = ""
 	}
@@ -772,6 +768,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 		return nil
 	}
 	st.Refs = appendUnique(st.Refs, view.eventID)
+	st.Entities = appendUniqueEntities(st.Entities, eventEntities(view.ev)...)
 	if len(st.Refs) > e.limits.MaxCEPRefs {
 		e.metrics.DroppedEventRefs += uint64(len(st.Refs) - e.limits.MaxCEPRefs)
 		st.Refs = st.Refs[len(st.Refs)-e.limits.MaxCEPRefs:]
@@ -795,7 +792,7 @@ func (e *Engine) detectSequenceCandidate(view eventView, candidate compiledSeque
 	refs := appendRefs(nil, st.Refs...)
 	e.deactivateSequenceWait(rule.rule.spec.RuleID, st.WaitingBehavior)
 	delete(ruleState.Groups, groupKey)
-	return e.signal(view.ev, rule.rule, refs, rule.rule.terminal(true), eventEntities(view.ev)...)
+	return e.signal(view.ev, rule.rule, refs, rule.rule.terminal(true), st.Entities...)
 }
 
 func (e *Engine) activateSequenceWait(ruleID, behavior string) {
@@ -1027,6 +1024,9 @@ func eventField(ev *eventv1.CanonicalEvent, field string) string {
 
 func eventEntities(ev *eventv1.CanonicalEvent) []*signalv1.EntityRef {
 	entities := []*signalv1.EntityRef{processEntity(ev)}
+	if eventBehavior(ev) == eventmodel.BehaviorProcessExec.String() && ev.GetSubjectProc().GetBinary() != "" {
+		entities = append(entities, fileEntity(ev.GetSubjectProc().GetBinary(), "subject"))
+	}
 	if path := ev.GetObject().GetFilePath(); path != "" {
 		entities = append(entities, fileEntity(path, "object"))
 	}

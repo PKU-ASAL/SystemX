@@ -178,30 +178,59 @@
           },
           {
             "rule_id": "suspicious_exec_connect",
-            "version": 1,
+            "version": 2,
             "severity": "high",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.suspicious_exec_connect"
+              "type": "sequence",
+              "sequence": {
+                "within": "2m",
+                "by": ["lineage_id"],
+                "steps": [
+                  {
+                    "id": "exec",
+                    "event": "process.exec",
+                    "condition_group": {
+                      "any": [
+                        {"condition": {"field": "process.binary", "op": "prefix", "ref": "ctx:payload-path-prefixes"}},
+                        {"condition": {"field": "process.argv", "op": "contains", "ref": "ctx:payload-path-prefixes"}}
+                      ]
+                    }
+                  },
+                  {
+                    "id": "connect",
+                    "event": "network.connect",
+                    "conditions": [
+                      {"field": "socket.port", "op": "in", "ref": "ioc:c2-control-port-feed"}
+                    ],
+                    "condition_group": {
+                      "any": [
+                        {"condition": {"field": "process.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}},
+                        {"condition": {"field": "parent.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}}
+                      ]
+                    }
+                  }
+                ]
+              }
             },
             "requires": {
               "events": [
                 {
                   "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "parent.stable_id", "lineage_id"]
+                  "fields": ["process.binary", "process.argv", "process.stable_id", "lineage_id"]
                 },
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.addr", "socket.port", "process.binary", "process.argv", "lineage_id"]
+                  "fields": ["socket.port", "process.stable_id", "parent.stable_id", "lineage_id"]
                 }
               ],
               "context": {
-                "optional": ["ctx:payload-path-prefixes"]
+                "required": ["ctx:payload-path-prefixes"]
               },
               "ioc": {
-                "optional": ["ioc:c2-ip-feed", "ioc:c2-control-port-feed"]
+                "required": ["ioc:c2-control-port-feed"]
               }
-            }
+            },
+            "output": {"terminal": false}
           },
           {
             "rule_id": "payload_lifecycle",
