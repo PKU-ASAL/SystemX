@@ -43,7 +43,20 @@ if curl -fsS "http://127.0.0.1:$WEB_PORT/rce?marker=bad%20marker" >/dev/null 2>&
   exit 1
 fi
 
-curl -fsS "http://127.0.0.1:$WEB_PORT/rce?marker=sysarmor-fixture-rce" | jq -e '.status == "ok"' >/dev/null
+rce_response="$TMP/rce-response.json"
+curl -fsS "http://127.0.0.1:$WEB_PORT/rce?marker=sysarmor-fixture-rce" >"$rce_response" &
+rce_pid="$!"
+rce_deadline=$((SECONDS + 2))
+until pgrep -f 'sysarmor-rce sysarmor-fixture-rce' >/dev/null; do
+  if (( SECONDS >= rce_deadline )); then
+    wait "$rce_pid" || true
+    echo "web runtime shell was not observable" >&2
+    exit 1
+  fi
+  sleep 0.05
+done
+wait "$rce_pid"
+jq -e '.status == "ok"' "$rce_response" >/dev/null
 curl -fsS "http://127.0.0.1:$WEB_PORT/download?marker=sysarmor-fixture-download" | jq -e '.status == "ok"' >/dev/null
 curl -fsS "http://127.0.0.1:$WEB_PORT/reverse-shell?marker=sysarmor-fixture-reverse" | jq -e '.status == "ok"' >/dev/null
 curl -fsS "http://127.0.0.1:$WEB_PORT/exec-connect?marker=sysarmor-fixture-exec-connect" | jq -e '.status == "ok"' >/dev/null
