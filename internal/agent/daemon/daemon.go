@@ -220,11 +220,13 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	scopeSelector := scope.Selector
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
 	r.setCollectionIntent(r.withCollectionCapabilities(intent))
+	if err := r.applyStartupDetection(effectivePolicy); err != nil {
+		return failStartup("detection", err)
+	}
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
 	longControl := r.Config.Manager.Transport == "grpc"
-	r.setPolicy(effectivePolicy)
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
 		return failStartup("subscribe", err)

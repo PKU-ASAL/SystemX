@@ -56,7 +56,7 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -124,7 +124,7 @@ func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -170,7 +170,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -185,7 +185,7 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 			"policy_id":"local-policy",
 			"version":7,
 			"collection":{"behaviors":["process.exec"]},
-			"detection":{},
+			"detection":{"policy_id":"local-detection","version":1,"rulesets":[{"ref":"ruleset:cep-endpoint","enabled":true}]},
 			"telemetry":{"max_batch_items":256,"max_batch_bytes":262144,"flush_interval":"1s"},
 			"response":{}
 		}`,
@@ -222,7 +222,7 @@ func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -299,7 +299,7 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -397,7 +397,7 @@ func TestLocalControlPushesNetworkProcessBinarySelector(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -446,7 +446,7 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -475,7 +475,11 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListContent() error = %v", err)
 	}
-	if len(list.GetRecords()) != 1 || list.GetRecords()[0].GetRef() != "ioc:c2-ip-feed" {
+	found := false
+	for _, record := range list.GetRecords() {
+		found = found || record.GetRef() == "ioc:c2-ip-feed"
+	}
+	if !found {
 		t.Fatalf("list = %+v", list)
 	}
 	got, err := client.GetContent(context.Background(), &controlplanev1.GetContentRequest{Ref: "ioc:c2-ip-feed"})
@@ -503,7 +507,7 @@ func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -562,7 +566,7 @@ func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -587,26 +591,6 @@ func TestLocalControlContentRebuildFailureKeepsPreviousDetection(t *testing.T) {
 	if goodAck.GetStatus() != "applied" {
 		t.Fatalf("good content ack = %+v", goodAck)
 	}
-	policyAck, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
-		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-bad-policy"},
-		PolicyType: "detection",
-		PolicyJson: `{
-			"policy_id":"bad-runtime-candidate",
-			"version":2,
-			"mode":"observe",
-			"rulesets":[
-				{"ref":"ruleset:endpoint-linux-builtin","enabled":true},
-				{"ref":"ruleset:bad-runtime","enabled":true}
-			]
-		}`,
-	})
-	if err != nil {
-		t.Fatalf("ApplyPolicy(detection) error = %v", err)
-	}
-	if policyAck.GetStatus() != "applied" {
-		t.Fatalf("policy ack = %+v", policyAck)
-	}
-
 	badAck, err := client.ApplyContent(context.Background(), &controlplanev1.ApplyContentRequest{
 		Context:       &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-bad-content"},
 		ContentJson:   badRuntimeRulePackJSON(),
@@ -657,7 +641,7 @@ func TestLocalControlDetectionPolicyRebuildFailureKeepsPreviousPolicy(t *testing
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -702,7 +686,7 @@ func badRuntimeRulePackJSON() string {
 		"api_version":"sysarmor.content/v1",
 		"kind":"rulepack",
 		"metadata":{"id":"rulepack:bad-runtime","version":"bad-v1"},
-		"spec":{"rulesets":[{"id":"ruleset:bad-runtime","version":"v1","rules":[{
+		"spec":{"rulesets":[{"id":"ruleset:cep-endpoint","version":"v1","rules":[{
 			"rule_id":"bad_runtime_rule",
 			"version":1,
 			"severity":"high",
@@ -745,7 +729,7 @@ func TestLocalControlWatchRecentEventsAndSignals(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -837,7 +821,7 @@ func TestLocalControlContentApplyEnablesCEPRulePack(t *testing.T) {
 	rt := sensorruntime.New(runner.Sensor)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bus, batcher, sender := newTestTelemetry(runner)
+	bus, batcher, sender := newTestTelemetry(t, runner)
 	stop, err := runner.startLocalControlServer(ctx, rt, bus, batcher, sender, time.Now())
 	if err != nil {
 		t.Fatalf("startLocalControlServer() error = %v", err)
@@ -981,7 +965,9 @@ func (u *recordingUploader) SendBatch(batch *dataplanev1.DataBatch) (*dataplanev
 	return (&noopUploader{}).SendBatch(batch)
 }
 
-func newTestTelemetry(runner *AgentRuntime) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender) {
+func newTestTelemetry(t testing.TB, runner *AgentRuntime) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender) {
+	t.Helper()
+	installTestDetection(t, runner)
 	bus := telemetry.NewBus(1024)
 	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 16)
 	sender := &telemetry.Sender{Appender: noopUploader{}, Batcher: batcher}
