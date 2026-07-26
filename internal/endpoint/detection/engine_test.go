@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -330,6 +331,151 @@ func TestExprRuleEvaluatesGenericConditionTree(t *testing.T) {
 		if got := countSignals(engine.Process(tt.event), "neutral_boolean_rule"); got != tt.want {
 			t.Fatalf("%s signals = %d, want %d", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestRuleValidationRejectsInvalidCorrelate(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*CorrelateSpec)
+		want   string
+	}{
+		{name: "invalid duration", mutate: func(spec *CorrelateSpec) { spec.Within = 0; spec.WithinText = "bad" }, want: "invalid correlate window"},
+		{name: "zero window", mutate: func(spec *CorrelateSpec) { spec.Within = 0 }, want: "correlate window"},
+		{name: "excessive window", mutate: func(spec *CorrelateSpec) { spec.Within = 25 * time.Hour }, want: "correlate window"},
+		{name: "empty by", mutate: func(spec *CorrelateSpec) { spec.By = nil }, want: "correlate by field is required"},
+		{name: "unknown by", mutate: func(spec *CorrelateSpec) { spec.By = []string{"process.unknown"} }, want: "unsupported correlate by field"},
+		{name: "duplicate fact", mutate: func(spec *CorrelateSpec) { spec.Facts[1].ID = spec.Facts[0].ID }, want: "duplicate fact"},
+		{name: "event conflict", mutate: func(spec *CorrelateSpec) { spec.Facts[0].Event = "file.write" }, want: "exactly one of event or events"},
+		{name: "empty behaviors", mutate: func(spec *CorrelateSpec) { spec.Facts[0].Events = nil }, want: "exactly one of event or events"},
+		{name: "blank behavior", mutate: func(spec *CorrelateSpec) { spec.Facts[0].Events = []string{" "} }, want: "behavior is required"},
+		{name: "one fact", mutate: func(spec *CorrelateSpec) { spec.Facts = spec.Facts[:1] }, want: "at least two facts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := neutralCorrelateSpec()
+			tt.mutate(&spec)
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_correlate", RuleSetRef: "ruleset:cep", RuntimeType: "correlate", Correlate: spec,
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuleValidationAcceptsValidCorrelate(t *testing.T) {
+	content := ContentSnapshot{Rules: []RuleSpec{{
+		RuleID: "neutral_correlate", RuleSetRef: "ruleset:cep", RuntimeType: "correlate", Correlate: neutralCorrelateSpec(),
+	}}}
+	_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v, want applied", report)
+	}
+}
+
+func neutralCorrelateSpec() CorrelateSpec {
+	return CorrelateSpec{
+		Within: 2 * time.Minute,
+		By:     []string{"lineage_id"},
+		Facts: []FactSpec{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}, Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: "/tmp/test/"}}},
+			{ID: "run", Event: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary", Op: "prefix", Value: "/tmp/test/"}}},
+		},
+	}
+}
+
+func TestCorrelateRuntimeMatchesAllFactPermutations(t *testing.T) {
+	permutations := [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}
+	for _, order := range permutations {
+		name := fmt.Sprintf("%d%d%d", order[0], order[1], order[2])
+		t.Run(name, func(t *testing.T) {
+			engine, report := newNeutralCorrelateEngine(EngineLimits{})
+			if report.Status != "applied" {
+				t.Fatalf("report = %+v", report)
+			}
+			events := neutralCorrelateEvents("lin-a", 1)
+			var signals []*signalv1.Signal
+			for _, index := range order {
+				signals = append(signals, engine.Process(events[index])...)
+			}
+			if got := countSignals(signals, "neutral_three_fact"); got != 1 {
+				t.Fatalf("signals = %d, want 1; all=%+v", got, signals)
+			}
+			for _, id := range []string{"change", "run", "access"} {
+				if !contains(signals[0].GetEventRefs(), id) {
+					t.Fatalf("refs = %v, missing %s", signals[0].GetEventRefs(), id)
+				}
+			}
+		})
+	}
+}
+
+func TestCorrelateRuntimeReplacesDuplicateFactEvidence(t *testing.T) {
+	engine, _ := newNeutralCorrelateEngine(EngineLimits{})
+	engine.Process(writeEventAt("change-old", "lin-a", "p1", "/bin/tool", "/tmp/test/item", 1))
+	engine.Process(writeEventAt("change-new", "lin-a", "p1", "/bin/tool", "/tmp/test/item", 2))
+	engine.Process(execEventAt("run", "lin-a", "p2", "parent", "/tmp/test/item", nil, 3))
+	signals := engine.Process(connectEventAt("access", "lin-a", "p2", "parent", "/tmp/test/item", "10.0.0.1:9443", 4))
+	if len(signals) != 1 || contains(signals[0].GetEventRefs(), "change-old") || !contains(signals[0].GetEventRefs(), "change-new") {
+		t.Fatalf("signals = %+v, want latest fact evidence", signals)
+	}
+}
+
+func TestCorrelateRuntimeExpiresAndIsolatesGroups(t *testing.T) {
+	engine, _ := newNeutralCorrelateEngine(EngineLimits{})
+	engine.Process(writeEventAt("change-a", "lin-a", "p1", "/bin/tool", "/tmp/test/a", 1))
+	engine.Process(execEventAt("run-b", "lin-b", "p2", "parent", "/tmp/test/b", nil, 2))
+	if signals := engine.Process(connectEventAt("access-a", "lin-a", "p1", "parent", "/tmp/test/a", "10.0.0.1:9443", 3)); len(signals) != 0 {
+		t.Fatalf("cross-group signals = %+v", signals)
+	}
+	late := uint64((3 * time.Minute).Nanoseconds())
+	if signals := engine.Process(execEventAt("run-a-late", "lin-a", "p1", "parent", "/tmp/test/a", nil, late)); len(signals) != 0 {
+		t.Fatalf("expired signals = %+v", signals)
+	}
+	if engine.Metrics().ExpiredCEPGroups == 0 {
+		t.Fatalf("metrics = %+v, want expired correlate group", engine.Metrics())
+	}
+}
+
+func TestCorrelateRuntimeEnforcesGroupAndRefLimits(t *testing.T) {
+	engine, _ := newNeutralCorrelateEngine(EngineLimits{MaxCEPGroups: 2, MaxCEPRefs: 2})
+	for _, lineage := range []string{"lin-a", "lin-b", "lin-c"} {
+		engine.Process(writeEventAt("change-"+lineage, lineage, "p1", "/bin/tool", "/tmp/test/"+lineage, 1))
+	}
+	if engine.Metrics().EvictedCEPGroups == 0 {
+		t.Fatalf("metrics = %+v, want correlate eviction", engine.Metrics())
+	}
+	for _, event := range neutralCorrelateEvents("lin-c", 2)[1:] {
+		signals := engine.Process(event)
+		if len(signals) == 1 {
+			if len(signals[0].GetEventRefs()) != 2 || engine.Metrics().DroppedEventRefs == 0 {
+				t.Fatalf("signal=%+v metrics=%+v, want bounded refs", signals[0], engine.Metrics())
+			}
+		}
+	}
+}
+
+func newNeutralCorrelateEngine(limits EngineLimits) (*Engine, ApplyReport) {
+	rule := RuleSpec{
+		RuleID: "neutral_three_fact", RuleSetRef: "ruleset:cep", RuntimeType: "correlate",
+		RequiredBehaviors: []string{"file.write", "file.chmod", "process.exec", "network.connect"},
+		Correlate: CorrelateSpec{Within: 2 * time.Minute, By: []string{"lineage_id"}, Facts: []FactSpec{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}, Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: "/tmp/test/"}}},
+			{ID: "run", Event: "process.exec", Conditions: []ConditionSpec{{Field: "process.binary", Op: "prefix", Value: "/tmp/test/"}}},
+			{ID: "access", Event: "network.connect", Conditions: []ConditionSpec{{Field: "socket.port", Op: "in", Values: []string{"9443"}}}},
+		}},
+	}
+	return NewWithRuntimeLimits(cepPolicy(), contract.CollectionIntent{}, ContentSnapshot{Rules: []RuleSpec{rule}}, limits)
+}
+
+func neutralCorrelateEvents(lineage string, start uint64) []*eventv1.CanonicalEvent {
+	return []*eventv1.CanonicalEvent{
+		writeEventAt("change", lineage, "p1", "/bin/tool", "/tmp/test/item", start),
+		execEventAt("run", lineage, "p2", "parent", "/tmp/test/item", nil, start+1),
+		connectEventAt("access", lineage, "p2", "parent", "/tmp/test/item", "10.0.0.1:9443", start+2),
 	}
 }
 

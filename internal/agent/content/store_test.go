@@ -188,3 +188,38 @@ func TestStoreParsesConditionTree(t *testing.T) {
 		t.Fatalf("condition leaf = %+v", got)
 	}
 }
+
+func TestStoreParsesCorrelateRule(t *testing.T) {
+	store := NewStore()
+	raw := `{
+		"api_version":"sysarmor.content/v1","kind":"rulepack",
+		"metadata":{"id":"rulepack:correlate","version":"v1"},
+		"spec":{"rulesets":[{"id":"ruleset:correlate","version":"v1","rules":[{
+			"rule_id":"neutral_correlate_rule","version":1,"severity":"high",
+			"runtime":{"type":"correlate","correlate":{
+				"within":"2m","by":["lineage_id"],"facts":[
+					{"id":"change","events":["file.write","file.chmod"],"conditions":[{"field":"file.path","op":"prefix","value":"/tmp/test/"}]},
+					{"id":"run","event":"process.exec","condition_group":{"any":[
+						{"condition":{"field":"process.binary","op":"prefix","value":"/tmp/test/"}},
+						{"condition":{"field":"process.argv","op":"contains","value":"/tmp/test/"}}
+					]}}
+				]
+			}},
+			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]}
+		}]}]}
+	}`
+	if _, err := store.Apply(raw, true, false); err != nil {
+		t.Fatal(err)
+	}
+	rules := store.Snapshot().Rules
+	if len(rules) != 1 {
+		t.Fatalf("rules = %+v", rules)
+	}
+	correlate := rules[0].Correlate
+	if correlate.Within != "2m" || !slices.Equal(correlate.By, []string{"lineage_id"}) || len(correlate.Facts) != 2 {
+		t.Fatalf("correlate = %+v", correlate)
+	}
+	if !slices.Equal(correlate.Facts[0].Events, []string{"file.write", "file.chmod"}) || correlate.Facts[1].Event != "process.exec" || correlate.Facts[1].ConditionGroup == nil {
+		t.Fatalf("facts = %+v", correlate.Facts)
+	}
+}

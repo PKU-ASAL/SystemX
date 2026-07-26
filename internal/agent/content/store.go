@@ -77,6 +77,7 @@ type Rule struct {
 	RuntimeEntry   string
 	Expr           RuntimeExpr
 	Sequence       RuntimeSequence
+	Correlate      RuntimeCorrelate
 	Suppression    RuntimeSuppression
 	RequiredEvents []RequiredEvent
 	ContextRefs    []string
@@ -101,6 +102,20 @@ type RuntimeSequence struct {
 	Within string        `json:"within"`
 	By     []string      `json:"by"`
 	Steps  []RuntimeStep `json:"steps"`
+}
+
+type RuntimeCorrelate struct {
+	Within string        `json:"within"`
+	By     []string      `json:"by"`
+	Facts  []RuntimeFact `json:"facts"`
+}
+
+type RuntimeFact struct {
+	ID             string                `json:"id"`
+	Event          string                `json:"event,omitempty"`
+	Events         []string              `json:"events,omitempty"`
+	Conditions     []RuntimeCondition    `json:"conditions"`
+	ConditionGroup *RuntimeConditionNode `json:"condition_group,omitempty"`
 }
 
 type RuntimeSuppression struct {
@@ -576,10 +591,11 @@ func parseRulePack(record Record) ([]Rule, error) {
 				Version  uint64 `json:"version"`
 				Severity string `json:"severity"`
 				Runtime  struct {
-					Type       string          `json:"type"`
-					Entrypoint string          `json:"entrypoint"`
-					Expr       RuntimeExpr     `json:"expr"`
-					Sequence   RuntimeSequence `json:"sequence"`
+					Type       string           `json:"type"`
+					Entrypoint string           `json:"entrypoint"`
+					Expr       RuntimeExpr      `json:"expr"`
+					Sequence   RuntimeSequence  `json:"sequence"`
+					Correlate  RuntimeCorrelate `json:"correlate"`
 				} `json:"runtime"`
 				Suppress RuntimeSuppression `json:"suppress"`
 				Requires struct {
@@ -615,6 +631,7 @@ func parseRulePack(record Record) ([]Rule, error) {
 				RuntimeEntry:   rule.Runtime.Entrypoint,
 				Expr:           rule.Runtime.Expr,
 				Sequence:       rule.Runtime.Sequence,
+				Correlate:      rule.Runtime.Correlate,
 				Suppression:    rule.Suppress,
 				RequiredEvents: rule.Requires.Events,
 				ContextRefs:    append(append([]string(nil), rule.Requires.Context.Required...), rule.Requires.Context.Optional...),

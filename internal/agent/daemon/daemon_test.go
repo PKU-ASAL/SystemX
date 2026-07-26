@@ -66,6 +66,22 @@ func TestDetectionConditionTreeConversion(t *testing.T) {
 	}
 }
 
+func TestDetectionCorrelateConversion(t *testing.T) {
+	got := detectionCorrelate(agentcontent.RuntimeCorrelate{
+		Within: "2m", By: []string{"lineage_id"},
+		Facts: []agentcontent.RuntimeFact{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}},
+			{ID: "run", Event: "process.exec", Conditions: []agentcontent.RuntimeCondition{{Field: "process.binary", Op: "exists"}}},
+		},
+	})
+	if got.Within != 2*time.Minute || got.WithinText != "2m" || !slices.Equal(got.By, []string{"lineage_id"}) || len(got.Facts) != 2 {
+		t.Fatalf("correlate = %+v", got)
+	}
+	if !slices.Equal(got.Facts[0].Events, []string{"file.write", "file.chmod"}) || got.Facts[1].Event != "process.exec" || len(got.Facts[1].Conditions) != 1 {
+		t.Fatalf("facts = %+v", got.Facts)
+	}
+}
+
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
 

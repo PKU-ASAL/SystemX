@@ -25,6 +25,7 @@ type Engine struct {
 	state       map[string]*lineageState
 	cep         map[string]*cepRuleState
 	cepActive   map[string]map[string]int
+	correlate   map[string]*correlateRuleState
 	suppression map[string]time.Time
 	limits      EngineLimits
 	metrics     Metrics
@@ -33,6 +34,7 @@ type Engine struct {
 	refs        ContentSnapshot
 	compiled    compiledRuntime
 	sequence    compiledSequenceRuntime
+	correlation compiledCorrelateRuntime
 }
 
 type EngineLimits struct {
@@ -100,6 +102,7 @@ type RuleSpec struct {
 	RuntimeType       string
 	Expr              ExprSpec
 	Sequence          SequenceSpec
+	Correlate         CorrelateSpec
 	Suppression       SuppressionSpec
 	RequiredEvents    []RequiredEventSpec
 	RequiredBehaviors []string
@@ -130,6 +133,21 @@ type SequenceSpec struct {
 	Within time.Duration
 	By     []string
 	Steps  []StepSpec
+}
+
+type CorrelateSpec struct {
+	Within     time.Duration
+	WithinText string
+	By         []string
+	Facts      []FactSpec
+}
+
+type FactSpec struct {
+	ID             string
+	Event          string
+	Events         []string
+	Conditions     []ConditionSpec
+	ConditionGroup *ConditionNodeSpec
 }
 
 type SuppressionSpec struct {
@@ -229,6 +247,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 		state:       make(map[string]*lineageState),
 		cep:         make(map[string]*cepRuleState),
 		cepActive:   make(map[string]map[string]int),
+		correlate:   make(map[string]*correlateRuleState),
 		suppression: make(map[string]time.Time),
 		limits:      limits,
 		ctx:         resolveContext(normalized.ContextRefs, content),
@@ -250,6 +269,7 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 	}
 	engine.compiled = compileRuntime(rules, content)
 	engine.sequence = compileSequenceRuntime(rules, content)
+	engine.correlation = compileCorrelateRuntime(rules, content)
 	report.Coverage = CheckCoverageWithContent(normalized, collection, content)
 	report.Warnings = append(report.Warnings, report.Coverage.Warnings...)
 	if len(report.Warnings) > 0 {
@@ -265,7 +285,7 @@ func validateEffectiveRules(rules map[string]effectiveRule) []string {
 	for _, rule := range rules {
 		runtimeType := rule.runtimeType()
 		switch runtimeType {
-		case "", "builtin", "expr", "sequence":
+		case "", "builtin", "expr", "sequence", "correlate":
 		default:
 			out = append(out, fmt.Sprintf("rule %s has unsupported runtime type %q", rule.spec.RuleID, runtimeType))
 		}
@@ -284,6 +304,9 @@ func validateEffectiveRules(rules map[string]effectiveRule) []string {
 					out = append(out, fmt.Sprintf("rule %s sequence step %s behavior is required", rule.spec.RuleID, step.ID))
 				}
 			}
+		}
+		if runtimeType == "correlate" && len(rule.spec.Correlate.Facts) == 0 {
+			out = append(out, fmt.Sprintf("rule %s correlate runtime requires facts", rule.spec.RuleID))
 		}
 	}
 	return out
@@ -309,6 +332,9 @@ func (e *Engine) Metrics() Metrics {
 	}
 	var active uint64
 	for _, ruleState := range e.cep {
+		active += uint64(len(ruleState.Groups))
+	}
+	for _, ruleState := range e.correlate {
 		active += uint64(len(ruleState.Groups))
 	}
 	metrics.ActiveCEPGroups = active
@@ -646,6 +672,13 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 			out = append(out, sig)
 		}
 	}
+	for _, rule := range e.correlation.rulesForBehavior(view.behavior) {
+		e.metrics.CEPRulesScanned++
+		e.metrics.CEPRulesEvaluated++
+		if sig := e.detectCorrelateRule(view, rule); sig != nil {
+			out = append(out, sig)
+		}
+	}
 	return out
 }
 
@@ -665,7 +698,7 @@ func (e *Engine) suppressCompiledRule(view eventView, rule compiledRule) bool {
 
 func (r effectiveRule) isCEP() bool {
 	switch r.runtimeType() {
-	case "expr", "sequence":
+	case "expr", "sequence", "correlate":
 		return true
 	default:
 		return false
@@ -677,7 +710,7 @@ func (r effectiveRule) runtimeType() string {
 		return strings.ToLower(strings.TrimSpace(r.spec.RuntimeType))
 	}
 	switch strings.ToLower(strings.TrimSpace(r.spec.Runtime)) {
-	case "expr", "sequence":
+	case "expr", "sequence", "correlate":
 		return strings.ToLower(strings.TrimSpace(r.spec.Runtime))
 	default:
 		return ""

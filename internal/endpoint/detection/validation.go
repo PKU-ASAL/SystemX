@@ -26,9 +26,63 @@ func validateRuleSpec(rule RuleSpec) []string {
 		return append(out, validateConditionTree(rule.RuleID, "expr", rule.Expr.ConditionGroup, nil)...)
 	case "sequence":
 		return append(out, validateSequence(rule)...)
+	case "correlate":
+		return append(out, validateCorrelate(rule)...)
 	default:
 		return out
 	}
+}
+
+func validateCorrelate(rule RuleSpec) []string {
+	spec := rule.Correlate
+	var out []string
+	if spec.WithinText != "" {
+		if _, err := time.ParseDuration(spec.WithinText); err != nil {
+			out = append(out, fmt.Sprintf("rule %s has invalid correlate window %q", rule.RuleID, spec.WithinText))
+		}
+	}
+	if spec.Within <= 0 || spec.Within > maxSuppressionWindow {
+		out = append(out, fmt.Sprintf("rule %s correlate window must be within (0, %s]", rule.RuleID, maxSuppressionWindow))
+	}
+	if len(spec.By) == 0 {
+		out = append(out, fmt.Sprintf("rule %s correlate by field is required", rule.RuleID))
+	}
+	for _, field := range spec.By {
+		if compileField(field) == fieldUnknown {
+			out = append(out, fmt.Sprintf("rule %s has unsupported correlate by field %q", rule.RuleID, field))
+		}
+	}
+	if len(spec.Facts) < 2 {
+		out = append(out, fmt.Sprintf("rule %s correlate requires at least two facts", rule.RuleID))
+	}
+	return append(out, validateCorrelateFacts(rule.RuleID, spec.Facts)...)
+}
+
+func validateCorrelateFacts(ruleID string, facts []FactSpec) []string {
+	seen := make(map[string]bool, len(facts))
+	var out []string
+	for _, fact := range facts {
+		id := strings.TrimSpace(fact.ID)
+		if id == "" {
+			out = append(out, fmt.Sprintf("rule %s correlate fact id is required", ruleID))
+		} else if seen[id] {
+			out = append(out, fmt.Sprintf("rule %s correlate has duplicate fact %q", ruleID, id))
+		}
+		seen[id] = true
+		hasEvent := strings.TrimSpace(fact.Event) != ""
+		hasEvents := len(fact.Events) > 0
+		if hasEvent == hasEvents {
+			out = append(out, fmt.Sprintf("rule %s correlate fact %s must set exactly one of event or events", ruleID, id))
+		}
+		for _, behavior := range fact.Events {
+			if strings.TrimSpace(behavior) == "" {
+				out = append(out, fmt.Sprintf("rule %s correlate fact %s behavior is required", ruleID, id))
+			}
+		}
+		out = append(out, validateConditions(ruleID, "fact "+id, fact.Conditions, nil)...)
+		out = append(out, validateConditionTree(ruleID, "fact "+id, fact.ConditionGroup, nil)...)
+	}
+	return out
 }
 
 func validateSuppression(rule RuleSpec) []string {

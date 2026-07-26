@@ -1074,6 +1074,7 @@ func detectionContentSnapshotFromContent(snapshot agentcontent.Snapshot) detecti
 			RuntimeType:       rule.RuntimeType,
 			Expr:              detectionExpr(rule.Expr),
 			Sequence:          detectionSequence(rule.Sequence),
+			Correlate:         detectionCorrelate(rule.Correlate),
 			Suppression:       detectionSuppression(rule.Suppression),
 			RequiredEvents:    detectionRequiredEvents(rule.RequiredEvents),
 			RequiredBehaviors: requiredBehaviors(rule.RequiredEvents),
@@ -1148,6 +1149,30 @@ func detectionSequence(seq agentcontent.RuntimeSequence) detection.SequenceSpec 
 			next.Conditions = append(next.Conditions, detectionCondition(cond))
 		}
 		out.Steps = append(out.Steps, next)
+	}
+	return out
+}
+
+func detectionCorrelate(spec agentcontent.RuntimeCorrelate) detection.CorrelateSpec {
+	within, _ := time.ParseDuration(spec.Within)
+	out := detection.CorrelateSpec{
+		Within:     within,
+		WithinText: spec.Within,
+		By:         append([]string(nil), spec.By...),
+		Facts:      make([]detection.FactSpec, 0, len(spec.Facts)),
+	}
+	for _, fact := range spec.Facts {
+		next := detection.FactSpec{
+			ID:             fact.ID,
+			Event:          fact.Event,
+			Events:         append([]string(nil), fact.Events...),
+			Conditions:     make([]detection.ConditionSpec, 0, len(fact.Conditions)),
+			ConditionGroup: detectionConditionNode(fact.ConditionGroup),
+		}
+		for _, condition := range fact.Conditions {
+			next.Conditions = append(next.Conditions, detectionCondition(condition))
+		}
+		out.Facts = append(out.Facts, next)
 	}
 	return out
 }
