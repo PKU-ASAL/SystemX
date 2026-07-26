@@ -23,6 +23,8 @@ for case_name in wrong-severity wrong-terminal missing-ref missing-behavior wron
 done
 
 run_assert absent fake external-marker "$TMP/absent.jsonl"
+run_assert capture-signals fake "$TMP/signals-all.jsonl"
+test -s "$TMP/signals-all.jsonl"
 if FAKE_CASE=external-marker FAKE_MARKER=external-marker run_assert absent fake external-marker "$TMP/present.jsonl" >/dev/null 2>&1; then
   echo "isolation assertion accepted external marker" >&2
   exit 1

@@ -36,7 +36,8 @@ const downloadServer = http.createServer((request, response) => {
   }
   if (url.pathname === "/payload") {
     const requestedPort = Number(url.searchParams.get("control_port") || controlPort);
-    const script = `#!/bin/sh\n/usr/bin/curl -fsS 'http://${controlHost}:${requestedPort}/control?marker=${marker}' >/dev/null\n`;
+    const targetHost = url.hostname || controlHost;
+    const script = `#!/bin/sh\n/usr/bin/curl -fsS 'http://${targetHost}:${requestedPort}/control?marker=${marker}' >/dev/null\n`;
     send(response, 200, "text/x-shellscript", script);
     return;
   }

@@ -22,6 +22,11 @@ query_signals_with_events() {
     --include-events --rule-id "$2" --limit 1000
 }
 
+capture_signals() {
+  docker exec "$1" sysarmorctl --json signal watch --snapshot --include-recent \
+    --include-events --limit 1000 >"$2"
+}
+
 assert_ready() {
   local container="$1" output="$2" deadline=$((SECONDS + HEALTH_TIMEOUT))
   until docker exec "$container" sysarmorctl --json agent health >"$output" 2>"$output.err" &&
@@ -109,5 +114,6 @@ case "${1:-}" in
   ready) [[ $# -eq 3 ]] || fail "usage: assert.sh ready CONTAINER OUTPUT"; assert_ready "$2" "$3" ;;
   detected) [[ $# -eq 5 ]] || fail "usage: assert.sh detected CONTAINER SCENARIO MARKER OUTPUT"; assert_detected "$2" "$3" "$4" "$5" ;;
   absent) [[ $# -eq 4 ]] || fail "usage: assert.sh absent CONTAINER MARKER OUTPUT"; assert_absent "$2" "$3" "$4" ;;
-  *) fail "usage: assert.sh ready|detected|absent ..." ;;
+  capture-signals) [[ $# -eq 3 ]] || fail "usage: assert.sh capture-signals CONTAINER OUTPUT"; capture_signals "$2" "$3" ;;
+  *) fail "usage: assert.sh ready|detected|absent|capture-signals ..." ;;
 esac

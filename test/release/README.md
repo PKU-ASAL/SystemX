@@ -34,6 +34,8 @@ make -C test/release test \
 
 ## 运行条件
 
+目标系统安装阶段需要 `bash`、`curl`、`jq`、`sha256sum` 和 `tar`。
+
 容器必须使用 `--privileged --cgroupns=host`，并挂载宿主机 BTF 与 bpffs。测试按镜像串行执行，避免多个 Tetragon 实例竞争同一宿主机的 eBPF 资源。
 生产运行还应配置 `--restart unless-stopped` 或等价编排策略。Agent 异常退出、业务退出和信号转发由独立的容器入口测试覆盖，不属于本 Release 矩阵。
 

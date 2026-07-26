@@ -12,6 +12,7 @@ RESULT_ROOT=""
 INSTALL_URL=""
 ACTIVE_BUSINESS=""
 ACTIVE_ATTACKER=""
+ACTIVE_ATTACKER_HOST=""
 ACTIVE_NETWORK=""
 ACTIVE_RESULT_DIR=""
 
@@ -42,6 +43,7 @@ cleanup() {
   [[ -z "$ACTIVE_NETWORK" ]] || docker network rm "$ACTIVE_NETWORK" >/dev/null 2>&1 || true
   ACTIVE_BUSINESS=""
   ACTIVE_ATTACKER=""
+  ACTIVE_ATTACKER_HOST=""
   ACTIVE_NETWORK=""
   ACTIVE_RESULT_DIR=""
 }
@@ -70,11 +72,13 @@ start_attacker() {
     --entrypoint node -e "CONTROL_HOST=$ACTIVE_ATTACKER" "$1" \
     /opt/sysarmor-release-test/payload-server/server.js >/dev/null
   wait_http "$ACTIVE_ATTACKER" "http://127.0.0.1:8080/healthz"
+  ACTIVE_ATTACKER_HOST="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$ACTIVE_ATTACKER")"
+  [[ -n "$ACTIVE_ATTACKER_HOST" ]]
 }
 
 start_business() {
   docker run -d --name "$ACTIVE_BUSINESS" --network "$ACTIVE_NETWORK" \
-    --privileged --cgroupns=host -e "ATTACK_HOST=$ACTIVE_ATTACKER" \
+    --privileged --cgroupns=host -e "ATTACK_HOST=$ACTIVE_ATTACKER_HOST" \
     -v /sys/kernel/btf/vmlinux:/sys/kernel/btf/vmlinux:ro \
     -v /sys/fs/bpf:/sys/fs/bpf "$1" >/dev/null
 }
@@ -120,6 +124,7 @@ run_image() {
   "$HERE/assert.sh" ready "$ACTIVE_BUSINESS" "$ACTIVE_RESULT_DIR/health.json"
   wait_http "$ACTIVE_BUSINESS" "http://127.0.0.1:3000/healthz"
   run_scenarios
+  "$HERE/assert.sh" capture-signals "$ACTIVE_BUSINESS" "$ACTIVE_RESULT_DIR/signals-all.jsonl"
   run_isolation_checks "$tag"
   cleanup
   echo "[release-test] $image ok"
