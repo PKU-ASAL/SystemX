@@ -77,6 +77,7 @@ type Rule struct {
 	RuntimeEntry   string
 	Expr           RuntimeExpr
 	Sequence       RuntimeSequence
+	Suppression    RuntimeSuppression
 	RequiredEvents []RequiredEvent
 	ContextRefs    []string
 	IOCRefs        []string
@@ -92,6 +93,11 @@ type RuntimeSequence struct {
 	Within string        `json:"within"`
 	By     []string      `json:"by"`
 	Steps  []RuntimeStep `json:"steps"`
+}
+
+type RuntimeSuppression struct {
+	Within string   `json:"within"`
+	By     []string `json:"by"`
 }
 
 type RuntimeStep struct {
@@ -566,6 +572,7 @@ func parseRulePack(record Record) ([]Rule, error) {
 					Expr       RuntimeExpr     `json:"expr"`
 					Sequence   RuntimeSequence `json:"sequence"`
 				} `json:"runtime"`
+				Suppress RuntimeSuppression `json:"suppress"`
 				Requires struct {
 					Events  []RequiredEvent `json:"events"`
 					Context struct {
@@ -599,6 +606,7 @@ func parseRulePack(record Record) ([]Rule, error) {
 				RuntimeEntry:   rule.Runtime.Entrypoint,
 				Expr:           rule.Runtime.Expr,
 				Sequence:       rule.Runtime.Sequence,
+				Suppression:    rule.Suppress,
 				RequiredEvents: rule.Requires.Events,
 				ContextRefs:    append(append([]string(nil), rule.Requires.Context.Required...), rule.Requires.Context.Optional...),
 				IOCRefs:        append(append([]string(nil), rule.Requires.IOC.Required...), rule.Requires.IOC.Optional...),

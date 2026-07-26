@@ -38,7 +38,13 @@ type compiledRule struct {
 }
 
 type compiledExpr struct {
-	conditions []compiledCondition
+	conditions  []compiledCondition
+	suppression compiledSuppression
+}
+
+type compiledSuppression struct {
+	within time.Duration
+	by     []fieldID
 }
 
 type compiledSequence struct {
@@ -194,7 +200,13 @@ func compileRule(rule effectiveRule, content ContentSnapshot) compiledRule {
 		return compiledRule{
 			rule: rule,
 			kind: compiledRuleExpr,
-			expr: compiledExpr{conditions: compileConditions(rule.spec.Expr.Conditions, content)},
+			expr: compiledExpr{
+				conditions: compileConditions(rule.spec.Expr.Conditions, content),
+				suppression: compiledSuppression{
+					within: rule.spec.Suppression.Within,
+					by:     compileFields(rule.spec.Suppression.By),
+				},
+			},
 		}
 	case "sequence":
 		steps := make([]compiledStep, 0, len(rule.spec.Sequence.Steps))

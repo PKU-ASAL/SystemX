@@ -49,6 +49,18 @@ func builtinRules() []RuleSpec {
 		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
 		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
 		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
-		{RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileRead.String()}, ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"}},
+		{
+			RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: eventmodel.BehaviorFileOpen.String(), Fields: []string{"file.path", "process.binary", "process.stable_id"}},
+				{Behavior: eventmodel.BehaviorFileRead.String(), Fields: []string{"file.path", "process.binary", "process.stable_id"}},
+			},
+			ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "file.path", Op: "prefix", Ref: "ctx:credential-path-prefixes"},
+				{Field: "process.binary", Op: "not_in", Ref: "ctx:trusted-admin-binaries"},
+			}},
+			Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
+		},
 	}
 }

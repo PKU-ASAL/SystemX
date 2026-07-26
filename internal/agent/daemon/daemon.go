@@ -1074,6 +1074,7 @@ func detectionContentSnapshotFromContent(snapshot agentcontent.Snapshot) detecti
 			RuntimeType:       rule.RuntimeType,
 			Expr:              detectionExpr(rule.Expr),
 			Sequence:          detectionSequence(rule.Sequence),
+			Suppression:       detectionSuppression(rule.Suppression),
 			RequiredEvents:    detectionRequiredEvents(rule.RequiredEvents),
 			RequiredBehaviors: requiredBehaviors(rule.RequiredEvents),
 			ContextRefs:       append([]string(nil), rule.ContextRefs...),
@@ -1145,6 +1146,11 @@ func detectionSequence(seq agentcontent.RuntimeSequence) detection.SequenceSpec 
 		out.Steps = append(out.Steps, next)
 	}
 	return out
+}
+
+func detectionSuppression(spec agentcontent.RuntimeSuppression) detection.SuppressionSpec {
+	within, _ := time.ParseDuration(spec.Within)
+	return detection.SuppressionSpec{Within: within, By: append([]string(nil), spec.By...)}
 }
 
 func detectionCondition(cond agentcontent.RuntimeCondition) detection.ConditionSpec {

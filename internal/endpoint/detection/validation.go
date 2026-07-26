@@ -3,7 +3,10 @@ package detection
 import (
 	"fmt"
 	"strings"
+	"time"
 )
+
+const maxSuppressionWindow = 24 * time.Hour
 
 func validateRuleSpecs(rules []effectiveRule) []string {
 	var out []string
@@ -14,14 +17,38 @@ func validateRuleSpecs(rules []effectiveRule) []string {
 }
 
 func validateRuleSpec(rule RuleSpec) []string {
+	out := validateSuppression(rule)
 	switch ruleRuntimeType(rule) {
 	case "expr":
-		return validateConditions(rule.RuleID, "expr", rule.Expr.Conditions, nil)
+		return append(out, validateConditions(rule.RuleID, "expr", rule.Expr.Conditions, nil)...)
 	case "sequence":
-		return validateSequence(rule)
+		return append(out, validateSequence(rule)...)
 	default:
+		return out
+	}
+}
+
+func validateSuppression(rule RuleSpec) []string {
+	suppression := rule.Suppression
+	if suppression.Within == 0 && len(suppression.By) == 0 {
 		return nil
 	}
+	var out []string
+	if ruleRuntimeType(rule) != "expr" {
+		out = append(out, fmt.Sprintf("rule %s suppression requires expr runtime", rule.RuleID))
+	}
+	if suppression.Within <= 0 || suppression.Within > maxSuppressionWindow {
+		out = append(out, fmt.Sprintf("rule %s suppression window must be between 0 and %s", rule.RuleID, maxSuppressionWindow))
+	}
+	if len(suppression.By) == 0 {
+		out = append(out, fmt.Sprintf("rule %s suppression by field is required", rule.RuleID))
+	}
+	for _, field := range suppression.By {
+		if compileField(field) == fieldUnknown {
+			out = append(out, fmt.Sprintf("rule %s has unsupported suppression by field %q", rule.RuleID, field))
+		}
+	}
+	return out
 }
 
 func validateSequence(rule RuleSpec) []string {

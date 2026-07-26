@@ -2,6 +2,7 @@ package detection
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -220,6 +221,86 @@ func TestRuleValidationRejectsInvalidSequenceReferences(t *testing.T) {
 	}
 }
 
+func TestRuleValidationRejectsInvalidSuppression(t *testing.T) {
+	tests := []struct {
+		name        string
+		suppression SuppressionSpec
+		want        string
+	}{
+		{name: "zero window", suppression: SuppressionSpec{By: []string{"process.stable_id"}}, want: "suppression window"},
+		{name: "excessive window", suppression: SuppressionSpec{Within: 25 * time.Hour, By: []string{"process.stable_id"}}, want: "suppression window"},
+		{name: "missing key", suppression: SuppressionSpec{Within: time.Minute}, want: "suppression by field"},
+		{name: "unknown field", suppression: SuppressionSpec{Within: time.Minute, By: []string{"process.unknown"}}, want: "unsupported suppression by field"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_suppression", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+				Expr:        ExprSpec{Conditions: []ConditionSpec{{Field: "file.path", Op: "exists"}}},
+				Suppression: tt.suppression,
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestExprRuleSuppressesByDeclaredFieldsWithinWindow(t *testing.T) {
+	rule := RuleSpec{
+		RuleID: "suppressed_read", RuleSetRef: "ruleset:cep", RuntimeType: "expr", RequiredBehaviors: []string{"file.open"},
+		Expr:        ExprSpec{Conditions: []ConditionSpec{{Field: "file.path", Op: "prefix", Value: "/secrets/"}}},
+		Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
+	}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, ContentSnapshot{Rules: []RuleSpec{rule}})
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	events := []struct {
+		event *eventv1.CanonicalEvent
+		want  int
+	}{
+		{event: openEventAt("first", "lin-a", "proc-a", "/bin/cat", "/secrets/token", time.Second), want: 1},
+		{event: openEventAt("duplicate", "lin-a", "proc-a", "/bin/cat", "/secrets/token", 2*time.Second), want: 0},
+		{event: openEventAt("different-process", "lin-a", "proc-b", "/bin/cat", "/secrets/token", 3*time.Second), want: 1},
+		{event: openEventAt("different-path", "lin-a", "proc-a", "/bin/cat", "/secrets/other", 4*time.Second), want: 1},
+		{event: openEventAt("expired", "lin-a", "proc-a", "/bin/cat", "/secrets/token", 6*time.Minute), want: 1},
+	}
+	for _, item := range events {
+		if got := countSignals(engine.Process(item.event), "suppressed_read"); got != item.want {
+			t.Fatalf("%s signals = %d, want %d", item.event.GetId(), got, item.want)
+		}
+	}
+}
+
+func TestSuppressionEvictsAtKeyLimit(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	now := time.Unix(100, 0)
+	for i := 0; i <= maxSuppressionKeys; i++ {
+		engine.suppressSignal("key-"+strconv.Itoa(i), now, time.Hour)
+	}
+	if got := len(engine.suppression); got > maxSuppressionKeys {
+		t.Fatalf("suppression keys = %d, want <= %d", got, maxSuppressionKeys)
+	}
+	if engine.Metrics().SuppressionEvictions == 0 {
+		t.Fatalf("metrics = %+v, want suppression eviction", engine.Metrics())
+	}
+}
+
+func TestSuppressionCleanupRespectsOriginalWindows(t *testing.T) {
+	engine, _ := New(policymodel.DefaultDetectionPolicy())
+	start := time.Unix(100, 0)
+	engine.suppressSignal("long-window", start, 5*time.Minute)
+	for i := 0; i < maxSuppressionKeys-1; i++ {
+		engine.suppressSignal("short-"+strconv.Itoa(i), start.Add(2*time.Minute), time.Minute)
+	}
+	engine.suppressSignal("overflow", start.Add(2*time.Minute), time.Minute)
+	if suppressed := engine.suppressSignal("long-window", start.Add(3*time.Minute), 5*time.Minute); !suppressed {
+		t.Fatal("long-window key was expired using another rule's shorter window")
+	}
+}
+
 func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
 	engine, _ := New(policymodel.DefaultDetectionPolicy())
 	var gotContext bool
@@ -312,6 +393,56 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	third := openEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
 	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
 		t.Fatalf("different path credential signal count = %d, want 1", got)
+	}
+}
+
+func TestCredentialReadUsesDynamicExprSemantics(t *testing.T) {
+	enabled := true
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:custom-credential"}}
+	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:custom-credential-paths": {Ref: "ctx:custom-credential-paths", Version: "v2", Values: []string{"/opt/secrets/"}},
+			"ctx:custom-trusted-binaries": {Ref: "ctx:custom-trusted-binaries", Version: "v2", Values: []string{"/opt/admin"}},
+		},
+		Rules: []RuleSpec{{
+			RuleID: "credential_file_read", Version: 2, RuleSetRef: "ruleset:custom-credential", Severity: "medium", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: "file.open", Fields: []string{"file.path", "process.binary", "process.stable_id"}},
+				{Behavior: "file.read", Fields: []string{"file.path", "process.binary", "process.stable_id"}},
+			},
+			ContextRefs: []string{"ctx:custom-credential-paths", "ctx:custom-trusted-binaries"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "file.path", Op: "prefix", Ref: "ctx:custom-credential-paths"},
+				{Field: "process.binary", Op: "not_in", Ref: "ctx:custom-trusted-binaries"},
+			}},
+			Suppression: SuppressionSpec{Within: 5 * time.Minute, By: []string{"process.stable_id", "file.path"}},
+		}},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(openEvent("default", "lin-default", "p1", "/bin/cat", "/root/.ssh/id_rsa")), "credential_file_read"); got != 0 {
+		t.Fatalf("default path signals = %d, want none under dynamic expr", got)
+	}
+	if got := countSignals(engine.Process(openEvent("trusted", "lin-trusted", "p2", "/opt/admin", "/opt/secrets/token")), "credential_file_read"); got != 0 {
+		t.Fatalf("trusted binary signals = %d, want none", got)
+	}
+	signals := engine.Process(openEvent("read", "lin-read", "p3", "/bin/cat", "/opt/secrets/token"))
+	if got := countSignals(signals, "credential_file_read"); got != 1 {
+		t.Fatalf("credential signals = %d, want 1", got)
+	}
+	var signal *signalv1.Signal
+	for _, candidate := range signals {
+		if candidate.GetName() == "credential_file_read" {
+			signal = candidate
+			break
+		}
+	}
+	if !slices.Equal(signal.GetEventRefs(), []string{"read"}) || len(signal.GetEntities()) != 2 || len(signal.GetContextRefs()) != 2 {
+		t.Fatalf("signal = %+v, want event, process/file entities and contexts", signal)
 	}
 }
 
@@ -777,6 +908,12 @@ func writeEventAt(id, lineage, stable, bin, file string, ts uint64) *eventv1.Can
 func chmodEventAt(id, lineage, stable, bin, file string, ts uint64) *eventv1.CanonicalEvent {
 	ev := chmodEvent(id, lineage, stable, bin, file)
 	ev.OccurredAtNs = ts
+	return ev
+}
+
+func openEventAt(id, lineage, stable, bin, file string, ts time.Duration) *eventv1.CanonicalEvent {
+	ev := openEvent(id, lineage, stable, bin, file)
+	ev.OccurredAtNs = uint64(ts.Nanoseconds())
 	return ev
 }
 

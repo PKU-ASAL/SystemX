@@ -17,7 +17,6 @@ import (
 const builtinRuleSetRef = "ruleset:endpoint-linux-builtin"
 const defaultMaxCEPGroups = 4096
 const defaultMaxCEPRefs = 128
-const credentialReadSuppressWindow = 5 * time.Minute
 const maxSuppressionKeys = 8192
 
 type Engine struct {
@@ -42,26 +41,25 @@ type EngineLimits struct {
 }
 
 type Metrics struct {
-	EventsProcessed     uint64
-	EventsByBehavior    map[string]uint64
-	CEPRulesScanned     uint64
-	CEPRulesEvaluated   uint64
-	ConditionsEvaluated uint64
-	ConditionsMatched   uint64
-	FieldReads          uint64
-	ProcessNanosTotal   uint64
-	ActiveCEPGroups     uint64
-	EvictedCEPGroups    uint64
-	ExpiredCEPGroups    uint64
-	DroppedEventRefs    uint64
-	CEPEvalErrors       uint64
-	EmittedSignals      uint64
+	EventsProcessed      uint64
+	EventsByBehavior     map[string]uint64
+	CEPRulesScanned      uint64
+	CEPRulesEvaluated    uint64
+	ConditionsEvaluated  uint64
+	ConditionsMatched    uint64
+	FieldReads           uint64
+	ProcessNanosTotal    uint64
+	ActiveCEPGroups      uint64
+	EvictedCEPGroups     uint64
+	ExpiredCEPGroups     uint64
+	DroppedEventRefs     uint64
+	SuppressionEvictions uint64
+	CEPEvalErrors        uint64
+	EmittedSignals       uint64
 }
 
 type ContextSnapshot struct {
-	CredentialPathPrefixes []string
-	PayloadPathPrefixes    []string
-	TrustedAdminBinaries   []string
+	PayloadPathPrefixes []string
 }
 
 type IOCSnapshot struct {
@@ -102,6 +100,7 @@ type RuleSpec struct {
 	RuntimeType       string
 	Expr              ExprSpec
 	Sequence          SequenceSpec
+	Suppression       SuppressionSpec
 	RequiredEvents    []RequiredEventSpec
 	RequiredBehaviors []string
 	ContextRefs       []string
@@ -123,6 +122,11 @@ type SequenceSpec struct {
 	Within time.Duration
 	By     []string
 	Steps  []StepSpec
+}
+
+type SuppressionSpec struct {
+	Within time.Duration
+	By     []string
 }
 
 type StepSpec struct {
@@ -324,8 +328,6 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 		e.observeDownloadEvidence(ev, state)
 		out = append(out, e.detectReverseShell(ev, state)...)
 		out = append(out, e.detectPayloadConnect(ev, state)...)
-	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String():
-		out = append(out, e.detectCredentialRead(ev)...)
 	case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
 		e.observePayloadEvidence(ev, state)
 	}
@@ -471,30 +473,6 @@ func (e *Engine) detectPayloadLifecycle(ev *eventv1.CanonicalEvent, st *lineageS
 	}
 }
 
-func (e *Engine) detectCredentialRead(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
-	rule, ok := e.rule("credential_file_read")
-	if !ok {
-		return nil
-	}
-	path := ev.GetObject().GetFilePath()
-	if !hasAnyPrefix(path, e.ctx.CredentialPathPrefixes) {
-		return nil
-	}
-	if isTrustedBinary(ev.GetSubjectProc().GetBinary(), e.ctx.TrustedAdminBinaries) {
-		return nil
-	}
-	if e.suppressSignal("credential_file_read:"+credentialReadKey(ev, path), eventWallTime(ev), credentialReadSuppressWindow) {
-		return nil
-	}
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), fileEntity(path, "object"))}
-}
-
-func credentialReadKey(ev *eventv1.CanonicalEvent, path string) string {
-	proc := ev.GetSubjectProc()
-	processKey := firstNonEmpty(proc.GetStableId(), proc.GetBinary(), ev.GetLineageId(), "unknown-process")
-	return processKey + "|" + path
-}
-
 func eventWallTime(ev *eventv1.CanonicalEvent) time.Time {
 	if ev.GetOccurredAtNs() > 0 {
 		return time.Unix(0, int64(ev.GetOccurredAtNs())).UTC()
@@ -509,18 +487,24 @@ func (e *Engine) suppressSignal(key string, now time.Time, window time.Duration)
 	if e == nil || key == "" || window <= 0 {
 		return false
 	}
-	if last, ok := e.suppression[key]; ok && now.Sub(last) < window {
+	if expiresAt, ok := e.suppression[key]; ok && now.Before(expiresAt) {
 		return true
 	}
 	if len(e.suppression) >= maxSuppressionKeys {
-		cutoff := now.Add(-window)
-		for got, last := range e.suppression {
-			if last.Before(cutoff) {
+		for got, expiresAt := range e.suppression {
+			if !expiresAt.After(now) {
 				delete(e.suppression, got)
 			}
 		}
 	}
-	e.suppression[key] = now
+	for len(e.suppression) >= maxSuppressionKeys {
+		for got := range e.suppression {
+			delete(e.suppression, got)
+			e.metrics.SuppressionEvictions++
+			break
+		}
+	}
+	e.suppression[key] = now.Add(window)
 	return false
 }
 
@@ -636,6 +620,9 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 		switch rule.kind {
 		case compiledRuleExpr:
 			if e.matchCompiledConditions(view, rule.expr.conditions, nil) {
+				if e.suppressCompiledRule(view, rule) {
+					continue
+				}
 				out = append(out, e.signal(view.ev, rule.rule, []string{view.eventID}, false, eventEntities(view.ev)...))
 			}
 		}
@@ -651,6 +638,20 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 		}
 	}
 	return out
+}
+
+func (e *Engine) suppressCompiledRule(view eventView, rule compiledRule) bool {
+	suppression := rule.expr.suppression
+	if suppression.within <= 0 || len(suppression.by) == 0 {
+		return false
+	}
+	parts := make([]string, 0, len(suppression.by)+1)
+	parts = append(parts, "rule="+rule.rule.spec.RuleID)
+	for _, field := range suppression.by {
+		e.metrics.FieldReads++
+		parts = append(parts, fieldName(field)+"="+view.field(field))
+	}
+	return e.suppressSignal(strings.Join(parts, "|"), eventWallTime(view.ev), suppression.within)
 }
 
 func (r effectiveRule) isCEP() bool {
@@ -1263,9 +1264,7 @@ func availableFieldsFromCapabilities(collection contract.CollectionIntent) map[s
 
 func resolveContext(refs []policymodel.ContentRef, content ContentSnapshot) ContextSnapshot {
 	out := ContextSnapshot{
-		CredentialPathPrefixes: []string{"/root/.ssh/", "/home/", "/var/run/secrets/", "/run/secrets/", "/etc/kubernetes/"},
-		PayloadPathPrefixes:    []string{"/dev/shm/", "/tmp/.sysarmor-attack/", "/var/tmp/.sysarmor-attack/", "/var/lib/app/plugins/"},
-		TrustedAdminBinaries:   []string{"/usr/bin/vim", "/usr/bin/vi", "/usr/bin/nano"},
+		PayloadPathPrefixes: []string{"/dev/shm/", "/tmp/.sysarmor-attack/", "/var/tmp/.sysarmor-attack/", "/var/lib/app/plugins/"},
 	}
 	for _, ref := range refs {
 		item, ok := content.ContextRefs[ref.Ref]
@@ -1273,12 +1272,8 @@ func resolveContext(refs []policymodel.ContentRef, content ContentSnapshot) Cont
 			continue
 		}
 		switch ref.Ref {
-		case "ctx:credential-path-prefixes":
-			out.CredentialPathPrefixes = append([]string(nil), item.Values...)
 		case "ctx:payload-path-prefixes":
 			out.PayloadPathPrefixes = append([]string(nil), item.Values...)
-		case "ctx:trusted-admin-binaries":
-			out.TrustedAdminBinaries = append([]string(nil), item.Values...)
 		}
 	}
 	return out
@@ -1373,15 +1368,6 @@ func isShell(bin string) bool {
 	default:
 		return false
 	}
-}
-
-func isTrustedBinary(path string, trusted []string) bool {
-	for _, candidate := range trusted {
-		if path == candidate {
-			return true
-		}
-	}
-	return false
 }
 
 func hasAnyPrefix(value string, prefixes []string) bool {

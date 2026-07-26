@@ -112,6 +112,39 @@
             }
           },
           {
+            "rule_id": "credential_file_read",
+            "version": 2,
+            "severity": "medium",
+            "runtime": {
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "file.path", "op": "prefix", "ref": "ctx:credential-path-prefixes"},
+                  {"field": "process.binary", "op": "not_in", "ref": "ctx:trusted-admin-binaries"}
+                ]
+              }
+            },
+            "requires": {
+              "events": [
+                {
+                  "behavior": "file.open",
+                  "fields": ["file.path", "process.binary", "process.stable_id"]
+                },
+                {
+                  "behavior": "file.read",
+                  "fields": ["file.path", "process.binary", "process.stable_id"]
+                }
+              ],
+              "context": {
+                "required": ["ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"]
+              }
+            },
+            "suppress": {
+              "within": "5m",
+              "by": ["process.stable_id", "file.path"]
+            }
+          },
+          {
             "rule_id": "reverse_shell_pattern",
             "version": 1,
             "severity": "critical",

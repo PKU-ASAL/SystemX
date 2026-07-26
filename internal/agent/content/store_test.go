@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -132,7 +133,8 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 				}
 			},
 			"requires":{"events":[{"behavior":"file.write","fields":["file.path"]},{"behavior":"process.exec","fields":["process.binary"]}]},
-			"output":{"terminal":false}
+			"output":{"terminal":false},
+			"suppress":{"within":"5m","by":["process.stable_id","file.path"]}
 		}]}]}
 	}`
 	if _, err := store.Apply(raw, true, false); err != nil {
@@ -147,5 +149,8 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 	}
 	if rules[0].Terminal == nil || *rules[0].Terminal {
 		t.Fatalf("terminal = %v, want explicit false", rules[0].Terminal)
+	}
+	if rules[0].Suppression.Within != "5m" || !slices.Equal(rules[0].Suppression.By, []string{"process.stable_id", "file.path"}) {
+		t.Fatalf("suppression = %+v", rules[0].Suppression)
 	}
 }
