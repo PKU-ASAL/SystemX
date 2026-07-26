@@ -34,7 +34,18 @@ func builtinRules() []RuleSpec {
 				{Field: "socket.port", Op: "in", Ref: "ioc:c2-download-port-feed"},
 			}},
 		},
-		{RuleID: "payload_dropped", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}},
+		{
+			RuleID: "payload_dropped", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: eventmodel.BehaviorFileWrite.String(), Fields: []string{"file.path"}},
+				{Behavior: eventmodel.BehaviorFileChmod.String(), Fields: []string{"file.path"}},
+			},
+			ContextRefs: []string{"ctx:payload-path-prefixes"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "behavior", Op: "in", Values: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String()}},
+				{Field: "file.path", Op: "prefix", Ref: "ctx:payload-path-prefixes"},
+			}},
+		},
 		{RuleID: "reverse_shell_pattern", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "critical", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}, ResponseIntent: collect},
 		{RuleID: "suspicious_exec_connect", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, IOCRefs: []string{"ioc:c2-control-port-feed"}},
 		{RuleID: "payload_lifecycle", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "high", Runtime: "builtin", RequiredBehaviors: []string{eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorProcessExec.String(), eventmodel.BehaviorNetworkConnect.String()}, ContextRefs: []string{"ctx:payload-path-prefixes"}, IOCRefs: []string{"ioc:c2-control-port-feed"}},

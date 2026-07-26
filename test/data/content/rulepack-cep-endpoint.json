@@ -84,11 +84,16 @@
           },
           {
             "rule_id": "payload_dropped",
-            "version": 1,
+            "version": 2,
             "severity": "high",
             "runtime": {
-              "type": "builtin",
-              "entrypoint": "builtin.payload_dropped"
+              "type": "expr",
+              "expr": {
+                "conditions": [
+                  {"field": "behavior", "op": "in", "values": ["file.write", "file.chmod"]},
+                  {"field": "file.path", "op": "prefix", "ref": "ctx:payload-path-prefixes"}
+                ]
+              }
             },
             "requires": {
               "events": [
@@ -102,7 +107,7 @@
                 }
               ],
               "context": {
-                "optional": ["ctx:payload-path-prefixes"]
+                "required": ["ctx:payload-path-prefixes"]
               }
             }
           },

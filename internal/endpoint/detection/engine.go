@@ -327,7 +327,7 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 	case eventmodel.BehaviorFileOpen.String(), eventmodel.BehaviorFileRead.String():
 		out = append(out, e.detectCredentialRead(ev)...)
 	case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
-		out = append(out, e.detectPayloadDrop(ev, state)...)
+		e.observePayloadEvidence(ev, state)
 	}
 	out = append(out, e.detectCEPRules(view)...)
 	out = compact(out)
@@ -524,19 +524,14 @@ func (e *Engine) suppressSignal(key string, now time.Time, window time.Duration)
 	return false
 }
 
-func (e *Engine) detectPayloadDrop(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	rule, ok := e.rule("payload_dropped")
-	if !ok {
-		return nil
-	}
+func (e *Engine) observePayloadEvidence(ev *eventv1.CanonicalEvent, st *lineageState) {
 	path := ev.GetObject().GetFilePath()
 	if path == "" || !hasAnyPrefix(path, e.ctx.PayloadPathPrefixes) {
-		return nil
+		return
 	}
 	st.payloads[path] = true
 	st.payloadRefs = appendUnique(st.payloadRefs, ev.GetId())
 	st.lastWriterByPath[path] = ev.GetSubjectProc().GetStableId()
-	return []*signalv1.Signal{e.signal(ev, rule, []string{ev.GetId()}, false, processEntity(ev), fileEntity(path, "object"))}
 }
 
 func (e *Engine) rule(id string) (effectiveRule, bool) {

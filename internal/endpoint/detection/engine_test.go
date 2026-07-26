@@ -245,6 +245,57 @@ func TestSignalCarriesContextAndIOCRefs(t *testing.T) {
 	}
 }
 
+func TestPayloadDroppedUsesDynamicExprSemantics(t *testing.T) {
+	policy := policymodel.DefaultDetectionPolicy()
+	policy.RuleSets = []policymodel.RuleSetRef{{Ref: "ruleset:custom-payload"}}
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:custom-payload-paths": {Ref: "ctx:custom-payload-paths", Version: "v2", Values: []string{"/opt/payloads/"}},
+		},
+		Rules: []RuleSpec{{
+			RuleID: "payload_dropped", Version: 2, RuleSetRef: "ruleset:custom-payload", Severity: "high", RuntimeType: "expr",
+			RequiredEvents: []RequiredEventSpec{
+				{Behavior: "file.write", Fields: []string{"file.path"}},
+				{Behavior: "file.chmod", Fields: []string{"file.path"}},
+			},
+			ContextRefs: []string{"ctx:custom-payload-paths"},
+			Expr: ExprSpec{Conditions: []ConditionSpec{
+				{Field: "behavior", Op: "in", Values: []string{"file.write", "file.chmod"}},
+				{Field: "file.path", Op: "prefix", Ref: "ctx:custom-payload-paths"},
+			}},
+		}},
+	}
+	engine, report := NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	if got := countSignals(engine.Process(writeEvent("default", "lin-default", "p1", "/usr/bin/curl", "/dev/shm/x")), "payload_dropped"); got != 0 {
+		t.Fatalf("default path signals = %d, want none under dynamic expr", got)
+	}
+	for _, event := range []*eventv1.CanonicalEvent{
+		writeEvent("write", "lin-write", "p2", "/usr/bin/curl", "/opt/payloads/write.sh"),
+		chmodEvent("chmod", "lin-chmod", "p3", "/usr/bin/chmod", "/opt/payloads/chmod.sh"),
+	} {
+		signals := engine.Process(event)
+		if got := countSignals(signals, "payload_dropped"); got != 1 {
+			t.Fatalf("%s signals = %d, want 1", event.GetId(), got)
+		}
+		var signal *signalv1.Signal
+		for _, candidate := range signals {
+			if candidate.GetName() == "payload_dropped" {
+				signal = candidate
+				break
+			}
+		}
+		if !slices.Equal(signal.GetEventRefs(), []string{event.GetId()}) || len(signal.GetEntities()) != 2 {
+			t.Fatalf("%s evidence = %+v, want event plus process/file entities", event.GetId(), signal)
+		}
+		if len(signal.GetContextRefs()) != 1 || signal.GetContextRefs()[0].GetRef() != "ctx:custom-payload-paths" || signal.GetContextRefs()[0].GetVersion() != "v2" {
+			t.Fatalf("%s context refs = %+v", event.GetId(), signal.GetContextRefs())
+		}
+	}
+}
+
 func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	enabled := true
 	policy := policymodel.DefaultDetectionPolicy()
