@@ -465,6 +465,25 @@ func signedBytes(env Envelope) []byte {
 	return data
 }
 
+func SignEnvelope(env Envelope, keyID string, privateKey ed25519.PrivateKey) (Envelope, error) {
+	keyID = strings.TrimSpace(keyID)
+	if keyID == "" {
+		return Envelope{}, fmt.Errorf("content signing key_id is required")
+	}
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return Envelope{}, fmt.Errorf("invalid Ed25519 private key")
+	}
+	env.Integrity = Integrity{}
+	env.Integrity = Integrity{
+		DigestAlg:    "sha256",
+		Digest:       signedDigest(env),
+		SignatureAlg: "ed25519",
+		KeyID:        keyID,
+		Signature:    base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, signedBytes(env))),
+	}
+	return env, nil
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

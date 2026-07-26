@@ -12,7 +12,25 @@
     ],
     "observe_only": true
   },
-  "detection": {},
+  "detection": {
+    "policy_id": "standalone-default-detection",
+    "version": 1,
+    "mode": "observe",
+    "rulesets": [
+      {
+        "ref": "ruleset:cep-endpoint",
+        "version": "v1",
+        "enabled": true
+      }
+    ],
+    "rule_overrides": [
+      {
+        "rule_id": "credential_file_read",
+        "enabled": false,
+        "reason": "disabled in the long-running balanced baseline"
+      }
+    ]
+  },
   "telemetry": {
     "max_batch_items": 256,
     "max_batch_bytes": 262144,

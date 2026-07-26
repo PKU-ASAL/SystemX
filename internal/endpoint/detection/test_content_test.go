@@ -22,7 +22,7 @@ func testDetectionPolicy() *policymodel.DetectionPolicy {
 func testContentSnapshot(t testing.TB) ContentSnapshot {
 	t.Helper()
 	store := agentcontent.NewStore()
-	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "test", "data", "content", "*.json"))
+	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "deployments", "agent", "content", "*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
