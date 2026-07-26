@@ -18,6 +18,19 @@ make_fake_executable "$WORK/tetragon/tetragon-v1.7.0/bin/tetragon"
 make_fake_executable "$WORK/tetragon/tetragon-v1.7.0/bin/tetra"
 tar -C "$WORK/tetragon" -czf "$WORK/tetragon.tar.gz" tetragon-v1.7.0
 openssl genrsa -out "$WORK/signing-key.pem" 2048 >/dev/null 2>&1
+openssl genpkey -algorithm ED25519 -out "$WORK/content-signing-key.pem" >/dev/null 2>&1
+
+if SYSARMOR_TETRAGON_SHA256="$(sha256sum "$WORK/tetragon.tar.gz" | awk '{print $1}')" \
+  "$REPO/deployments/agent/package-agent.sh" \
+  --version missing-content-key \
+  --output "$WORK/missing-content-key.tar.gz" \
+  --agent-bin "$WORK/bin/sysarmor-agent" \
+  --ctl-bin "$WORK/bin/sysarmorctl" \
+  --tetragon-archive "$WORK/tetragon.tar.gz" \
+  --signing-key "$WORK/signing-key.pem" >/dev/null 2>&1; then
+  echo "[standalone-release-package][ERROR] package accepted missing content signing key" >&2
+  exit 1
+fi
 
 archive="$WORK/sysarmor-agent-linux-amd64-test.tar.gz"
 SYSARMOR_TETRAGON_SHA256="$(sha256sum "$WORK/tetragon.tar.gz" | awk '{print $1}')" \
@@ -27,6 +40,8 @@ SYSARMOR_TETRAGON_SHA256="$(sha256sum "$WORK/tetragon.tar.gz" | awk '{print $1}'
   --agent-bin "$WORK/bin/sysarmor-agent" \
   --ctl-bin "$WORK/bin/sysarmorctl" \
   --tetragon-archive "$WORK/tetragon.tar.gz" \
+  --content-signing-key "$WORK/content-signing-key.pem" \
+  --content-key-id release-test \
   --signing-key "$WORK/signing-key.pem" >/dev/null
 
 mkdir -p "$WORK/release"
@@ -34,6 +49,8 @@ tar -xzf "$archive" -C "$WORK/release"
 test -x "$WORK/release/install.sh"
 test -x "$WORK/release/container/sysarmor-container-entrypoint"
 test -f "$WORK/release/configs/standalone-container.yaml"
+test -f "$WORK/release/content/default/content-manifest.json"
+grep -Fq '"signature_alg": "ed25519"' "$WORK/release/content/default/rulepack-cep-endpoint.json"
 grep -Fq 'Mulan Permissive Software License' "$WORK/release/LICENSE"
 
 install_env=(
@@ -47,17 +64,31 @@ install_env=(
   SYSARMOR_RUNTIME_DIR="$WORK/root/run/sysarmor/agent"
   SYSARMOR_TETRAGON_BUNDLE_DIR="$WORK/root/opt/sysarmor/agent/bundles/tetragon"
   SYSARMOR_TETRAGON_INSTALL_DIR="$WORK/root/opt/sysarmor/agent/sensors"
+  SYSARMOR_DEFAULT_CONTENT_DIR="$WORK/root/opt/sysarmor/agent/content/default"
 )
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 
 test -x "$WORK/root/opt/sysarmor/agent/bin/sysarmor-agent"
 test -x "$WORK/root/usr/local/bin/sysarmorctl"
 test -x "$WORK/root/opt/sysarmor/agent/bundles/tetragon/bin/tetragon"
+test -f "$WORK/root/opt/sysarmor/agent/content/default/content-manifest.json"
 grep -Fq 'state_path: /var/lib/sysarmor/agent' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 if grep -Eq '^[[:space:]]*(tetra_path|tetragon_path):' "$WORK/root/etc/sysarmor/agent/agent.yaml"; then
   echo "[standalone-release-package][ERROR] host config points at the bundle before activation" >&2
   exit 1
 fi
+
+printf 'keep-old-default\n' >"$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
+cp "$WORK/release/content/default/context-shell-binaries.json" "$WORK/context-shell-binaries.original.json"
+jq '.metadata.version = "tampered"' "$WORK/context-shell-binaries.original.json" >"$WORK/release/content/default/context-shell-binaries.json"
+if env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null 2>&1; then
+  echo "[standalone-release-package][ERROR] invalid default content was installed" >&2
+  exit 1
+fi
+grep -Fxq keep-old-default "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
+mv "$WORK/context-shell-binaries.original.json" "$WORK/release/content/default/context-shell-binaries.json"
+env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
+test ! -e "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
 
 printf 'preserved-config\n' >"$WORK/root/etc/sysarmor/agent/agent.yaml"
 printf 'preserved-policy\n' >"$WORK/root/etc/sysarmor/agent/policy.json"
@@ -102,6 +133,8 @@ thin_archive="$WORK/sysarmor-agent-linux-amd64-thin.tar.gz"
   --agent-bin "$WORK/bin/sysarmor-agent" \
   --ctl-bin "$WORK/bin/sysarmorctl" \
   --tetragon-mode download \
+  --content-signing-key "$WORK/content-signing-key.pem" \
+  --content-key-id release-test \
   --signing-key "$WORK/signing-key.pem" >/dev/null
 
 mkdir -p "$WORK/thin-release"

@@ -15,6 +15,8 @@ CTL_BIN="$REPO/dist/bin/sysarmorctl"
 TETRAGON_ARCHIVE=""
 SIGNING_KEY="$REPO/deployments/pki/agent-plane-mtls/runtime/artifact-signing-key.pem"
 PUBLIC_KEY="$REPO/deployments/pki/agent-plane-mtls/runtime/artifact-public.pem"
+CONTENT_SIGNING_KEY="${SYSARMOR_CONTENT_SIGNING_KEY:-}"
+CONTENT_KEY_ID="${SYSARMOR_CONTENT_KEY_ID:-sysarmor-release}"
 
 usage() {
   cat <<EOF
@@ -23,6 +25,7 @@ usage: build-release.sh [--version VERSION] [--os OS] [--arch ARCH]
                         [--channels "CHANNEL ..."] [--agent-bin FILE] [--ctl-bin FILE]
                         [--tetragon-archive FILE]
                         [--signing-key FILE] [--public-key FILE]
+                        [--content-signing-key FILE] [--content-key-id ID]
 
 Build a signed agent release package and package index.
 EOF
@@ -41,6 +44,8 @@ while [[ $# -gt 0 ]]; do
     --tetragon-archive) TETRAGON_ARCHIVE="$2"; shift 2 ;;
     --signing-key) SIGNING_KEY="$2"; shift 2 ;;
     --public-key) PUBLIC_KEY="$2"; shift 2 ;;
+    --content-signing-key) CONTENT_SIGNING_KEY="$2"; shift 2 ;;
+    --content-key-id) CONTENT_KEY_ID="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "[build-release][ERROR] unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -73,6 +78,8 @@ package_path="$OUTPUT_DIR/$package_file"
   --agent-bin "$AGENT_BIN" \
   --ctl-bin "$CTL_BIN" \
   --tetragon-archive "$TETRAGON_ARCHIVE" \
+  --content-signing-key "$CONTENT_SIGNING_KEY" \
+  --content-key-id "$CONTENT_KEY_ID" \
   --signing-key "$SIGNING_KEY" >/dev/null
 
 sha256="$(sha256sum "$package_path" | awk '{print $1}')"

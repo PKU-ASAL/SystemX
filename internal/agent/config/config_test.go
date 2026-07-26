@@ -166,7 +166,10 @@ func TestReleaseBuilderPackagesAgentControlTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	builder := string(data)
-	for _, want := range []string{`CTL_BIN=`, `--ctl-bin "$CTL_BIN"`} {
+	for _, want := range []string{
+		`CTL_BIN=`, `--ctl-bin "$CTL_BIN"`,
+		`CONTENT_SIGNING_KEY=`, `--content-signing-key "$CONTENT_SIGNING_KEY"`, `--content-key-id "$CONTENT_KEY_ID"`,
+	} {
 		if !strings.Contains(builder, want) {
 			t.Fatalf("release builder missing %q", want)
 		}

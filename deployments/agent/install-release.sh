@@ -13,6 +13,7 @@ POLICY_DST="${SYSARMOR_POLICY_DST:-/etc/sysarmor/agent/policy.json}"
 STATE_DIR="${SYSARMOR_STATE_DIR:-/var/lib/sysarmor/agent}"
 RUNTIME_DIR="${SYSARMOR_RUNTIME_DIR:-/run/sysarmor/agent}"
 BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-$AGENT_HOME/bundles/tetragon}"
+DEFAULT_CONTENT_DIR="${SYSARMOR_DEFAULT_CONTENT_DIR:-$AGENT_HOME/content/default}"
 INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-$AGENT_HOME/sensors}"
 SOCKET_PATH="${SYSARMOR_AGENT_SOCKET:-/run/sysarmor/agent/control.sock}"
 
@@ -105,6 +106,42 @@ install_sensor_bundle() {
   rm -rf "$backup"
 }
 
+install_default_content() {
+  local source parent stage backup
+  source="$HERE/content/default"
+  parent="$(dirname "$DEFAULT_CONTENT_DIR")"
+  install -d -m 0755 "$parent"
+  stage="$(mktemp -d "$parent/.default.XXXXXX")"
+  cp -a "$source/." "$stage/"
+  if ! validate_default_content "$stage"; then
+    rm -rf "$stage"
+    return 1
+  fi
+  backup="$parent/.default.previous.$$"
+  if [[ -e "$DEFAULT_CONTENT_DIR" ]]; then
+    mv "$DEFAULT_CONTENT_DIR" "$backup"
+  fi
+  if ! mv "$stage" "$DEFAULT_CONTENT_DIR"; then
+    [[ ! -e "$backup" ]] || mv "$backup" "$DEFAULT_CONTENT_DIR"
+    return 1
+  fi
+  rm -rf "$backup"
+}
+
+validate_default_content() {
+  local dir entry file
+  dir="$1"
+  command -v jq >/dev/null 2>&1 || fail "未找到 jq，无法校验默认内容清单"
+  jq -e '.version != "" and (.entries | length > 0)' "$dir/content-manifest.json" >/dev/null || return 1
+  while IFS= read -r entry; do
+    file="$(jq -r '.file' <<<"$entry")"
+    [[ -n "$file" && "$file" == "$(basename "$file")" && -f "$dir/$file" ]] || return 1
+    jq -e --argjson entry "$entry" \
+      '.metadata.id == $entry.ref and .kind == $entry.kind and .metadata.version == $entry.version and .integrity.digest == $entry.digest' \
+      "$dir/$file" >/dev/null || return 1
+  done < <(jq -c '.entries[]' "$dir/content-manifest.json")
+}
+
 parse_args "$@"
 if [[ "$PROFILE" == "linux-container" ]]; then
   ENABLE_SERVICE=0
@@ -115,7 +152,7 @@ else
 fi
 
 verify_platform
-for file in bin/sysarmor-agent bin/sysarmorctl systemd/sysarmor-agent.service configs/standalone.yaml configs/standalone-container.yaml container/sysarmor-container-entrypoint policies/policy.json sensors/tetragon/install-bundle.sh sensors/tetragon/bundle.env; do
+for file in bin/sysarmor-agent bin/sysarmorctl systemd/sysarmor-agent.service configs/standalone.yaml configs/standalone-container.yaml container/sysarmor-container-entrypoint policies/policy.json content/default/content-manifest.json sensors/tetragon/install-bundle.sh sensors/tetragon/bundle.env; do
   require_file "$HERE/$file"
 done
 
@@ -135,6 +172,7 @@ else
 fi
 install_if_absent "$CONFIG_SOURCE" "$CONFIG_DST"
 install_if_absent "$HERE/policies/policy.json" "$POLICY_DST"
+install_default_content
 install_sensor_bundle
 
 if [[ "$ENABLE_SERVICE" == "1" ]]; then
