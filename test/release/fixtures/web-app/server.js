@@ -40,7 +40,7 @@ function requireMarker(url, response) {
 
 async function handleAttack(pathname, marker) {
   if (pathname === "/rce") {
-    await run("/bin/sh", ["-c", "printf '%s\\n' \"$1\" >/dev/null", "sysarmor-rce", marker]);
+    await run("/bin/sh", ["-c", "sleep 1; printf '%s\\n' \"$1\" >/dev/null", "sysarmor-rce", marker]);
     return;
   }
   if (pathname === "/download") {
