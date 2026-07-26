@@ -382,15 +382,15 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	policy := policymodel.DefaultDetectionPolicy()
 	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
 	engine, _ := New(policy)
-	first := openEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
-	second := openEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	first := readEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
+	second := readEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/root/.ssh/id_rsa")
 	if got := countSignals(engine.Process(first), "credential_file_read"); got != 1 {
 		t.Fatalf("first credential signal count = %d, want 1", got)
 	}
 	if got := countSignals(engine.Process(second), "credential_file_read"); got != 0 {
 		t.Fatalf("duplicate credential signal count = %d, want 0", got)
 	}
-	third := openEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
+	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/run/secrets/token")
 	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
 		t.Fatalf("different path credential signal count = %d, want 1", got)
 	}
@@ -409,7 +409,6 @@ func TestCredentialReadUsesDynamicExprSemantics(t *testing.T) {
 		Rules: []RuleSpec{{
 			RuleID: "credential_file_read", Version: 2, RuleSetRef: "ruleset:custom-credential", Severity: "medium", RuntimeType: "expr",
 			RequiredEvents: []RequiredEventSpec{
-				{Behavior: "file.open", Fields: []string{"file.path", "process.binary", "process.stable_id"}},
 				{Behavior: "file.read", Fields: []string{"file.path", "process.binary", "process.stable_id"}},
 			},
 			ContextRefs: []string{"ctx:custom-credential-paths", "ctx:custom-trusted-binaries"},
@@ -424,13 +423,13 @@ func TestCredentialReadUsesDynamicExprSemantics(t *testing.T) {
 	if report.Status != "applied" {
 		t.Fatalf("report = %+v", report)
 	}
-	if got := countSignals(engine.Process(openEvent("default", "lin-default", "p1", "/bin/cat", "/root/.ssh/id_rsa")), "credential_file_read"); got != 0 {
+	if got := countSignals(engine.Process(readEvent("default", "lin-default", "p1", "/bin/cat", "/root/.ssh/id_rsa")), "credential_file_read"); got != 0 {
 		t.Fatalf("default path signals = %d, want none under dynamic expr", got)
 	}
-	if got := countSignals(engine.Process(openEvent("trusted", "lin-trusted", "p2", "/opt/admin", "/opt/secrets/token")), "credential_file_read"); got != 0 {
+	if got := countSignals(engine.Process(readEvent("trusted", "lin-trusted", "p2", "/opt/admin", "/opt/secrets/token")), "credential_file_read"); got != 0 {
 		t.Fatalf("trusted binary signals = %d, want none", got)
 	}
-	signals := engine.Process(openEvent("read", "lin-read", "p3", "/bin/cat", "/opt/secrets/token"))
+	signals := engine.Process(readEvent("read", "lin-read", "p3", "/bin/cat", "/opt/secrets/token"))
 	if got := countSignals(signals, "credential_file_read"); got != 1 {
 		t.Fatalf("credential signals = %d, want 1", got)
 	}
@@ -483,6 +482,19 @@ func TestWebRuntimeRuleDeclaresSensorSourceFields(t *testing.T) {
 		return
 	}
 	t.Fatal("web_runtime_spawns_shell rule not found")
+}
+
+func TestCredentialReadDeclaresCollectedReadBehavior(t *testing.T) {
+	for _, rule := range builtinRules() {
+		if rule.RuleID != "credential_file_read" {
+			continue
+		}
+		if len(rule.RequiredEvents) != 1 || rule.RequiredEvents[0].Behavior != "file.read" {
+			t.Fatalf("required events = %+v, want only file.read", rule.RequiredEvents)
+		}
+		return
+	}
+	t.Fatal("credential_file_read rule not found")
 }
 
 func TestWebRuntimeShellKeepsAshCompatibility(t *testing.T) {
@@ -897,6 +909,12 @@ func openEvent(id, lineage, stable, bin, file string) *eventv1.CanonicalEvent {
 		SubjectProc: &eventv1.ProcessRef{StableId: stable, Binary: bin},
 		Object:      &eventv1.ObjectRef{Kind: "file", FilePath: file},
 	}
+}
+
+func readEvent(id, lineage, stable, bin, file string) *eventv1.CanonicalEvent {
+	ev := openEvent(id, lineage, stable, bin, file)
+	ev.Behavior = "file.read"
+	return ev
 }
 
 func writeEventAt(id, lineage, stable, bin, file string, ts uint64) *eventv1.CanonicalEvent {

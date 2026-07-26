@@ -127,10 +127,6 @@
             "requires": {
               "events": [
                 {
-                  "behavior": "file.open",
-                  "fields": ["file.path", "process.binary", "process.stable_id"]
-                },
-                {
                   "behavior": "file.read",
                   "fields": ["file.path", "process.binary", "process.stable_id"]
                 }

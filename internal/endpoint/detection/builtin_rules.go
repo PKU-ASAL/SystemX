@@ -52,7 +52,6 @@ func builtinRules() []RuleSpec {
 		{
 			RuleID: "credential_file_read", Version: 1, RuleSetRef: builtinRuleSetRef, Where: "endpoint", Severity: "medium", RuntimeType: "expr",
 			RequiredEvents: []RequiredEventSpec{
-				{Behavior: eventmodel.BehaviorFileOpen.String(), Fields: []string{"file.path", "process.binary", "process.stable_id"}},
 				{Behavior: eventmodel.BehaviorFileRead.String(), Fields: []string{"file.path", "process.binary", "process.stable_id"}},
 			},
 			ContextRefs: []string{"ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"},
