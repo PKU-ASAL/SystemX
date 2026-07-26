@@ -13,6 +13,7 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
@@ -105,6 +106,13 @@ func TestLocalControlServerOverUnixSocket(t *testing.T) {
 	}
 	if profile.GetProfileType() != "cpu" || profile.GetSeconds() != 1 || profile.GetLabel() != "unit-test" || len(profile.GetProfile()) == 0 {
 		t.Fatalf("profile = %+v len=%d", profile, len(profile.GetProfile()))
+	}
+}
+
+func TestHealthResponseIncludesDefaultManifestVersion(t *testing.T) {
+	response := healthResponse(agenthealth.AgentHealth{Detection: agenthealth.DetectionHealth{DefaultManifestVersion: "release-v1"}})
+	if got := response.GetDetection().GetDefaultManifestVersion(); got != "release-v1" {
+		t.Fatalf("health manifest version = %q, want release-v1", got)
 	}
 }
 

@@ -39,6 +39,12 @@ func TestOpenLayeredLoadsManifestContent(t *testing.T) {
 	if !store.IsDefaultRef("ctx:default") {
 		t.Fatal("default ref was not marked read-only")
 	}
+	if got := store.DefaultManifestVersion(); got != "v1" {
+		t.Fatalf("DefaultManifestVersion() = %q, want v1", got)
+	}
+	if got := store.Snapshot().DefaultManifestVersion; got != "v1" {
+		t.Fatalf("Snapshot().DefaultManifestVersion = %q, want v1", got)
+	}
 }
 
 func TestOpenLayeredRejectsRefConflict(t *testing.T) {

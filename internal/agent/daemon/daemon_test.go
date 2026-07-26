@@ -224,6 +224,16 @@ func TestAgentRuntimeRejectsStartupDetectionWithoutRuleSet(t *testing.T) {
 	}
 }
 
+func TestDetectionStatusIncludesDefaultManifestVersion(t *testing.T) {
+	runner := &AgentRuntime{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.Detection = &policymodel.DetectionPolicy{PolicyID: "detection-test"}
+	runner.setDetectionStatus(policy, detection.ApplyReport{Status: "applied"}, agentcontent.Snapshot{DefaultManifestVersion: "release-v1"})
+	if got := runner.detectionHealth().DefaultManifestVersion; got != "release-v1" {
+		t.Fatalf("detection manifest version = %q, want release-v1", got)
+	}
+}
+
 func TestAgentRuntimeMatcherFeatureFlagTestOverride(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "optimized")

@@ -785,12 +785,13 @@ func (r *AgentRuntime) commitDetectionContent(record agentcontent.Record, snapsh
 
 func (r *AgentRuntime) setDetectionStatus(policy policymodel.Policy, report detection.ApplyReport, snapshot agentcontent.Snapshot) {
 	status := agenthealth.DetectionHealth{
-		PolicyID:        firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
-		PolicyVersion:   policy.Detection.Version,
-		FeatureFlags:    r.featureFlags,
-		LastApplyStatus: report.Status,
-		UpdatedAt:       time.Now().UTC(),
-		ContentRefs:     detectionContentRefs(snapshot),
+		PolicyID:               firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
+		PolicyVersion:          policy.Detection.Version,
+		FeatureFlags:           r.featureFlags,
+		LastApplyStatus:        report.Status,
+		UpdatedAt:              time.Now().UTC(),
+		ContentRefs:            detectionContentRefs(snapshot),
+		DefaultManifestVersion: snapshot.DefaultManifestVersion,
 	}
 	if report.Status == "rejected" {
 		status.LastApplyError = strings.Join(report.Details, "; ")

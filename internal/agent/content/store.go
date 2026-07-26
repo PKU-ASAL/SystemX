@@ -55,10 +55,11 @@ type Record struct {
 }
 
 type Snapshot struct {
-	RulePacks   map[string]Record
-	Rules       []Rule
-	ContextSets map[string]ValueSet
-	IOCPacks    map[string]ValueSet
+	RulePacks              map[string]Record
+	Rules                  []Rule
+	ContextSets            map[string]ValueSet
+	IOCPacks               map[string]ValueSet
+	DefaultManifestVersion string
 }
 
 type ValueSet struct {
@@ -154,11 +155,12 @@ type ResponseIntent struct {
 }
 
 type Store struct {
-	mu          sync.RWMutex
-	dir         string
-	trustedKeys map[string]ed25519.PublicKey
-	records     map[string]Record
-	defaultRefs map[string]bool
+	mu              sync.RWMutex
+	dir             string
+	trustedKeys     map[string]ed25519.PublicKey
+	records         map[string]Record
+	defaultRefs     map[string]bool
+	manifestVersion string
 }
 
 func NewStore() *Store {
@@ -325,7 +327,9 @@ func (s *Store) Get(ref string) (Record, bool) {
 func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return snapshotFromRecords(s.records)
+	snapshot := snapshotFromRecords(s.records)
+	snapshot.DefaultManifestVersion = s.manifestVersion
+	return snapshot
 }
 
 func (s *Store) SnapshotWith(record Record) Snapshot {
@@ -338,7 +342,9 @@ func (s *Store) SnapshotWith(record Record) Snapshot {
 	if record.Ref != "" {
 		records[record.Ref] = record
 	}
-	return snapshotFromRecords(records)
+	snapshot := snapshotFromRecords(records)
+	snapshot.DefaultManifestVersion = s.manifestVersion
+	return snapshot
 }
 
 func snapshotFromRecords(records map[string]Record) Snapshot {

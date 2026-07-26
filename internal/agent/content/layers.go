@@ -24,7 +24,7 @@ func OpenLayered(opts Options) (*Store, error) {
 		users.records[ref] = record
 		users.defaultRefs[ref] = true
 	}
-	_ = manifest
+	users.manifestVersion = manifest.Version
 	return users, nil
 }
 
@@ -104,4 +104,10 @@ func (s *Store) IsDefaultRef(ref string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.defaultRefs[ref]
+}
+
+func (s *Store) DefaultManifestVersion() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.manifestVersion
 }
