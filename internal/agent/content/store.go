@@ -196,9 +196,15 @@ func (s *Store) Load() error {
 		}
 		env, err := Parse(string(data))
 		if err != nil {
-			return err
+			return fmt.Errorf("load content %s: %w", entry.Name(), err)
 		}
-		records[env.Metadata.ID] = Record{
+		if err := s.Validate(env, false); err != nil {
+			return fmt.Errorf("load content %s (%s): %w", entry.Name(), env.Metadata.ID, err)
+		}
+		if _, exists := records[env.Metadata.ID]; exists {
+			return fmt.Errorf("load content %s: duplicate content ref %s", entry.Name(), env.Metadata.ID)
+		}
+		record := Record{
 			Ref:     env.Metadata.ID,
 			Kind:    env.Kind,
 			Version: env.Metadata.Version,
@@ -207,10 +213,28 @@ func (s *Store) Load() error {
 			Status:  "loaded",
 			RawJSON: string(data),
 		}
+		if err := validateRecordPayload(record); err != nil {
+			return fmt.Errorf("load content %s (%s): %w", entry.Name(), env.Metadata.ID, err)
+		}
+		records[env.Metadata.ID] = record
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.records = records
+	return nil
+}
+
+func validateRecordPayload(record Record) error {
+	switch record.Kind {
+	case "rulepack":
+		if _, err := parseRulePack(record); err != nil {
+			return fmt.Errorf("parse rulepack: %w", err)
+		}
+	case "contextset", "iocpack":
+		if _, err := parseValueSet(record); err != nil {
+			return fmt.Errorf("parse %s: %w", record.Kind, err)
+		}
+	}
 	return nil
 }
 
