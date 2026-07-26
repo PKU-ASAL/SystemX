@@ -2,7 +2,6 @@ package detection
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,15 +21,12 @@ const maxSuppressionKeys = 8192
 type Engine struct {
 	nextID      uint64
 	rules       map[string]effectiveRule
-	state       map[string]*lineageState
 	cep         map[string]*cepRuleState
 	cepActive   map[string]map[string]int
 	correlate   map[string]*correlateRuleState
 	suppression map[string]time.Time
 	limits      EngineLimits
 	metrics     Metrics
-	ctx         ContextSnapshot
-	ioc         IOCSnapshot
 	refs        ContentSnapshot
 	compiled    compiledRuntime
 	sequence    compiledSequenceRuntime
@@ -58,16 +54,6 @@ type Metrics struct {
 	SuppressionEvictions uint64
 	CEPEvalErrors        uint64
 	EmittedSignals       uint64
-}
-
-type ContextSnapshot struct {
-	PayloadPathPrefixes []string
-}
-
-type IOCSnapshot struct {
-	C2DownloadPorts []string
-	C2ControlPorts  []string
-	C2Addrs         []string
 }
 
 type ContentSnapshot struct {
@@ -185,21 +171,6 @@ type cepGroupState struct {
 	WaitingBehavior string
 }
 
-type lineageState struct {
-	downloadRefs            []string
-	payloadRefs             []string
-	payloadExecRefs         []string
-	reverseConnectRefs      []string
-	reverseSocketAddr       string
-	payloads                map[string]bool
-	payloadExecStable       map[string]bool
-	lastWriterByPath        map[string]string
-	stagedPayloadSeen       bool
-	reverseShellSeen        bool
-	payloadLifecycleEmitted bool
-	lastExecByStableID      map[string]string
-}
-
 type ApplyReport struct {
 	Status   string         `json:"status"`
 	Message  string         `json:"message"`
@@ -245,14 +216,11 @@ func NewWithRuntimeLimits(policy *policymodel.DetectionPolicy, collection contra
 	limits = normalizeLimits(limits)
 	engine := &Engine{
 		rules:       make(map[string]effectiveRule),
-		state:       make(map[string]*lineageState),
 		cep:         make(map[string]*cepRuleState),
 		cepActive:   make(map[string]map[string]int),
 		correlate:   make(map[string]*correlateRuleState),
 		suppression: make(map[string]time.Time),
 		limits:      limits,
-		ctx:         resolveContext(normalized.ContextRefs, content),
-		ioc:         resolveIOC(normalized.IOCRefs, content),
 		refs:        content,
 	}
 	report := ApplyReport{Status: "applied", Message: "detection policy applied"}
@@ -354,20 +322,7 @@ func (e *Engine) Process(ev *eventv1.CanonicalEvent) []*signalv1.Signal {
 		e.metrics.EventsByBehavior = make(map[string]uint64)
 	}
 	e.metrics.EventsByBehavior[behavior]++
-	state := e.lineage(ev.GetLineageId())
-	state.remember(ev)
-	var out []*signalv1.Signal
-	switch behavior {
-	case eventmodel.BehaviorProcessExec.String():
-		out = append(out, e.detectPayloadExec(ev, state)...)
-	case eventmodel.BehaviorNetworkConnect.String():
-		e.observeDownloadEvidence(ev, state)
-		e.observeControlConnection(ev, state)
-		out = append(out, e.detectPayloadConnect(ev, state)...)
-	case eventmodel.BehaviorFileWrite.String(), eventmodel.BehaviorFileChmod.String():
-		e.observePayloadEvidence(ev, state)
-	}
-	out = append(out, e.detectCEPRules(view)...)
+	out := e.detectCEPRules(view)
 	out = compact(out)
 	e.metrics.EmittedSignals += uint64(len(out))
 	e.metrics.ProcessNanosTotal += uint64(time.Since(start).Nanoseconds())
@@ -390,88 +345,6 @@ func eventBehavior(ev *eventv1.CanonicalEvent) string {
 		return strings.ToLower(behavior)
 	}
 	return ""
-}
-
-func (e *Engine) lineage(id string) *lineageState {
-	if id == "" {
-		id = "unknown"
-	}
-	st, ok := e.state[id]
-	if !ok {
-		st = &lineageState{
-			payloads:           make(map[string]bool),
-			payloadExecStable:  make(map[string]bool),
-			lastWriterByPath:   make(map[string]string),
-			lastExecByStableID: make(map[string]string),
-		}
-		e.state[id] = st
-	}
-	return st
-}
-
-func (s *lineageState) remember(ev *eventv1.CanonicalEvent) {
-	if ev.GetSubjectProc() == nil {
-		return
-	}
-	stableID := ev.GetSubjectProc().GetStableId()
-	if eventBehavior(ev) == eventmodel.BehaviorProcessExec.String() && stableID != "" {
-		s.lastExecByStableID[stableID] = ev.GetId()
-	}
-}
-
-func (e *Engine) detectPayloadExec(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	path := ev.GetSubjectProc().GetBinary()
-	if path == "" {
-		return nil
-	}
-	payloadPath := path
-	if !st.payloads[payloadPath] && !hasAnyPrefix(payloadPath, e.ctx.PayloadPathPrefixes) {
-		payloadPath = payloadPathFromArgv(ev.GetSubjectProc().GetArgv(), e.ctx.PayloadPathPrefixes)
-	}
-	if payloadPath != "" && (st.payloads[payloadPath] || hasAnyPrefix(payloadPath, e.ctx.PayloadPathPrefixes)) {
-		st.payloads[payloadPath] = true
-		st.payloadExecStable[ev.GetSubjectProc().GetStableId()] = true
-		st.payloadExecRefs = appendUnique(st.payloadExecRefs, ev.GetId())
-		if hasAnyPrefix(payloadPath, []string{"/var/lib/app/plugins/"}) {
-			st.stagedPayloadSeen = true
-		}
-		return nil
-	}
-	return nil
-}
-
-func (e *Engine) observeDownloadEvidence(ev *eventv1.CanonicalEvent, st *lineageState) {
-	if !containsString(e.contentValues("ctx:download-client-binaries"), binaryBase(ev)) || !e.ioc.isDownloadSocket(ev.GetObject().GetSocketAddr()) {
-		return
-	}
-	st.downloadRefs = appendUnique(st.downloadRefs, ev.GetId())
-}
-
-func (e *Engine) observeControlConnection(ev *eventv1.CanonicalEvent, st *lineageState) {
-	if !containsString(e.contentValues("ctx:shell-binaries"), binaryBase(ev)) || !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
-		return
-	}
-	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
-	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-}
-
-func (e *Engine) detectPayloadConnect(ev *eventv1.CanonicalEvent, st *lineageState) []*signalv1.Signal {
-	if !e.ioc.isControlSocket(ev.GetObject().GetSocketAddr()) {
-		return nil
-	}
-	proc := ev.GetSubjectProc()
-	argv := strings.Join(proc.GetArgv(), " ")
-	payloadProc := st.payloadExecStable[proc.GetStableId()] ||
-		st.payloadExecStable[ev.GetParentStableId()] ||
-		(len(st.payloadRefs) > 0 && len(st.payloadExecRefs) > 0) ||
-		strings.Contains(argv, "helper") ||
-		hasAnyPrefix(proc.GetBinary(), e.ctx.PayloadPathPrefixes)
-	if !payloadProc {
-		return nil
-	}
-	st.reverseConnectRefs = appendUnique(st.reverseConnectRefs, ev.GetId())
-	st.reverseSocketAddr = ev.GetObject().GetSocketAddr()
-	return nil
 }
 
 func eventWallTime(ev *eventv1.CanonicalEvent) time.Time {
@@ -507,16 +380,6 @@ func (e *Engine) suppressSignal(key string, now time.Time, window time.Duration)
 	}
 	e.suppression[key] = now.Add(window)
 	return false
-}
-
-func (e *Engine) observePayloadEvidence(ev *eventv1.CanonicalEvent, st *lineageState) {
-	path := ev.GetObject().GetFilePath()
-	if path == "" || !hasAnyPrefix(path, e.ctx.PayloadPathPrefixes) {
-		return
-	}
-	st.payloads[path] = true
-	st.payloadRefs = appendUnique(st.payloadRefs, ev.GetId())
-	st.lastWriterByPath[path] = ev.GetSubjectProc().GetStableId()
 }
 
 func (e *Engine) rule(id string) (effectiveRule, bool) {
@@ -1276,81 +1139,6 @@ func availableFieldsFromCapabilities(collection contract.CollectionIntent) map[s
 	return fields
 }
 
-func resolveContext(refs []policymodel.ContentRef, content ContentSnapshot) ContextSnapshot {
-	out := ContextSnapshot{
-		PayloadPathPrefixes: []string{"/dev/shm/", "/tmp/.sysarmor-attack/", "/var/tmp/.sysarmor-attack/", "/var/lib/app/plugins/"},
-	}
-	for _, ref := range refs {
-		item, ok := content.ContextRefs[ref.Ref]
-		if !ok {
-			continue
-		}
-		switch ref.Ref {
-		case "ctx:payload-path-prefixes":
-			out.PayloadPathPrefixes = append([]string(nil), item.Values...)
-		}
-	}
-	return out
-}
-
-func resolveIOC(refs []policymodel.ContentRef, content ContentSnapshot) IOCSnapshot {
-	out := IOCSnapshot{
-		C2DownloadPorts: []string{"8080"},
-		C2ControlPorts:  []string{"443", "8443"},
-	}
-	for _, ref := range refs {
-		item, ok := content.IOCRefs[ref.Ref]
-		if !ok {
-			continue
-		}
-		switch ref.Ref {
-		case "ioc:c2-port-feed":
-			out.C2ControlPorts = append([]string(nil), item.Values...)
-		case "ioc:c2-download-port-feed":
-			out.C2DownloadPorts = append([]string(nil), item.Values...)
-		case "ioc:c2-control-port-feed":
-			out.C2ControlPorts = append([]string(nil), item.Values...)
-		case "ioc:c2-ip-feed":
-			out.C2Addrs = append([]string(nil), item.Values...)
-		}
-	}
-	return out
-}
-
-func (i IOCSnapshot) isDownloadSocket(socket string) bool {
-	return i.socketMatches(socket, i.C2DownloadPorts)
-}
-
-func (i IOCSnapshot) isControlSocket(socket string) bool {
-	return i.socketMatches(socket, i.C2ControlPorts)
-}
-
-func (i IOCSnapshot) socketMatches(socket string, ports []string) bool {
-	addr, port, ok := strings.Cut(socket, ":")
-	if !ok {
-		return false
-	}
-	portMatched := false
-	for _, candidate := range ports {
-		if port == candidate {
-			portMatched = true
-			break
-		}
-	}
-	if !portMatched {
-		return false
-	}
-	if len(i.C2Addrs) == 0 {
-		return true
-	}
-	for _, candidate := range i.C2Addrs {
-		if addr == candidate {
-			return true
-		}
-	}
-	return false
-}
-
 func processEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {
 	key := ""
 	if ev.GetSubjectProc() != nil {
@@ -1363,51 +1151,8 @@ func socketEntity(ev *eventv1.CanonicalEvent) *signalv1.EntityRef {
 	return &signalv1.EntityRef{Kind: "socket", Key: ev.GetObject().GetSocketAddr(), Role: "object"}
 }
 
-func socketAddrEntity(addr string) *signalv1.EntityRef {
-	return &signalv1.EntityRef{Kind: "socket", Key: addr, Role: "object"}
-}
-
 func fileEntity(path, role string) *signalv1.EntityRef {
 	return &signalv1.EntityRef{Kind: "file", Key: path, Role: role}
-}
-
-func binaryBase(ev *eventv1.CanonicalEvent) string {
-	return filepath.Base(ev.GetSubjectProc().GetBinary())
-}
-
-func isShell(bin string) bool {
-	switch bin {
-	case "sh", "bash", "dash", "zsh", "ksh", "ash":
-		return true
-	default:
-		return false
-	}
-}
-
-func hasAnyPrefix(value string, prefixes []string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(value, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func payloadPathFromArgv(argv []string, prefixes []string) string {
-	for _, arg := range argv {
-		arg = strings.Trim(arg, `"'`)
-		if hasAnyPrefix(arg, prefixes) {
-			return arg
-		}
-	}
-	return ""
-}
-
-func firstPayloadPath(st *lineageState) string {
-	for path := range st.payloads {
-		return path
-	}
-	return "/var/lib/app/plugins/helper"
 }
 
 func riskForSeverity(severity string) uint32 {

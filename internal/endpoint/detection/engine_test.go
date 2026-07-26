@@ -2,6 +2,7 @@ package detection
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +14,25 @@ import (
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
+
+func TestEngineHasNoRuleSpecificLineageDetectors(t *testing.T) {
+	source, err := os.ReadFile("engine.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, symbol := range []string{
+		"lineageState",
+		"observeDownloadEvidence",
+		"observeControlConnection",
+		"observePayloadEvidence",
+		"detectPayloadExec",
+		"detectPayloadConnect",
+	} {
+		if strings.Contains(string(source), symbol) {
+			t.Errorf("engine.go still contains rule-specific symbol %q", symbol)
+		}
+	}
+}
 
 func TestBuiltinRuleSetEmitsMultiEventPayloadLifecycle(t *testing.T) {
 	engine, report := New(policymodel.DefaultDetectionPolicy())
