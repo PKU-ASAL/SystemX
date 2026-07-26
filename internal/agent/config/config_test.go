@@ -50,6 +50,9 @@ sensor:
   backend: fake
 policy:
   path: /etc/sysarmor/agent/policy.json
+content:
+  default_path: /opt/sysarmor/agent/content/default
+  path: /var/lib/sysarmor/agent/content
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -63,6 +66,9 @@ policy:
 	}
 	if cfg.Sensor.PolicyPath != cfg.Policy.Path {
 		t.Fatalf("sensor policy path = %q want %q", cfg.Sensor.PolicyPath, cfg.Policy.Path)
+	}
+	if cfg.Content.DefaultPath != "/opt/sysarmor/agent/content/default" || cfg.Content.Path != "/var/lib/sysarmor/agent/content" {
+		t.Fatalf("content config = %+v", cfg.Content)
 	}
 }
 

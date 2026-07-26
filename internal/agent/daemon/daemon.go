@@ -129,9 +129,9 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	contentStore, err := agentcontent.NewStoreWithOptions(agentcontent.Options{Dir: cfg.Content.Path, TrustedKeys: parseTrustKeys(cfg.Content.TrustKeys)})
+	contentStore, err := newContentStore(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load startup content: %w", err)
 	}
 	var state *localstore.Store
 	if cfg.Manager.Transport == "" {

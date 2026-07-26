@@ -178,6 +178,19 @@ func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeRejectsMissingDefaultContentManifest(t *testing.T) {
+	cfg := config.Config{
+		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true},
+		Content: config.ContentConfig{DefaultPath: t.TempDir(), Path: t.TempDir()},
+	}
+	_, err := New(cfg)
+	if err == nil || !strings.Contains(err.Error(), "default content manifest") {
+		t.Fatalf("New() error = %v, want default content manifest error", err)
+	}
+}
+
 func TestAgentRuntimeMatcherFeatureFlagTestOverride(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SYSARMOR_TEST_MATCHER_STRATEGY", "optimized")

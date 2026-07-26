@@ -132,8 +132,9 @@ type PolicyConfig struct {
 }
 
 type ContentConfig struct {
-	Path      string
-	TrustKeys string
+	DefaultPath string
+	Path        string
+	TrustKeys   string
 }
 
 type ResourceConfig struct {
@@ -537,6 +538,8 @@ func assign(cfg *Config, section, key, value string) error {
 		}
 	case "content":
 		switch key {
+		case "default_path":
+			cfg.Content.DefaultPath = value
 		case "path":
 			cfg.Content.Path = value
 		case "trust_keys":
