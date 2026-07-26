@@ -115,7 +115,15 @@ type RequiredEventSpec struct {
 }
 
 type ExprSpec struct {
-	Conditions []ConditionSpec
+	Conditions     []ConditionSpec
+	ConditionGroup *ConditionNodeSpec
+}
+
+type ConditionNodeSpec struct {
+	All       []ConditionNodeSpec
+	Any       []ConditionNodeSpec
+	Not       *ConditionNodeSpec
+	Condition *ConditionSpec
 }
 
 type SequenceSpec struct {
@@ -130,9 +138,10 @@ type SuppressionSpec struct {
 }
 
 type StepSpec struct {
-	ID         string
-	Behavior   string
-	Conditions []ConditionSpec
+	ID             string
+	Behavior       string
+	Conditions     []ConditionSpec
+	ConditionGroup *ConditionNodeSpec
 }
 
 type ConditionSpec struct {
@@ -260,7 +269,7 @@ func validateEffectiveRules(rules map[string]effectiveRule) []string {
 		default:
 			out = append(out, fmt.Sprintf("rule %s has unsupported runtime type %q", rule.spec.RuleID, runtimeType))
 		}
-		if runtimeType == "expr" && len(rule.spec.Expr.Conditions) == 0 {
+		if runtimeType == "expr" && len(rule.spec.Expr.Conditions) == 0 && rule.spec.Expr.ConditionGroup == nil {
 			out = append(out, fmt.Sprintf("rule %s expr runtime requires conditions", rule.spec.RuleID))
 		}
 		if runtimeType == "sequence" {
@@ -619,7 +628,7 @@ func (e *Engine) detectCEPRules(view eventView) []*signalv1.Signal {
 		e.metrics.CEPRulesEvaluated++
 		switch rule.kind {
 		case compiledRuleExpr:
-			if e.matchCompiledConditions(view, rule.expr.conditions, nil) {
+			if e.matchCompiledConditions(view, rule.expr.conditions, nil) && e.matchCompiledConditionNode(view, rule.expr.conditionGroup, nil) {
 				if e.suppressCompiledRule(view, rule) {
 					continue
 				}

@@ -38,8 +38,9 @@ type compiledRule struct {
 }
 
 type compiledExpr struct {
-	conditions  []compiledCondition
-	suppression compiledSuppression
+	conditions     []compiledCondition
+	conditionGroup *compiledConditionNode
+	suppression    compiledSuppression
 }
 
 type compiledSuppression struct {
@@ -54,10 +55,11 @@ type compiledSequence struct {
 }
 
 type compiledStep struct {
-	id         string
-	behavior   string
-	conditions []compiledCondition
-	saveFields []fieldID
+	id             string
+	behavior       string
+	conditions     []compiledCondition
+	conditionGroup *compiledConditionNode
+	saveFields     []fieldID
 }
 
 type compiledSequenceCandidate struct {
@@ -201,7 +203,8 @@ func compileRule(rule effectiveRule, content ContentSnapshot) compiledRule {
 			rule: rule,
 			kind: compiledRuleExpr,
 			expr: compiledExpr{
-				conditions: compileConditions(rule.spec.Expr.Conditions, content),
+				conditions:     compileConditions(rule.spec.Expr.Conditions, content),
+				conditionGroup: compileConditionNode(rule.spec.Expr.ConditionGroup, content),
 				suppression: compiledSuppression{
 					within: rule.spec.Suppression.Within,
 					by:     compileFields(rule.spec.Suppression.By),
@@ -212,9 +215,10 @@ func compileRule(rule effectiveRule, content ContentSnapshot) compiledRule {
 		steps := make([]compiledStep, 0, len(rule.spec.Sequence.Steps))
 		for _, step := range rule.spec.Sequence.Steps {
 			steps = append(steps, compiledStep{
-				id:         strings.TrimSpace(step.ID),
-				behavior:   eventmodel.NormalizeBehavior(step.Behavior).String(),
-				conditions: compileConditions(step.Conditions, content),
+				id:             strings.TrimSpace(step.ID),
+				behavior:       eventmodel.NormalizeBehavior(step.Behavior).String(),
+				conditions:     compileConditions(step.Conditions, content),
+				conditionGroup: compileConditionNode(step.ConditionGroup, content),
 			})
 		}
 		steps = attachSequenceSaveFields(steps)
@@ -244,7 +248,9 @@ func attachSequenceSaveFields(steps []compiledStep) []compiledStep {
 		seen[i] = map[fieldID]bool{}
 	}
 	for _, step := range steps {
-		for _, cond := range step.conditions {
+		conditions := append([]compiledCondition(nil), step.conditions...)
+		conditions = appendCompiledNodeConditions(conditions, step.conditionGroup)
+		for _, cond := range conditions {
 			if cond.op != opSameAs || cond.step == "" {
 				continue
 			}
@@ -349,6 +355,14 @@ func compileConditions(conditions []ConditionSpec, content ContentSnapshot) []co
 		return out[i].cost < out[j].cost
 	})
 	return out
+}
+
+func compileCondition(cond ConditionSpec, content ContentSnapshot) compiledCondition {
+	compiled := compileConditions([]ConditionSpec{cond}, content)
+	if len(compiled) == 0 {
+		return compiledCondition{}
+	}
+	return compiled[0]
 }
 
 func conditionCost(cond compiledCondition) int {
@@ -597,7 +611,7 @@ func (e *Engine) matchCompiledStep(view eventView, step compiledStep, st *cepGro
 	if step.behavior != "" && view.behavior != step.behavior {
 		return false
 	}
-	return e.matchCompiledConditions(view, step.conditions, st)
+	return e.matchCompiledConditions(view, step.conditions, st) && e.matchCompiledConditionNode(view, step.conditionGroup, st)
 }
 
 func (e *Engine) matchCompiledConditions(view eventView, conditions []compiledCondition, st *cepGroupState) bool {

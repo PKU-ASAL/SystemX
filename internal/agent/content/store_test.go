@@ -154,3 +154,37 @@ func TestStoreParsesCEPRulePack(t *testing.T) {
 		t.Fatalf("suppression = %+v", rules[0].Suppression)
 	}
 }
+
+func TestStoreParsesConditionTree(t *testing.T) {
+	store := NewStore()
+	raw := `{
+		"api_version":"sysarmor.content/v1",
+		"kind":"rulepack",
+		"metadata":{"id":"rulepack:condition-tree","version":"v1"},
+		"spec":{"rulesets":[{"id":"ruleset:condition-tree","version":"v1","rules":[{
+			"rule_id":"neutral_boolean_rule","version":1,"severity":"medium",
+			"runtime":{"type":"expr","expr":{"condition_group":{"all":[
+				{"any":[
+					{"condition":{"field":"process.binary_name","op":"in","ref":"ctx:test-tools"}},
+					{"condition":{"field":"process.argv","op":"contains","ref":"ctx:test-markers"}}
+				]},
+				{"not":{"condition":{"field":"socket.port","op":"in","values":["80"]}}}
+			]}}},
+			"requires":{"events":[{"behavior":"network.connect","fields":["process.binary","process.argv","socket.port"]}]}
+		}]}]}
+	}`
+	if _, err := store.Apply(raw, true, false); err != nil {
+		t.Fatal(err)
+	}
+	rules := store.Snapshot().Rules
+	if len(rules) != 1 {
+		t.Fatalf("rules = %+v", rules)
+	}
+	group := rules[0].Expr.ConditionGroup
+	if group == nil || len(group.All) != 2 || len(group.All[0].Any) != 2 || group.All[1].Not == nil {
+		t.Fatalf("condition group = %+v", group)
+	}
+	if got := group.All[0].Any[1].Condition; got == nil || got.Field != "process.argv" || got.Ref != "ctx:test-markers" {
+		t.Fatalf("condition leaf = %+v", got)
+	}
+}

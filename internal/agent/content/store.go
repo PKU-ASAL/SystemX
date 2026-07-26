@@ -86,7 +86,15 @@ type Rule struct {
 }
 
 type RuntimeExpr struct {
-	Conditions []RuntimeCondition `json:"conditions"`
+	Conditions     []RuntimeCondition    `json:"conditions"`
+	ConditionGroup *RuntimeConditionNode `json:"condition_group,omitempty"`
+}
+
+type RuntimeConditionNode struct {
+	All       []RuntimeConditionNode `json:"all,omitempty"`
+	Any       []RuntimeConditionNode `json:"any,omitempty"`
+	Not       *RuntimeConditionNode  `json:"not,omitempty"`
+	Condition *RuntimeCondition      `json:"condition,omitempty"`
 }
 
 type RuntimeSequence struct {
@@ -101,10 +109,11 @@ type RuntimeSuppression struct {
 }
 
 type RuntimeStep struct {
-	ID         string             `json:"id"`
-	Behavior   string             `json:"behavior,omitempty"`
-	Event      string             `json:"event,omitempty"`
-	Conditions []RuntimeCondition `json:"conditions"`
+	ID             string                `json:"id"`
+	Behavior       string                `json:"behavior,omitempty"`
+	Event          string                `json:"event,omitempty"`
+	Conditions     []RuntimeCondition    `json:"conditions"`
+	ConditionGroup *RuntimeConditionNode `json:"condition_group,omitempty"`
 }
 
 type RuntimeCondition struct {

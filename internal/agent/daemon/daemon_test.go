@@ -52,6 +52,20 @@ func TestDetectionSuppressionConversion(t *testing.T) {
 	}
 }
 
+func TestDetectionConditionTreeConversion(t *testing.T) {
+	node := &agentcontent.RuntimeConditionNode{Any: []agentcontent.RuntimeConditionNode{
+		{Condition: &agentcontent.RuntimeCondition{Field: "process.binary_name", Op: "in", Ref: "ctx:test-tools"}},
+		{Not: &agentcontent.RuntimeConditionNode{Condition: &agentcontent.RuntimeCondition{Field: "socket.port", Op: "in", Values: []string{"80"}}}},
+	}}
+	got := detectionConditionNode(node)
+	if got == nil || len(got.Any) != 2 || got.Any[0].Condition == nil || got.Any[1].Not == nil {
+		t.Fatalf("condition tree = %+v", got)
+	}
+	if got.Any[0].Condition.Ref != "ctx:test-tools" || !slices.Equal(got.Any[1].Not.Condition.Values, []string{"80"}) {
+		t.Fatalf("condition tree leaves = %+v", got)
+	}
+}
+
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
 

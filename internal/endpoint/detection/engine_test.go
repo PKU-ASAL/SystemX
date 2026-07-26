@@ -247,6 +247,100 @@ func TestRuleValidationRejectsInvalidSuppression(t *testing.T) {
 	}
 }
 
+func TestRuleValidationRejectsInvalidConditionTree(t *testing.T) {
+	leaf := conditionLeaf(ConditionSpec{Field: "file.path", Op: "exists"})
+	tests := []struct {
+		name string
+		node *ConditionNodeSpec
+		want string
+	}{
+		{name: "empty", node: &ConditionNodeSpec{}, want: "condition node must set exactly one kind"},
+		{name: "multiple kinds", node: &ConditionNodeSpec{All: []ConditionNodeSpec{leaf}, Condition: leaf.Condition}, want: "condition node must set exactly one kind"},
+		{name: "empty any", node: &ConditionNodeSpec{Any: []ConditionNodeSpec{}}, want: "any requires children"},
+		{name: "empty not", node: &ConditionNodeSpec{Not: &ConditionNodeSpec{}}, want: "condition node must set exactly one kind"},
+		{name: "unknown field", node: ptrConditionNode(conditionLeaf(ConditionSpec{Field: "file.unknown", Op: "exists"})), want: "unsupported field"},
+	}
+	deep := conditionLeaf(ConditionSpec{Field: "file.path", Op: "exists"})
+	for i := 0; i < 9; i++ {
+		deep = ConditionNodeSpec{Not: ptrConditionNode(deep)}
+	}
+	tests = append(tests, struct {
+		name string
+		node *ConditionNodeSpec
+		want string
+	}{name: "too deep", node: &deep, want: "maximum depth"})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := ContentSnapshot{Rules: []RuleSpec{{
+				RuleID: "invalid_tree", RuleSetRef: "ruleset:cep", RuntimeType: "expr",
+				Expr: ExprSpec{Conditions: []ConditionSpec{{Field: "file.path", Op: "exists"}}, ConditionGroup: tt.node},
+			}}}
+			_, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+			if report.Status != "rejected" || !containsWarning(report.Details, tt.want) {
+				t.Fatalf("report = %+v, want rejected with %q", report, tt.want)
+			}
+		})
+	}
+}
+
+func TestExprRuleEvaluatesGenericConditionTree(t *testing.T) {
+	rule := RuleSpec{
+		RuleID: "neutral_boolean_rule", RuleSetRef: "ruleset:cep", RuntimeType: "expr", RequiredBehaviors: []string{"network.connect"},
+		ContextRefs: []string{"ctx:test-tools", "ctx:test-markers"}, IOCRefs: []string{"ioc:test-ports"},
+		Expr: ExprSpec{
+			ConditionGroup: &ConditionNodeSpec{All: []ConditionNodeSpec{
+				{Any: []ConditionNodeSpec{
+					conditionLeaf(ConditionSpec{Field: "process.binary_name", Op: "in", Ref: "ctx:test-tools"}),
+					conditionLeaf(ConditionSpec{Field: "process.argv", Op: "contains", Ref: "ctx:test-markers"}),
+				}},
+				conditionLeaf(ConditionSpec{Field: "socket.port", Op: "in", Ref: "ioc:test-ports"}),
+				{Not: ptrConditionNode(conditionLeaf(ConditionSpec{Field: "process.binary_name", Op: "eq", Value: "blocked"}))},
+			}},
+		},
+	}
+	content := ContentSnapshot{
+		ContextRefs: map[string]ContentRef{
+			"ctx:test-tools":   {Ref: "ctx:test-tools", Values: []string{"fetcher"}},
+			"ctx:test-markers": {Ref: "ctx:test-markers", Values: []string{"--probe"}},
+		},
+		IOCRefs: map[string]ContentRef{"ioc:test-ports": {Ref: "ioc:test-ports", Values: []string{"9443"}}},
+		Rules:   []RuleSpec{rule},
+	}
+	engine, report := NewWithRuntime(cepPolicy(), contract.CollectionIntent{}, content)
+	if report.Status != "applied" {
+		t.Fatalf("report = %+v", report)
+	}
+	tests := []struct {
+		name  string
+		event *eventv1.CanonicalEvent
+		want  int
+	}{
+		{name: "binary branch", event: connectEventWithParent("binary", "lin-a", "p1", "parent", "/opt/fetcher", "10.0.0.1:9443"), want: 1},
+		{name: "wrong port", event: connectEventWithParent("port", "lin-b", "p2", "parent", "/opt/fetcher", "10.0.0.1:80"), want: 0},
+		{name: "blocked", event: connectEventWithParent("blocked", "lin-c", "p3", "parent", "/opt/blocked", "10.0.0.1:9443"), want: 0},
+	}
+	argvEvent := connectEventWithParent("argv", "lin-d", "p4", "parent", "/opt/other", "10.0.0.1:9443")
+	argvEvent.SubjectProc.Argv = []string{"/opt/other", "--probe"}
+	tests = append(tests, struct {
+		name  string
+		event *eventv1.CanonicalEvent
+		want  int
+	}{name: "argv branch", event: argvEvent, want: 1})
+	for _, tt := range tests {
+		if got := countSignals(engine.Process(tt.event), "neutral_boolean_rule"); got != tt.want {
+			t.Fatalf("%s signals = %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}
+
+func conditionLeaf(condition ConditionSpec) ConditionNodeSpec {
+	return ConditionNodeSpec{Condition: &condition}
+}
+
+func ptrConditionNode(node ConditionNodeSpec) *ConditionNodeSpec {
+	return &node
+}
+
 func TestExprRuleSuppressesByDeclaredFieldsWithinWindow(t *testing.T) {
 	rule := RuleSpec{
 		RuleID: "suppressed_read", RuleSetRef: "ruleset:cep", RuntimeType: "expr", RequiredBehaviors: []string{"file.open"},

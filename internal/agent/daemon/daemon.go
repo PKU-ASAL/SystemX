@@ -1116,7 +1116,10 @@ func detectionRequiredEvents(events []agentcontent.RequiredEvent) []detection.Re
 }
 
 func detectionExpr(expr agentcontent.RuntimeExpr) detection.ExprSpec {
-	out := detection.ExprSpec{Conditions: make([]detection.ConditionSpec, 0, len(expr.Conditions))}
+	out := detection.ExprSpec{
+		Conditions:     make([]detection.ConditionSpec, 0, len(expr.Conditions)),
+		ConditionGroup: detectionConditionNode(expr.ConditionGroup),
+	}
 	for _, cond := range expr.Conditions {
 		out.Conditions = append(out.Conditions, detectionCondition(cond))
 	}
@@ -1136,14 +1139,37 @@ func detectionSequence(seq agentcontent.RuntimeSequence) detection.SequenceSpec 
 			behavior = step.Event
 		}
 		next := detection.StepSpec{
-			ID:         step.ID,
-			Behavior:   eventmodel.NormalizeBehavior(behavior).String(),
-			Conditions: make([]detection.ConditionSpec, 0, len(step.Conditions)),
+			ID:             step.ID,
+			Behavior:       eventmodel.NormalizeBehavior(behavior).String(),
+			Conditions:     make([]detection.ConditionSpec, 0, len(step.Conditions)),
+			ConditionGroup: detectionConditionNode(step.ConditionGroup),
 		}
 		for _, cond := range step.Conditions {
 			next.Conditions = append(next.Conditions, detectionCondition(cond))
 		}
 		out.Steps = append(out.Steps, next)
+	}
+	return out
+}
+
+func detectionConditionNode(node *agentcontent.RuntimeConditionNode) *detection.ConditionNodeSpec {
+	if node == nil {
+		return nil
+	}
+	out := &detection.ConditionNodeSpec{
+		All: make([]detection.ConditionNodeSpec, 0, len(node.All)),
+		Any: make([]detection.ConditionNodeSpec, 0, len(node.Any)),
+	}
+	for i := range node.All {
+		out.All = append(out.All, *detectionConditionNode(&node.All[i]))
+	}
+	for i := range node.Any {
+		out.Any = append(out.Any, *detectionConditionNode(&node.Any[i]))
+	}
+	out.Not = detectionConditionNode(node.Not)
+	if node.Condition != nil {
+		condition := detectionCondition(*node.Condition)
+		out.Condition = &condition
 	}
 	return out
 }
