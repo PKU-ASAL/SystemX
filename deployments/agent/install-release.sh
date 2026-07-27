@@ -124,7 +124,16 @@ install_release_config_and_content() {
   stage="$(mktemp -d "$parent/.default.XXXXXX")"
   config_stage="$(mktemp "$config_parent/.agent.yaml.XXXXXX")"
   cp -a "$source/." "$stage/"
-  install -m 0644 "$CONFIG_SOURCE" "$config_stage"
+  if [[ -e "$CONFIG_DST" ]]; then
+    if ! "$AGENT_DST" merge-release-config --existing "$CONFIG_DST" --release "$CONFIG_SOURCE" --output "$config_stage"; then
+      rm -rf "$stage"
+      rm -f "$config_stage"
+      return 1
+    fi
+    chmod 0644 "$config_stage"
+  else
+    install -m 0644 "$CONFIG_SOURCE" "$config_stage"
+  fi
   if ! validate_default_content "$stage"; then
     rm -rf "$stage"
     rm -f "$config_stage"

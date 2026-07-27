@@ -12,7 +12,8 @@ make_fake_executable() {
   chmod 0755 "$path"
 }
 
-make_fake_executable "$WORK/bin/sysarmor-agent"
+mkdir -p "$WORK/bin"
+(cd "$REPO" && go build -o "$WORK/bin/sysarmor-agent" ./cmd/sysarmor-agent)
 make_fake_executable "$WORK/bin/sysarmorctl"
 make_fake_executable "$WORK/tetragon/tetragon-v1.7.0/bin/tetragon"
 make_fake_executable "$WORK/tetragon/tetragon-v1.7.0/bin/tetra"
@@ -53,6 +54,32 @@ test -f "$WORK/release/content/default/content-manifest.json"
 grep -Fq '"signature_alg": "ed25519"' "$WORK/release/content/default/rulepack-cep-endpoint.json"
 grep -Fq 'Mulan Permissive Software License' "$WORK/release/LICENSE"
 
+write_upgrade_config() {
+  local path="$1" marker="$2"
+  cat >"$path" <<EOF
+agent:
+  label.upgrade_marker: $marker
+local:
+  state_path: /custom/state
+sensor:
+  backend: tetragon
+  mode: managed
+  scope:
+    type: container
+    selector: 0123456789ab
+telemetry:
+  max_batch_items: 17
+  max_batch_bytes: 64KiB
+  flush_interval: 3s
+policy:
+  path: /custom/policy.json
+content:
+  default_path: /old/default
+  path: /custom/content
+  trust_keys: "old=key"
+EOF
+}
+
 install_env=(
   SYSARMOR_ENABLE_SERVICE=0
   SYSARMOR_AGENT_HOME="$WORK/root/opt/sysarmor/agent"
@@ -89,12 +116,22 @@ fi
 grep -Fxq keep-old-default "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
 grep -Fxq keep-old-config "$WORK/root/etc/sysarmor/agent/agent.yaml"
 mv "$WORK/context-shell-binaries.original.json" "$WORK/release/content/default/context-shell-binaries.json"
+write_upgrade_config "$WORK/root/etc/sysarmor/agent/agent.yaml" keep-user-config
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 test ! -e "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
 grep -Fq 'trust_keys: "release-test=' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'label.upgrade_marker: keep-user-config' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'state_path: /custom/state' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'selector: 0123456789ab' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'max_batch_items: 17' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'path: "/custom/content"' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+if grep -Fq 'old=key' "$WORK/root/etc/sysarmor/agent/agent.yaml"; then
+  echo "[standalone-release-package][ERROR] old content trust key was preserved" >&2
+  exit 1
+fi
 
 printf 'transaction-old-content\n' >"$WORK/root/opt/sysarmor/agent/content/default/transaction-marker"
-printf 'transaction-old-config\n' >"$WORK/root/etc/sysarmor/agent/agent.yaml"
+write_upgrade_config "$WORK/root/etc/sysarmor/agent/agent.yaml" transaction-old-config
 mkdir -p "$WORK/fail-bin"
 cat >"$WORK/fail-bin/mv" <<'EOF'
 #!/usr/bin/env bash
@@ -110,7 +147,8 @@ if FAIL_MV_STATE="$WORK/fail-mv.state" PATH="$WORK/fail-bin:$PATH" env "${instal
   exit 1
 fi
 grep -Fxq transaction-old-content "$WORK/root/opt/sysarmor/agent/content/default/transaction-marker"
-grep -Fxq transaction-old-config "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'label.upgrade_marker: transaction-old-config' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'trust_keys: "old=key"' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 rm -f "$WORK/root/opt/sysarmor/agent/content/default/transaction-marker"
 
 printf 'preserved-policy\n' >"$WORK/root/etc/sysarmor/agent/policy.json"

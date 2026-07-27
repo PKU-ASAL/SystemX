@@ -31,6 +31,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "merge-release-config":
+			if err := mergeReleaseConfigCommand(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "sysarmor-agent merge-release-config: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 
@@ -76,6 +82,36 @@ func main() {
 	}
 
 	fmt.Fprintf(os.Stderr, "sysarmor-agent skeleton: agent_id=%s host_id=%s manager=%s\n", *agentID, *hostID, *manager)
+}
+
+func mergeReleaseConfigCommand(args []string) error {
+	fs := flag.NewFlagSet("merge-release-config", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	existingPath := fs.String("existing", "", "existing agent config path")
+	releasePath := fs.String("release", "", "release agent config path")
+	outputPath := fs.String("output", "", "merged config output path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *existingPath == "" || *releasePath == "" || *outputPath == "" {
+		return fmt.Errorf("--existing, --release, and --output are required")
+	}
+	existing, err := os.ReadFile(*existingPath)
+	if err != nil {
+		return fmt.Errorf("read existing config: %w", err)
+	}
+	release, err := os.ReadFile(*releasePath)
+	if err != nil {
+		return fmt.Errorf("read release config: %w", err)
+	}
+	merged, err := agentconfig.MergeReleaseContent(existing, release)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*outputPath, merged, 0o644); err != nil {
+		return fmt.Errorf("write merged config: %w", err)
+	}
+	return nil
 }
 
 func runDaemonCommand(args []string) error {
