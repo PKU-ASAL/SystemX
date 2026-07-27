@@ -817,10 +817,9 @@ func TestAgentRuntimeProcessesTamperSignalFromHealth(t *testing.T) {
 		},
 	}
 	sig := (&tamper.Detector{}).Evaluate(health, time.Now().UTC(), tamper.Options{
-		MaxRestarts:        uint64(runner.Config.Sensor.MaxRestarts),
-		MaxParseErrors:     runner.Config.Sensor.MaxParseErrors,
-		MaxDroppedEvents:   runner.Config.Sensor.MaxDroppedEvents,
-		NoEventGracePeriod: tamperNoEventGracePeriod(runner.Config.Sensor.RestartWindow, runner.Config.Health.Interval),
+		MaxRestarts:      uint64(runner.Config.Sensor.MaxRestarts),
+		MaxParseErrors:   runner.Config.Sensor.MaxParseErrors,
+		MaxDroppedEvents: runner.Config.Sensor.MaxDroppedEvents,
 	})
 	if sig == nil {
 		t.Fatal("tamper Evaluate() = nil")
@@ -921,15 +920,6 @@ func TestTetragonRestartPolicyFromConfig(t *testing.T) {
 	}
 	if _, err := tetragonRestartPolicy(config.SensorConfig{Restart: "sometimes"}); err == nil {
 		t.Fatal("tetragonRestartPolicy(unknown) error = nil")
-	}
-}
-
-func TestTamperNoEventGracePeriodHasFloor(t *testing.T) {
-	if got := tamperNoEventGracePeriod(500*time.Millisecond, 500*time.Millisecond); got != 30*time.Second {
-		t.Fatalf("tamper grace = %s, want 30s floor", got)
-	}
-	if got := tamperNoEventGracePeriod(time.Minute, 10*time.Second); got != 100*time.Second {
-		t.Fatalf("tamper grace = %s, want 10 health intervals", got)
 	}
 }
 

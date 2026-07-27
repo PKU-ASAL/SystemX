@@ -337,10 +337,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				return err
 			}
 			if sig := tamperDetector.Evaluate(health, time.Now().UTC(), tamper.Options{
-				MaxRestarts:        uint64(r.Config.Sensor.MaxRestarts),
-				MaxParseErrors:     r.Config.Sensor.MaxParseErrors,
-				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
-				NoEventGracePeriod: tamperNoEventGracePeriod(r.Config.Sensor.RestartWindow, r.Config.Health.Interval),
+				MaxRestarts:      uint64(r.Config.Sensor.MaxRestarts),
+				MaxParseErrors:   r.Config.Sensor.MaxParseErrors,
+				MaxDroppedEvents: r.Config.Sensor.MaxDroppedEvents,
 			}); sig != nil {
 				batch, err := endpointRuntime.ProcessSignals([]*signalv1.Signal{sig})
 				if err != nil {
@@ -365,17 +364,6 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
-}
-
-func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.Duration {
-	grace := restartWindow
-	if grace < 30*time.Second {
-		grace = 30 * time.Second
-	}
-	if intervalGrace := healthInterval * 10; intervalGrace > grace {
-		grace = intervalGrace
-	}
-	return grace
 }
 
 func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, bus *telemetry.Bus, batcher *telemetry.Batcher, sender *telemetry.Sender, reporter healthReporter, startedAt time.Time, cancelDataPlane func(), stopRuntime func()) error {

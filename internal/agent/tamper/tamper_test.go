@@ -60,23 +60,94 @@ func TestDetectorEmitsSensorTamperSignal(t *testing.T) {
 	}
 }
 
-func TestReasonDetectsBlindEventStream(t *testing.T) {
+func TestReasonDoesNotTreatQuietEventStreamAsBlind(t *testing.T) {
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	health := agenthealth.AgentHealth{
-		UptimeSeconds: 120,
+		UptimeSeconds: 3600,
 		Sensor: agenthealth.SensorHealth{
 			Backend:      "tetragon",
 			PolicyLoaded: true,
 			Running:      true,
 		},
 	}
-	if got := Reason(health, now, Options{NoEventGracePeriod: time.Minute}); got != "event_stream_blind:no_events_seen" {
-		t.Fatalf("Reason() = %q", got)
+	if got := Reason(health, DefaultOptions()); got != "" {
+		t.Fatalf("Reason() = %q, want quiet healthy sensor", got)
 	}
 
-	health.Sensor.LastEventAt = now.Add(-2 * time.Minute)
-	if got := Reason(health, now, Options{NoEventGracePeriod: time.Minute}); got == "" {
-		t.Fatal("Reason() for stale last_event_at = empty")
+	health.Sensor.LastEventAt = now.Add(-time.Hour)
+	if got := Reason(health, DefaultOptions()); got != "" {
+		t.Fatalf("Reason() with stale business event = %q, want quiet healthy sensor", got)
+	}
+}
+
+func TestDetectorEmitsAgainAfterRecovery(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	detector := &Detector{}
+	health := agenthealth.AgentHealth{
+		AgentID: "agent-a", HostID: "host-a", TenantID: "default",
+		Sensor: agenthealth.SensorHealth{Backend: "tetragon", PolicyLoaded: true, Running: false},
+	}
+	first := detector.Evaluate(health, now, DefaultOptions())
+	if first == nil {
+		t.Fatal("first failure signal = nil")
+	}
+	if got := detector.Evaluate(health, now.Add(time.Second), DefaultOptions()); got != nil {
+		t.Fatalf("duplicate failure signal = %+v", got)
+	}
+	health.Sensor.Running = true
+	if got := detector.Evaluate(health, now.Add(2*time.Second), DefaultOptions()); got != nil {
+		t.Fatalf("recovery signal = %+v", got)
+	}
+	health.Sensor.Running = false
+	second := detector.Evaluate(health, now.Add(3*time.Second), DefaultOptions())
+	if second == nil {
+		t.Fatal("failure after recovery signal = nil")
+	}
+	if second.GetId() == first.GetId() {
+		t.Fatalf("failure after recovery reused signal ID %q", second.GetId())
+	}
+}
+
+func TestDetectorDoesNotRepeatWhenThresholdCountIncreases(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	detector := &Detector{}
+	health := agenthealth.AgentHealth{
+		AgentID: "agent-a", HostID: "host-a", TenantID: "default",
+		Sensor: agenthealth.SensorHealth{
+			Backend:      "tetragon",
+			PolicyLoaded: true,
+			Running:      true,
+			ParseErrors:  3,
+		},
+	}
+	opts := Options{MaxParseErrors: 2}
+	if got := detector.Evaluate(health, now, opts); got == nil {
+		t.Fatal("first threshold signal = nil")
+	}
+	health.Sensor.ParseErrors = 4
+	if got := detector.Evaluate(health, now.Add(time.Second), opts); got != nil {
+		t.Fatalf("increased count repeated signal = %+v", got)
+	}
+}
+
+func TestDetectorEmitsWhenSensorErrorChanges(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	detector := &Detector{}
+	health := agenthealth.AgentHealth{
+		AgentID: "agent-a", HostID: "host-a", TenantID: "default",
+		Sensor: agenthealth.SensorHealth{
+			Backend:      "tetragon",
+			PolicyLoaded: true,
+			Running:      true,
+			LastError:    "btf unavailable",
+		},
+	}
+	if got := detector.Evaluate(health, now, DefaultOptions()); got == nil {
+		t.Fatal("first sensor error signal = nil")
+	}
+	health.Sensor.LastError = "bpffs unavailable"
+	if got := detector.Evaluate(health, now.Add(time.Second), DefaultOptions()); got == nil {
+		t.Fatal("changed sensor error signal = nil")
 	}
 }
 
@@ -103,11 +174,11 @@ func TestReasonDetectsParseAndDropThresholds(t *testing.T) {
 			EventsDropped: 4,
 		},
 	}
-	if got := Reason(health, time.Now(), Options{MaxParseErrors: 2}); got != "parse_errors_exceeded:3>2" {
+	if got := Reason(health, Options{MaxParseErrors: 2}); got != "parse_errors_exceeded:3>2" {
 		t.Fatalf("parse Reason() = %q", got)
 	}
 	health.Sensor.ParseErrors = 0
-	if got := Reason(health, time.Now(), Options{MaxDroppedEvents: 2}); got != "events_dropped_exceeded:4>2" {
+	if got := Reason(health, Options{MaxDroppedEvents: 2}); got != "events_dropped_exceeded:4>2" {
 		t.Fatalf("drop Reason() = %q", got)
 	}
 }

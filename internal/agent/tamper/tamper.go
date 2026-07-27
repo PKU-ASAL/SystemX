@@ -14,39 +14,39 @@ import (
 const SignalName = "sensor_tamper_or_blindness"
 
 type Detector struct {
-	lastID string
+	activeIncident string
 }
 
 type Options struct {
-	MaxRestarts        uint64
-	MaxParseErrors     uint64
-	MaxDroppedEvents   uint64
-	NoEventGracePeriod time.Duration
+	MaxRestarts      uint64
+	MaxParseErrors   uint64
+	MaxDroppedEvents uint64
 }
 
 func DefaultOptions() Options {
 	return Options{
-		MaxRestarts:        0,
-		MaxParseErrors:     0,
-		MaxDroppedEvents:   0,
-		NoEventGracePeriod: time.Minute,
+		MaxRestarts:      0,
+		MaxParseErrors:   0,
+		MaxDroppedEvents: 0,
 	}
 }
 
 func (d *Detector) Evaluate(health agenthealth.AgentHealth, now time.Time, opts Options) *signalv1.Signal {
-	reason := Reason(health, now, opts)
+	reason := Reason(health, opts)
 	if reason == "" {
+		d.activeIncident = ""
 		return nil
 	}
+	incident := incidentKey(health, reason)
+	if incident == d.activeIncident {
+		return nil
+	}
+	d.activeIncident = incident
 	id := signalID(health, reason, now)
-	if id == d.lastID {
-		return nil
-	}
-	d.lastID = id
 	return Signal(health, reason, id)
 }
 
-func Reason(health agenthealth.AgentHealth, now time.Time, opts Options) string {
+func Reason(health agenthealth.AgentHealth, opts Options) string {
 	sensor := health.Sensor
 	switch {
 	case !sensor.PolicyLoaded:
@@ -61,13 +61,29 @@ func Reason(health agenthealth.AgentHealth, now time.Time, opts Options) string 
 		return fmt.Sprintf("parse_errors_exceeded:%d>%d", sensor.ParseErrors, opts.MaxParseErrors)
 	case opts.MaxDroppedEvents > 0 && sensor.EventsDropped > opts.MaxDroppedEvents:
 		return fmt.Sprintf("events_dropped_exceeded:%d>%d", sensor.EventsDropped, opts.MaxDroppedEvents)
-	case opts.NoEventGracePeriod > 0 && sensor.Running && sensor.LastEventAt.IsZero() && health.UptimeSeconds >= int64(opts.NoEventGracePeriod.Seconds()):
-		return "event_stream_blind:no_events_seen"
-	case opts.NoEventGracePeriod > 0 && sensor.Running && !sensor.LastEventAt.IsZero() && now.Sub(sensor.LastEventAt) > opts.NoEventGracePeriod:
-		return "event_stream_blind:" + now.Sub(sensor.LastEventAt).String()
 	default:
 		return ""
 	}
+}
+
+func incidentKey(health agenthealth.AgentHealth, reason string) string {
+	return strings.Join([]string{
+		health.TenantID,
+		health.AgentID,
+		health.HostID,
+		scopeSummary(health.Scope),
+		health.Sensor.Backend,
+		stableIncidentReason(reason),
+	}, "|")
+}
+
+func stableIncidentReason(reason string) string {
+	for _, prefix := range []string{"restart_count_exceeded", "parse_errors_exceeded", "events_dropped_exceeded"} {
+		if strings.HasPrefix(reason, prefix+":") {
+			return prefix
+		}
+	}
+	return reason
 }
 
 func Signal(health agenthealth.AgentHealth, reason, id string) *signalv1.Signal {
@@ -115,8 +131,7 @@ func Signal(health agenthealth.AgentHealth, reason, id string) *signalv1.Signal 
 }
 
 func signalID(health agenthealth.AgentHealth, reason string, now time.Time) string {
-	bucket := now.UTC().Unix() / int64((5 * time.Minute).Seconds())
-	base := strings.Join([]string{health.TenantID, health.AgentID, health.HostID, scopeSummary(health.Scope), health.Sensor.Backend, reason, fmt.Sprint(bucket)}, "|")
+	base := strings.Join([]string{health.TenantID, health.AgentID, health.HostID, scopeSummary(health.Scope), health.Sensor.Backend, reason, fmt.Sprint(now.UTC().UnixNano())}, "|")
 	sum := sha256.Sum256([]byte(base))
 	return "sig-tamper-" + hex.EncodeToString(sum[:8])
 }
