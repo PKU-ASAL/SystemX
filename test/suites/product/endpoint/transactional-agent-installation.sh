@@ -73,6 +73,9 @@ if [[ "$1" == *'.stage.'* && "$2" == "${SIGNAL_COMMIT_TARGET:-}" && ! -e "${SIGN
   : >"$SIGNAL_ONCE_STATE"
   kill -s "${INSTALL_SIGNAL:-TERM}" "$PPID"
 fi
+if [[ "$1" == *'.previous.'* && "$2" == "${FAIL_RESTORE_TARGET:-}" ]]; then
+  exit 1
+fi
 exec /usr/bin/mv "$@"
 EOF
   printf '#!/usr/bin/env sh\nprintf "1\\n"\n' >"$WORK/commands/seq"
@@ -156,6 +159,20 @@ if HEALTH_FAIL=1 run_core >/dev/null 2>&1; then
   fail "health failure was accepted"
 fi
 assert_old_installation
+
+set_paths rollback-failure
+seed_old_installation
+rollback_error="$ROOT/rollback-error.log"
+if HEALTH_FAIL=1 FAIL_RESTORE_TARGET="$AGENT" run_core >/dev/null 2>"$rollback_error"; then
+  fail "rollback restoration failure was accepted"
+fi
+shopt -s nullglob
+rollback_backups=("$(dirname "$AGENT")/.$(basename "$AGENT").previous."*)
+shopt -u nullglob
+[[ ${#rollback_backups[@]} -eq 1 && -e "${rollback_backups[0]}" ]] || \
+  { cat "$rollback_error" >&2; fail "failed rollback did not preserve the Agent backup"; }
+grep -Fq "$AGENT" "$rollback_error" || fail "rollback failure did not identify the target"
+grep -Fq "${rollback_backups[0]}" "$rollback_error" || fail "rollback failure did not identify the backup"
 
 for install_signal in TERM INT; do
   set_paths "signal-${install_signal,,}"

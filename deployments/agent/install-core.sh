@@ -177,7 +177,7 @@ cleanup_transaction_files() {
 }
 
 rollback_installation() {
-  local i target backup
+  local i target backup rollback_failed=0
   trap - EXIT INT TERM
   if [[ "$ENABLE_SERVICE" == "1" ]]; then
     systemctl stop sysarmor-agent 2>/dev/null || true
@@ -186,9 +186,18 @@ rollback_installation() {
     target="${TARGETS[$i]}"
     backup="${BACKUPS[$i]}"
     [[ -n "$backup" ]] || continue
-    [[ ! -e "$target" ]] || rm -rf "$target"
+    if [[ -e "$target" ]] && ! rm -rf "$target"; then
+      echo "[sysarmor-install][ERROR] rollback could not remove target: $target; backup preserved: $backup" >&2
+      BACKUPS[$i]=""
+      rollback_failed=1
+      continue
+    fi
     if [[ "${HAD_OLD[$i]}" == 1 && -e "$backup" ]]; then
-      mv "$backup" "$target" || true
+      if ! mv "$backup" "$target"; then
+        echo "[sysarmor-install][ERROR] rollback could not restore target: $target; backup preserved: $backup" >&2
+        BACKUPS[$i]=""
+        rollback_failed=1
+      fi
     fi
   done
   cleanup_transaction_files
@@ -197,12 +206,16 @@ rollback_installation() {
     [[ "$WAS_ENABLED" == 1 ]] || systemctl disable sysarmor-agent 2>/dev/null || true
     [[ "$WAS_ACTIVE" != 1 ]] || systemctl start sysarmor-agent 2>/dev/null || true
   fi
+  return "$rollback_failed"
 }
 
 on_exit() {
   local status=$?
   if [[ "$TRANSACTION_ACTIVE" == 1 ]]; then
-    rollback_installation
+    if ! rollback_installation; then
+      echo "[sysarmor-install][ERROR] installation rollback incomplete; preserved backups require manual recovery" >&2
+      status=1
+    fi
   else
     cleanup_transaction_files
   fi
