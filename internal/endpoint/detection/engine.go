@@ -976,7 +976,7 @@ func sudoOptionNeedsValue(arg string) bool {
 
 func sudoFlagWithoutValue(arg string) bool {
 	switch arg {
-	case "-A", "-b", "-E", "-H", "-K", "-k", "-n", "-P", "-S",
+	case "-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S",
 		"--askpass", "--background", "--non-interactive", "--preserve-env",
 		"--preserve-groups", "--reset-timestamp", "--set-home", "--stdin":
 		return true

@@ -208,13 +208,10 @@ func argv(binary, arguments string) []string {
 }
 
 func argvBoundariesTrusted(arguments string) bool {
-	if arguments == "" {
-		return true
-	}
-	if strings.TrimSpace(arguments) != arguments || strings.Contains(arguments, "  ") {
+	if strings.Join(strings.Fields(arguments), " ") != arguments {
 		return false
 	}
-	return !strings.ContainsAny(arguments, "\t\r\n\"'\\")
+	return !strings.ContainsAny(arguments, "\"'\\")
 }
 
 func monotonicishNS(primary, fallback string) uint64 {

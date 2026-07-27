@@ -769,6 +769,7 @@ func TestCredentialReadUsesExactSystemCommandBaselines(t *testing.T) {
 		{name: "sysarmor token in quoted prompt", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-p", "\"notice", "sysarmorctl", "tail\"", "cat", "/etc/shadow"}, want: 1},
 		{name: "untrusted argv boundaries", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "agent", "health"}, untrustedArgv: true, want: 1},
 		{name: "sudo edit sysarmor path", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-e", "sysarmorctl", "/etc/shadow"}, want: 1},
+		{name: "sudo remove timestamp", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-K", "sysarmorctl"}, want: 1},
 		{name: "unknown sudo option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--unknown", "sysarmorctl", "agent", "health"}, want: 1},
 		{name: "unknown sudo inline option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--unknown=value", "sysarmorctl", "agent", "health"}, want: 1},
 		{name: "sudo dangerous command", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "cat", "/etc/shadow"}, want: 1},
