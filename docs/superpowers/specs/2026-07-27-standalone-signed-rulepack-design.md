@@ -64,8 +64,8 @@ Agent 发行包自身的 artifact 签名与内容签名是两条独立校验链�
 配置与默认内容必须属于同一发行事务，避免新 trust key 配旧内容或旧 trust key 配新内容。
 
 已有配置升级时以现有配置为基础，只由发行包更新
-`content.default_path` 和 `content.trust_keys`。Manager 地址、Agent 身份、
-sensor scope、telemetry 等用户或平台管理字段必须原样保留。首次安装仍使用发行包
+`content.default_path` 和 `content.trust_keys`。Agent labels、local、sensor scope、
+telemetry、policy 和 `content.path` 等用户或平台管理字段必须原样保留。首次安装仍使用发行包
 提供的完整默认配置。结构化合并后的配置与默认内容一起进入 staging、校验、提交和
 回滚，任何一步失败都恢复旧配置与旧内容。
 
