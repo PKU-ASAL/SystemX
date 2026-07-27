@@ -26,6 +26,8 @@ type preparedEndpointPolicy struct {
 }
 
 func (s *localControlServer) applyEndpointPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+	s.runner.detectionUpdateMu.Lock()
+	defer s.runner.detectionUpdateMu.Unlock()
 	prepared, err := s.prepareEndpointPolicy(req.GetPolicyJson())
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "policy", err.Error())

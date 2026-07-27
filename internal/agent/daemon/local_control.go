@@ -396,7 +396,7 @@ func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentReques
 }
 
 func (r *AgentRuntime) applyContentTransaction(req *controlplanev1.ApplyContentRequest) (record agentcontent.Record, report detection.ApplyReport, status string, ack *controlplanev1.ControlAck) {
-	r.withContentUpdateTransaction(func() {
+	r.withDetectionUpdateTransaction(func() {
 		var snapshot agentcontent.Snapshot
 		var err error
 		record, snapshot, err = r.contentStore().Prepare(req.GetContentJson(), req.GetAllowUnsigned())
@@ -463,6 +463,8 @@ func (s *localControlServer) GetEvent(ctx context.Context, req *controlplanev1.G
 }
 
 func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+	s.runner.detectionUpdateMu.Lock()
+	defer s.runner.detectionUpdateMu.Unlock()
 	policy, err := agentpolicy.ParseCollectionPolicyJSON([]byte(req.GetPolicyJson()), s.runner.Config.Sensor.ObserveOnly)
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "invalid collection policy: "+err.Error())
@@ -524,6 +526,8 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 }
 
 func (s *localControlServer) applyDetectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+	s.runner.detectionUpdateMu.Lock()
+	defer s.runner.detectionUpdateMu.Unlock()
 	var envelope struct {
 		Detection *policymodel.DetectionPolicy `json:"detection"`
 	}

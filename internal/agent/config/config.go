@@ -2,7 +2,6 @@ package config
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -12,63 +11,6 @@ import (
 
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
-
-func MergeReleaseContent(existing, release []byte) ([]byte, error) {
-	existingConfig, err := parse(bytes.NewReader(existing))
-	if err != nil {
-		return nil, fmt.Errorf("parse existing config: %w", err)
-	}
-	if err := existingConfig.Validate(); err != nil {
-		return nil, fmt.Errorf("validate existing config: %w", err)
-	}
-	releaseConfig, err := parse(bytes.NewReader(release))
-	if err != nil {
-		return nil, fmt.Errorf("parse release config: %w", err)
-	}
-	if err := releaseConfig.Validate(); err != nil {
-		return nil, fmt.Errorf("validate release config: %w", err)
-	}
-	if strings.TrimSpace(releaseConfig.Content.DefaultPath) == "" || strings.TrimSpace(releaseConfig.Content.TrustKeys) == "" {
-		return nil, fmt.Errorf("release content.default_path and content.trust_keys are required")
-	}
-	content := ContentConfig{
-		DefaultPath: releaseConfig.Content.DefaultPath,
-		Path:        existingConfig.Content.Path,
-		TrustKeys:   releaseConfig.Content.TrustKeys,
-	}
-	merged := replaceTopLevelSection(string(existing), "content", renderContentConfig(content))
-	if _, err := parse(strings.NewReader(merged)); err != nil {
-		return nil, fmt.Errorf("validate merged config: %w", err)
-	}
-	return []byte(merged), nil
-}
-
-func renderContentConfig(content ContentConfig) string {
-	return fmt.Sprintf("content:\n  default_path: %q\n  path: %q\n  trust_keys: %q\n",
-		content.DefaultPath, content.Path, content.TrustKeys)
-}
-
-func replaceTopLevelSection(raw, section, replacement string) string {
-	lines := strings.Split(raw, "\n")
-	start, end := -1, len(lines)
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(stripComment(line))
-		if start < 0 && line == strings.TrimLeft(line, " \t") && trimmed == section+":" {
-			start = i
-			continue
-		}
-		if start >= 0 && i > start && trimmed != "" && line == strings.TrimLeft(line, " \t") {
-			end = i
-			break
-		}
-	}
-	if start < 0 {
-		return strings.TrimRight(raw, "\n") + "\n\n" + replacement
-	}
-	before := strings.Join(lines[:start], "\n")
-	after := strings.Join(lines[end:], "\n")
-	return strings.TrimRight(before, "\n") + "\n" + replacement + strings.TrimLeft(after, "\n")
-}
 
 type Config struct {
 	Agent     AgentConfig
@@ -346,6 +288,7 @@ func parse(r io.Reader) (Config, error) {
 	cfg := defaults()
 	scanner := bufio.NewScanner(r)
 	root, nested := "", ""
+	seen := make(map[string]struct{})
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
@@ -357,6 +300,9 @@ func parse(r io.Reader) (Config, error) {
 		trimmed := strings.TrimSpace(raw)
 		if indent == 0 && strings.HasSuffix(trimmed, ":") {
 			root = strings.TrimSuffix(trimmed, ":")
+			if err := markConfigPath(seen, "section "+root); err != nil {
+				return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
+			}
 			nested = ""
 			continue
 		}
@@ -365,6 +311,9 @@ func parse(r io.Reader) (Config, error) {
 		}
 		if indent == 2 && strings.HasSuffix(trimmed, ":") {
 			nested = root + "." + strings.TrimSuffix(trimmed, ":")
+			if err := markConfigPath(seen, "section "+nested); err != nil {
+				return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
+			}
 			continue
 		}
 		key, value, ok := strings.Cut(trimmed, ":")
@@ -378,6 +327,9 @@ func parse(r io.Reader) (Config, error) {
 		} else if indent == 2 {
 			nested = ""
 		}
+		if err := markConfigPath(seen, "key "+assignSection+"."+key); err != nil {
+			return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
+		}
 		if err := assign(&cfg, assignSection, key, unquote(strings.TrimSpace(value))); err != nil {
 			return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
 		}
@@ -386,6 +338,14 @@ func parse(r io.Reader) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func markConfigPath(seen map[string]struct{}, path string) error {
+	if _, ok := seen[path]; ok {
+		return fmt.Errorf("duplicate %s", path)
+	}
+	seen[path] = struct{}{}
+	return nil
 }
 
 func defaults() Config {

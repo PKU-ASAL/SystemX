@@ -108,10 +108,15 @@ func mergeReleaseConfigCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(*outputPath, merged, 0o644); err != nil {
+	output, err := os.OpenFile(*outputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open merged config: %w", err)
+	}
+	if _, err := output.Write(merged); err != nil {
+		_ = output.Close()
 		return fmt.Errorf("write merged config: %w", err)
 	}
-	return nil
+	return output.Close()
 }
 
 func runDaemonCommand(args []string) error {

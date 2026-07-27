@@ -50,4 +50,11 @@ content:
 	if !strings.Contains(string(merged), `path: "/custom/content"`) || !strings.Contains(string(merged), `trust_keys: "release=new-key"`) {
 		t.Fatalf("merged config =\n%s", merged)
 	}
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("output mode = %o, want 600", info.Mode().Perm())
+	}
 }

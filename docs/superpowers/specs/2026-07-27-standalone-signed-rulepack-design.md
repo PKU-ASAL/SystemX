@@ -99,8 +99,9 @@ Agent 启动调整为：
 
 ## 运行时更新
 
-运行时 `content apply` 使用 Agent 级专用事务锁串行执行 prepare、验签、构建新
-snapshot、编译、持久化和切换 detection engine。Store、engine 和 detection health
+运行时 `content apply` 与 detection、collection、endpoint policy 更新共享 Agent 级
+事务锁，串行执行 prepare、验签、构建新 snapshot、编译、持久化和切换 detection
+engine。Store、policy、engine 和 detection health
 必须在同一临界区内提交，避免并发请求交错后分别指向不同版本。持久化失败时恢复
 被覆盖的旧 record，继续使用上一个已生效 snapshot，并将失败写入控制命令结果和
 detection health。

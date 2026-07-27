@@ -27,7 +27,7 @@
 - Modify: `internal/agent/content/store_test.go`
 
 **Interfaces:**
-- Produces: `AgentRuntime.contentUpdateMu sync.Mutex`
+- Produces: `AgentRuntime.detectionUpdateMu sync.Mutex`
 - Produces: `Store.Commit(record Record) error` 的失败恢复保证
 
 - [ ] **Step 1: 写失败测试**
@@ -41,7 +41,7 @@ Expected: 并发一致性或旧 record 保留断言失败。
 
 - [ ] **Step 3: 最小实现**
 
-在 `applyContentUpdate` 非 dry-run 流程进入 `contentUpdateMu` 临界区；`Store.Commit` 在写盘失败时恢复提交前的 record，而不是直接删除 ref。
+内容与 detection、collection、endpoint policy 更新进入同一 `detectionUpdateMu` 临界区；`Store.Commit` 在写盘失败时恢复提交前的 record，而不是直接删除 ref。
 
 - [ ] **Step 4: 验证通过**
 

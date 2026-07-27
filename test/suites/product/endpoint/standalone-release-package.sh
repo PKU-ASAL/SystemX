@@ -117,6 +117,7 @@ grep -Fxq keep-old-default "$WORK/root/opt/sysarmor/agent/content/default/existi
 grep -Fxq keep-old-config "$WORK/root/etc/sysarmor/agent/agent.yaml"
 mv "$WORK/context-shell-binaries.original.json" "$WORK/release/content/default/context-shell-binaries.json"
 write_upgrade_config "$WORK/root/etc/sysarmor/agent/agent.yaml" keep-user-config
+chmod 0600 "$WORK/root/etc/sysarmor/agent/agent.yaml"
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 test ! -e "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
 grep -Fq 'trust_keys: "release-test=' "$WORK/root/etc/sysarmor/agent/agent.yaml"
@@ -125,6 +126,7 @@ grep -Fq 'state_path: /custom/state' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 grep -Fq 'selector: 0123456789ab' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 grep -Fq 'max_batch_items: 17' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 grep -Fq 'path: "/custom/content"' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+[[ "$(stat -c '%a' "$WORK/root/etc/sysarmor/agent/agent.yaml")" == 600 ]]
 if grep -Fq 'old=key' "$WORK/root/etc/sysarmor/agent/agent.yaml"; then
   echo "[standalone-release-package][ERROR] old content trust key was preserved" >&2
   exit 1

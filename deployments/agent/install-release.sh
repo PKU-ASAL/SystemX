@@ -130,7 +130,8 @@ install_release_config_and_content() {
       rm -f "$config_stage"
       return 1
     fi
-    chmod 0644 "$config_stage"
+    chown --reference="$CONFIG_DST" "$config_stage"
+    chmod --reference="$CONFIG_DST" "$config_stage"
   else
     install -m 0644 "$CONFIG_SOURCE" "$config_stage"
   fi

@@ -499,34 +499,38 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	}
 }
 
-func TestContentUpdateTransactionSerializesCallbacks(t *testing.T) {
-	runner := &AgentRuntime{}
-	entered := make(chan struct{}, 2)
+func TestDetectionPolicyWaitsForContentTransaction(t *testing.T) {
+	runner := &AgentRuntime{
+		Config:     config.Config{Agent: config.AgentConfig{TenantID: "default"}},
+		capability: contract.Capability{Backend: "fake", SupportsExec: true},
+	}
+	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
+	server := &localControlServer{runner: runner}
+	entered := make(chan struct{})
 	release := make(chan struct{})
-	done := make(chan struct{}, 2)
-	callback := func() {
+	go runner.withDetectionUpdateTransaction(func() {
 		entered <- struct{}{}
 		<-release
-		done <- struct{}{}
-	}
-
-	go runner.withContentUpdateTransaction(callback)
+	})
 	<-entered
-	go runner.withContentUpdateTransaction(callback)
+	done := make(chan *controlplanev1.ControlAck, 1)
+	go func() {
+		done <- server.applyDetectionPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+			Context:    &controlplanev1.RequestContext{TenantId: "default"},
+			PolicyJson: `{"policy_id":"concurrent-policy","version":2,"mode":"observe"}`,
+		})
+	}()
 	select {
-	case <-entered:
-		t.Fatal("second content transaction entered before first completed")
+	case ack := <-done:
+		t.Fatalf("detection policy completed during content transaction: %+v", ack)
 	case <-time.After(20 * time.Millisecond):
 	}
-	release <- struct{}{}
-	<-done
+	close(release)
 	select {
-	case <-entered:
+	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("second content transaction did not enter after first completed")
+		t.Fatal("detection policy did not complete after content transaction")
 	}
-	release <- struct{}{}
-	<-done
 }
 
 func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
