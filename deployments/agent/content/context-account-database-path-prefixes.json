@@ -2,14 +2,11 @@
   "api_version": "sysarmor.content/v1",
   "kind": "contextset",
   "metadata": {
-    "id": "ctx:credential-path-prefixes",
+    "id": "ctx:account-database-path-prefixes",
     "version": "2026.07.27.1"
   },
   "spec": {
     "value_type": "path_prefix",
-    "values": [
-      "/etc/shadow",
-      "/etc/sudoers"
-    ]
+    "values": ["/etc/passwd"]
   }
 }

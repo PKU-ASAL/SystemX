@@ -113,7 +113,7 @@
           },
           {
             "rule_id": "credential_file_read",
-            "version": 4,
+            "version": 5,
             "severity": "medium",
             "runtime": {
               "type": "expr",
@@ -145,6 +145,41 @@
               ],
               "context": {
                 "required": ["ctx:credential-path-prefixes", "ctx:trusted-admin-binaries"]
+              }
+            },
+            "suppress": {
+              "within": "5m",
+              "by": ["lineage_id", "process.binary", "file.path"]
+            }
+          },
+          {
+            "rule_id": "account_database_read",
+            "version": 1,
+            "severity": "low",
+            "runtime": {
+              "type": "expr",
+              "expr": {
+                "condition_group": {
+                  "all": [
+                    {"condition": {"field": "file.path", "op": "prefix", "ref": "ctx:account-database-path-prefixes"}},
+                    {"any": [
+                      {"not": {"condition": {"field": "process.binary", "op": "exists"}}},
+                      {"condition": {"field": "process.binary_name", "op": "in", "ref": "ctx:account-enumeration-binaries"}},
+                      {"condition": {"field": "process.binary_name", "op": "in", "ref": "ctx:shell-binaries"}}
+                    ]}
+                  ]
+                }
+              }
+            },
+            "requires": {
+              "events": [
+                {
+                  "behavior": "file.read",
+                  "fields": ["file.path", "process.binary", "lineage_id"]
+                }
+              ],
+              "context": {
+                "required": ["ctx:account-database-path-prefixes", "ctx:account-enumeration-binaries", "ctx:shell-binaries"]
               }
             },
             "suppress": {

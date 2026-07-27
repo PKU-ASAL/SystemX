@@ -742,13 +742,47 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	if got := countSignals(engine.Process(second), "credential_file_read"); got != 0 {
 		t.Fatalf("duplicate credential signal count = %d, want 0", got)
 	}
-	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/etc/passwd")
+	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/etc/sudoers")
 	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
 		t.Fatalf("different path credential signal count = %d, want 1", got)
 	}
 	fourth := readEvent("e4", "lin-b", "proc-c", "/tmp/cat", "/etc/shadow")
 	if got := countSignals(engine.Process(fourth), "credential_file_read"); got != 1 {
 		t.Fatalf("different lineage credential signal count = %d, want 1", got)
+	}
+}
+
+func TestAccountDatabaseReadRequiresSuspiciousReader(t *testing.T) {
+	tests := []struct {
+		name string
+		bin  string
+		want int
+	}{
+		{name: "cat", bin: "/usr/bin/cat", want: 1},
+		{name: "shell", bin: "/bin/bash", want: 1},
+		{name: "account enumeration", bin: "/usr/bin/getent", want: 1},
+		{name: "missing binary", want: 1},
+		{name: "health curl", bin: "/usr/bin/curl", want: 0},
+		{name: "sshd", bin: "/usr/sbin/sshd", want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, _ := NewWithRuntime(testDetectionPolicy(), contract.CollectionIntent{}, testContentSnapshot(t))
+			signals := engine.Process(readEvent("passwd-read", "lineage", "process", tt.bin, "/etc/passwd"))
+			if got := countSignals(signals, "account_database_read"); got != tt.want {
+				t.Fatalf("account database signals = %d, want %d", got, tt.want)
+			}
+			if got := countSignals(signals, "credential_file_read"); got != 0 {
+				t.Fatalf("credential signals = %d, want 0 for /etc/passwd", got)
+			}
+			if tt.want == 1 {
+				for _, signal := range signals {
+					if signal.GetName() == "account_database_read" && signal.GetSeverity() != "low" {
+						t.Fatalf("severity = %q, want low", signal.GetSeverity())
+					}
+			}
+			}
+		})
 	}
 }
 
