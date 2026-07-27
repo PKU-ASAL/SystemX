@@ -77,3 +77,13 @@ for benchmark in "$REPO/test/suites/performance/endpoint/run.sh" "$REPO/test/sui
 done
 
 echo "[unified-agent-installation] benchmark content boundary ok"
+
+if jq -e '.detection.rule_overrides[]? | select(.rule_id == "credential_file_read" and .enabled == false)' \
+  "$REPO/deployments/agent/policy.json" >/dev/null; then
+  fail "default policy disables credential_file_read"
+fi
+if rg -q 'sudo sysarmorctl.*agent health' "$REPO/test/shared/recorder/recorder-vm.sh"; then
+  fail "performance recorder creates sudo credential-read noise"
+fi
+
+echo "[unified-agent-installation] credential read defaults ok"
