@@ -1416,11 +1416,11 @@ func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
 		if b.ContainerIDPrefix == "" {
 			return true
 		}
-		return strings.HasPrefix(event.GetContainerId(), b.ContainerIDPrefix)
+		return containerIDsMatch(event.GetContainerId(), b.ContainerIDPrefix)
 	case "host":
 		return true
 	case "container":
-		return strings.HasPrefix(event.GetContainerId(), scopeSelector)
+		return containerIDsMatch(event.GetContainerId(), scopeSelector)
 	case "cgroup":
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
 	case "namespace":
