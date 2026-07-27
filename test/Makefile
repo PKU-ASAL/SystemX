@@ -130,6 +130,8 @@ product-endpoint: doctor
 
 product-endpoint-standalone:
 	bash suites/product/endpoint/standalone-local-store.sh
+	bash suites/product/endpoint/unified-agent-installation.sh
+	bash suites/product/endpoint/transactional-agent-installation.sh
 	bash suites/product/endpoint/standalone-release-package.sh
 	bash suites/product/endpoint/container-entrypoint.sh
 	bash suites/product/endpoint/standalone-github-assets.sh

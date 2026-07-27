@@ -27,6 +27,7 @@ fi
 cd "$ENVDIR"
 vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
 vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-content-sign" /tmp/sysarmor-content-sign.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
@@ -124,7 +125,7 @@ policy:
 health:
   interval: 500ms
 EOF
-  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh
+  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh
   test -f \"$TETRAGON_BUNDLE_DIR/manifest.json\"
   systemctl daemon-reload
   install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl

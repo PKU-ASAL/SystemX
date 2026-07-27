@@ -141,8 +141,9 @@ func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
 	}
 }
 
-func TestInstallerUsesUnifiedLayoutAndStartsService(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "agent", "install-agent.sh"))
+func TestInstallCoreUsesUnifiedLayoutAndStartsService(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "deployments", "agent")
+	data, err := os.ReadFile(filepath.Join(root, "install-core.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,12 +151,21 @@ func TestInstallerUsesUnifiedLayoutAndStartsService(t *testing.T) {
 	for _, want := range []string{
 		`/etc/sysarmor/agent/agent.yaml`,
 		`/etc/sysarmor/agent/policy.json`,
-		`SYSARMOR_CTL_BIN`,
+		`SYSARMOR_INSTALL_CTL_SOURCE`,
 		`systemctl enable --now sysarmor-agent`,
-		`systemctl is-active --quiet sysarmor-agent`,
+		`wait_for_agent`,
 	} {
 		if !strings.Contains(installer, want) {
 			t.Fatalf("installer missing %q", want)
+		}
+	}
+	for _, name := range []string{"install-agent.sh", "install-release.sh"} {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "install-core.sh") {
+			t.Fatalf("%s does not delegate to install-core.sh", name)
 		}
 	}
 }

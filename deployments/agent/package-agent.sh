@@ -11,6 +11,7 @@ AGENT_BIN="${SYSARMOR_AGENT_BIN:-$REPO/dist/bin/sysarmor-agent}"
 CTL_BIN="${SYSARMOR_CTL_BIN:-$REPO/dist/bin/sysarmorctl}"
 SERVICE_FILE="${SYSARMOR_AGENT_SERVICE:-$HERE/systemd/sysarmor-agent.service}"
 INSTALLER_FILE="${SYSARMOR_RELEASE_INSTALLER:-$HERE/install-release.sh}"
+CORE_INSTALLER_FILE="${SYSARMOR_CORE_INSTALLER:-$HERE/install-core.sh}"
 TETRAGON_ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
 TETRAGON_MODE="${SYSARMOR_TETRAGON_MODE:-bundled}"
 SIGNING_KEY="${SYSARMOR_ARTIFACT_SIGNING_KEY:-}"
@@ -56,6 +57,7 @@ require_file "$AGENT_BIN"
 require_file "$CTL_BIN"
 require_file "$SERVICE_FILE"
 require_file "$INSTALLER_FILE"
+require_file "$CORE_INSTALLER_FILE"
 require_file "$REPO/LICENSE"
 if [[ "$TETRAGON_MODE" != "bundled" && "$TETRAGON_MODE" != "download" ]]; then
   echo "[package-agent][ERROR] --tetragon-mode must be bundled or download" >&2
@@ -95,6 +97,7 @@ install -m 0755 "$CTL_BIN" "$ROOT/bin/sysarmorctl"
 install -m 0755 "$HERE/sysarmor-container-entrypoint" "$ROOT/container/sysarmor-container-entrypoint"
 install -m 0644 "$SERVICE_FILE" "$ROOT/systemd/sysarmor-agent.service"
 install -m 0755 "$INSTALLER_FILE" "$ROOT/install.sh"
+install -m 0755 "$CORE_INSTALLER_FILE" "$ROOT/install-core.sh"
 install -m 0644 "$REPO/LICENSE" "$ROOT/LICENSE"
 if [[ -f "$REPO/configs/agent.example.yaml" ]]; then
   install -m 0644 "$REPO/configs/agent.example.yaml" "$ROOT/configs/agent.example.yaml"
@@ -192,6 +195,7 @@ cat > "$ROOT/manifest.json" <<EOF
   "files": [
 $(file_json "LICENSE" "0644"),
 $(file_json "install.sh" "0755"),
+$(file_json "install-core.sh" "0755"),
 $(file_json "bin/sysarmor-agent" "0755"),
 $(file_json "bin/sysarmorctl" "0755"),
 $(file_json "container/sysarmor-container-entrypoint" "0755"),

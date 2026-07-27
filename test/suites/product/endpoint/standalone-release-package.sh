@@ -93,6 +93,17 @@ install_env=(
   SYSARMOR_TETRAGON_INSTALL_DIR="$WORK/root/opt/sysarmor/agent/sensors"
   SYSARMOR_DEFAULT_CONTENT_DIR="$WORK/root/opt/sysarmor/agent/content/default"
 )
+
+cp "$WORK/release/bin/sysarmorctl" "$WORK/sysarmorctl.original"
+printf '\ntampered\n' >>"$WORK/release/bin/sysarmorctl"
+if env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null 2>&1; then
+  echo "[standalone-release-package][ERROR] manifest checksum mismatch was accepted" >&2
+  exit 1
+fi
+test ! -e "$WORK/root/opt/sysarmor/agent/bin/sysarmor-agent"
+mv "$WORK/sysarmorctl.original" "$WORK/release/bin/sysarmorctl"
+chmod 0755 "$WORK/release/bin/sysarmorctl"
+
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 
 test -x "$WORK/root/opt/sysarmor/agent/bin/sysarmor-agent"

@@ -21,8 +21,8 @@ TETRAGON_DATA_CACHE_SIZE="${SYSARMOR_TETRAGON_DATA_CACHE_SIZE:-128}"
 TETRAGON_EVENT_QUEUE_SIZE="${SYSARMOR_TETRAGON_EVENT_QUEUE_SIZE:-1024}"
 TETRAGON_RB_QUEUE_SIZE="${SYSARMOR_TETRAGON_RB_QUEUE_SIZE:-8192}"
 
-if [[ ! -x "$REPO/dist/bin/sysarmor-agent" || ! -x "$REPO/dist/bin/sysarmorctl" ]]; then
-  echo "[sync-agent-vm][ERROR] missing dist/bin/sysarmor-agent or dist/bin/sysarmorctl; run make build-binary first" >&2
+if [[ ! -x "$REPO/dist/bin/sysarmor-agent" || ! -x "$REPO/dist/bin/sysarmorctl" || ! -x "$REPO/dist/bin/sysarmor-content-sign" ]]; then
+  echo "[sync-agent-vm][ERROR] missing Agent development binaries; run make build-binary first" >&2
   exit 1
 fi
 if [[ -n "$TETRAGON_ARCHIVE" && ! -f "$TETRAGON_ARCHIVE" ]]; then
@@ -39,6 +39,7 @@ cd "$ENVDIR"
 echo "[sync-agent-vm] uploading current sysarmor-agent distribution to $NODE in $VM_ENV"
 vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload "$NODE" >/dev/null
 vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload "$NODE" >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-content-sign" /tmp/sysarmor-content-sign.upload "$NODE" >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload "$NODE" >/dev/null
 if [[ "$VM_ENV" == "vm-topology" ]]; then
   vagrant upload "$PKI_DIR" /tmp/sysarmor-pki.upload "$NODE" >/dev/null
@@ -113,14 +114,18 @@ health:
 policy:
   path: /etc/sysarmor/agent/policy.json
 EOF
-sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload \
+if ! sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload \
   SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload \
+  SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload \
   SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml \
   SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json \
   SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' \
   SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' \
   $archive_env \
-  bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1
+  bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then
+  sudo cat /tmp/sysarmor-install-agent.log >&2
+  exit 1
+fi
 sudo systemctl reset-failed sysarmor-agent 2>/dev/null || true
 sudo systemctl restart sysarmor-agent
 " >/dev/null
