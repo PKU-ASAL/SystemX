@@ -15,6 +15,9 @@ Medium 测试的 272 条 credential Signal 中，240 条来自 Recorder 每 10 �
 3. 规则只在 `process.binary` 和 `process.argv` 同时命中同一条基线时排除；`cat`、`curl`、Shell、未知或字段缺失进程继续告警。
 4. 抑制键改为 `lineage_id + process.binary + file.path`，窗口保持 5 分钟。不同 lineage 和不同敏感路径分别告警。
 5. 删除默认 Policy 中关闭该规则的 override，使其随默认 ruleset 启用。
+6. 按敏感度拆分路径：`credential_file_read` 只处理 `/etc/shadow` 和 `/etc/sudoers`；
+   新增低等级 `account_database_read` 处理 `/etc/passwd`，且仅匹配显式账户枚举工具、
+   Shell 或缺失 binary 的读取者。普通 curl、sshd 和系统服务只保留 Event。
 
 ## 数据与安全边界
 

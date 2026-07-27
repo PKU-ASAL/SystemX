@@ -44,6 +44,20 @@
 - [ ] Run focused detection tests, `go test ./...`, and Release content/package contracts.
 - [ ] Commit only the parser, rule, tests, design, and plan as `fix(detection): trust explicit sysarmorctl sudo commands`.
 
+### Task 6: Split credential secrets from account enumeration
+
+**Files:**
+- Modify: `deployments/agent/content/context-credential-path-prefixes.json`
+- Create: `deployments/agent/content/context-account-database-path-prefixes.json`
+- Create: `deployments/agent/content/context-account-enumeration-binaries.json`
+- Modify: `deployments/agent/content/rulepack-cep-endpoint.json`
+- Test: `internal/endpoint/detection/engine_test.go`
+
+- [ ] Add failing tests proving shadow/sudoers remain medium, suspicious or unknown passwd readers
+  produce low `account_database_read`, and health curl passwd reads produce no Signal.
+- [ ] Split signed contexts and add the new rule without retaining a duplicate legacy path.
+- [ ] Run detection/content tests and commit as `fix(detection): split account enumeration signals`.
+
 ---
 
 ### Task 1: Lock rule behavior
