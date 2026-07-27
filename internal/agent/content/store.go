@@ -163,6 +163,16 @@ type Store struct {
 	manifestVersion string
 }
 
+type persistedRecord struct {
+	Admission *unsignedAdmission `json:"admission,omitempty"`
+	Content   json.RawMessage    `json:"content"`
+}
+
+type unsignedAdmission struct {
+	AllowUnsigned bool   `json:"allow_unsigned"`
+	Digest        string `json:"digest"`
+}
+
 func NewStore() *Store {
 	return &Store{records: make(map[string]Record), defaultRefs: make(map[string]bool)}
 }
@@ -198,11 +208,18 @@ func (s *Store) Load() error {
 		if err != nil {
 			return err
 		}
-		env, err := Parse(string(data))
+		raw, allowUnsigned, err := decodePersistedContent(data)
 		if err != nil {
 			return fmt.Errorf("load content %s: %w", entry.Name(), err)
 		}
-		if err := s.Validate(env, false); err != nil {
+		env, err := Parse(raw)
+		if err != nil {
+			return fmt.Errorf("load content %s: %w", entry.Name(), err)
+		}
+		if allowUnsigned && !strings.EqualFold(persistedDigest(data), signedDigest(env)) {
+			return fmt.Errorf("load content %s (%s): unsigned admission digest mismatch", entry.Name(), env.Metadata.ID)
+		}
+		if err := s.Validate(env, allowUnsigned); err != nil {
 			return fmt.Errorf("load content %s (%s): %w", entry.Name(), env.Metadata.ID, err)
 		}
 		if _, exists := records[env.Metadata.ID]; exists {
@@ -215,7 +232,7 @@ func (s *Store) Load() error {
 			Digest:  signedDigest(env),
 			Signed:  strings.TrimSpace(env.Integrity.Signature) != "",
 			Status:  "loaded",
-			RawJSON: string(data),
+			RawJSON: raw,
 		}
 		if err := validateRecordPayload(record); err != nil {
 			return fmt.Errorf("load content %s (%s): %w", entry.Name(), env.Metadata.ID, err)
@@ -625,10 +642,40 @@ func (s *Store) persistLocked(record Record) error {
 	name := safeName(record.Ref) + ".json"
 	tmp := filepath.Join(s.dir, name+".tmp")
 	dst := filepath.Join(s.dir, name)
-	if err := os.WriteFile(tmp, []byte(record.RawJSON), 0o644); err != nil {
+	data := []byte(record.RawJSON)
+	if !record.Signed {
+		wrapped, err := json.Marshal(persistedRecord{
+			Admission: &unsignedAdmission{AllowUnsigned: true, Digest: record.Digest},
+			Content:   json.RawMessage(record.RawJSON),
+		})
+		if err != nil {
+			return err
+		}
+		data = wrapped
+	}
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, dst)
+}
+
+func decodePersistedContent(data []byte) (string, bool, error) {
+	var persisted persistedRecord
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		return "", false, err
+	}
+	if persisted.Admission == nil || len(persisted.Content) == 0 {
+		return string(data), false, nil
+	}
+	return string(persisted.Content), persisted.Admission.AllowUnsigned, nil
+}
+
+func persistedDigest(data []byte) string {
+	var persisted persistedRecord
+	if json.Unmarshal(data, &persisted) != nil || persisted.Admission == nil {
+		return ""
+	}
+	return persisted.Admission.Digest
 }
 
 func safeName(ref string) string {

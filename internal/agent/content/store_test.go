@@ -55,6 +55,47 @@ func TestStoreLoadRejectsUnsignedContent(t *testing.T) {
 	}
 }
 
+func TestStoreReloadsUnsignedContentAcceptedByApply(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStoreWithOptions(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"port","values":["443"]}}`
+	if _, err := store.Apply(raw, true, false); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := NewStoreWithOptions(Options{Dir: dir})
+	if err != nil {
+		t.Fatalf("reload accepted unsigned content: %v", err)
+	}
+	if record, ok := loaded.Get("ioc:test"); !ok || record.Signed {
+		t.Fatalf("reloaded record = %+v, ok=%v; want admitted unsigned record", record, ok)
+	}
+}
+
+func TestStoreReloadRejectsModifiedAdmittedUnsignedContent(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStoreWithOptions(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"port","values":["443"]}}`
+	if _, err := store.Apply(raw, true, false); err != nil {
+		t.Fatal(err)
+	}
+	tampered := strings.Replace(raw, `"443"`, `"8443"`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "ioc_test.json"), []byte(tampered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = NewStoreWithOptions(Options{Dir: dir})
+	if err == nil || !strings.Contains(err.Error(), "unsigned content") {
+		t.Fatalf("reload tampered admitted content error = %v, want unsigned content rejection", err)
+	}
+}
+
 func TestStoreLoadRejectsDuplicateRefs(t *testing.T) {
 	dir := t.TempDir()
 	pub, priv, err := ed25519.GenerateKey(nil)
