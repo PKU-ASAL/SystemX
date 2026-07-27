@@ -63,6 +63,12 @@ Agent 发行包自身的 artifact 签名与内容签名是两条独立校验链�
 
 配置与默认内容必须属于同一发行事务，避免新 trust key 配旧内容或旧 trust key 配新内容。
 
+已有配置升级时以现有配置为基础，只由发行包更新
+`content.default_path` 和 `content.trust_keys`。Manager 地址、Agent 身份、
+sensor scope、telemetry 等用户或平台管理字段必须原样保留。首次安装仍使用发行包
+提供的完整默认配置。结构化合并后的配置与默认内容一起进入 staging、校验、提交和
+回滚，任何一步失败都恢复旧配置与旧内容。
+
 ## Agent 启动顺序
 
 Agent 启动调整为：
@@ -93,7 +99,11 @@ Agent 启动调整为：
 
 ## 运行时更新
 
-运行时 `content apply` 保持 prepare、验签、构建新 snapshot、编译、commit 的原子流程。更新失败时继续使用上一个已生效 snapshot，并将失败写入控制命令结果和 detection health。
+运行时 `content apply` 使用 Agent 级专用事务锁串行执行 prepare、验签、构建新
+snapshot、编译、持久化和切换 detection engine。Store、engine 和 detection health
+必须在同一临界区内提交，避免并发请求交错后分别指向不同版本。持久化失败时恢复
+被覆盖的旧 record，继续使用上一个已生效 snapshot，并将失败写入控制命令结果和
+detection health。
 
 发行版 ref 是只读保留命名空间，运行时更新请求命中这些 ref 时拒绝。用户 rule pack 可以使用其他 ruleset/ref，但 Endpoint Policy 必须显式引用后才生效。
 
@@ -134,6 +144,8 @@ standalone ready 断言必须检查必需默认内容已经生效，不能只检
 - fake backend 使用显式测试 rule pack，不依赖 builtin。
 - standalone Agent 缺失或损坏默认内容时进程非零退出并包含明确错误。
 - 动态用户内容更新失败时保留旧 engine。
+- 两个并发内容更新完成后，Store、engine 和 detection health 指向同一版本。
+- 覆盖已有 ref 持久化失败时保留旧 record 和旧 engine。
 - 全仓测试不再隐式获得 builtin 规则。
 
 ### Release 验收
