@@ -1378,10 +1378,10 @@ func (b *Backend) openManagedEventSource(ctx context.Context) (io.Reader, func()
 		return nil, func() {}, err
 	}
 	return stdout, func() {
+		_ = stdout.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = b.eventSupervisor.Stop(ctx)
-		_ = stdout.Close()
 	}, nil
 }
 

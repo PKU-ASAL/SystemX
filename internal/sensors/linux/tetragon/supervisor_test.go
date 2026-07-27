@@ -1,7 +1,9 @@
 package tetragon
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +11,63 @@ import (
 	"testing"
 	"time"
 )
+
+func TestProcessSupervisorDrainsStdoutBeforeExit(t *testing.T) {
+	sh := requireShell(t)
+	supervisor := &ProcessSupervisor{}
+	stdout, err := supervisor.StartWithStdout(context.Background(), ProcessSpec{
+		Name: "tail-output",
+		Path: sh,
+		Args: []string{"-c", "i=0; while [ $i -lt 20000 ]; do printf 'event-%s\\n' \"$i\"; i=$((i+1)); done; printf 'final-dropped-events\\n'"},
+	})
+	if err != nil {
+		t.Fatalf("StartWithStdout() error = %v", err)
+	}
+	data, err := io.ReadAll(stdout)
+	if err != nil {
+		t.Fatalf("ReadAll(stdout) error = %v", err)
+	}
+	if got := bytes.Count(data, []byte{'\n'}); got != 20001 {
+		t.Fatalf("stdout lines = %d, want 20001", got)
+	}
+	if !bytes.HasSuffix(data, []byte("final-dropped-events\n")) {
+		t.Fatalf("stdout missing final dropped-events record")
+	}
+}
+
+func TestProcessSupervisorCancellationClosesStdout(t *testing.T) {
+	sh := requireShell(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	supervisor := &ProcessSupervisor{}
+	stdout, err := supervisor.StartWithStdout(ctx, ProcessSpec{
+		Name: "cancel-output",
+		Path: sh,
+		Args: []string{"-c", "printf 'ready\\n'; sleep 30"},
+	})
+	if err != nil {
+		t.Fatalf("StartWithStdout() error = %v", err)
+	}
+	ready := make([]byte, len("ready\n"))
+	if _, err := io.ReadFull(stdout, ready); err != nil {
+		t.Fatalf("ReadFull(stdout) error = %v", err)
+	}
+	cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.ReadAll(stdout)
+		done <- err
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stdout remained open after cancellation")
+	}
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+	defer stopCancel()
+	if err := supervisor.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop() after cancellation error = %v", err)
+	}
+}
 
 func TestProcessSupervisorStartsAndStopsProcess(t *testing.T) {
 	sh := requireShell(t)
