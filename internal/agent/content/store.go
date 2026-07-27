@@ -290,9 +290,14 @@ func (s *Store) Commit(record Record) error {
 	if s.records == nil {
 		s.records = make(map[string]Record)
 	}
+	previous, existed := s.records[record.Ref]
 	s.records[record.Ref] = record
 	if err := s.persistLocked(record); err != nil {
-		delete(s.records, record.Ref)
+		if existed {
+			s.records[record.Ref] = previous
+		} else {
+			delete(s.records, record.Ref)
+		}
 		return err
 	}
 	return nil

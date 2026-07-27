@@ -11,6 +11,32 @@ import (
 	"testing"
 )
 
+func TestStoreCommitFailureRestoresExistingRecord(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStoreWithOptions(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRaw := `{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"port","values":["443"]}}`
+	if _, err := store.Apply(oldRaw, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, []byte("block persistence"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newRaw := `{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v2"},"spec":{"value_type":"port","values":["8443"]}}`
+	if _, err := store.Apply(newRaw, true, false); err == nil {
+		t.Fatal("Apply() error = nil, want persistence failure")
+	}
+	record, ok := store.Get("ioc:test")
+	if !ok || record.Version != "v1" {
+		t.Fatalf("record after failed commit = %+v, ok=%v; want v1", record, ok)
+	}
+}
+
 func TestStoreLoadRejectsUnsignedContent(t *testing.T) {
 	dir := t.TempDir()
 	raw := `{

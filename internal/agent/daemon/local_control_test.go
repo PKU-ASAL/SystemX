@@ -499,6 +499,36 @@ func TestLocalControlApplyListGetContent(t *testing.T) {
 	}
 }
 
+func TestContentUpdateTransactionSerializesCallbacks(t *testing.T) {
+	runner := &AgentRuntime{}
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	done := make(chan struct{}, 2)
+	callback := func() {
+		entered <- struct{}{}
+		<-release
+		done <- struct{}{}
+	}
+
+	go runner.withContentUpdateTransaction(callback)
+	<-entered
+	go runner.withContentUpdateTransaction(callback)
+	select {
+	case <-entered:
+		t.Fatal("second content transaction entered before first completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	release <- struct{}{}
+	<-done
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("second content transaction did not enter after first completed")
+	}
+	release <- struct{}{}
+	<-done
+}
+
 func TestLocalControlContentApplyRebuildsDetection(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")

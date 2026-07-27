@@ -98,6 +98,7 @@ type AgentRuntime struct {
 	localStore         *localstore.Store
 	network            *networkSupervisor
 	mu                 sync.RWMutex
+	contentUpdateMu    sync.Mutex
 	identity           runtimeIdentity
 	standaloneIdentity runtimeIdentity
 	normalizer         *normalize.Normalizer
@@ -114,6 +115,12 @@ type AgentRuntime struct {
 	eventSeq           uint64
 	signalSeq          uint64
 	telemetrySeq       uint64
+}
+
+func (r *AgentRuntime) withContentUpdateTransaction(fn func()) {
+	r.contentUpdateMu.Lock()
+	defer r.contentUpdateMu.Unlock()
+	fn()
 }
 
 type healthReporter interface {
