@@ -38,7 +38,6 @@ type ProcessSupervisor struct {
 	cmd          *exec.Cmd
 	cancel       context.CancelFunc
 	done         chan struct{}
-	stdout       io.ReadCloser
 	loopCancel   context.CancelFunc
 	loopDone     chan struct{}
 	running      bool
@@ -67,6 +66,7 @@ func (s *ProcessSupervisor) start(ctx context.Context, spec ProcessSpec, capture
 	}
 	procCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(procCtx, spec.Path, spec.Args...)
+	configureProcessGroup(cmd)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
 	logFile, err := openProcessLog(spec.LogPath)
@@ -81,7 +81,6 @@ func (s *ProcessSupervisor) start(ctx context.Context, spec ProcessSpec, capture
 	if captureStdout {
 		stdout, stdoutWriter = io.Pipe()
 		cmd.Stdout = stdoutWriter
-		cmd.WaitDelay = 100 * time.Millisecond
 	} else if logFile != nil {
 		cmd.Stdout = logFile
 	}
@@ -89,10 +88,6 @@ func (s *ProcessSupervisor) start(ctx context.Context, spec ProcessSpec, capture
 	s.cmd = cmd
 	s.cancel = cancel
 	s.done = done
-	s.stdout = nil
-	if stdout != nil {
-		s.stdout = stdout
-	}
 	s.running = true
 	s.restartCount++
 	s.lastExit = ""
@@ -111,7 +106,6 @@ func (s *ProcessSupervisor) start(ctx context.Context, spec ProcessSpec, capture
 		s.cmd = nil
 		s.cancel = nil
 		s.done = nil
-		s.stdout = nil
 		s.running = false
 		s.lastError = err.Error()
 		s.mu.Unlock()
@@ -121,18 +115,7 @@ func (s *ProcessSupervisor) start(ctx context.Context, spec ProcessSpec, capture
 	}
 
 	go s.wait(procCtx, cmd, done, logFile, stdoutWriter)
-	if stdout != nil {
-		go closeReaderOnCancel(procCtx, done, stdout)
-	}
 	return stdout, nil
-}
-
-func closeReaderOnCancel(ctx context.Context, done <-chan struct{}, reader io.Closer) {
-	select {
-	case <-ctx.Done():
-		_ = reader.Close()
-	case <-done:
-	}
 }
 
 func (s *ProcessSupervisor) StartRestarting(ctx context.Context, spec ProcessSpec, policy RestartPolicy) error {
@@ -165,7 +148,6 @@ func (s *ProcessSupervisor) Stop(ctx context.Context) error {
 	loopDone := s.loopDone
 	cancel := s.cancel
 	done := s.done
-	stdout := s.stdout
 	s.mu.Unlock()
 	if loopCancel != nil && loopDone != nil {
 		loopCancel()
@@ -180,9 +162,6 @@ func (s *ProcessSupervisor) Stop(ctx context.Context) error {
 		return nil
 	}
 	cancel()
-	if stdout != nil {
-		_ = stdout.Close()
-	}
 	select {
 	case <-done:
 		return nil
@@ -264,7 +243,6 @@ func (s *ProcessSupervisor) runProcess(ctx context.Context, spec ProcessSpec) er
 	s.cmd = nil
 	s.cancel = nil
 	s.done = nil
-	s.stdout = nil
 	if procCtx.Err() != nil {
 		s.lastExit = "stopped"
 		return nil
@@ -314,7 +292,6 @@ func (s *ProcessSupervisor) wait(ctx context.Context, cmd *exec.Cmd, done chan s
 	s.cmd = nil
 	s.cancel = nil
 	s.done = nil
-	s.stdout = nil
 	if ctx.Err() != nil {
 		s.lastExit = "stopped"
 		return

@@ -35,6 +35,30 @@ func TestProcessSupervisorDrainsStdoutBeforeExit(t *testing.T) {
 	}
 }
 
+func TestProcessSupervisorDrainsStdoutForSlowConsumer(t *testing.T) {
+	sh := requireShell(t)
+	supervisor := &ProcessSupervisor{}
+	stdout, err := supervisor.StartWithStdout(context.Background(), ProcessSpec{
+		Name: "slow-tail-output",
+		Path: sh,
+		Args: []string{"-c", "i=0; while [ $i -lt 100 ]; do printf 'event-%s\\n' \"$i\"; i=$((i+1)); done; printf 'final-dropped-events\\n'"},
+	})
+	if err != nil {
+		t.Fatalf("StartWithStdout() error = %v", err)
+	}
+	time.Sleep(250 * time.Millisecond)
+	data, err := io.ReadAll(stdout)
+	if err != nil {
+		t.Fatalf("ReadAll(stdout) error = %v", err)
+	}
+	if got := bytes.Count(data, []byte{'\n'}); got != 101 {
+		t.Fatalf("stdout lines = %d, want 101", got)
+	}
+	if !bytes.HasSuffix(data, []byte("final-dropped-events\n")) {
+		t.Fatal("stdout missing final dropped-events record")
+	}
+}
+
 func TestProcessSupervisorCancellationClosesStdout(t *testing.T) {
 	sh := requireShell(t)
 	ctx, cancel := context.WithCancel(context.Background())
