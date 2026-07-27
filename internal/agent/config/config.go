@@ -101,9 +101,6 @@ type SensorConfig struct {
 	PolicyPath        string
 	EventSource       string
 	Scope             RuntimeScope
-	ScopeType         string
-	ScopeSelector     string
-	ContainerIDPrefix string
 	FakeStartupEvents int
 	ObserveOnly       bool
 	Restart           string
@@ -211,11 +208,6 @@ func (c Config) Validate() error {
 	if scope.Type == "namespace" && scope.Selector != "self" {
 		return fmt.Errorf("sensor scope: namespace scope selector must be self")
 	}
-	scopeSelector := strings.TrimSpace(scope.Selector)
-	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
-	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
-		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")
-	}
 	if _, err := ResolveTelemetry(c.Telemetry, nil); err != nil {
 		return err
 	}
@@ -244,31 +236,7 @@ func (c Config) Validate() error {
 }
 
 func (s SensorConfig) EffectiveScope() (RuntimeScope, error) {
-	scopeType := strings.TrimSpace(s.Scope.Type)
-	scopeSelector := strings.TrimSpace(s.Scope.Selector)
-	legacyType := strings.TrimSpace(s.ScopeType)
-	legacySelector := strings.TrimSpace(s.ScopeSelector)
-	containerIDPrefix := strings.TrimSpace(s.ContainerIDPrefix)
-
-	if scopeType != "" && legacyType != "" && scopeType != legacyType {
-		return RuntimeScope{}, fmt.Errorf("sensor.scope.type conflicts with sensor.scope_type")
-	}
-	if scopeSelector != "" && legacySelector != "" && scopeSelector != legacySelector {
-		return RuntimeScope{}, fmt.Errorf("sensor.scope.selector conflicts with sensor.scope_selector")
-	}
-	if scopeType == "" {
-		scopeType = legacyType
-	}
-	if scopeSelector == "" {
-		scopeSelector = legacySelector
-	}
-	if scopeType == "" && containerIDPrefix != "" {
-		scopeType = "container"
-	}
-	if scopeSelector == "" && containerIDPrefix != "" {
-		scopeSelector = containerIDPrefix
-	}
-	normalizedType, normalizedSelector, err := contract.NormalizeScope(scopeType, scopeSelector)
+	normalizedType, normalizedSelector, err := contract.NormalizeScope(s.Scope.Type, s.Scope.Selector)
 	if err != nil {
 		return RuntimeScope{}, err
 	}

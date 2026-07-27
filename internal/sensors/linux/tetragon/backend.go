@@ -41,7 +41,6 @@ type Backend struct {
 	RBQueueSize              string
 	ScopeType                string
 	ScopeSelector            string
-	ContainerIDPrefix        string
 	namespaceSelfContainerID string
 	BTFPath                  string
 	BPFFSPath                string
@@ -606,9 +605,6 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	if explicitScope {
 		b.ScopeType = normalized.ScopeType
 		b.ScopeSelector = normalized.ScopeSelector
-		if normalized.ScopeType == "container" && b.ContainerIDPrefix == "" {
-			b.ContainerIDPrefix = normalized.ScopeSelector
-		}
 	}
 	b.mu.Lock()
 	loaded := b.policyLoaded
@@ -1413,10 +1409,7 @@ func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
 	scopeSelector := strings.TrimSpace(b.ScopeSelector)
 	switch scopeType {
 	case "":
-		if b.ContainerIDPrefix == "" {
-			return true
-		}
-		return containerIDsMatch(event.GetContainerId(), b.ContainerIDPrefix)
+		return true
 	case "host":
 		return true
 	case "container":

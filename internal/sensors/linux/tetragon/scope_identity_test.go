@@ -1,11 +1,18 @@
 package tetragon
 
 import (
+	"reflect"
 	"testing"
 
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
+
+func TestBackendHasNoLegacyScopeFields(t *testing.T) {
+	if _, ok := reflect.TypeOf(Backend{}).FieldByName("ContainerIDPrefix"); ok {
+		t.Fatal("Backend still exposes legacy ContainerIDPrefix")
+	}
+}
 
 const (
 	containerID64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -46,7 +53,6 @@ func TestBackendContainerIDLengthCompatibility(t *testing.T) {
 		backend *Backend
 	}{
 		{name: "container scope", backend: &Backend{ScopeType: "container", ScopeSelector: containerID64}},
-		{name: "legacy prefix", backend: &Backend{ContainerIDPrefix: containerID64}},
 		{name: "namespace self", backend: &Backend{
 			ScopeType:                "namespace",
 			ScopeSelector:            "self",

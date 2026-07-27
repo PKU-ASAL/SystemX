@@ -1341,7 +1341,6 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 		}
 		backend.ScopeType = scope.Type
 		backend.ScopeSelector = scope.Selector
-		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
 		backend.BTFPath = cfg.Sensor.BTFPath
 		backend.BPFFSPath = cfg.Sensor.BPFFSPath
 		backend.RequireBTF = cfg.Sensor.RequireBTF
