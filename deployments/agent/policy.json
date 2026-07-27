@@ -22,13 +22,6 @@
         "version": "v1",
         "enabled": true
       }
-    ],
-    "rule_overrides": [
-      {
-        "rule_id": "credential_file_read",
-        "enabled": false,
-        "reason": "disabled in the long-running balanced baseline"
-      }
     ]
   },
   "telemetry": {

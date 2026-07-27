@@ -12,7 +12,7 @@
 
 - Do not change Event collection or retention.
 - Do not add Go rule syntax or Signal schema fields.
-- Missing provenance fields remain suspicious.
+- Missing binary or argv fields remain suspicious.
 - Do not include the staged Release experiment report in commits.
 
 ---
@@ -27,21 +27,20 @@
 - Consumes: existing condition-tree and suppression runtime
 - Produces: regression contracts for baseline exclusion and lineage suppression
 
-- [ ] Add failing tests for root baseline readers, non-root readers, dangerous binaries, missing fields, same-lineage suppression, and different-lineage alerts.
+- [ ] Add failing tests for exact binary/argv baseline readers, near-miss commands, dangerous binaries, missing fields, same-lineage suppression, and different-lineage alerts.
 - [ ] Run focused tests and verify failures describe the old content semantics.
 
 ### Task 2: Update signed content and default policy
 
 **Files:**
 - Modify: `deployments/agent/content/rulepack-cep-endpoint.json`
-- Create: `deployments/agent/content/context-system-credential-reader-binaries.json`
 - Modify: `deployments/agent/policy.json`
 
 **Interfaces:**
-- Consumes: `process.binary`, `process.uid`, `lineage_id`, and `file.path`
+- Consumes: `process.binary`, `process.argv`, `lineage_id`, and `file.path`
 - Produces: default-enabled low-noise `credential_file_read`
 
-- [ ] Add the context reference and Boolean baseline exclusion.
+- [ ] Add the Boolean binary/argv baseline exclusion.
 - [ ] Change suppression fields to lineage, binary, and path.
 - [ ] Remove the default disable override.
 - [ ] Run focused content and detection tests until green.
@@ -75,4 +74,3 @@
 - [ ] Run quick on a fresh VM and inspect summaries and errors.
 - [ ] Run medium with `collection-balanced`, `business-normal`, and `apt-fileless-c2-local` on a fresh VM.
 - [ ] Verify credential Signal reduction, dangerous reader coverage, EventRefs resolution, and zero drop/parse/watch errors.
-

@@ -735,7 +735,7 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	policy.RuleOverrides = append(policy.RuleOverrides, policymodel.RuleOverride{RuleID: "credential_file_read", Enabled: &enabled})
 	engine, _ := NewWithRuntime(policy, contract.CollectionIntent{}, testContentSnapshot(t))
 	first := readEvent("e1", "lin-a", "proc-a", "/tmp/cat", "/etc/shadow")
-	second := readEvent("e2", "lin-a", "proc-a", "/tmp/cat", "/etc/shadow")
+	second := readEvent("e2", "lin-a", "proc-b", "/tmp/cat", "/etc/shadow")
 	if got := countSignals(engine.Process(first), "credential_file_read"); got != 1 {
 		t.Fatalf("first credential signal count = %d, want 1", got)
 	}
@@ -745,6 +745,37 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 	third := readEvent("e3", "lin-a", "proc-a", "/tmp/cat", "/etc/passwd")
 	if got := countSignals(engine.Process(third), "credential_file_read"); got != 1 {
 		t.Fatalf("different path credential signal count = %d, want 1", got)
+	}
+	fourth := readEvent("e4", "lin-b", "proc-c", "/tmp/cat", "/etc/shadow")
+	if got := countSignals(engine.Process(fourth), "credential_file_read"); got != 1 {
+		t.Fatalf("different lineage credential signal count = %d, want 1", got)
+	}
+}
+
+func TestCredentialReadUsesExactSystemCommandBaselines(t *testing.T) {
+	tests := []struct {
+		name string
+		bin  string
+		argv []string
+		want int
+	}{
+		{name: "sysarmor health", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "--socket", "/run/sysarmor/agent/control.sock", "--json", "agent", "health"}, want: 0},
+		{name: "sudo dangerous command", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "cat", "/etc/shadow"}, want: 1},
+		{name: "sudo missing argv", bin: "/usr/bin/sudo", want: 1},
+		{name: "sshd daemon", bin: "/usr/sbin/sshd", argv: []string{"/usr/sbin/sshd", "-D", "-R"}, want: 0},
+		{name: "sshd near miss", bin: "/usr/sbin/sshd", argv: []string{"sshd:", "user@pts/0"}, want: 1},
+		{name: "cat", bin: "/usr/bin/cat", argv: []string{"cat", "/etc/shadow"}, want: 1},
+		{name: "missing binary", argv: []string{"cat", "/etc/shadow"}, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, _ := NewWithRuntime(testDetectionPolicy(), contract.CollectionIntent{}, testContentSnapshot(t))
+			event := readEvent("read", "lineage", "process", tt.bin, "/etc/shadow")
+			event.SubjectProc.Argv = tt.argv
+			if got := countSignals(engine.Process(event), "credential_file_read"); got != tt.want {
+				t.Fatalf("credential signals = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
