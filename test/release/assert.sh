@@ -23,8 +23,33 @@ query_signals_with_events() {
 }
 
 capture_signals() {
-  docker exec "$1" sysarmorctl --json signal watch --snapshot --include-recent \
-    --include-events --limit 1000 >"$2"
+  local container="$1" output="$2" count expected=0 hits=0 scenario
+  docker exec "$container" sysarmorctl --json signal watch --snapshot --include-recent \
+    --include-events --limit 1001 >"$output"
+  count="$(wc -l <"$output")"
+  (( count < 1001 )) || fail "Signal 快照达到 1001 条，结果可能被截断"
+  while IFS= read -r scenario; do
+    expected=$((expected + 1))
+    [[ ! -s "$(dirname "$output")/$scenario.jsonl" ]] || hits=$((hits + 1))
+  done < <(release_scenarios)
+  summarize_signals "$output" "$(dirname "$output")/signal-summary.json" "$expected" "$hits"
+}
+
+summarize_signals() {
+  local input="$1" output="$2" expected="$3" hits="$4"
+  jq -s --argjson expected "$expected" --argjson hits "$hits" '
+    (map(select(.signalFrame.signal.id != null)) | unique_by(.signalFrame.signal.id)) as $signals |
+    ($signals | map(select(any(.eventFrames[]?; (.event | tostring | contains("sysarmor-")))))) as $tp |
+    {
+      signal_total: ($signals | length), true_positives: ($tp | length),
+      false_positives: (($signals | length) - ($tp | length)),
+      precision: (if ($signals | length) == 0 then 1 else ($tp | length) / ($signals | length) end),
+      expected_scenarios: $expected, detected_scenarios: $hits,
+      recall: (if $expected == 0 then 1 else $hits / $expected end),
+      by_rule: ($signals | group_by(.signalFrame.signal.ruleId) |
+        map({rule_id: .[0].signalFrame.signal.ruleId, count: length}))
+    }
+  ' "$input" >"$output"
 }
 
 assert_ready() {
@@ -115,5 +140,6 @@ case "${1:-}" in
   detected) [[ $# -eq 5 ]] || fail "usage: assert.sh detected CONTAINER SCENARIO MARKER OUTPUT"; assert_detected "$2" "$3" "$4" "$5" ;;
   absent) [[ $# -eq 4 ]] || fail "usage: assert.sh absent CONTAINER MARKER OUTPUT"; assert_absent "$2" "$3" "$4" ;;
   capture-signals) [[ $# -eq 3 ]] || fail "usage: assert.sh capture-signals CONTAINER OUTPUT"; capture_signals "$2" "$3" ;;
-  *) fail "usage: assert.sh ready|detected|absent|capture-signals ..." ;;
+  summarize-signals) [[ $# -eq 5 ]] || fail "usage: assert.sh summarize-signals INPUT OUTPUT EXPECTED HITS"; summarize_signals "$2" "$3" "$4" "$5" ;;
+  *) fail "usage: assert.sh ready|detected|absent|capture-signals|summarize-signals ..." ;;
 esac

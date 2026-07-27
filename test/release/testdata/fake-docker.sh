@@ -5,6 +5,22 @@ args="$*"
 marker="${FAKE_MARKER:-marker-1}"
 case_name="${FAKE_CASE:-ok}"
 
+if [[ "$args" == *"signal watch"* && "$case_name" == "summary-overflow" ]]; then
+  for id in $(seq 1 1001); do
+    printf '{"eventFrames":[],"signalFrame":{"signal":{"id":"sig-%s","ruleId":"rule-a"}}}\n' "$id"
+  done
+  exit 0
+fi
+
+if [[ "$args" == *"signal watch"* && "$case_name" == "summary-mixed" ]]; then
+  printf '%s\n' \
+    '{"eventFrames":[{"event":{"subjectProc":{"argv":["sysarmor-one"]}}}],"signalFrame":{"signal":{"id":"sig-1","ruleId":"rule-a"}}}' \
+    '{"eventFrames":[{"event":{"subjectProc":{"argv":["sysarmor-one"]}}}],"signalFrame":{"signal":{"id":"sig-1","ruleId":"rule-a"}}}' \
+    '{"eventFrames":[],"signalFrame":{"signal":{"id":"sig-2","ruleId":"rule-b"}}}' \
+    '{"eventFrames":[{"event":{"subjectProc":{"argv":["sysarmor-three"]}}}],"signalFrame":{"signal":{"id":"sig-3","ruleId":"rule-a"}}}'
+  exit 0
+fi
+
 if [[ "$args" == *"agent health"* ]]; then
   printf '%s\n' '{"status":"ok","scope":{"type":"namespace","selector":"self"},"capability":{"backend":"tetragon"},"sensor":{"running":true,"policyLoaded":true}}'
   exit 0
@@ -26,6 +42,7 @@ for arg in "$@"; do
   fi
   previous="$arg"
 done
+[[ -n "$rule" ]] || rule="web_runtime_spawns_shell"
 
 severity="high"
 terminal=false
@@ -68,6 +85,6 @@ case "$case_name" in
   wrong-port) events="$(printf '%s' "$events" | sed -e 's/:8080/:80/g' -e 's/:8443/:4443/g')" ;;
 esac
 
-jq -cn --arg rule "$rule" --arg severity "$severity" --argjson terminal "$terminal" \
+jq -cn --arg rule "$rule" --arg signal_id "sig-fake-$rule" --arg severity "$severity" --argjson terminal "$terminal" \
   --argjson missing "$missing" --argjson events "$events" \
-  '{eventFrames:$events,missingEventRefs:$missing,signalFrame:{signal:{ruleId:$rule,severity:$severity,terminal:$terminal}}}'
+  '{eventFrames:$events,missingEventRefs:$missing,signalFrame:{signal:{id:$signal_id,ruleId:$rule,severity:$severity,terminal:$terminal}}}'

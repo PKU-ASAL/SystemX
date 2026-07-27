@@ -93,6 +93,26 @@ env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 test ! -e "$WORK/root/opt/sysarmor/agent/content/default/existing-marker"
 grep -Fq 'trust_keys: "release-test=' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 
+printf 'transaction-old-content\n' >"$WORK/root/opt/sysarmor/agent/content/default/transaction-marker"
+printf 'transaction-old-config\n' >"$WORK/root/etc/sysarmor/agent/agent.yaml"
+mkdir -p "$WORK/fail-bin"
+cat >"$WORK/fail-bin/mv" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == */.agent.yaml.* && "$2" == */agent.yaml && ! -e "$FAIL_MV_STATE" ]]; then
+  : >"$FAIL_MV_STATE"
+  exit 1
+fi
+exec /usr/bin/mv "$@"
+EOF
+chmod 0755 "$WORK/fail-bin/mv"
+if FAIL_MV_STATE="$WORK/fail-mv.state" PATH="$WORK/fail-bin:$PATH" env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null 2>&1; then
+  echo "[standalone-release-package][ERROR] config commit failure was accepted" >&2
+  exit 1
+fi
+grep -Fxq transaction-old-content "$WORK/root/opt/sysarmor/agent/content/default/transaction-marker"
+grep -Fxq transaction-old-config "$WORK/root/etc/sysarmor/agent/agent.yaml"
+rm -f "$WORK/root/opt/sysarmor/agent/content/default/transaction-marker"
+
 printf 'preserved-policy\n' >"$WORK/root/etc/sysarmor/agent/policy.json"
 env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 grep -Fq 'trust_keys: "release-test=' "$WORK/root/etc/sysarmor/agent/agent.yaml"

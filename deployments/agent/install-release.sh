@@ -16,6 +16,14 @@ BUNDLE_DIR="${SYSARMOR_TETRAGON_BUNDLE_DIR:-$AGENT_HOME/bundles/tetragon}"
 DEFAULT_CONTENT_DIR="${SYSARMOR_DEFAULT_CONTENT_DIR:-$AGENT_HOME/content/default}"
 INSTALL_DIR="${SYSARMOR_TETRAGON_INSTALL_DIR:-$AGENT_HOME/sensors}"
 SOCKET_PATH="${SYSARMOR_AGENT_SOCKET:-/run/sysarmor/agent/control.sock}"
+TX_CONTENT_BACKUP=""
+TX_CONFIG_BACKUP=""
+TX_CONTENT_STAGE=""
+TX_CONFIG_STAGE=""
+TX_OLD_CONTENT=0
+TX_OLD_CONFIG=0
+TX_NEW_CONTENT=0
+TX_NEW_CONFIG=0
 
 usage() {
   echo "usage: install.sh [--profile linux-systemd|linux-container]"
@@ -126,26 +134,66 @@ install_release_config_and_content() {
 }
 
 commit_release_config_and_content() {
-  local stage="$1" config_stage="$2" parent config_parent content_backup config_backup
+  local stage="$1" config_stage="$2" parent config_parent
   parent="$(dirname "$DEFAULT_CONTENT_DIR")"
   config_parent="$(dirname "$CONFIG_DST")"
-  content_backup="$parent/.default.previous.$$"
-  config_backup="$config_parent/.agent.yaml.previous.$$"
+  TX_CONTENT_BACKUP="$parent/.default.previous.$$"
+  TX_CONFIG_BACKUP="$config_parent/.agent.yaml.previous.$$"
+  TX_CONTENT_STAGE="$stage"
+  TX_CONFIG_STAGE="$config_stage"
+  trap 'rollback_release_config_and_content' EXIT
+  trap 'abort_release_transaction 130' INT
+  trap 'abort_release_transaction 143' TERM
   if [[ -e "$DEFAULT_CONTENT_DIR" ]]; then
-    mv "$DEFAULT_CONTENT_DIR" "$content_backup"
+    TX_OLD_CONTENT=1
+    if ! mv "$DEFAULT_CONTENT_DIR" "$TX_CONTENT_BACKUP"; then
+      rollback_release_config_and_content
+      return 1
+    fi
   fi
   if [[ -e "$CONFIG_DST" ]]; then
-    mv "$CONFIG_DST" "$config_backup"
+    TX_OLD_CONFIG=1
+    if ! mv "$CONFIG_DST" "$TX_CONFIG_BACKUP"; then
+      rollback_release_config_and_content
+      return 1
+    fi
   fi
-  if ! mv "$config_stage" "$CONFIG_DST" || ! mv "$stage" "$DEFAULT_CONTENT_DIR"; then
-    rm -f "$CONFIG_DST"
-    rm -rf "$DEFAULT_CONTENT_DIR"
-    [[ ! -e "$config_backup" ]] || mv "$config_backup" "$CONFIG_DST"
-    [[ ! -e "$content_backup" ]] || mv "$content_backup" "$DEFAULT_CONTENT_DIR"
+  TX_NEW_CONFIG=1
+  if ! mv "$TX_CONFIG_STAGE" "$CONFIG_DST"; then
+    rollback_release_config_and_content
     return 1
   fi
-  rm -f "$config_backup"
-  rm -rf "$content_backup"
+  TX_NEW_CONTENT=1
+  if ! mv "$TX_CONTENT_STAGE" "$DEFAULT_CONTENT_DIR"; then
+    rollback_release_config_and_content
+    return 1
+  fi
+  trap - INT TERM EXIT
+  rm -f "$TX_CONFIG_BACKUP"
+  rm -rf "$TX_CONTENT_BACKUP"
+  reset_release_transaction
+}
+
+rollback_release_config_and_content() {
+  trap - INT TERM EXIT
+  [[ "$TX_NEW_CONTENT" != 1 ]] || rm -rf "$DEFAULT_CONTENT_DIR"
+  [[ "$TX_NEW_CONFIG" != 1 ]] || rm -f "$CONFIG_DST"
+  [[ "$TX_OLD_CONFIG" != 1 || ! -e "$TX_CONFIG_BACKUP" ]] || mv "$TX_CONFIG_BACKUP" "$CONFIG_DST"
+  [[ "$TX_OLD_CONTENT" != 1 || ! -e "$TX_CONTENT_BACKUP" ]] || mv "$TX_CONTENT_BACKUP" "$DEFAULT_CONTENT_DIR"
+  [[ -z "$TX_CONFIG_STAGE" || ! -e "$TX_CONFIG_STAGE" ]] || rm -f "$TX_CONFIG_STAGE"
+  [[ -z "$TX_CONTENT_STAGE" || ! -e "$TX_CONTENT_STAGE" ]] || rm -rf "$TX_CONTENT_STAGE"
+  reset_release_transaction
+}
+
+abort_release_transaction() {
+  local status="$1"
+  rollback_release_config_and_content
+  exit "$status"
+}
+
+reset_release_transaction() {
+  TX_CONTENT_BACKUP="" TX_CONFIG_BACKUP="" TX_CONTENT_STAGE="" TX_CONFIG_STAGE=""
+  TX_OLD_CONTENT=0 TX_OLD_CONFIG=0 TX_NEW_CONTENT=0 TX_NEW_CONFIG=0
 }
 
 validate_default_content() {
