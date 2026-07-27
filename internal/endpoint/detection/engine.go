@@ -882,7 +882,7 @@ func eventField(ev *eventv1.CanonicalEvent, field string) string {
 	case "process.argv", "argv":
 		return strings.Join(ev.GetSubjectProc().GetArgv(), " ")
 	case "process.sudo_command":
-		if filepath.Base(ev.GetSubjectProc().GetBinary()) != "sudo" {
+		if filepath.Base(ev.GetSubjectProc().GetBinary()) != "sudo" || !ev.GetSubjectProc().GetArgvBoundariesTrusted() {
 			return ""
 		}
 		return sudoCommand(ev.GetSubjectProc().GetArgv())
@@ -928,6 +928,11 @@ func sudoCommand(argv []string) string {
 	if len(argv) < 2 || filepath.Base(argv[0]) != "sudo" {
 		return ""
 	}
+	for _, arg := range argv[1:] {
+		if strings.ContainsAny(arg, "\"'") {
+			return ""
+		}
+	}
 	for i := 1; i < len(argv); i++ {
 		arg := argv[i]
 		if arg == "--" {
@@ -971,10 +976,9 @@ func sudoOptionNeedsValue(arg string) bool {
 
 func sudoFlagWithoutValue(arg string) bool {
 	switch arg {
-	case "-A", "-b", "-E", "-e", "-H", "-i", "-K", "-k", "-n", "-P", "-S", "-s", "-V",
-		"--askpass", "--background", "--edit", "--help", "--hostpreserve", "--login",
-		"--non-interactive", "--preserve-env", "--remove-timestamp", "--reset-timestamp",
-		"--set-home", "--shell", "--stdin", "--validate", "--version":
+	case "-A", "-b", "-E", "-H", "-K", "-k", "-n", "-P", "-S",
+		"--askpass", "--background", "--non-interactive", "--preserve-env",
+		"--preserve-groups", "--reset-timestamp", "--set-home", "--stdin":
 		return true
 	default:
 		return false

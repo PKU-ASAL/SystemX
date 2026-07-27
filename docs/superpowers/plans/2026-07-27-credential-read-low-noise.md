@@ -20,6 +20,10 @@
 ### Task 5: Trust the exact sudo sysarmorctl target
 
 **Files:**
+- Modify: `api/proto/sensor/v1/sensor.proto`
+- Modify: `api/proto/event/v1/event.proto`
+- Modify: `internal/sensors/linux/tetragon/adapter.go`
+- Modify: `internal/endpoint/normalize/normalize.go`
 - Modify: `internal/endpoint/detection/compiled.go`
 - Modify: `internal/endpoint/detection/engine.go`
 - Modify: `internal/endpoint/detection/engine_test.go`
@@ -27,11 +31,15 @@
 
 **Interfaces:**
 - Consumes: canonical `process.binary` and tokenized `process.argv`
-- Produces: derived condition field `process.sudo_command` containing the basename of sudo's target command
+- Produces: trusted-boundary process metadata and derived condition field `process.sudo_command`
+  containing the basename of sudo's target command
 
 - [ ] Add failing tests for direct, absolute-path, and option-bearing `sudo sysarmorctl`, plus Shell and dangerous-command near misses.
+- [ ] Add failing adapter and detection tests for quoted sudo prompt injection, tabs, repeated spaces,
+  untrusted boundaries, and sudoedit mode.
 - [ ] Run `go test ./internal/endpoint/detection -run TestCredentialReadUsesExactSystemCommandBaselines -count=1` and verify the new trusted cases fail with one Signal.
-- [ ] Implement the minimal sudo argv parser and expose `process.sudo_command` through the compiled condition field resolver.
+- [ ] Carry `argv_boundaries_trusted` from the Tetragon adapter through normalization, then implement
+  the fail-closed sudo argv parser and expose `process.sudo_command` through both field resolvers.
 - [ ] Replace the health-only substring baseline with `process.binary == /usr/bin/sudo` and `process.sudo_command == sysarmorctl`; increment the rule version.
 - [ ] Run focused detection tests, `go test ./...`, and Release content/package contracts.
 - [ ] Commit only the parser, rule, tests, design, and plan as `fix(detection): trust explicit sysarmorctl sudo commands`.

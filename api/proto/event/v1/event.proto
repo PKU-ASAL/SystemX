@@ -11,6 +11,7 @@ message ProcessRef {
   repeated string argv = 4;
   uint32 uid = 5;
   uint64 start_time_ns = 6;
+  bool argv_boundaries_trusted = 7;
 }
 
 message ObjectRef {

@@ -548,7 +548,7 @@ func newEventView(ev *eventv1.CanonicalEvent) eventView {
 		view.processBinary = proc.GetBinary()
 		view.processBinaryName = filepath.Base(proc.GetBinary())
 		view.processArgv = strings.Join(proc.GetArgv(), " ")
-		if filepath.Base(proc.GetBinary()) == "sudo" {
+		if filepath.Base(proc.GetBinary()) == "sudo" && proc.GetArgvBoundariesTrusted() {
 			view.processSudoCommand = sudoCommand(proc.GetArgv())
 		}
 		view.processUID = strconv.FormatUint(uint64(proc.GetUid()), 10)

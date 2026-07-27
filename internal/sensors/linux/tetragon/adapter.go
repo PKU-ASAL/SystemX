@@ -182,15 +182,16 @@ func sensorEvent(env envelope, proc, parent tetragonProcess, behavior string, ob
 		MonoNs:   monotonicishNS(env.Time, proc.StartTime),
 		Behavior: eventmodel.NormalizeBehavior(behavior).String(),
 		Proc: &sensorv1.RawProcess{
-			Pid:                proc.PID,
-			Ppid:               ppid,
-			Binary:             proc.Binary,
-			Argv:               argv(proc.Binary, proc.Arguments),
-			Uid:                proc.UID,
-			StartTimeNs:        monotonicishNS(proc.StartTime, env.Time),
-			Cgroup:             proc.Docker,
-			SensorExecId:       proc.ExecID,
-			SensorParentExecId: parentExecID,
+			Pid:                   proc.PID,
+			Ppid:                  ppid,
+			Binary:                proc.Binary,
+			Argv:                  argv(proc.Binary, proc.Arguments),
+			ArgvBoundariesTrusted: argvBoundariesTrusted(proc.Arguments),
+			Uid:                   proc.UID,
+			StartTimeNs:           monotonicishNS(proc.StartTime, env.Time),
+			Cgroup:                proc.Docker,
+			SensorExecId:          proc.ExecID,
+			SensorParentExecId:    parentExecID,
 		},
 		Object:      obj,
 		ContainerId: proc.Docker,
@@ -204,6 +205,16 @@ func argv(binary, arguments string) []string {
 	}
 	out = append(out, strings.Fields(arguments)...)
 	return out
+}
+
+func argvBoundariesTrusted(arguments string) bool {
+	if arguments == "" {
+		return true
+	}
+	if strings.TrimSpace(arguments) != arguments || strings.Contains(arguments, "  ") {
+		return false
+	}
+	return !strings.ContainsAny(arguments, "\t\r\n\"'\\")
 }
 
 func monotonicishNS(primary, fallback string) uint64 {

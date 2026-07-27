@@ -22,18 +22,19 @@ const (
 )
 
 type RawProcess struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Pid                uint32                 `protobuf:"varint,1,opt,name=pid,proto3" json:"pid,omitempty"`
-	Ppid               uint32                 `protobuf:"varint,2,opt,name=ppid,proto3" json:"ppid,omitempty"`
-	Binary             string                 `protobuf:"bytes,3,opt,name=binary,proto3" json:"binary,omitempty"`
-	Argv               []string               `protobuf:"bytes,4,rep,name=argv,proto3" json:"argv,omitempty"`
-	Uid                uint32                 `protobuf:"varint,5,opt,name=uid,proto3" json:"uid,omitempty"`
-	StartTimeNs        uint64                 `protobuf:"varint,6,opt,name=start_time_ns,json=startTimeNs,proto3" json:"start_time_ns,omitempty"`
-	Cgroup             string                 `protobuf:"bytes,7,opt,name=cgroup,proto3" json:"cgroup,omitempty"`
-	SensorExecId       string                 `protobuf:"bytes,8,opt,name=sensor_exec_id,json=sensorExecId,proto3" json:"sensor_exec_id,omitempty"`
-	SensorParentExecId string                 `protobuf:"bytes,9,opt,name=sensor_parent_exec_id,json=sensorParentExecId,proto3" json:"sensor_parent_exec_id,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Pid                   uint32                 `protobuf:"varint,1,opt,name=pid,proto3" json:"pid,omitempty"`
+	Ppid                  uint32                 `protobuf:"varint,2,opt,name=ppid,proto3" json:"ppid,omitempty"`
+	Binary                string                 `protobuf:"bytes,3,opt,name=binary,proto3" json:"binary,omitempty"`
+	Argv                  []string               `protobuf:"bytes,4,rep,name=argv,proto3" json:"argv,omitempty"`
+	Uid                   uint32                 `protobuf:"varint,5,opt,name=uid,proto3" json:"uid,omitempty"`
+	StartTimeNs           uint64                 `protobuf:"varint,6,opt,name=start_time_ns,json=startTimeNs,proto3" json:"start_time_ns,omitempty"`
+	Cgroup                string                 `protobuf:"bytes,7,opt,name=cgroup,proto3" json:"cgroup,omitempty"`
+	SensorExecId          string                 `protobuf:"bytes,8,opt,name=sensor_exec_id,json=sensorExecId,proto3" json:"sensor_exec_id,omitempty"`
+	SensorParentExecId    string                 `protobuf:"bytes,9,opt,name=sensor_parent_exec_id,json=sensorParentExecId,proto3" json:"sensor_parent_exec_id,omitempty"`
+	ArgvBoundariesTrusted bool                   `protobuf:"varint,10,opt,name=argv_boundaries_trusted,json=argvBoundariesTrusted,proto3" json:"argv_boundaries_trusted,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *RawProcess) Reset() {
@@ -127,6 +128,13 @@ func (x *RawProcess) GetSensorParentExecId() string {
 		return x.SensorParentExecId
 	}
 	return ""
+}
+
+func (x *RawProcess) GetArgvBoundariesTrusted() bool {
+	if x != nil {
+		return x.ArgvBoundariesTrusted
+	}
+	return false
 }
 
 type RawObject struct {
@@ -329,7 +337,7 @@ var File_api_proto_sensor_v1_sensor_proto protoreflect.FileDescriptor
 
 const file_api_proto_sensor_v1_sensor_proto_rawDesc = "" +
 	"\n" +
-	" api/proto/sensor/v1/sensor.proto\x12\x12sysarmor.sensor.v1\"\x85\x02\n" +
+	" api/proto/sensor/v1/sensor.proto\x12\x12sysarmor.sensor.v1\"\xbd\x02\n" +
 	"\n" +
 	"RawProcess\x12\x10\n" +
 	"\x03pid\x18\x01 \x01(\rR\x03pid\x12\x12\n" +
@@ -340,7 +348,9 @@ const file_api_proto_sensor_v1_sensor_proto_rawDesc = "" +
 	"\rstart_time_ns\x18\x06 \x01(\x04R\vstartTimeNs\x12\x16\n" +
 	"\x06cgroup\x18\a \x01(\tR\x06cgroup\x12$\n" +
 	"\x0esensor_exec_id\x18\b \x01(\tR\fsensorExecId\x121\n" +
-	"\x15sensor_parent_exec_id\x18\t \x01(\tR\x12sensorParentExecId\"P\n" +
+	"\x15sensor_parent_exec_id\x18\t \x01(\tR\x12sensorParentExecId\x126\n" +
+	"\x17argv_boundaries_trusted\x18\n" +
+	" \x01(\bR\x15argvBoundariesTrusted\"P\n" +
 	"\tRawObject\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
 	"\x03dst\x18\x02 \x01(\tR\x03dst\x12\x1d\n" +

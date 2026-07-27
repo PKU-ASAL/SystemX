@@ -754,10 +754,11 @@ func TestCredentialReadSuppressesDuplicateProcessPathSignals(t *testing.T) {
 
 func TestCredentialReadUsesExactSystemCommandBaselines(t *testing.T) {
 	tests := []struct {
-		name string
-		bin  string
-		argv []string
-		want int
+		name          string
+		bin           string
+		argv          []string
+		untrustedArgv bool
+		want          int
 	}{
 		{name: "sysarmor health", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "--socket", "/run/sysarmor/agent/control.sock", "--json", "agent", "health"}, want: 0},
 		{name: "sysarmor policy apply", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "policy", "apply", "collection", "--file", "/tmp/policy.json"}, want: 0},
@@ -765,6 +766,9 @@ func TestCredentialReadUsesExactSystemCommandBaselines(t *testing.T) {
 		{name: "sudo user option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-u", "root", "sysarmorctl", "policy", "current"}, want: 0},
 		{name: "sudo long user option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--user=root", "--", "sysarmorctl", "event", "watch"}, want: 0},
 		{name: "sysarmor token in shell", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "bash", "-c", "echo sysarmorctl"}, want: 1},
+		{name: "sysarmor token in quoted prompt", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-p", "\"notice", "sysarmorctl", "tail\"", "cat", "/etc/shadow"}, want: 1},
+		{name: "untrusted argv boundaries", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "agent", "health"}, untrustedArgv: true, want: 1},
+		{name: "sudo edit sysarmor path", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-e", "sysarmorctl", "/etc/shadow"}, want: 1},
 		{name: "unknown sudo option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--unknown", "sysarmorctl", "agent", "health"}, want: 1},
 		{name: "unknown sudo inline option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--unknown=value", "sysarmorctl", "agent", "health"}, want: 1},
 		{name: "sudo dangerous command", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "cat", "/etc/shadow"}, want: 1},
@@ -779,6 +783,7 @@ func TestCredentialReadUsesExactSystemCommandBaselines(t *testing.T) {
 			engine, _ := NewWithRuntime(testDetectionPolicy(), contract.CollectionIntent{}, testContentSnapshot(t))
 			event := readEvent("read", "lineage", "process", tt.bin, "/etc/shadow")
 			event.SubjectProc.Argv = tt.argv
+			event.SubjectProc.ArgvBoundariesTrusted = !tt.untrustedArgv
 			if got := countSignals(engine.Process(event), "credential_file_read"); got != tt.want {
 				t.Fatalf("credential signals = %d, want %d", got, tt.want)
 			}

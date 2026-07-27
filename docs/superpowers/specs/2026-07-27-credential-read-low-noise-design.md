@@ -23,6 +23,10 @@ Medium 测试的 272 条 credential Signal 中，240 条来自 Recorder 每 10 �
 - 不将 `sudo`、`sshd` 加入无条件可信列表；必须同时满足对应 argv 特征。
 - sudo 基线解析 argv 中的实际目标命令，跳过 sudo 选项及其参数；只有目标命令 basename
   为 `sysarmorctl` 时才可信。参数文本中仅出现该名称的 Shell 等命令仍告警。
+- Tetragon 仅提供格式化后的 arguments 字符串。适配器只有在参数由安全 token 和普通单空格
+  组成、边界可无歧义恢复时才设置 `argv_boundaries_trusted`；含引号、Tab、换行、反斜线、
+  首尾或重复空格时保持不可信。sudo 基线必须同时要求该标志，默认 false 并 fail-closed。
+- `sudoedit`、Shell、登录 Shell、查询/帮助等非执行模式不解析为目标命令。
 - 缺失 binary、argv 或 lineage 时采取保守语义，不得静默进入可信基线。
 
 ## 验收
