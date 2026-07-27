@@ -11,9 +11,29 @@ import (
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
+
+func TestRepositoryDefaultPolicyCoversDefaultDetectionContent(t *testing.T) {
+	raw, err := os.ReadFile("../../../deployments/agent/policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := agentpolicy.ParseEndpointPolicy(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := agentpolicy.CollectionPolicyIntent(policy.Collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := CheckCoverageWithContent(&policy.Detection, intent, testContentSnapshot(t))
+	if report.Status != "covered" {
+		t.Fatalf("default detection coverage = %+v, want covered", report)
+	}
+}
 
 func TestEngineHasNoRuleSpecificLineageDetectors(t *testing.T) {
 	source, err := os.ReadFile("engine.go")
@@ -780,7 +800,7 @@ func TestAccountDatabaseReadRequiresSuspiciousReader(t *testing.T) {
 					if signal.GetName() == "account_database_read" && signal.GetSeverity() != "low" {
 						t.Fatalf("severity = %q, want low", signal.GetSeverity())
 					}
-			}
+				}
 			}
 		})
 	}
