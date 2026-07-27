@@ -2,6 +2,7 @@ package detection
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -880,6 +881,11 @@ func eventField(ev *eventv1.CanonicalEvent, field string) string {
 		return ev.GetSubjectProc().GetBinary()
 	case "process.argv", "argv":
 		return strings.Join(ev.GetSubjectProc().GetArgv(), " ")
+	case "process.sudo_command":
+		if filepath.Base(ev.GetSubjectProc().GetBinary()) != "sudo" {
+			return ""
+		}
+		return sudoCommand(ev.GetSubjectProc().GetArgv())
 	case "process.uid", "uid":
 		return strconv.FormatUint(uint64(ev.GetSubjectProc().GetUid()), 10)
 	case "process.pid", "pid":
@@ -915,6 +921,63 @@ func eventField(ev *eventv1.CanonicalEvent, field string) string {
 		return ev.GetCgroup()
 	default:
 		return ""
+	}
+}
+
+func sudoCommand(argv []string) string {
+	if len(argv) < 2 || filepath.Base(argv[0]) != "sudo" {
+		return ""
+	}
+	for i := 1; i < len(argv); i++ {
+		arg := argv[i]
+		if arg == "--" {
+			if i+1 < len(argv) {
+				return filepath.Base(argv[i+1])
+			}
+			return ""
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			return filepath.Base(arg)
+		}
+		if sudoOptionHasInlineValue(arg) || sudoFlagWithoutValue(arg) {
+			continue
+		}
+		if sudoOptionNeedsValue(arg) && i+1 < len(argv) {
+			i++
+			continue
+		}
+		return ""
+	}
+	return ""
+}
+
+func sudoOptionHasInlineValue(arg string) bool {
+	if name, _, ok := strings.Cut(arg, "="); ok && strings.HasPrefix(name, "--") {
+		return sudoOptionNeedsValue(name) || name == "--preserve-env"
+	}
+	return len(arg) > 2 && strings.ContainsRune("CDghprTtu", rune(arg[1]))
+}
+
+func sudoOptionNeedsValue(arg string) bool {
+	switch arg {
+	case "-C", "-D", "-g", "-h", "-p", "-R", "-r", "-T", "-t", "-u",
+		"--chdir", "--chroot", "--close-from", "--command-timeout", "--group",
+		"--host", "--prompt", "--role", "--type", "--user":
+		return true
+	default:
+		return false
+	}
+}
+
+func sudoFlagWithoutValue(arg string) bool {
+	switch arg {
+	case "-A", "-b", "-E", "-e", "-H", "-i", "-K", "-k", "-n", "-P", "-S", "-s", "-V",
+		"--askpass", "--background", "--edit", "--help", "--hostpreserve", "--login",
+		"--non-interactive", "--preserve-env", "--remove-timestamp", "--reset-timestamp",
+		"--set-home", "--shell", "--stdin", "--validate", "--version":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -107,6 +107,7 @@ const (
 	fieldProcessBinary
 	fieldProcessBinaryName
 	fieldProcessArgv
+	fieldProcessSudoCommand
 	fieldProcessUID
 	fieldProcessPID
 	fieldParentStableID
@@ -121,27 +122,28 @@ const (
 )
 
 type eventView struct {
-	ev                *eventv1.CanonicalEvent
-	eventID           string
-	behavior          string
-	lineageID         string
-	processStableID   string
-	processBinary     string
-	processBinaryName string
-	processArgv       string
-	processUID        string
-	processPID        string
-	parentStableID    string
-	filePath          string
-	socketAddr        string
-	socketPort        string
-	socket            string
-	scopeType         string
-	scopeSelector     string
-	containerID       string
-	cgroup            string
-	occurredAtNs      uint64
-	monoNs            uint64
+	ev                 *eventv1.CanonicalEvent
+	eventID            string
+	behavior           string
+	lineageID          string
+	processStableID    string
+	processBinary      string
+	processBinaryName  string
+	processArgv        string
+	processSudoCommand string
+	processUID         string
+	processPID         string
+	parentStableID     string
+	filePath           string
+	socketAddr         string
+	socketPort         string
+	socket             string
+	scopeType          string
+	scopeSelector      string
+	containerID        string
+	cgroup             string
+	occurredAtNs       uint64
+	monoNs             uint64
 }
 
 func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRuntime {
@@ -466,6 +468,8 @@ func compileField(field string) fieldID {
 		return fieldProcessBinaryName
 	case "process.argv", "argv":
 		return fieldProcessArgv
+	case "process.sudo_command":
+		return fieldProcessSudoCommand
 	case "process.uid", "uid":
 		return fieldProcessUID
 	case "process.pid", "pid":
@@ -544,6 +548,9 @@ func newEventView(ev *eventv1.CanonicalEvent) eventView {
 		view.processBinary = proc.GetBinary()
 		view.processBinaryName = filepath.Base(proc.GetBinary())
 		view.processArgv = strings.Join(proc.GetArgv(), " ")
+		if filepath.Base(proc.GetBinary()) == "sudo" {
+			view.processSudoCommand = sudoCommand(proc.GetArgv())
+		}
 		view.processUID = strconv.FormatUint(uint64(proc.GetUid()), 10)
 		if proc.GetPid() != 0 {
 			view.processPID = strconv.FormatUint(uint64(proc.GetPid()), 10)
@@ -582,6 +589,8 @@ func (v eventView) field(field fieldID) string {
 		return v.processBinaryName
 	case fieldProcessArgv:
 		return v.processArgv
+	case fieldProcessSudoCommand:
+		return v.processSudoCommand
 	case fieldProcessUID:
 		return v.processUID
 	case fieldProcessPID:
@@ -700,6 +709,8 @@ func fieldName(field fieldID) string {
 		return "process.binary_name"
 	case fieldProcessArgv:
 		return "process.argv"
+	case fieldProcessSudoCommand:
+		return "process.sudo_command"
 	case fieldProcessUID:
 		return "process.uid"
 	case fieldProcessPID:

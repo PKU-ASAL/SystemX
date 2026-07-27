@@ -760,6 +760,13 @@ func TestCredentialReadUsesExactSystemCommandBaselines(t *testing.T) {
 		want int
 	}{
 		{name: "sysarmor health", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "--socket", "/run/sysarmor/agent/control.sock", "--json", "agent", "health"}, want: 0},
+		{name: "sysarmor policy apply", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "sysarmorctl", "policy", "apply", "collection", "--file", "/tmp/policy.json"}, want: 0},
+		{name: "absolute sysarmor path", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "/usr/local/bin/sysarmorctl", "content", "apply", "--file", "/tmp/content.json"}, want: 0},
+		{name: "sudo user option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "-u", "root", "sysarmorctl", "policy", "current"}, want: 0},
+		{name: "sudo long user option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--user=root", "--", "sysarmorctl", "event", "watch"}, want: 0},
+		{name: "sysarmor token in shell", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "bash", "-c", "echo sysarmorctl"}, want: 1},
+		{name: "unknown sudo option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--unknown", "sysarmorctl", "agent", "health"}, want: 1},
+		{name: "unknown sudo inline option", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "--unknown=value", "sysarmorctl", "agent", "health"}, want: 1},
 		{name: "sudo dangerous command", bin: "/usr/bin/sudo", argv: []string{"/usr/bin/sudo", "cat", "/etc/shadow"}, want: 1},
 		{name: "sudo missing argv", bin: "/usr/bin/sudo", want: 1},
 		{name: "sshd daemon", bin: "/usr/sbin/sshd", argv: []string{"/usr/sbin/sshd", "-D", "-R"}, want: 0},

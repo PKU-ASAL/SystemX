@@ -113,7 +113,7 @@
           },
           {
             "rule_id": "credential_file_read",
-            "version": 3,
+            "version": 4,
             "severity": "medium",
             "runtime": {
               "type": "expr",
@@ -125,8 +125,7 @@
                     {"not": {"any": [
                       {"all": [
                         {"condition": {"field": "process.binary", "op": "eq", "value": "/usr/bin/sudo"}},
-                        {"condition": {"field": "process.argv", "op": "contains", "value": "sysarmorctl"}},
-                        {"condition": {"field": "process.argv", "op": "contains", "value": "agent health"}}
+                        {"condition": {"field": "process.sudo_command", "op": "eq", "value": "sysarmorctl"}}
                       ]},
                       {"all": [
                         {"condition": {"field": "process.binary", "op": "eq", "value": "/usr/sbin/sshd"}},
