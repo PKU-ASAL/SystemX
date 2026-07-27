@@ -201,10 +201,17 @@ rollback_installation() {
     fi
   done
   cleanup_transaction_files
-  if [[ "$ENABLE_SERVICE" == "1" ]]; then
-    systemctl daemon-reload 2>/dev/null || true
-    [[ "$WAS_ENABLED" == 1 ]] || systemctl disable sysarmor-agent 2>/dev/null || true
-    [[ "$WAS_ACTIVE" != 1 ]] || systemctl start sysarmor-agent 2>/dev/null || true
+  if [[ "$ENABLE_SERVICE" == "1" && "$rollback_failed" == 0 ]]; then
+    if ! systemctl daemon-reload 2>/dev/null; then
+      echo "[sysarmor-install][ERROR] rollback could not reload systemd" >&2
+      rollback_failed=1
+    elif [[ "$WAS_ENABLED" != 1 ]] && ! systemctl disable sysarmor-agent 2>/dev/null; then
+      echo "[sysarmor-install][ERROR] rollback could not restore disabled service state" >&2
+      rollback_failed=1
+    elif [[ "$WAS_ACTIVE" == 1 ]] && ! systemctl start sysarmor-agent 2>/dev/null; then
+      echo "[sysarmor-install][ERROR] rollback could not restart the restored service" >&2
+      rollback_failed=1
+    fi
   fi
   return "$rollback_failed"
 }

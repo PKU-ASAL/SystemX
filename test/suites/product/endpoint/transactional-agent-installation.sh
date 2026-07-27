@@ -173,6 +173,9 @@ shopt -u nullglob
   { cat "$rollback_error" >&2; fail "failed rollback did not preserve the Agent backup"; }
 grep -Fq "$AGENT" "$rollback_error" || fail "rollback failure did not identify the target"
 grep -Fq "${rollback_backups[0]}" "$rollback_error" || fail "rollback failure did not identify the backup"
+if grep -Fxq 'start sysarmor-agent' "$SYSTEMCTL_LOG"; then
+  fail "incomplete rollback restarted the service"
+fi
 
 for install_signal in TERM INT; do
   set_paths "signal-${install_signal,,}"
