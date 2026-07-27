@@ -17,6 +17,27 @@
 
 ---
 
+### Task 5: Trust the exact sudo sysarmorctl target
+
+**Files:**
+- Modify: `internal/endpoint/detection/compiled.go`
+- Modify: `internal/endpoint/detection/engine.go`
+- Modify: `internal/endpoint/detection/engine_test.go`
+- Modify: `deployments/agent/content/rulepack-cep-endpoint.json`
+
+**Interfaces:**
+- Consumes: canonical `process.binary` and tokenized `process.argv`
+- Produces: derived condition field `process.sudo_command` containing the basename of sudo's target command
+
+- [ ] Add failing tests for direct, absolute-path, and option-bearing `sudo sysarmorctl`, plus Shell and dangerous-command near misses.
+- [ ] Run `go test ./internal/endpoint/detection -run TestCredentialReadUsesExactSystemCommandBaselines -count=1` and verify the new trusted cases fail with one Signal.
+- [ ] Implement the minimal sudo argv parser and expose `process.sudo_command` through the compiled condition field resolver.
+- [ ] Replace the health-only substring baseline with `process.binary == /usr/bin/sudo` and `process.sudo_command == sysarmorctl`; increment the rule version.
+- [ ] Run focused detection tests, `go test ./...`, and Release content/package contracts.
+- [ ] Commit only the parser, rule, tests, design, and plan as `fix(detection): trust explicit sysarmorctl sudo commands`.
+
+---
+
 ### Task 1: Lock rule behavior
 
 **Files:**
