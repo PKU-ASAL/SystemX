@@ -588,9 +588,10 @@ apply_detection() {
       ([.sections[]? | select(.name == "detection") | .reportJson | fromjson |
         .coverage.rules[]? | select(.status != "covered") |
         {rule_id, missing_behaviors}] ==
-       [{"rule_id":"credential_file_read","missing_behaviors":["file.read"]}])
+       [{"rule_id":"credential_file_read","missing_behaviors":["file.read"]},
+        {"rule_id":"account_database_read","missing_behaviors":["file.read"]}])
     ' "$policy_out/detection-apply.json" >/dev/null; then
-      echo "[performance-endpoint] expected minimal detection coverage gap: credential_file_read requires file.read"
+      echo "[performance-endpoint] expected minimal detection coverage gaps: account_database_read and credential_file_read require file.read"
     else
       echo "[performance-endpoint][ERROR] detection policy was not fully applied: $DETECTION_POLICY" >&2
       cat "$policy_out/detection-apply.json" >&2 2>/dev/null || true
