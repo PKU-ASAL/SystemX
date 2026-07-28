@@ -135,6 +135,7 @@ product-endpoint-standalone:
 	bash suites/product/endpoint/standalone-release-package.sh
 	bash suites/product/endpoint/container-entrypoint.sh
 	bash suites/product/endpoint/standalone-github-assets.sh
+	bash suites/product/endpoint/release-notes.sh
 	bash suites/product/endpoint/release-workflow-contract.sh
 	bash suites/product/endpoint/release-container-e2e-contract.sh
 
