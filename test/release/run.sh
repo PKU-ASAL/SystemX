@@ -10,6 +10,7 @@ source "$HERE/scenarios.sh"
 
 RESULT_ROOT=""
 INSTALL_URL=""
+TETRAGON_URL=""
 ACTIVE_BUSINESS=""
 ACTIVE_ATTACKER=""
 ACTIVE_ATTACKER_HOST=""
@@ -50,7 +51,9 @@ cleanup() {
 trap cleanup EXIT
 
 build_image() {
-  local args=(--network host -f "$HERE/images/$1/Dockerfile" --build-arg "SYSARMOR_INSTALL_URL=$INSTALL_URL")
+  local args=(--network host -f "$HERE/images/$1/Dockerfile"
+    --build-arg "SYSARMOR_INSTALL_URL=$INSTALL_URL"
+    --build-arg "SYSARMOR_TETRAGON_URL=$TETRAGON_URL")
   [[ "$FRESH_DOWNLOAD" != "1" ]] || args+=(--no-cache)
   docker build "${args[@]}" -t "$2" "$HERE" >"$3/build.log" 2>&1
 }
@@ -133,7 +136,9 @@ run_image() {
 main() {
   prepare_result_root "$TEST_ROOT/.results/release" "$RUN_ID"
   INSTALL_URL="$(resolve_download_url "$(resolve_install_url)")"
+  TETRAGON_URL="$(resolve_tetragon_url)"
   printf '%s\n' "$INSTALL_URL" >"$RESULT_ROOT/install-url.txt"
+  printf '%s\n' "$TETRAGON_URL" >"$RESULT_ROOT/tetragon-url.txt"
   for image in $IMAGES; do
     case "$image" in
       ubuntu2204|ubuntu2404|debian12) run_image "$image" ;;

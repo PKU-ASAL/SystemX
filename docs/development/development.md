@@ -65,16 +65,21 @@ make web-build
 ### GitHub 发布
 
 发布使用短生命周期 `release/vX.Y.Z` 分支。先将功能分支通过 PR 合入 `dev`，再从冻结的
-`dev` 创建 release 分支；不要直接提交到 `dev` 或 `main`。
+`dev` 创建 release 分支；不要直接提交到 `dev` 或 `main`。首次引入或修改发布入口时，
+对应 workflow 必须先存在于默认分支，否则 GitHub 不提供 `workflow_dispatch` 入口。
 
 从 `release/vX.Y.Z` 手动触发 `.github/workflows/release-candidate.yml`，输入正整数
 `rc_number`，创建 `vX.Y.Z-rc.N` Pre-release。RC 使用 runner 临时生成的 RSA manifest key
-和 Ed25519 content key。RC 发布后，必须使用公开 GitHub Release URL 完成 fresh medium 和
-Ubuntu 22.04、Ubuntu 24.04、Debian 12 三镜像验收，再冻结 release 分支。
+和 Ed25519 content key。工作流从同一提交生成安装说明、容器示例、provenance 验证命令和
+变更链接，并通过 `--notes-file` 创建 Release，不使用只生成变更列表的默认说明。RC 发布后，
+必须使用公开 GitHub Release URL 完成 fresh medium 和 Ubuntu 22.04、Ubuntu 24.04、
+Debian 12 三镜像验收，再冻结 release 分支。
 
 验收通过后，将 release 分支通过 PR 合入 `main`。从 `main` 手动触发
 `.github/workflows/release-stable.yml`，输入不带 `v` 的 `version` 和已验收的
-`accepted_rc_tag`。工作流仅在 `main` 与 RC tag 的 Git tree 完全一致时继续。
+`accepted_rc_tag`。工作流仅在 `main` 与 RC tag 的 Git tree 完全一致时继续，并使用同一
+Release notes 渲染器生成正式版本说明。GitHub Releases 是发行变更记录的事实来源，不另行
+维护重复的 changelog。
 
 正式发布前，仓库必须配置受保护的 `production-release` Environment、审批人，以及：
 
