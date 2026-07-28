@@ -43,7 +43,7 @@ grep -Fq 'openssl genrsa' "$build"
 grep -Fq 'openssl genpkey -algorithm ED25519' "$build"
 grep -Fq 'sha256sum -c SHA256SUMS' "$build"
 grep -Fq 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1' "$build"
-grep -Fq 'actions/setup-go@b7ad1dad31e06c5925f5d2fc7ad053ef454303e # v7.0.0' "$build"
+grep -Fq 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0' "$build"
 grep -Fq 'actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1' "$build"
 grep -Fq 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1' "$build"
 
