@@ -370,24 +370,10 @@ func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentReques
 	if req.GetDryRun() {
 		status = "validated"
 	} else {
-		var snapshot agentcontent.Snapshot
-		record, snapshot, err := r.contentStore().Prepare(req.GetContentJson(), req.GetAllowUnsigned())
-		if err != nil {
-			return rejectedAck(r.Config, req.GetContext(), "content", err.Error())
-		}
-		var engine *detection.Engine
-		engine, report = r.buildDetectionWithSnapshot(snapshot)
-		if report.Status == "rejected" {
-			message := "content rejected; detection rebuild failed: " + strings.Join(report.Details, "; ")
-			r.setDetectionStatus(r.activePolicy(), report, r.contentStore().Snapshot())
-			return rejectedAck(r.Config, req.GetContext(), "content", message)
-		}
-		if err := r.commitDetectionContent(record, snapshot, engine, report); err != nil {
-			return rejectedAck(r.Config, req.GetContext(), "content", err.Error())
-		}
-		status = record.Status
-		if report.Status == "degraded" {
-			status = "degraded"
+		var transactionAck *controlplanev1.ControlAck
+		record, report, status, transactionAck = r.applyContentTransaction(req)
+		if transactionAck != nil {
+			return transactionAck
 		}
 	}
 	message := fmt.Sprintf("content %s %s@%s digest=%s", status, record.Ref, record.Version, record.Digest)
@@ -407,6 +393,35 @@ func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentReques
 			Message: message,
 		}},
 	}
+}
+
+func (r *AgentRuntime) applyContentTransaction(req *controlplanev1.ApplyContentRequest) (record agentcontent.Record, report detection.ApplyReport, status string, ack *controlplanev1.ControlAck) {
+	r.withDetectionUpdateTransaction(func() {
+		var snapshot agentcontent.Snapshot
+		var err error
+		record, snapshot, err = r.contentStore().Prepare(req.GetContentJson(), req.GetAllowUnsigned())
+		if err != nil {
+			ack = rejectedAck(r.Config, req.GetContext(), "content", err.Error())
+			return
+		}
+		var engine *detection.Engine
+		engine, report = r.buildDetectionWithSnapshot(snapshot)
+		if report.Status == "rejected" {
+			message := "content rejected; detection rebuild failed: " + strings.Join(report.Details, "; ")
+			r.setDetectionStatus(r.activePolicy(), report, r.contentStore().Snapshot())
+			ack = rejectedAck(r.Config, req.GetContext(), "content", message)
+			return
+		}
+		if err = r.commitDetectionContent(record, snapshot, engine, report); err != nil {
+			ack = rejectedAck(r.Config, req.GetContext(), "content", err.Error())
+			return
+		}
+		status = record.Status
+		if report.Status == "degraded" {
+			status = "degraded"
+		}
+	})
+	return record, report, status, ack
 }
 
 func (s *localControlServer) ListContent(ctx context.Context, req *controlplanev1.ListContentRequest) (*controlplanev1.ListContentResponse, error) {
@@ -448,6 +463,8 @@ func (s *localControlServer) GetEvent(ctx context.Context, req *controlplanev1.G
 }
 
 func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+	s.runner.detectionUpdateMu.Lock()
+	defer s.runner.detectionUpdateMu.Unlock()
 	policy, err := agentpolicy.ParseCollectionPolicyJSON([]byte(req.GetPolicyJson()), s.runner.Config.Sensor.ObserveOnly)
 	if err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "invalid collection policy: "+err.Error())
@@ -509,6 +526,8 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 }
 
 func (s *localControlServer) applyDetectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+	s.runner.detectionUpdateMu.Lock()
+	defer s.runner.detectionUpdateMu.Unlock()
 	var envelope struct {
 		Detection *policymodel.DetectionPolicy `json:"detection"`
 	}
@@ -1217,12 +1236,13 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 			LastError:       health.TelemetrySender.LastError,
 		},
 		Detection: &controlplanev1.DetectionRuntimeHealth{
-			PolicyId:        health.Detection.PolicyID,
-			PolicyVersion:   health.Detection.PolicyVersion,
-			ContentRefs:     detectionContentRefMessages(health.Detection.ContentRefs),
-			LastApplyStatus: health.Detection.LastApplyStatus,
-			LastApplyError:  health.Detection.LastApplyError,
-			UpdatedAt:       timestampString(health.Detection.UpdatedAt),
+			PolicyId:               health.Detection.PolicyID,
+			PolicyVersion:          health.Detection.PolicyVersion,
+			ContentRefs:            detectionContentRefMessages(health.Detection.ContentRefs),
+			LastApplyStatus:        health.Detection.LastApplyStatus,
+			LastApplyError:         health.Detection.LastApplyError,
+			UpdatedAt:              timestampString(health.Detection.UpdatedAt),
+			DefaultManifestVersion: health.Detection.DefaultManifestVersion,
 		},
 		Cep: &controlplanev1.CEPHealth{
 			ActiveGroups:     health.CEP.ActiveGroups,

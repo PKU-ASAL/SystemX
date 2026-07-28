@@ -62,19 +62,29 @@ make web-build
 
 `make build` 必须显式传 `SERVICE`。Package 服务使用 `nginx:alpine`，没有本地 image build。
 
-### GitHub 开发预发布
+### GitHub 发布
 
-`.github/workflows/dev-prerelease.yml` 只能从 `dev` 手动触发。工作流运行 Go 和 standalone
-发行包契约测试，构建 Linux x86_64 thin 包，生成 `install.sh` 与 `SHA256SUMS`，使用 GitHub
-OIDC 记录 build provenance，最后创建绑定精确 commit 的 Pre-release。版本格式为
-`v<major>.<minor>.<patch>-dev.<UTC timestamp>+<commit>`。
+发布使用短生命周期 `release/vX.Y.Z` 分支。先将功能分支通过 PR 合入 `dev`，再从冻结的
+`dev` 创建 release 分支；不要直接提交到 `dev` 或 `main`。
 
-GitHub-hosted runner 不具备本项目要求的 libvirt/eBPF 环境，因此该工作流不宣称验证真实采集和检测。
-正式触发预发布前，维护者仍需在校内测试机运行：
+从 `release/vX.Y.Z` 手动触发 `.github/workflows/release-candidate.yml`，输入正整数
+`rc_number`，创建 `vX.Y.Z-rc.N` Pre-release。RC 使用 runner 临时生成的 RSA manifest key
+和 Ed25519 content key。RC 发布后，必须使用公开 GitHub Release URL 完成 fresh medium 和
+Ubuntu 22.04、Ubuntu 24.04、Debian 12 三镜像验收，再冻结 release 分支。
 
-```bash
-make -C test product-endpoint
-```
+验收通过后，将 release 分支通过 PR 合入 `main`。从 `main` 手动触发
+`.github/workflows/release-stable.yml`，输入不带 `v` 的 `version` 和已验收的
+`accepted_rc_tag`。工作流仅在 `main` 与 RC tag 的 Git tree 完全一致时继续。
+
+正式发布前，仓库必须配置受保护的 `production-release` Environment、审批人，以及：
+
+- Secret `SYSARMOR_ARTIFACT_SIGNING_KEY_PEM`：RSA artifact manifest 私钥。
+- Secret `SYSARMOR_CONTENT_SIGNING_KEY_PEM`：Ed25519 content 私钥。
+- Variable `SYSARMOR_CONTENT_KEY_ID`：稳定且可审计的内容签名 key ID。
+
+公共 `.github/workflows/release-build.yml` 对 RC 和 GA 执行相同测试、构建、SHA-256 自校验
+和 provenance attestation。GitHub-hosted runner 不具备本项目要求的 libvirt/eBPF 环境，
+因此公开 RC 的真实采集、检测和性能验收不能由构建工作流替代。
 
 ## 修改协议
 

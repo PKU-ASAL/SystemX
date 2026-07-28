@@ -121,6 +121,31 @@ func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, bus *telem
 	return batch
 }
 
+func installTestDetection(t testing.TB, runner *AgentRuntime) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "deployments", "agent", "content", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runner.contentStore().Apply(string(raw), true, false); err != nil {
+			t.Fatalf("load test content %s: %v", path, err)
+		}
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.Detection = &policymodel.DetectionPolicy{
+		PolicyID: "daemon-test-detection", Version: 1, Mode: "observe",
+		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:cep-endpoint"}},
+	}
+	if report, ok := runner.tryApplyRuntimePolicy(policy); !ok {
+		t.Fatalf("install test detection: %+v", report)
+	}
+}
+
 func TestAgentRuntimeSwitchesBatchIdentityAfterEnrollment(t *testing.T) {
 	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "device-a", HostID: "host-a", TenantID: "local"}}}
 	runner.setRuntimeIdentity(runtimeIdentity{AgentID: "device-a", HostID: "host-a", TenantID: "local"})
@@ -175,6 +200,37 @@ func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
 	}
 	if got := runner.detectionHealth().FeatureFlags.MatcherStrategy; got != "optimized" {
 		t.Fatalf("health matcher strategy = %q, want optimized", got)
+	}
+}
+
+func TestAgentRuntimeRejectsMissingDefaultContentManifest(t *testing.T) {
+	cfg := config.Config{
+		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true},
+		Content: config.ContentConfig{DefaultPath: t.TempDir(), Path: t.TempDir()},
+	}
+	_, err := New(cfg)
+	if err == nil || !strings.Contains(err.Error(), "default content manifest") {
+		t.Fatalf("New() error = %v, want default content manifest error", err)
+	}
+}
+
+func TestAgentRuntimeRejectsStartupDetectionWithoutRuleSet(t *testing.T) {
+	runner := &AgentRuntime{content: agentcontent.NewStore()}
+	err := runner.applyStartupDetection(policymodel.DefaultPolicy("default"))
+	if err == nil || !strings.Contains(err.Error(), "explicit ruleset") {
+		t.Fatalf("applyStartupDetection() error = %v, want explicit ruleset error", err)
+	}
+}
+
+func TestDetectionStatusIncludesDefaultManifestVersion(t *testing.T) {
+	runner := &AgentRuntime{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.Detection = &policymodel.DetectionPolicy{PolicyID: "detection-test"}
+	runner.setDetectionStatus(policy, detection.ApplyReport{Status: "applied"}, agentcontent.Snapshot{DefaultManifestVersion: "release-v1"})
+	if got := runner.detectionHealth().DefaultManifestVersion; got != "release-v1" {
+		t.Fatalf("detection manifest version = %q, want release-v1", got)
 	}
 }
 
@@ -241,6 +297,7 @@ func TestAgentRuntimeUploadsFakeSensorEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	installTestDetection(t, runner)
 	var out bytes.Buffer
 	runDaemonUntilUploadedBatch(t, runner, &out)
 	got := out.String()
@@ -314,8 +371,13 @@ func TestEndpointSignalIDsContinueAcrossDetectionReplacement(t *testing.T) {
 		Id: "event-a", Behavior: "process.exec", ParentStableId: "node-parent",
 		SubjectProc: &eventv1.ProcessRef{StableId: "shell-child", Binary: "/bin/bash"},
 	}
-	firstEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
-	secondEngine, _ := detection.New(policymodel.DefaultDetectionPolicy())
+	policy := &policymodel.DetectionPolicy{RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:signal-sequence"}}}
+	content := detection.ContentSnapshot{Rules: []detection.RuleSpec{{
+		RuleID: "signal_sequence_test", RuleSetRef: "ruleset:signal-sequence", RuntimeType: "expr",
+		Expr: detection.ExprSpec{Conditions: []detection.ConditionSpec{{Field: "process.binary_name", Op: "eq", Value: "bash"}}},
+	}}}
+	firstEngine, _ := detection.NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	secondEngine, _ := detection.NewWithRuntime(policy, contract.CollectionIntent{}, content)
 	firstEngine.Process(parent)
 	secondEngine.Process(parent)
 	first := runner.dataBatchForEvent(event, firstEngine.Process(event)).GetSignals()[0]
@@ -379,6 +441,7 @@ func TestAgentRuntimeUploadsConfiguredLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	installTestDetection(t, runner)
 	batch := runDaemonUntilUploadedBatch(t, runner, nil)
 	if got := batch.GetEvents()[0].GetEvent().GetLabels()["scenario"]; got != "daemon-scenario" {
 		t.Fatalf("event label scenario = %q", got)
@@ -431,10 +494,11 @@ func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "refresh-scenario"}},
 	}
 	runner := &AgentRuntime{Config: cfg}
+	installTestDetection(t, runner)
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
 	first := appendEndpointEventForTest(t, runner, nil, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
-	updated := policymodel.DefaultPolicy("default")
+	updated := runner.activePolicy()
 	updated.PolicyID = "no-payload-after-refresh"
 	updated.Version = 2
 	disabled := false
@@ -602,7 +666,7 @@ func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
 	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunControlChannel() error = %v", err)
 	}
-	if ack.GetStatus() != "degraded" || ack.GetPolicyId() != "ioc:c2-control-port-feed" {
+	if ack.GetStatus() != "applied" || ack.GetPolicyId() != "ioc:c2-control-port-feed" {
 		t.Fatalf("content ack = %+v", ack)
 	}
 	if record, ok := runner.contentStore().Get("ioc:c2-control-port-feed"); !ok || record.Version != "control-9443" {
@@ -624,7 +688,7 @@ func TestAgentRuntimeControlChannelRejectsBadContentUpdateWithoutReplacingDetect
 			"api_version":"sysarmor.content/v1",
 			"kind":"rulepack",
 			"metadata":{"id":"rulepack:bad-runtime","version":"bad-v1"},
-			"spec":{"rulesets":[{"id":"ruleset:bad-runtime","version":"v1","rules":[{
+			"spec":{"rulesets":[{"id":"ruleset:cep-endpoint","version":"v1","rules":[{
 				"rule_id":"bad_runtime_rule",
 				"version":1,
 				"severity":"high",
@@ -676,6 +740,7 @@ func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	installTestDetection(t, runner)
 	var out safeBuffer
 	runDaemonUntilOutput(t, runner, &out, "agent daemon event")
 	got := out.String()
@@ -752,10 +817,9 @@ func TestAgentRuntimeProcessesTamperSignalFromHealth(t *testing.T) {
 		},
 	}
 	sig := (&tamper.Detector{}).Evaluate(health, time.Now().UTC(), tamper.Options{
-		MaxRestarts:        uint64(runner.Config.Sensor.MaxRestarts),
-		MaxParseErrors:     runner.Config.Sensor.MaxParseErrors,
-		MaxDroppedEvents:   runner.Config.Sensor.MaxDroppedEvents,
-		NoEventGracePeriod: tamperNoEventGracePeriod(runner.Config.Sensor.RestartWindow, runner.Config.Health.Interval),
+		MaxRestarts:      uint64(runner.Config.Sensor.MaxRestarts),
+		MaxParseErrors:   runner.Config.Sensor.MaxParseErrors,
+		MaxDroppedEvents: runner.Config.Sensor.MaxDroppedEvents,
 	})
 	if sig == nil {
 		t.Fatal("tamper Evaluate() = nil")
@@ -856,15 +920,6 @@ func TestTetragonRestartPolicyFromConfig(t *testing.T) {
 	}
 	if _, err := tetragonRestartPolicy(config.SensorConfig{Restart: "sometimes"}); err == nil {
 		t.Fatal("tetragonRestartPolicy(unknown) error = nil")
-	}
-}
-
-func TestTamperNoEventGracePeriodHasFloor(t *testing.T) {
-	if got := tamperNoEventGracePeriod(500*time.Millisecond, 500*time.Millisecond); got != 30*time.Second {
-		t.Fatalf("tamper grace = %s, want 30s floor", got)
-	}
-	if got := tamperNoEventGracePeriod(time.Minute, 10*time.Second); got != 100*time.Second {
-		t.Fatalf("tamper grace = %s, want 10 health intervals", got)
 	}
 }
 
@@ -978,6 +1033,7 @@ func runTestControlChannel(t *testing.T, dir string, server *contentUpdateContro
 			SupportsHealth: true,
 		},
 	}
+	installTestDetection(t, runner)
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	rt := sensorruntime.New(runner.Sensor)
 	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 16)

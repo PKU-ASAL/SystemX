@@ -98,6 +98,7 @@ type AgentRuntime struct {
 	localStore         *localstore.Store
 	network            *networkSupervisor
 	mu                 sync.RWMutex
+	detectionUpdateMu  sync.Mutex
 	identity           runtimeIdentity
 	standaloneIdentity runtimeIdentity
 	normalizer         *normalize.Normalizer
@@ -116,6 +117,12 @@ type AgentRuntime struct {
 	telemetrySeq       uint64
 }
 
+func (r *AgentRuntime) withDetectionUpdateTransaction(fn func()) {
+	r.detectionUpdateMu.Lock()
+	defer r.detectionUpdateMu.Unlock()
+	fn()
+}
+
 type healthReporter interface {
 	Report(context.Context, agenthealth.AgentHealth) error
 }
@@ -129,9 +136,9 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	contentStore, err := agentcontent.NewStoreWithOptions(agentcontent.Options{Dir: cfg.Content.Path, TrustedKeys: parseTrustKeys(cfg.Content.TrustKeys)})
+	contentStore, err := newContentStore(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load startup content: %w", err)
 	}
 	var state *localstore.Store
 	if cfg.Manager.Transport == "" {
@@ -220,11 +227,13 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	scopeSelector := scope.Selector
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
 	r.setCollectionIntent(r.withCollectionCapabilities(intent))
+	if err := r.applyStartupDetection(effectivePolicy); err != nil {
+		return failStartup("detection", err)
+	}
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
 	longControl := r.Config.Manager.Transport == "grpc"
-	r.setPolicy(effectivePolicy)
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
 		return failStartup("subscribe", err)
@@ -328,10 +337,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				return err
 			}
 			if sig := tamperDetector.Evaluate(health, time.Now().UTC(), tamper.Options{
-				MaxRestarts:        uint64(r.Config.Sensor.MaxRestarts),
-				MaxParseErrors:     r.Config.Sensor.MaxParseErrors,
-				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
-				NoEventGracePeriod: tamperNoEventGracePeriod(r.Config.Sensor.RestartWindow, r.Config.Health.Interval),
+				MaxRestarts:      uint64(r.Config.Sensor.MaxRestarts),
+				MaxParseErrors:   r.Config.Sensor.MaxParseErrors,
+				MaxDroppedEvents: r.Config.Sensor.MaxDroppedEvents,
 			}); sig != nil {
 				batch, err := endpointRuntime.ProcessSignals([]*signalv1.Signal{sig})
 				if err != nil {
@@ -356,17 +364,6 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
-}
-
-func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.Duration {
-	grace := restartWindow
-	if grace < 30*time.Second {
-		grace = 30 * time.Second
-	}
-	if intervalGrace := healthInterval * 10; intervalGrace > grace {
-		grace = intervalGrace
-	}
-	return grace
 }
 
 func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, bus *telemetry.Bus, batcher *telemetry.Batcher, sender *telemetry.Sender, reporter healthReporter, startedAt time.Time, cancelDataPlane func(), stopRuntime func()) error {
@@ -783,12 +780,13 @@ func (r *AgentRuntime) commitDetectionContent(record agentcontent.Record, snapsh
 
 func (r *AgentRuntime) setDetectionStatus(policy policymodel.Policy, report detection.ApplyReport, snapshot agentcontent.Snapshot) {
 	status := agenthealth.DetectionHealth{
-		PolicyID:        firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
-		PolicyVersion:   policy.Detection.Version,
-		FeatureFlags:    r.featureFlags,
-		LastApplyStatus: report.Status,
-		UpdatedAt:       time.Now().UTC(),
-		ContentRefs:     detectionContentRefs(snapshot),
+		PolicyID:               firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
+		PolicyVersion:          policy.Detection.Version,
+		FeatureFlags:           r.featureFlags,
+		LastApplyStatus:        report.Status,
+		UpdatedAt:              time.Now().UTC(),
+		ContentRefs:            detectionContentRefs(snapshot),
+		DefaultManifestVersion: snapshot.DefaultManifestVersion,
 	}
 	if report.Status == "rejected" {
 		status.LastApplyError = strings.Join(report.Details, "; ")
@@ -1331,7 +1329,6 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 		}
 		backend.ScopeType = scope.Type
 		backend.ScopeSelector = scope.Selector
-		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
 		backend.BTFPath = cfg.Sensor.BTFPath
 		backend.BPFFSPath = cfg.Sensor.BPFFSPath
 		backend.RequireBTF = cfg.Sensor.RequireBTF

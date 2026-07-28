@@ -175,6 +175,7 @@ message DetectionRuntimeHealth {
   string last_apply_status = 4;
   string last_apply_error = 5;
   string updated_at = 6;
+  string default_manifest_version = 7;
 }
 
 message LocalStreamHealth {

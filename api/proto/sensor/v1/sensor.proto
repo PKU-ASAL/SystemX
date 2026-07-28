@@ -14,6 +14,7 @@ message RawProcess {
   string cgroup = 7;
   string sensor_exec_id = 8;
   string sensor_parent_exec_id = 9;
+  bool argv_boundaries_trusted = 10;
 }
 
 message RawObject {

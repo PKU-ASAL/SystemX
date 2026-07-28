@@ -113,22 +113,34 @@
           },
           {
             "rule_id": "credential_file_read",
-            "version": 2,
+            "version": 5,
             "severity": "medium",
             "runtime": {
               "type": "expr",
               "expr": {
-                "conditions": [
-                  {"field": "file.path", "op": "prefix", "ref": "ctx:credential-path-prefixes"},
-                  {"field": "process.binary", "op": "not_in", "ref": "ctx:trusted-admin-binaries"}
-                ]
+                "condition_group": {
+                  "all": [
+                    {"condition": {"field": "file.path", "op": "prefix", "ref": "ctx:credential-path-prefixes"}},
+                    {"condition": {"field": "process.binary", "op": "not_in", "ref": "ctx:trusted-admin-binaries"}},
+                    {"not": {"any": [
+                      {"all": [
+                        {"condition": {"field": "process.binary", "op": "eq", "value": "/usr/bin/sudo"}},
+                        {"condition": {"field": "process.sudo_command", "op": "eq", "value": "sysarmorctl"}}
+                      ]},
+                      {"all": [
+                        {"condition": {"field": "process.binary", "op": "eq", "value": "/usr/sbin/sshd"}},
+                        {"condition": {"field": "process.argv", "op": "contains", "value": "/usr/sbin/sshd -D"}}
+                      ]}
+                    ]}}
+                  ]
+                }
               }
             },
             "requires": {
               "events": [
                 {
                   "behavior": "file.read",
-                  "fields": ["file.path", "process.binary", "process.stable_id"]
+                  "fields": ["file.path", "process.binary", "process.argv", "lineage_id"]
                 }
               ],
               "context": {
@@ -137,7 +149,42 @@
             },
             "suppress": {
               "within": "5m",
-              "by": ["process.stable_id", "file.path"]
+              "by": ["lineage_id", "process.binary", "file.path"]
+            }
+          },
+          {
+            "rule_id": "account_database_read",
+            "version": 1,
+            "severity": "low",
+            "runtime": {
+              "type": "expr",
+              "expr": {
+                "condition_group": {
+                  "all": [
+                    {"condition": {"field": "file.path", "op": "prefix", "ref": "ctx:account-database-path-prefixes"}},
+                    {"any": [
+                      {"not": {"condition": {"field": "process.binary", "op": "exists"}}},
+                      {"condition": {"field": "process.binary_name", "op": "in", "ref": "ctx:account-enumeration-binaries"}},
+                      {"condition": {"field": "process.binary_name", "op": "in", "ref": "ctx:shell-binaries"}}
+                    ]}
+                  ]
+                }
+              }
+            },
+            "requires": {
+              "events": [
+                {
+                  "behavior": "file.read",
+                  "fields": ["file.path", "process.binary", "lineage_id"]
+                }
+              ],
+              "context": {
+                "required": ["ctx:account-database-path-prefixes", "ctx:account-enumeration-binaries", "ctx:shell-binaries"]
+              }
+            },
+            "suppress": {
+              "within": "5m",
+              "by": ["lineage_id", "process.binary", "file.path"]
             }
           },
           {
@@ -205,7 +252,8 @@
                     "condition_group": {
                       "any": [
                         {"condition": {"field": "process.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}},
-                        {"condition": {"field": "parent.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}}
+                        {"condition": {"field": "parent.stable_id", "op": "same_as", "step": "exec", "step_field": "process.stable_id"}},
+                        {"condition": {"field": "process.pid", "op": "same_as", "step": "exec", "step_field": "process.pid"}}
                       ]
                     }
                   }
@@ -216,11 +264,11 @@
               "events": [
                 {
                   "behavior": "process.exec",
-                  "fields": ["process.binary", "process.argv", "process.stable_id", "lineage_id"]
+                  "fields": ["process.binary", "process.argv", "process.stable_id", "process.pid", "lineage_id"]
                 },
                 {
                   "behavior": "network.connect",
-                  "fields": ["socket.port", "process.stable_id", "parent.stable_id", "lineage_id"]
+                  "fields": ["socket.port", "process.stable_id", "process.pid", "parent.stable_id", "lineage_id"]
                 }
               ],
               "context": {

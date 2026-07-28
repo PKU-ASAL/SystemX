@@ -6,6 +6,16 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 )
 
+func TestNormalizePreservesArgvBoundaryTrust(t *testing.T) {
+	n := New("agent-a", "host-a", nil)
+	event := n.Normalize(&sensorv1.SensorEvent{Proc: &sensorv1.RawProcess{
+		Pid: 10, Binary: "/usr/bin/sudo", ArgvBoundariesTrusted: true,
+	}})
+	if !event.GetSubjectProc().GetArgvBoundariesTrusted() {
+		t.Fatal("normalized process lost trusted argv boundary metadata")
+	}
+}
+
 func TestNormalizeInheritsLineageFromParent(t *testing.T) {
 	n := New("agent-a", "host-a", nil)
 	parent := n.Normalize(&sensorv1.SensorEvent{

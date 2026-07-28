@@ -33,3 +33,10 @@ func TestTelemetryPolicyContainsOnlyBatchSettings(t *testing.T) {
 		t.Fatalf("telemetry policy JSON = %s", raw)
 	}
 }
+
+func TestDefaultDetectionPolicyContainsNoBuiltinContentRefs(t *testing.T) {
+	policy := DefaultDetectionPolicy()
+	if len(policy.RuleSets) != 0 || len(policy.ContextRefs) != 0 || len(policy.IOCRefs) != 0 || len(policy.RuleOverrides) != 0 {
+		t.Fatalf("default detection policy still embeds content refs: %+v", policy)
+	}
+}

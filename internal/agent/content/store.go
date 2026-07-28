@@ -39,6 +39,7 @@ type Integrity struct {
 }
 
 type Options struct {
+	DefaultDir  string
 	Dir         string
 	TrustedKeys map[string]ed25519.PublicKey
 }
@@ -54,10 +55,11 @@ type Record struct {
 }
 
 type Snapshot struct {
-	RulePacks   map[string]Record
-	Rules       []Rule
-	ContextSets map[string]ValueSet
-	IOCPacks    map[string]ValueSet
+	RulePacks              map[string]Record
+	Rules                  []Rule
+	ContextSets            map[string]ValueSet
+	IOCPacks               map[string]ValueSet
+	DefaultManifestVersion string
 }
 
 type ValueSet struct {
@@ -153,18 +155,30 @@ type ResponseIntent struct {
 }
 
 type Store struct {
-	mu          sync.RWMutex
-	dir         string
-	trustedKeys map[string]ed25519.PublicKey
-	records     map[string]Record
+	mu              sync.RWMutex
+	dir             string
+	trustedKeys     map[string]ed25519.PublicKey
+	records         map[string]Record
+	defaultRefs     map[string]bool
+	manifestVersion string
+}
+
+type persistedRecord struct {
+	Admission *unsignedAdmission `json:"admission,omitempty"`
+	Content   json.RawMessage    `json:"content"`
+}
+
+type unsignedAdmission struct {
+	AllowUnsigned bool   `json:"allow_unsigned"`
+	Digest        string `json:"digest"`
 }
 
 func NewStore() *Store {
-	return &Store{records: make(map[string]Record)}
+	return &Store{records: make(map[string]Record), defaultRefs: make(map[string]bool)}
 }
 
 func NewStoreWithOptions(opts Options) (*Store, error) {
-	store := &Store{dir: strings.TrimSpace(opts.Dir), trustedKeys: opts.TrustedKeys, records: make(map[string]Record)}
+	store := &Store{dir: strings.TrimSpace(opts.Dir), trustedKeys: opts.TrustedKeys, records: make(map[string]Record), defaultRefs: make(map[string]bool)}
 	if store.dir == "" {
 		return store, nil
 	}
@@ -194,23 +208,54 @@ func (s *Store) Load() error {
 		if err != nil {
 			return err
 		}
-		env, err := Parse(string(data))
+		raw, allowUnsigned, err := decodePersistedContent(data)
 		if err != nil {
-			return err
+			return fmt.Errorf("load content %s: %w", entry.Name(), err)
 		}
-		records[env.Metadata.ID] = Record{
+		env, err := Parse(raw)
+		if err != nil {
+			return fmt.Errorf("load content %s: %w", entry.Name(), err)
+		}
+		if allowUnsigned && !strings.EqualFold(persistedDigest(data), signedDigest(env)) {
+			return fmt.Errorf("load content %s (%s): unsigned admission digest mismatch", entry.Name(), env.Metadata.ID)
+		}
+		if err := s.Validate(env, allowUnsigned); err != nil {
+			return fmt.Errorf("load content %s (%s): %w", entry.Name(), env.Metadata.ID, err)
+		}
+		if _, exists := records[env.Metadata.ID]; exists {
+			return fmt.Errorf("load content %s: duplicate content ref %s", entry.Name(), env.Metadata.ID)
+		}
+		record := Record{
 			Ref:     env.Metadata.ID,
 			Kind:    env.Kind,
 			Version: env.Metadata.Version,
 			Digest:  signedDigest(env),
 			Signed:  strings.TrimSpace(env.Integrity.Signature) != "",
 			Status:  "loaded",
-			RawJSON: string(data),
+			RawJSON: raw,
 		}
+		if err := validateRecordPayload(record); err != nil {
+			return fmt.Errorf("load content %s (%s): %w", entry.Name(), env.Metadata.ID, err)
+		}
+		records[env.Metadata.ID] = record
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.records = records
+	return nil
+}
+
+func validateRecordPayload(record Record) error {
+	switch record.Kind {
+	case "rulepack":
+		if _, err := parseRulePack(record); err != nil {
+			return fmt.Errorf("parse rulepack: %w", err)
+		}
+	case "contextset", "iocpack":
+		if _, err := parseValueSet(record); err != nil {
+			return fmt.Errorf("parse %s: %w", record.Kind, err)
+		}
+	}
 	return nil
 }
 
@@ -233,6 +278,9 @@ func (s *Store) Prepare(raw string, allowUnsigned bool) (Record, Snapshot, error
 	env, err := Parse(raw)
 	if err != nil {
 		return Record{}, Snapshot{}, err
+	}
+	if s.IsDefaultRef(env.Metadata.ID) {
+		return Record{}, Snapshot{}, fmt.Errorf("default content ref %s is read-only", env.Metadata.ID)
 	}
 	if err := s.Validate(env, allowUnsigned); err != nil {
 		return Record{}, Snapshot{}, err
@@ -259,9 +307,14 @@ func (s *Store) Commit(record Record) error {
 	if s.records == nil {
 		s.records = make(map[string]Record)
 	}
+	previous, existed := s.records[record.Ref]
 	s.records[record.Ref] = record
 	if err := s.persistLocked(record); err != nil {
-		delete(s.records, record.Ref)
+		if existed {
+			s.records[record.Ref] = previous
+		} else {
+			delete(s.records, record.Ref)
+		}
 		return err
 	}
 	return nil
@@ -296,7 +349,9 @@ func (s *Store) Get(ref string) (Record, bool) {
 func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return snapshotFromRecords(s.records)
+	snapshot := snapshotFromRecords(s.records)
+	snapshot.DefaultManifestVersion = s.manifestVersion
+	return snapshot
 }
 
 func (s *Store) SnapshotWith(record Record) Snapshot {
@@ -309,7 +364,9 @@ func (s *Store) SnapshotWith(record Record) Snapshot {
 	if record.Ref != "" {
 		records[record.Ref] = record
 	}
-	return snapshotFromRecords(records)
+	snapshot := snapshotFromRecords(records)
+	snapshot.DefaultManifestVersion = s.manifestVersion
+	return snapshot
 }
 
 func snapshotFromRecords(records map[string]Record) Snapshot {
@@ -434,6 +491,25 @@ func signedBytes(env Envelope) []byte {
 	}
 	data, _ := json.Marshal(payload)
 	return data
+}
+
+func SignEnvelope(env Envelope, keyID string, privateKey ed25519.PrivateKey) (Envelope, error) {
+	keyID = strings.TrimSpace(keyID)
+	if keyID == "" {
+		return Envelope{}, fmt.Errorf("content signing key_id is required")
+	}
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return Envelope{}, fmt.Errorf("invalid Ed25519 private key")
+	}
+	env.Integrity = Integrity{}
+	env.Integrity = Integrity{
+		DigestAlg:    "sha256",
+		Digest:       signedDigest(env),
+		SignatureAlg: "ed25519",
+		KeyID:        keyID,
+		Signature:    base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, signedBytes(env))),
+	}
+	return env, nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -566,10 +642,40 @@ func (s *Store) persistLocked(record Record) error {
 	name := safeName(record.Ref) + ".json"
 	tmp := filepath.Join(s.dir, name+".tmp")
 	dst := filepath.Join(s.dir, name)
-	if err := os.WriteFile(tmp, []byte(record.RawJSON), 0o644); err != nil {
+	data := []byte(record.RawJSON)
+	if !record.Signed {
+		wrapped, err := json.Marshal(persistedRecord{
+			Admission: &unsignedAdmission{AllowUnsigned: true, Digest: record.Digest},
+			Content:   json.RawMessage(record.RawJSON),
+		})
+		if err != nil {
+			return err
+		}
+		data = wrapped
+	}
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, dst)
+}
+
+func decodePersistedContent(data []byte) (string, bool, error) {
+	var persisted persistedRecord
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		return "", false, err
+	}
+	if persisted.Admission == nil || len(persisted.Content) == 0 {
+		return string(data), false, nil
+	}
+	return string(persisted.Content), persisted.Admission.AllowUnsigned, nil
+}
+
+func persistedDigest(data []byte) string {
+	var persisted persistedRecord
+	if json.Unmarshal(data, &persisted) != nil || persisted.Admission == nil {
+		return ""
+	}
+	return persisted.Admission.Digest
 }
 
 func safeName(ref string) string {

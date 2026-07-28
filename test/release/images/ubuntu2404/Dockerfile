@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 ARG SYSARMOR_INSTALL_URL
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bash ca-certificates curl nodejs procps sqlite3 util-linux \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bash ca-certificates curl jq nodejs procps sqlite3 util-linux \
     && rm -rf /var/lib/apt/lists/*
 RUN test -n "$SYSARMOR_INSTALL_URL" \
     && base_url="${SYSARMOR_INSTALL_URL%/*}" \

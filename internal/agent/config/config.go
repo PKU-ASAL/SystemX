@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -100,9 +101,6 @@ type SensorConfig struct {
 	PolicyPath        string
 	EventSource       string
 	Scope             RuntimeScope
-	ScopeType         string
-	ScopeSelector     string
-	ContainerIDPrefix string
 	FakeStartupEvents int
 	ObserveOnly       bool
 	Restart           string
@@ -132,8 +130,9 @@ type PolicyConfig struct {
 }
 
 type ContentConfig struct {
-	Path      string
-	TrustKeys string
+	DefaultPath string
+	Path        string
+	TrustKeys   string
 }
 
 type ResourceConfig struct {
@@ -209,11 +208,6 @@ func (c Config) Validate() error {
 	if scope.Type == "namespace" && scope.Selector != "self" {
 		return fmt.Errorf("sensor scope: namespace scope selector must be self")
 	}
-	scopeSelector := strings.TrimSpace(scope.Selector)
-	containerIDPrefix := strings.TrimSpace(c.Sensor.ContainerIDPrefix)
-	if scopeSelector != "" && containerIDPrefix != "" && scopeSelector != containerIDPrefix {
-		return fmt.Errorf("sensor.scope_selector conflicts with sensor.container_id_prefix")
-	}
 	if _, err := ResolveTelemetry(c.Telemetry, nil); err != nil {
 		return err
 	}
@@ -242,31 +236,7 @@ func (c Config) Validate() error {
 }
 
 func (s SensorConfig) EffectiveScope() (RuntimeScope, error) {
-	scopeType := strings.TrimSpace(s.Scope.Type)
-	scopeSelector := strings.TrimSpace(s.Scope.Selector)
-	legacyType := strings.TrimSpace(s.ScopeType)
-	legacySelector := strings.TrimSpace(s.ScopeSelector)
-	containerIDPrefix := strings.TrimSpace(s.ContainerIDPrefix)
-
-	if scopeType != "" && legacyType != "" && scopeType != legacyType {
-		return RuntimeScope{}, fmt.Errorf("sensor.scope.type conflicts with sensor.scope_type")
-	}
-	if scopeSelector != "" && legacySelector != "" && scopeSelector != legacySelector {
-		return RuntimeScope{}, fmt.Errorf("sensor.scope.selector conflicts with sensor.scope_selector")
-	}
-	if scopeType == "" {
-		scopeType = legacyType
-	}
-	if scopeSelector == "" {
-		scopeSelector = legacySelector
-	}
-	if scopeType == "" && containerIDPrefix != "" {
-		scopeType = "container"
-	}
-	if scopeSelector == "" && containerIDPrefix != "" {
-		scopeSelector = containerIDPrefix
-	}
-	normalizedType, normalizedSelector, err := contract.NormalizeScope(scopeType, scopeSelector)
+	normalizedType, normalizedSelector, err := contract.NormalizeScope(s.Scope.Type, s.Scope.Selector)
 	if err != nil {
 		return RuntimeScope{}, err
 	}
@@ -282,10 +252,11 @@ func validMatcherStrategy(strategy string) bool {
 	}
 }
 
-func parse(r *os.File) (Config, error) {
+func parse(r io.Reader) (Config, error) {
 	cfg := defaults()
 	scanner := bufio.NewScanner(r)
 	root, nested := "", ""
+	seen := make(map[string]struct{})
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
@@ -297,6 +268,9 @@ func parse(r *os.File) (Config, error) {
 		trimmed := strings.TrimSpace(raw)
 		if indent == 0 && strings.HasSuffix(trimmed, ":") {
 			root = strings.TrimSuffix(trimmed, ":")
+			if err := markConfigPath(seen, "section "+root); err != nil {
+				return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
+			}
 			nested = ""
 			continue
 		}
@@ -305,6 +279,9 @@ func parse(r *os.File) (Config, error) {
 		}
 		if indent == 2 && strings.HasSuffix(trimmed, ":") {
 			nested = root + "." + strings.TrimSuffix(trimmed, ":")
+			if err := markConfigPath(seen, "section "+nested); err != nil {
+				return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
+			}
 			continue
 		}
 		key, value, ok := strings.Cut(trimmed, ":")
@@ -318,6 +295,9 @@ func parse(r *os.File) (Config, error) {
 		} else if indent == 2 {
 			nested = ""
 		}
+		if err := markConfigPath(seen, "key "+assignSection+"."+key); err != nil {
+			return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
+		}
 		if err := assign(&cfg, assignSection, key, unquote(strings.TrimSpace(value))); err != nil {
 			return Config{}, fmt.Errorf("line %d: %w", lineNo, err)
 		}
@@ -326,6 +306,14 @@ func parse(r *os.File) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func markConfigPath(seen map[string]struct{}, path string) error {
+	if _, ok := seen[path]; ok {
+		return fmt.Errorf("duplicate %s", path)
+	}
+	seen[path] = struct{}{}
+	return nil
 }
 
 func defaults() Config {
@@ -537,6 +525,8 @@ func assign(cfg *Config, section, key, value string) error {
 		}
 	case "content":
 		switch key {
+		case "default_path":
+			cfg.Content.DefaultPath = value
 		case "path":
 			cfg.Content.Path = value
 		case "trust_keys":

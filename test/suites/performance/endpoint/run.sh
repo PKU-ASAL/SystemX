@@ -570,6 +570,7 @@ reset_endpoint_policy() {
 
 apply_detection() {
   local policy_out="$1"
+  local policy_name="$2"
   if [[ "$APPLY_DETECTION" == "1" ]]; then
     echo "[performance-endpoint] applying detection policy: $DETECTION_POLICY"
     vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy apply --type detection --file /tmp/sysarmor-bench-detection.policy --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 60s" \
@@ -579,7 +580,19 @@ apply_detection() {
         cat "$policy_out/detection-apply.err" >&2 2>/dev/null || true
         exit 1
       }
-    if ! jq -e '.status == "applied"' "$policy_out/detection-apply.json" >/dev/null; then
+    if jq -e '.status == "applied"' "$policy_out/detection-apply.json" >/dev/null; then
+      return
+    fi
+    if [[ "$policy_name" == "collection-minimal" ]] && jq -e '
+      .status == "degraded" and
+      ([.sections[]? | select(.name == "detection") | .reportJson | fromjson |
+        .coverage.rules[]? | select(.status != "covered") |
+        {rule_id, missing_behaviors}] ==
+       [{"rule_id":"credential_file_read","missing_behaviors":["file.read"]},
+        {"rule_id":"account_database_read","missing_behaviors":["file.read"]}])
+    ' "$policy_out/detection-apply.json" >/dev/null; then
+      echo "[performance-endpoint] expected minimal detection coverage gaps: account_database_read and credential_file_read require file.read"
+    else
       echo "[performance-endpoint][ERROR] detection policy was not fully applied: $DETECTION_POLICY" >&2
       cat "$policy_out/detection-apply.json" >&2 2>/dev/null || true
       exit 1
@@ -739,7 +752,7 @@ EOF
   echo "[performance-endpoint] waiting ${POLICY_SETTLE_SECONDS}s for sensor BPF reload"
   sleep "$POLICY_SETTLE_SECONDS"
   finish_agent_profile_window "$policy_out" policy_apply "$rec_run_id"
-  apply_detection "$policy_out"
+  apply_detection "$policy_out" "$name"
 
   mark "$rec_run_id" settle_start "$name"
   sleep "$SETTLE_SECONDS"

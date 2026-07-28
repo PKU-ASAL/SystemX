@@ -10,6 +10,7 @@ import (
 )
 
 var containerIDPattern = regexp.MustCompile(`[0-9a-fA-F]{32,64}`)
+var validContainerIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
 func resolveNamespaceSelfContainerID(intent contract.CollectionIntent) (string, error) {
 	if intent.ScopeType != "namespace" || intent.ScopeSelector != "self" {
@@ -47,11 +48,15 @@ func runningInContainer() bool {
 	return false
 }
 
-func containerIDsMatch(eventID, selfID string) bool {
+func containerIDsMatch(eventID, selector string) bool {
 	eventID = strings.ToLower(strings.TrimSpace(eventID))
-	selfID = strings.ToLower(strings.TrimSpace(selfID))
-	if len(eventID) < 12 || len(selfID) < 12 {
+	selector = strings.ToLower(strings.TrimSpace(selector))
+	if eventID == "" || selector == "" {
 		return false
 	}
-	return strings.HasPrefix(eventID, selfID) || strings.HasPrefix(selfID, eventID)
+	if strings.HasPrefix(eventID, selector) {
+		return true
+	}
+	return len(eventID) >= 12 && validContainerIDPattern.MatchString(eventID) &&
+		validContainerIDPattern.MatchString(selector) && strings.HasPrefix(selector, eventID)
 }

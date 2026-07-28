@@ -1316,15 +1316,16 @@ func (x *DetectionContentRef) GetDigest() string {
 }
 
 type DetectionRuntimeHealth struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	PolicyId        string                 `protobuf:"bytes,1,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
-	PolicyVersion   uint64                 `protobuf:"varint,2,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
-	ContentRefs     []*DetectionContentRef `protobuf:"bytes,3,rep,name=content_refs,json=contentRefs,proto3" json:"content_refs,omitempty"`
-	LastApplyStatus string                 `protobuf:"bytes,4,opt,name=last_apply_status,json=lastApplyStatus,proto3" json:"last_apply_status,omitempty"`
-	LastApplyError  string                 `protobuf:"bytes,5,opt,name=last_apply_error,json=lastApplyError,proto3" json:"last_apply_error,omitempty"`
-	UpdatedAt       string                 `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	PolicyId               string                 `protobuf:"bytes,1,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	PolicyVersion          uint64                 `protobuf:"varint,2,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	ContentRefs            []*DetectionContentRef `protobuf:"bytes,3,rep,name=content_refs,json=contentRefs,proto3" json:"content_refs,omitempty"`
+	LastApplyStatus        string                 `protobuf:"bytes,4,opt,name=last_apply_status,json=lastApplyStatus,proto3" json:"last_apply_status,omitempty"`
+	LastApplyError         string                 `protobuf:"bytes,5,opt,name=last_apply_error,json=lastApplyError,proto3" json:"last_apply_error,omitempty"`
+	UpdatedAt              string                 `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DefaultManifestVersion string                 `protobuf:"bytes,7,opt,name=default_manifest_version,json=defaultManifestVersion,proto3" json:"default_manifest_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *DetectionRuntimeHealth) Reset() {
@@ -1395,6 +1396,13 @@ func (x *DetectionRuntimeHealth) GetLastApplyError() string {
 func (x *DetectionRuntimeHealth) GetUpdatedAt() string {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *DetectionRuntimeHealth) GetDefaultManifestVersion() string {
+	if x != nil {
+		return x.DefaultManifestVersion
 	}
 	return ""
 }
@@ -4397,7 +4405,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x16\n" +
-	"\x06digest\x18\x04 \x01(\tR\x06digest\"\xa3\x02\n" +
+	"\x06digest\x18\x04 \x01(\tR\x06digest\"\xdd\x02\n" +
 	"\x16DetectionRuntimeHealth\x12\x1b\n" +
 	"\tpolicy_id\x18\x01 \x01(\tR\bpolicyId\x12%\n" +
 	"\x0epolicy_version\x18\x02 \x01(\x04R\rpolicyVersion\x12P\n" +
@@ -4405,7 +4413,8 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x11last_apply_status\x18\x04 \x01(\tR\x0flastApplyStatus\x12(\n" +
 	"\x10last_apply_error\x18\x05 \x01(\tR\x0elastApplyError\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\tR\tupdatedAt\"\x91\x05\n" +
+	"updated_at\x18\x06 \x01(\tR\tupdatedAt\x128\n" +
+	"\x18default_manifest_version\x18\a \x01(\tR\x16defaultManifestVersion\"\x91\x05\n" +
 	"\x11LocalStreamHealth\x12%\n" +
 	"\x0eevent_capacity\x18\x01 \x01(\x04R\reventCapacity\x12%\n" +
 	"\x0eevent_buffered\x18\x02 \x01(\x04R\reventBuffered\x12.\n" +

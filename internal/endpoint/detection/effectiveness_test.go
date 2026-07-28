@@ -6,7 +6,6 @@ import (
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 )
 
 func TestRuleEngineEffectivenessScenarios(t *testing.T) {
@@ -50,7 +49,7 @@ func TestRuleEngineEffectivenessScenarios(t *testing.T) {
 			t.Cleanup(func() { matcher.SetDefaultStrategy(matcher.StrategyLinear) })
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
-					engine, report := New(policymodel.DefaultDetectionPolicy())
+					engine, report := newTestEngine(t)
 					if report.Status != "applied" {
 						t.Fatalf("report = %+v", report)
 					}

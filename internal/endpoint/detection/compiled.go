@@ -107,7 +107,9 @@ const (
 	fieldProcessBinary
 	fieldProcessBinaryName
 	fieldProcessArgv
+	fieldProcessSudoCommand
 	fieldProcessUID
+	fieldProcessPID
 	fieldParentStableID
 	fieldFilePath
 	fieldSocketAddr
@@ -120,26 +122,28 @@ const (
 )
 
 type eventView struct {
-	ev                *eventv1.CanonicalEvent
-	eventID           string
-	behavior          string
-	lineageID         string
-	processStableID   string
-	processBinary     string
-	processBinaryName string
-	processArgv       string
-	processUID        string
-	parentStableID    string
-	filePath          string
-	socketAddr        string
-	socketPort        string
-	socket            string
-	scopeType         string
-	scopeSelector     string
-	containerID       string
-	cgroup            string
-	occurredAtNs      uint64
-	monoNs            uint64
+	ev                 *eventv1.CanonicalEvent
+	eventID            string
+	behavior           string
+	lineageID          string
+	processStableID    string
+	processBinary      string
+	processBinaryName  string
+	processArgv        string
+	processSudoCommand string
+	processUID         string
+	processPID         string
+	parentStableID     string
+	filePath           string
+	socketAddr         string
+	socketPort         string
+	socket             string
+	scopeType          string
+	scopeSelector      string
+	containerID        string
+	cgroup             string
+	occurredAtNs       uint64
+	monoNs             uint64
 }
 
 func compileRuntime(rules []effectiveRule, content ContentSnapshot) compiledRuntime {
@@ -434,7 +438,7 @@ func contentValuesFromSnapshot(content ContentSnapshot, ref string) []string {
 	if item, ok := content.IOCRefs[ref]; ok {
 		return item.Values
 	}
-	return builtinContentValues(ref)
+	return nil
 }
 
 func compileFields(fields []string) []fieldID {
@@ -464,8 +468,12 @@ func compileField(field string) fieldID {
 		return fieldProcessBinaryName
 	case "process.argv", "argv":
 		return fieldProcessArgv
+	case "process.sudo_command":
+		return fieldProcessSudoCommand
 	case "process.uid", "uid":
 		return fieldProcessUID
+	case "process.pid", "pid":
+		return fieldProcessPID
 	case "parent.stable_id", "parent.id":
 		return fieldParentStableID
 	case "file.path", "object.file_path":
@@ -540,7 +548,13 @@ func newEventView(ev *eventv1.CanonicalEvent) eventView {
 		view.processBinary = proc.GetBinary()
 		view.processBinaryName = filepath.Base(proc.GetBinary())
 		view.processArgv = strings.Join(proc.GetArgv(), " ")
+		if filepath.Base(proc.GetBinary()) == "sudo" && proc.GetArgvBoundariesTrusted() {
+			view.processSudoCommand = sudoCommand(proc.GetArgv())
+		}
 		view.processUID = strconv.FormatUint(uint64(proc.GetUid()), 10)
+		if proc.GetPid() != 0 {
+			view.processPID = strconv.FormatUint(uint64(proc.GetPid()), 10)
+		}
 	}
 	if obj := ev.GetObject(); obj != nil {
 		view.filePath = obj.GetFilePath()
@@ -575,8 +589,12 @@ func (v eventView) field(field fieldID) string {
 		return v.processBinaryName
 	case fieldProcessArgv:
 		return v.processArgv
+	case fieldProcessSudoCommand:
+		return v.processSudoCommand
 	case fieldProcessUID:
 		return v.processUID
+	case fieldProcessPID:
+		return v.processPID
 	case fieldParentStableID:
 		return v.parentStableID
 	case fieldFilePath:
@@ -691,8 +709,12 @@ func fieldName(field fieldID) string {
 		return "process.binary_name"
 	case fieldProcessArgv:
 		return "process.argv"
+	case fieldProcessSudoCommand:
+		return "process.sudo_command"
 	case fieldProcessUID:
 		return "process.uid"
+	case fieldProcessPID:
+		return "process.pid"
 	case fieldParentStableID:
 		return "parent.stable_id"
 	case fieldFilePath:

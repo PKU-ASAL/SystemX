@@ -25,6 +25,15 @@ class PerformanceEndpointPolicyFlowTest(unittest.TestCase):
     def test_requires_detection_policy_to_be_fully_applied(self):
         self.assertIn("jq -e '.status == \"applied\"'", self.script)
 
+    def test_allows_only_known_minimal_file_read_coverage_gaps(self):
+        compact_script = "".join(self.script.split())
+        expected_gaps = (
+            '[{"rule_id":"credential_file_read","missing_behaviors":["file.read"]},'
+            '{"rule_id":"account_database_read","missing_behaviors":["file.read"]}]'
+        )
+
+        self.assertIn(expected_gaps, compact_script)
+
     def test_resets_each_case_before_recording_its_baseline(self):
         loop = self.script.index("for policy in $POLICIES_RAW; do")
         reset = self.script.index('reset_endpoint_policy "$policy_out"', loop)
