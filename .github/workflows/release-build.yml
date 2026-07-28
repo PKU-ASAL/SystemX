@@ -1,0 +1,155 @@
+name: Build release assets
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      release_type:
+        required: true
+        type: string
+      content_key_id:
+        required: true
+        type: string
+      release_environment:
+        required: true
+        type: string
+    outputs:
+      version:
+        value: ${{ jobs.build.outputs.version }}
+      source_sha:
+        value: ${{ jobs.build.outputs.source_sha }}
+      artifact_name:
+        value: ${{ jobs.build.outputs.artifact_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.release_environment }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      source_sha: ${{ steps.build.outputs.source_sha }}
+      artifact_name: ${{ steps.build.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925f5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate release inputs
+        env:
+          VERSION: ${{ inputs.version }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          CONTENT_KEY_ID: ${{ inputs.release_type == 'ga' && vars.SYSARMOR_CONTENT_KEY_ID || inputs.content_key_id }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TYPE" in
+            rc) [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]] ;;
+            ga) [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ;;
+            *) echo "release_type must be rc or ga" >&2; exit 2 ;;
+          esac || {
+            echo "version does not match release_type" >&2
+            exit 2
+          }
+          [[ "$CONTENT_KEY_ID" =~ ^[A-Za-z0-9._-]+$ ]] || {
+            echo "content_key_id contains unsupported characters" >&2
+            exit 2
+          }
+
+      - name: Run release tests
+        run: |
+          set -euo pipefail
+          go test ./...
+          bash test/suites/product/endpoint/standalone-release-package.sh
+          bash test/suites/product/endpoint/container-entrypoint.sh
+          bash test/suites/product/endpoint/standalone-github-assets.sh
+          bash test/suites/product/endpoint/release-workflow-contract.sh
+          bash test/suites/product/endpoint/release-container-e2e-contract.sh
+
+      - name: Build and sign release assets
+        id: build
+        env:
+          VERSION: ${{ inputs.version }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          CONTENT_KEY_ID: ${{ inputs.release_type == 'ga' && vars.SYSARMOR_CONTENT_KEY_ID || inputs.content_key_id }}
+          ARTIFACT_SIGNING_KEY_PEM: ${{ secrets.SYSARMOR_ARTIFACT_SIGNING_KEY_PEM }}
+          CONTENT_SIGNING_KEY_PEM: ${{ secrets.SYSARMOR_CONTENT_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key_dir="$RUNNER_TEMP/sysarmor-release"
+          asset_dir="$GITHUB_WORKSPACE/dist/github-release"
+          manifest_key="$key_dir/manifest-key.pem"
+          content_key="$key_dir/content-key.pem"
+          package="$asset_dir/sysarmor-agent-linux-amd64-$VERSION.tar.gz"
+          artifact_name="sysarmor-release-$VERSION"
+          mkdir -p "$GITHUB_WORKSPACE/dist/bin" "$asset_dir" "$key_dir"
+
+          if [[ "$RELEASE_TYPE" == "rc" ]]; then
+            openssl genrsa -out "$manifest_key" 3072 >/dev/null 2>&1
+            openssl genpkey -algorithm ED25519 -out "$content_key" >/dev/null 2>&1
+          else
+            [[ -n "$ARTIFACT_SIGNING_KEY_PEM" ]] || {
+              echo "SYSARMOR_ARTIFACT_SIGNING_KEY_PEM is required for GA" >&2
+              exit 1
+            }
+            [[ -n "$CONTENT_SIGNING_KEY_PEM" ]] || {
+              echo "SYSARMOR_CONTENT_SIGNING_KEY_PEM is required for GA" >&2
+              exit 1
+            }
+            printf '%s\n' "$ARTIFACT_SIGNING_KEY_PEM" >"$manifest_key"
+            printf '%s\n' "$CONTENT_SIGNING_KEY_PEM" >"$content_key"
+          fi
+
+          CGO_ENABLED=0 go build -o dist/bin/sysarmor-agent ./cmd/sysarmor-agent
+          CGO_ENABLED=0 go build -o dist/bin/sysarmorctl ./cmd/sysarmorctl
+          deployments/agent/package-agent.sh \
+            --version "$VERSION" \
+            --output "$package" \
+            --agent-bin dist/bin/sysarmor-agent \
+            --ctl-bin dist/bin/sysarmorctl \
+            --tetragon-mode download \
+            --signing-key "$manifest_key" \
+            --content-signing-key "$content_key" \
+            --content-key-id "$CONTENT_KEY_ID"
+          deployments/packages/build-github-assets.sh \
+            --version "$VERSION" \
+            --repository "$GITHUB_REPOSITORY" \
+            --package "$package" \
+            --output-dir "$asset_dir"
+          (cd "$asset_dir" && sha256sum -c SHA256SUMS)
+
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "source_sha=$GITHUB_SHA" >>"$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >>"$GITHUB_OUTPUT"
+          echo "asset_dir=$asset_dir" >>"$GITHUB_OUTPUT"
+          echo "package=$package" >>"$GITHUB_OUTPUT"
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            ${{ steps.build.outputs.package }}
+            ${{ steps.build.outputs.asset_dir }}/install.sh
+            ${{ steps.build.outputs.asset_dir }}/SHA256SUMS
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.build.outputs.artifact_name }}
+          path: |
+            ${{ steps.build.outputs.package }}
+            ${{ steps.build.outputs.asset_dir }}/install.sh
+            ${{ steps.build.outputs.asset_dir }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
