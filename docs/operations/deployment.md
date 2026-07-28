@@ -7,7 +7,7 @@
 | 目标 | 入口 | 适用场景 |
 |---|---|---|
 | 单机 Agent | `make install-agent` | 无平台连接的主机采集、检测和本地调查 |
-| GitHub 开发预发布 | Release 页面中的 `install.sh` | 从 `dev` 构建的可追溯 standalone 体验版本 |
+| GitHub 发行包 | Release 页面中的 `install.sh` | 可追溯的 standalone 候选版本或正式版本 |
 | 本地管理平台 | `make deploy` | 端云链路、集中管理和开发验证 |
 
 当前 Compose 配置面向单机开发和验证，默认凭据、无安全插件的 OpenSearch 以及宿主机暴露的基础设施端口不应直接用于生产环境。
@@ -46,18 +46,19 @@ sudo sysarmorctl agent health
 
 默认配置运行 managed Tetragon、host scope 和 observe-only 模式，不连接平台。注册信息由 enrollment 写入本地状态，不应手工添加到 YAML。自定义安装路径和配置项见[配置参考](../reference/configuration.md)。
 
-### 安装 GitHub 开发预发布
+### 安装 GitHub 发行包
 
-在 GitHub Releases 页面选择标记为 Pre-release 的版本，使用该版本说明中的固定 URL：
+在 GitHub Releases 页面选择目标版本，使用该版本说明中的固定 URL。候选版本标记为
+Pre-release；正式版本不带该标记：
 
 ```bash
-curl -fsSL https://github.com/PKU-ASAL/sysarmor/releases/download/<version>/install.sh | sudo bash
+curl -fsSL https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh | sudo bash
 ```
 
-开发预发布支持 Linux x86_64；默认 `linux-systemd` profile 安装主机服务，
-`linux-container` profile 用于容器镜像。版本号同时包含构建时间与 Git commit，例如
-`v0.1.0-dev.20260724+097acdae`。安装脚本下载同一 Release 的归档，校验固定 SHA-256，
-安装后等待 Agent 健康检查通过。重复安装会更新程序和 systemd unit，但保留已有配置、策略和本地数据。
+公开发行包支持 Linux x86_64；默认 `linux-systemd` profile 安装主机服务，
+`linux-container` profile 用于容器镜像。RC tag 采用 `vX.Y.Z-rc.N`，正式版本采用
+`vX.Y.Z`。安装脚本下载同一 Release 的归档，校验固定 SHA-256，安装后等待 Agent 健康检查
+通过。重复安装会更新程序和 systemd unit，但保留已有配置、策略和本地数据。
 
 GitHub 公开归档只包含 SysArmor。安装时从 Tetragon 官方 Release 下载锁定版本并校验固定
 SHA-256，从而避免在第三方许可证清单完成前重新分发其二进制。需要完全离线的一体包时，仍须先完成
@@ -66,7 +67,7 @@ SHA-256，从而避免在第三方许可证清单完成前重新分发其二进�
 可使用 GitHub CLI 验证构建来源：
 
 ```bash
-gh attestation verify sysarmor-agent-linux-amd64-<version>.tar.gz --repo PKU-ASAL/sysarmor
+gh attestation verify sysarmor-agent-linux-amd64-<tag>.tar.gz --repo PKU-ASAL/sysarmor
 ```
 
 ### 安装到容器镜像
@@ -168,7 +169,7 @@ make release RELEASE_VERSION=v1.0.0
 
 产物写入 `dist/release/`。Package 服务提供不可变字节，Manager 管理 artifact 元数据、channel、一次性 enrollment 和安装脚本。
 
-本地平台 Agent bundle 还包含 Tetragon、bpftool、gops 和 BPF 对象等第三方资产。仓库根目录的 MulanPSL-2.0 只覆盖 SysArmor，不改变第三方组件的许可证。在完成逐项许可证清单、LICENSE/NOTICE 携带和全部打包文件完整性校验前，该一体 bundle 只用于开发与评估，不能作为已经完成外部分发合规的制品发布。GitHub 开发预发布使用不携带 Tetragon 二进制的 thin 包，不属于该一体 bundle。
+本地平台 Agent bundle 还包含 Tetragon、bpftool、gops 和 BPF 对象等第三方资产。仓库根目录的 MulanPSL-2.0 只覆盖 SysArmor，不改变第三方组件的许可证。在完成逐项许可证清单、LICENSE/NOTICE 携带和全部打包文件完整性校验前，该一体 bundle 只用于开发与评估，不能作为已经完成外部分发合规的制品发布。GitHub 发行包使用不携带 Tetragon 二进制的 thin 包，不属于该一体 bundle。
 
 推荐从 Manager Console 的 Deploy 页面选择 artifact、channel 和安装 profile，然后在目标端执行生成的安装命令。完整流程为：
 
