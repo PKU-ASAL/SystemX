@@ -36,15 +36,10 @@ set -euo pipefail
 %s
 SYSARMOR_AGENT_BUNDLE_SHA256="${SYSARMOR_AGENT_BUNDLE_SHA256:-%s}"
 SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-%s}"
-AGENT_HOME="${SYSARMOR_AGENT_HOME:-/opt/sysarmor/agent}"
-CONFIG_DST="${SYSARMOR_CONFIG_DST:-/etc/sysarmor/agent/agent.yaml}"
-POLICY_DST="${SYSARMOR_POLICY_DST:-/etc/sysarmor/agent/policy.json}"
-SERVICE_DST="${SYSARMOR_SERVICE_DST:-/etc/systemd/system/sysarmor-agent.service}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 %s
-mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/runtime" "$AGENT_HOME/cache" "$(dirname "$CONFIG_DST")" /var/lib/sysarmor/agent
 %s
 %s
 if [[ -n "$SYSARMOR_AGENT_BUNDLE_SHA256" ]]; then
@@ -76,10 +71,6 @@ agent:
 %s
 YAML
 SYSARMOR_RELEASE_CONFIG="$tmp/enrollment-agent.yaml" \
-SYSARMOR_AGENT_HOME="$AGENT_HOME" \
-SYSARMOR_CONFIG_DST="$CONFIG_DST" \
-SYSARMOR_POLICY_DST="$POLICY_DST" \
-SYSARMOR_SERVICE_DST="$SERVICE_DST" \
   "$tmp/install.sh" --profile "$SYSARMOR_INSTALL_PROFILE"
 
 %s
@@ -98,7 +89,7 @@ func renderInstallDependencies(profile string) string {
 		return `if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y >/dev/null
-		apt-get install -y ca-certificates curl jq openssl python3 >/dev/null
+  apt-get install -y ca-certificates curl jq openssl python3 >/dev/null
 fi`
 	}
 	return `for bin in curl jq openssl tar sha256sum sed awk; do

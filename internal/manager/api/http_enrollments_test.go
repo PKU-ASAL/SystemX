@@ -73,6 +73,16 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	if strings.Contains(body, `install -m 0755 "$tmp/$DIST_ENTRYPOINT"`) {
 		t.Fatalf("install script duplicates the distribution installer: %s", body)
 	}
+	for _, unsupported := range []string{
+		"SYSARMOR_AGENT_HOME",
+		"SYSARMOR_CONFIG_DST",
+		"SYSARMOR_POLICY_DST",
+		"SYSARMOR_SERVICE_DST",
+	} {
+		if strings.Contains(body, unsupported) {
+			t.Fatalf("install script exposes unsupported path override %q: %s", unsupported, body)
+		}
+	}
 }
 
 func TestBootstrapTicketCanFetchInstallScriptOnce(t *testing.T) {
