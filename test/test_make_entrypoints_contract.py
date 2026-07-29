@@ -47,12 +47,64 @@ class TestMakeEntrypointsContract(unittest.TestCase):
         result = self.run_make("test-performance", "DOMAIN=all", dry_run=True)
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("make -C test"), 1)
         for internal_target in (
             "performance-endpoint",
             "performance-platform",
             "performance-modules",
         ):
-            self.assertIn(internal_target, result.stdout)
+            self.assertEqual(result.stdout.count(internal_target), 1)
+
+    def test_runtime_parameters_reach_internal_commands(self):
+        performance = self.run_make(
+            "test-performance",
+            "DOMAIN=endpoint",
+            "PROFILE=profile-marker",
+            "WORKLOAD=workload-marker",
+            "SCENARIO=scenario-marker",
+            "POLICIES=policy-marker",
+            "SYSARMOR_TETRAGON_ARCHIVE=/tmp/tetragon-marker.tar.gz",
+            dry_run=True,
+        )
+        functional = self.run_make(
+            "test-functional",
+            "DOMAIN=endpoint",
+            "SYSARMOR_TETRAGON_ARCHIVE=/tmp/tetragon-marker.tar.gz",
+            dry_run=True,
+        )
+
+        self.assertEqual(performance.returncode, 0, performance.stderr)
+        for marker in (
+            "SYSARMOR_BENCH_PROFILE=profile-marker",
+            "SYSARMOR_BENCH_WORKLOAD=workload-marker",
+            "SYSARMOR_BENCH_SCENARIO=scenario-marker",
+            'SYSARMOR_BENCH_POLICIES="policy-marker"',
+            'SYSARMOR_TETRAGON_ARCHIVE="/tmp/tetragon-marker.tar.gz"',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, performance.stdout)
+        self.assertEqual(functional.returncode, 0, functional.stderr)
+        self.assertIn(
+            'SYSARMOR_TETRAGON_ARCHIVE="/tmp/tetragon-marker.tar.gz"',
+            functional.stdout,
+        )
+
+    def test_published_url_reaches_distribution_and_release_commands(self):
+        url = "https://example.invalid/url-marker"
+
+        for target, selector in (
+            ("test-distribution", "SOURCE=published"),
+            ("test-release", "STAGE=post-publish"),
+        ):
+            with self.subTest(target=target):
+                result = self.run_make(
+                    target,
+                    selector,
+                    f"URL={url}",
+                    dry_run=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f'URL="{url}"', result.stdout)
 
     def test_missing_or_invalid_selectors_fail_with_usage(self):
         cases = (
