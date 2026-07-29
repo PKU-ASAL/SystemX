@@ -1,16 +1,16 @@
-# 公开发行包容器测试
+# Distribution Published 测试
 
 该目录验证公开 standalone 发行包在 Ubuntu 22.04、Ubuntu 24.04 和 Debian 12 中的真实安装与运行链路。测试运行真实 Node.js HTTP 业务，覆盖 Agent/Tetragon 健康、三条内置检测规则的完整 Event/Signal 证据和 `namespace/self` 隔离。
 
 ```bash
-make -C test/release doctor
-make -C test/release test
+make -C test/suites/distribution/published doctor
+make -C test distribution-published
 ```
 
 缺省会查询 GitHub 最新 pre-release 的 `install.sh`。也可以固定版本，保证测试可复现：
 
 ```bash
-make -C test/release test \
+make -C test distribution-published \
   URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh
 ```
 
@@ -20,7 +20,7 @@ make -C test/release test \
 测试参数集中在 `config.sh`。可以通过 Make 参数覆盖镜像和下载行为：
 
 ```bash
-make -C test/release test \
+make -C test distribution-published \
   URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh \
   IMAGES="ubuntu2204 debian12" \
   FRESH_DOWNLOAD=1

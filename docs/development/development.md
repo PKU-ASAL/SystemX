@@ -36,7 +36,7 @@ make web-build
 | `deployments/` | 安装器、镜像、Compose、PKI 和运行配置 |
 | `web/manager/` | Manager Console 与认证 BFF |
 | `configs/` | Policy/rule 元数据示例，不自动加载 |
-| `test/` | Product、Effectiveness、Performance 验证 |
+| `test/` | Unit、Functional、Detection、Performance、Distribution 验证与 Release 门禁 |
 
 边界规则：
 
@@ -159,7 +159,7 @@ make test-doctor               # VM/真实链路测试前
 git diff --check
 ```
 
-涉及协议、共享存储、Agent 生命周期或用户主流程时，应进一步运行对应 Product/Effectiveness/Performance suite。新增测试命令进入 `test/Makefile help`，测试方法进入 `docs/development/testing.md`，不要在 suite 子目录新增重复 README。
+涉及协议、共享存储、Agent 生命周期、发行包或用户主流程时，应进一步运行对应 Functional、Detection、Performance 或 Distribution suite。新增测试命令进入 `test/Makefile help`，测试方法进入 `docs/development/testing.md`，不要在 suite 子目录新增重复 README。
 
 ## 代码与文档规则
 

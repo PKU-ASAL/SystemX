@@ -12,7 +12,7 @@ Scenario 和 Content；测试实现、生成结果和临时部署缓存不属于
 | Scenario | `scenarios/` | 执行恶意或良性行为并声明预期结果 | 是 |
 | Content | `content/` | 提供 IOC、上下文集合和规则包 | 否 |
 
-Effectiveness 测试组合 Policy、Workload 和 Scenario 判断检测结果；Performance
+Detection 测试组合 Policy、Workload 和 Scenario 判断检测结果；Performance
 测试以 Workload 形成资源窗口，并可增加 Scenario 关联检测活动与资源成本。
 
 ## Policy
@@ -93,7 +93,7 @@ scenarios/<environment>/<scenario>/
 | 文件 | 职责 |
 |---|---|
 | `attack.sh` | 执行场景并以退出码报告执行是否成功 |
-| `labels.yaml` | Effectiveness 评分使用的 truth labels 和关联要求 |
+| `labels.yaml` | Detection 评分使用的 truth labels 和关联要求 |
 | `expected.yaml` | 端到端期望契约，包括更完整的 Event、Signal、Evidence/Incident 语义 |
 
 `labels.yaml` 的核心结构是：
@@ -165,10 +165,10 @@ make test-performance \
   POLICIES='test/data/policies/collection-balanced.json'
 ```
 
-Effectiveness 矩阵：
+Detection 矩阵：
 
 ```bash
-make -C test effectiveness-topology \
+make -C test detection-topology \
   POLICIES='test/data/policies/collection-balanced.json' \
   WORKLOADS='business-normal' \
   SCENARIOS='apt-fileless-c2 apt-staged-drop benign-ci-noise'
