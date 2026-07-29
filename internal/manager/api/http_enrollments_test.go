@@ -67,8 +67,11 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") {
 		t.Fatalf("install script response = %d body=%s", rec.Code, body)
 	}
-	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, "systemctl enable --now sysarmor-agent") {
+	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, `"$tmp/install.sh" --profile "$SYSARMOR_INSTALL_PROFILE"`) {
 		t.Fatalf("default install profile/script mismatch: profile=%q body=%s", created.Enrollment.Profile, body)
+	}
+	if strings.Contains(body, `install -m 0755 "$tmp/$DIST_ENTRYPOINT"`) {
+		t.Fatalf("install script duplicates the distribution installer: %s", body)
 	}
 }
 
@@ -260,12 +263,10 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 	for _, want := range []string{
 		`SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-linux-container}"`,
 		`label.scenario: "namespace-self-container"`,
-		"scope:",
-		"    type: namespace",
-		"    selector: self",
+		`enrollment_config_source="$tmp/configs/standalone-container.yaml"`,
 		"sha256sum -c",
 		`sysarmor-agent" run --config`,
-		"sysarmorctl\" --socket /run/sysarmor/agent/control.sock",
+		"/usr/local/bin/sysarmorctl --socket /run/sysarmor/agent/control.sock",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("container install script missing %q:\n%s", want, body)

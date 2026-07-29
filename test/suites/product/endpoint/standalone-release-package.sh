@@ -104,13 +104,20 @@ test ! -e "$WORK/root/opt/sysarmor/agent/bin/sysarmor-agent"
 mv "$WORK/sysarmorctl.original" "$WORK/release/bin/sysarmorctl"
 chmod 0755 "$WORK/release/bin/sysarmorctl"
 
-env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
+cp "$WORK/release/configs/standalone.yaml" "$WORK/enrollment.yaml"
+cat >>"$WORK/enrollment.yaml" <<'EOF'
+
+agent:
+  label.install_source: enrollment
+EOF
+SYSARMOR_RELEASE_CONFIG="$WORK/enrollment.yaml" env "${install_env[@]}" "$WORK/release/install.sh" >/dev/null
 
 test -x "$WORK/root/opt/sysarmor/agent/bin/sysarmor-agent"
 test -x "$WORK/root/usr/local/bin/sysarmorctl"
 test -x "$WORK/root/opt/sysarmor/agent/bundles/tetragon/bin/tetragon"
 test -f "$WORK/root/opt/sysarmor/agent/content/default/content-manifest.json"
 grep -Fq 'state_path: /var/lib/sysarmor/agent' "$WORK/root/etc/sysarmor/agent/agent.yaml"
+grep -Fq 'label.install_source: enrollment' "$WORK/root/etc/sysarmor/agent/agent.yaml"
 if grep -Eq '^[[:space:]]*(tetra_path|tetragon_path):' "$WORK/root/etc/sysarmor/agent/agent.yaml"; then
   echo "[standalone-release-package][ERROR] host config points at the bundle before activation" >&2
   exit 1
