@@ -6,7 +6,10 @@ class TopologyE2EContractTest(unittest.TestCase):
     def test_vm_topology_authenticates_manager_operations(self):
         script = (Path(__file__).resolve().parent / "e2e-systemd-vm.sh").read_text()
 
-        self.assertIn("tools/auth/issue-manager-jwt.sh", script)
+        self.assertIn(
+            'tools/auth/issue-manager-jwt.sh" "$PKI_DIR/manager-jwt-private.pem" sysarmor-bff sysarmor-manager',
+            script,
+        )
         self.assertIn("Authorization: Bearer $MANAGER_JWT", script)
         self.assertIn(
             'MANAGER_CTL="SYSARMOR_MANAGER_JWT=\'$MANAGER_JWT\' /tmp/sysarmorctl"',

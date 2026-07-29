@@ -25,7 +25,7 @@ echo "[e2e-agent-systemd-vm] starting VM topology"
 bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV" >/dev/null
 
 cd "$ENVDIR"
-MANAGER_JWT="$("$REPO/tools/auth/issue-manager-jwt.sh" "$PKI_DIR/manager-jwt-private.pem" sysarmor-test sysarmor-manager)"
+MANAGER_JWT="$("$REPO/tools/auth/issue-manager-jwt.sh" "$PKI_DIR/manager-jwt-private.pem" sysarmor-bff sysarmor-manager)"
 MANAGER_CTL="SYSARMOR_MANAGER_JWT='$MANAGER_JWT' /tmp/sysarmorctl"
 
 echo "[e2e-agent-systemd-vm] publishing agent artifact through manager"
