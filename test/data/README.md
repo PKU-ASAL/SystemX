@@ -158,7 +158,7 @@ matcher_strategy=<strategy>
 端侧性能：
 
 ```bash
-make test-performance \
+make test-performance DOMAIN=endpoint \
   PROFILE=medium \
   WORKLOAD=business-normal \
   SCENARIO=apt-fileless-c2-local \
@@ -168,7 +168,7 @@ make test-performance \
 Detection 矩阵：
 
 ```bash
-make -C test detection-topology \
+make test-detection \
   POLICIES='test/data/policies/collection-balanced.json' \
   WORKLOADS='business-normal' \
   SCENARIOS='apt-fileless-c2 apt-staged-drop benign-ci-noise'

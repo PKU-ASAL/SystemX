@@ -61,11 +61,11 @@ sudo sysarmorctl signal watch --include-recent
 make build-binary
 make test-unit
 make test-doctor
-make test-performance PROFILE=medium
+make test-performance DOMAIN=endpoint PROFILE=medium
 make test-help
 ```
 
-Product、Effectiveness 和 Performance 测试回答不同问题，不应互相替代。详见[测试指南](docs/development/testing.md)。
+Functional、Detection 和 Performance 测试回答不同问题，不应互相替代。详见[测试指南](docs/development/testing.md)。
 
 ## 文档
 

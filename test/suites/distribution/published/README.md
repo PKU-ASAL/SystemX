@@ -4,13 +4,13 @@
 
 ```bash
 make -C test/suites/distribution/published doctor
-make -C test distribution-published
+make test-distribution SOURCE=published
 ```
 
 缺省会查询 GitHub 最新 pre-release 的 `install.sh`。也可以固定版本，保证测试可复现：
 
 ```bash
-make -C test distribution-published \
+make test-distribution SOURCE=published \
   URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh
 ```
 
@@ -20,7 +20,7 @@ make -C test distribution-published \
 测试参数集中在 `config.sh`。可以通过 Make 参数覆盖镜像和下载行为：
 
 ```bash
-make -C test distribution-published \
+make test-distribution SOURCE=published \
   URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh \
   IMAGES="ubuntu2204 debian12" \
   FRESH_DOWNLOAD=1

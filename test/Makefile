@@ -26,7 +26,6 @@ export SYSARMOR_TETRAGON_ARCHIVE := $(TETRAGON_ARCHIVE)
 .PHONY: test-unit functional-core
 .PHONY: functional-endpoint functional-endpoint-local functional-endpoint-container functional-platform functional-platform-full functional-topology
 .PHONY: detection-topology detection-report distribution-package distribution-published release-candidate release-published
-.PHONY: product-endpoint product-endpoint-standalone product-endpoint-release-container product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full effectiveness-topology effectiveness-report test-all
 .PHONY: performance-endpoint performance-local-store performance-platform performance-modules performance-rule-engine performance-matcher
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
 .PHONY: capture-endpoint capture-topology report
@@ -222,76 +221,26 @@ release-candidate: test-unit functional-core detection-topology performance-modu
 
 release-published: distribution-published
 
-# Deprecated compatibility targets -------------------------------------------
-
-product-endpoint: functional-endpoint
-	@echo "[deprecated] use functional-endpoint"
-
-product-endpoint-standalone: functional-endpoint-local distribution-package
-	@echo "[deprecated] use functional-endpoint-local and distribution-package"
-
-product-endpoint-release-container: distribution-published
-	@echo "[deprecated] use distribution-published"
-
-product-endpoint-namespace-container: functional-endpoint-container
-	@echo "[deprecated] use functional-endpoint-container"
-
-product-topology: functional-topology
-	@echo "[deprecated] use functional-topology"
-
-product-platform: functional-platform
-	@echo "[deprecated] use functional-platform"
-
-product-platform-smoke: functional-platform
-	@echo "[deprecated] use functional-platform"
-
-product-platform-full: functional-platform-full
-	@echo "[deprecated] use functional-platform-full"
-
-effectiveness-topology: detection-topology
-	@echo "[deprecated] use detection-topology"
-
-effectiveness-report: detection-report
-	@echo "[deprecated] use detection-report"
-
-test-all: test-unit functional-core
-	@echo "[deprecated] use test-unit and functional-core"
-
 report:
 	python3 shared/reports/report.py
 
 help:
-	@echo "SysArmor test suites:"
-	@echo "  doctor           verify tools, libvirt provider, connection, and Tetragon archive"
-	@echo "  test-unit               local Go tests"
-	@echo "  functional-endpoint     single VM endpoint with owned real Tetragon"
-	@echo "  functional-platform     local platform behavior contracts"
-	@echo "  functional-topology     multi-VM artifact, enrollment, and systemd path"
-	@echo "  detection-topology      truth-labeled detection quality over vm-topology"
-	@echo "  performance-endpoint endpoint CPU/RSS benchmark"
-	@echo "  performance-platform platform service CPU/memory benchmark over vm-topology"
-	@echo "  performance-modules local module microbenchmarks"
-	@echo "  distribution-package   local package and installer contracts"
-	@echo "  distribution-published published package compatibility matrix"
-	@echo "  release-candidate       aggregate pre-publish release gate"
-	@echo "  release-published       aggregate post-publish release gate"
+	@echo "SysArmor public test commands (run from repository root):"
+	@echo "  make test-unit"
+	@echo "  make test-functional DOMAIN=endpoint|platform|topology|all"
+	@echo "  make test-detection"
+	@echo "  make test-performance DOMAIN=endpoint|platform|modules|all PROFILE=medium"
+	@echo "  make test-distribution SOURCE=local|published URL=https://..."
+	@echo "  make test-release STAGE=pre-publish|post-publish URL=https://..."
+	@echo "  make test-doctor"
 	@echo ""
-	@echo "Environments:"
+	@echo "Internal environment and diagnostic targets:"
 	@echo "  ENV=container | vm-endpoint | vm-topology"
 	@echo "  up-container | up-vm-endpoint | up-vm-topology | up-all"
 	@echo "  down-container | down-vm-endpoint | down-vm-topology | down-all"
-	@echo ""
-	@echo "Common:"
 	@echo "  make -C test up ENV=vm-endpoint"
 	@echo "  make -C test down-all"
-	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal"
-	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'"
-	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal"
-	@echo "  make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=600"
-	@echo "  make -C test detection-topology"
 	@echo "  make -C test recorder-start RUN_ID=my-run"
-	@echo ""
-	@echo "Endpoint benchmark phases: startup, steady, workload, activity, persistence, overall"
 
 define require_env
 	@case "$(ENV)" in container|vm-endpoint|vm-topology) ;; *) echo "unsupported ENV=$(ENV)" >&2; exit 2 ;; esac

@@ -9,10 +9,10 @@
 ```bash
 make test-doctor
 make test-unit
-make test-functional-endpoint
-make test-functional-platform
-make test-functional-topology
-make test-performance PROFILE=medium \
+make test-functional DOMAIN=endpoint
+make test-functional DOMAIN=platform
+make test-functional DOMAIN=topology
+make test-performance DOMAIN=endpoint PROFILE=medium \
   WORKLOAD=business-normal \
   SCENARIO=apt-fileless-c2-local \
   POLICIES='test/data/policies/collection-balanced.json'
@@ -27,8 +27,8 @@ Event/Signal 与命名空间隔离测试位于
 [`suites/distribution/published/`](suites/distribution/published/README.md)。
 
 ```bash
-make test-distribution-package
-make test-distribution-published URL=https://.../install.sh
+make test-distribution SOURCE=local
+make test-distribution SOURCE=published URL=https://.../install.sh
 ```
 
 `quick` 只验证性能测试链路；资源结论使用可比的 `medium` 或 `long` 运行。

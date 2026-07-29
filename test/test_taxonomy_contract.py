@@ -47,26 +47,26 @@ class TestTaxonomyContract(unittest.TestCase):
                     rf"(?m)^{re.escape(target)}(?:\s*:[^\n]*)$",
                 )
 
-    def test_legacy_targets_delegate_to_new_taxonomy(self):
-        aliases = {
-            "product-endpoint": "functional-endpoint",
-            "product-endpoint-standalone": "functional-endpoint-local distribution-package",
-            "product-endpoint-release-container": "distribution-published",
-            "product-endpoint-namespace-container": "functional-endpoint-container",
-            "product-platform": "functional-platform",
-            "product-platform-smoke": "functional-platform",
-            "product-platform-full": "functional-platform-full",
-            "product-topology": "functional-topology",
-            "effectiveness-topology": "detection-topology",
-            "effectiveness-report": "detection-report",
-            "test-all": "test-unit functional-core",
-        }
+    def test_internal_makefile_has_no_legacy_targets(self):
+        legacy_targets = (
+            "product-endpoint",
+            "product-endpoint-standalone",
+            "product-endpoint-release-container",
+            "product-endpoint-namespace-container",
+            "product-platform",
+            "product-platform-smoke",
+            "product-platform-full",
+            "product-topology",
+            "effectiveness-topology",
+            "effectiveness-report",
+            "test-all",
+        )
 
-        for legacy, replacement in aliases.items():
-            with self.subTest(legacy=legacy):
-                self.assertRegex(
+        for target in legacy_targets:
+            with self.subTest(target=target):
+                self.assertNotRegex(
                     self.test_makefile,
-                    rf"(?m)^{re.escape(legacy)}\s*:\s*{re.escape(replacement)}\s*$",
+                    rf"(?m)^\.PHONY:.*\b{re.escape(target)}\b|^{re.escape(target)}\s*:",
                 )
 
     def test_root_makefile_exposes_public_taxonomy(self):
@@ -101,7 +101,7 @@ class TestTaxonomyContract(unittest.TestCase):
     def test_release_workflow_uses_distribution_paths(self):
         self.assertNotIn("test/suites/product/", self.release_workflow)
         self.assertNotIn("test/release/", self.release_workflow)
-        self.assertIn("make -C test distribution-package", self.release_workflow)
+        self.assertIn("make test-distribution SOURCE=local", self.release_workflow)
 
     def test_detection_reports_use_current_taxonomy(self):
         reports = self.test_root / "shared/reports"
@@ -122,10 +122,7 @@ class TestTaxonomyContract(unittest.TestCase):
             "Effectiveness 测试",
         )
         roots = [self.repo / "docs", self.repo / "test"]
-        excluded = {
-            self.repo / "test/Makefile",
-            Path(__file__).resolve(),
-        }
+        excluded = {Path(__file__).resolve()}
 
         for root in roots:
             for path in root.rglob("*"):

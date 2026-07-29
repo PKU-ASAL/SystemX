@@ -53,24 +53,27 @@ make test-help
 ```bash
 make test-unit
 make test-doctor
-make test-performance PROFILE=medium \
+make test-functional DOMAIN=endpoint
+make test-detection
+make test-performance DOMAIN=endpoint PROFILE=medium \
   WORKLOAD=business-normal \
   SCENARIO=apt-fileless-c2-local \
   POLICIES='test/data/policies/collection-balanced.json'
+make test-distribution SOURCE=local
+make test-release STAGE=pre-publish
 ```
 
-更细的 Suite 直接使用测试 Makefile：
+公共入口按测试分类组织；分类内使用语义明确的参数选择测试对象：
 
 ```bash
-make -C test functional-endpoint
-make -C test functional-platform
-make -C test functional-topology
-make -C test detection-topology
-make -C test performance-platform
-make -C test performance-modules
-make -C test distribution-package
-make -C test distribution-published URL=https://example.invalid/install.sh
+make test-functional DOMAIN=endpoint|platform|topology|all
+make test-performance DOMAIN=endpoint|platform|modules|all
+make test-distribution SOURCE=local|published
+make test-release STAGE=pre-publish|post-publish
 ```
+
+`DOMAIN` 表示系统领域，`SOURCE` 表示发行产物来源，`STAGE` 表示发布门禁阶段。
+参数缺失或取值不合法时 Make 会打印完整用法并退出，不会静默选择默认测试。
 
 ## 测试环境
 
@@ -107,7 +110,7 @@ VM 会创建特权基础设施，并可能传输较大的镜像和 sensor 包。
 
 Functional Suite 证明“系统通不通”。
 
-| 入口 | 边界 | Sensor/输入 |
+| 内部目标 | 边界 | Sensor/输入 |
 |---|---|---|
 | `functional-endpoint-local` | 本地状态和容器入口运行行为 | fake binary/本地契约 |
 | `functional-endpoint` | 安装 standalone Agent，验证真实 Event、Signal、关联引用和重启恢复 | owned real Tetragon |
@@ -116,15 +119,17 @@ Functional Suite 证明“系统通不通”。
 | `functional-platform-full` | 容器内 Event、Signal、Incident 产品路径 | Tetragon container |
 | `functional-topology` | 三 VM 分发、注册、证书和接入链路 | Manager 分发真实 Agent |
 
-典型入口：
+公共入口：
 
 ```bash
-make -C test functional-endpoint
-make -C test functional-endpoint-container
-make -C test functional-platform
-make -C test functional-platform-full
-make -C test functional-topology
+make test-functional DOMAIN=endpoint
+make test-functional DOMAIN=platform
+make test-functional DOMAIN=topology
+make test-functional DOMAIN=all
 ```
+
+`functional-endpoint-local`、`functional-endpoint-container` 和 `functional-platform-full`
+是开发测试实现使用的内部目标，不作为稳定公共入口。
 
 `functional-topology` 验证：
 
@@ -143,7 +148,7 @@ Detection Suite 在真实端云链路上判断恶意和良性行为是否产生�
 Signal：
 
 ```bash
-make -C test detection-topology
+make test-detection
 ```
 
 默认组合：
@@ -155,7 +160,7 @@ make -C test detection-topology
 `collection-minimal` 有意缩窄可见性，不进入默认完整检测门禁。自定义矩阵：
 
 ```bash
-make -C test detection-topology \
+make test-detection \
   POLICIES='test/data/policies/collection-balanced.json' \
   WORKLOADS='business-normal' \
   SCENARIOS='apt-fileless-c2 apt-staged-drop benign-ci-noise'
@@ -202,7 +207,7 @@ Performance Suite 将三种成本分开测量：
 日常可比运行：
 
 ```bash
-make test-performance \
+make test-performance DOMAIN=endpoint \
   PROFILE=medium \
   WORKLOAD=business-normal \
   SCENARIO=apt-fileless-c2-local \
@@ -253,7 +258,7 @@ test/.results/recordings/performance-endpoint/<run-id>/<policy>/
 ### Platform
 
 ```bash
-make -C test performance-platform \
+make test-performance DOMAIN=platform \
   SYSARMOR_PLATFORM_PERF_DURATION=600 \
   SYSARMOR_PLATFORM_PERF_INTERVAL=5
 ```
@@ -273,7 +278,7 @@ Endpoint 与 Platform 是两个独立成本面，不能相加，也不能互相�
 ### Module
 
 ```bash
-make -C test performance-modules BENCHTIME=200ms COUNT=1
+make test-performance DOMAIN=modules BENCHTIME=200ms COUNT=1
 ```
 
 Module benchmark 适合定位算法回归，不包含 sensor、VM、网络或平台成本。
@@ -282,14 +287,14 @@ Module benchmark 适合定位算法回归，不包含 sensor、VM、网络或平
 
 Distribution 验证发行包和安装兼容性，不承担发布决策：
 
-| 入口 | 边界 |
+| 来源 | 边界 |
 |---|---|
-| `distribution-package` | 当前源码生成的本地签名包、标准路径、安装事务和发布工作流契约 |
-| `distribution-published` | 指定公开安装地址在 Ubuntu 22.04、Ubuntu 24.04 和 Debian 12 中的真实安装与运行 |
+| `SOURCE=local` | 当前源码生成的本地签名包、标准路径、安装事务和发布工作流契约 |
+| `SOURCE=published` | 指定公开安装地址在 Ubuntu 22.04、Ubuntu 24.04 和 Debian 12 中的真实安装与运行 |
 
 ```bash
-make -C test distribution-package
-make -C test distribution-published \
+make test-distribution SOURCE=local
+make test-distribution SOURCE=published \
   URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh
 ```
 
@@ -301,12 +306,12 @@ Published 测试必须显式指定待验收 tag 的 URL，避免误测其他 pre
 Release 不拥有独立测试实现，只组合已有分类：
 
 ```bash
-make test-release-candidate
-make test-release-published URL=https://.../install.sh
+make test-release STAGE=pre-publish
+make test-release STAGE=post-publish URL=https://.../install.sh
 ```
 
-候选门禁包含 Unit、核心 Functional、Detection、选定的模块 Performance 基线和
-Distribution Package。公开发布门禁在发布后运行 Distribution Published。
+发布前门禁包含 Unit、核心 Functional、Detection、选定的模块 Performance 基线和
+本地 Distribution。发布后门禁运行已发布产物的 Distribution 验收。
 
 ## 测试数据
 

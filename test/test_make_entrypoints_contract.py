@@ -1,3 +1,4 @@
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -88,6 +89,54 @@ class TestMakeEntrypointsContract(unittest.TestCase):
                 result = self.run_make(target, dry_run=True)
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("No rule to make target", result.stderr)
+
+    def test_active_documentation_does_not_recommend_removed_commands(self):
+        removed_commands = re.compile(
+            r"make test-(?:functional-(?:endpoint|platform|topology)"
+            r"|distribution-(?:package|published)"
+            r"|release-(?:candidate|published))\b"
+        )
+
+        paths = [self.repo / "README.md", self.repo / "README.zh-CN.md"]
+        paths.extend((self.repo / "docs").rglob("*.md"))
+        paths.extend((self.repo / "test").rglob("*.md"))
+        for path in paths:
+            relative = path.relative_to(self.repo).as_posix()
+            if (
+                relative.startswith("docs/superpowers/")
+                or relative.startswith("test/.results/")
+                or relative.startswith(
+                    "test/suites/distribution/published/results/"
+                )
+            ):
+                continue
+            with self.subTest(path=relative):
+                self.assertNotRegex(path.read_text(), removed_commands)
+
+    def test_help_uses_parameterized_public_commands(self):
+        root_help = self.run_make("help")
+        test_help = self.run_make("test-help")
+        expected = (
+            "make test-functional DOMAIN=endpoint",
+            "make test-performance DOMAIN=endpoint",
+            "make test-distribution SOURCE=local",
+            "make test-release STAGE=pre-publish",
+        )
+
+        self.assertEqual(root_help.returncode, 0, root_help.stderr)
+        self.assertEqual(test_help.returncode, 0, test_help.stderr)
+        for command in expected:
+            with self.subTest(command=command):
+                self.assertIn(command, root_help.stdout)
+                self.assertIn(command, test_help.stdout)
+
+    def test_release_workflow_uses_public_distribution_dispatcher(self):
+        workflow = (
+            self.repo / ".github/workflows/release-build.yml"
+        ).read_text()
+
+        self.assertIn("make test-distribution SOURCE=local", workflow)
+        self.assertNotIn("make -C test distribution-package", workflow)
 
 
 if __name__ == "__main__":
