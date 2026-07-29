@@ -204,17 +204,17 @@ else
 fi
 
 python3 "$HERE/report.py" "$OUT_DIR"
-python3 "$ROOT/shared/reports/effectiveness_report.py" \
+python3 "$ROOT/shared/reports/detection_report.py" \
   --bench-matrix-dir "$OUT_DIR" \
   --output-dir "$RESULTS/detection/$RUN_ID" \
   --topology vm \
   --scope "$EVALUATION_SCOPE" \
   --scenarios $SCENARIOS \
   --workloads $WORKLOADS
-python3 "$ROOT/shared/reports/assert_effectiveness.py" \
+python3 "$ROOT/shared/reports/assert_detection.py" \
   --matrix "$RESULTS/detection/$RUN_ID/matrix.csv" \
   --truth-steps "$RESULTS/detection/$RUN_ID/truth_steps.csv" \
-  --min-score "${SYSARMOR_EFFECTIVENESS_MIN_SCORE:-1.0}"
+  --min-score "${SYSARMOR_DETECTION_MIN_SCORE:-1.0}"
 
 echo "[detection-topology] matrix written to $OUT_DIR/matrix.csv"
 echo "[detection-topology] detection results written to $RESULTS/detection/$RUN_ID"

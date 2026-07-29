@@ -83,7 +83,7 @@ def marker_time(markers, phase):
     return None
 
 
-def effectiveness_window(bench_summary):
+def detection_window(bench_summary):
     markers = (bench_summary or {}).get("markers") or []
     start = marker_time(markers, "workload_start")
     end = marker_time(markers, "workload_done") or marker_time(markers, "recorder_stop")
@@ -654,7 +654,7 @@ def build_rows(args):
         auxiliary_events = load_ndjson(events_all_path) if events_all_path else []
         all_signals = load_ndjson(signals_path) if signals_path else []
         bench_summary = load_json(case["bench_case_dir"] / "summary.json")
-        window_start, window_end, window_name = effectiveness_window(bench_summary)
+        window_start, window_end, window_name = detection_window(bench_summary)
         if args.scope in ("manager", "full", "control"):
             events = all_events
             auxiliary_events = auxiliary_events
@@ -673,7 +673,7 @@ def build_rows(args):
             "scenario": case.get("scenario", ""),
             "policy": case["policy"],
             "label_file": str(labels_path),
-            "effectiveness_window": window_name,
+            "detection_window": window_name,
             "observed_events_total": len(all_events),
             "observed_signals_total": len(all_signals),
             "events_path": str(events_path) if events_path else "",
@@ -768,7 +768,7 @@ def main():
         "drop_rate",
         "parse_error_rate",
         "cost_per_1k_events_cpu",
-        "effectiveness_window",
+        "detection_window",
         "label_file",
         "events_path",
         "events_all_path",

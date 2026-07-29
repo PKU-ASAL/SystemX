@@ -47,12 +47,12 @@ def main():
                 )
 
     if failures:
-        print("[assert-effectiveness][ERROR] effectiveness expectations failed:")
+        print("[assert-detection][ERROR] detection expectations failed:")
         for failure in failures:
             print(f"  - {failure}")
         raise SystemExit(1)
 
-    print("[assert-effectiveness] ok")
+    print("[assert-detection] ok")
 
 
 if __name__ == "__main__":

@@ -50,9 +50,16 @@ class TestTaxonomyContract(unittest.TestCase):
     def test_legacy_targets_delegate_to_new_taxonomy(self):
         aliases = {
             "product-endpoint": "functional-endpoint",
+            "product-endpoint-standalone": "functional-endpoint-local distribution-package",
+            "product-endpoint-release-container": "distribution-published",
+            "product-endpoint-namespace-container": "functional-endpoint-container",
             "product-platform": "functional-platform",
+            "product-platform-smoke": "functional-platform",
+            "product-platform-full": "functional-platform-full",
             "product-topology": "functional-topology",
             "effectiveness-topology": "detection-topology",
+            "effectiveness-report": "detection-report",
+            "test-all": "test-unit functional-core",
         }
 
         for legacy, replacement in aliases.items():
@@ -83,6 +90,49 @@ class TestTaxonomyContract(unittest.TestCase):
         self.assertNotIn("test/suites/product/", self.release_workflow)
         self.assertNotIn("test/release/", self.release_workflow)
         self.assertIn("make -C test distribution-package", self.release_workflow)
+
+    def test_detection_reports_use_current_taxonomy(self):
+        reports = self.test_root / "shared/reports"
+
+        self.assertTrue((reports / "detection_report.py").is_file())
+        self.assertTrue((reports / "assert_detection.py").is_file())
+        self.assertFalse((reports / "effectiveness_report.py").exists())
+        self.assertFalse((reports / "assert_effectiveness.py").exists())
+
+    def test_active_files_do_not_use_legacy_taxonomy(self):
+        forbidden = (
+            "suites/product/",
+            "suites/effectiveness/",
+            "effectiveness_report.py",
+            "assert_effectiveness.py",
+            "SYSARMOR_EFFECTIVENESS_MIN_SCORE",
+            "Product 测试",
+            "Effectiveness 测试",
+        )
+        roots = [self.repo / "docs", self.repo / "test"]
+        excluded = {
+            self.repo / "test/Makefile",
+            Path(__file__).resolve(),
+        }
+
+        for root in roots:
+            for path in root.rglob("*"):
+                if not path.is_file() or path in excluded:
+                    continue
+                relative = path.relative_to(self.repo).as_posix()
+                if (
+                    relative.startswith("docs/superpowers/")
+                    or relative.startswith("test/.results/")
+                    or "/results/" in relative
+                ):
+                    continue
+                try:
+                    document = path.read_text()
+                except UnicodeDecodeError:
+                    continue
+                for legacy in forbidden:
+                    with self.subTest(path=relative, legacy=legacy):
+                        self.assertNotIn(legacy, document)
 
 
 if __name__ == "__main__":

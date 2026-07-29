@@ -203,7 +203,7 @@ recorder-report:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint RUN_ID=$(RUN_ID) bash shared/recorder/recorder-vm.sh report
 
 detection-report:
-	python3 shared/reports/effectiveness_report.py --bench-matrix-dir .results/detection-topology/$(RUN_ID) --topology vm --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/detection/$(RUN_ID)
+	python3 shared/reports/detection_report.py --bench-matrix-dir .results/detection-topology/$(RUN_ID) --topology vm --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/detection/$(RUN_ID)
 
 # Distribution and release gates ---------------------------------------------
 
