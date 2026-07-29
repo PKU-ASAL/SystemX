@@ -20,7 +20,7 @@ esac
 
 if [[ "$BUILD_BINARIES" == "1" ]]; then
   echo ">>> 构建 SysArmor binaries"
-  make -C "$REPO" build
+  make -C "$REPO" build-binary
 else
   echo ">>> 复用已构建 SysArmor binaries"
 fi

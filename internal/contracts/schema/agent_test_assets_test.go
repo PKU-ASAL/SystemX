@@ -41,6 +41,11 @@ func TestOpenSearchExactFieldsUseKeywordMappings(t *testing.T) {
 var legacyAgentTestPatterns = []string{
 	"/run/sysarmor/agent.sock",
 	"\ndata_plane:",
+	"\nagent:\n  id:",
+	"\n  host_id:",
+	"\n  tenant_id:",
+	"\n  token:",
+	"\nmanager:\n  transport: local",
 	"\n  batch_size:",
 	"\n  policy_path:",
 }
@@ -91,6 +96,29 @@ func TestObsoleteAgentTestAssetsAreRemoved(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); !os.IsNotExist(err) {
 			t.Errorf("obsolete Agent test asset still exists: %s", path)
+		}
+	}
+}
+
+func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, path := range []string{
+		"test/shared/diagnostics/capture-vm.sh",
+		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := string(raw)
+		for _, want := range []string{
+			"SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload",
+			"  path: /etc/sysarmor/agent/policy.json",
+			"/tmp/sysarmor-install-agent.log",
+		} {
+			if !strings.Contains(document, want) {
+				t.Errorf("%s missing current installer contract %q", path, want)
+			}
 		}
 	}
 }

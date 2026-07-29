@@ -1,0 +1,41 @@
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+class StartVMContractTest(unittest.TestCase):
+    def test_builds_all_binaries_before_starting_endpoint_vm(self):
+        harness_dir = Path(__file__).resolve().parent
+        repo = harness_dir.parents[2]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bin_dir = Path(temp_dir)
+            calls = bin_dir / "make.calls"
+            self._write_executable(
+                bin_dir / "make",
+                f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{calls}"\n',
+            )
+            self._write_executable(bin_dir / "vagrant", "#!/usr/bin/env bash\nexit 0\n")
+
+            env = os.environ.copy()
+            env["PATH"] = f"{bin_dir}:{env['PATH']}"
+            subprocess.run(
+                ["bash", str(harness_dir / "start-vm.sh"), "vm-endpoint"],
+                check=True,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(calls.read_text().strip(), f"-C {repo} build-binary")
+
+    @staticmethod
+    def _write_executable(path: Path, content: str):
+        path.write_text(content)
+        path.chmod(0o755)
+
+
+if __name__ == "__main__":
+    unittest.main()
