@@ -64,11 +64,11 @@ See [Quickstart](docs/quickstart.md) for prerequisites, verification, and next s
 make build-binary
 make test-unit
 make test-doctor
-make test-performance PROFILE=medium
+make test-performance DOMAIN=endpoint PROFILE=medium
 make test-help
 ```
 
-Product, Effectiveness, and Performance suites answer different questions and do not substitute for each other. See [Testing](docs/development/testing.md).
+Functional, Detection, and Performance suites answer different questions and do not substitute for each other. See [Testing](docs/development/testing.md).
 
 ## Documentation
 

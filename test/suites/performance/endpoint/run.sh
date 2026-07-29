@@ -11,8 +11,8 @@ RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUT_DIR="$RESULTS/performance-endpoint/$RUN_ID"
 BENCH_PROFILE="${SYSARMOR_BENCH_PROFILE:-quick}"
 AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent/control.sock}"
-AGENT_ID="${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}"
-TENANT_ID="${SYSARMOR_BENCH_TENANT_ID:-default}"
+AGENT_ID=""
+TENANT_ID=""
 if [[ -v SYSARMOR_BENCH_WORKLOAD ]]; then
   WORKLOAD="$SYSARMOR_BENCH_WORKLOAD"
 else
