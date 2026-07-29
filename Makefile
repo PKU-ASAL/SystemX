@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-functional-endpoint test-functional-platform test-functional-topology test-detection test-performance test-distribution-package test-distribution-published test-release-candidate test-release-published test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-functional test-detection test-performance test-distribution test-release test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -19,6 +19,22 @@ RELEASE_SIGNING_KEY ?= $(PKI_RUNTIME_DIR)/artifact-signing-key.pem
 RELEASE_PUBLIC_KEY ?= $(PKI_RUNTIME_DIR)/artifact-public.pem
 TETRAGON_ARCHIVE_CANDIDATE := $(firstword $(wildcard .cache/tetragon-v1.7.0-amd64.tar.gz .scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz))
 TETRAGON_ARCHIVE ?= $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(if $(TETRAGON_ARCHIVE_CANDIDATE),$(abspath $(TETRAGON_ARCHIVE_CANDIDATE))))
+FUNCTIONAL_TARGET_endpoint := functional-endpoint
+FUNCTIONAL_TARGET_platform := functional-platform
+FUNCTIONAL_TARGET_topology := functional-topology
+FUNCTIONAL_TARGET_all := functional-core
+FUNCTIONAL_TARGET := $(FUNCTIONAL_TARGET_$(DOMAIN))
+PERFORMANCE_TARGET_endpoint := performance-endpoint
+PERFORMANCE_TARGET_platform := performance-platform
+PERFORMANCE_TARGET_modules := performance-modules
+PERFORMANCE_TARGET_all := performance-endpoint performance-platform performance-modules
+PERFORMANCE_TARGET := $(PERFORMANCE_TARGET_$(DOMAIN))
+DISTRIBUTION_TARGET_local := distribution-package
+DISTRIBUTION_TARGET_published := distribution-published
+DISTRIBUTION_TARGET := $(DISTRIBUTION_TARGET_$(SOURCE))
+RELEASE_TARGET_pre-publish := release-candidate
+RELEASE_TARGET_post-publish := release-published
+RELEASE_TARGET := $(RELEASE_TARGET_$(STAGE))
 PROFILE ?= quick
 WORKLOAD ?= business-normal
 SCENARIO ?=
@@ -89,37 +105,45 @@ test-doctor:
 test-unit:
 	$(MAKE) -C test test-unit
 
-test-functional-endpoint:
-	$(MAKE) -C test functional-endpoint SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
-
-test-functional-platform:
-	$(MAKE) -C test functional-platform
-
-test-functional-topology:
-	$(MAKE) -C test functional-topology SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+test-functional:
+ifeq ($(FUNCTIONAL_TARGET),)
+	@echo "usage: make test-functional DOMAIN=endpoint|platform|topology|all" >&2
+	@exit 2
+else
+	$(MAKE) -C test $(FUNCTIONAL_TARGET) SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+endif
 
 test-detection:
 	$(MAKE) -C test detection-topology SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
 
 test-performance:
-	$(MAKE) -C test performance-endpoint \
+ifeq ($(PERFORMANCE_TARGET),)
+	@echo "usage: make test-performance DOMAIN=endpoint|platform|modules|all" >&2
+	@exit 2
+else
+	$(MAKE) -C test $(PERFORMANCE_TARGET) \
 		SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)" \
 		SYSARMOR_BENCH_PROFILE=$(PROFILE) \
 		SYSARMOR_BENCH_WORKLOAD=$(WORKLOAD) \
 		SYSARMOR_BENCH_SCENARIO=$(SCENARIO) \
 		SYSARMOR_BENCH_POLICIES="$(POLICIES)"
+endif
 
-test-distribution-package:
-	$(MAKE) -C test distribution-package
+test-distribution:
+ifeq ($(DISTRIBUTION_TARGET),)
+	@echo "usage: make test-distribution SOURCE=local|published" >&2
+	@exit 2
+else
+	$(MAKE) -C test $(DISTRIBUTION_TARGET)
+endif
 
-test-distribution-published:
-	$(MAKE) -C test distribution-published
-
-test-release-candidate:
-	$(MAKE) -C test release-candidate SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
-
-test-release-published:
-	$(MAKE) -C test release-published
+test-release:
+ifeq ($(RELEASE_TARGET),)
+	@echo "usage: make test-release STAGE=pre-publish|post-publish" >&2
+	@exit 2
+else
+	$(MAKE) -C test $(RELEASE_TARGET) SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+endif
 
 test-opensearch-lifecycle:
 	bash test/suites/functional/platform/opensearch-alias-lifecycle.sh

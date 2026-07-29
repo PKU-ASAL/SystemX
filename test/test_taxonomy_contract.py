@@ -71,20 +71,32 @@ class TestTaxonomyContract(unittest.TestCase):
 
     def test_root_makefile_exposes_public_taxonomy(self):
         targets = [
-            "test-functional-endpoint",
-            "test-functional-platform",
-            "test-functional-topology",
+            "test-functional",
             "test-detection",
             "test-performance",
-            "test-distribution-package",
-            "test-distribution-published",
-            "test-release-candidate",
-            "test-release-published",
+            "test-distribution",
+            "test-release",
         ]
 
         for target in targets:
             with self.subTest(target=target):
                 self.assertRegex(self.root_makefile, rf"(?m)^{re.escape(target)}\s*:")
+
+        removed = [
+            "test-functional-endpoint",
+            "test-functional-platform",
+            "test-functional-topology",
+            "test-distribution-package",
+            "test-distribution-published",
+            "test-release-candidate",
+            "test-release-published",
+        ]
+        for target in removed:
+            with self.subTest(removed=target):
+                self.assertNotRegex(
+                    self.root_makefile,
+                    rf"(?m)^\.PHONY:.*\b{re.escape(target)}\b|^{re.escape(target)}\s*:",
+                )
 
     def test_release_workflow_uses_distribution_paths(self):
         self.assertNotIn("test/suites/product/", self.release_workflow)
