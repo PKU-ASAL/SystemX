@@ -46,10 +46,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$PROFILE" in
-  linux-systemd) config="$HERE/configs/standalone.yaml" ;;
-  linux-container) config="$HERE/configs/standalone-container.yaml" ;;
+  linux-systemd) default_config="$HERE/configs/standalone.yaml" ;;
+  linux-container) default_config="$HERE/configs/standalone-container.yaml" ;;
   *) echo "[sysarmor-install][ERROR] 不支持的安装 profile: $PROFILE；可选值为 linux-systemd、linux-container" >&2; exit 1 ;;
 esac
+config="${SYSARMOR_RELEASE_CONFIG:-$default_config}"
 
 validate_release_manifest
 

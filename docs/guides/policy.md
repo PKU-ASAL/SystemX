@@ -43,7 +43,7 @@ Collection 描述行为类别、选择器、运行作用域和 observe-only 意�
 1. 列出目标 Signal 所需的最小 Event 和实体关系。
 2. 选择可在 sensor 下推的作用域和前缀，减少进入 Agent 的无效数据。
 3. 对无法下推但可由 Agent 判断的条件评估 CPU 与事件量。
-4. 用 Product 测试验证链路，用 Effectiveness 测试验证必要结果，用 Performance 测试验证资源预算。
+4. 用 Functional 测试验证链路，用 Detection 测试验证必要结果，用 Performance 测试验证资源预算。
 
 常开策略应保持小而稳定。更深的文件读取、广泛网络或高频系统行为适合受控场景，而不是默认无限采集。策略样例位于 `test/data/policies/`，它们用于测试预算和场景，不是生产基线的自动承诺。
 
