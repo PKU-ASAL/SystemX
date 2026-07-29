@@ -34,8 +34,13 @@ grep -Fq 'contents: read' "$build"
 grep -Fq 'id-token: write' "$build"
 grep -Fq 'attestations: write' "$build"
 grep -Fq 'go test ./...' "$build"
-grep -Fq 'make test-distribution SOURCE=local' "$build"
+grep -Fq 'sudo make test-distribution SOURCE=local' "$build"
 grep -Fq 'container-entrypoint.sh' "$build"
+if grep -R -n -w --include='*.sh' rg "$REPO/test/suites/distribution/package" |
+  grep -v 'release-workflow-contract.sh'; then
+  echo "[release-workflow-contract][ERROR] distribution contracts require non-default rg" >&2
+  exit 1
+fi
 grep -Fq -- '--tetragon-mode download' "$build"
 grep -Fq -- '--signing-key "$manifest_key"' "$build"
 grep -Fq -- '--content-signing-key "$content_key"' "$build"
