@@ -114,10 +114,6 @@ sa_wait_no_glob() {
   done
 }
 
-sa_build_all() {
-  make -C "$REPO_ROOT" build >/dev/null
-}
-
 sa_build_go_bins() {
   local pkg
   for pkg in "$@"; do

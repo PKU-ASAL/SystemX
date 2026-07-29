@@ -149,7 +149,6 @@ product-topology: doctor
 
 product-platform:
 	bash suites/product/platform/e2e-control-contract.sh
-	bash suites/product/platform/e2e-gateway-local-ingest.sh
 	bash suites/product/platform/e2e-agent-gateway-manager-local.sh
 	bash suites/product/platform/e2e-control-roundtrip-local.sh
 	bash suites/product/platform/e2e-manager-api-policy.sh

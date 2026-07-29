@@ -81,15 +81,17 @@ func TestAgentTestAssetsUseCurrentSchema(t *testing.T) {
 	validateCoverageInventory(t, filepath.Join(testRoot, "contracts", "agent-test-coverage.tsv"))
 }
 
-func TestContainerCaptureCreatesWorkDirectory(t *testing.T) {
+func TestObsoleteAgentTestAssetsAreRemoved(t *testing.T) {
 	root := repositoryRoot(t)
-	path := filepath.Join(root, "test", "shared", "diagnostics", "capture-container.sh")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), "rm -rf '$WORK'; mkdir -p '$WORK'") {
-		t.Errorf("container capture must create its work directory")
+	for _, path := range []string{
+		"configs/agent.fake.yaml",
+		"test/shared/diagnostics/capture-container.sh",
+		"test/suites/product/endpoint/e2e-real-tetragon-owned-container.sh",
+		"test/suites/product/platform/e2e-gateway-local-ingest.sh",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); !os.IsNotExist(err) {
+			t.Errorf("obsolete Agent test asset still exists: %s", path)
+		}
 	}
 }
 
