@@ -45,6 +45,12 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn("select(.event.labels.scenario == $scenario)", self.script)
         self.assertNotIn('grep -Fq "\\\"labels\\\":{\\\"scenario\\\"', self.script)
 
+    def test_attack_capture_uses_pre_attack_stream_cursors(self):
+        self.assertIn("streams.eventNewestSequence", self.script)
+        self.assertIn("streams.signalNewestSequence", self.script)
+        self.assertIn('--after-seq \'$EVENT_CURSOR\'', self.script)
+        self.assertIn('--after-seq \'$SIGNAL_CURSOR\'', self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

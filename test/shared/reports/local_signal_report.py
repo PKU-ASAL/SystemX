@@ -30,6 +30,10 @@ def signal_name(signal):
     return signal.get("name", "")
 
 
+def signal_scenario(signal):
+    return signal.get("scenario") or signal.get("labels", {}).get("scenario", "")
+
+
 def is_endpoint_signal(signal):
     return signal_where(signal) == "SIGNAL_WHERE_ENDPOINT"
 
@@ -37,7 +41,7 @@ def is_endpoint_signal(signal):
 def is_attack_signal(signal, scenario):
     return (
         is_endpoint_signal(signal)
-        and signal.get("scenario") == scenario
+        and signal_scenario(signal) == scenario
         and not str(signal_name(signal)).startswith("sensor_")
     )
 
@@ -69,7 +73,7 @@ def linked_signal(signal, events_by_id, missing_refs):
         "signal_id": signal.get("id"),
         "signal_name": signal_name(signal),
         "where": signal_where(signal),
-        "scenario": signal.get("scenario"),
+        "scenario": signal_scenario(signal),
         "base_risk": signal.get("baseRisk") or signal.get("base_risk"),
         "lineage_id": signal.get("lineageId") or signal.get("lineage_id"),
         "entities": signal.get("entities", []),
