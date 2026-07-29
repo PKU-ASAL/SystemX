@@ -124,12 +124,12 @@ func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
 	}
 }
 
-func TestAgentTestsUseProductContentSource(t *testing.T) {
+func TestAgentTestsApplyOnlyAdditionalTestContent(t *testing.T) {
 	root := repositoryRoot(t)
 	for path, want := range map[string]string{
-		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh":  `vagrant upload "$REPO/deployments/agent/content"`,
-		"test/suites/performance/endpoint/run.sh":                    `SYSARMOR_BENCH_CONTENT_DIR:-deployments/agent/content`,
-		"test/suites/performance/endpoint/lifecycle.sh":              `SYSARMOR_BENCH_CONTENT_DIR:-deployments/agent/content`,
+		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh": `vagrant upload "$REPO/test/data/content"`,
+		"test/suites/performance/endpoint/run.sh":                   `SYSARMOR_BENCH_CONTENT_DIR:-test/data/content`,
+		"test/suites/performance/endpoint/lifecycle.sh":             `SYSARMOR_BENCH_CONTENT_DIR:-test/data/content`,
 	} {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil {
@@ -138,6 +138,13 @@ func TestAgentTestsUseProductContentSource(t *testing.T) {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("%s missing product content source %q", path, want)
 		}
+	}
+	e2e, err := os.ReadFile(filepath.Join(root, "test", "suites", "product", "endpoint", "e2e-real-tetragon-owned-vm.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(e2e), "ioc-c2-port-feed.json") {
+		t.Error("endpoint E2E still applies the removed combined C2 port feed")
 	}
 }
 

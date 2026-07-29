@@ -14,10 +14,9 @@ class EndpointE2EContractTest(unittest.TestCase):
             self.script,
         )
 
-    def test_product_content_is_uploaded_from_deployment_source(self):
-        self.assertIn(
-            'vagrant upload "$REPO/deployments/agent/content"', self.script
-        )
+    def test_only_additional_test_content_is_applied(self):
+        self.assertIn('vagrant upload "$REPO/test/data/content"', self.script)
+        self.assertNotIn("ioc-c2-port-feed.json", self.script)
 
     def test_standalone_config_uses_labels_without_cloud_identity(self):
         self.assertIn("  label.scenario: $SCENARIO", self.script)

@@ -72,11 +72,11 @@ private_dir="$(cat "$WORK/install-capture")"
 echo "[unified-agent-installation] development adapter ok"
 
 for benchmark in "$REPO/test/suites/performance/endpoint/run.sh" "$REPO/test/suites/performance/endpoint/lifecycle.sh"; do
-  grep -Fq 'SYSARMOR_BENCH_CONTENT_DIR:-deployments/agent/content' "$benchmark" || \
-    fail "$(basename "$benchmark") does not use the product content source by default"
+  grep -Fq 'SYSARMOR_BENCH_CONTENT_DIR:-test/data/content' "$benchmark" || \
+    fail "$(basename "$benchmark") does not keep product defaults separate from benchmark content"
 done
 
-echo "[unified-agent-installation] benchmark content source ok"
+echo "[unified-agent-installation] benchmark content boundary ok"
 
 if jq -e '.detection.rule_overrides[]? | select(.rule_id == "credential_file_read" and .enabled == false)' \
   "$REPO/deployments/agent/policy.json" >/dev/null; then

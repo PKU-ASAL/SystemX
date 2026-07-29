@@ -43,7 +43,7 @@ vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a
 vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/dist/bin/sysarmor-content-sign" /tmp/sysarmor-content-sign.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
-vagrant upload "$REPO/deployments/agent/content" /tmp/sysarmor-content.upload node-a >/dev/null
+vagrant upload "$REPO/test/data/content" /tmp/sysarmor-content.upload node-a >/dev/null
 vagrant upload "$REPO/test/data/policies/collection-balanced.json" /tmp/sysarmor-collection-balanced.json node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
@@ -176,12 +176,9 @@ wait_socket "$AGENT_SOCK"
 
 echo "[e2e-agent-real-tetragon-owned-vm] applying EDR-balanced content and collection policy via local control"
 for content_name in \
-  context-credential-path-prefixes.json \
-  context-payload-path-prefixes.json \
   context-persistence-path-prefixes.json \
   context-secret-volume-prefixes.json \
-  ioc-c2-ip-feed.json \
-  ioc-c2-port-feed.json; do
+  ioc-c2-ip-feed.json; do
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json content apply --file '/tmp/sysarmor-content.upload/$content_name' --allow-unsigned --agent-id vm-owned-tetragon --tenant-id default" \
     > "$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json" \
     2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.content.$content_name.json.err"

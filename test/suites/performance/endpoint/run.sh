@@ -22,7 +22,7 @@ SCENARIO="${SYSARMOR_BENCH_SCENARIO:-}"
 VARIANT="${SYSARMOR_BENCH_VARIANT:-}"
 MATCHER_STRATEGY="${SYSARMOR_BENCH_MATCHER_STRATEGY:-${SYSARMOR_TEST_MATCHER_STRATEGY:-}}"
 POLICIES_RAW="${SYSARMOR_BENCH_POLICIES:-${POLICIES:-test/data/policies/collection-minimal.json test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}}"
-CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-deployments/agent/content}"
+CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-test/data/content}"
 DETECTION_POLICY="${SYSARMOR_BENCH_DETECTION_POLICY:-test/data/policies/detection-cep-endpoint.json}"
 APPLY_DETECTION="${SYSARMOR_BENCH_APPLY_DETECTION:-1}"
 case "$BENCH_PROFILE" in
