@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           go test ./...
-          make test-distribution SOURCE=local
+          sudo make test-distribution SOURCE=local
           bash test/suites/functional/endpoint/container-entrypoint.sh
 
       - name: Build and sign release assets

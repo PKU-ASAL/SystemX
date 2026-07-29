@@ -82,7 +82,7 @@ if jq -e '.detection.rule_overrides[]? | select(.rule_id == "credential_file_rea
   "$REPO/deployments/agent/policy.json" >/dev/null; then
   fail "default policy disables credential_file_read"
 fi
-if rg -q 'sudo sysarmorctl.*agent health' "$REPO/test/shared/recorder/recorder-vm.sh"; then
+if grep -Eq 'sudo sysarmorctl.*agent health' "$REPO/test/shared/recorder/recorder-vm.sh"; then
   fail "performance recorder creates sudo credential-read noise"
 fi
 
