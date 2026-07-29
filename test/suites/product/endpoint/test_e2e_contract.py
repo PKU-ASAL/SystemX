@@ -32,6 +32,11 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn('\'"policyId":"standalone-default"\'', self.script)
         self.assertNotIn("default-edr-policy", self.script)
 
+    def test_single_node_environment_starts_c2_fixture(self):
+        self.assertIn("ip address replace 10.66.0.99/32 dev lo", self.script)
+        self.assertIn("systemd-run --unit sysarmor-test-c2-http", self.script)
+        self.assertIn("systemctl stop sysarmor-test-c2-http", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

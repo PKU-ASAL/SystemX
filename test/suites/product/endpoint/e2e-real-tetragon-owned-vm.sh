@@ -24,7 +24,7 @@ mkdir -p "$RESULTS"
 cleanup() {
   (
     cd "$ENVDIR"
-    vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo pkill -x tetragon 2>/dev/null || true; sudo pkill -x tetra 2>/dev/null || true" >/dev/null 2>&1 || true
+    vagrant ssh node-a -c "sudo systemctl stop sysarmor-test-c2-http 2>/dev/null || true; sudo systemctl reset-failed sysarmor-test-c2-http 2>/dev/null || true; sudo ip address del 10.66.0.99/32 dev lo 2>/dev/null || true; sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo pkill -x tetragon 2>/dev/null || true; sudo pkill -x tetra 2>/dev/null || true" >/dev/null 2>&1 || true
   )
 }
 trap cleanup EXIT
@@ -160,6 +160,10 @@ resolve_agent_identity() {
   fi
 }
 
+start_c2_fixture() {
+  vagrant ssh node-a -c "sudo ip address replace 10.66.0.99/32 dev lo; sudo systemctl stop sysarmor-test-c2-http 2>/dev/null || true; sudo systemctl reset-failed sysarmor-test-c2-http 2>/dev/null || true; sudo systemd-run --unit sysarmor-test-c2-http --property=Restart=no /usr/bin/python3 -m http.server 8080 --bind 10.66.0.99 --directory /vagrant/test/environments/container/images/attacker/payloads >/dev/null; deadline=\$((SECONDS + 30)); until curl -fsS http://10.66.0.99:8080/helper >/dev/null; do if (( SECONDS >= deadline )); then sudo systemctl status sysarmor-test-c2-http --no-pager -l; exit 1; fi; sleep 1; done" >/dev/null
+}
+
 wait_absent() {
   local name="$1"
   local pattern="$2"
@@ -231,6 +235,7 @@ wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESUL
 wait_contains "agent-owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 
+start_c2_fixture
 echo "[e2e-agent-real-tetragon-owned-vm] running apt-staged-drop attack"
 vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.health-before-attack.json.err"
