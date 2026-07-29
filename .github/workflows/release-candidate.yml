@@ -72,6 +72,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.source_sha }}
+
       - name: Download release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -86,9 +91,10 @@ jobs:
           ASSET_DIR: ${{ github.workspace }}/dist/github-release
         run: |
           set -euo pipefail
+          deployments/packages/render-github-release-notes.sh "$VERSION" "$GITHUB_REPOSITORY" rc >"$RUNNER_TEMP/release-notes.md"
           gh release create "$VERSION" "$ASSET_DIR"/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --title "SysArmor $VERSION" \
-            --generate-notes \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --prerelease

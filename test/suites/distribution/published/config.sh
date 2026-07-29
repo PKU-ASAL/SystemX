@@ -55,3 +55,15 @@ resolve_download_url() {
   echo "  代理: $proxied_url" >&2
   return 1
 }
+
+resolve_tetragon_url() {
+  local bundle_env="$TEST_ROOT/../deployments/sensors/tetragon/bundle.env"
+  local TETRAGON_URL=""
+  [[ -f "$bundle_env" ]] || {
+    echo "[release][ERROR] 缺少 Tetragon bundle 配置: $bundle_env" >&2
+    return 1
+  }
+  # shellcheck source=/dev/null
+  source "$bundle_env"
+  resolve_download_url "$TETRAGON_URL"
+}

@@ -65,7 +65,8 @@ make web-build
 ### GitHub 发布
 
 发布使用短生命周期 `release/vX.Y.Z` 分支。先将功能分支通过 PR 合入 `dev`，再从冻结的
-`dev` 创建 release 分支；不要直接提交到 `dev` 或 `main`。
+`dev` 创建 release 分支；不要直接提交到 `dev` 或 `main`。首次引入或修改发布入口时，
+对应 workflow 必须先存在于默认分支，否则 GitHub 不提供 `workflow_dispatch` 入口。
 
 在仓库根目录发布 RC：
 
@@ -75,8 +76,9 @@ make release-rc VERSION=1.0.0 RC=1
 
 该命令从 `release/v1.0.0` 触发 `.github/workflows/release-candidate.yml`，创建
 `v1.0.0-rc.1` Pre-release。RC 使用 runner 临时生成的 RSA manifest key 和 Ed25519
-content key。也可以从 GitHub Actions 页面选择 `Release candidate`，在对应 release
-分支输入相同的 RC 序号。
+content key。工作流从同一提交生成安装说明、容器示例、provenance 验证命令和变更链接，
+并通过 `--notes-file` 创建 Release。也可以从 GitHub Actions 页面选择
+`Release candidate`，在对应 release 分支输入相同的 RC 序号。
 
 验收通过后，将 release 分支通过 PR 合入 `main`，再发布正式版：
 
@@ -86,7 +88,8 @@ make release-stable VERSION=1.0.0 RC=1
 
 该命令从 `main` 触发 `.github/workflows/release-stable.yml`，自动传递
 `accepted_rc_tag=v1.0.0-rc.1`。也可以从 GitHub Actions 页面手工填写相同参数。工作流
-仅在 `main` 与 RC tag 的 Git tree 完全一致时继续。
+仅在 `main` 与 RC tag 的 Git tree 完全一致时继续，并使用同一 Release Notes 渲染器生成
+正式版本说明。GitHub Releases 是发行变更记录的事实来源，不另行维护重复的 changelog。
 
 两个 Make 命令只负责触发 Workflow，不创建或合并分支，也不等待发布完成。运行前需要
 安装 GitHub CLI 并执行 `gh auth login`。

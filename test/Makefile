@@ -211,6 +211,7 @@ distribution-package:
 	bash suites/distribution/package/transactional-agent-installation.sh
 	bash suites/distribution/package/standalone-release-package.sh
 	bash suites/distribution/package/standalone-github-assets.sh
+	bash suites/distribution/package/release-notes.sh
 	bash suites/distribution/package/release-workflow-contract.sh
 	bash suites/distribution/package/release-container-e2e-contract.sh
 

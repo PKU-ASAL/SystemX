@@ -50,10 +50,11 @@ sudo sysarmorctl event watch --include-recent
 sudo sysarmorctl signal watch --include-recent
 ```
 
-You can also select a development pre-release on GitHub Releases and run the exact install command shown
-on that release. Public pre-releases install in standalone mode by default and expose a `linux-container`
-profile for image builds. See [Deployment](docs/operations/deployment.md)
-for verification, platform limits, and offline distribution constraints.
+You can also select a release on GitHub Releases and run the exact install command shown on that release.
+Release candidates are marked as pre-releases and become stable releases after acceptance. Public packages
+install in standalone mode by default and expose a `linux-container` profile for image builds. See
+[Deployment](docs/operations/deployment.md) for verification, platform limits, and offline distribution
+constraints.
 
 See [Quickstart](docs/quickstart.md) for prerequisites, verification, and next steps.
 
