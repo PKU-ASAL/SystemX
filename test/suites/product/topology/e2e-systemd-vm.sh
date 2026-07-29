@@ -25,6 +25,8 @@ echo "[e2e-agent-systemd-vm] starting VM topology"
 bash "$ROOT/shared/harness/start-vm.sh" "$VM_ENV" >/dev/null
 
 cd "$ENVDIR"
+MANAGER_JWT="$("$REPO/tools/auth/issue-manager-jwt.sh" "$PKI_DIR/manager-jwt-private.pem" sysarmor-test sysarmor-manager)"
+MANAGER_CTL="SYSARMOR_MANAGER_JWT='$MANAGER_JWT' /tmp/sysarmorctl"
 
 echo "[e2e-agent-systemd-vm] publishing agent artifact through manager"
 TMP="$(mktemp -d)"
@@ -53,20 +55,20 @@ fi
   --signing-key "$SIGNING_KEY" >/dev/null
 vagrant upload "$TMP/sysarmor-agent-linux-amd64.tar.gz" /tmp/sysarmor-agent-linux-amd64.tar.gz mgr >/dev/null
 
-vagrant ssh mgr -c "curl -sf -X POST 'http://127.0.0.1:9443/api/v1/reset'" >/dev/null
+vagrant ssh mgr -c "curl -sf -H 'Authorization: Bearer $MANAGER_JWT' -X POST 'http://127.0.0.1:9443/api/v1/reset'" >/dev/null
 
 ARTIFACT_JSON="$RESULTS/e2e-agent-systemd-vm.artifact.json"
-vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url http://127.0.0.1:9443 --json manager artifacts upload --file /tmp/sysarmor-agent-linux-amd64.tar.gz --name sysarmor-agent --kind agent --version topology-test --os linux --arch amd64 --status active" >"$ARTIFACT_JSON"
+vagrant ssh mgr -c "$MANAGER_CTL --manager-url http://127.0.0.1:9443 --json manager artifacts upload --file /tmp/sysarmor-agent-linux-amd64.tar.gz --name sysarmor-agent --kind agent --version topology-test --os linux --arch amd64 --status active" >"$ARTIFACT_JSON"
 ARTIFACT_ID="$(python3 - "$ARTIFACT_JSON" <<'PY'
 import json, sys
 print(json.load(open(sys.argv[1]))["artifact"]["artifact_id"])
 PY
 )"
 CHANNEL_JSON="$RESULTS/e2e-agent-systemd-vm.channel.json"
-vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url http://127.0.0.1:9443 --json manager channels upsert --channel topology-test --artifact-id $ARTIFACT_ID" >"$CHANNEL_JSON"
+vagrant ssh mgr -c "$MANAGER_CTL --manager-url http://127.0.0.1:9443 --json manager channels upsert --channel topology-test --artifact-id $ARTIFACT_ID" >"$CHANNEL_JSON"
 
 ENROLLMENT_JSON="$RESULTS/e2e-agent-systemd-vm.enrollment.json"
-vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url http://10.66.0.10:9443 --json manager enrollments create --agent-id $AGENT_ID --host-id vm-node-a --gateway-addr 10.66.0.10:9444 --gateway-sni sysarmor-gateway.local --channel topology-test --ttl 1h --label suite=$CASE_LABEL --label topology=vm" >"$ENROLLMENT_JSON"
+vagrant ssh mgr -c "$MANAGER_CTL --manager-url http://10.66.0.10:9443 --json manager enrollments create --agent-id $AGENT_ID --host-id vm-node-a --gateway-addr 10.66.0.10:9444 --gateway-sni sysarmor-gateway.local --channel topology-test --ttl 1h --label suite=$CASE_LABEL --label topology=vm" >"$ENROLLMENT_JSON"
 INSTALL_URL="$(python3 - "$ENROLLMENT_JSON" <<'PY'
 import json, sys
 print(json.load(open(sys.argv[1]))["install_url"])
@@ -106,21 +108,21 @@ wait_contains() {
 }
 
 wait_contains "agent-health" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 wait_contains "agent-health artifact agent" '"backend":"tetragon"' "$RESULTS/e2e-agent-systemd-vm.health.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 wait_contains "agent-session" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.sessions.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager sessions list --agent-id $AGENT_ID --tenant-id default"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager sessions list --agent-id $AGENT_ID --tenant-id default"
 wait_contains "artifact list" "\"artifact_id\":\"$ARTIFACT_ID\"" "$RESULTS/e2e-agent-systemd-vm.artifacts.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager artifacts list --kind agent --status active"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager artifacts list --kind agent --status active"
 wait_contains "channel list" '"channel":"topology-test"' "$RESULTS/e2e-agent-systemd-vm.channels.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager channels list --tenant-id default"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager channels list --tenant-id default"
 wait_contains "enrollment list" "\"artifact_id\":\"$ARTIFACT_ID\"" "$RESULTS/e2e-agent-systemd-vm.enrollments.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager enrollments list --tenant-id default --status active"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager enrollments list --tenant-id default --status active"
 wait_contains "manager events" "\"agentId\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.events.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list --label suite=$CASE_LABEL --limit 50"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager events list --label suite=$CASE_LABEL --limit 50"
 wait_contains "agent-session data plane" '"data_transport":"grpc_stream"' "$RESULTS/e2e-agent-systemd-vm.sessions.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager sessions list --agent-id $AGENT_ID --tenant-id default"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager sessions list --agent-id $AGENT_ID --tenant-id default"
 
 read_agent_pid() {
   vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent 2>/dev/null | awk '/^[0-9]+$/ { print \"PID=\" \$1; exit }'" 2>/dev/null \
@@ -171,7 +173,7 @@ until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE"
 done
 
 wait_contains "agent-health after systemd restart" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \
-  vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
 
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-systemd-vm.systemd.txt" 2>&1 || true
 vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 120" > "$RESULTS/e2e-agent-systemd-vm.journal.txt" 2>&1 || true
