@@ -30,7 +30,7 @@ for image in ubuntu2204 ubuntu2404 debian12; do
   grep -Fq 'CMD ["node", "/opt/sysarmor-release-test/web-app/server.js"]' "$dockerfile"
 done
 
-if rg -n "require\\([\"']node:" "$RELEASE/fixtures" >/dev/null; then
+if grep -R -n -E "require\\([\"']node:" "$RELEASE/fixtures" >/dev/null; then
   echo "release fixtures must support Ubuntu 22.04 Node.js 12" >&2
   exit 1
 fi
@@ -71,7 +71,7 @@ grep -Fq 'scenario_terminal' "$RELEASE/scenarios.sh"
 grep -Fq "'file.write process.exec network.connect'" "$RELEASE/scenarios.sh"
 grep -Eq 'payload-lifecycle\).*8443' "$RELEASE/scenarios.sh"
 
-if rg -n 'RESTART_TEST|verify_restart_recovery|stopped-nonzero' "$RELEASE" >/dev/null; then
+if grep -R -n -E 'RESTART_TEST|verify_restart_recovery|stopped-nonzero' "$RELEASE" >/dev/null; then
   echo "release tests must not contain restart test logic" >&2
   exit 1
 fi
