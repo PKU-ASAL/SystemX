@@ -41,6 +41,10 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn('\'"name":"suspicious_exec_connect"\'', self.script)
         self.assertNotIn('\'"name":"payload_lifecycle"\'', self.script)
 
+    def test_event_labels_are_checked_structurally(self):
+        self.assertIn("select(.event.labels.scenario == $scenario)", self.script)
+        self.assertNotIn('grep -Fq "\\\"labels\\\":{\\\"scenario\\\"', self.script)
+
 
 if __name__ == "__main__":
     unittest.main()
