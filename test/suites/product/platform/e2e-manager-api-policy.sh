@@ -6,7 +6,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../../shared/harness/li
 sa_init_repo_paths
 TMP="$(sa_make_tmp sysarmor-policy-publish)"
 sa_pick_ports 53000 2000
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 AGENT_ID="policy-publish-agent"
 SA_TEST_NAME="e2e-policy-publish"
 SA_WAIT_LOGS=("$TMP/manager.log")
@@ -38,7 +37,7 @@ cat > "$TMP/policy.json" <<'JSON'
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/policies?actor=e2e&reason=draft" \
+sa_manager_curl -sf -X POST "$MGR_URL/api/v1/policies?actor=e2e&reason=draft" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/policy.json" > "$RESULTS/e2e-policy-publish.draft.json"
 
@@ -62,7 +61,7 @@ cat > "$TMP/assignment.json" <<JSON
 JSON
 
 status="$(
-  curl -sS -o "$RESULTS/e2e-policy-publish.assignment-before.json" \
+  sa_manager_curl -sS -o "$RESULTS/e2e-policy-publish.assignment-before.json" \
     -w '%{http_code}' \
     -X POST "$MGR_URL/api/v1/policy-assignments" \
     -H 'Content-Type: application/json' \
@@ -89,7 +88,7 @@ for want in '"policy_id":"draft-policy"' '"published":true'; do
   fi
 done
 
-curl -sf -X POST "$MGR_URL/api/v1/policy-assignments" \
+sa_manager_curl -sf -X POST "$MGR_URL/api/v1/policy-assignments" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/assignment.json" > "$RESULTS/e2e-policy-publish.assignment-after.json"
 
@@ -105,9 +104,16 @@ fi
   --tenant-id default \
   --policy-id draft-policy > "$RESULTS/e2e-policy-publish.audit.json"
 
-for want in '"action":"policy.upsert"' '"actor":"e2e"' '"action":"policy.publish"' '"actor":"reviewer"' '"action":"policy.assign"' '"actor":"operator"'; do
+for want in '"action":"policy.upsert"' '"action":"policy.publish"' '"action":"policy.assign"' '"actor":"test-admin"'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-policy-publish.audit.json"; then
     echo "[e2e-policy-publish][ERROR] audit missing $want" >&2
+    cat "$RESULTS/e2e-policy-publish.audit.json" >&2
+    exit 1
+  fi
+done
+for spoofed_actor in e2e reviewer operator; do
+  if grep -Fq "\"actor\":\"$spoofed_actor\"" "$RESULTS/e2e-policy-publish.audit.json"; then
+    echo "[e2e-policy-publish][ERROR] audit trusted spoofed actor: $spoofed_actor" >&2
     cat "$RESULTS/e2e-policy-publish.audit.json" >&2
     exit 1
   fi

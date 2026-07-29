@@ -6,7 +6,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../../shared/harness/li
 sa_init_repo_paths
 TMP="$(sa_make_tmp sysarmor-response-approval)"
 sa_pick_ports 50000 2000
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 AGENT_ID="response-approval-agent"
 SA_TEST_NAME="e2e-response-approval"
 SA_WAIT_LOGS=("$TMP/manager.log")
@@ -42,7 +41,7 @@ cat > "$TMP/response.json" <<JSON
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/responses" \
+sa_manager_curl -sf -X POST "$MGR_URL/api/v1/responses" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/response.json" > "$RESULTS/e2e-response-approval.create.json"
 
@@ -68,13 +67,18 @@ fi
   --actor analyst \
   --reason "approved for evidence collection" > "$RESULTS/e2e-response-approval.approve.json"
 
-for want in '"response_id":"resp-approval-collect"' '"status":"pending"' '"approval_status":"approved"' '"approved_by":"analyst"'; do
+for want in '"response_id":"resp-approval-collect"' '"status":"pending"' '"approval_status":"approved"' '"approved_by":"test-admin"'; do
   if ! grep -Fq "$want" "$RESULTS/e2e-response-approval.approve.json"; then
     echo "[e2e-response-approval][ERROR] approval missing $want" >&2
     cat "$RESULTS/e2e-response-approval.approve.json" >&2
     exit 1
   fi
 done
+if grep -Fq '"approved_by":"analyst"' "$RESULTS/e2e-response-approval.approve.json"; then
+  echo "[e2e-response-approval][ERROR] approval trusted spoofed actor" >&2
+  cat "$RESULTS/e2e-response-approval.approve.json" >&2
+  exit 1
+fi
 
 "$BIN/sysarmorctl" --manager-url "$MGR_URL" --json manager responses list --tenant-id default --agent-id "$AGENT_ID" --pending > "$RESULTS/e2e-response-approval.pending-after.json"
 if ! grep -Fq '"response_id":"resp-approval-collect"' "$RESULTS/e2e-response-approval.pending-after.json"; then

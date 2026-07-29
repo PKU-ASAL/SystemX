@@ -134,12 +134,25 @@ sa_start_memory_gateway() {
 
 sa_start_memory_manager() {
   local extra_args=("$@")
+  local jwt_dir="$TMP/manager-jwt"
+  local jwt_issuer="sysarmor-test"
+  local jwt_audience="sysarmor-manager"
+  bash "$REPO_ROOT/tools/pki/gen-manager-jwt.sh" "$jwt_dir" >/dev/null
+  SYSARMOR_MANAGER_JWT="$(bash "$REPO_ROOT/tools/auth/issue-manager-jwt.sh" "$jwt_dir/manager-jwt-private.pem" "$jwt_issuer" "$jwt_audience")"
+  export SYSARMOR_MANAGER_JWT
   "$BIN/sysarmor-manager" \
     --listen "127.0.0.1:$MANAGER_PORT" \
     --store-backend memory \
+    --jwt-public-key "$jwt_dir/manager-jwt-public.pem" \
+    --jwt-issuer "$jwt_issuer" \
+    --jwt-audience "$jwt_audience" \
     "${extra_args[@]}" \
     >"$TMP/manager.log" 2>&1 &
   MGR_PID=$!
+}
+
+sa_manager_curl() {
+  command curl -H "Authorization: Bearer ${SYSARMOR_MANAGER_JWT:?manager JWT not initialized}" "$@"
 }
 
 sa_start_memory_agent_stack() {

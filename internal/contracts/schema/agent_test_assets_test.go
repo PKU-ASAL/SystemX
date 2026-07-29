@@ -123,6 +123,28 @@ func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
 	}
 }
 
+func TestPlatformHarnessConfiguresManagerJWT(t *testing.T) {
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "test", "shared", "harness", "lib", "common.sh")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(raw)
+	for _, want := range []string{
+		"tools/pki/gen-manager-jwt.sh",
+		"tools/auth/issue-manager-jwt.sh",
+		"--jwt-public-key",
+		"export SYSARMOR_MANAGER_JWT",
+		"sa_manager_curl()",
+		"Authorization: Bearer",
+	} {
+		if !strings.Contains(document, want) {
+			t.Errorf("platform harness missing Manager JWT contract %q", want)
+		}
+	}
+}
+
 func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
 	root := repositoryRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "test", "environments", "container", "compose.yaml"))

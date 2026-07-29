@@ -6,7 +6,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../../shared/harness/li
 sa_init_repo_paths
 TMP="$(sa_make_tmp sysarmor-store-status)"
 sa_pick_ports 58000 2000
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 SA_TEST_NAME="e2e-store-status"
 SA_WAIT_LOGS=("$TMP/manager.log")
 

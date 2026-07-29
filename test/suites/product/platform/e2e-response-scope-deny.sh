@@ -6,7 +6,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../../shared/harness/li
 sa_init_repo_paths
 TMP="$(sa_make_tmp sysarmor-response-scope-deny)"
 sa_pick_ports 46000 2000
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 AGENT_ID="response-scope-agent"
 SA_TEST_NAME="e2e-response-scope-deny"
 SA_WAIT_LOGS=("$TMP/manager.log")
@@ -43,8 +42,7 @@ cat > "$TMP/agent-health.json" <<JSON
 }
 JSON
 
-curl -sf -X POST "$MGR_URL/api/v1/agent-health" \
-  -H "X-SysArmor-Agent-Token: $TOKEN" \
+sa_manager_curl -sf -X POST "$MGR_URL/api/v1/agent-health" \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMP/agent-health.json" > "$TMP/agent-health.result.json"
 
@@ -63,7 +61,7 @@ cat > "$TMP/scope-deny-command.json" <<JSON
 JSON
 
 status="$(
-  curl -sS -o "$RESULTS/e2e-response-scope-deny.create.json" \
+  sa_manager_curl -sS -o "$RESULTS/e2e-response-scope-deny.create.json" \
     -w '%{http_code}' \
     -X POST "$MGR_URL/api/v1/responses" \
     -H 'Content-Type: application/json' \
