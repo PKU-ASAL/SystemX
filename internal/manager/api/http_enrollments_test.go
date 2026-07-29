@@ -275,7 +275,9 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 		`label.scenario: "namespace-self-container"`,
 		`enrollment_config_source="$tmp/configs/standalone-container.yaml"`,
 		"sha256sum -c",
-		`sysarmor-agent" run --config`,
+		`"/opt/sysarmor/agent/bin/sysarmor-agent" run --config "/etc/sysarmor/agent/agent.yaml"`,
+		`>"/opt/sysarmor/agent/runtime/agent.log"`,
+		`> "/opt/sysarmor/agent/runtime/agent.pid"`,
 		"/usr/local/bin/sysarmorctl --socket /run/sysarmor/agent/control.sock",
 	} {
 		if !strings.Contains(body, want) {
@@ -287,6 +289,16 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 	}
 	if strings.Contains(body, "python3") {
 		t.Fatalf("container install script should not require python3:\n%s", body)
+	}
+	for _, unsupported := range []string{
+		"SYSARMOR_AGENT_HOME",
+		"SYSARMOR_CONFIG_DST",
+		"SYSARMOR_POLICY_DST",
+		"SYSARMOR_SERVICE_DST",
+	} {
+		if strings.Contains(body, unsupported) {
+			t.Fatalf("container install script exposes unsupported path override %q:\n%s", unsupported, body)
+		}
 	}
 }
 

@@ -149,8 +149,8 @@ func renderEnrollmentLifecycle(profile, enrollmentID string) string {
 		return fmt.Sprintf(`echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"`, enrollmentID)
 	}
 	return fmt.Sprintf(`echo "[sysarmor-enroll] installed sysarmor-agent enrollment=%s"
-"$AGENT_HOME/bin/sysarmor-agent" run --config "$CONFIG_DST" >"$AGENT_HOME/runtime/agent.log" 2>&1 &
-echo $! > "$AGENT_HOME/runtime/agent.pid"`, enrollmentID)
+"/opt/sysarmor/agent/bin/sysarmor-agent" run --config "/etc/sysarmor/agent/agent.yaml" >"/opt/sysarmor/agent/runtime/agent.log" 2>&1 &
+echo $! > "/opt/sysarmor/agent/runtime/agent.pid"`, enrollmentID)
 }
 
 func renderAgentLabelConfig(labels map[string]string) string {
