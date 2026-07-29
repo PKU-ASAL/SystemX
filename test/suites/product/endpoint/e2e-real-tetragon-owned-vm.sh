@@ -293,7 +293,7 @@ if [[ "$CAPTURE_PERF" == "1" ]]; then
     "$RESULTS/e2e-agent-real-tetragon-owned-vm.perf-summary.json"
 fi
 
-vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --after-seq '$SIGNAL_CURSOR' --snapshot --limit 2000 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --after-seq '$SIGNAL_CURSOR' --snapshot --limit 2000 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 20s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson.err"
 if ! grep -Fq '"name":"payload_dropped"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson"; then
   echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local attack signal not found: payload_dropped" >&2
@@ -310,7 +310,7 @@ if ! grep -Fq '"where":"SIGNAL_WHERE_ENDPOINT"' "$RESULTS/e2e-agent-real-tetrago
   cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" >&2 2>/dev/null || true
   exit 1
 fi
-vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --after-seq '$EVENT_CURSOR' --snapshot --limit 8192 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --after-seq '$EVENT_CURSOR' --snapshot --limit 8192 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 20s" \
   > "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" 2>"$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson.err"
 if ! jq -e --arg scenario "$SCENARIO" 'select(.event.labels.scenario == $scenario)' \
   "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-events.ndjson" >/dev/null; then
