@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-functional test-detection test-performance test-distribution test-release test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-functional test-detection test-performance test-distribution test-release test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release release-rc release-stable check-github-release-inputs web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -176,6 +176,30 @@ release: build-agent-tools pki
 	  --tetragon-archive "$(TETRAGON_ARCHIVE)" \
 	  --signing-key "$(RELEASE_SIGNING_KEY)" \
 	  --public-key "$(RELEASE_PUBLIC_KEY)"
+
+check-github-release-inputs:
+	@if ! printf '%s\n' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo "VERSION must use MAJOR.MINOR.PATCH, for example VERSION=1.0.0" >&2; \
+		exit 2; \
+	fi
+	@if ! printf '%s\n' "$(RC)" | grep -Eq '^[1-9][0-9]*$$'; then \
+		echo "RC must be a positive integer, for example RC=1" >&2; \
+		exit 2; \
+	fi
+	@command -v gh >/dev/null 2>&1 || { \
+		echo "GitHub CLI is required; install gh before publishing" >&2; \
+		exit 2; \
+	}
+	@gh auth status >/dev/null 2>&1 || { \
+		echo "GitHub CLI is not authenticated; run gh auth login" >&2; \
+		exit 2; \
+	}
+
+release-rc: check-github-release-inputs
+	gh workflow run release-candidate.yml --ref "release/v$(VERSION)" -f "rc_number=$(RC)"
+
+release-stable: check-github-release-inputs
+	gh workflow run release-stable.yml --ref main -f "version=$(VERSION)" -f "accepted_rc_tag=v$(VERSION)-rc.$(RC)"
 
 up: release auth-init
 	@if [ -n "$(SERVICE)" ]; then \
