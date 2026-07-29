@@ -23,6 +23,11 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn("  path: /etc/sysarmor/agent/policy.json", self.script)
         self.assertNotIn("  transport: local", self.script)
 
+    def test_control_commands_use_runtime_identity(self):
+        self.assertIn(".agentId // .agent_id", self.script)
+        self.assertIn(".tenantId // .tenant_id", self.script)
+        self.assertNotIn("--agent-id vm-owned-tetragon", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

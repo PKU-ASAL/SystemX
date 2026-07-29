@@ -254,6 +254,33 @@ func TestEndpointPerformanceDiscoversRuntimeIdentity(t *testing.T) {
 	}
 }
 
+func TestStandaloneVMToolsDiscoverRuntimeIdentity(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, path := range []string{
+		"test/shared/diagnostics/capture-vm.sh",
+		"test/shared/diagnostics/diagnose-tetragon-vm.sh",
+		"test/shared/recorder/recorder-vm.sh",
+		"test/suites/performance/endpoint/lifecycle.sh",
+		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := string(raw)
+		for _, want := range []string{`agent health`, `.agentId // .agent_id`, `.tenantId // .tenant_id`} {
+			if !strings.Contains(document, want) {
+				t.Errorf("%s does not discover runtime identity with %q", path, want)
+			}
+		}
+		for _, legacy := range []string{"--agent-id vm-owned-tetragon", "--agent-id vm-node-a"} {
+			if strings.Contains(document, legacy) {
+				t.Errorf("%s still uses legacy local identity %q", path, legacy)
+			}
+		}
+	}
+}
+
 func TestVMRecorderUsesRuntimeStreamCursors(t *testing.T) {
 	root := repositoryRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "test", "shared", "recorder", "recorder-vm.sh"))

@@ -12,8 +12,8 @@ OUT_DIR="$RESULTS/bench-edr-lifecycle-vm/$RUN_ID"
 REC_RUN_ID="bench-edr-lifecycle-vm/$RUN_ID"
 REC_DIR="$RESULTS/recordings/$REC_RUN_ID"
 AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent/control.sock}"
-AGENT_ID="${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}"
-TENANT_ID="${SYSARMOR_BENCH_TENANT_ID:-default}"
+AGENT_ID=""
+TENANT_ID=""
 POLICY="${POLICY:-test/data/policies/collection-balanced.json}"
 CONTENT_DIR="${SYSARMOR_BENCH_CONTENT_DIR:-test/data/content}"
 WORKLOAD="${DIAG_SCENARIO:-edr-activity-heavy}"
@@ -51,6 +51,17 @@ wait_agent_socket() {
   done
 }
 
+resolve_agent_identity() {
+  local health
+  health="$(vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health")"
+  AGENT_ID="$(jq -r '.agentId // .agent_id // empty' <<<"$health")"
+  TENANT_ID="$(jq -r '.tenantId // .tenant_id // empty' <<<"$health")"
+  if [[ -z "$AGENT_ID" || -z "$TENANT_ID" ]]; then
+    echo "[bench-edr-lifecycle-vm][ERROR] Agent health did not expose runtime identity: $health" >&2
+    exit 1
+  fi
+}
+
 run_workload() {
   cd "$ENVDIR"
   if [[ -f "$ROOT/data/workloads/vm/$WORKLOAD/run.sh" ]]; then
@@ -67,6 +78,8 @@ run_workload() {
 }
 
 echo "[bench-edr-lifecycle-vm] output: $OUT_DIR"
+wait_agent_socket
+resolve_agent_identity
 SYSARMOR_RECORDER_DURATION=3600 recorder start
 mark baseline_start
 sleep "$BASELINE_SECONDS"
