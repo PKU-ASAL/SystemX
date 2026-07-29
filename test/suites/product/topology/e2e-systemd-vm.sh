@@ -48,6 +48,8 @@ fi
   --agent-bin "$REPO/dist/bin/sysarmor-agent" \
   --ctl-bin "$REPO/dist/bin/sysarmorctl" \
   --tetragon-archive "$TETRAGON_ARCHIVE" \
+  --content-signing-key "$PKI_DIR/content-signing-key.pem" \
+  --content-key-id topology-test \
   --signing-key "$SIGNING_KEY" >/dev/null
 vagrant upload "$TMP/sysarmor-agent-linux-amd64.tar.gz" /tmp/sysarmor-agent-linux-amd64.tar.gz mgr >/dev/null
 

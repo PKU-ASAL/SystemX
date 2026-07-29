@@ -20,6 +20,10 @@ if [[ ! -f "$PKI_DIR/artifact-signing-key.pem" ]]; then
   chmod 0600 "$PKI_DIR/artifact-signing-key.pem"
   chmod 0644 "$PKI_DIR/artifact-public.pem"
 fi
+if [[ ! -f "$PKI_DIR/content-signing-key.pem" ]]; then
+  openssl genpkey -algorithm ED25519 -out "$PKI_DIR/content-signing-key.pem" >/dev/null 2>&1
+  chmod 0600 "$PKI_DIR/content-signing-key.pem"
+fi
 prepare_runtime_image() {
   local name="$1"
   local binary="$2"

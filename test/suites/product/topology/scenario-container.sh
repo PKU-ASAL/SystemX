@@ -54,7 +54,9 @@ install_from_manager() {
   "$REPO/deployments/agent/package-agent.sh" \
     --version "topology-$CASE" --output "$TMP/agent.tar.gz" \
     --agent-bin "$REPO/dist/bin/sysarmor-agent" --ctl-bin "$REPO/dist/bin/sysarmorctl" \
-    --tetragon-archive "$TETRAGON_ARCHIVE" --signing-key "$PKI_DIR/artifact-signing-key.pem" >/dev/null
+    --tetragon-archive "$TETRAGON_ARCHIVE" \
+    --content-signing-key "$PKI_DIR/content-signing-key.pem" --content-key-id topology-test \
+    --signing-key "$PKI_DIR/artifact-signing-key.pem" >/dev/null
   artifact_json="$(manager_ctl artifacts upload --file "$TMP/agent.tar.gz" --name sysarmor-agent --kind agent --version "topology-$CASE" --os linux --arch amd64 --status active)"
   artifact_id="$(jq -r '.artifact.artifact_id' <<<"$artifact_json")"
   enrollment_json="$(manager_ctl enrollments create --agent-id "$AGENT_ID" --host-id node-a \

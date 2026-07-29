@@ -19,6 +19,14 @@ class StartVMContractTest(unittest.TestCase):
             '"$REPO/tools/auth/init-bootstrap-admin.sh" "$PKI_DIR"', script
         )
 
+    def test_topology_initializes_content_signing_key(self):
+        script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
+
+        self.assertIn(
+            'openssl genpkey -algorithm ED25519 -out "$PKI_DIR/content-signing-key.pem"',
+            script,
+        )
+
     def test_topology_uploads_platform_as_archive(self):
         script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
 

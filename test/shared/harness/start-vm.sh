@@ -40,6 +40,10 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
     chmod 0600 "$PKI_DIR/artifact-signing-key.pem"
     chmod 0644 "$PKI_DIR/artifact-public.pem"
   fi
+  if [[ ! -f "$PKI_DIR/content-signing-key.pem" ]]; then
+    openssl genpkey -algorithm ED25519 -out "$PKI_DIR/content-signing-key.pem" >/dev/null 2>&1
+    chmod 0600 "$PKI_DIR/content-signing-key.pem"
+  fi
 
   echo ">>> 准备 VM topology deployment 源码包"
   mkdir -p "$PLATFORM_UPLOAD_DIR" "$PLATFORM_IMAGES_DIR"
