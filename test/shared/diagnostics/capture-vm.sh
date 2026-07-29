@@ -78,9 +78,6 @@ vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; s
 vagrant ssh node-a -c "sudo bash -c '
   set -euo pipefail
   rm -rf \"$WORK\"
-  cat > \"$WORK/policy.yaml\" <<\"EOF\"
-{"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
-EOF
   cat > \"$WORK/agent.yaml\" <<EOF
 agent:
   label.scenario: $S
@@ -117,7 +114,7 @@ policy:
 health:
   interval: 500ms
 EOF
-  if ! SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then
+  if ! SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then
     cat /tmp/sysarmor-install-agent.log >&2
     exit 1
   fi

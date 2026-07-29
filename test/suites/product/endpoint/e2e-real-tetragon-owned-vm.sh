@@ -43,7 +43,7 @@ vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a
 vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
 vagrant upload "$REPO/dist/bin/sysarmor-content-sign" /tmp/sysarmor-content-sign.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
-vagrant upload "$REPO/test/data/content" /tmp/sysarmor-content.upload node-a >/dev/null
+vagrant upload "$REPO/deployments/agent/content" /tmp/sysarmor-content.upload node-a >/dev/null
 vagrant upload "$REPO/test/data/policies/collection-balanced.json" /tmp/sysarmor-collection-balanced.json node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
@@ -55,37 +55,7 @@ AGENT_SOCK="/run/sysarmor/agent/control.sock"
 
 vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo systemctl disable sysarmor-agent 2>/dev/null || true; sudo systemctl reset-failed sysarmor-agent 2>/dev/null || true; sudo systemctl stop tetragon 2>/dev/null || true; sudo systemctl disable tetragon 2>/dev/null || true; sudo pkill -x sysarmor-agent 2>/dev/null || true; sudo pkill -x tetragon 2>/dev/null || true; sudo pkill -x tetra 2>/dev/null || true" >/dev/null
 
-vagrant ssh node-a -c "sudo tee /tmp/sysarmor-owned-tetragon.yaml >/dev/null <<'EOF'
-{
-  \"policy_id\": \"vm-owned-tetragon-narrow\",
-  \"version\": 2,
-  \"behaviors\": [
-    {
-      \"id\": \"process.exec\",
-      \"enabled\": true,
-      \"selectors\": {
-        \"binary\": { \"prefixes\": [\"/var/lib/app/plugins\", \"/bin/\", \"/usr/bin/\"] }
-      }
-    },
-    {
-      \"id\": \"network.connect\",
-      \"enabled\": true,
-      \"selectors\": {
-        \"socket\": { \"families\": [\"AF_INET\"], \"addrs\": [\"10.66.0.99\"], \"ports\": [\"443\", \"8080\"] }
-      }
-    },
-    {
-      \"id\": \"file.write\",
-      \"enabled\": true,
-      \"selectors\": {
-        \"file\": { \"prefixes\": [\"/var/lib/app/plugins\", \"/dev/shm\"] }
-      }
-    }
-  ],
-  \"observe_only\": true
-}
-EOF
-sudo tee /tmp/sysarmor-agent.yaml >/dev/null <<EOF
+vagrant ssh node-a -c "sudo tee /tmp/sysarmor-agent.yaml >/dev/null <<EOF
 agent:
   label.scenario: $SCENARIO
 
@@ -132,7 +102,7 @@ sudo systemctl reset-failed sysarmor-agent 2>/dev/null || true
 sudo rm -rf /var/lib/sysarmor/agent/telemetry-owned-tetragon '$TETRAGON_BUNDLE_DIR' '$TETRAGON_INSTALL_DIR/tetragon'
 sudo systemctl daemon-reload" >/dev/null
 
-vagrant ssh node-a -c "if ! sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-owned-tetragon.yaml SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then sudo cat /tmp/sysarmor-install-agent.log >&2; exit 1; fi" >/dev/null
+vagrant ssh node-a -c "if ! sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then sudo cat /tmp/sysarmor-install-agent.log >&2; exit 1; fi" >/dev/null
 vagrant ssh node-a -c "sudo test -f '$TETRAGON_BUNDLE_DIR/manifest.json'" >/dev/null
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
 

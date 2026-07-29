@@ -113,12 +113,30 @@ func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
 		document := string(raw)
 		for _, want := range []string{
 			"SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload",
+			"SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json",
 			"  path: /etc/sysarmor/agent/policy.json",
 			"/tmp/sysarmor-install-agent.log",
 		} {
 			if !strings.Contains(document, want) {
 				t.Errorf("%s missing current installer contract %q", path, want)
 			}
+		}
+	}
+}
+
+func TestAgentTestsUseProductContentSource(t *testing.T) {
+	root := repositoryRoot(t)
+	for path, want := range map[string]string{
+		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh":  `vagrant upload "$REPO/deployments/agent/content"`,
+		"test/suites/performance/endpoint/run.sh":                    `SYSARMOR_BENCH_CONTENT_DIR:-deployments/agent/content`,
+		"test/suites/performance/endpoint/lifecycle.sh":              `SYSARMOR_BENCH_CONTENT_DIR:-deployments/agent/content`,
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("%s missing product content source %q", path, want)
 		}
 	}
 }
