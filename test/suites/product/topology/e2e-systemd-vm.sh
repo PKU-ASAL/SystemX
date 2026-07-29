@@ -118,7 +118,7 @@ wait_contains "artifact list" "\"artifact_id\":\"$ARTIFACT_ID\"" "$RESULTS/e2e-a
 wait_contains "channel list" '"channel":"topology-test"' "$RESULTS/e2e-agent-systemd-vm.channels.json" \
   vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager channels list --tenant-id default"
 wait_contains "enrollment list" "\"artifact_id\":\"$ARTIFACT_ID\"" "$RESULTS/e2e-agent-systemd-vm.enrollments.json" \
-  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager enrollments list --tenant-id default --status active"
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager enrollments list --tenant-id default --status issued"
 wait_contains "manager events" "\"agentId\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.events.json" \
   vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager events list --label suite=$CASE_LABEL --limit 50"
 wait_contains "agent-session data plane" '"data_transport":"grpc_stream"' "$RESULTS/e2e-agent-systemd-vm.sessions.json" \

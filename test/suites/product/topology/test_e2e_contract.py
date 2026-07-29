@@ -16,6 +16,12 @@ class TopologyE2EContractTest(unittest.TestCase):
             script,
         )
 
+    def test_vm_topology_asserts_issued_enrollment(self):
+        script = (Path(__file__).resolve().parent / "e2e-systemd-vm.sh").read_text()
+
+        self.assertIn("enrollments list --tenant-id default --status issued", script)
+        self.assertNotIn("enrollments list --tenant-id default --status active", script)
+
     def test_container_harness_initializes_content_signing_key(self):
         harness = (
             Path(__file__).resolve().parents[3] / "shared/harness/start-container.sh"
