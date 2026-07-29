@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-RELEASE="$REPO/test/release"
+RELEASE="$REPO/test/suites/distribution/published"
 
 for file in Makefile README.md config.sh doctor.sh run.sh assert.sh scenarios.sh test-assert.sh \
   attacks/web-runtime-shell.sh attacks/download-by-lolbin.sh attacks/payload-lifecycle.sh \

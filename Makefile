@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-performance test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
+.PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-functional-endpoint test-functional-platform test-functional-topology test-detection test-performance test-distribution-package test-distribution-published test-release-candidate test-release-published test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release web-install web-dev web-up web-build web-preview web-status web-stop help
 
 PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
@@ -89,6 +89,18 @@ test-doctor:
 test-unit:
 	$(MAKE) -C test test-unit
 
+test-functional-endpoint:
+	$(MAKE) -C test functional-endpoint SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+
+test-functional-platform:
+	$(MAKE) -C test functional-platform
+
+test-functional-topology:
+	$(MAKE) -C test functional-topology SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+
+test-detection:
+	$(MAKE) -C test detection-topology SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+
 test-performance:
 	$(MAKE) -C test performance-endpoint \
 		SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)" \
@@ -97,8 +109,20 @@ test-performance:
 		SYSARMOR_BENCH_SCENARIO=$(SCENARIO) \
 		SYSARMOR_BENCH_POLICIES="$(POLICIES)"
 
+test-distribution-package:
+	$(MAKE) -C test distribution-package
+
+test-distribution-published:
+	$(MAKE) -C test distribution-published
+
+test-release-candidate:
+	$(MAKE) -C test release-candidate SYSARMOR_TETRAGON_ARCHIVE="$(TETRAGON_ARCHIVE)"
+
+test-release-published:
+	$(MAKE) -C test release-published
+
 test-opensearch-lifecycle:
-	bash test/suites/product/platform/opensearch-alias-lifecycle.sh
+	bash test/suites/functional/platform/opensearch-alias-lifecycle.sh
 
 test-business-docx:
 	bash test/suites/docs/business-docx.sh
@@ -219,5 +243,13 @@ help:
 	@echo "  make test-help         show all test suite commands"
 	@echo "  make test-doctor       verify the complete test environment"
 	@echo "  make test-unit         run local Go tests"
+	@echo "  make test-functional-endpoint  run endpoint functional tests"
+	@echo "  make test-functional-platform  run platform functional tests"
+	@echo "  make test-functional-topology  run multi-VM functional tests"
+	@echo "  make test-detection    run truth-labeled detection tests"
+	@echo "  make test-distribution-package run local package contracts"
+	@echo "  make test-distribution-published URL=https://... run published package tests"
+	@echo "  make test-release-candidate    run the pre-publish release gate"
+	@echo "  make test-release-published URL=https://... run the post-publish gate"
 	@echo "  make test-business-docx validate the formal proposal DOCX build"
 	@echo "  make test-performance PROFILE=medium WORKLOAD=business-normal SCENARIO=apt-fileless-c2-local POLICIES='test/data/policies/collection-balanced.json'"

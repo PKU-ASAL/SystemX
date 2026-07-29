@@ -25,7 +25,7 @@ def load_csv(path):
 
 def main():
     if len(sys.argv) != 2:
-        raise SystemExit("usage: report.py <effectiveness-topology-dir>")
+        raise SystemExit("usage: report.py <detection-topology-dir>")
     out_dir = Path(sys.argv[1])
     rows = []
     cases_dir = out_dir / "cases"

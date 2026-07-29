@@ -6,5 +6,5 @@ REPO="$(cd "$ROOT/.." && pwd)"
 
 echo "[e2e-agent-gateway-manager-local] running in-process gateway/manager data path"
 cd "$REPO"
-go test ./test/suites/product/platform -run '^TestAgentGatewayManagerLocalDataPath$' -count=1
+go test ./test/suites/functional/platform -run '^TestAgentGatewayManagerLocalDataPath$' -count=1
 echo "[e2e-agent-gateway-manager-local] ok"

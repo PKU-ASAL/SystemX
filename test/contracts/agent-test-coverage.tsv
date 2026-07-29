@@ -5,24 +5,24 @@ test/shared/recorder/recorder-vm.sh	operations	recorder start mark stop and repo
 test/shared/vm/sync-agent.sh	lifecycle	VM install starts Agent-owned Tetragon and local control	test/shared/vm/sync-agent.sh	legacy
 test/suites/performance/endpoint/lifecycle.sh	operations	performance lifecycle starts stops and reports Agent state	test/suites/performance/endpoint/lifecycle.sh	legacy
 test/suites/performance/endpoint/run.sh	operations	endpoint benchmark preserves throughput resource and restart measurements	test/suites/performance/endpoint/run.sh	legacy
-test/suites/product/endpoint/README.md	operations	product endpoint documentation names the current startup path	test/suites/product/endpoint/README.md	legacy
-test/suites/product/endpoint/e2e-capability.sh	lifecycle	unsupported sensor capability causes explicit startup failure	test/suites/product/endpoint/capability.sh	covered
-test/suites/product/endpoint/e2e-capability-btf.sh	lifecycle	missing required BTF causes explicit startup failure	test/suites/product/endpoint/capability.sh	covered
-test/suites/product/endpoint/e2e-capability-bpffs.sh	lifecycle	missing required bpffs causes explicit startup failure	test/suites/product/endpoint/capability.sh	covered
-test/suites/product/endpoint/e2e-daemon-container.sh	data	container daemon exports normalized events and health	test/suites/product/platform/e2e-agent-gateway-manager-local.sh	covered
-test/suites/product/endpoint/e2e-daemon.sh	data	fake sensor daemon exports events signals labels and health	internal/agent/daemon/daemon_test.go	covered
-test/suites/product/endpoint/e2e-dropped-health.sh	data	dropped sensor events degrade health and emit terminal signal	internal/agent/daemon/daemon_test.go	covered
-test/suites/product/endpoint/e2e-managed-container.sh	cloud	enrolled container installs sensor and exports one session	test/suites/product/endpoint/e2e-namespace-self-container.sh	covered
-test/suites/product/endpoint/e2e-managed-recover-container.sh	cloud	enrolled container recovers sensor and resumes export	internal/sensors/linux/tetragon/backend_test.go	covered
-test/suites/product/endpoint/e2e-managed-restart-container.sh	cloud	enrolled container restarts sensor once and remains healthy	internal/sensors/linux/tetragon/backend_test.go	covered
-test/suites/product/endpoint/e2e-managed-vm.sh	cloud	enrolled VM installs sensor and exports health	test/suites/product/topology/e2e-systemd-vm.sh	covered
-test/suites/product/endpoint/e2e-managed-recover-vm.sh	cloud	enrolled VM recovers sensor and resumes health	internal/sensors/linux/tetragon/backend_test.go	covered
-test/suites/product/endpoint/e2e-namespace-self-container.sh	data	namespace self scope includes owned events and excludes neighbors	test/suites/product/endpoint/e2e-namespace-self-container.sh	legacy
-test/suites/product/endpoint/e2e-parse-health.sh	data	parse errors degrade Agent health and remain queryable	internal/agent/daemon/daemon_test.go	covered
-test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh	data	real VM Tetragon applies content policy and emits local detections	test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh	legacy
-test/suites/product/endpoint/e2e-sensor-recover.sh	lifecycle	failed sensor process recovers and resumes events	internal/sensors/linux/tetragon/backend_test.go	covered
-test/suites/product/endpoint/e2e-sensor-restart.sh	lifecycle	sensor process restarts once and health recovers	internal/sensors/linux/tetragon/backend_test.go	covered
-test/suites/product/topology/e2e-scenario-apt-container.sh	cloud	apt scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	covered
-test/suites/product/topology/e2e-scenario-benign-container.sh	cloud	benign scenario produces events without signals incidents or terminal state	test/suites/product/topology/scenario-container.sh	covered
-test/suites/product/topology/e2e-scenario-staged-container.sh	cloud	staged scenario produces events signals incident and expected terminal state	test/suites/product/topology/scenario-container.sh	covered
-test/suites/product/topology/e2e-systemd-vm.sh	lifecycle	signed package installs enrolls restarts and preserves systemd service	test/suites/product/topology/e2e-systemd-vm.sh	legacy
+test/suites/functional/endpoint/README.md	operations	product endpoint documentation names the current startup path	test/suites/functional/endpoint/README.md	legacy
+test/suites/functional/endpoint/e2e-capability.sh	lifecycle	unsupported sensor capability causes explicit startup failure	test/suites/functional/endpoint/capability.sh	covered
+test/suites/functional/endpoint/e2e-capability-btf.sh	lifecycle	missing required BTF causes explicit startup failure	test/suites/functional/endpoint/capability.sh	covered
+test/suites/functional/endpoint/e2e-capability-bpffs.sh	lifecycle	missing required bpffs causes explicit startup failure	test/suites/functional/endpoint/capability.sh	covered
+test/suites/functional/endpoint/e2e-daemon-container.sh	data	container daemon exports normalized events and health	test/suites/functional/platform/e2e-agent-gateway-manager-local.sh	covered
+test/suites/functional/endpoint/e2e-daemon.sh	data	fake sensor daemon exports events signals labels and health	internal/agent/daemon/daemon_test.go	covered
+test/suites/functional/endpoint/e2e-dropped-health.sh	data	dropped sensor events degrade health and emit terminal signal	internal/agent/daemon/daemon_test.go	covered
+test/suites/functional/endpoint/e2e-managed-container.sh	cloud	enrolled container installs sensor and exports one session	test/suites/functional/endpoint/e2e-namespace-self-container.sh	covered
+test/suites/functional/endpoint/e2e-managed-recover-container.sh	cloud	enrolled container recovers sensor and resumes export	internal/sensors/linux/tetragon/backend_test.go	covered
+test/suites/functional/endpoint/e2e-managed-restart-container.sh	cloud	enrolled container restarts sensor once and remains healthy	internal/sensors/linux/tetragon/backend_test.go	covered
+test/suites/functional/endpoint/e2e-managed-vm.sh	cloud	enrolled VM installs sensor and exports health	test/suites/functional/topology/e2e-systemd-vm.sh	covered
+test/suites/functional/endpoint/e2e-managed-recover-vm.sh	cloud	enrolled VM recovers sensor and resumes health	internal/sensors/linux/tetragon/backend_test.go	covered
+test/suites/functional/endpoint/e2e-namespace-self-container.sh	data	namespace self scope includes owned events and excludes neighbors	test/suites/functional/endpoint/e2e-namespace-self-container.sh	legacy
+test/suites/functional/endpoint/e2e-parse-health.sh	data	parse errors degrade Agent health and remain queryable	internal/agent/daemon/daemon_test.go	covered
+test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh	data	real VM Tetragon applies content policy and emits local detections	test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh	legacy
+test/suites/functional/endpoint/e2e-sensor-recover.sh	lifecycle	failed sensor process recovers and resumes events	internal/sensors/linux/tetragon/backend_test.go	covered
+test/suites/functional/endpoint/e2e-sensor-restart.sh	lifecycle	sensor process restarts once and health recovers	internal/sensors/linux/tetragon/backend_test.go	covered
+test/suites/functional/topology/e2e-scenario-apt-container.sh	cloud	apt scenario produces events signals incident and expected terminal state	test/suites/functional/topology/scenario-container.sh	covered
+test/suites/functional/topology/e2e-scenario-benign-container.sh	cloud	benign scenario produces events without signals incidents or terminal state	test/suites/functional/topology/scenario-container.sh	covered
+test/suites/functional/topology/e2e-scenario-staged-container.sh	cloud	staged scenario produces events signals incident and expected terminal state	test/suites/functional/topology/scenario-container.sh	covered
+test/suites/functional/topology/e2e-systemd-vm.sh	lifecycle	signed package installs enrolls restarts and preserves systemd service	test/suites/functional/topology/e2e-systemd-vm.sh	legacy

@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  command -v unshare >/dev/null 2>&1 || {
+    echo "[transactional-agent-installation][ERROR] unshare is required for the isolated root test" >&2
+    exit 1
+  }
+  exec unshare --user --map-root-user -- bash "$0" "$@"
+fi
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

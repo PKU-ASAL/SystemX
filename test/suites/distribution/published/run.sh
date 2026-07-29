@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEST_ROOT="$(cd "$HERE/.." && pwd)"
+TEST_ROOT="$(cd "$HERE/../../.." && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/config.sh"
 # shellcheck source=/dev/null

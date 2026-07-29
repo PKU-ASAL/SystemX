@@ -91,8 +91,8 @@ func TestObsoleteAgentTestAssetsAreRemoved(t *testing.T) {
 	for _, path := range []string{
 		"configs/agent.fake.yaml",
 		"test/shared/diagnostics/capture-container.sh",
-		"test/suites/product/endpoint/e2e-real-tetragon-owned-container.sh",
-		"test/suites/product/platform/e2e-gateway-local-ingest.sh",
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-container.sh",
+		"test/suites/functional/platform/e2e-gateway-local-ingest.sh",
 	} {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); !os.IsNotExist(err) {
 			t.Errorf("obsolete Agent test asset still exists: %s", path)
@@ -104,7 +104,7 @@ func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
 	root := repositoryRoot(t)
 	for _, path := range []string{
 		"test/shared/diagnostics/capture-vm.sh",
-		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh",
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh",
 	} {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil {
@@ -127,7 +127,7 @@ func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
 func TestAgentTestsApplyOnlyAdditionalTestContent(t *testing.T) {
 	root := repositoryRoot(t)
 	for path, want := range map[string]string{
-		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh": `vagrant upload "$REPO/test/data/content"`,
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh": `vagrant upload "$REPO/test/data/content"`,
 		"test/suites/performance/endpoint/run.sh":                   `SYSARMOR_BENCH_CONTENT_DIR:-test/data/content`,
 		"test/suites/performance/endpoint/lifecycle.sh":             `SYSARMOR_BENCH_CONTENT_DIR:-test/data/content`,
 	} {
@@ -139,7 +139,7 @@ func TestAgentTestsApplyOnlyAdditionalTestContent(t *testing.T) {
 			t.Errorf("%s missing product content source %q", path, want)
 		}
 	}
-	e2e, err := os.ReadFile(filepath.Join(root, "test", "suites", "product", "endpoint", "e2e-real-tetragon-owned-vm.sh"))
+	e2e, err := os.ReadFile(filepath.Join(root, "test", "suites", "functional", "endpoint", "e2e-real-tetragon-owned-vm.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
 	if strings.Contains(document, "  tetragon:\n") {
 		t.Error("container topology still defines a Tetragon sidecar")
 	}
-	runner, err := os.ReadFile(filepath.Join(root, "test", "suites", "product", "topology", "scenario-container.sh"))
+	runner, err := os.ReadFile(filepath.Join(root, "test", "suites", "functional", "topology", "scenario-container.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestStandaloneVMToolsDiscoverRuntimeIdentity(t *testing.T) {
 		"test/shared/diagnostics/diagnose-tetragon-vm.sh",
 		"test/shared/recorder/recorder-vm.sh",
 		"test/suites/performance/endpoint/lifecycle.sh",
-		"test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh",
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh",
 	} {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil {

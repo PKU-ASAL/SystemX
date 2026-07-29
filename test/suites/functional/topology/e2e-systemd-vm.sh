@@ -9,7 +9,7 @@ ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$VM_ENV}"
 AGENT_ID="vm-owned-tetragon"
-CASE_LABEL="product-topology"
+CASE_LABEL="functional-topology"
 
 mkdir -p "$RESULTS"
 
@@ -36,7 +36,7 @@ if [[ -z "$TETRAGON_ARCHIVE" && -f "$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz" ]
   TETRAGON_ARCHIVE="$REPO/.cache/tetragon-v1.7.0-amd64.tar.gz"
 fi
 if [[ -z "$TETRAGON_ARCHIVE" || ! -f "$TETRAGON_ARCHIVE" ]]; then
-  echo "[e2e-agent-systemd-vm][ERROR] SYSARMOR_TETRAGON_ARCHIVE is required for product-topology agent artifact" >&2
+  echo "[e2e-agent-systemd-vm][ERROR] SYSARMOR_TETRAGON_ARCHIVE is required for functional-topology agent artifact" >&2
   exit 1
 fi
 SIGNING_KEY="$PKI_DIR/artifact-signing-key.pem"
@@ -200,7 +200,7 @@ health_after = load("e2e-agent-systemd-vm.health-after-restart.json", {})
 enrollment = load("e2e-agent-systemd-vm.enrollment.json", {}).get("enrollment", {})
 
 summary = {
-    "suite": "product-topology",
+    "suite": "functional-topology",
     "topology": "vm",
     "agent_id": agent_id,
     "artifact_id": artifact_id,

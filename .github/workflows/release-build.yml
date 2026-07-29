@@ -70,11 +70,8 @@ jobs:
         run: |
           set -euo pipefail
           go test ./...
-          bash test/suites/product/endpoint/standalone-release-package.sh
-          bash test/suites/product/endpoint/container-entrypoint.sh
-          bash test/suites/product/endpoint/standalone-github-assets.sh
-          bash test/suites/product/endpoint/release-workflow-contract.sh
-          bash test/suites/product/endpoint/release-container-e2e-contract.sh
+          make -C test distribution-package
+          bash test/suites/functional/endpoint/container-entrypoint.sh
 
       - name: Build and sign release assets
         id: build

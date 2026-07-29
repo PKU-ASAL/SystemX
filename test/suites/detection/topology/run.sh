@@ -7,7 +7,7 @@ RESULTS="$ROOT/.results"
 VM_ENV="${SYSARMOR_VM_ENV:-${ENV:-vm-topology}}"
 ENVDIR="$ROOT/environments/$VM_ENV"
 RUN_ID="${SYSARMOR_BENCH_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
-OUT_DIR="$RESULTS/effectiveness-topology/$RUN_ID"
+OUT_DIR="$RESULTS/detection-topology/$RUN_ID"
 
 POLICIES="${POLICIES-test/data/policies/collection-balanced.json test/data/policies/collection-deep.json}"
 WORKLOADS="${WORKLOADS-business-normal}"
@@ -22,7 +22,7 @@ mkdir -p "$OUT_DIR"
 cat >"$OUT_DIR/manifest.json" <<EOF
 {
   "suite": "topology",
-  "tool": "effectiveness-topology",
+  "tool": "detection-topology",
   "evaluation_scope": "$EVALUATION_SCOPE",
   "topology": "vm",
   "run_id": "$RUN_ID",
@@ -89,7 +89,7 @@ capture_manager_case() {
     policy="$(basename "$policy_out")"
     local labels
     labels="$(manager_label_args "$policy" "$workload" "$scenario" "$bench_run_id")"
-    echo "[effectiveness-topology] capturing manager telemetry policy=$policy workload=${workload:-none} scenario=${scenario:-none}"
+    echo "[detection-topology] capturing manager telemetry policy=$policy workload=${workload:-none} scenario=${scenario:-none}"
     (cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager events list $labels --limit 1000") >"$policy_out/manager.events.json"
     (cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager signals list $labels --limit 1000") >"$policy_out/manager.signals.json"
     (cd "$ENVDIR" && vagrant ssh mgr -c "/tmp/sysarmorctl --manager-url 127.0.0.1:9443 --json manager incidents list $labels --limit 1000") >"$policy_out/manager.incidents.json"
@@ -115,7 +115,7 @@ run_case() {
   local case_dir="$OUT_DIR/cases/$case_name"
   mkdir -p "$case_dir"
 
-  echo "[effectiveness-topology] variant=$variant_label matcher_strategy=${matcher_strategy:-config-default} workload=$workload_label scenario=$scenario_label"
+  echo "[detection-topology] variant=$variant_label matcher_strategy=${matcher_strategy:-config-default} workload=$workload_label scenario=$scenario_label"
   if SYSARMOR_BENCH_RUN_ID="$case_run_id" \
       POLICIES="$POLICIES" \
       SYSARMOR_BENCH_VARIANT="$variant" \
@@ -132,20 +132,20 @@ run_case() {
     printf '{"name":"%s","variant":"%s","matcher_strategy":"%s","workload":"%s","scenario":"%s","status":"failed","exit_code":%s,"bench_run_id":"%s"}\n' \
       "$case_name" "$variant" "$matcher_strategy" "$workload" "$scenario" "$rc" "$case_run_id" >"$case_dir/status.json"
     if [[ "$STOP_ON_ERROR" == "1" ]]; then
-      echo "[effectiveness-topology][ERROR] failed workload=$workload_label scenario=$scenario_label" >&2
+      echo "[detection-topology][ERROR] failed workload=$workload_label scenario=$scenario_label" >&2
       cat "$case_dir/run.err" >&2 2>/dev/null || true
       exit "$rc"
     fi
   fi
 }
 
-echo "[effectiveness-topology] output: $OUT_DIR"
-echo "[effectiveness-topology] evaluation_scope: $EVALUATION_SCOPE"
-echo "[effectiveness-topology] policies: $POLICIES"
-echo "[effectiveness-topology] workloads: $WORKLOADS"
-echo "[effectiveness-topology] scenarios: $SCENARIOS"
-echo "[effectiveness-topology] matcher_variants: ${MATCHER_VARIANTS:-default}"
-echo "[effectiveness-topology] matrix_mode: $MATRIX_MODE"
+echo "[detection-topology] output: $OUT_DIR"
+echo "[detection-topology] evaluation_scope: $EVALUATION_SCOPE"
+echo "[detection-topology] policies: $POLICIES"
+echo "[detection-topology] workloads: $WORKLOADS"
+echo "[detection-topology] scenarios: $SCENARIOS"
+echo "[detection-topology] matcher_variants: ${MATCHER_VARIANTS:-default}"
+echo "[detection-topology] matrix_mode: $MATRIX_MODE"
 
 run_mode_for_variant() {
   local variant="${1:-}"
@@ -182,7 +182,7 @@ run_mode_for_variant() {
       done
       ;;
     *)
-      echo "[effectiveness-topology][ERROR] unsupported MATRIX_MODE=$MATRIX_MODE (want workload|scenario|cross|all)" >&2
+      echo "[detection-topology][ERROR] unsupported MATRIX_MODE=$MATRIX_MODE (want workload|scenario|cross|all)" >&2
       exit 1
       ;;
   esac
@@ -193,7 +193,7 @@ if [[ -n "$MATCHER_VARIANTS" ]]; then
     case "$matcher_strategy" in
       linear|optimized) ;;
       *)
-        echo "[effectiveness-topology][ERROR] unsupported matcher variant: $matcher_strategy" >&2
+        echo "[detection-topology][ERROR] unsupported matcher variant: $matcher_strategy" >&2
         exit 1
         ;;
     esac
@@ -206,15 +206,15 @@ fi
 python3 "$HERE/report.py" "$OUT_DIR"
 python3 "$ROOT/shared/reports/effectiveness_report.py" \
   --bench-matrix-dir "$OUT_DIR" \
-  --output-dir "$RESULTS/effectiveness/$RUN_ID" \
+  --output-dir "$RESULTS/detection/$RUN_ID" \
   --topology vm \
   --scope "$EVALUATION_SCOPE" \
   --scenarios $SCENARIOS \
   --workloads $WORKLOADS
 python3 "$ROOT/shared/reports/assert_effectiveness.py" \
-  --matrix "$RESULTS/effectiveness/$RUN_ID/matrix.csv" \
-  --truth-steps "$RESULTS/effectiveness/$RUN_ID/truth_steps.csv" \
+  --matrix "$RESULTS/detection/$RUN_ID/matrix.csv" \
+  --truth-steps "$RESULTS/detection/$RUN_ID/truth_steps.csv" \
   --min-score "${SYSARMOR_EFFECTIVENESS_MIN_SCORE:-1.0}"
 
-echo "[effectiveness-topology] matrix written to $OUT_DIR/matrix.csv"
-echo "[effectiveness-topology] effectiveness written to $RESULTS/effectiveness/$RUN_ID"
+echo "[detection-topology] matrix written to $OUT_DIR/matrix.csv"
+echo "[detection-topology] detection results written to $RESULTS/detection/$RUN_ID"
