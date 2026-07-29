@@ -298,8 +298,8 @@ if ! grep -Fq '"name":"payload_dropped"' "$RESULTS/e2e-agent-real-tetragon-owned
   cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" >&2 2>/dev/null || true
   exit 1
 fi
-if ! grep -Fq '"name":"payload_lifecycle"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson"; then
-  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local multi-event attack signal not found: payload_lifecycle" >&2
+if ! grep -Fq '"name":"suspicious_exec_connect"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson"; then
+  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] local multi-event attack signal not found: suspicious_exec_connect" >&2
   cat "$RESULTS/e2e-agent-real-tetragon-owned-vm.local-signals.ndjson" >&2 2>/dev/null || true
   exit 1
 fi

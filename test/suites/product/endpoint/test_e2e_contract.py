@@ -37,6 +37,10 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn("systemd-run --unit sysarmor-test-c2-http", self.script)
         self.assertIn("systemctl stop sysarmor-test-c2-http", self.script)
 
+    def test_attack_asserts_scenario_signals(self):
+        self.assertIn('\'"name":"suspicious_exec_connect"\'', self.script)
+        self.assertNotIn('\'"name":"payload_lifecycle"\'', self.script)
+
 
 if __name__ == "__main__":
     unittest.main()
