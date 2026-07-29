@@ -78,6 +78,7 @@ vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; s
 vagrant ssh node-a -c "sudo bash -c '
   set -euo pipefail
   rm -rf \"$WORK\"
+  install -d -m 0755 \"$WORK\"
   cat > \"$WORK/agent.yaml\" <<EOF
 agent:
   label.scenario: $S
