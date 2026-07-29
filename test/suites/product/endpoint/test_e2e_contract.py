@@ -28,6 +28,10 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn(".tenantId // .tenant_id", self.script)
         self.assertNotIn("--agent-id vm-owned-tetragon", self.script)
 
+    def test_current_policy_uses_installed_policy_id(self):
+        self.assertIn('\'"policyId":"standalone-default"\'', self.script)
+        self.assertNotIn("default-edr-policy", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -252,6 +252,11 @@ func TestEndpointPerformanceDiscoversRuntimeIdentity(t *testing.T) {
 			t.Errorf("endpoint performance runner does not discover runtime identity with %q", want)
 		}
 	}
+	for _, legacy := range []string{"SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon", "SYSARMOR_BENCH_TENANT_ID:-default"} {
+		if strings.Contains(runner, legacy) {
+			t.Errorf("endpoint performance runner still defines unused identity default %q", legacy)
+		}
+	}
 }
 
 func TestStandaloneVMToolsDiscoverRuntimeIdentity(t *testing.T) {

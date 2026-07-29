@@ -224,7 +224,7 @@ wait_contains "agent-health policy" '"policyLoaded":true' "$RESULTS/e2e-agent-re
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent capability collection" 'process.exec' "$RESULTS/e2e-agent-real-tetragon-owned-vm.capability.json" \
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent capability --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
-wait_contains "agent current policy" '"policyId":"default-edr-policy"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.policy.json" \
+wait_contains "agent current policy" '"policyId":"standalone-default"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.policy.json" \
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy current --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESULTS/e2e-agent-real-tetragon-owned-vm.tracingpolicy.txt" \
   vagrant ssh node-a -c "sudo '$TETRA_PATH' tracingpolicy list"
