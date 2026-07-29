@@ -82,6 +82,11 @@ def linked_signal(signal, events_by_id, missing_refs):
     }
 
 
+def is_fully_resolved_multi_event(signal):
+    refs = signal["event_refs"]
+    return len(refs) > 1 and len(signal["events"]) == len(refs)
+
+
 def main():
     if len(sys.argv) != 6:
         raise SystemExit(
@@ -114,6 +119,9 @@ def main():
     attack_with_events = [sig for sig in linked_attack_signals if sig["events"]]
     multi_event_signals = [sig for sig in linked_signals if len(sig["event_refs"]) > 1]
     multi_event_attack_signals = [sig for sig in linked_attack_signals if len(sig["event_refs"]) > 1]
+    resolved_multi_event_attack_signals = [
+        sig for sig in linked_attack_signals if is_fully_resolved_multi_event(sig)
+    ]
     summary = {
         "topology": "vm",
         "scenario": scenario,
@@ -131,6 +139,7 @@ def main():
         "attack_signals_with_resolved_events": len(attack_with_events),
         "multi_event_signals": len(multi_event_signals),
         "multi_event_attack_signals": len(multi_event_attack_signals),
+        "multi_event_attack_signals_with_resolved_events": len(resolved_multi_event_attack_signals),
         "multi_event_attack_signal_names": dict(sorted(Counter(sig["signal_name"] for sig in multi_event_attack_signals).items())),
         "missing_event_refs": missing_refs,
         "pass": 1 if len(events) > 0 else 0,

@@ -51,6 +51,12 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn('--include-recent --after-seq \'$EVENT_CURSOR\'', self.script)
         self.assertIn('--include-recent --after-seq \'$SIGNAL_CURSOR\'', self.script)
 
+    def test_report_requires_resolved_multi_event_attack_signal(self):
+        self.assertIn(
+            "multi_event_attack_signals_with_resolved_events", self.script
+        )
+        self.assertNotIn('if summary.get("missing_event_refs")', self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

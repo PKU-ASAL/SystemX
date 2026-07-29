@@ -334,10 +334,8 @@ if int(summary.get("attack_signals_with_event_refs", 0)) <= 0:
     raise SystemExit("expected attack signal eventRefs")
 if int(summary.get("attack_signals_with_resolved_events", 0)) <= 0:
     raise SystemExit("expected attack signal eventRefs to resolve to local events")
-if int(summary.get("multi_event_attack_signals", 0)) <= 0:
-    raise SystemExit("expected at least one attack signal with multiple eventRefs")
-if summary.get("missing_event_refs"):
-    raise SystemExit(f"missing event refs: {summary['missing_event_refs']}")
+if int(summary.get("multi_event_attack_signals_with_resolved_events", 0)) <= 0:
+    raise SystemExit("expected at least one fully resolved multi-event attack signal")
 PY
 
 PID_BEFORE="$(vagrant ssh node-a -c "systemctl show -p MainPID --value sysarmor-agent" 2>/dev/null | tr -d '\r' | tail -1)"

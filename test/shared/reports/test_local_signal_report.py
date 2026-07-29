@@ -24,6 +24,11 @@ class LocalSignalReportTest(unittest.TestCase):
             "apt-staged-drop-owned-vm",
         )
 
+    def test_fully_resolved_multi_event_signal_requires_every_event(self):
+        check = getattr(REPORT, "is_fully_resolved_multi_event", lambda _: False)
+        self.assertTrue(check({"event_refs": ["a", "b"], "events": [{}, {}]}))
+        self.assertFalse(check({"event_refs": ["a", "b"], "events": [{}]}))
+
 
 if __name__ == "__main__":
     unittest.main()
