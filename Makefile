@@ -19,6 +19,10 @@ RELEASE_SIGNING_KEY ?= $(PKI_RUNTIME_DIR)/artifact-signing-key.pem
 RELEASE_PUBLIC_KEY ?= $(PKI_RUNTIME_DIR)/artifact-public.pem
 TETRAGON_ARCHIVE_CANDIDATE := $(firstword $(wildcard .cache/tetragon-v1.7.0-amd64.tar.gz .scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz))
 TETRAGON_ARCHIVE ?= $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(if $(TETRAGON_ARCHIVE_CANDIDATE),$(abspath $(TETRAGON_ARCHIVE_CANDIDATE))))
+# Preserve release inputs as data instead of recursively expanding Make syntax.
+override VERSION := $(value VERSION)
+override RC := $(value RC)
+export VERSION RC
 FUNCTIONAL_TARGET_endpoint := functional-endpoint
 FUNCTIONAL_TARGET_platform := functional-platform
 FUNCTIONAL_TARGET_topology := functional-topology
@@ -178,11 +182,11 @@ release: build-agent-tools pki
 	  --public-key "$(RELEASE_PUBLIC_KEY)"
 
 check-github-release-inputs:
-	@if ! printf '%s\n' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	@if ! printf '%s\n' "$${VERSION:-}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
 		echo "VERSION must use MAJOR.MINOR.PATCH, for example VERSION=1.0.0" >&2; \
 		exit 2; \
 	fi
-	@if ! printf '%s\n' "$(RC)" | grep -Eq '^[1-9][0-9]*$$'; then \
+	@if ! printf '%s\n' "$${RC:-}" | grep -Eq '^[1-9][0-9]*$$'; then \
 		echo "RC must be a positive integer, for example RC=1" >&2; \
 		exit 2; \
 	fi
@@ -196,10 +200,10 @@ check-github-release-inputs:
 	}
 
 release-rc: check-github-release-inputs
-	gh workflow run release-candidate.yml --ref "release/v$(VERSION)" -f "rc_number=$(RC)"
+	gh workflow run release-candidate.yml --ref "release/v$${VERSION}" -f "rc_number=$${RC}"
 
 release-stable: check-github-release-inputs
-	gh workflow run release-stable.yml --ref main -f "version=$(VERSION)" -f "accepted_rc_tag=v$(VERSION)-rc.$(RC)"
+	gh workflow run release-stable.yml --ref main -f "version=$${VERSION}" -f "accepted_rc_tag=v$${VERSION}-rc.$${RC}"
 
 up: release auth-init
 	@if [ -n "$(SERVICE)" ]; then \

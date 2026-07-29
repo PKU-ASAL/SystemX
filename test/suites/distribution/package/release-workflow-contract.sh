@@ -81,12 +81,12 @@ grep -Fq 'interval: weekly' "$dependabot"
 
 grep -Fq 'release-rc:' "$root_makefile"
 grep -Fq 'release-stable:' "$root_makefile"
-grep -Fq 'gh workflow run release-candidate.yml --ref "release/v$(VERSION)" -f "rc_number=$(RC)"' "$root_makefile"
-grep -Fq 'gh workflow run release-stable.yml --ref main -f "version=$(VERSION)" -f "accepted_rc_tag=v$(VERSION)-rc.$(RC)"' "$root_makefile"
+grep -Fq 'gh workflow run release-candidate.yml --ref "release/v$${VERSION}" -f "rc_number=$${RC}"' "$root_makefile"
+grep -Fq 'gh workflow run release-stable.yml --ref main -f "version=$${VERSION}" -f "accepted_rc_tag=v$${VERSION}-rc.$${RC}"' "$root_makefile"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/bin" "$work/empty-bin"
+mkdir -p "$work/bin" "$work/no-gh-bin"
 cat >"$work/bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -118,6 +118,20 @@ for arguments in \
 done
 test ! -s "$work/invalid.calls"
 
+for value in \
+  '1.2.3; touch injected' \
+  '1.2.3"; touch injected; echo "' \
+  '1.2.3$(touch injected)'; do
+  if GH_CALLS="$work/injection.calls" PATH="$work/bin:$PATH" \
+    make --no-print-directory -s -C "$work" -f "$root_makefile" \
+      release-rc VERSION="$value" RC=1 >/dev/null 2>&1; then
+    echo "[release-workflow-contract][ERROR] unsafe VERSION accepted: $value" >&2
+    exit 1
+  fi
+done
+test ! -e "$work/injected"
+test ! -s "$work/injection.calls"
+
 if GH_CALLS="$work/auth.calls" GH_AUTH_EXIT=1 PATH="$work/bin:$PATH" \
   make --no-print-directory -s -C "$REPO" release-rc VERSION=1.2.3 RC=1 >/dev/null 2>&1; then
   echo "[release-workflow-contract][ERROR] unauthenticated gh accepted" >&2
@@ -125,11 +139,14 @@ if GH_CALLS="$work/auth.calls" GH_AUTH_EXIT=1 PATH="$work/bin:$PATH" \
 fi
 test ! -s "$work/auth.calls"
 
-if GH_CALLS="$work/missing.calls" PATH="$work/empty-bin" \
-  /usr/bin/make --no-print-directory -s -C "$REPO" release-rc VERSION=1.2.3 RC=1 >/dev/null 2>&1; then
+ln -s "$(command -v grep)" "$work/no-gh-bin/grep"
+if GH_CALLS="$work/missing.calls" PATH="$work/no-gh-bin" \
+  /usr/bin/make --no-print-directory -s -C "$REPO" release-rc VERSION=1.2.3 RC=1 \
+    >"$work/missing.out" 2>"$work/missing.err"; then
   echo "[release-workflow-contract][ERROR] missing gh accepted" >&2
   exit 1
 fi
+grep -Fq 'GitHub CLI is required' "$work/missing.err"
 test ! -e "$work/missing.calls"
 
 echo "[release-workflow-contract] ok"
