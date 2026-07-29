@@ -6,6 +6,19 @@ from pathlib import Path
 
 
 class StartVMContractTest(unittest.TestCase):
+    def test_topology_offline_bundle_includes_ui_images(self):
+        script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
+
+        self.assertIn("nginx:alpine", script)
+        self.assertIn("node:24-alpine", script)
+
+    def test_topology_initializes_manager_ui_secrets(self):
+        script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
+
+        self.assertIn(
+            '"$REPO/tools/auth/init-bootstrap-admin.sh" "$PKI_DIR"', script
+        )
+
     def test_topology_uploads_platform_as_archive(self):
         script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
 
