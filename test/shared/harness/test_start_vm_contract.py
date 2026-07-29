@@ -6,6 +6,19 @@ from pathlib import Path
 
 
 class StartVMContractTest(unittest.TestCase):
+    def test_topology_uploads_platform_as_archive(self):
+        script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
+
+        self.assertIn('tar -C "$PLATFORM_UPLOAD_DIR" -cf "$PLATFORM_SOURCE_BUNDLE" .', script)
+        self.assertIn(
+            'vagrant upload "$PLATFORM_SOURCE_BUNDLE" /tmp/sysarmor-platform.tar mgr',
+            script,
+        )
+        self.assertNotIn(
+            'vagrant upload "$PLATFORM_UPLOAD_DIR" /tmp/sysarmor-platform.upload mgr',
+            script,
+        )
+
     def test_builds_all_binaries_before_starting_endpoint_vm(self):
         harness_dir = Path(__file__).resolve().parent
         repo = harness_dir.parents[2]

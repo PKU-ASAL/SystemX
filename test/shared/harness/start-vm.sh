@@ -9,6 +9,7 @@ PKI_DIR="${SYSARMOR_VM_MTLS_DIR:-$ROOT/.results/pki/$ENV_NAME}"
 VM_DEPLOY_DIR="${SYSARMOR_VM_DEPLOY_DIR:-$ROOT/environments/$ENV_NAME/deploy}"
 PLATFORM_UPLOAD_DIR="${SYSARMOR_VM_PLATFORM_UPLOAD_DIR:-$VM_DEPLOY_DIR/platform}"
 PLATFORM_IMAGES_DIR="${SYSARMOR_VM_PLATFORM_IMAGES_DIR:-$VM_DEPLOY_DIR/images}"
+PLATFORM_SOURCE_BUNDLE="$VM_DEPLOY_DIR/platform.tar"
 PLATFORM_IMAGE_BUNDLE="$PLATFORM_IMAGES_DIR/vm-images.tar"
 PLATFORM_IMAGE_MANIFEST="$PLATFORM_IMAGES_DIR/images.manifest"
 BUILD_BINARIES="${SYSARMOR_VM_BUILD_BINARIES:-1}"
@@ -59,6 +60,7 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   install -m 0755 "$REPO/dist/bin/sysarmor-worker" "$PLATFORM_UPLOAD_DIR/deployments/vm-build/worker/sysarmor-worker"
   mkdir -p "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime"
   rsync -a --delete "$PKI_DIR/" "$PLATFORM_UPLOAD_DIR/deployments/pki/agent-plane-mtls/runtime/"
+  tar -C "$PLATFORM_UPLOAD_DIR" -cf "$PLATFORM_SOURCE_BUNDLE" .
   required_images=(ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest apache/kafka:latest sysarmor-opensearch:latest)
   tmp_manifest="$PLATFORM_IMAGE_MANIFEST.tmp"
   : > "$tmp_manifest"
@@ -84,7 +86,7 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
     vagrant provision mgr >/dev/null
   fi
   vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload mgr >/dev/null
-  vagrant upload "$PLATFORM_UPLOAD_DIR" /tmp/sysarmor-platform.upload mgr >/dev/null
+  vagrant upload "$PLATFORM_SOURCE_BUNDLE" /tmp/sysarmor-platform.tar mgr >/dev/null
   vagrant upload "$PLATFORM_IMAGE_MANIFEST" /tmp/sysarmor-vm-images.manifest mgr >/dev/null
   image_upload=0
   if vagrant ssh mgr -c "test -f /opt/sysarmor/images/vm-images.tar && test -f /opt/sysarmor/images/images.manifest && cmp -s /tmp/sysarmor-vm-images.manifest /opt/sysarmor/images/images.manifest && sudo docker image inspect ubuntu:24.04 redis:7-alpine sysarmor-postgres:latest apache/kafka:latest sysarmor-opensearch:latest >/dev/null" >/dev/null 2>&1; then
@@ -99,6 +101,9 @@ IMAGE_UPLOAD=$image_upload
 sudo install -m 0755 /tmp/sysarmorctl.upload /tmp/sysarmorctl
 sudo pkill -x sysarmor-manager 2>/dev/null || true
 sudo pkill -x sysarmor-gateway 2>/dev/null || true
+sudo rm -rf /tmp/sysarmor-platform.upload
+sudo mkdir -p /tmp/sysarmor-platform.upload
+sudo tar -xf /tmp/sysarmor-platform.tar -C /tmp/sysarmor-platform.upload
 sudo rm -rf /opt/sysarmor/platform
 sudo mkdir -p /opt/sysarmor /opt/sysarmor/images
 sudo cp -a /tmp/sysarmor-platform.upload /opt/sysarmor/platform
