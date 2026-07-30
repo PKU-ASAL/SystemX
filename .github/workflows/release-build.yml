@@ -108,8 +108,18 @@ jobs:
             printf '%s\n' "$CONTENT_SIGNING_KEY_PEM" >"$content_key"
           fi
 
-          CGO_ENABLED=0 go build -o dist/bin/sysarmor-agent ./cmd/sysarmor-agent
-          CGO_ENABLED=0 go build -o dist/bin/sysarmorctl ./cmd/sysarmorctl
+          CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmor-agent ./cmd/sysarmor-agent
+          CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmorctl ./cmd/sysarmorctl
+          agent_version="$(dist/bin/sysarmor-agent version)"
+          ctl_version="$(dist/bin/sysarmorctl version)"
+          [[ "$agent_version" == "$VERSION" ]] || {
+            echo "sysarmor-agent version mismatch: expected $VERSION, got $agent_version" >&2
+            exit 1
+          }
+          [[ "$ctl_version" == "$VERSION" ]] || {
+            echo "sysarmorctl version mismatch: expected $VERSION, got $ctl_version" >&2
+            exit 1
+          }
           deployments/agent/package-agent.sh \
             --version "$VERSION" \
             --output "$package" \
