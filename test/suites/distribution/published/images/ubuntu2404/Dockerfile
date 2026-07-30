@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ARG SYSARMOR_INSTALL_URL
 ARG SYSARMOR_TETRAGON_URL
 RUN apt-get update \
