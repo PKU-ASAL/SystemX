@@ -20,6 +20,7 @@ done
 for image in ubuntu2204 ubuntu2404 debian12; do
   dockerfile="$RELEASE/images/$image/Dockerfile"
   test -f "$dockerfile"
+  grep -Fq 'SHELL ["/bin/bash", "-o", "pipefail", "-c"]' "$dockerfile"
   grep -Fq 'ARG SYSARMOR_INSTALL_URL' "$dockerfile"
   grep -Fq 'ARG SYSARMOR_TETRAGON_URL' "$dockerfile"
   grep -Fq 'SYSARMOR_TETRAGON_URL="$SYSARMOR_TETRAGON_URL"' "$dockerfile"
