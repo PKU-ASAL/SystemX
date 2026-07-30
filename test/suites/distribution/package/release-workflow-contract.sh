@@ -36,6 +36,12 @@ grep -Fq 'attestations: write' "$build"
 grep -Fq 'go test ./...' "$build"
 grep -Fq 'sudo make test-distribution SOURCE=local' "$build"
 grep -Fq 'container-entrypoint.sh' "$build"
+grep -Fq 'CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmor-agent ./cmd/sysarmor-agent' "$build"
+grep -Fq 'CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmorctl ./cmd/sysarmorctl' "$build"
+grep -Fq 'agent_version="$(dist/bin/sysarmor-agent version)"' "$build"
+grep -Fq 'ctl_version="$(dist/bin/sysarmorctl version)"' "$build"
+grep -Fq '[[ "$agent_version" == "$VERSION" ]]' "$build"
+grep -Fq '[[ "$ctl_version" == "$VERSION" ]]' "$build"
 if grep -R -n -w --include='*.sh' rg "$REPO/test/suites/distribution/package" |
   grep -v 'release-workflow-contract.sh'; then
   echo "[release-workflow-contract][ERROR] distribution contracts require non-default rg" >&2
