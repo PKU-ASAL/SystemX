@@ -67,8 +67,21 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") {
 		t.Fatalf("install script response = %d body=%s", rec.Code, body)
 	}
-	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, "systemctl enable --now sysarmor-agent") {
+	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, `"$tmp/install.sh" --profile "$SYSARMOR_INSTALL_PROFILE"`) {
 		t.Fatalf("default install profile/script mismatch: profile=%q body=%s", created.Enrollment.Profile, body)
+	}
+	if strings.Contains(body, `install -m 0755 "$tmp/$DIST_ENTRYPOINT"`) {
+		t.Fatalf("install script duplicates the distribution installer: %s", body)
+	}
+	for _, unsupported := range []string{
+		"SYSARMOR_AGENT_HOME",
+		"SYSARMOR_CONFIG_DST",
+		"SYSARMOR_POLICY_DST",
+		"SYSARMOR_SERVICE_DST",
+	} {
+		if strings.Contains(body, unsupported) {
+			t.Fatalf("install script exposes unsupported path override %q: %s", unsupported, body)
+		}
 	}
 }
 
@@ -260,12 +273,12 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 	for _, want := range []string{
 		`SYSARMOR_INSTALL_PROFILE="${SYSARMOR_INSTALL_PROFILE:-linux-container}"`,
 		`label.scenario: "namespace-self-container"`,
-		"scope:",
-		"    type: namespace",
-		"    selector: self",
+		`enrollment_config_source="$tmp/configs/standalone-container.yaml"`,
 		"sha256sum -c",
-		`sysarmor-agent" run --config`,
-		"sysarmorctl\" --socket /run/sysarmor/agent/control.sock",
+		`"/opt/sysarmor/agent/bin/sysarmor-agent" run --config "/etc/sysarmor/agent/agent.yaml"`,
+		`>"/opt/sysarmor/agent/runtime/agent.log"`,
+		`> "/opt/sysarmor/agent/runtime/agent.pid"`,
+		"/usr/local/bin/sysarmorctl --socket /run/sysarmor/agent/control.sock",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("container install script missing %q:\n%s", want, body)
@@ -276,6 +289,16 @@ func TestContainerEnrollmentInstallScriptUsesEntrypointAndNamespaceScope(t *test
 	}
 	if strings.Contains(body, "python3") {
 		t.Fatalf("container install script should not require python3:\n%s", body)
+	}
+	for _, unsupported := range []string{
+		"SYSARMOR_AGENT_HOME",
+		"SYSARMOR_CONFIG_DST",
+		"SYSARMOR_POLICY_DST",
+		"SYSARMOR_SERVICE_DST",
+	} {
+		if strings.Contains(body, unsupported) {
+			t.Fatalf("container install script exposes unsupported path override %q:\n%s", unsupported, body)
+		}
 	}
 }
 

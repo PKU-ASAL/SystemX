@@ -41,6 +41,11 @@ func TestOpenSearchExactFieldsUseKeywordMappings(t *testing.T) {
 var legacyAgentTestPatterns = []string{
 	"/run/sysarmor/agent.sock",
 	"\ndata_plane:",
+	"\nagent:\n  id:",
+	"\n  host_id:",
+	"\n  tenant_id:",
+	"\n  token:",
+	"\nmanager:\n  transport: local",
 	"\n  batch_size:",
 	"\n  policy_path:",
 }
@@ -81,15 +86,87 @@ func TestAgentTestAssetsUseCurrentSchema(t *testing.T) {
 	validateCoverageInventory(t, filepath.Join(testRoot, "contracts", "agent-test-coverage.tsv"))
 }
 
-func TestContainerCaptureCreatesWorkDirectory(t *testing.T) {
+func TestObsoleteAgentTestAssetsAreRemoved(t *testing.T) {
 	root := repositoryRoot(t)
-	path := filepath.Join(root, "test", "shared", "diagnostics", "capture-container.sh")
+	for _, path := range []string{
+		"configs/agent.fake.yaml",
+		"test/shared/diagnostics/capture-container.sh",
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-container.sh",
+		"test/suites/functional/platform/e2e-gateway-local-ingest.sh",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); !os.IsNotExist(err) {
+			t.Errorf("obsolete Agent test asset still exists: %s", path)
+		}
+	}
+}
+
+func TestVMDevelopmentInstallersUseCurrentContract(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, path := range []string{
+		"test/shared/diagnostics/capture-vm.sh",
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := string(raw)
+		for _, want := range []string{
+			"SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload",
+			"SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json",
+			"  path: /etc/sysarmor/agent/policy.json",
+			"/tmp/sysarmor-install-agent.log",
+		} {
+			if !strings.Contains(document, want) {
+				t.Errorf("%s missing current installer contract %q", path, want)
+			}
+		}
+	}
+}
+
+func TestAgentTestsApplyOnlyAdditionalTestContent(t *testing.T) {
+	root := repositoryRoot(t)
+	for path, want := range map[string]string{
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh": `vagrant upload "$REPO/test/data/content"`,
+		"test/suites/performance/endpoint/run.sh":                   `SYSARMOR_BENCH_CONTENT_DIR:-test/data/content`,
+		"test/suites/performance/endpoint/lifecycle.sh":             `SYSARMOR_BENCH_CONTENT_DIR:-test/data/content`,
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("%s missing product content source %q", path, want)
+		}
+	}
+	e2e, err := os.ReadFile(filepath.Join(root, "test", "suites", "functional", "endpoint", "e2e-real-tetragon-owned-vm.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(e2e), "ioc-c2-port-feed.json") {
+		t.Error("endpoint E2E still applies the removed combined C2 port feed")
+	}
+}
+
+func TestPlatformHarnessConfiguresManagerJWT(t *testing.T) {
+	root := repositoryRoot(t)
+	path := filepath.Join(root, "test", "shared", "harness", "lib", "common.sh")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "rm -rf '$WORK'; mkdir -p '$WORK'") {
-		t.Errorf("container capture must create its work directory")
+	document := string(raw)
+	for _, want := range []string{
+		"tools/pki/gen-manager-jwt.sh",
+		"tools/auth/issue-manager-jwt.sh",
+		"--jwt-public-key",
+		"export SYSARMOR_MANAGER_JWT",
+		"sa_manager_curl()",
+		"Authorization: Bearer",
+	} {
+		if !strings.Contains(document, want) {
+			t.Errorf("platform harness missing Manager JWT contract %q", want)
+		}
 	}
 }
 
@@ -115,7 +192,7 @@ func TestContainerTopologyUsesProtectedContainerInstaller(t *testing.T) {
 	if strings.Contains(document, "  tetragon:\n") {
 		t.Error("container topology still defines a Tetragon sidecar")
 	}
-	runner, err := os.ReadFile(filepath.Join(root, "test", "suites", "product", "topology", "scenario-container.sh"))
+	runner, err := os.ReadFile(filepath.Join(root, "test", "suites", "functional", "topology", "scenario-container.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +250,38 @@ func TestEndpointPerformanceDiscoversRuntimeIdentity(t *testing.T) {
 	for _, want := range []string{`agent health`, `.agentId // .agent_id`, `.tenantId // .tenant_id`} {
 		if !strings.Contains(runner, want) {
 			t.Errorf("endpoint performance runner does not discover runtime identity with %q", want)
+		}
+	}
+	for _, legacy := range []string{"SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon", "SYSARMOR_BENCH_TENANT_ID:-default"} {
+		if strings.Contains(runner, legacy) {
+			t.Errorf("endpoint performance runner still defines unused identity default %q", legacy)
+		}
+	}
+}
+
+func TestStandaloneVMToolsDiscoverRuntimeIdentity(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, path := range []string{
+		"test/shared/diagnostics/capture-vm.sh",
+		"test/shared/diagnostics/diagnose-tetragon-vm.sh",
+		"test/shared/recorder/recorder-vm.sh",
+		"test/suites/performance/endpoint/lifecycle.sh",
+		"test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := string(raw)
+		for _, want := range []string{`agent health`, `.agentId // .agent_id`, `.tenantId // .tenant_id`} {
+			if !strings.Contains(document, want) {
+				t.Errorf("%s does not discover runtime identity with %q", path, want)
+			}
+		}
+		for _, legacy := range []string{"--agent-id vm-owned-tetragon", "--agent-id vm-node-a"} {
+			if strings.Contains(document, legacy) {
+				t.Errorf("%s still uses legacy local identity %q", path, legacy)
+			}
 		}
 	}
 }

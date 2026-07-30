@@ -6,12 +6,11 @@ import (
 
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 )
 
-func BenchmarkEngineProcessBuiltinMixed(b *testing.B) {
-	engine, _ := New(policymodel.DefaultDetectionPolicy())
+func BenchmarkEngineProcessDefaultContentMixed(b *testing.B) {
+	engine, _ := newTestEngine(b)
 	events := benchmarkEventStream(256)
 	b.ReportAllocs()
 	b.ResetTimer()

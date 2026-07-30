@@ -15,8 +15,8 @@ RESULTS="$ROOT/.results"
 RUN_ID="${RUN_ID:-${SYSARMOR_RECORDER_RUN_ID:-manual}}"
 OUT_DIR="$RESULTS/recordings/$RUN_ID"
 AGENT_SOCK="${SYSARMOR_AGENT_SOCK:-/run/sysarmor/agent/control.sock}"
-AGENT_ID="${SYSARMOR_RECORDER_AGENT_ID:-${SYSARMOR_BENCH_AGENT_ID:-vm-owned-tetragon}}"
-TENANT_ID="${SYSARMOR_RECORDER_TENANT_ID:-${SYSARMOR_BENCH_TENANT_ID:-default}}"
+AGENT_ID="${SYSARMOR_RECORDER_AGENT_ID:-${SYSARMOR_BENCH_AGENT_ID:-}}"
+TENANT_ID="${SYSARMOR_RECORDER_TENANT_ID:-${SYSARMOR_BENCH_TENANT_ID:-}}"
 DURATION="${DURATION:-${SYSARMOR_RECORDER_DURATION:-3600}}"
 SEMANTIC_INTERVAL="${SYSARMOR_RECORDER_SEMANTIC_INTERVAL:-10}"
 LABELS="${SYSARMOR_RECORDER_LABELS:-}"
@@ -65,8 +65,8 @@ start_remote_sampler() {
 set -euo pipefail
 DUR=\"\${1:-3600}\"
 AGENT_SOCK=\"\${2:-/run/sysarmor/agent/control.sock}\"
-AGENT_ID=\"\${3:-vm-owned-tetragon}\"
-TENANT_ID=\"\${4:-default}\"
+AGENT_ID=\"\${3:-}\"
+TENANT_ID=\"\${4:-}\"
 LABELS=\"\${5:-}\"
 SEMANTIC_INTERVAL=\"\${6:-10}\"
 STATE_DIR=/run/sysarmor/recorder
@@ -155,7 +155,14 @@ line_count() {
   local file=\"\$1\"
   awk 'NF {n++} END {print n+0}' \"\$file\" 2>/dev/null || echo 0
 }
-sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\"
+identity=\"\$(sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health)\"
+AGENT_ID=\"\$(jq -r '.agentId // .agent_id // empty' <<<\"\$identity\")\"
+TENANT_ID=\"\$(jq -r '.tenantId // .tenant_id // empty' <<<\"\$identity\")\"
+if [ -z \"\$AGENT_ID\" ] || [ -z \"\$TENANT_ID\" ]; then
+  echo \"recorder: Agent health did not expose runtime identity: \$identity\" >&2
+  exit 1
+fi
+sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\"
 EVENT_CURSOR=\"\$(num_json streams.eventNewestSequence \"\$HEALTH_JSON\")\"
 SIGNAL_CURSOR=\"\$(num_json streams.signalNewestSequence \"\$HEALTH_JSON\")\"
 start_watchers() {
@@ -173,7 +180,7 @@ ensure_watchers() {
   kill \"\$EVENT_WATCH_PID\" \"\$SIGNAL_WATCH_PID\" 2>/dev/null || true
   wait \"\$EVENT_WATCH_PID\" 2>/dev/null || true
   wait \"\$SIGNAL_WATCH_PID\" 2>/dev/null || true
-  sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || return
+  sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || return
   runtime_event_cursor=\"\$(num_json streams.eventNewestSequence \"\$HEALTH_JSON\")\"
   runtime_signal_cursor=\"\$(num_json streams.signalNewestSequence \"\$HEALTH_JSON\")\"
   if [ \"\$runtime_event_cursor\" -lt \"\$EVENT_CURSOR\" ]; then EVENT_CURSOR=0; fi
@@ -267,7 +274,7 @@ while [ \"\$elapsed\" -le \"\$DUR\" ]; do
   if pidof tetragon >/dev/null 2>&1 || pidof sysarmor-sensor >/dev/null 2>&1; then sensor_running=1; else sensor_running=0; fi
   if [ \"\$elapsed\" -eq 0 ] || [ \$((elapsed % SEMANTIC_INTERVAL)) -eq 0 ]; then
     sample_tag=\"\$(printf '%06d' \"\$elapsed\")\"
-    sudo sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || true
+    sysarmorctl --socket \"\$AGENT_SOCK\" --json agent health --agent-id \"\$AGENT_ID\" --tenant-id \"\$TENANT_ID\" >\"\$HEALTH_JSON\" 2>/dev/null || true
     cp \"\$HEALTH_JSON\" \"\$RAW_DIR/\$sample_tag.health.json\" 2>/dev/null || true
     events=\"\$(num_json sensor.eventsSeen \"\$HEALTH_JSON\")\"
     dropped=\"\$(num_json sensor.eventsDropped \"\$HEALTH_JSON\")\"

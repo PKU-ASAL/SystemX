@@ -1,0 +1,40 @@
+local:
+  state_path: /var/lib/sysarmor/agent
+  storage:
+    max_bytes: 10GiB
+    min_free_bytes: 2GiB
+    segment_size: 64MiB
+    signal_max_count: 100000
+  export:
+    retry_initial: 1s
+    retry_max: 30s
+    request_timeout: 10s
+    max_inflight: 1
+    wire_compression: none
+
+control:
+  socket_path: /run/sysarmor/agent/control.sock
+
+sensor:
+  backend: tetragon
+  mode: managed
+  bundle_dir: /opt/sysarmor/agent/bundles/tetragon
+  install_dir: /opt/sysarmor/agent/sensors
+  scope:
+    type: namespace
+    selector: self
+  observe_only: true
+  restart: always
+  max_restarts: 5
+  restart_window: 60s
+
+telemetry:
+  max_batch_items: 256
+  max_batch_bytes: 256KiB
+  flush_interval: 1s
+
+health:
+  interval: 10s
+
+policy:
+  path: /etc/sysarmor/agent/policy.json

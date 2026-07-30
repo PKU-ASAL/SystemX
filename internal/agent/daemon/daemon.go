@@ -98,6 +98,7 @@ type AgentRuntime struct {
 	localStore         *localstore.Store
 	network            *networkSupervisor
 	mu                 sync.RWMutex
+	detectionUpdateMu  sync.Mutex
 	identity           runtimeIdentity
 	standaloneIdentity runtimeIdentity
 	normalizer         *normalize.Normalizer
@@ -111,8 +112,15 @@ type AgentRuntime struct {
 	content            *agentcontent.Store
 	featureFlags       agenthealth.RuntimeFeatureFlags
 	detectionStatus    agenthealth.DetectionHealth
+	eventSeq           uint64
 	signalSeq          uint64
 	telemetrySeq       uint64
+}
+
+func (r *AgentRuntime) withDetectionUpdateTransaction(fn func()) {
+	r.detectionUpdateMu.Lock()
+	defer r.detectionUpdateMu.Unlock()
+	fn()
 }
 
 type healthReporter interface {
@@ -128,9 +136,9 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	contentStore, err := agentcontent.NewStoreWithOptions(agentcontent.Options{Dir: cfg.Content.Path, TrustedKeys: parseTrustKeys(cfg.Content.TrustKeys)})
+	contentStore, err := newContentStore(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load startup content: %w", err)
 	}
 	var state *localstore.Store
 	if cfg.Manager.Transport == "" {
@@ -152,6 +160,14 @@ func New(cfg config.Config) (*AgentRuntime, error) {
 		if cfg.Agent.TenantID == "" {
 			cfg.Agent.TenantID = "local"
 		}
+		cursor, err := state.SequenceCursor(context.Background())
+		if err != nil {
+			_ = state.Close()
+			return nil, fmt.Errorf("load local sequence cursor: %w", err)
+		}
+		runtime := &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state, eventSeq: cursor.Event, signalSeq: cursor.Signal}
+		runtime.setRuntimeIdentity(runtimeIdentity{AgentID: cfg.Agent.ID, HostID: cfg.Agent.HostID, TenantID: cfg.Agent.TenantID})
+		return runtime, nil
 	}
 	runtime := &AgentRuntime{Config: cfg, Sensor: sensor, content: contentStore, featureFlags: featureFlags, localStore: state}
 	runtime.setRuntimeIdentity(runtimeIdentity{AgentID: cfg.Agent.ID, HostID: cfg.Agent.HostID, TenantID: cfg.Agent.TenantID})
@@ -211,11 +227,13 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	scopeSelector := scope.Selector
 	intent = policy.WithScope(intent, scopeType, scopeSelector)
 	r.setCollectionIntent(r.withCollectionCapabilities(intent))
+	if err := r.applyStartupDetection(effectivePolicy); err != nil {
+		return failStartup("detection", err)
+	}
 	if err := rt.Apply(ctx, intent); err != nil {
 		return failStartup("apply", err)
 	}
 	longControl := r.Config.Manager.Transport == "grpc"
-	r.setPolicy(effectivePolicy)
 	events, err := rt.Subscribe(ctx)
 	if err != nil {
 		return failStartup("subscribe", err)
@@ -245,10 +263,11 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	dataPlaneCtx, cancelDataPlane := context.WithCancel(ctx)
 	defer cancelDataPlane()
 	norm := normalize.NewWithOptions(r.Config.Agent.ID, r.Config.Agent.HostID, nil, normalize.Options{
-		TenantID:      r.Config.Agent.TenantID,
-		ScopeType:     scopeType,
-		ScopeSelector: scopeSelector,
-		Labels:        r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
+		TenantID:        r.Config.Agent.TenantID,
+		ScopeType:       scopeType,
+		ScopeSelector:   scopeSelector,
+		Labels:          r.runtimeLabels(scopeType, scopeSelector, capability.Backend),
+		InitialSequence: r.eventSeq,
 	})
 	r.setNormalizer(norm)
 	endpointRuntime := NewEndpointRuntime(r, norm)
@@ -318,10 +337,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 				return err
 			}
 			if sig := tamperDetector.Evaluate(health, time.Now().UTC(), tamper.Options{
-				MaxRestarts:        uint64(r.Config.Sensor.MaxRestarts),
-				MaxParseErrors:     r.Config.Sensor.MaxParseErrors,
-				MaxDroppedEvents:   r.Config.Sensor.MaxDroppedEvents,
-				NoEventGracePeriod: tamperNoEventGracePeriod(r.Config.Sensor.RestartWindow, r.Config.Health.Interval),
+				MaxRestarts:      uint64(r.Config.Sensor.MaxRestarts),
+				MaxParseErrors:   r.Config.Sensor.MaxParseErrors,
+				MaxDroppedEvents: r.Config.Sensor.MaxDroppedEvents,
 			}); sig != nil {
 				batch, err := endpointRuntime.ProcessSignals([]*signalv1.Signal{sig})
 				if err != nil {
@@ -346,17 +364,6 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 			}
 		}
 	}
-}
-
-func tamperNoEventGracePeriod(restartWindow, healthInterval time.Duration) time.Duration {
-	grace := restartWindow
-	if grace < 30*time.Second {
-		grace = 30 * time.Second
-	}
-	if intervalGrace := healthInterval * 10; intervalGrace > grace {
-		grace = intervalGrace
-	}
-	return grace
 }
 
 func (r *AgentRuntime) shutdownAndReport(ctx context.Context, rt sensorruntime.Runtime, bus *telemetry.Bus, batcher *telemetry.Batcher, sender *telemetry.Sender, reporter healthReporter, startedAt time.Time, cancelDataPlane func(), stopRuntime func()) error {
@@ -773,12 +780,13 @@ func (r *AgentRuntime) commitDetectionContent(record agentcontent.Record, snapsh
 
 func (r *AgentRuntime) setDetectionStatus(policy policymodel.Policy, report detection.ApplyReport, snapshot agentcontent.Snapshot) {
 	status := agenthealth.DetectionHealth{
-		PolicyID:        firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
-		PolicyVersion:   policy.Detection.Version,
-		FeatureFlags:    r.featureFlags,
-		LastApplyStatus: report.Status,
-		UpdatedAt:       time.Now().UTC(),
-		ContentRefs:     detectionContentRefs(snapshot),
+		PolicyID:               firstNonEmptyString(policy.Detection.PolicyID, policy.PolicyID),
+		PolicyVersion:          policy.Detection.Version,
+		FeatureFlags:           r.featureFlags,
+		LastApplyStatus:        report.Status,
+		UpdatedAt:              time.Now().UTC(),
+		ContentRefs:            detectionContentRefs(snapshot),
+		DefaultManifestVersion: snapshot.DefaultManifestVersion,
 	}
 	if report.Status == "rejected" {
 		status.LastApplyError = strings.Join(report.Details, "; ")
@@ -952,13 +960,25 @@ func (r *AgentRuntime) dataBatchForEvent(event *eventv1.CanonicalEvent, signals 
 		})
 	}
 	for _, sig := range signals {
+		sequence := r.nextSignalSequence()
+		setEndpointSignalID(sig, sequence)
 		batch.Signals = append(batch.Signals, &dataplanev1.SignalFrame{
-			Sequence:   r.nextSignalSequence(),
+			Sequence:   sequence,
 			ObservedAt: now.Format(time.RFC3339Nano),
 			Signal:     sig,
 		})
 	}
 	return batch
+}
+
+func setEndpointSignalID(signal *signalv1.Signal, sequence uint64) {
+	if signal == nil {
+		return
+	}
+	signal.Id = fmt.Sprintf("sig-%020d", sequence)
+	if signal.Evidence != nil {
+		signal.Evidence.Id = "evb-" + signal.Id
+	}
 }
 
 func (r *AgentRuntime) dataBatchForSignals(signals []*signalv1.Signal) *dataplanev1.DataBatch {
@@ -1052,6 +1072,8 @@ func detectionContentSnapshotFromContent(snapshot agentcontent.Snapshot) detecti
 			RuntimeType:       rule.RuntimeType,
 			Expr:              detectionExpr(rule.Expr),
 			Sequence:          detectionSequence(rule.Sequence),
+			Correlate:         detectionCorrelate(rule.Correlate),
+			Suppression:       detectionSuppression(rule.Suppression),
 			RequiredEvents:    detectionRequiredEvents(rule.RequiredEvents),
 			RequiredBehaviors: requiredBehaviors(rule.RequiredEvents),
 			ContextRefs:       append([]string(nil), rule.ContextRefs...),
@@ -1061,6 +1083,7 @@ func detectionContentSnapshotFromContent(snapshot agentcontent.Snapshot) detecti
 				Confidence: rule.ResponseIntent.Confidence,
 				Reason:     rule.ResponseIntent.Reason,
 			},
+			Terminal: rule.Terminal,
 		})
 	}
 	return out
@@ -1092,7 +1115,10 @@ func detectionRequiredEvents(events []agentcontent.RequiredEvent) []detection.Re
 }
 
 func detectionExpr(expr agentcontent.RuntimeExpr) detection.ExprSpec {
-	out := detection.ExprSpec{Conditions: make([]detection.ConditionSpec, 0, len(expr.Conditions))}
+	out := detection.ExprSpec{
+		Conditions:     make([]detection.ConditionSpec, 0, len(expr.Conditions)),
+		ConditionGroup: detectionConditionNode(expr.ConditionGroup),
+	}
 	for _, cond := range expr.Conditions {
 		out.Conditions = append(out.Conditions, detectionCondition(cond))
 	}
@@ -1112,9 +1138,10 @@ func detectionSequence(seq agentcontent.RuntimeSequence) detection.SequenceSpec 
 			behavior = step.Event
 		}
 		next := detection.StepSpec{
-			ID:         step.ID,
-			Behavior:   eventmodel.NormalizeBehavior(behavior).String(),
-			Conditions: make([]detection.ConditionSpec, 0, len(step.Conditions)),
+			ID:             step.ID,
+			Behavior:       eventmodel.NormalizeBehavior(behavior).String(),
+			Conditions:     make([]detection.ConditionSpec, 0, len(step.Conditions)),
+			ConditionGroup: detectionConditionNode(step.ConditionGroup),
 		}
 		for _, cond := range step.Conditions {
 			next.Conditions = append(next.Conditions, detectionCondition(cond))
@@ -1122,6 +1149,60 @@ func detectionSequence(seq agentcontent.RuntimeSequence) detection.SequenceSpec 
 		out.Steps = append(out.Steps, next)
 	}
 	return out
+}
+
+func detectionCorrelate(spec agentcontent.RuntimeCorrelate) detection.CorrelateSpec {
+	within, _ := time.ParseDuration(spec.Within)
+	out := detection.CorrelateSpec{
+		Within:     within,
+		WithinText: spec.Within,
+		By:         append([]string(nil), spec.By...),
+		Facts:      make([]detection.FactSpec, 0, len(spec.Facts)),
+	}
+	for _, fact := range spec.Facts {
+		next := detection.FactSpec{
+			ID:             fact.ID,
+			Event:          fact.Event,
+			Events:         append([]string(nil), fact.Events...),
+			Conditions:     make([]detection.ConditionSpec, 0, len(fact.Conditions)),
+			ConditionGroup: detectionConditionNode(fact.ConditionGroup),
+		}
+		for _, condition := range fact.Conditions {
+			next.Conditions = append(next.Conditions, detectionCondition(condition))
+		}
+		out.Facts = append(out.Facts, next)
+	}
+	return out
+}
+
+func detectionConditionNode(node *agentcontent.RuntimeConditionNode) *detection.ConditionNodeSpec {
+	if node == nil {
+		return nil
+	}
+	out := &detection.ConditionNodeSpec{}
+	if node.All != nil {
+		out.All = make([]detection.ConditionNodeSpec, 0, len(node.All))
+		for i := range node.All {
+			out.All = append(out.All, *detectionConditionNode(&node.All[i]))
+		}
+	}
+	if node.Any != nil {
+		out.Any = make([]detection.ConditionNodeSpec, 0, len(node.Any))
+		for i := range node.Any {
+			out.Any = append(out.Any, *detectionConditionNode(&node.Any[i]))
+		}
+	}
+	out.Not = detectionConditionNode(node.Not)
+	if node.Condition != nil {
+		condition := detectionCondition(*node.Condition)
+		out.Condition = &condition
+	}
+	return out
+}
+
+func detectionSuppression(spec agentcontent.RuntimeSuppression) detection.SuppressionSpec {
+	within, _ := time.ParseDuration(spec.Within)
+	return detection.SuppressionSpec{Within: within, By: append([]string(nil), spec.By...)}
 }
 
 func detectionCondition(cond agentcontent.RuntimeCondition) detection.ConditionSpec {
@@ -1248,7 +1329,6 @@ func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {
 		}
 		backend.ScopeType = scope.Type
 		backend.ScopeSelector = scope.Selector
-		backend.ContainerIDPrefix = cfg.Sensor.ContainerIDPrefix
 		backend.BTFPath = cfg.Sensor.BTFPath
 		backend.BPFFSPath = cfg.Sensor.BPFFSPath
 		backend.RequireBTF = cfg.Sensor.RequireBTF

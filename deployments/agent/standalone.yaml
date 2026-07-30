@@ -20,8 +20,6 @@ sensor:
   mode: managed
   bundle_dir: /opt/sysarmor/agent/bundles/tetragon
   install_dir: /opt/sysarmor/agent/sensors
-  tetra_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetra
-  tetragon_path: /opt/sysarmor/agent/sensors/tetragon/current/bin/tetragon
   scope:
     type: host
   observe_only: true

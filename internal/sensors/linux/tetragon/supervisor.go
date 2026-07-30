@@ -47,11 +47,15 @@ type ProcessSupervisor struct {
 }
 
 func (s *ProcessSupervisor) Start(ctx context.Context, spec ProcessSpec) error {
-	_, err := s.StartWithStdout(ctx, spec)
+	_, err := s.start(ctx, spec, false)
 	return err
 }
 
 func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpec) (io.ReadCloser, error) {
+	return s.start(ctx, spec, true)
+}
+
+func (s *ProcessSupervisor) start(ctx context.Context, spec ProcessSpec, captureStdout bool) (io.ReadCloser, error) {
 	if strings.TrimSpace(spec.Path) == "" {
 		return nil, fmt.Errorf("process path is required")
 	}
@@ -62,6 +66,7 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 	}
 	procCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(procCtx, spec.Path, spec.Args...)
+	configureProcessGroup(cmd)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
 	logFile, err := openProcessLog(spec.LogPath)
@@ -71,14 +76,13 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 	if logFile != nil {
 		cmd.Stderr = logFile
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		if logFile != nil {
-			_ = logFile.Close()
-		}
-		cancel()
-		s.mu.Unlock()
-		return nil, err
+	var stdout *io.PipeReader
+	var stdoutWriter *io.PipeWriter
+	if captureStdout {
+		stdout, stdoutWriter = io.Pipe()
+		cmd.Stdout = stdoutWriter
+	} else if logFile != nil {
+		cmd.Stdout = logFile
 	}
 	done := make(chan struct{})
 	s.cmd = cmd
@@ -91,6 +95,10 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 	s.mu.Unlock()
 
 	if err := cmd.Start(); err != nil {
+		if stdoutWriter != nil {
+			_ = stdoutWriter.CloseWithError(err)
+			_ = stdout.Close()
+		}
 		if logFile != nil {
 			_ = logFile.Close()
 		}
@@ -106,7 +114,7 @@ func (s *ProcessSupervisor) StartWithStdout(ctx context.Context, spec ProcessSpe
 		return nil, err
 	}
 
-	go s.wait(procCtx, cmd, done, logFile)
+	go s.wait(procCtx, cmd, done, logFile, stdoutWriter)
 	return stdout, nil
 }
 
@@ -269,11 +277,14 @@ func (s *ProcessSupervisor) Status() ProcessStatus {
 	}
 }
 
-func (s *ProcessSupervisor) wait(ctx context.Context, cmd *exec.Cmd, done chan struct{}, logFile *os.File) {
+func (s *ProcessSupervisor) wait(ctx context.Context, cmd *exec.Cmd, done chan struct{}, logFile *os.File, stdout *io.PipeWriter) {
 	if logFile != nil {
 		defer logFile.Close()
 	}
 	err := cmd.Wait()
+	if stdout != nil {
+		_ = stdout.Close()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer close(done)

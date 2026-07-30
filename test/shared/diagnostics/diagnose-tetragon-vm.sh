@@ -18,8 +18,10 @@ PERF_STAT_EVENTS="${SYSARMOR_DIAG_PERF_STAT_EVENTS:-task-clock,context-switches,
 WORKLOAD_WARMUP_SECONDS="${SYSARMOR_DIAG_WORKLOAD_WARMUP_SECONDS:-3}"
 WORKLOAD_REPEAT="${SYSARMOR_DIAG_WORKLOAD_REPEAT:-3}"
 WORKLOAD_C2="${SYSARMOR_DIAG_WORKLOAD_C2:-10.66.0.99}"
-AGENT_ID="${SYSARMOR_DIAG_AGENT_ID:-vm-owned-tetragon}"
-TENANT_ID="${SYSARMOR_DIAG_TENANT_ID:-default}"
+AGENT_CONFIG="${SYSARMOR_AGENT_CONFIG:-/etc/sysarmor/agent/agent.yaml}"
+AGENT_ID=""
+TENANT_ID=""
+AGENT_SOCK="/run/sysarmor/agent/control.sock"
 ENABLE_PPROF="${SYSARMOR_DIAG_ENABLE_PPROF:-1}"
 RESTORE_CONFIG="${SYSARMOR_DIAG_RESTORE_CONFIG:-1}"
 CONFIG_CHANGED=0
@@ -27,7 +29,7 @@ RESTORED=0
 
 restore_config() {
   if [[ "$CONFIG_CHANGED" == "1" && "$RESTORE_CONFIG" == "1" && "$RESTORED" == "0" ]]; then
-    vagrant ssh node-a -c "sudo test -f /tmp/sysarmor-agent.yaml.before-diag && sudo cp /tmp/sysarmor-agent.yaml.before-diag /etc/sysarmor/agent.yaml && sudo systemctl restart sysarmor-agent" >/dev/null || true
+    vagrant ssh node-a -c "sudo test -f /tmp/sysarmor-agent.yaml.before-diag && sudo cp /tmp/sysarmor-agent.yaml.before-diag '$AGENT_CONFIG' && sudo systemctl restart sysarmor-agent" >/dev/null || true
     RESTORED=1
   fi
 }
@@ -40,20 +42,30 @@ mkdir -p "$(dirname "$RESULTS/$OUT_PREFIX")"
 cd "$ENVDIR"
 
 wait_agent_socket() {
-  local socket_path
-  socket_path="$(vagrant ssh node-a -c "sudo awk '/socket_path:/ {print \$2}' /etc/sysarmor/agent.yaml 2>/dev/null | tail -1" 2>/dev/null | tr -d '\r')"
-  if [[ -z "$socket_path" ]]; then
-    socket_path="/run/sysarmor/agent/control.sock"
+  AGENT_SOCK="$(vagrant ssh node-a -c "sudo awk '/socket_path:/ {print \$2}' '$AGENT_CONFIG' 2>/dev/null | tail -1" 2>/dev/null | tr -d '\r')"
+  if [[ -z "$AGENT_SOCK" ]]; then
+    AGENT_SOCK="/run/sysarmor/agent/control.sock"
   fi
   local deadline=$((SECONDS + 60))
-  until vagrant ssh node-a -c "sudo test -S '$socket_path'" >/dev/null 2>&1; do
+  until vagrant ssh node-a -c "sudo test -S '$AGENT_SOCK'" >/dev/null 2>&1; do
     if (( SECONDS >= deadline )); then
-      echo "[diagnose-tetragon-vm][ERROR] timeout waiting for agent socket: $socket_path" >&2
+      echo "[diagnose-tetragon-vm][ERROR] timeout waiting for agent socket: $AGENT_SOCK" >&2
       vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l || true" >&2 2>/dev/null || true
       exit 1
     fi
     sleep 1
   done
+}
+
+resolve_agent_identity() {
+  local health
+  health="$(vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health")"
+  AGENT_ID="$(jq -r '.agentId // .agent_id // empty' <<<"$health")"
+  TENANT_ID="$(jq -r '.tenantId // .tenant_id // empty' <<<"$health")"
+  if [[ -z "$AGENT_ID" || -z "$TENANT_ID" ]]; then
+    echo "[diagnose-tetragon-vm][ERROR] Agent health did not expose runtime identity: $health" >&2
+    exit 1
+  fi
 }
 
 if [[ "$MODE" != "idle" && "$MODE" != "workload" ]]; then
@@ -67,7 +79,7 @@ fi
 
 echo "[diagnose-tetragon-vm] preparing diagnostic mode=$MODE workload=$WORKLOAD"
 if [[ "$ENABLE_PPROF" == "1" ]]; then
-  vagrant ssh node-a -c "sudo cp /etc/sysarmor/agent.yaml /tmp/sysarmor-agent.yaml.before-diag && sudo sed -i '/^  pprof_address:/d' /etc/sysarmor/agent.yaml && sudo sed -i '/^sensor:/a\  pprof_address: $PPROF_ADDRESS' /etc/sysarmor/agent.yaml && sudo systemctl restart sysarmor-agent" >/dev/null
+  vagrant ssh node-a -c "sudo cp '$AGENT_CONFIG' /tmp/sysarmor-agent.yaml.before-diag && sudo sed -i '/^  pprof_address:/d' '$AGENT_CONFIG' && sudo sed -i '/^sensor:/a\  pprof_address: $PPROF_ADDRESS' '$AGENT_CONFIG' && sudo systemctl restart sysarmor-agent" >/dev/null
   CONFIG_CHANGED=1
   wait_agent_socket
 fi
@@ -79,6 +91,9 @@ if [[ "$MODE" == "workload" ]]; then
     vagrant ssh node-a -c "sudo cp '/vagrant/test/data/scenarios/vm/$WORKLOAD/attack.sh' /tmp/sysarmor-diag-workload.sh && sudo chmod +x /tmp/sysarmor-diag-workload.sh" >/dev/null
   fi
 fi
+
+wait_agent_socket
+resolve_agent_identity
 
 echo "[diagnose-tetragon-vm] collecting perf/pprof/strace artifacts"
 vagrant ssh node-a -c "sudo bash -c '
@@ -116,7 +131,7 @@ rm -f /tmp/sysarmor-tetragon-strace-c.txt \
   echo \"workload_repeat=${WORKLOAD_REPEAT}\"
 } >/tmp/sysarmor-tetragon-perf-meta.txt
 
-agent_sock=\$(awk \"/socket_path:/ {print \\\$2}\" /etc/sysarmor/agent.yaml 2>/dev/null | tail -1)
+agent_sock=\$(awk \"/socket_path:/ {print \\\$2}\" '$AGENT_CONFIG' 2>/dev/null | tail -1)
 if [ -z \"\$agent_sock\" ]; then
   agent_sock=/run/sysarmor/agent/control.sock
 fi

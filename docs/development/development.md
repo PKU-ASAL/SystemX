@@ -36,7 +36,7 @@ make web-build
 | `deployments/` | 安装器、镜像、Compose、PKI 和运行配置 |
 | `web/manager/` | Manager Console 与认证 BFF |
 | `configs/` | Policy/rule 元数据示例，不自动加载 |
-| `test/` | Product、Effectiveness、Performance 验证 |
+| `test/` | Unit、Functional、Detection、Performance、Distribution 验证与 Release 门禁 |
 
 边界规则：
 
@@ -62,19 +62,47 @@ make web-build
 
 `make build` 必须显式传 `SERVICE`。Package 服务使用 `nginx:alpine`，没有本地 image build。
 
-### GitHub 开发预发布
+### GitHub 发布
 
-`.github/workflows/dev-prerelease.yml` 只能从 `dev` 手动触发。工作流运行 Go 和 standalone
-发行包契约测试，构建 Linux x86_64 thin 包，生成 `install.sh` 与 `SHA256SUMS`，使用 GitHub
-OIDC 记录 build provenance，最后创建绑定精确 commit 的 Pre-release。版本格式为
-`v<major>.<minor>.<patch>-dev.<UTC timestamp>+<commit>`。
+发布使用短生命周期 `release/vX.Y.Z` 分支。先将功能分支通过 PR 合入 `dev`，再从冻结的
+`dev` 创建 release 分支；不要直接提交到 `dev` 或 `main`。首次引入或修改发布入口时，
+对应 workflow 必须先存在于默认分支，否则 GitHub 不提供 `workflow_dispatch` 入口。
 
-GitHub-hosted runner 不具备本项目要求的 libvirt/eBPF 环境，因此该工作流不宣称验证真实采集和检测。
-正式触发预发布前，维护者仍需在校内测试机运行：
+在仓库根目录发布 RC：
 
 ```bash
-make -C test product-endpoint
+make release-rc VERSION=1.0.0 RC=1
 ```
+
+该命令从 `release/v1.0.0` 触发 `.github/workflows/release-candidate.yml`，创建
+`v1.0.0-rc.1` Pre-release。RC 使用 runner 临时生成的 RSA manifest key 和 Ed25519
+content key。工作流从同一提交生成安装说明、容器示例、provenance 验证命令和变更链接，
+并通过 `--notes-file` 创建 Release。也可以从 GitHub Actions 页面选择
+`Release candidate`，在对应 release 分支输入相同的 RC 序号。
+
+验收通过后，将 release 分支通过 PR 合入 `main`，再发布正式版：
+
+```bash
+make release-stable VERSION=1.0.0 RC=1
+```
+
+该命令从 `main` 触发 `.github/workflows/release-stable.yml`，自动传递
+`accepted_rc_tag=v1.0.0-rc.1`。也可以从 GitHub Actions 页面手工填写相同参数。工作流
+仅在 `main` 与 RC tag 的 Git tree 完全一致时继续，并使用同一 Release Notes 渲染器生成
+正式版本说明。GitHub Releases 是发行变更记录的事实来源，不另行维护重复的 changelog。
+
+两个 Make 命令只负责触发 Workflow，不创建或合并分支，也不等待发布完成。运行前需要
+安装 GitHub CLI 并执行 `gh auth login`。
+
+正式发布前，仓库必须配置受保护的 `production-release` Environment、审批人，以及：
+
+- Secret `SYSARMOR_ARTIFACT_SIGNING_KEY_PEM`：RSA artifact manifest 私钥。
+- Secret `SYSARMOR_CONTENT_SIGNING_KEY_PEM`：Ed25519 content 私钥。
+- Variable `SYSARMOR_CONTENT_KEY_ID`：稳定且可审计的内容签名 key ID。
+
+公共 `.github/workflows/release-build.yml` 对 RC 和 GA 执行相同测试、构建、SHA-256 自校验
+和 provenance attestation。GitHub-hosted runner 不具备本项目要求的 libvirt/eBPF 环境，
+因此公开 RC 的真实采集、检测和性能验收不能由构建工作流替代。
 
 ## 修改协议
 
@@ -149,7 +177,7 @@ make test-doctor               # VM/真实链路测试前
 git diff --check
 ```
 
-涉及协议、共享存储、Agent 生命周期或用户主流程时，应进一步运行对应 Product/Effectiveness/Performance suite。新增测试命令进入 `test/Makefile help`，测试方法进入 `docs/development/testing.md`，不要在 suite 子目录新增重复 README。
+涉及协议、共享存储、Agent 生命周期、发行包或用户主流程时，应进一步运行对应 Functional、Detection、Performance 或 Distribution suite。新增测试命令进入 `test/Makefile help`，测试方法进入 `docs/development/testing.md`，不要在 suite 子目录新增重复 README。
 
 ## 代码与文档规则
 

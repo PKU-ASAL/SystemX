@@ -25,27 +25,27 @@ import (
 const runtimeTracingPolicyName = "sysarmor-runtime-collection"
 
 type Backend struct {
-	PolicyPath        string
-	EventSource       string
-	EventTransport    string
-	ServerAddress     string
-	Version           string
-	Bundle            BundleConfig
-	Restart           ProcessRestartPolicy
-	CgroupRate        string
-	PprofAddress      string
-	GopsAddress       string
-	ProcessCacheSize  int
-	DataCacheSize     int
-	EventQueueSize    int
-	RBQueueSize       string
-	ScopeType         string
-	ScopeSelector     string
-	ContainerIDPrefix string
-	BTFPath           string
-	BPFFSPath         string
-	RequireBTF        bool
-	RequireBPFFS      bool
+	PolicyPath               string
+	EventSource              string
+	EventTransport           string
+	ServerAddress            string
+	Version                  string
+	Bundle                   BundleConfig
+	Restart                  ProcessRestartPolicy
+	CgroupRate               string
+	PprofAddress             string
+	GopsAddress              string
+	ProcessCacheSize         int
+	DataCacheSize            int
+	EventQueueSize           int
+	RBQueueSize              string
+	ScopeType                string
+	ScopeSelector            string
+	namespaceSelfContainerID string
+	BTFPath                  string
+	BPFFSPath                string
+	RequireBTF               bool
+	RequireBPFFS             bool
 
 	mu                   sync.Mutex
 	intent               contract.CollectionIntent
@@ -133,7 +133,7 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 }
 
 func CollectionCapabilities() []contract.CollectionBehaviorCapability {
-	commonProcess := []string{"event.id", "event.behavior", "lineage_id", "process.stable_id", "process.binary", "process.argv", "process.uid", "parent.stable_id", "scope.type", "scope.selector", "container.id", "cgroup"}
+	commonProcess := []string{"event.id", "event.behavior", "lineage_id", "process.stable_id", "process.binary", "process.argv", "process.uid", "process.pid", "parent.stable_id", "scope.type", "scope.selector", "container.id", "cgroup"}
 	agentSideScope := []string{"scope.container", "scope.cgroup", "scope.pod"}
 	with := func(base []string, fields ...string) []string {
 		out := append([]string(nil), base...)
@@ -427,11 +427,17 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 		b.setError(err)
 		return err
 	}
+	selfContainerID, err := resolveNamespaceSelfContainerID(normalized)
+	if err != nil {
+		b.setError(err)
+		return err
+	}
 	if _, err := os.Stat(b.PolicyPath); err != nil {
 		b.setError(err)
 		return fmt.Errorf("verify tetragon policy: %w", err)
 	}
 	b.mu.Lock()
+	b.namespaceSelfContainerID = selfContainerID
 	loaded := b.policyLoaded
 	oldIntent := b.intent
 	oldRuntimePolicyApplied := b.runtimePolicyApplied
@@ -599,9 +605,6 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	if explicitScope {
 		b.ScopeType = normalized.ScopeType
 		b.ScopeSelector = normalized.ScopeSelector
-		if normalized.ScopeType == "container" && b.ContainerIDPrefix == "" {
-			b.ContainerIDPrefix = normalized.ScopeSelector
-		}
 	}
 	b.mu.Lock()
 	loaded := b.policyLoaded
@@ -1406,22 +1409,23 @@ func (b *Backend) matchesScope(event *sensorv1.SensorEvent) bool {
 	scopeSelector := strings.TrimSpace(b.ScopeSelector)
 	switch scopeType {
 	case "":
-		if b.ContainerIDPrefix == "" {
-			return true
-		}
-		return strings.HasPrefix(event.GetContainerId(), b.ContainerIDPrefix)
+		return true
 	case "host":
 		return true
 	case "container":
-		return strings.HasPrefix(event.GetContainerId(), scopeSelector)
+		return containerIDsMatch(event.GetContainerId(), scopeSelector)
 	case "cgroup":
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
 	case "namespace":
 		b.mu.Lock()
 		hasNamespaceSelectors := len(b.intent.NamespaceSelectors) > 0
+		selfContainerID := b.namespaceSelfContainerID
 		b.mu.Unlock()
 		if scopeSelector == "self" && hasNamespaceSelectors {
-			return true
+			if selfContainerID == "" {
+				return event.GetContainerId() == ""
+			}
+			return containerIDsMatch(event.GetContainerId(), selfContainerID)
 		}
 		return strings.HasPrefix(event.GetProc().GetCgroup(), scopeSelector)
 	case "pod":

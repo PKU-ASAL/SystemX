@@ -13,7 +13,6 @@ ENVDIR="$(cd "$ROOT/environments/$VM_ENV" && pwd)"
 RESULTS="$ROOT/.results"
 S="${1:?用法: capture-vm.sh <scenario> [duration_s]}"
 DUR="${2:-30}"
-TOKEN="${SYSARMOR_DEV_TOKEN:-dev-token}"
 : "${C2:=10.66.0.99}" "${GAP:=8}" "${CYCLES:=3}"
 TETRAGON_ARCHIVE="${SYSARMOR_TETRAGON_ARCHIVE:-}"
 
@@ -27,6 +26,7 @@ fi
 cd "$ENVDIR"
 vagrant upload "$REPO/dist/bin/sysarmor-agent" /tmp/sysarmor-agent.upload node-a >/dev/null
 vagrant upload "$REPO/dist/bin/sysarmorctl" /tmp/sysarmorctl.upload node-a >/dev/null
+vagrant upload "$REPO/dist/bin/sysarmor-content-sign" /tmp/sysarmor-content-sign.upload node-a >/dev/null
 vagrant upload "$REPO/deployments" /tmp/sysarmor-deployments.upload node-a >/dev/null
 vagrant upload "$TETRAGON_ARCHIVE" /tmp/sysarmor-tetragon.upload node-a >/dev/null
 
@@ -78,19 +78,10 @@ vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; s
 vagrant ssh node-a -c "sudo bash -c '
   set -euo pipefail
   rm -rf \"$WORK\"
-  cat > \"$WORK/policy.yaml\" <<\"EOF\"
-{"behaviors":["process.exec","network.connect","file.open","file.write","file.chmod"],"observe_only":true}
-EOF
+  install -d -m 0755 \"$WORK\"
   cat > \"$WORK/agent.yaml\" <<EOF
 agent:
-  id: vm-node-a
-  host_id: vm-node-a
-  tenant_id: default
-  token: $TOKEN
   label.scenario: $S
-
-manager:
-  transport: local
 
 control:
   socket_path: $AGENT_SOCK
@@ -119,25 +110,35 @@ local:
     request_timeout: 2s
 
 policy:
-  path: $WORK/policy.yaml
+  path: /etc/sysarmor/agent/policy.json
 
 health:
   interval: 500ms
 EOF
-  SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=\"$WORK/policy.yaml\" SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh
+  if ! SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=\"$WORK/agent.yaml\" SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json SYSARMOR_TETRAGON_BUNDLE_DIR=$TETRAGON_BUNDLE_DIR SYSARMOR_TETRAGON_INSTALL_DIR=$TETRAGON_INSTALL_DIR SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then
+    cat /tmp/sysarmor-install-agent.log >&2
+    exit 1
+  fi
   test -f \"$TETRAGON_BUNDLE_DIR/manifest.json\"
   systemctl daemon-reload
-  install -m 0755 /tmp/sysarmorctl.upload /usr/local/bin/sysarmorctl
 '" >/dev/null
 
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
 
+health="$(vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health")"
+AGENT_ID="$(jq -r '.agentId // .agent_id // empty' <<<"$health")"
+TENANT_ID="$(jq -r '.tenantId // .tenant_id // empty' <<<"$health")"
+if [[ -z "$AGENT_ID" || -z "$TENANT_ID" ]]; then
+  echo "[capture-vm][ERROR] Agent health did not expose runtime identity: $health" >&2
+  exit 1
+fi
+
 wait_contains "agent health" '"status":"ok"' "$RESULTS/vm.$S.agent-health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-node-a --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent health tetragon" '"backend":"tetragon"' "$RESULTS/vm.$S.agent-health.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id vm-node-a --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent capability" 'process.exec' "$RESULTS/vm.$S.agent-capability.json" \
-  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent capability --agent-id vm-node-a --tenant-id default"
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent capability --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "tracing policy" 'sysarmor-runtime-collection' "$RESULTS/vm.$S.tracingpolicy.txt" \
   vagrant ssh node-a -c "sudo '$TETRA_PATH' tracingpolicy list"
 wait_contains "owned tetragon process" "$TETRAGON_PATH" "$RESULTS/vm.$S.tetragon-process.txt" \
@@ -155,7 +156,7 @@ vagrant ssh node-a -c "sudo bash -c '
 sleep "$DUR"
 
 if [[ -n "$SIGNAL_RULE" ]]; then
-  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-node-a --tenant-id default --timeout 20s" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 20s" \
     > "$RESULTS/vm.$S.signals.ndjson" 2>"$RESULTS/vm.$S.signals.ndjson.err"
   if ! grep -Fq "\"name\":\"$SIGNAL_RULE\"" "$RESULTS/vm.$S.signals.ndjson"; then
     echo "[capture-vm][ERROR] local attack signal not found: $SIGNAL_RULE" >&2
@@ -163,10 +164,10 @@ if [[ -n "$SIGNAL_RULE" ]]; then
     exit 1
   fi
 else
-  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id vm-node-a --tenant-id default --timeout 5s" > "$RESULTS/vm.$S.signals.ndjson" 2>/dev/null || true
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json signal watch --include-recent --snapshot --limit 200 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 5s" > "$RESULTS/vm.$S.signals.ndjson" 2>/dev/null || true
 fi
 
-vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id vm-node-a --tenant-id default --timeout 20s" \
+vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json event watch --include-recent --snapshot --limit 8192 --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID' --timeout 20s" \
   > "$RESULTS/vm.$S.events.ndjson" 2>"$RESULTS/vm.$S.events.ndjson.err"
 if ! grep -Fq "\"labels\":{\"scenario\":\"$S\"" "$RESULTS/vm.$S.events.ndjson"; then
   echo "[capture-vm][ERROR] local events do not contain label scenario=$S" >&2

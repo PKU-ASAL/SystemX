@@ -24,13 +24,14 @@ type AgentHealth struct {
 }
 
 type DetectionHealth struct {
-	PolicyID        string              `json:"policy_id,omitempty"`
-	PolicyVersion   uint64              `json:"policy_version,omitempty"`
-	ContentRefs     []ContentRef        `json:"content_refs,omitempty"`
-	FeatureFlags    RuntimeFeatureFlags `json:"feature_flags,omitempty"`
-	LastApplyStatus string              `json:"last_apply_status,omitempty"`
-	LastApplyError  string              `json:"last_apply_error,omitempty"`
-	UpdatedAt       time.Time           `json:"updated_at,omitempty"`
+	PolicyID               string              `json:"policy_id,omitempty"`
+	PolicyVersion          uint64              `json:"policy_version,omitempty"`
+	ContentRefs            []ContentRef        `json:"content_refs,omitempty"`
+	DefaultManifestVersion string              `json:"default_manifest_version,omitempty"`
+	FeatureFlags           RuntimeFeatureFlags `json:"feature_flags,omitempty"`
+	LastApplyStatus        string              `json:"last_apply_status,omitempty"`
+	LastApplyError         string              `json:"last_apply_error,omitempty"`
+	UpdatedAt              time.Time           `json:"updated_at,omitempty"`
 }
 
 type ContentRef struct {

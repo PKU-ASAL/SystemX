@@ -8,11 +8,23 @@
       "process.fork",
       "file.read",
       "file.write",
+      "file.chmod",
       "network.connect"
     ],
     "observe_only": true
   },
-  "detection": {},
+  "detection": {
+    "policy_id": "standalone-default-detection",
+    "version": 1,
+    "mode": "observe",
+    "rulesets": [
+      {
+        "ref": "ruleset:cep-endpoint",
+        "version": "v1",
+        "enabled": true
+      }
+    ]
+  },
   "telemetry": {
     "max_batch_items": 256,
     "max_batch_bytes": 262144,

@@ -1,0 +1,12 @@
+{
+  "api_version": "sysarmor.content/v1",
+  "kind": "contextset",
+  "metadata": {
+    "id": "ctx:trusted-admin-binaries",
+    "version": "2026.07.26.1"
+  },
+  "spec": {
+    "value_type": "process_binary",
+    "values": ["/usr/bin/nano", "/usr/bin/vi", "/usr/bin/vim"]
+  }
+}

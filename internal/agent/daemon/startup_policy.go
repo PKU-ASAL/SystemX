@@ -77,7 +77,7 @@ func (r *AgentRuntime) loadLegacyRuntimePolicy() (contract.CollectionIntent, pol
 	if err != nil {
 		return contract.CollectionIntent{}, policymodel.Policy{}, config.EffectiveTelemetry{}, err
 	}
-	policy := policymodel.DefaultPolicy(r.Config.Agent.TenantID)
+	policy := r.activePolicy()
 	effectiveTelemetry, err := config.ResolveTelemetry(r.Config.Telemetry, policy.Telemetry)
 	return intent, policy, effectiveTelemetry, err
 }

@@ -1,15 +1,17 @@
 # 测试指南
 
-SysArmor 将产品正确性、检测有效性和性能成本分开验证。三类测试使用不同的证据和
-通过条件，任何单一 Suite 都不能替代另外两类。
+SysArmor 将基础逻辑、产品功能、检测质量、资源成本和发行兼容性分开验证。五类测试
+使用不同证据和通过条件；Release 只聚合发布所需门禁，不重复实现测试。
 
 ## 测试边界
 
 | Suite | 回答的问题 | 主要证据 | 不证明什么 |
 |---|---|---|---|
-| Product | 组件或产品链路是否工作 | 合约断言、健康状态、真实链路输出 | 检测准确率、长期资源成本 |
-| Effectiveness | 恶意与良性行为是否产生预期安全结果 | truth labels、Event、Signal；Incident 仅作诊断采集 | Incident 正确性、长期性能、全部产品功能 |
+| Unit | 独立代码单元和模块边界是否正确 | Go 单测、聚焦契约 | 完整部署和产品链路 |
+| Functional | 组件或产品链路是否工作 | 合约断言、健康状态、真实链路输出 | 检测准确率、长期资源成本 |
+| Detection | 恶意与良性行为是否产生预期安全结果 | truth labels、Event、Signal；Incident 仅作诊断采集 | Incident 正确性、长期性能、全部产品功能 |
 | Performance | 给定环境和负载下成本是多少 | CPU、RSS、吞吐、丢弃、时间线 | 检测覆盖完整、所有功能正确 |
+| Distribution | 制品能否校验、安装和运行 | 包结构、签名、安装事务、多系统镜像 | 全部产品功能和发布决策 |
 
 此外，`make test-unit` 运行本地 Go 测试；module benchmark 用于定位代码级性能，
 不等同于真实 Agent 或平台基准。
@@ -51,22 +53,27 @@ make test-help
 ```bash
 make test-unit
 make test-doctor
-make test-performance PROFILE=medium \
+make test-functional DOMAIN=endpoint
+make test-detection
+make test-performance DOMAIN=endpoint PROFILE=medium \
   WORKLOAD=business-normal \
   SCENARIO=apt-fileless-c2-local \
   POLICIES='test/data/policies/collection-balanced.json'
+make test-distribution SOURCE=local
+make test-release STAGE=pre-publish
 ```
 
-更细的 Suite 直接使用测试 Makefile：
+公共入口按测试分类组织；分类内使用语义明确的参数选择测试对象：
 
 ```bash
-make -C test product-endpoint
-make -C test product-platform
-make -C test product-topology
-make -C test effectiveness-topology
-make -C test performance-platform
-make -C test performance-modules
+make test-functional DOMAIN=endpoint|platform|topology|all
+make test-performance DOMAIN=endpoint|platform|modules|all
+make test-distribution SOURCE=local|published
+make test-release STAGE=pre-publish|post-publish
 ```
+
+`DOMAIN` 表示系统领域，`SOURCE` 表示发行产物来源，`STAGE` 表示发布门禁阶段。
+参数缺失或取值不合法时 Make 会打印完整用法并退出，不会静默选择默认测试。
 
 ## 测试环境
 
@@ -99,30 +106,32 @@ VM 会创建特权基础设施，并可能传输较大的镜像和 sensor 包。
 `down`。`test/environments/vm-topology/deploy/` 仅保存可再生成的 `platform/` 和
 `images/` 部署缓存；所有测试结果仍写入 `test/.results/`。
 
-## Product 测试
+## Functional 测试
 
-Product Suite 证明“系统通不通”。
+Functional Suite 证明“系统通不通”。
 
-| 入口 | 边界 | Sensor/输入 |
+| 内部目标 | 边界 | Sensor/输入 |
 |---|---|---|
-| `product-endpoint-standalone` | 本地身份、有界存储、standalone 发行包和安装契约 | fake binary/本地契约 |
-| `product-endpoint` | 安装 standalone Agent，验证真实 Event、Signal、关联引用和重启恢复 | owned real Tetragon |
-| `product-endpoint-namespace-container` | 容器 Agent 的 `namespace/self` 隔离 | Manager 分发的容器 Agent |
-| `product-platform` | Manager、Gateway、Worker、Store、Policy、Response 合约 | 构造或 fake 输入 |
-| `product-platform-smoke` | `product-platform` 的显式别名 | 构造或 fake 输入 |
-| `product-platform-full` | 容器内 Event、Signal、Incident 产品路径 | Tetragon container |
-| `product-topology` | 三 VM 分发、注册、证书和接入链路 | Manager 分发真实 Agent |
+| `functional-endpoint-local` | 本地状态和容器入口运行行为 | fake binary/本地契约 |
+| `functional-endpoint` | 安装 standalone Agent，验证真实 Event、Signal、关联引用和重启恢复 | owned real Tetragon |
+| `functional-endpoint-container` | 容器 Agent 的 `namespace/self` 隔离 | Manager 分发的容器 Agent |
+| `functional-platform` | Manager、Gateway、Worker、Store、Policy、Response 合约 | 构造或 fake 输入 |
+| `functional-platform-full` | 容器内 Event、Signal、Incident 产品路径 | Tetragon container |
+| `functional-topology` | 三 VM 分发、注册、证书和接入链路 | Manager 分发真实 Agent |
 
-典型入口：
+公共入口：
 
 ```bash
-make -C test product-endpoint
-make -C test product-platform
-make -C test product-platform-full
-make -C test product-topology
+make test-functional DOMAIN=endpoint
+make test-functional DOMAIN=platform
+make test-functional DOMAIN=topology
+make test-functional DOMAIN=all
 ```
 
-`product-topology` 验证：
+`functional-endpoint-local`、`functional-endpoint-container` 和 `functional-platform-full`
+是开发测试实现使用的内部目标，不作为稳定公共入口。
+
+`functional-topology` 验证：
 
 ```text
 signed artifact -> channel -> one-time enrollment -> verified install
@@ -130,16 +139,16 @@ signed artifact -> channel -> one-time enrollment -> verified install
 ```
 
 它验证 Manager 可见的 health/session 和 Agent 重启，但不证明内核遥测质量、攻击检测
-准确率或平台资源成本。需要 truth-label 检测结论时运行 Effectiveness；需要资源结论时
+准确率或平台资源成本。需要 truth-label 检测结论时运行 Detection；需要资源结论时
 运行 Performance。
 
-## Effectiveness 测试
+## Detection 测试
 
-Effectiveness Suite 在真实端云链路上判断恶意和良性行为是否产生预期 Event 和
+Detection Suite 在真实端云链路上判断恶意和良性行为是否产生预期 Event 和
 Signal：
 
 ```bash
-make -C test effectiveness-topology
+make test-detection
 ```
 
 默认组合：
@@ -151,7 +160,7 @@ make -C test effectiveness-topology
 `collection-minimal` 有意缩窄可见性，不进入默认完整检测门禁。自定义矩阵：
 
 ```bash
-make -C test effectiveness-topology \
+make test-detection \
   POLICIES='test/data/policies/collection-balanced.json' \
   WORKLOADS='business-normal' \
   SCENARIOS='apt-fileless-c2 apt-staged-drop benign-ci-noise'
@@ -167,21 +176,21 @@ manager.incidents.json
 
 脚本将三者转换为对应的 `.ndjson` 文件。当前评分器只消费 Event、Signal 以及
 terminal/forbidden Signal；Incident 文件会被采集并记录到报告路径，但不参与评分或
-门禁。因此 Effectiveness 通过不能证明 Incident 数量、内容或 Evidence 子图正确。
+门禁。因此 Detection 通过不能证明 Incident 数量、内容或 Evidence 子图正确。
 本地 Agent watch 文件只用于诊断，不是默认评分源。恶意场景缺少 required truth，或
 良性场景产生 forbidden detection，均应使门禁失败。完整报告包括：
 
 ```text
-test/.results/effectiveness-topology/<run-id>/
+test/.results/detection-topology/<run-id>/
   manifest.json
   matrix.csv
 
-test/.results/effectiveness/<run-id>/
+test/.results/detection/<run-id>/
   matrix.csv
   truth_steps.csv
 ```
 
-Effectiveness 运行中采集到的 CPU/RSS 只提供上下文，不构成正式性能基线。
+Detection 运行中采集到的 CPU/RSS 只提供上下文，不构成正式性能基线。
 
 ## Performance 测试
 
@@ -198,7 +207,7 @@ Performance Suite 将三种成本分开测量：
 日常可比运行：
 
 ```bash
-make test-performance \
+make test-performance DOMAIN=endpoint \
   PROFILE=medium \
   WORKLOAD=business-normal \
   SCENARIO=apt-fileless-c2-local \
@@ -249,7 +258,7 @@ test/.results/recordings/performance-endpoint/<run-id>/<policy>/
 ### Platform
 
 ```bash
-make -C test performance-platform \
+make test-performance DOMAIN=platform \
   SYSARMOR_PLATFORM_PERF_DURATION=600 \
   SYSARMOR_PLATFORM_PERF_INTERVAL=5
 ```
@@ -269,10 +278,40 @@ Endpoint 与 Platform 是两个独立成本面，不能相加，也不能互相�
 ### Module
 
 ```bash
-make -C test performance-modules BENCHTIME=200ms COUNT=1
+make test-performance DOMAIN=modules BENCHTIME=200ms COUNT=1
 ```
 
 Module benchmark 适合定位算法回归，不包含 sensor、VM、网络或平台成本。
+
+## Distribution 测试
+
+Distribution 验证发行包和安装兼容性，不承担发布决策：
+
+| 来源 | 边界 |
+|---|---|
+| `SOURCE=local` | 当前源码生成的本地签名包、标准路径、安装事务和发布工作流契约 |
+| `SOURCE=published` | 指定公开安装地址在 Ubuntu 22.04、Ubuntu 24.04 和 Debian 12 中的真实安装与运行 |
+
+```bash
+make test-distribution SOURCE=local
+make test-distribution SOURCE=published \
+  URL=https://github.com/PKU-ASAL/sysarmor/releases/download/<tag>/install.sh
+```
+
+Published 测试必须显式指定待验收 tag 的 URL，避免误测其他 pre-release。详细镜像和场景
+说明见 `test/suites/distribution/published/README.md`。
+
+## Release 门禁
+
+Release 不拥有独立测试实现，只组合已有分类：
+
+```bash
+make test-release STAGE=pre-publish
+make test-release STAGE=post-publish URL=https://.../install.sh
+```
+
+发布前门禁包含 Unit、核心 Functional、Detection、选定的模块 Performance 基线和
+本地 Distribution。发布后门禁运行已发布产物的 Distribution 验收。
 
 ## 测试数据
 
@@ -294,7 +333,7 @@ Module benchmark 适合定位算法回归，不包含 sensor、VM、网络或平
 1. `manifest.json` 完整记录环境、Policy、Workload、Scenario、持续时间和 run ID。
 2. Workload 与 Scenario 按预期退出，时间线和必要结果文件非空。
 3. watcher 没有未解释退出；drop 和 parse error 必须显式为零或解释原因。
-4. Effectiveness 的 required/forbidden truth 全部得到判定。
+4. Detection 的 required/forbidden truth 全部得到判定。
 5. 性能对比使用相同 Profile、Policy、Workload、Scenario 和 VM 生命周期。
 6. 发布汇总时保留原始数据，并同时说明该测试不证明什么。
 
@@ -305,9 +344,10 @@ RSS 结论。重复运行应固定输入并报告样本数、聚合方法和异�
 
 新增测试时按问题选择位置：
 
-- 产品功能或链路断言：`test/suites/product/`；
-- truth-label 检测断言：`test/suites/effectiveness/`；
+- 产品功能或链路断言：`test/suites/functional/`；
+- truth-label 检测断言：`test/suites/detection/`；
 - 资源、吞吐或算法成本：`test/suites/performance/`；
+- 发行包和安装兼容性：`test/suites/distribution/`；
 - 多 Suite 共用机制：`test/shared/`；
 - 可复用输入：`test/data/`。
 

@@ -41,13 +41,13 @@ Agent 和 Sensor 是所有安全能力的执行基础。系统不能只依靠 Ag
 - observe-only 测试能够稳定记录终止尝试；
 - enforcement 能够拒绝未授权终止，同时允许受审计、限时的安装、升级、停止和卸载；
 - 不支持 BPF LSM 的主机能够 fail-open，并明确报告降级原因；
-- Product 测试覆盖启动、终止、卡死、连续崩溃、维护、重启和策略恢复。
+- Functional 测试覆盖启动、终止、卡死、连续崩溃、维护、重启和策略恢复。
 
 ### 当前证据
 
 - [systemd Agent unit](../deployments/agent/systemd/sysarmor-agent.service)
 - [Sensor 篡改与失明检测](../internal/agent/tamper/tamper.go)
-- [真实 Tetragon Agent 生命周期测试](../test/suites/product/endpoint/e2e-real-tetragon-owned-vm.sh)
+- [真实 Tetragon Agent 生命周期测试](../test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh)
 
 ### 边界
 

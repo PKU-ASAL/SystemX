@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,12 +21,14 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/tamper"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
+	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
@@ -38,6 +41,58 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
 )
+
+func TestDetectionSuppressionConversion(t *testing.T) {
+	got := detectionSuppression(agentcontent.RuntimeSuppression{
+		Within: "5m",
+		By:     []string{"process.stable_id", "file.path"},
+	})
+	if got.Within != 5*time.Minute || !slices.Equal(got.By, []string{"process.stable_id", "file.path"}) {
+		t.Fatalf("suppression = %+v", got)
+	}
+}
+
+func TestDetectionConditionTreeConversion(t *testing.T) {
+	node := &agentcontent.RuntimeConditionNode{Any: []agentcontent.RuntimeConditionNode{
+		{Condition: &agentcontent.RuntimeCondition{Field: "process.binary_name", Op: "in", Ref: "ctx:test-tools"}},
+		{Not: &agentcontent.RuntimeConditionNode{Condition: &agentcontent.RuntimeCondition{Field: "socket.port", Op: "in", Values: []string{"80"}}}},
+		{All: []agentcontent.RuntimeConditionNode{
+			{Condition: &agentcontent.RuntimeCondition{Field: "behavior", Op: "eq", Value: "process.exec"}},
+		}},
+	}}
+	got := detectionConditionNode(node)
+	if got == nil || len(got.Any) != 3 || got.Any[0].Condition == nil || got.Any[1].Not == nil || len(got.Any[2].All) != 1 {
+		t.Fatalf("condition tree = %+v", got)
+	}
+	if got.All != nil || got.Not != nil || got.Condition != nil {
+		t.Fatalf("any node gained unrelated kinds: %+v", got)
+	}
+	if got.Any[0].All != nil || got.Any[0].Any != nil || got.Any[0].Not != nil {
+		t.Fatalf("condition leaf gained unrelated kinds: %+v", got.Any[0])
+	}
+	if got.Any[0].Condition.Ref != "ctx:test-tools" || !slices.Equal(got.Any[1].Not.Condition.Values, []string{"80"}) {
+		t.Fatalf("condition tree leaves = %+v", got)
+	}
+	if got.Any[2].Any != nil || got.Any[2].Not != nil || got.Any[2].Condition != nil {
+		t.Fatalf("all node gained unrelated kinds: %+v", got.Any[2])
+	}
+}
+
+func TestDetectionCorrelateConversion(t *testing.T) {
+	got := detectionCorrelate(agentcontent.RuntimeCorrelate{
+		Within: "2m", By: []string{"lineage_id"},
+		Facts: []agentcontent.RuntimeFact{
+			{ID: "change", Events: []string{"file.write", "file.chmod"}},
+			{ID: "run", Event: "process.exec", Conditions: []agentcontent.RuntimeCondition{{Field: "process.binary", Op: "exists"}}},
+		},
+	})
+	if got.Within != 2*time.Minute || got.WithinText != "2m" || !slices.Equal(got.By, []string{"lineage_id"}) || len(got.Facts) != 2 {
+		t.Fatalf("correlate = %+v", got)
+	}
+	if !slices.Equal(got.Facts[0].Events, []string{"file.write", "file.chmod"}) || got.Facts[1].Event != "process.exec" || len(got.Facts[1].Conditions) != 1 {
+		t.Fatalf("facts = %+v", got.Facts)
+	}
+}
 
 const testCollectionPolicyJSON = `{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true}
 `
@@ -64,6 +119,31 @@ func appendEndpointSignalsForTest(t testing.TB, runner *AgentRuntime, bus *telem
 		bus.PublishBatch(batch)
 	}
 	return batch
+}
+
+func installTestDetection(t testing.TB, runner *AgentRuntime) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "deployments", "agent", "content", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runner.contentStore().Apply(string(raw), true, false); err != nil {
+			t.Fatalf("load test content %s: %v", path, err)
+		}
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.Detection = &policymodel.DetectionPolicy{
+		PolicyID: "daemon-test-detection", Version: 1, Mode: "observe",
+		RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:cep-endpoint"}},
+	}
+	if report, ok := runner.tryApplyRuntimePolicy(policy); !ok {
+		t.Fatalf("install test detection: %+v", report)
+	}
 }
 
 func TestAgentRuntimeSwitchesBatchIdentityAfterEnrollment(t *testing.T) {
@@ -120,6 +200,37 @@ func TestAgentRuntimeAppliesMatcherFeatureFlag(t *testing.T) {
 	}
 	if got := runner.detectionHealth().FeatureFlags.MatcherStrategy; got != "optimized" {
 		t.Fatalf("health matcher strategy = %q, want optimized", got)
+	}
+}
+
+func TestAgentRuntimeRejectsMissingDefaultContentManifest(t *testing.T) {
+	cfg := config.Config{
+		Manager: config.ManagerConfig{Address: "local", Transport: "local"},
+		Runtime: config.RuntimeConfig{FeatureFlags: config.RuntimeFeatureFlags{MatcherStrategy: "linear"}},
+		Sensor:  config.SensorConfig{Backend: "fake", Mode: "managed", ObserveOnly: true},
+		Content: config.ContentConfig{DefaultPath: t.TempDir(), Path: t.TempDir()},
+	}
+	_, err := New(cfg)
+	if err == nil || !strings.Contains(err.Error(), "default content manifest") {
+		t.Fatalf("New() error = %v, want default content manifest error", err)
+	}
+}
+
+func TestAgentRuntimeRejectsStartupDetectionWithoutRuleSet(t *testing.T) {
+	runner := &AgentRuntime{content: agentcontent.NewStore()}
+	err := runner.applyStartupDetection(policymodel.DefaultPolicy("default"))
+	if err == nil || !strings.Contains(err.Error(), "explicit ruleset") {
+		t.Fatalf("applyStartupDetection() error = %v, want explicit ruleset error", err)
+	}
+}
+
+func TestDetectionStatusIncludesDefaultManifestVersion(t *testing.T) {
+	runner := &AgentRuntime{}
+	policy := policymodel.DefaultPolicy("default")
+	policy.Detection = &policymodel.DetectionPolicy{PolicyID: "detection-test"}
+	runner.setDetectionStatus(policy, detection.ApplyReport{Status: "applied"}, agentcontent.Snapshot{DefaultManifestVersion: "release-v1"})
+	if got := runner.detectionHealth().DefaultManifestVersion; got != "release-v1" {
+		t.Fatalf("detection manifest version = %q, want release-v1", got)
 	}
 }
 
@@ -186,6 +297,7 @@ func TestAgentRuntimeUploadsFakeSensorEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	installTestDetection(t, runner)
 	var out bytes.Buffer
 	runDaemonUntilUploadedBatch(t, runner, &out)
 	got := out.String()
@@ -231,6 +343,86 @@ func TestStandaloneRuntimePersistsBeforeAcknowledging(t *testing.T) {
 	}
 }
 
+func TestStandaloneRuntimeResumesPersistentSequences(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state")
+	store := openSequenceStore(t, statePath)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := standaloneTestConfig(t, dir, statePath)
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.localStore.Close()
+	if runner.eventSeq != 41 || runner.signalSeq != 17 {
+		t.Fatalf("eventSeq=%d signalSeq=%d, want 41/17", runner.eventSeq, runner.signalSeq)
+	}
+}
+
+func TestEndpointSignalIDsContinueAcrossDetectionReplacement(t *testing.T) {
+	runner := &AgentRuntime{signalSeq: 17}
+	parent := &eventv1.CanonicalEvent{
+		Id: "event-parent", Behavior: "process.exec",
+		SubjectProc: &eventv1.ProcessRef{StableId: "node-parent", Binary: "/usr/bin/node"},
+	}
+	event := &eventv1.CanonicalEvent{
+		Id: "event-a", Behavior: "process.exec", ParentStableId: "node-parent",
+		SubjectProc: &eventv1.ProcessRef{StableId: "shell-child", Binary: "/bin/bash"},
+	}
+	policy := &policymodel.DetectionPolicy{RuleSets: []policymodel.RuleSetRef{{Ref: "ruleset:signal-sequence"}}}
+	content := detection.ContentSnapshot{Rules: []detection.RuleSpec{{
+		RuleID: "signal_sequence_test", RuleSetRef: "ruleset:signal-sequence", RuntimeType: "expr",
+		Expr: detection.ExprSpec{Conditions: []detection.ConditionSpec{{Field: "process.binary_name", Op: "eq", Value: "bash"}}},
+	}}}
+	firstEngine, _ := detection.NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	secondEngine, _ := detection.NewWithRuntime(policy, contract.CollectionIntent{}, content)
+	firstEngine.Process(parent)
+	secondEngine.Process(parent)
+	first := runner.dataBatchForEvent(event, firstEngine.Process(event)).GetSignals()[0]
+	second := runner.dataBatchForEvent(event, secondEngine.Process(event)).GetSignals()[0]
+	if first.GetSequence() != 18 || first.GetSignal().GetId() != "sig-00000000000000000018" {
+		t.Fatalf("first signal=%+v", first)
+	}
+	if second.GetSequence() != 19 || second.GetSignal().GetId() != "sig-00000000000000000019" {
+		t.Fatalf("second signal=%+v", second)
+	}
+}
+
+func openSequenceStore(t *testing.T, statePath string) *localstore.Store {
+	t.Helper()
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: statePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signal := &dataplanev1.SignalFrame{Sequence: 17, ObservedAt: "2026-07-24T00:00:00Z", Signal: &signalv1.Signal{Id: "sig-00000000000000000017"}}
+	batch := &dataplanev1.DataBatch{
+		Header:  &dataplanev1.BatchHeader{BatchId: "seed", EventSeqStart: 41, EventSeqEnd: 41, SignalSeqStart: 17, SignalSeqEnd: 17},
+		Signals: []*dataplanev1.SignalFrame{signal},
+	}
+	if _, err := store.AppendBatch(t.Context(), batch); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendSignals(t.Context(), []*dataplanev1.SignalFrame{signal}); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func standaloneTestConfig(t *testing.T, dir, statePath string) config.Config {
+	t.Helper()
+	policyPath := filepath.Join(dir, "collection.json")
+	if err := os.WriteFile(policyPath, []byte(testCollectionPolicyJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return config.Config{
+		Local:     config.LocalConfig{StatePath: statePath, Storage: config.LocalStorageConfig{MaxBytes: 1 << 30, MinFreeBytes: 1, SegmentSize: 1 << 20, SignalMaxCount: 1000}},
+		Sensor:    config.SensorConfig{Backend: "fake", Mode: "managed", PolicyPath: policyPath, ObserveOnly: true},
+		Telemetry: config.TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: time.Second},
+	}
+}
+
 func TestAgentRuntimeUploadsConfiguredLabels(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "collection.yaml")
@@ -249,6 +441,7 @@ func TestAgentRuntimeUploadsConfiguredLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	installTestDetection(t, runner)
 	batch := runDaemonUntilUploadedBatch(t, runner, nil)
 	if got := batch.GetEvents()[0].GetEvent().GetLabels()["scenario"]; got != "daemon-scenario" {
 		t.Fatalf("event label scenario = %q", got)
@@ -301,10 +494,11 @@ func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 		Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "default", Token: "dev-token", Labels: map[string]string{"scenario": "refresh-scenario"}},
 	}
 	runner := &AgentRuntime{Config: cfg}
+	installTestDetection(t, runner)
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	norm := normalize.New(cfg.Agent.ID, cfg.Agent.HostID, nil)
 	first := appendEndpointEventForTest(t, runner, nil, norm, sensorEventEnvelope("file.write", 100, "/usr/bin/curl", "/dev/shm/x.sh", ""))
-	updated := policymodel.DefaultPolicy("default")
+	updated := runner.activePolicy()
 	updated.PolicyID = "no-payload-after-refresh"
 	updated.Version = 2
 	disabled := false
@@ -472,7 +666,7 @@ func TestAgentRuntimeControlChannelAppliesContentUpdate(t *testing.T) {
 	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunControlChannel() error = %v", err)
 	}
-	if ack.GetStatus() != "degraded" || ack.GetPolicyId() != "ioc:c2-control-port-feed" {
+	if ack.GetStatus() != "applied" || ack.GetPolicyId() != "ioc:c2-control-port-feed" {
 		t.Fatalf("content ack = %+v", ack)
 	}
 	if record, ok := runner.contentStore().Get("ioc:c2-control-port-feed"); !ok || record.Version != "control-9443" {
@@ -494,7 +688,7 @@ func TestAgentRuntimeControlChannelRejectsBadContentUpdateWithoutReplacingDetect
 			"api_version":"sysarmor.content/v1",
 			"kind":"rulepack",
 			"metadata":{"id":"rulepack:bad-runtime","version":"bad-v1"},
-			"spec":{"rulesets":[{"id":"ruleset:bad-runtime","version":"v1","rules":[{
+			"spec":{"rulesets":[{"id":"ruleset:cep-endpoint","version":"v1","rules":[{
 				"rule_id":"bad_runtime_rule",
 				"version":1,
 				"severity":"high",
@@ -546,6 +740,7 @@ func TestAgentRuntimeRunsWithTetragonJSONLSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	installTestDetection(t, runner)
 	var out safeBuffer
 	runDaemonUntilOutput(t, runner, &out, "agent daemon event")
 	got := out.String()
@@ -622,10 +817,9 @@ func TestAgentRuntimeProcessesTamperSignalFromHealth(t *testing.T) {
 		},
 	}
 	sig := (&tamper.Detector{}).Evaluate(health, time.Now().UTC(), tamper.Options{
-		MaxRestarts:        uint64(runner.Config.Sensor.MaxRestarts),
-		MaxParseErrors:     runner.Config.Sensor.MaxParseErrors,
-		MaxDroppedEvents:   runner.Config.Sensor.MaxDroppedEvents,
-		NoEventGracePeriod: tamperNoEventGracePeriod(runner.Config.Sensor.RestartWindow, runner.Config.Health.Interval),
+		MaxRestarts:      uint64(runner.Config.Sensor.MaxRestarts),
+		MaxParseErrors:   runner.Config.Sensor.MaxParseErrors,
+		MaxDroppedEvents: runner.Config.Sensor.MaxDroppedEvents,
 	})
 	if sig == nil {
 		t.Fatal("tamper Evaluate() = nil")
@@ -726,15 +920,6 @@ func TestTetragonRestartPolicyFromConfig(t *testing.T) {
 	}
 	if _, err := tetragonRestartPolicy(config.SensorConfig{Restart: "sometimes"}); err == nil {
 		t.Fatal("tetragonRestartPolicy(unknown) error = nil")
-	}
-}
-
-func TestTamperNoEventGracePeriodHasFloor(t *testing.T) {
-	if got := tamperNoEventGracePeriod(500*time.Millisecond, 500*time.Millisecond); got != 30*time.Second {
-		t.Fatalf("tamper grace = %s, want 30s floor", got)
-	}
-	if got := tamperNoEventGracePeriod(time.Minute, 10*time.Second); got != 100*time.Second {
-		t.Fatalf("tamper grace = %s, want 10 health intervals", got)
 	}
 }
 
@@ -848,6 +1033,7 @@ func runTestControlChannel(t *testing.T, dir string, server *contentUpdateContro
 			SupportsHealth: true,
 		},
 	}
+	installTestDetection(t, runner)
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
 	rt := sensorruntime.New(runner.Sensor)
 	batcher := telemetry.NewBatcher(runner.newDataBatch, 10, time.Hour, 16)

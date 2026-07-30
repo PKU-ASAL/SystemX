@@ -22,15 +22,16 @@ const (
 )
 
 type ProcessRef struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StableId      string                 `protobuf:"bytes,1,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
-	Pid           uint32                 `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
-	Binary        string                 `protobuf:"bytes,3,opt,name=binary,proto3" json:"binary,omitempty"`
-	Argv          []string               `protobuf:"bytes,4,rep,name=argv,proto3" json:"argv,omitempty"`
-	Uid           uint32                 `protobuf:"varint,5,opt,name=uid,proto3" json:"uid,omitempty"`
-	StartTimeNs   uint64                 `protobuf:"varint,6,opt,name=start_time_ns,json=startTimeNs,proto3" json:"start_time_ns,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	StableId              string                 `protobuf:"bytes,1,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
+	Pid                   uint32                 `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
+	Binary                string                 `protobuf:"bytes,3,opt,name=binary,proto3" json:"binary,omitempty"`
+	Argv                  []string               `protobuf:"bytes,4,rep,name=argv,proto3" json:"argv,omitempty"`
+	Uid                   uint32                 `protobuf:"varint,5,opt,name=uid,proto3" json:"uid,omitempty"`
+	StartTimeNs           uint64                 `protobuf:"varint,6,opt,name=start_time_ns,json=startTimeNs,proto3" json:"start_time_ns,omitempty"`
+	ArgvBoundariesTrusted bool                   `protobuf:"varint,7,opt,name=argv_boundaries_trusted,json=argvBoundariesTrusted,proto3" json:"argv_boundaries_trusted,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ProcessRef) Reset() {
@@ -103,6 +104,13 @@ func (x *ProcessRef) GetStartTimeNs() uint64 {
 		return x.StartTimeNs
 	}
 	return 0
+}
+
+func (x *ProcessRef) GetArgvBoundariesTrusted() bool {
+	if x != nil {
+		return x.ArgvBoundariesTrusted
+	}
+	return false
 }
 
 type ObjectRef struct {
@@ -417,7 +425,7 @@ var File_api_proto_event_v1_event_proto protoreflect.FileDescriptor
 
 const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1eapi/proto/event/v1/event.proto\x12\x11sysarmor.event.v1\"\x9d\x01\n" +
+	"\x1eapi/proto/event/v1/event.proto\x12\x11sysarmor.event.v1\"\xd5\x01\n" +
 	"\n" +
 	"ProcessRef\x12\x1b\n" +
 	"\tstable_id\x18\x01 \x01(\tR\bstableId\x12\x10\n" +
@@ -425,7 +433,8 @@ const file_api_proto_event_v1_event_proto_rawDesc = "" +
 	"\x06binary\x18\x03 \x01(\tR\x06binary\x12\x12\n" +
 	"\x04argv\x18\x04 \x03(\tR\x04argv\x12\x10\n" +
 	"\x03uid\x18\x05 \x01(\rR\x03uid\x12\"\n" +
-	"\rstart_time_ns\x18\x06 \x01(\x04R\vstartTimeNs\"\x90\x01\n" +
+	"\rstart_time_ns\x18\x06 \x01(\x04R\vstartTimeNs\x126\n" +
+	"\x17argv_boundaries_trusted\x18\a \x01(\bR\x15argvBoundariesTrusted\"\x90\x01\n" +
 	"\tObjectRef\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1b\n" +
 	"\tfile_path\x18\x02 \x01(\tR\bfilePath\x12\x1f\n" +

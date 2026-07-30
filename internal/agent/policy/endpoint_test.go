@@ -96,6 +96,9 @@ func TestRepositoryDefaultEndpointPolicyParses(t *testing.T) {
 	if len(policy.Collection.Behaviors) == 0 || policy.Telemetry.MaxBatchItems != 256 {
 		t.Fatalf("policy sections were not normalized: %+v", policy)
 	}
+	if len(policy.Detection.RuleSets) != 1 || policy.Detection.RuleSets[0].Ref != "ruleset:cep-endpoint" {
+		t.Fatalf("default policy detection rulesets = %+v", policy.Detection.RuleSets)
+	}
 }
 
 func writeEndpointPolicy(t *testing.T, path, document string) {

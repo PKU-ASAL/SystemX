@@ -30,10 +30,11 @@ type Identity struct {
 }
 
 type Options struct {
-	TenantID      string
-	ScopeType     string
-	ScopeSelector string
-	Labels        map[string]string
+	TenantID        string
+	ScopeType       string
+	ScopeSelector   string
+	Labels          map[string]string
+	InitialSequence uint64
 }
 
 func New(agentID, hostID string, table *endpointctx.Table) *Normalizer {
@@ -53,6 +54,7 @@ func NewWithOptions(agentID, hostID string, table *endpointctx.Table, opts Optio
 		labels:        cloneLabels(opts.Labels),
 		table:         table,
 	}
+	n.seq.Store(opts.InitialSequence)
 	n.SetIdentity(agentID, hostID, opts.TenantID)
 	return n
 }
@@ -96,12 +98,13 @@ func (n *Normalizer) Normalize(ev *sensorv1.SensorEvent) *eventv1.CanonicalEvent
 		OccurredAtNs: ev.GetMonoNs(),
 		Behavior:     eventBehavior(ev),
 		SubjectProc: &eventv1.ProcessRef{
-			StableId:    stableID,
-			Pid:         ev.GetProc().GetPid(),
-			Binary:      cleanBinary(ev.GetProc().GetBinary()),
-			Argv:        ev.GetProc().GetArgv(),
-			Uid:         ev.GetProc().GetUid(),
-			StartTimeNs: ev.GetProc().GetStartTimeNs(),
+			StableId:              stableID,
+			Pid:                   ev.GetProc().GetPid(),
+			Binary:                cleanBinary(ev.GetProc().GetBinary()),
+			Argv:                  ev.GetProc().GetArgv(),
+			ArgvBoundariesTrusted: ev.GetProc().GetArgvBoundariesTrusted(),
+			Uid:                   ev.GetProc().GetUid(),
+			StartTimeNs:           ev.GetProc().GetStartTimeNs(),
 		},
 		Object:         objectRef(ev),
 		ParentStableId: parentStableID,

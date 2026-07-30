@@ -1,10 +1,12 @@
 # SysArmor test entrypoints.
 #
-# The test system is organized by evaluation suite:
-#   unit      - local Go tests and microbenchmarks, no environment
-#   performance - resource cost and local microbenchmarks
-#   effectiveness - detection truth labels, recall, precision, incident linkage
-#   product   - product functionality: endpoint, platform, topology
+# The test system is organized by concern:
+#   unit         - local code and module correctness
+#   functional   - endpoint, platform, and topology product behavior
+#   detection    - truth labels, detection quality, and evidence linkage
+#   performance  - resource cost, throughput, and local microbenchmarks
+#   distribution - package and published installation compatibility
+#   release      - aggregate gates over the required test concerns
 
 ENV       ?= container
 SCENARIO  ?= apt-fileless-c2
@@ -15,18 +17,18 @@ SYSARMOR_BENCH_WORKLOAD ?= business-normal
 SYSARMOR_BENCH_SCENARIO ?=
 SYSARMOR_BENCH_POLICIES ?=
 EVALUATION_SCOPE ?= local
-TETRAGON_ARCHIVE ?= $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(firstword $(wildcard ../.cache/tetragon-v1.7.0-amd64.tar.gz ../.scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz)))
+TETRAGON_ARCHIVE ?= $(abspath $(or $(SYSARMOR_TETRAGON_ARCHIVE),$(firstword $(wildcard ../.cache/tetragon-v1.7.0-amd64.tar.gz ../.scratchpad/.cache/tetragon-v1.7.0-amd64.tar.gz))))
 export SYSARMOR_TETRAGON_ARCHIVE := $(TETRAGON_ARCHIVE)
 
 .DEFAULT_GOAL := help
 
 .PHONY: doctor up down up-container up-vm-endpoint up-vm-topology up-all down-container down-vm-endpoint down-vm-topology down-all provision status clean help
-.PHONY: test-unit test-all
-.PHONY: product-endpoint product-endpoint-standalone product-endpoint-namespace-container product-topology product-platform product-platform-smoke product-platform-full
+.PHONY: test-unit functional-core
+.PHONY: functional-endpoint functional-endpoint-local functional-endpoint-container functional-platform functional-platform-full functional-topology
+.PHONY: detection-topology detection-report distribution-package distribution-published release-candidate release-published
 .PHONY: performance-endpoint performance-local-store performance-platform performance-modules performance-rule-engine performance-matcher
-.PHONY: effectiveness-topology effectiveness-report
 .PHONY: diag-endpoint recorder-start recorder-mark recorder-stop recorder-report
-.PHONY: capture-endpoint capture-topology report effectiveness-report
+.PHONY: capture-endpoint capture-topology report
 
 # Environment lifecycle -------------------------------------------------------
 
@@ -120,44 +122,39 @@ status:
 clean:
 	bash shared/harness/cleanup.sh $(ENV) --results
 
-# Product suites ---------------------------------------------------------------
+# Unit and functional suites --------------------------------------------------
 
 test-unit:
 	cd .. && go test ./...
 
-product-endpoint: doctor
-	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash suites/product/endpoint/e2e-real-tetragon-owned-vm.sh
+functional-endpoint: doctor
+	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint bash suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh
 
-product-endpoint-standalone:
-	bash suites/product/endpoint/standalone-local-store.sh
-	bash suites/product/endpoint/standalone-release-package.sh
-	bash suites/product/endpoint/standalone-github-assets.sh
-	bash suites/product/endpoint/dev-prerelease-workflow.sh
+functional-endpoint-local:
+	bash suites/functional/endpoint/standalone-local-store.sh
+	bash suites/functional/endpoint/container-entrypoint.sh
 
-product-endpoint-namespace-container:
-	bash suites/product/endpoint/e2e-namespace-self-container.sh
+functional-endpoint-container:
+	bash suites/functional/endpoint/e2e-namespace-self-container.sh
 
-product-topology: doctor
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/product/topology/e2e-systemd-vm.sh
+functional-topology: doctor
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/functional/topology/e2e-systemd-vm.sh
 
-product-platform:
-	bash suites/product/platform/e2e-control-contract.sh
-	bash suites/product/platform/e2e-gateway-local-ingest.sh
-	bash suites/product/platform/e2e-agent-gateway-manager-local.sh
-	bash suites/product/platform/e2e-control-roundtrip-local.sh
-	bash suites/product/platform/e2e-manager-api-policy.sh
-	bash suites/product/platform/e2e-response-policy-deny.sh
-	bash suites/product/platform/e2e-response-scope-deny.sh
-	bash suites/product/platform/e2e-response-approval.sh
-	bash suites/product/platform/e2e-store-status.sh
+functional-platform:
+	bash suites/functional/platform/e2e-control-contract.sh
+	bash suites/functional/platform/e2e-agent-gateway-manager-local.sh
+	bash suites/functional/platform/e2e-control-roundtrip-local.sh
+	bash suites/functional/platform/e2e-manager-api-policy.sh
+	bash suites/functional/platform/e2e-response-policy-deny.sh
+	bash suites/functional/platform/e2e-response-scope-deny.sh
+	bash suites/functional/platform/e2e-response-approval.sh
+	bash suites/functional/platform/e2e-store-status.sh
 
-product-platform-smoke: product-platform
-
-product-platform-full:
+functional-platform-full:
 	bash shared/harness/start-container.sh
-	bash suites/product/topology/e2e-scenarios-container.sh
+	bash suites/functional/topology/e2e-scenarios-container.sh
 
-test-all: test-unit product-endpoint product-topology product-platform
+functional-core: functional-endpoint functional-topology functional-platform
 
 # Capture ---------------------------------------------------------------------
 
@@ -167,7 +164,7 @@ capture-endpoint: doctor
 capture-topology: doctor
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash shared/diagnostics/capture-vm.sh $(SCENARIO) $(DUR)
 
-# Performance and effectiveness ----------------------------------------------
+# Detection and performance --------------------------------------------------
 
 performance-endpoint: doctor
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint SYSARMOR_BENCH_PROFILE=$(SYSARMOR_BENCH_PROFILE) SYSARMOR_BENCH_WORKLOAD=$(SYSARMOR_BENCH_WORKLOAD) SYSARMOR_BENCH_SCENARIO=$(SYSARMOR_BENCH_SCENARIO) SYSARMOR_BENCH_POLICIES="$(SYSARMOR_BENCH_POLICIES)" bash suites/performance/endpoint/run.sh
@@ -178,8 +175,8 @@ performance-local-store:
 performance-platform:
 	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/performance/platform/run.sh
 
-effectiveness-topology:
-	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/effectiveness/topology/run.sh
+detection-topology:
+	ENV=vm-topology SYSARMOR_VM_ENV=vm-topology bash suites/detection/topology/run.sh
 
 performance-modules: performance-rule-engine performance-matcher
 
@@ -204,44 +201,47 @@ recorder-stop:
 recorder-report:
 	ENV=vm-endpoint SYSARMOR_VM_ENV=vm-endpoint RUN_ID=$(RUN_ID) bash shared/recorder/recorder-vm.sh report
 
-effectiveness-report:
-	python3 shared/reports/effectiveness_report.py --bench-matrix-dir .results/effectiveness-topology/$(RUN_ID) --topology vm --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/effectiveness/$(RUN_ID)
+detection-report:
+	python3 shared/reports/detection_report.py --bench-matrix-dir .results/detection-topology/$(RUN_ID) --topology vm --scope $(EVALUATION_SCOPE) --scenarios $(or $(SCENARIOS),apt-fileless-c2 apt-staged-drop benign-ci-noise) --workloads $(or $(WORKLOADS),business-normal host-activity-heavy edr-activity-heavy) --output-dir .results/detection/$(RUN_ID)
+
+# Distribution and release gates ---------------------------------------------
+
+distribution-package:
+	bash suites/distribution/package/unified-agent-installation.sh
+	bash suites/distribution/package/transactional-agent-installation.sh
+	bash suites/distribution/package/standalone-release-package.sh
+	bash suites/distribution/package/standalone-github-assets.sh
+	bash suites/distribution/package/release-notes.sh
+	bash suites/distribution/package/release-workflow-contract.sh
+	bash suites/distribution/package/release-container-e2e-contract.sh
+
+distribution-published:
+	$(MAKE) -C suites/distribution/published test
+
+release-candidate: test-unit functional-core detection-topology performance-modules distribution-package
+
+release-published: distribution-published
 
 report:
 	python3 shared/reports/report.py
 
 help:
-	@echo "SysArmor test suites:"
-	@echo "  doctor           verify tools, libvirt provider, connection, and Tetragon archive"
-	@echo "  test-unit        local Go tests"
-	@echo "  product-endpoint single VM endpoint with owned real Tetragon"
-	@echo "  product-endpoint-standalone local state and standalone release package contracts"
-	@echo "  product-endpoint-namespace-container container agent with namespace/self Tetragon scope"
-	@echo "  product-topology multi-VM manager artifact/enrollment install path"
-	@echo "  product-platform local platform contracts/smoke"
-	@echo "  product-platform-smoke alias for product-platform"
-	@echo "  product-platform-full container gateway/worker/manager product path"
-	@echo "  performance-endpoint endpoint CPU/RSS benchmark"
-	@echo "  performance-platform platform service CPU/memory benchmark over vm-topology"
-	@echo "  performance-modules local module microbenchmarks"
-	@echo "  effectiveness-topology detection effectiveness over vm-topology"
+	@echo "SysArmor public test commands (run from repository root):"
+	@echo "  make test-unit"
+	@echo "  make test-functional DOMAIN=endpoint|platform|topology|all"
+	@echo "  make test-detection"
+	@echo "  make test-performance DOMAIN=endpoint|platform|modules|all PROFILE=medium"
+	@echo "  make test-distribution SOURCE=local|published URL=https://..."
+	@echo "  make test-release STAGE=pre-publish|post-publish URL=https://..."
+	@echo "  make test-doctor"
 	@echo ""
-	@echo "Environments:"
+	@echo "Internal environment and diagnostic targets:"
 	@echo "  ENV=container | vm-endpoint | vm-topology"
 	@echo "  up-container | up-vm-endpoint | up-vm-topology | up-all"
 	@echo "  down-container | down-vm-endpoint | down-vm-topology | down-all"
-	@echo ""
-	@echo "Common:"
 	@echo "  make -C test up ENV=vm-endpoint"
 	@echo "  make -C test down-all"
-	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=quick SYSARMOR_BENCH_WORKLOAD=business-normal"
-	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=medium SYSARMOR_BENCH_WORKLOAD=business-normal SYSARMOR_BENCH_SCENARIO=apt-fileless-c2-local SYSARMOR_BENCH_POLICIES='test/data/policies/collection-balanced.json'"
-	@echo "  make -C test performance-endpoint SYSARMOR_BENCH_PROFILE=long SYSARMOR_BENCH_WORKLOAD=business-normal"
-	@echo "  make -C test performance-platform SYSARMOR_PLATFORM_PERF_DURATION=600"
-	@echo "  make -C test effectiveness-topology ENV=vm-topology"
 	@echo "  make -C test recorder-start RUN_ID=my-run"
-	@echo ""
-	@echo "Endpoint benchmark phases: startup, steady, workload, activity, persistence, overall"
 
 define require_env
 	@case "$(ENV)" in container|vm-endpoint|vm-topology) ;; *) echo "unsupported ENV=$(ENV)" >&2; exit 2 ;; esac

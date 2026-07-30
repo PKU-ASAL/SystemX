@@ -50,6 +50,9 @@ sensor:
   backend: fake
 policy:
   path: /etc/sysarmor/agent/policy.json
+content:
+  default_path: /opt/sysarmor/agent/content/default
+  path: /var/lib/sysarmor/agent/content
 `)
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -63,6 +66,9 @@ policy:
 	}
 	if cfg.Sensor.PolicyPath != cfg.Policy.Path {
 		t.Fatalf("sensor policy path = %q want %q", cfg.Sensor.PolicyPath, cfg.Policy.Path)
+	}
+	if cfg.Content.DefaultPath != "/opt/sysarmor/agent/content/default" || cfg.Content.Path != "/var/lib/sysarmor/agent/content" {
+		t.Fatalf("content config = %+v", cfg.Content)
 	}
 }
 
@@ -135,8 +141,9 @@ func TestSystemdUnitStartsAgentDaemon(t *testing.T) {
 	}
 }
 
-func TestInstallerUsesUnifiedLayoutAndStartsService(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "deployments", "agent", "install-agent.sh"))
+func TestInstallCoreUsesUnifiedLayoutAndStartsService(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "deployments", "agent")
+	data, err := os.ReadFile(filepath.Join(root, "install-core.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,12 +151,21 @@ func TestInstallerUsesUnifiedLayoutAndStartsService(t *testing.T) {
 	for _, want := range []string{
 		`/etc/sysarmor/agent/agent.yaml`,
 		`/etc/sysarmor/agent/policy.json`,
-		`SYSARMOR_CTL_BIN`,
+		`SYSARMOR_INSTALL_CTL_SOURCE`,
 		`systemctl enable --now sysarmor-agent`,
-		`systemctl is-active --quiet sysarmor-agent`,
+		`wait_for_agent`,
 	} {
 		if !strings.Contains(installer, want) {
 			t.Fatalf("installer missing %q", want)
+		}
+	}
+	for _, name := range []string{"install-agent.sh", "install-release.sh"} {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "install-core.sh") {
+			t.Fatalf("%s does not delegate to install-core.sh", name)
 		}
 	}
 }
@@ -160,7 +176,10 @@ func TestReleaseBuilderPackagesAgentControlTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	builder := string(data)
-	for _, want := range []string{`CTL_BIN=`, `--ctl-bin "$CTL_BIN"`} {
+	for _, want := range []string{
+		`CTL_BIN=`, `--ctl-bin "$CTL_BIN"`,
+		`CONTENT_SIGNING_KEY=`, `--content-signing-key "$CONTENT_SIGNING_KEY"`, `--content-key-id "$CONTENT_KEY_ID"`,
+	} {
 		if !strings.Contains(builder, want) {
 			t.Fatalf("release builder missing %q", want)
 		}

@@ -51,6 +51,9 @@ func (s *Store) ReadBatches(_ context.Context, opts ReadOptions) ([]StoredBatch,
 }
 
 func (s *Store) recoverSegments(ctx context.Context) error {
+	if err := s.loadSequenceCursor(ctx); err != nil {
+		return err
+	}
 	files, err := segmentFiles(filepath.Join(s.rootDir, "spool"))
 	if err != nil {
 		return err
@@ -65,6 +68,7 @@ func (s *Store) recoverSegments(ctx context.Context) error {
 			return err
 		}
 		for _, batch := range batches {
+			s.advanceSequenceCursor(batch.Batch)
 			s.batchPositions[batch.Position.BatchID] = batch.Position
 		}
 		if open {
@@ -78,7 +82,7 @@ func (s *Store) recoverSegments(ctx context.Context) error {
 			s.writer = writer
 		}
 	}
-	return nil
+	return s.persistSequenceCursor(ctx)
 }
 
 func openRecoveredWriter(path string, batches []StoredBatch) (*segmentWriter, error) {
