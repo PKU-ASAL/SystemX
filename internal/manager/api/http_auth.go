@@ -11,6 +11,7 @@ import (
 )
 
 const maxAuthenticatedBody = 4 << 20
+const maxManagerRequestBody = 128 << 20
 
 func (s *Server) HandlerWithAuth(verifier *managerauth.Verifier) http.Handler {
 	base := s.Handler()
@@ -44,6 +45,19 @@ func bindPrincipalTenant(next http.Handler) http.Handler {
 		r.URL.RawQuery = query.Encode()
 		if !bindJSONTenant(w, r, principal.TenantID) {
 			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func limitRequestBody(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if maxBytes > 0 && r.Body != nil {
+			if r.ContentLength > maxBytes {
+				writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "Request body too large")
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 		}
 		next.ServeHTTP(w, r)
 	})

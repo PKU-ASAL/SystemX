@@ -234,8 +234,24 @@ func NewServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) 
 	return s
 }
 
-func NewProductionServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) *Server {
-	return newServer(st, searcher)
+func NewProductionServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) (*Server, error) {
+	s := newServer(st, searcher)
+	var err error
+	if s.artifactPub, err = readRequiredFile("SYSARMOR_ARTIFACT_PUBLIC_KEY"); err != nil {
+		return nil, err
+	}
+	if s.caCertPEM, err = readRequiredFile("SYSARMOR_AGENT_CA_CERT"); err != nil {
+		return nil, err
+	}
+	caKeyPEM, err := readRequiredFile("SYSARMOR_AGENT_CA_KEY")
+	if err != nil {
+		return nil, err
+	}
+	s.caCert, s.caKey, err = parseCARequired(s.caCertPEM, caKeyPEM)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func newServer(st ManagerStore, searcher platformopensearch.Searcher) *Server {
@@ -268,29 +284,49 @@ func readOptionalFile(path string) []byte {
 	return data
 }
 
+func readRequiredFile(envName string) ([]byte, error) {
+	path := strings.TrimSpace(os.Getenv(envName))
+	if path == "" {
+		return nil, fmt.Errorf("%s is required", envName)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", envName, err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("%s is empty", envName)
+	}
+	return data, nil
+}
+
 func parseCA(certPEM, keyPEM []byte) (*x509.Certificate, *rsa.PrivateKey) {
+	cert, key, _ := parseCARequired(certPEM, keyPEM)
+	return cert, key
+}
+
+func parseCARequired(certPEM, keyPEM []byte) (*x509.Certificate, *rsa.PrivateKey, error) {
 	certBlock, _ := pem.Decode(certPEM)
 	keyBlock, _ := pem.Decode(keyPEM)
 	if certBlock == nil || keyBlock == nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("decode agent CA cert/key PEM")
 	}
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("parse agent CA cert: %w", err)
 	}
 	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
 	if err != nil {
 		parsed, parseErr := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
 		if parseErr != nil {
-			return nil, nil
+			return nil, nil, fmt.Errorf("parse agent CA key: %w", err)
 		}
 		rsaKey, ok := parsed.(*rsa.PrivateKey)
 		if !ok {
-			return nil, nil
+			return nil, nil, fmt.Errorf("agent CA key must be RSA")
 		}
 		key = rsaKey
 	}
-	return cert, key
+	return cert, key, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -333,7 +369,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)
-	return normalizeAPIErrors(requireProductionPrincipal(mux))
+	return limitRequestBody(normalizeAPIErrors(requireProductionPrincipal(mux)), maxManagerRequestBody)
 }
 
 func parseLabelSelector(values []string) store.LabelSelector {

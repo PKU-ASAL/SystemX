@@ -85,6 +85,19 @@ func TestEnrollmentTokenEndpointsDoNotRequirePrincipal(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsOversizedAnonymousBodyBeforeEndpoint(t *testing.T) {
+	handler := NewServer(&store.Store{}).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/enrollment-certificate", strings.NewReader(`{}`))
+	req.ContentLength = maxManagerRequestBody + 1
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusRequestEntityTooLarge, rec.Body.String())
+	}
+}
+
 func TestForgedIdentityHeadersDoNotCreatePrincipal(t *testing.T) {
 	handler := NewServer(&store.Store{}).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reset", nil)
@@ -156,5 +169,16 @@ func TestOperatorPrincipalCannotSatisfyAdminRequirement(t *testing.T) {
 	allowed := server.requireOperator(rec, req, "admin")
 	if allowed || rec.Code != http.StatusForbidden {
 		t.Fatalf("operator satisfied admin requirement: allowed=%t status=%d", allowed, rec.Code)
+	}
+}
+
+func TestProductionServerRequiresSecurityFiles(t *testing.T) {
+	t.Setenv("SYSARMOR_ARTIFACT_PUBLIC_KEY", "")
+	t.Setenv("SYSARMOR_AGENT_CA_CERT", "")
+	t.Setenv("SYSARMOR_AGENT_CA_KEY", "")
+
+	_, err := NewProductionServerWithSearch(&store.Store{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "SYSARMOR_ARTIFACT_PUBLIC_KEY") {
+		t.Fatalf("NewProductionServerWithSearch error = %v, want artifact public key requirement", err)
 	}
 }

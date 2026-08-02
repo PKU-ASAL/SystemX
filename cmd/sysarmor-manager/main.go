@@ -74,19 +74,31 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	managerSrv := managerapi.NewProductionServerWithSearch(st, searcher)
+	managerSrv, err := managerapi.NewProductionServerWithSearch(st, searcher)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure production manager: %v\n", err)
+		os.Exit(1)
+	}
 	if err := managerSrv.SeedArtifactFeedFromEnv(ctx); err != nil {
 		log.Printf("seed package index: %v", err)
 	}
 
-	srv := &http.Server{
-		Addr:    *listen,
-		Handler: managerSrv.HandlerWithAuth(verifier),
-	}
+	srv := newManagerHTTPServer(*listen, managerSrv.HandlerWithAuth(verifier))
 	log.Printf("sysarmor-manager listening on %s store_backend=%s store=%s", *listen, *storeBackend, *storePath)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "manager serve: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func newManagerHTTPServer(listen string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              listen,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }
 
