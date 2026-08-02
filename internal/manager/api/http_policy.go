@@ -46,7 +46,11 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "policy_id is required", http.StatusBadRequest)
 			return
 		}
-		policy = s.store.UpsertPolicy(policy)
+		policy, err := s.store.UpsertPolicyWithError(policy)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("save policy: %v", err), http.StatusInternalServerError)
+			return
+		}
 		s.recordPolicyAudit(policymodel.AuditRecord{
 			TenantID:      policy.TenantID,
 			Action:        "policy.upsert",
@@ -82,25 +86,21 @@ func (s *Server) policyPublish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "policy_id is required", http.StatusBadRequest)
 		return
 	}
-	policy, ok := s.store.PublishPolicy(req.TenantID, req.PolicyID, req.Version, req.Published)
-	if !ok {
-		http.Error(w, "policy not found", http.StatusNotFound)
-		return
-	}
 	action := "policy.unpublish"
 	if req.Published {
 		action = "policy.publish"
 	}
-	s.recordPolicyAudit(policymodel.AuditRecord{
-		TenantID:      policy.TenantID,
-		Action:        action,
-		PolicyID:      policy.PolicyID,
-		PolicyVersion: policy.Version,
-		Actor:         s.actorFromRequest(r, req.Actor),
-		Reason:        req.Reason,
+	policy, ok, err := s.store.PublishPolicyWithAudit(req.TenantID, req.PolicyID, req.Version, req.Published, policymodel.AuditRecord{
+		Action: action,
+		Actor:  s.actorFromRequest(r, req.Actor),
+		Reason: req.Reason,
 	})
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("save policy publication: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "policy not found", http.StatusNotFound)
 		return
 	}
 	writeJSON(w, policy)
@@ -133,32 +133,26 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		assignment := req.Assignment
-		saved, ok := s.store.AssignPolicy(assignment)
-		if !ok {
-			http.Error(w, "policy not found or assignment invalid", http.StatusBadRequest)
-			return
-		}
-		s.recordPolicyAudit(policymodel.AuditRecord{
-			TenantID:      saved.TenantID,
-			Action:        "policy.assign",
-			PolicyID:      saved.PolicyID,
-			PolicyVersion: saved.PolicyVersion,
-			AssignmentID:  saved.AssignmentID,
-			Actor:         s.actorFromRequest(r, req.Actor),
-			Reason:        req.Reason,
-		})
 		var command *controlmodel.ControlCommand
 		if req.Downlink {
-			cmd, err := s.policyDownlinkCommand(r, saved, req)
+			cmd, err := s.policyDownlinkCommand(r, assignment, req)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			out := s.store.CreateControlCommand(cmd)
-			command = &out
+			command = &cmd
 		}
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		saved, command, ok, err := s.store.AssignPolicyWithAudit(assignment, policymodel.AuditRecord{
+			Action: "policy.assign",
+			Actor:  s.actorFromRequest(r, req.Actor),
+			Reason: req.Reason,
+		}, command)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("save policy assignment: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			http.Error(w, "policy not found or assignment invalid", http.StatusBadRequest)
 			return
 		}
 		if command != nil {
@@ -175,22 +169,13 @@ func (s *Server) policyDownlinkCommand(r *http.Request, assignment policymodel.A
 	if strings.TrimSpace(assignment.AgentID) == "" {
 		return controlmodel.ControlCommand{}, fmt.Errorf("downlink requires agent_id on policy assignment")
 	}
-	policy, ok := s.store.GetPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
-	if !ok {
-		return controlmodel.ControlCommand{}, fmt.Errorf("policy not found for downlink")
-	}
-	payload, err := json.Marshal(policy.EndpointPolicy())
-	if err != nil {
-		return controlmodel.ControlCommand{}, fmt.Errorf("encode policy downlink payload: %v", err)
-	}
 	return controlmodel.ControlCommand{
 		CommandID:     req.CommandID,
 		TenantID:      assignment.TenantID,
 		AgentID:       assignment.AgentID,
 		Type:          controlmodel.ControlCommandTypePolicyUpdate,
-		PolicyID:      policy.PolicyID,
-		PolicyVersion: policy.Version,
-		PayloadJSON:   payload,
+		PolicyID:      assignment.PolicyID,
+		PolicyVersion: assignment.PolicyVersion,
 		Actor:         s.actorFromRequest(r, req.Actor),
 		Reason:        firstNonEmptyString(req.Reason, "policy assignment downlink"),
 	}, nil

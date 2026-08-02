@@ -30,6 +30,7 @@ const FileStoreStateVersion = 1
 
 type Store struct {
 	mu              sync.RWMutex
+	durableMu       sync.Mutex
 	path            string
 	backendInfo     *Info
 	backend         Backend
@@ -508,36 +509,68 @@ func (s *Store) ListRules(where string) []policymodel.RuleContent {
 }
 
 func (s *Store) UpsertPolicy(policy policymodel.Policy) policymodel.Policy {
+	out, _ := s.UpsertPolicyWithError(policy)
+	return out
+}
+
+func (s *Store) UpsertPolicyWithError(policy policymodel.Policy) (policymodel.Policy, error) {
 	if policy.PolicyID == "" {
-		return policymodel.Policy{}
+		return policymodel.Policy{}, nil
 	}
 	policy = policymodel.Normalize(policy)
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
 	s.mu.Lock()
-	for i, existing := range s.Policies {
-		if existing.TenantID == policy.TenantID && existing.PolicyID == policy.PolicyID && existing.Version == policy.Version {
-			if existing.CreatedAt.IsZero() {
-				existing.CreatedAt = policy.CreatedAt
-			}
-			policy.CreatedAt = existing.CreatedAt
-			s.Policies[i] = policy
-			backend, ctx := s.backend, s.baseCtx
+	policies, policy := upsertPolicySnapshot(s.Policies, policy)
+	backend, ctx := s.backend, s.baseCtx
+	if backend == nil {
+		oldPolicies := s.Policies
+		s.Policies = policies
+		if err := s.persistFileLocked(); err != nil {
+			s.Policies = oldPolicies
 			s.mu.Unlock()
-			if backend != nil {
-				_ = backend.WritePolicy(ctxOrBackground(ctx), policy)
+			return policymodel.Policy{}, fmt.Errorf("write policy: %w", err)
+		}
+		s.mu.Unlock()
+		return policy, nil
+	}
+	s.mu.Unlock()
+	if err := backend.WritePolicy(ctxOrBackground(ctx), policy); err != nil {
+		return policymodel.Policy{}, fmt.Errorf("write policy: %w", err)
+	}
+	s.mu.Lock()
+	s.Policies = policies
+	s.mu.Unlock()
+	return policy, nil
+}
+
+func upsertPolicySnapshot(policies []policymodel.Policy, policy policymodel.Policy) ([]policymodel.Policy, policymodel.Policy) {
+	out := append([]policymodel.Policy(nil), policies...)
+	for i, existing := range out {
+		if existing.TenantID == policy.TenantID && existing.PolicyID == policy.PolicyID && existing.Version == policy.Version {
+			if !existing.CreatedAt.IsZero() {
+				policy.CreatedAt = existing.CreatedAt
 			}
-			return policy
+			out[i] = policy
+			return out, policy
 		}
 	}
-	s.Policies = append(s.Policies, policy)
-	backend, ctx := s.backend, s.baseCtx
-	s.mu.Unlock()
-	if backend != nil {
-		_ = backend.WritePolicy(ctxOrBackground(ctx), policy)
-	}
-	return policy
+	return append(out, policy), policy
 }
 
 func (s *Store) RecordPolicyAudit(record policymodel.AuditRecord) policymodel.AuditRecord {
+	record = normalizePolicyAudit(record)
+	s.mu.Lock()
+	s.PolicyAudits = append(s.PolicyAudits, record)
+	backend, ctx := s.backend, s.baseCtx
+	s.mu.Unlock()
+	if backend != nil {
+		_ = backend.WritePolicyAudit(ctxOrBackground(ctx), record)
+	}
+	return record
+}
+
+func normalizePolicyAudit(record policymodel.AuditRecord) policymodel.AuditRecord {
 	if record.TenantID == "" {
 		record.TenantID = "default"
 	}
@@ -550,13 +583,6 @@ func (s *Store) RecordPolicyAudit(record policymodel.AuditRecord) policymodel.Au
 	}
 	if record.AuditID == "" {
 		record.AuditID = fmt.Sprintf("policy-audit-%d", now.UnixNano())
-	}
-	s.mu.Lock()
-	s.PolicyAudits = append(s.PolicyAudits, record)
-	backend, ctx := s.backend, s.baseCtx
-	s.mu.Unlock()
-	if backend != nil {
-		_ = backend.WritePolicyAudit(ctxOrBackground(ctx), record)
 	}
 	return record
 }
@@ -643,33 +669,42 @@ func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymode
 	return latest, ok
 }
 
-func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, published bool) (policymodel.Policy, bool) {
+func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, published bool) (policymodel.Policy, bool, error) {
 	if tenantID == "" {
 		tenantID = "default"
 	}
 	if policyID == "" {
-		return policymodel.Policy{}, false
+		return policymodel.Policy{}, false, nil
+	}
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	if err := s.loadPolicyForCommit(tenantID, policyID, version); err != nil {
+		return policymodel.Policy{}, false, err
+	}
+	s.mu.RLock()
+	index := policyIndex(s.Policies, tenantID, policyID, version)
+	if index < 0 {
+		s.mu.RUnlock()
+		return policymodel.Policy{}, false, nil
+	}
+	policy := s.Policies[index]
+	backend, ctx := s.backend, s.baseCtx
+	s.mu.RUnlock()
+	policy.Published, policy.UpdatedAt = published, time.Now().UTC()
+	if backend != nil {
+		if err := backend.WritePolicy(ctxOrBackground(ctx), policy); err != nil {
+			return policymodel.Policy{}, false, fmt.Errorf("write policy publication: %w", err)
+		}
 	}
 	s.mu.Lock()
-	for i, policy := range s.Policies {
-		if policy.TenantID != tenantID || policy.PolicyID != policyID {
-			continue
-		}
-		if version != 0 && policy.Version != version {
-			continue
-		}
-		policy.Published = published
-		policy.UpdatedAt = time.Now().UTC()
-		s.Policies[i] = policy
-		backend, ctx := s.backend, s.baseCtx
-		s.mu.Unlock()
-		if backend != nil {
-			_ = backend.WritePolicy(ctxOrBackground(ctx), policy)
-		}
-		return policy, true
+	defer s.mu.Unlock()
+	oldPolicies := s.Policies
+	s.Policies, _ = upsertPolicySnapshot(s.Policies, policy)
+	if err := s.persistFileLocked(); err != nil {
+		s.Policies = oldPolicies
+		return policymodel.Policy{}, false, fmt.Errorf("write policy publication: %w", err)
 	}
-	s.mu.Unlock()
-	return policymodel.Policy{}, false
+	return policy, true, nil
 }
 
 func (s *Store) publishedPolicy(tenantID, policyID string, version uint64) (policymodel.Policy, bool) {
@@ -698,56 +733,41 @@ func (s *Store) publishedPolicy(tenantID, policyID string, version uint64) (poli
 	return latest, ok
 }
 
-func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Assignment, bool) {
+func (s *Store) AssignPolicy(assignment policymodel.Assignment) (policymodel.Assignment, bool, error) {
 	if assignment.PolicyID == "" {
-		return policymodel.Assignment{}, false
+		return policymodel.Assignment{}, false, nil
 	}
 	if assignment.TenantID == "" {
 		assignment.TenantID = "default"
 	}
-	policy, ok := s.publishedPolicy(assignment.TenantID, assignment.PolicyID, assignment.PolicyVersion)
-	if !ok {
-		return policymodel.Assignment{}, false
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	if err := s.loadAssignmentState(assignment); err != nil {
+		return policymodel.Assignment{}, false, err
 	}
-	assignment.PolicyVersion = policy.Version
-	if assignment.AssignmentID == "" {
-		assignment.AssignmentID = assignmentKey(assignment)
-	}
-	now := time.Now().UTC()
-	if assignment.CreatedAt.IsZero() {
-		assignment.CreatedAt = now
-	}
-	assignment.UpdatedAt = now
-	s.mu.Lock()
-	for i, existing := range s.Assignments {
-		if existing.AssignmentID == assignment.AssignmentID {
-			assignment.CreatedAt = existing.CreatedAt
-			s.Assignments[i] = assignment
-			backend, ctx := s.backend, s.baseCtx
-			s.mu.Unlock()
-			if backend != nil {
-				_ = backend.WriteAssignment(ctxOrBackground(ctx), assignment)
-			}
-			return assignment, true
-		}
-		if sameAssignmentTarget(existing, assignment) {
-			assignment.CreatedAt = existing.CreatedAt
-			s.Assignments[i] = assignment
-			backend, ctx := s.backend, s.baseCtx
-			s.mu.Unlock()
-			if backend != nil {
-				_ = backend.WriteAssignment(ctxOrBackground(ctx), assignment)
-			}
-			return assignment, true
-		}
-	}
-	s.Assignments = append(s.Assignments, assignment)
+	s.mu.RLock()
+	policies := append([]policymodel.Policy(nil), s.Policies...)
+	assignments := append([]policymodel.Assignment(nil), s.Assignments...)
 	backend, ctx := s.backend, s.baseCtx
-	s.mu.Unlock()
-	if backend != nil {
-		_ = backend.WriteAssignment(ctxOrBackground(ctx), assignment)
+	s.mu.RUnlock()
+	assignment, _, ok := prepareAssignment(policies, assignments, assignment)
+	if !ok {
+		return policymodel.Assignment{}, false, nil
 	}
-	return assignment, true
+	if backend != nil {
+		if err := backend.WriteAssignment(ctxOrBackground(ctx), assignment); err != nil {
+			return policymodel.Assignment{}, false, fmt.Errorf("write policy assignment: %w", err)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	oldAssignments := s.Assignments
+	s.Assignments = upsertAssignmentSnapshot(s.Assignments, assignment)
+	if err := s.persistFileLocked(); err != nil {
+		s.Assignments = oldAssignments
+		return policymodel.Assignment{}, false, fmt.Errorf("write policy assignment: %w", err)
+	}
+	return assignment, true, nil
 }
 
 func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignment {
@@ -810,28 +830,108 @@ func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector stri
 	return policymodel.DefaultPolicy(tenantID), true
 }
 
-func (s *Store) CreateResponse(cmd responsemodel.Command) responsemodel.Command {
+func (s *Store) CreateResponse(cmd responsemodel.Command) (responsemodel.Command, error) {
 	cmd = responsemodel.NormalizeCommand(cmd)
-	s.mu.Lock()
-	for i, existing := range s.Responses {
-		if existing.ResponseID == cmd.ResponseID {
-			cmd.CreatedAt = existing.CreatedAt
-			s.Responses[i] = cmd
-			backend, ctx := s.backend, s.baseCtx
-			s.mu.Unlock()
-			if backend != nil {
-				_ = backend.WriteResponse(ctxOrBackground(ctx), cmd, nil)
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	s.mu.RLock()
+	backend, ctx := s.backend, s.baseCtx
+	if backend == nil {
+		for _, existing := range s.Responses {
+			if existing.TenantID == cmd.TenantID && existing.ResponseID == cmd.ResponseID {
+				s.mu.RUnlock()
+				return existing, nil
 			}
-			return cmd
 		}
 	}
-	s.Responses = append(s.Responses, cmd)
-	backend, ctx := s.backend, s.baseCtx
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	if backend != nil {
-		_ = backend.WriteResponse(ctxOrBackground(ctx), cmd, nil)
+		out, authoritative, err := s.createResponseInBackend(backend, ctxOrBackground(ctx), cmd)
+		if err != nil {
+			return responsemodel.Command{}, err
+		}
+		if authoritative {
+			return out, nil
+		}
 	}
-	return cmd
+	s.mu.Lock()
+	oldResponses := s.Responses
+	s.Responses = upsertResponseSnapshot(append([]responsemodel.Command(nil), s.Responses...), cmd)
+	if err := s.persistFileLocked(); err != nil {
+		s.Responses = oldResponses
+		s.mu.Unlock()
+		return responsemodel.Command{}, fmt.Errorf("write response: %w", err)
+	}
+	s.mu.Unlock()
+	return cmd, nil
+}
+
+func (s *Store) createResponseInBackend(backend Backend, ctx context.Context, cmd responsemodel.Command) (responsemodel.Command, bool, error) {
+	records, err := backend.ListResponses(ctx, cmd.TenantID, "")
+	if err != nil {
+		return responsemodel.Command{}, false, fmt.Errorf("find existing response: %w", err)
+	}
+	if existing, ok := findResponseAudit(records, cmd.TenantID, cmd.ResponseID); ok {
+		s.mu.Lock()
+		s.cacheResponseAuditLocked(existing)
+		s.mu.Unlock()
+		return existing.Command, true, nil
+	}
+	created, err := backend.CreateResponse(ctx, cmd)
+	if err != nil {
+		return responsemodel.Command{}, false, fmt.Errorf("write response: %w", err)
+	}
+	if created {
+		return cmd, false, nil
+	}
+	records, err = backend.ListResponses(ctx, cmd.TenantID, "")
+	if err != nil {
+		return responsemodel.Command{}, false, fmt.Errorf("reload conflicting response: %w", err)
+	}
+	existing, ok := findResponseAudit(records, cmd.TenantID, cmd.ResponseID)
+	if !ok {
+		return responsemodel.Command{}, false, fmt.Errorf("reload conflicting response: response not found")
+	}
+	s.mu.Lock()
+	s.cacheResponseAuditLocked(existing)
+	s.mu.Unlock()
+	return existing.Command, true, nil
+}
+
+func findResponseAudit(records []responsemodel.AuditRecord, tenantID, responseID string) (responsemodel.AuditRecord, bool) {
+	for _, record := range records {
+		if record.Command.TenantID == tenantID && record.Command.ResponseID == responseID {
+			return record, true
+		}
+	}
+	return responsemodel.AuditRecord{}, false
+}
+
+func (s *Store) cacheResponseAuditLocked(record responsemodel.AuditRecord) {
+	s.Responses = upsertResponseSnapshot(s.Responses, record.Command)
+	if record.Ack != nil {
+		s.ResponseAcks = upsertResponseAckSnapshot(s.ResponseAcks, *record.Ack)
+	}
+}
+
+func upsertResponseSnapshot(responses []responsemodel.Command, command responsemodel.Command) []responsemodel.Command {
+	for i, existing := range responses {
+		if existing.TenantID == command.TenantID && existing.ResponseID == command.ResponseID {
+			responses[i] = command
+			return responses
+		}
+	}
+	return append(responses, command)
+}
+
+func upsertResponseAckSnapshot(acks []responsemodel.Ack, ack responsemodel.Ack) []responsemodel.Ack {
+	for i, existing := range acks {
+		if existing.TenantID == ack.TenantID && existing.ResponseID == ack.ResponseID {
+			acks[i] = ack
+			return acks
+		}
+	}
+	return append(acks, ack)
 }
 
 func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRecord {
@@ -844,7 +944,7 @@ func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRec
 	defer s.mu.RUnlock()
 	acks := map[string]responsemodel.Ack{}
 	for _, ack := range s.ResponseAcks {
-		acks[ack.ResponseID] = ack
+		acks[responseKey(ack.TenantID, ack.ResponseID)] = ack
 	}
 	out := make([]responsemodel.AuditRecord, 0, len(s.Responses))
 	for _, cmd := range s.Responses {
@@ -855,7 +955,7 @@ func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRec
 			continue
 		}
 		record := responsemodel.AuditRecord{Command: cmd}
-		if ack, ok := acks[cmd.ResponseID]; ok {
+		if ack, ok := acks[responseKey(cmd.TenantID, cmd.ResponseID)]; ok {
 			record.Ack = &ack
 		}
 		out = append(out, record)
@@ -867,12 +967,17 @@ func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRec
 }
 
 func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Command {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if records, err := backend.ListResponses(ctx, tenantID, agentID); err == nil {
+			return pendingResponsesFromAudit(records)
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]responsemodel.Command, 0, len(s.Responses))
 	acked := map[string]bool{}
 	for _, ack := range s.ResponseAcks {
-		acked[ack.ResponseID] = true
+		acked[responseKey(ack.TenantID, ack.ResponseID)] = true
 	}
 	for _, cmd := range s.Responses {
 		if tenantID != "" && cmd.TenantID != tenantID {
@@ -881,10 +986,23 @@ func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Comma
 		if agentID != "" && cmd.AgentID != agentID {
 			continue
 		}
-		if cmd.Status != "pending" || acked[cmd.ResponseID] {
+		if cmd.Status != "pending" || acked[responseKey(cmd.TenantID, cmd.ResponseID)] {
 			continue
 		}
 		out = append(out, cmd)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+func pendingResponsesFromAudit(records []responsemodel.AuditRecord) []responsemodel.Command {
+	out := make([]responsemodel.Command, 0, len(records))
+	for _, record := range records {
+		if record.Command.Status == "pending" && record.Ack == nil {
+			out = append(out, record.Command)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
@@ -960,48 +1078,69 @@ func (s *Store) ApproveResponse(tenantID, agentID, responseID string, approved b
 	return responsemodel.Command{}, false
 }
 
-func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool) {
+func (s *Store) AckResponse(ack responsemodel.Ack) (responsemodel.Command, bool, error) {
 	if ack.ResponseID == "" {
-		return responsemodel.Command{}, false
+		return responsemodel.Command{}, false, nil
 	}
 	if ack.ObservedAt.IsZero() {
 		ack.ObservedAt = time.Now().UTC()
 	}
-	s.mu.Lock()
+	if ack.TenantID == "" {
+		ack.TenantID = "default"
+	}
+	if ack.AgentID == "" {
+		return responsemodel.Command{}, false, nil
+	}
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	s.mu.RLock()
 	var command responsemodel.Command
 	var ok bool
-	for i, cmd := range s.Responses {
-		if cmd.ResponseID == ack.ResponseID {
-			cmd.Status = "acked"
-			cmd.UpdatedAt = ack.ObservedAt
-			s.Responses[i] = cmd
+	for _, cmd := range s.Responses {
+		if cmd.ResponseID == ack.ResponseID && cmd.TenantID == ack.TenantID && cmd.AgentID == ack.AgentID {
 			command = cmd
 			ok = true
 			break
 		}
 	}
+	backend, ctx := s.backend, s.baseCtx
+	s.mu.RUnlock()
 	if !ok {
-		s.mu.Unlock()
-		return responsemodel.Command{}, false
-	}
-	for i, existing := range s.ResponseAcks {
-		if existing.ResponseID == ack.ResponseID {
-			s.ResponseAcks[i] = ack
-			backend, ctx := s.backend, s.baseCtx
-			s.mu.Unlock()
-			if backend != nil {
-				_ = backend.WriteResponse(ctxOrBackground(ctx), command, &ack)
+		if backend != nil {
+			records, err := backend.ListResponses(ctxOrBackground(ctx), ack.TenantID, ack.AgentID)
+			if err != nil {
+				return responsemodel.Command{}, false, fmt.Errorf("find response for ack: %w", err)
 			}
-			return command, true
+			if record, found := findResponseAudit(records, ack.TenantID, ack.ResponseID); found {
+				command, ok = record.Command, record.Command.AgentID == ack.AgentID
+			}
+		}
+		if !ok {
+			return responsemodel.Command{}, false, nil
 		}
 	}
-	s.ResponseAcks = append(s.ResponseAcks, ack)
-	backend, ctx := s.backend, s.baseCtx
-	s.mu.Unlock()
+	command.Status = "acked"
+	command.UpdatedAt = ack.ObservedAt
 	if backend != nil {
-		_ = backend.WriteResponse(ctxOrBackground(ctx), command, &ack)
+		if err := backend.WriteResponse(ctxOrBackground(ctx), command, &ack); err != nil {
+			return responsemodel.Command{}, false, fmt.Errorf("write response ack: %w", err)
+		}
 	}
-	return command, true
+	s.mu.Lock()
+	oldResponses, oldAcks := s.Responses, s.ResponseAcks
+	s.Responses = upsertResponseSnapshot(append([]responsemodel.Command(nil), s.Responses...), command)
+	s.ResponseAcks = upsertResponseAckSnapshot(append([]responsemodel.Ack(nil), s.ResponseAcks...), ack)
+	if err := s.persistFileLocked(); err != nil {
+		s.Responses, s.ResponseAcks = oldResponses, oldAcks
+		s.mu.Unlock()
+		return responsemodel.Command{}, false, fmt.Errorf("write response ack: %w", err)
+	}
+	s.mu.Unlock()
+	return command, true, nil
+}
+
+func responseKey(tenantID, responseID string) string {
+	return tenantID + "/" + responseID
 }
 
 func (s *Store) CreateEvidencePullback(req controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest {
@@ -1104,25 +1243,74 @@ func (s *Store) CompleteEvidencePullback(result controlmodel.EvidencePullbackRes
 	return controlmodel.EvidencePullbackRequest{}, false
 }
 
-func (s *Store) CreateControlCommand(cmd controlmodel.ControlCommand) controlmodel.ControlCommand {
+func (s *Store) CreateControlCommand(cmd controlmodel.ControlCommand) (controlmodel.ControlCommand, error) {
 	cmd = controlmodel.NormalizeControlCommand(cmd)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, existing := range s.ControlCommands {
-		if existing.CommandID == cmd.CommandID {
-			cmd.CreatedAt = existing.CreatedAt
-			if cmd.SentAt.IsZero() {
-				cmd.SentAt = existing.SentAt
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	s.mu.RLock()
+	backend, ctx := s.backend, s.baseCtx
+	if backend == nil {
+		for _, existing := range s.ControlCommands {
+			if existing.CommandID == cmd.CommandID && existing.TenantID == cmd.TenantID {
+				s.mu.RUnlock()
+				return existing, nil
 			}
-			if cmd.AckedAt.IsZero() {
-				cmd.AckedAt = existing.AckedAt
-			}
-			s.ControlCommands[i] = cmd
-			return cmd
 		}
 	}
-	s.ControlCommands = append(s.ControlCommands, cmd)
-	return cmd
+	s.mu.RUnlock()
+	if backend != nil {
+		out, authoritative, err := s.createControlCommandInBackend(backend, ctxOrBackground(ctx), cmd)
+		if err != nil {
+			return controlmodel.ControlCommand{}, err
+		}
+		if authoritative {
+			return out, nil
+		}
+	}
+	s.mu.Lock()
+	oldCommands := s.ControlCommands
+	s.ControlCommands = upsertControlCommandSnapshot(append([]controlmodel.ControlCommand(nil), s.ControlCommands...), cmd)
+	if err := s.persistFileLocked(); err != nil {
+		s.ControlCommands = oldCommands
+		s.mu.Unlock()
+		return controlmodel.ControlCommand{}, fmt.Errorf("write control command: %w", err)
+	}
+	s.mu.Unlock()
+	return cmd, nil
+}
+
+func (s *Store) createControlCommandInBackend(backend Backend, ctx context.Context, cmd controlmodel.ControlCommand) (controlmodel.ControlCommand, bool, error) {
+	commands, err := backend.ListControlCommands(ctx, cmd.TenantID, "", "")
+	if err != nil {
+		return controlmodel.ControlCommand{}, false, fmt.Errorf("find existing control command: %w", err)
+	}
+	if existing, ok := findControlCommandByTenant(commands, cmd.TenantID, cmd.CommandID); ok {
+		s.cacheControlCommand(existing)
+		return existing, true, nil
+	}
+	created, err := backend.CreateControlCommand(ctx, cmd)
+	if err != nil {
+		return controlmodel.ControlCommand{}, false, fmt.Errorf("write control command: %w", err)
+	}
+	if created {
+		return cmd, false, nil
+	}
+	commands, err = backend.ListControlCommands(ctx, cmd.TenantID, "", "")
+	if err != nil {
+		return controlmodel.ControlCommand{}, false, fmt.Errorf("reload conflicting control command: %w", err)
+	}
+	existing, ok := findControlCommandByTenant(commands, cmd.TenantID, cmd.CommandID)
+	if !ok {
+		return controlmodel.ControlCommand{}, false, fmt.Errorf("reload conflicting control command: command not found")
+	}
+	s.cacheControlCommand(existing)
+	return existing, true, nil
+}
+
+func (s *Store) cacheControlCommand(cmd controlmodel.ControlCommand) {
+	s.mu.Lock()
+	s.ControlCommands = upsertControlCommandSnapshot(s.ControlCommands, cmd)
+	s.mu.Unlock()
 }
 
 func (s *Store) ListControlCommands(tenantID, agentID, commandType string) []controlmodel.ControlCommand {
@@ -1315,39 +1503,67 @@ func (s *Store) updateControlCommand(commandID, tenantID, agentID string, update
 	return controlmodel.ControlCommand{}, false
 }
 
-func (s *Store) AckControlCommand(ack controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool) {
+func (s *Store) AckControlCommand(ack controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool, error) {
 	if ack.CommandID == "" {
-		return controlmodel.ControlCommand{}, false
+		return controlmodel.ControlCommand{}, false, nil
 	}
 	if ack.ObservedAt.IsZero() {
 		ack.ObservedAt = time.Now().UTC()
 	}
+	if ack.TenantID == "" {
+		ack.TenantID = "default"
+	}
+	if ack.AgentID == "" {
+		return controlmodel.ControlCommand{}, false, nil
+	}
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	s.mu.RLock()
+	cmd, ok := findControlCommand(s.ControlCommands, ack.TenantID, ack.AgentID, ack.CommandID)
+	backend, ctx := s.backend, s.baseCtx
+	s.mu.RUnlock()
+	if !ok && backend != nil {
+		commands, err := backend.ListControlCommands(ctxOrBackground(ctx), ack.TenantID, ack.AgentID, "")
+		if err != nil {
+			return controlmodel.ControlCommand{}, false, fmt.Errorf("find control command for ack: %w", err)
+		}
+		cmd, ok = findControlCommand(commands, ack.TenantID, ack.AgentID, ack.CommandID)
+	}
+	if !ok {
+		return controlmodel.ControlCommand{}, false, nil
+	}
+	cmd = applyControlCommandAck(cmd, ack)
+	if backend != nil {
+		if err := backend.WriteControlCommand(ctxOrBackground(ctx), cmd); err != nil {
+			return controlmodel.ControlCommand{}, false, fmt.Errorf("write control command ack: %w", err)
+		}
+	}
 	s.mu.Lock()
-	for i, cmd := range s.ControlCommands {
-		if cmd.CommandID != ack.CommandID {
-			continue
-		}
-		if ack.TenantID != "" && cmd.TenantID != ack.TenantID {
-			continue
-		}
-		if ack.AgentID != "" && cmd.AgentID != ack.AgentID {
-			continue
-		}
-		cmd = applyControlCommandAck(cmd, ack)
-		s.ControlCommands[i] = cmd
+	oldCommands := s.ControlCommands
+	s.ControlCommands = upsertControlCommandSnapshot(append([]controlmodel.ControlCommand(nil), s.ControlCommands...), cmd)
+	if err := s.persistFileLocked(); err != nil {
+		s.ControlCommands = oldCommands
 		s.mu.Unlock()
-		return cmd, true
+		return controlmodel.ControlCommand{}, false, fmt.Errorf("write control command ack: %w", err)
 	}
 	s.mu.Unlock()
-	for _, cmd := range s.ListControlCommands(ack.TenantID, ack.AgentID, "") {
-		if cmd.CommandID != ack.CommandID {
-			continue
+	return cmd, true, nil
+}
+
+func findControlCommand(commands []controlmodel.ControlCommand, tenantID, agentID, commandID string) (controlmodel.ControlCommand, bool) {
+	for _, cmd := range commands {
+		if cmd.CommandID == commandID && cmd.TenantID == tenantID && cmd.AgentID == agentID {
+			return cmd, true
 		}
-		cmd = applyControlCommandAck(cmd, ack)
-		s.mu.Lock()
-		s.ControlCommands = upsertControlCommandSnapshot(s.ControlCommands, cmd)
-		s.mu.Unlock()
-		return cmd, true
+	}
+	return controlmodel.ControlCommand{}, false
+}
+
+func findControlCommandByTenant(commands []controlmodel.ControlCommand, tenantID, commandID string) (controlmodel.ControlCommand, bool) {
+	for _, cmd := range commands {
+		if cmd.CommandID == commandID && cmd.TenantID == tenantID {
+			return cmd, true
+		}
 	}
 	return controlmodel.ControlCommand{}, false
 }
@@ -2237,6 +2453,8 @@ func (s *Store) DeleteByLabels(labels LabelSelector) {
 }
 
 func (s *Store) Save() error {
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
 	s.mu.RLock()
 	state, err := s.exportStateLocked()
 	path := s.path
@@ -2257,6 +2475,21 @@ func (s *Store) Save() error {
 		return err
 	}
 	return writeFileAtomic(path, data)
+}
+
+func (s *Store) persistFileLocked() error {
+	if s.backend != nil || s.path == "" {
+		return nil
+	}
+	state, err := s.exportStateLocked()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(s.path, data)
 }
 
 // writeFileAtomic writes data to a temporary file in the destination directory

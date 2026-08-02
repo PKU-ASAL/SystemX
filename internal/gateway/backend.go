@@ -44,11 +44,11 @@ type Backend interface {
 }
 
 type ControlStore interface {
-	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
+	AckResponse(responsemodel.Ack) (responsemodel.Command, bool, error)
 	AddAgent(store.AgentIdentity)
 	AttachIncidentEvidence(string, store.LabelSelector, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
-	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
+	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool, error)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
 	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)

@@ -53,16 +53,64 @@ func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {
 	}
 }
 
+func TestControlCommandCreateDoesNotRepeatPersistence(t *testing.T) {
+	st := &saveCountingManagerStore{Store: &store.Store{}}
+	handler := newAdminTestServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
+		"command_id":"ctrl-single-write",
+		"tenant_id":"default",
+		"agent_id":"agent-a",
+		"type":"content_update",
+		"payload_json":{"kind":"iocpack"}
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || st.saves != 0 {
+		t.Fatalf("control command create status=%d saves=%d body=%s, want success without full save", rec.Code, st.saves, rec.Body.String())
+	}
+}
+
+func TestEvidencePullbackCreatePersistsStore(t *testing.T) {
+	st := &saveCountingManagerStore{Store: &store.Store{}}
+	handler := newAdminTestServer(st).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/evidence-pullbacks", strings.NewReader(`{
+		"request_id":"pullback-persist",
+		"tenant_id":"default",
+		"agent_id":"agent-a"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || st.saves != 1 {
+		t.Fatalf("evidence pullback create status=%d saves=%d body=%s, want one save", rec.Code, st.saves, rec.Body.String())
+	}
+}
+
+type saveCountingManagerStore struct {
+	*store.Store
+	saves int
+}
+
+func (s *saveCountingManagerStore) Save() error {
+	s.saves++
+	return nil
+}
+
 func TestControlCommandActionsUpdateLifecycle(t *testing.T) {
 	st := &store.Store{}
 	handler := newAdminTestServer(st).Handler()
-	st.CreateControlCommand(controlmodel.ControlCommand{
+	if _, err := st.CreateControlCommand(controlmodel.ControlCommand{
 		CommandID:   "ctrl-action",
 		TenantID:    "default",
 		AgentID:     "agent-a",
 		Type:        controlmodel.ControlCommandTypeContentUpdate,
 		PayloadJSON: []byte(`{"kind":"iocpack"}`),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/control-commands", strings.NewReader(`{
 		"action":"cancel",

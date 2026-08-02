@@ -99,13 +99,15 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	if execLog := fakeExecLog(); strings.Contains(execLog, "CREATE TABLE IF NOT EXISTS incidents") {
 		t.Fatalf("postgres migration still creates incident reports: %s", execLog)
 	}
-	result.Store.CreateResponse(responsemodel.Command{
+	if _, err := result.Store.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-pg",
 		TenantID:   "default",
 		AgentID:    "agent-pg",
 		Action:     "collect",
 		Mode:       "observe",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -180,7 +182,7 @@ func TestOpenPostgresProjectsResponseAuditTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	result.Store.CreateResponse(responsemodel.Command{
+	if _, err := result.Store.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-audit-pg",
 		TenantID:   "default",
 		AgentID:    "agent-audit-pg",
@@ -189,19 +191,26 @@ func TestOpenPostgresProjectsResponseAuditTable(t *testing.T) {
 		Mode:       "observe",
 		CreatedAt:  time.Unix(100, 0).UTC(),
 		UpdatedAt:  time.Unix(101, 0).UTC(),
-	})
-	result.Store.AckResponse(responsemodel.Ack{
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := result.Store.AckResponse(responsemodel.Ack{
 		ResponseID:  "resp-audit-pg",
 		TenantID:    "default",
 		AgentID:     "agent-audit-pg",
 		Accepted:    true,
 		ObserveOnly: true,
 		ObservedAt:  time.Unix(102, 0).UTC(),
-	})
+	}); err != nil || !ok {
+		t.Fatalf("AckResponse ok=%t err=%v", ok, err)
+	}
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	execLog := fakeExecLog()
+	if !strings.Contains(execLog, "ON CONFLICT (tenant_id, response_id) DO NOTHING") {
+		t.Fatalf("response create is not create-only:\n%s", execLog)
+	}
 	for _, want := range []string{
 		"INSERT INTO response_audit",
 		"resp-audit-pg",
@@ -219,6 +228,7 @@ func TestOpenPostgresProjectsResponseAuditTable(t *testing.T) {
 func TestOpenPostgresWritesResponseAuditTablePath(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
+	now := time.Now().UTC()
 	result, err := Open(context.Background(), Options{
 		Kind:           KindPostgres,
 		PostgresDriver: fakeDriverName,
@@ -227,24 +237,28 @@ func TestOpenPostgresWritesResponseAuditTablePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	result.Store.CreateResponse(responsemodel.Command{
+	if _, err := result.Store.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-write-table-pg",
 		TenantID:   "default",
 		AgentID:    "agent-response-write-pg",
 		Status:     "pending",
 		Action:     "collect",
 		Mode:       "observe",
-		CreatedAt:  time.Unix(120, 0).UTC(),
-		UpdatedAt:  time.Unix(121, 0).UTC(),
-	})
-	result.Store.AckResponse(responsemodel.Ack{
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := result.Store.AckResponse(responsemodel.Ack{
 		ResponseID:  "resp-write-table-pg",
 		TenantID:    "default",
 		AgentID:     "agent-response-write-pg",
 		Accepted:    true,
 		ObserveOnly: true,
-		ObservedAt:  time.Unix(122, 0).UTC(),
-	})
+		ObservedAt:  now.Add(time.Second),
+	}); err != nil || !ok {
+		t.Fatalf("AckResponse ok=%t err=%v", ok, err)
+	}
 	execLog := fakeExecLog()
 	if !strings.Contains(execLog, "INSERT INTO response_audit") || strings.Contains(execLog, "INSERT INTO sysarmor_state") {
 		t.Fatalf("response write hook did not use table path without snapshot save:\n%s", execLog)
@@ -252,6 +266,122 @@ func TestOpenPostgresWritesResponseAuditTablePath(t *testing.T) {
 	records := result.Store.ListResponses("default", "agent-response-write-pg")
 	if len(records) != 1 || records[0].Command.ResponseID != "resp-write-table-pg" || records[0].Command.Status != "acked" || records[0].Ack == nil || !records[0].Ack.Accepted {
 		t.Fatalf("response audit table write/read = %+v", records)
+	}
+}
+
+func TestOpenPostgresDurableControlPathsWorkAfterReopen(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := result.Store.CreateResponse(responsemodel.Command{
+		ResponseID: "response-reopen", TenantID: "default", AgentID: "agent-reopen", Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID, policy.Version, policy.Published = "policy-reopen", 9, false
+	if _, err := result.Store.UpsertPolicyWithError(policy); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(context.Background(), Options{
+		Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending := reopened.Store.PendingResponses("default", "agent-reopen"); len(pending) != 1 || pending[0].ResponseID != "response-reopen" {
+		t.Fatalf("pending responses after reopen = %+v", pending)
+	}
+	if _, ok, err := reopened.Store.AckResponse(responsemodel.Ack{ResponseID: "response-reopen", TenantID: "default", AgentID: "agent-reopen"}); err != nil || !ok {
+		t.Fatalf("AckResponse after reopen ok=%t err=%v", ok, err)
+	}
+	if _, ok, err := reopened.Store.PublishPolicyWithAudit("default", "policy-reopen", 9, true, policymodel.AuditRecord{Action: "policy.publish"}); err != nil || !ok {
+		t.Fatalf("PublishPolicyWithAudit after reopen ok=%t err=%v", ok, err)
+	}
+	assignment, _, ok, err := reopened.Store.AssignPolicyWithAudit(
+		policymodel.Assignment{TenantID: "default", AgentID: "agent-reopen", PolicyID: "policy-reopen", PolicyVersion: 9},
+		policymodel.AuditRecord{Action: "policy.assign"}, nil,
+	)
+	if err != nil || !ok || assignment.PolicyVersion != 9 {
+		t.Fatalf("AssignPolicyWithAudit after reopen assignment=%+v ok=%t err=%v", assignment, ok, err)
+	}
+}
+
+func TestOpenPostgresStaleSaveDoesNotOverwriteControlAckFromAnotherStore(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	manager, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Store.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID: "control-cross-store", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gatewayStore, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := gatewayStore.Store.AckControlCommand(controlmodel.ControlCommandAck{
+		CommandID: "control-cross-store", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusApplied,
+		ObservedAt: time.Now().UTC().Add(time.Second),
+	}); err != nil || !ok {
+		t.Fatalf("AckControlCommand ok=%t err=%v", ok, err)
+	}
+	if err := manager.Store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := reopened.Store.ListControlCommands("default", "agent-a", "")
+	if len(commands) != 1 || commands[0].Status != controlmodel.ControlCommandStatusApplied {
+		t.Fatalf("control commands after stale cross-store save = %+v", commands)
+	}
+	if log := fakeExecLog(); !strings.Contains(log, "WHERE control_commands.updated_at <= EXCLUDED.updated_at") {
+		t.Fatalf("control command upsert missing monotonic guard:\n%s", log)
+	}
+}
+
+func TestOpenPostgresSaveDoesNotReplayExplicitControlPlaneTables(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := result.Store.CreateResponse(responsemodel.Command{ResponseID: "response-save-owner", TenantID: "default", AgentID: "agent-a"}); err != nil {
+		t.Fatal(err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID, policy.Version, policy.Published = "policy-save-owner", 1, true
+	if _, err := result.Store.UpsertPolicyWithError(policy); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, err := result.Store.AssignPolicyWithAudit(
+		policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: policy.PolicyID, PolicyVersion: 1},
+		policymodel.AuditRecord{AuditID: "audit-save-owner", Action: "policy.assign"}, nil,
+	); err != nil || !ok {
+		t.Fatalf("AssignPolicyWithAudit ok=%t err=%v", ok, err)
+	}
+	fakeClearExecLog()
+
+	if err := result.Store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	log := fakeExecLog()
+	for _, forbidden := range []string{"INSERT INTO response_audit", "INSERT INTO policies", "INSERT INTO policy_assignments", "INSERT INTO policy_audit"} {
+		if strings.Contains(log, forbidden) {
+			t.Fatalf("Save replayed explicitly owned table %q:\n%s", forbidden, log)
+		}
 	}
 }
 
@@ -272,14 +402,14 @@ func TestOpenPostgresProjectsPolicyTables(t *testing.T) {
 	policy.Scope = policymodel.ScopeSelector{Type: "container", Selector: "checkout-api"}
 	policy.Mode = "observe"
 	result.Store.UpsertPolicy(policy)
-	assignment, ok := result.Store.AssignPolicy(policymodel.Assignment{
+	assignment, ok, err := result.Store.AssignPolicy(policymodel.Assignment{
 		TenantID:      "default",
 		AgentID:       "agent-policy-pg",
 		PolicyID:      "policy-table-pg",
 		PolicyVersion: 9,
 	})
-	if !ok {
-		t.Fatal("AssignPolicy() ok = false")
+	if err != nil || !ok {
+		t.Fatalf("AssignPolicy() ok=%t err=%v", ok, err)
 	}
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -317,31 +447,31 @@ func TestOpenPostgresWritesPolicyControlTablePaths(t *testing.T) {
 	policy.Version = 4
 	policy.Published = false
 	result.Store.UpsertPolicy(policy)
-	published, ok := result.Store.PublishPolicy("default", "policy-write-table-pg", 4, true)
-	if !ok || !published.Published {
-		t.Fatalf("PublishPolicy() = %+v, %v", published, ok)
+	published, ok, err := result.Store.PublishPolicyWithAudit("default", "policy-write-table-pg", 4, true, policymodel.AuditRecord{
+		AuditID: "audit-policy-publish-pg", Action: "policy.publish", Actor: "alice", CreatedAt: time.Unix(129, 0).UTC(),
+	})
+	if err != nil || !ok || !published.Published {
+		t.Fatalf("PublishPolicy() = %+v ok=%t err=%v", published, ok, err)
 	}
-	assignment, ok := result.Store.AssignPolicy(policymodel.Assignment{
+	assignment, _, ok, err := result.Store.AssignPolicyWithAudit(policymodel.Assignment{
 		TenantID:      "default",
 		AgentID:       "agent-policy-write-pg",
 		PolicyID:      "policy-write-table-pg",
 		PolicyVersion: 4,
-	})
-	if !ok {
-		t.Fatal("AssignPolicy() ok = false")
+	}, policymodel.AuditRecord{
+		AuditID:   "audit-policy-write-pg",
+		Action:    "policy.assign",
+		Actor:     "alice",
+		Status:    "ok",
+		Reason:    "table write",
+		CreatedAt: time.Unix(130, 0).UTC(),
+	}, nil)
+	if err != nil || !ok {
+		t.Fatalf("AssignPolicy() ok=%t err=%v", ok, err)
 	}
-	result.Store.RecordPolicyAudit(policymodel.AuditRecord{
-		AuditID:       "audit-policy-write-pg",
-		TenantID:      "default",
-		Action:        "policy.assign",
-		PolicyID:      "policy-write-table-pg",
-		PolicyVersion: 4,
-		AssignmentID:  assignment.AssignmentID,
-		Actor:         "alice",
-		Status:        "ok",
-		Reason:        "table write",
-		CreatedAt:     time.Unix(130, 0).UTC(),
-	})
+	if assignment.AssignmentID == "" {
+		t.Fatal("AssignPolicyWithAudit assignment_id is empty")
+	}
 	execLog := fakeExecLog()
 	for _, want := range []string{
 		"INSERT INTO policies",
@@ -362,6 +492,71 @@ func TestOpenPostgresWritesPolicyControlTablePaths(t *testing.T) {
 	got, ok := result.Store.EffectivePolicy("default", "agent-policy-write-pg", "", "")
 	if !ok || got.PolicyID != "policy-write-table-pg" || got.Version != 4 || !got.Published {
 		t.Fatalf("effective policy from table write path = %+v, %v", got, ok)
+	}
+}
+
+func TestOpenPostgresRollsBackPolicyAssignmentWhenAuditWriteFails(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID, policy.Version, policy.Published = "policy-tx-rollback", 1, true
+	if _, err := result.Store.UpsertPolicyWithError(policy); err != nil {
+		t.Fatal(err)
+	}
+	fakeFailExecContaining("INSERT INTO policy_audit", errors.New("audit write failed"))
+
+	_, _, ok, err := result.Store.AssignPolicyWithAudit(
+		policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: policy.PolicyID, PolicyVersion: 1},
+		policymodel.AuditRecord{AuditID: "audit-tx-rollback", Action: "policy.assign"},
+		&controlmodel.ControlCommand{CommandID: "control-tx-rollback", Type: controlmodel.ControlCommandTypePolicyUpdate},
+	)
+
+	commits, rollbacks := fakeTransactionCounts()
+	if err == nil || ok || commits != 0 || rollbacks != 1 {
+		t.Fatalf("AssignPolicyWithAudit ok=%t err=%v commits=%d rollbacks=%d", ok, err, commits, rollbacks)
+	}
+	if log := fakeExecLog(); !strings.Contains(log, "INSERT INTO policy_assignments") || !strings.Contains(log, "INSERT INTO policy_audit") || strings.Contains(log, "control-tx-rollback") {
+		t.Fatalf("unexpected transaction exec log:\n%s", log)
+	}
+	if len(result.Store.Assignments) != 0 || len(result.Store.PolicyAudits) != 0 || len(result.Store.ControlCommands) != 0 {
+		t.Fatalf("failed transaction published memory state: assignments=%+v audits=%+v commands=%+v", result.Store.Assignments, result.Store.PolicyAudits, result.Store.ControlCommands)
+	}
+}
+
+func TestOpenPostgresRollsBackPolicyAssignmentOnControlCommandConflict(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID, policy.Version, policy.Published = "policy-command-conflict", 1, true
+	if _, err := result.Store.UpsertPolicyWithError(policy); err != nil {
+		t.Fatal(err)
+	}
+	fakeReturnZeroRowsContaining("INSERT INTO control_commands")
+
+	_, _, ok, err := result.Store.AssignPolicyWithAudit(
+		policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: policy.PolicyID, PolicyVersion: 1},
+		policymodel.AuditRecord{AuditID: "audit-command-conflict", Action: "policy.assign"},
+		&controlmodel.ControlCommand{CommandID: "control-command-conflict", Type: controlmodel.ControlCommandTypePolicyUpdate},
+	)
+
+	commits, rollbacks := fakeTransactionCounts()
+	if err == nil || ok || !strings.Contains(err.Error(), "already exists") || commits != 0 || rollbacks != 1 {
+		t.Fatalf("AssignPolicyWithAudit ok=%t err=%v commits=%d rollbacks=%d", ok, err, commits, rollbacks)
+	}
+	if len(result.Store.Assignments) != 0 || len(result.Store.PolicyAudits) != 0 || len(result.Store.ControlCommands) != 0 {
+		t.Fatalf("conflicting transaction published memory state: assignments=%+v audits=%+v commands=%+v", result.Store.Assignments, result.Store.PolicyAudits, result.Store.ControlCommands)
 	}
 }
 
@@ -466,6 +661,7 @@ func TestOpenPostgresProjectsRuleAndPullbackTables(t *testing.T) {
 func TestOpenPostgresProjectsAndQueriesControlCommands(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
+	now := time.Now().UTC()
 	result, err := Open(context.Background(), Options{
 		Kind:           KindPostgres,
 		PostgresDriver: fakeDriverName,
@@ -474,7 +670,7 @@ func TestOpenPostgresProjectsAndQueriesControlCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	result.Store.CreateControlCommand(controlmodel.ControlCommand{
+	if _, err := result.Store.CreateControlCommand(controlmodel.ControlCommand{
 		CommandID:      "ctrl-table-pg",
 		TenantID:       "default",
 		AgentID:        "agent-control-pg",
@@ -488,7 +684,12 @@ func TestOpenPostgresProjectsAndQueriesControlCommands(t *testing.T) {
 		Reason:         "postgres projection",
 		CreatedAt:      time.Unix(210, 0).UTC(),
 		UpdatedAt:      time.Unix(211, 0).UTC(),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if execLog := fakeExecLog(); !strings.Contains(execLog, "ON CONFLICT (tenant_id, command_id) DO NOTHING") {
+		t.Fatalf("control command create is not create-only:\n%s", execLog)
+	}
 	if err := result.Store.Save(); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -518,18 +719,18 @@ func TestOpenPostgresProjectsAndQueriesControlCommands(t *testing.T) {
 	if len(pending) != 1 || pending[0].CommandID != "ctrl-table-pg" || pending[0].ContentRef != "ioc:pg" {
 		t.Fatalf("pending control commands = %+v", pending)
 	}
-	if _, ok := reopened.Store.MarkControlCommandSent("ctrl-table-pg", "default", "agent-control-pg", time.Unix(220, 0).UTC()); !ok {
+	if _, ok := reopened.Store.MarkControlCommandSent("ctrl-table-pg", "default", "agent-control-pg", now.Add(time.Second)); !ok {
 		t.Fatal("MarkControlCommandSent ok = false")
 	}
-	if _, ok := reopened.Store.AckControlCommand(controlmodel.ControlCommandAck{
+	if _, ok, err := reopened.Store.AckControlCommand(controlmodel.ControlCommandAck{
 		CommandID:  "ctrl-table-pg",
 		TenantID:   "default",
 		AgentID:    "agent-control-pg",
 		Status:     controlmodel.ControlCommandStatusApplied,
 		Message:    "applied",
-		ObservedAt: time.Unix(221, 0).UTC(),
-	}); !ok {
-		t.Fatal("AckControlCommand ok = false")
+		ObservedAt: now.Add(2 * time.Second),
+	}); err != nil || !ok {
+		t.Fatalf("AckControlCommand ok=%t err=%v", ok, err)
 	}
 	if err := reopened.Store.Save(); err != nil {
 		t.Fatalf("Save acked command error = %v", err)
@@ -1062,18 +1263,18 @@ func TestOpenPostgresPersistsPolicyAndIncidentStateAcrossReopen(t *testing.T) {
 	policy.Version = 7
 	policy.Published = false
 	result.Store.UpsertPolicy(policy)
-	published, ok := result.Store.PublishPolicy("default", "postgres-policy", 7, true)
-	if !ok || !published.Published {
-		t.Fatalf("PublishPolicy() = %+v, %v", published, ok)
+	published, ok, err := result.Store.PublishPolicy("default", "postgres-policy", 7, true)
+	if err != nil || !ok || !published.Published {
+		t.Fatalf("PublishPolicy() = %+v ok=%t err=%v", published, ok, err)
 	}
-	assignment, ok := result.Store.AssignPolicy(policymodel.Assignment{
+	assignment, ok, err := result.Store.AssignPolicy(policymodel.Assignment{
 		TenantID:      "default",
 		AgentID:       "agent-pg-policy",
 		PolicyID:      "postgres-policy",
 		PolicyVersion: 7,
 	})
-	if !ok {
-		t.Fatal("AssignPolicy() ok = false")
+	if err != nil || !ok {
+		t.Fatalf("AssignPolicy() ok=%t err=%v", ok, err)
 	}
 	result.Store.RecordPolicyAudit(policymodel.AuditRecord{
 		TenantID:      "default",
@@ -1296,6 +1497,8 @@ var fakeState struct {
 	lastQuery          string
 	execLog            []string
 	execErr            error
+	execErrQuery       string
+	zeroRowsQuery      string
 	snapshot           []byte
 	eventRows          [][]byte
 	signalRows         [][]byte
@@ -1306,6 +1509,8 @@ var fakeState struct {
 	policyAuditRows    [][]byte
 	controlCommandRows [][]byte
 	closeN             int
+	commitN            int
+	rollbackN          int
 }
 
 func fakeSetExecError(err error) {
@@ -1314,6 +1519,8 @@ func fakeSetExecError(err error) {
 	fakeState.lastQuery = ""
 	fakeState.execLog = nil
 	fakeState.execErr = err
+	fakeState.execErrQuery = ""
+	fakeState.zeroRowsQuery = ""
 	fakeState.eventRows = nil
 	fakeState.signalRows = nil
 	fakeState.incidentRows = nil
@@ -1323,6 +1530,44 @@ func fakeSetExecError(err error) {
 	fakeState.policyAuditRows = nil
 	fakeState.controlCommandRows = nil
 	fakeState.closeN = 0
+	fakeState.commitN = 0
+	fakeState.rollbackN = 0
+}
+
+func fakeReturnZeroRowsContaining(query string) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.lastQuery = ""
+	fakeState.execLog = nil
+	fakeState.execErr = nil
+	fakeState.execErrQuery = ""
+	fakeState.zeroRowsQuery = query
+	fakeState.commitN = 0
+	fakeState.rollbackN = 0
+}
+
+func fakeFailExecContaining(query string, err error) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.lastQuery = ""
+	fakeState.execLog = nil
+	fakeState.execErr = err
+	fakeState.execErrQuery = query
+	fakeState.commitN = 0
+	fakeState.rollbackN = 0
+}
+
+func fakeTransactionCounts() (int, int) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	return fakeState.commitN, fakeState.rollbackN
+}
+
+func fakeClearExecLog() {
+	fakeState.Lock()
+	fakeState.lastQuery = ""
+	fakeState.execLog = nil
+	fakeState.Unlock()
 }
 
 func fakeSetSnapshot(data []byte) {
@@ -1463,7 +1708,7 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 	defer fakeState.Unlock()
 	fakeState.lastQuery = s.query
 	fakeState.execLog = append(fakeState.execLog, s.query, fakeArgs(args))
-	if fakeState.execErr != nil {
+	if fakeState.execErr != nil && (fakeState.execErrQuery == "" || strings.Contains(s.query, fakeState.execErrQuery)) {
 		return nil, fakeState.execErr
 	}
 	if strings.Contains(s.query, "INSERT INTO sysarmor_state") && len(args) >= 3 {
@@ -1498,9 +1743,12 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			fakeState.incidentRows = append(fakeState.incidentRows, []byte(data))
 		}
 	}
-	if strings.Contains(s.query, "INSERT INTO response_audit") && len(args) >= 9 {
+	if strings.Contains(s.query, "INSERT INTO response_audit") && len(args) >= 8 {
 		command := cloneDriverBytes(args[7].Value)
-		ack := cloneDriverBytes(args[8].Value)
+		var ack driver.Value
+		if len(args) >= 9 {
+			ack = cloneDriverBytes(args[8].Value)
+		}
 		upsertFakeResponseRow(command, ack)
 	}
 	if strings.Contains(s.query, "INSERT INTO policies") && len(args) >= 7 {
@@ -1539,6 +1787,9 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 			upsertFakeControlCommandRow([]byte(data))
 		}
 	}
+	if fakeState.zeroRowsQuery != "" && strings.Contains(s.query, fakeState.zeroRowsQuery) {
+		return driver.RowsAffected(0), nil
+	}
 	return driver.RowsAffected(1), nil
 }
 
@@ -1560,12 +1811,28 @@ func upsertFakeResponseRow(command, ack driver.Value) {
 	if responseID != "" {
 		for i, row := range fakeState.responseRows {
 			if fakeResponseID(row[0]) == responseID {
+				if responseUpdatedAt(row[0]).After(responseUpdatedAt(command)) {
+					return
+				}
 				fakeState.responseRows[i] = []driver.Value{command, ack}
 				return
 			}
 		}
 	}
 	fakeState.responseRows = append(fakeState.responseRows, []driver.Value{command, ack})
+}
+
+func responseUpdatedAt(value driver.Value) time.Time {
+	var raw []byte
+	switch data := value.(type) {
+	case []byte:
+		raw = data
+	case string:
+		raw = []byte(data)
+	}
+	var cmd responsemodel.Command
+	_ = json.Unmarshal(raw, &cmd)
+	return cmd.UpdatedAt
 }
 
 func upsertFakeEventRow(row []byte) {
@@ -1667,6 +1934,9 @@ func upsertFakeControlCommandRow(row []byte) {
 		for i, existing := range fakeState.controlCommandRows {
 			var existingCommand controlmodel.ControlCommand
 			if err := json.Unmarshal(existing, &existingCommand); err == nil && existingCommand.TenantID == cmd.TenantID && existingCommand.CommandID == cmd.CommandID {
+				if existingCommand.UpdatedAt.After(cmd.UpdatedAt) {
+					return
+				}
 				fakeState.controlCommandRows[i] = row
 				return
 			}
@@ -1812,10 +2082,16 @@ func filterPolicyRows(query string, args []driver.NamedValue, rows [][]byte) [][
 type fakeTx struct{}
 
 func (fakeTx) Commit() error {
+	fakeState.Lock()
+	fakeState.commitN++
+	fakeState.Unlock()
 	return nil
 }
 
 func (fakeTx) Rollback() error {
+	fakeState.Lock()
+	fakeState.rollbackN++
+	fakeState.Unlock()
 	return nil
 }
 

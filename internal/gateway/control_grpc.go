@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
@@ -26,6 +27,8 @@ type ControlServer struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
 	backend Backend
 }
+
+const maxControlReplayCache = 1024
 
 func NewControlServer(backend Backend) controlplanev1.AgentControlPlaneServiceServer {
 	return &ControlServer{backend: backend}
@@ -81,6 +84,7 @@ type controlConnectionState struct {
 	nextIncoming       uint64
 	nextOutgoing       uint64
 	repliesByRequestID map[string][]*controlplanev1.ControlFrame
+	replayOrder        []string
 }
 
 func (s *controlConnectionState) acceptIncoming(frame *controlplanev1.ControlFrame) error {
@@ -111,7 +115,18 @@ func (s *controlConnectionState) remember(requestID string, frames []*controlpla
 	if requestID == "" {
 		return
 	}
+	if s.repliesByRequestID == nil {
+		s.repliesByRequestID = map[string][]*controlplanev1.ControlFrame{}
+	}
+	if _, exists := s.repliesByRequestID[requestID]; !exists {
+		s.replayOrder = append(s.replayOrder, requestID)
+	}
 	s.repliesByRequestID[requestID] = cloneControlFrames(frames)
+	for len(s.replayOrder) > maxControlReplayCache {
+		oldest := s.replayOrder[0]
+		s.replayOrder = s.replayOrder[1:]
+		delete(s.repliesByRequestID, oldest)
+	}
 }
 
 func (s *controlConnectionState) replay(requestID string) ([]*controlplanev1.ControlFrame, bool) {
@@ -264,12 +279,16 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 		if ack.ResponseID == "" {
 			return nil, status.Error(codes.InvalidArgument, "response_ack response_id is required")
 		}
-		st := s.backend.Store()
-		if _, ok := st.AckResponse(ack); !ok {
-			return nil, status.Error(codes.NotFound, "response command not found")
+		tenantID, agentID, err := ackIdentity(frame.GetContext(), ack.TenantID, ack.AgentID)
+		if err != nil {
+			return nil, err
 		}
-		if err := st.Save(); err != nil {
+		ack.TenantID, ack.AgentID = tenantID, agentID
+		st := s.backend.Store()
+		if _, ok, err := st.AckResponse(ack); err != nil {
 			return nil, status.Errorf(codes.Internal, "save response ack: %v", err)
+		} else if !ok {
+			return nil, status.Error(codes.NotFound, "response command not found")
 		}
 		return []*controlplanev1.ControlFrame{controlAckFrame(frame, "accepted", "response ack accepted", "", false)}, nil
 	case "evidence_pullback_result":
@@ -304,17 +323,45 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 		}
 		st := s.backend.Store()
 		ack := controlCommandAckFromControl(frame.GetAck())
-		if ack.CommandID != "" {
-			if _, ok := st.AckControlCommand(ack); ok {
-				if err := st.Save(); err != nil {
-					return nil, status.Errorf(codes.Internal, "save control command ack: %v", err)
-				}
-			}
+		if ack.CommandID == "" {
+			return nil, status.Error(codes.InvalidArgument, "ack request_id is required")
+		}
+		tenantID, agentID, err := ackIdentity(frame.GetContext(), ack.TenantID, ack.AgentID)
+		if err != nil {
+			return nil, err
+		}
+		ack.TenantID, ack.AgentID = tenantID, agentID
+		if _, ok, err := st.AckControlCommand(ack); err != nil {
+			return nil, status.Errorf(codes.Internal, "save control command ack: %v", err)
+		} else if !ok && !isHelloPolicyAck(ack.CommandID) {
+			return nil, status.Error(codes.NotFound, "control command not found")
 		}
 		return []*controlplanev1.ControlFrame{controlAckFrame(frame, "accepted", "ack accepted", "", false)}, nil
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported control frame type %q", frame.GetType())
 	}
+}
+
+func isHelloPolicyAck(commandID string) bool {
+	return strings.HasPrefix(commandID, "policy-hello-")
+}
+
+func ackIdentity(ctx *controlplanev1.RequestContext, payloadTenantID, payloadAgentID string) (string, string, error) {
+	tenantID := ctx.GetTenantId()
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	agentID := ctx.GetAgentId()
+	if agentID == "" {
+		return "", "", status.Error(codes.InvalidArgument, "ack context agent_id is required")
+	}
+	if payloadTenantID != "" && payloadTenantID != tenantID {
+		return "", "", status.Error(codes.PermissionDenied, "ack tenant_id does not match frame context")
+	}
+	if payloadAgentID != "" && payloadAgentID != agentID {
+		return "", "", status.Error(codes.PermissionDenied, "ack agent_id does not match frame context")
+	}
+	return tenantID, agentID, nil
 }
 
 func currentPolicyFrame(policy policymodel.Policy) *controlplanev1.CurrentPolicyResponse {
@@ -408,7 +455,7 @@ func controlCommandFrame(cmd controlmodel.ControlCommand, scope *controlplanev1.
 		frame.ContentUpdate = &controlplanev1.ApplyContentRequest{
 			Context:       ctx,
 			ContentJson:   string(cmd.PayloadJSON),
-			AllowUnsigned: true,
+			AllowUnsigned: false,
 		}
 	default:
 		return nil, nil

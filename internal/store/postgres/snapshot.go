@@ -260,6 +260,24 @@ func (b *tableBackend) WriteResponse(ctx context.Context, cmd responsemodel.Comm
 	return upsertResponseAudit(ctx, b.db, cmd, ack)
 }
 
+func (b *tableBackend) CreateResponse(ctx context.Context, cmd responsemodel.Command) (bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return insertResponseAudit(ctx, b.db, cmd)
+}
+
+func (b *tableBackend) CreateControlCommand(ctx context.Context, cmd controlmodel.ControlCommand) (bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return insertControlCommand(ctx, b.db, cmd)
+}
+
+func (b *tableBackend) WriteControlCommand(ctx context.Context, cmd controlmodel.ControlCommand) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return projectControlCommands(ctx, b.db, []controlmodel.ControlCommand{cmd})
+}
+
 func (b *tableBackend) WritePolicy(ctx context.Context, policy policymodel.Policy) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
@@ -276,6 +294,52 @@ func (b *tableBackend) WritePolicyAudit(ctx context.Context, audit policymodel.A
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 	return upsertPolicyAudit(ctx, b.db, audit)
+}
+
+func (b *tableBackend) CommitPolicyPublication(ctx context.Context, policy policymodel.Policy, audit policymodel.AuditRecord) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return b.withTransaction(ctx, func(tx *sql.Tx) error {
+		if err := upsertPolicy(ctx, tx, policy); err != nil {
+			return err
+		}
+		return upsertPolicyAudit(ctx, tx, audit)
+	})
+}
+
+func (b *tableBackend) CommitPolicyAssignment(ctx context.Context, assignment policymodel.Assignment, audit policymodel.AuditRecord, command *controlmodel.ControlCommand) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return b.withTransaction(ctx, func(tx *sql.Tx) error {
+		if err := upsertPolicyAssignment(ctx, tx, assignment); err != nil {
+			return err
+		}
+		if err := upsertPolicyAudit(ctx, tx, audit); err != nil {
+			return err
+		}
+		if command != nil {
+			created, err := insertControlCommand(ctx, tx, *command)
+			if err != nil {
+				return err
+			}
+			if !created {
+				return fmt.Errorf("control command %s already exists", command.CommandID)
+			}
+		}
+		return nil
+	})
+}
+
+func (b *tableBackend) withTransaction(ctx context.Context, apply func(*sql.Tx) error) error {
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := apply(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (b *tableBackend) WriteEnrollment(ctx context.Context, enrollment store.Enrollment) error {
@@ -326,18 +390,8 @@ func saveTables(ctx context.Context, db *sql.DB, state store.State) error {
 	if err := projectRules(ctx, tx, state.Rules); err != nil {
 		return err
 	}
-	if err := projectResponseAudit(ctx, tx, state.Responses, state.ResponseAcks); err != nil {
-		return err
-	}
-	if err := projectPolicies(ctx, tx, state.Policies); err != nil {
-		return err
-	}
-	if err := projectPolicyAssignments(ctx, tx, state.Assignments); err != nil {
-		return err
-	}
-	if err := projectPolicyAudits(ctx, tx, state.PolicyAudits); err != nil {
-		return err
-	}
+	// Durable control-plane writers own responses and policy tables. Replaying
+	// them from a process-local snapshot can overwrite newer cross-process state.
 	if err := projectEnrollments(ctx, tx, state.Enrollments); err != nil {
 		return err
 	}
@@ -776,25 +830,6 @@ ON CONFLICT (tenant_id, rule_id, version) DO UPDATE SET
 	return nil
 }
 
-func projectResponseAudit(ctx context.Context, db sqlExecutor, commands []responsemodel.Command, acks []responsemodel.Ack) error {
-	ackByResponseID := map[string]responsemodel.Ack{}
-	for _, ack := range acks {
-		if ack.ResponseID != "" {
-			ackByResponseID[ack.ResponseID] = ack
-		}
-	}
-	for _, cmd := range commands {
-		var ackPtr *responsemodel.Ack
-		if ack, ok := ackByResponseID[cmd.ResponseID]; ok {
-			ackPtr = &ack
-		}
-		if err := upsertResponseAudit(ctx, db, cmd, ackPtr); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func queryPolicyAudits(ctx context.Context, db sqlExecutor, tenantID, policyID string) ([]policymodel.AuditRecord, error) {
 	if tenantID == "" {
 		tenantID = "default"
@@ -1053,13 +1088,13 @@ func upsertResponseAudit(ctx context.Context, db sqlExecutor, cmd responsemodel.
 	if err != nil {
 		return fmt.Errorf("encode response command projection: %w", err)
 	}
-	var ackData any
-	if ack != nil {
-		data, err := json.Marshal(*ack)
-		if err != nil {
-			return fmt.Errorf("encode response ack projection: %w", err)
-		}
-		ackData = data
+	if ack == nil {
+		_, err = insertResponseAudit(ctx, db, cmd)
+		return err
+	}
+	ackData, err := json.Marshal(*ack)
+	if err != nil {
+		return fmt.Errorf("encode response ack projection: %w", err)
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO response_audit (tenant_id, response_id, agent_id, status, action, created_at, updated_at, command, ack)
@@ -1076,6 +1111,67 @@ ON CONFLICT (tenant_id, response_id) DO UPDATE SET
 		return fmt.Errorf("project response audit: %w", err)
 	}
 	return nil
+}
+
+func insertResponseAudit(ctx context.Context, db sqlExecutor, cmd responsemodel.Command) (bool, error) {
+	if cmd.ResponseID == "" {
+		return false, nil
+	}
+	tenantID := cmd.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	commandData, err := json.Marshal(cmd)
+	if err != nil {
+		return false, fmt.Errorf("encode response command projection: %w", err)
+	}
+	result, err := db.ExecContext(ctx, `
+INSERT INTO response_audit (tenant_id, response_id, agent_id, status, action, created_at, updated_at, command, ack)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL)
+ON CONFLICT (tenant_id, response_id) DO NOTHING
+`, tenantID, cmd.ResponseID, cmd.AgentID, cmd.Status, cmd.Action, cmd.CreatedAt, cmd.UpdatedAt, commandData)
+	if err != nil {
+		return false, fmt.Errorf("create response audit: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read response create result: %w", err)
+	}
+	return rows > 0, nil
+}
+
+func insertControlCommand(ctx context.Context, db sqlExecutor, cmd controlmodel.ControlCommand) (bool, error) {
+	if cmd.CommandID == "" {
+		return false, nil
+	}
+	tenantID := cmd.TenantID
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		return false, fmt.Errorf("encode control command: %w", err)
+	}
+	result, err := db.ExecContext(ctx, `
+INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, created_at, updated_at, sent_at, last_sent_at, acked_at, canceled_at, expired_at, attempt_count, data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+ON CONFLICT (tenant_id, command_id) DO NOTHING
+`, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, cmd.Status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, cmd.CreatedAt, cmd.UpdatedAt, nullableTime(cmd.SentAt), nullableTime(cmd.LastSentAt), nullableTime(cmd.AckedAt), nullableTime(cmd.CanceledAt), nullableTime(cmd.ExpiredAt), cmd.AttemptCount, data)
+	if err != nil {
+		return false, fmt.Errorf("create control command: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read control command create result: %w", err)
+	}
+	return rows > 0, nil
+}
+
+func nullableTime(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value
 }
 
 func projectEvidencePullbacks(ctx context.Context, db sqlExecutor, pullbacks []controlmodel.EvidencePullbackRequest) error {
@@ -1170,25 +1266,7 @@ func projectControlCommands(ctx context.Context, db sqlExecutor, commands []cont
 			_, err = db.ExecContext(ctx, `
 INSERT INTO control_commands (tenant_id, command_id, agent_id, command_type, status, policy_id, policy_version, content_ref, content_kind, content_version, actor, reason, sent_at, last_sent_at, acked_at, canceled_at, expired_at, attempt_count, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-ON CONFLICT (tenant_id, command_id) DO UPDATE SET
-  agent_id = EXCLUDED.agent_id,
-  command_type = EXCLUDED.command_type,
-  status = EXCLUDED.status,
-  policy_id = EXCLUDED.policy_id,
-  policy_version = EXCLUDED.policy_version,
-  content_ref = EXCLUDED.content_ref,
-  content_kind = EXCLUDED.content_kind,
-  content_version = EXCLUDED.content_version,
-  actor = EXCLUDED.actor,
-  reason = EXCLUDED.reason,
-  updated_at = now(),
-  sent_at = EXCLUDED.sent_at,
-  last_sent_at = EXCLUDED.last_sent_at,
-  acked_at = EXCLUDED.acked_at,
-  canceled_at = EXCLUDED.canceled_at,
-  expired_at = EXCLUDED.expired_at,
-  attempt_count = EXCLUDED.attempt_count,
-  data = EXCLUDED.data
+ON CONFLICT (tenant_id, command_id) DO NOTHING
 `, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, sentAt, lastSentAt, ackedAt, canceledAt, expiredAt, cmd.AttemptCount, data)
 		} else {
 			_, err = db.ExecContext(ctx, `
@@ -1213,6 +1291,7 @@ ON CONFLICT (tenant_id, command_id) DO UPDATE SET
   expired_at = EXCLUDED.expired_at,
   attempt_count = EXCLUDED.attempt_count,
   data = EXCLUDED.data
+WHERE control_commands.updated_at <= EXCLUDED.updated_at
 `, tenantID, cmd.CommandID, cmd.AgentID, cmd.Type, status, cmd.PolicyID, cmd.PolicyVersion, cmd.ContentRef, cmd.ContentKind, cmd.ContentVersion, cmd.Actor, cmd.Reason, createdAt, updatedAt, sentAt, lastSentAt, ackedAt, canceledAt, expiredAt, cmd.AttemptCount, data)
 		}
 		if err != nil {
@@ -1247,15 +1326,6 @@ func joinTextArray(values []string) string {
 		out = append(out, strings.ReplaceAll(value, "\x1f", ""))
 	}
 	return strings.Join(out, "\x1f")
-}
-
-func projectPolicies(ctx context.Context, db sqlExecutor, policies []policymodel.Policy) error {
-	for _, policy := range policies {
-		if err := upsertPolicy(ctx, db, policy); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func upsertPolicy(ctx context.Context, db sqlExecutor, policy policymodel.Policy) error {
@@ -1298,15 +1368,6 @@ ON CONFLICT (tenant_id, policy_id, version) DO UPDATE SET
 	return nil
 }
 
-func projectPolicyAssignments(ctx context.Context, db sqlExecutor, assignments []policymodel.Assignment) error {
-	for _, assignment := range assignments {
-		if err := upsertPolicyAssignment(ctx, db, assignment); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func upsertPolicyAssignment(ctx context.Context, db sqlExecutor, assignment policymodel.Assignment) error {
 	if assignment.AssignmentID == "" || assignment.PolicyID == "" {
 		return nil
@@ -1325,14 +1386,7 @@ func upsertPolicyAssignment(ctx context.Context, db sqlExecutor, assignment poli
 		_, err = db.ExecContext(ctx, `
 INSERT INTO policy_assignments (tenant_id, assignment_id, agent_id, scope_type, scope_selector, policy_id, policy_version, data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
-  agent_id = EXCLUDED.agent_id,
-  scope_type = EXCLUDED.scope_type,
-  scope_selector = EXCLUDED.scope_selector,
-  policy_id = EXCLUDED.policy_id,
-  policy_version = EXCLUDED.policy_version,
-  updated_at = now(),
-  data = EXCLUDED.data
+ON CONFLICT (tenant_id, assignment_id) DO NOTHING
 `, tenantID, assignment.AssignmentID, assignment.AgentID, assignment.Scope.Type, assignment.Scope.Selector, assignment.PolicyID, assignment.PolicyVersion, data)
 	} else {
 		_, err = db.ExecContext(ctx, `
@@ -1350,15 +1404,6 @@ ON CONFLICT (tenant_id, assignment_id) DO UPDATE SET
 	}
 	if err != nil {
 		return fmt.Errorf("project policy assignment: %w", err)
-	}
-	return nil
-}
-
-func projectPolicyAudits(ctx context.Context, db sqlExecutor, audits []policymodel.AuditRecord) error {
-	for _, audit := range audits {
-		if err := upsertPolicyAudit(ctx, db, audit); err != nil {
-			return err
-		}
 	}
 	return nil
 }

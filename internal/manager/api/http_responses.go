@@ -168,9 +168,9 @@ func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command
 		cmd.Status = "pending_approval"
 		cmd.ApprovalStatus = "required"
 	}
-	cmd = s.store.CreateResponse(cmd)
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+	cmd, err := s.store.CreateResponse(cmd)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("save response: %v", err), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, cmd)
@@ -184,9 +184,10 @@ func (s *Server) denyResponse(w http.ResponseWriter, cmd responsemodel.Command, 
 	} else {
 		cmd.Reason = cmd.Reason + "; denied: " + decision.Reason
 	}
-	cmd = s.store.CreateResponse(cmd)
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+	var err error
+	cmd, err = s.store.CreateResponse(cmd)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("save response: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusForbidden)
@@ -224,12 +225,11 @@ func (s *Server) responseAcks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
 		return
 	}
-	if _, ok := s.store.AckResponse(ack); !ok {
-		http.Error(w, "response command not found", http.StatusNotFound)
+	if _, ok, err := s.store.AckResponse(ack); err != nil {
+		http.Error(w, fmt.Sprintf("save response ack: %v", err), http.StatusInternalServerError)
 		return
-	}
-	if err := s.store.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+	} else if !ok {
+		http.Error(w, "response command not found", http.StatusNotFound)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})

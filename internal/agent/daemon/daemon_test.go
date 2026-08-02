@@ -578,13 +578,15 @@ func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 
 func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 	st := &store.Store{}
-	st.CreateResponse(responsemodel.Command{
+	if _, err := st.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-runner-long",
 		TenantID:   "default",
 		AgentID:    "agent-runner-long",
 		Action:     "collect",
 		Target:     "process:p1",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	linkSrv := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(linkSrv))

@@ -38,22 +38,23 @@ type Server struct {
 }
 
 type ManagerStore interface {
-	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
+	AckResponse(responsemodel.Ack) (responsemodel.Command, bool, error)
 	AddAgent(store.AgentIdentity)
 	AddEvent(*eventv1.CanonicalEvent) bool
 	AddSignal(*signalv1.Signal) bool
 	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
-	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
-	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
+	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool, error)
+	AssignPolicyWithAudit(policymodel.Assignment, policymodel.AuditRecord, *controlmodel.ControlCommand) (policymodel.Assignment, *controlmodel.ControlCommand, bool, error)
+	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool, error)
 	CancelControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
-	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
+	CreateControlCommand(controlmodel.ControlCommand) (controlmodel.ControlCommand, error)
 	CreateEnrollment(store.Enrollment) store.Enrollment
 	CommitEnrollmentIssue(string, string, store.Enrollment, store.AgentCertificate) (store.Enrollment, store.EnrollmentIssueResult, error)
 	MarkEnrollmentUsed(string, time.Time) (store.Enrollment, bool)
 	RecordAgentCertificate(store.AgentCertificate) store.AgentCertificate
 	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
-	CreateResponse(responsemodel.Command) responsemodel.Command
+	CreateResponse(responsemodel.Command) (responsemodel.Command, error)
 	DeleteByLabels(store.LabelSelector)
 	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
 	EnsureDefaultPolicy(string)
@@ -88,7 +89,8 @@ type ManagerStore interface {
 	PendingControlCommands(string, string) []controlmodel.ControlCommand
 	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
 	PendingResponses(string, string) []responsemodel.Command
-	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
+	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool, error)
+	PublishPolicyWithAudit(string, string, uint64, bool, policymodel.AuditRecord) (policymodel.Policy, bool, error)
 	CloseAgentSession(string, string, time.Time) store.AgentSession
 	RecordDataBatchAppend(store.AgentIdentity, string, string, time.Time) store.AgentSession
 	RecordAgentSessionSeen(string, string, time.Time) store.AgentSession
@@ -103,6 +105,7 @@ type ManagerStore interface {
 	UpsertArtifact(store.Artifact) store.Artifact
 	UpsertChannel(store.ArtifactChannel) store.ArtifactChannel
 	UpsertPolicy(policymodel.Policy) policymodel.Policy
+	UpsertPolicyWithError(policymodel.Policy) (policymodel.Policy, error)
 }
 
 var _ ManagerStore = (*store.Store)(nil)

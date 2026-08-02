@@ -39,10 +39,15 @@ type Backend interface {
 	ListChannels(ctx context.Context, tenantID string) ([]ArtifactChannel, error)
 	GetChannel(ctx context.Context, tenantID, channel string) (ArtifactChannel, bool, error)
 
+	CreateResponse(ctx context.Context, cmd responsemodel.Command) (bool, error)
 	WriteResponse(ctx context.Context, cmd responsemodel.Command, ack *responsemodel.Ack) error
+	CreateControlCommand(ctx context.Context, cmd controlmodel.ControlCommand) (bool, error)
+	WriteControlCommand(ctx context.Context, cmd controlmodel.ControlCommand) error
 	WritePolicy(ctx context.Context, policy policymodel.Policy) error
 	WriteAssignment(ctx context.Context, assignment policymodel.Assignment) error
 	WritePolicyAudit(ctx context.Context, audit policymodel.AuditRecord) error
+	CommitPolicyPublication(ctx context.Context, policy policymodel.Policy, audit policymodel.AuditRecord) error
+	CommitPolicyAssignment(ctx context.Context, assignment policymodel.Assignment, audit policymodel.AuditRecord, command *controlmodel.ControlCommand) error
 	WriteEnrollment(ctx context.Context, enrollment Enrollment) error
 	WriteArtifact(ctx context.Context, artifact Artifact) error
 	WriteChannel(ctx context.Context, channel ArtifactChannel) error

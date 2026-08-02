@@ -70,9 +70,9 @@ func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		out := s.store.CreateControlCommand(cmd)
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		out, err := s.store.CreateControlCommand(cmd)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("save control command: %v", err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, out)
