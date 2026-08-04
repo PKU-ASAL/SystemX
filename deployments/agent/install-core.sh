@@ -119,8 +119,21 @@ stage_directory() {
   register_stage "$target" "$stage"
 }
 
+validate_sensor_bundle() {
+  local bundle="$1" rel expected actual
+  jq -e '.version | type == "string" and length > 0' "$bundle/manifest.json" >/dev/null || \
+    fail "invalid staged Tetragon manifest version"
+  for rel in bin/tetragon bin/tetra; do
+    [[ -f "$bundle/$rel" && -x "$bundle/$rel" ]] || fail "staged Tetragon bundle missing executable: $rel"
+    expected="$(jq -r --arg rel "$rel" '.files[$rel].sha256 // empty' "$bundle/manifest.json")"
+    [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || fail "invalid staged Tetragon checksum: $rel"
+    actual="$(sha256sum "$bundle/$rel" | awk '{print $1}')"
+    [[ "${actual,,}" == "${expected,,}" ]] || fail "staged Tetragon checksum mismatch: $rel"
+  done
+}
+
 stage_sensor() {
-  local parent stage
+  local parent stage install_parent install_stage version sensor_target
   parent="$(dirname "$BUNDLE_DIR")"
   install -d -m 0755 "$parent"
   stage="$(mktemp -d "$parent/.tetragon.stage.XXXXXX")"
@@ -131,6 +144,18 @@ stage_sensor() {
     fail "failed to stage Tetragon bundle"
   fi
   register_stage "$BUNDLE_DIR" "$stage"
+  validate_sensor_bundle "$stage"
+
+  version="$(jq -r '.version // empty' "$stage/manifest.json")"
+  [[ -n "$version" && "$version" != */* && "$version" != "." && "$version" != ".." ]] || fail "invalid staged Tetragon version"
+  sensor_target="$INSTALL_DIR/tetragon"
+  install_parent="$INSTALL_DIR"
+  install -d -m 0755 "$install_parent"
+  install_stage="$(mktemp -d "$install_parent/.tetragon.stage.XXXXXX")"
+  mkdir -p "$install_stage/$version"
+  cp -a "$stage/." "$install_stage/$version/"
+  ln -s "$version" "$install_stage/current"
+  register_stage "$sensor_target" "$install_stage"
 }
 
 stage_installation() {

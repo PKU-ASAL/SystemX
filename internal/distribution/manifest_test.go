@@ -58,6 +58,56 @@ func TestInspectTarGzRejectsFileLargerThanLimit(t *testing.T) {
 	}
 }
 
+func TestInspectTarGzRejectsTotalUncompressedSizeAboveLimit(t *testing.T) {
+	manifest, file := testManifestAndFile(t)
+	rawManifest := mustJSON(t, manifest)
+	archivePath := writeTestArchive(t, []testArchiveEntry{
+		regularEntry("manifest.json", rawManifest),
+		regularEntry(file.Path, []byte("hello")),
+	})
+
+	_, err := inspectTarGzWithLimits(archivePath, nil, inspectLimits{
+		MaxFileBytes:     int64(len(rawManifest)),
+		MaxTotalBytes:    int64(len(rawManifest) + 4),
+		MaxEntries:       10,
+		MaxMetadataBytes: int64(len(rawManifest)),
+	})
+	if err == nil || !strings.Contains(err.Error(), "total uncompressed size limit") {
+		t.Fatalf("InspectTarGz total size error = %v, want total uncompressed size limit", err)
+	}
+}
+
+func TestInspectTarGzRejectsTooManyEntries(t *testing.T) {
+	manifest, file := testManifestAndFile(t)
+	archivePath := writeTestArchive(t, []testArchiveEntry{
+		regularEntry("manifest.json", mustJSON(t, manifest)),
+		regularEntry(file.Path, []byte("hello")),
+	})
+
+	_, err := inspectTarGzWithLimits(archivePath, nil, inspectLimits{
+		MaxFileBytes:     1024,
+		MaxTotalBytes:    2048,
+		MaxEntries:       1,
+		MaxMetadataBytes: 1024,
+	})
+	if err == nil || !strings.Contains(err.Error(), "archive entry limit") {
+		t.Fatalf("InspectTarGz entry count error = %v, want archive entry limit", err)
+	}
+}
+
+func TestInspectTarGzAcceptsArchiveRootDirectoryMarker(t *testing.T) {
+	manifest, file := testManifestAndFile(t)
+	archivePath := writeTestArchive(t, []testArchiveEntry{
+		{header: &tar.Header{Name: "./", Typeflag: tar.TypeDir, Mode: 0o755}},
+		regularEntry("manifest.json", mustJSON(t, manifest)),
+		regularEntry(file.Path, []byte("hello")),
+	})
+
+	if _, err := InspectTarGz(archivePath, nil); err != nil {
+		t.Fatalf("InspectTarGz root directory marker error = %v", err)
+	}
+}
+
 func testManifestAndFile(t *testing.T) (Manifest, FileSpec) {
 	t.Helper()
 	sum := sha256.Sum256([]byte("hello"))

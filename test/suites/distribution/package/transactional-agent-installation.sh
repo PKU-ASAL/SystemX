@@ -54,6 +54,12 @@ EOF
   printf '#!/usr/bin/env sh\nexit 0\n' >"$src/sensor/bin/tetragon"
   cp "$src/sensor/bin/tetragon" "$src/sensor/bin/tetra"
   chmod 0755 "$src/sensor/bin/tetragon" "$src/sensor/bin/tetra"
+  local tetragon_sha tetra_sha
+  tetragon_sha="$(sha256sum "$src/sensor/bin/tetragon" | awk '{print $1}')"
+  tetra_sha="$(sha256sum "$src/sensor/bin/tetra" | awk '{print $1}')"
+  cat >"$src/sensor/manifest.json" <<EOF
+{"version":"test","files":{"bin/tetragon":{"sha256":"$tetragon_sha"},"bin/tetra":{"sha256":"$tetra_sha"}}}
+EOF
 }
 
 make_commands() {
@@ -100,6 +106,7 @@ set_paths() {
   POLICY="$ROOT/etc/sysarmor/policy.json"
   CONTENT="$ROOT/opt/agent/content/default"
   SENSOR="$ROOT/opt/agent/bundles/tetragon"
+  SENSOR_INSTALL="$ROOT/opt/agent/sensors/tetragon"
   SERVICE_STATE="$ROOT/service-state"
   SYSTEMCTL_LOG="$ROOT/systemctl.log"
   export SERVICE_STATE SYSTEMCTL_LOG
@@ -107,7 +114,7 @@ set_paths() {
 
 seed_old_installation() {
   mkdir -p "$(dirname "$AGENT")" "$(dirname "$CTL")" "$(dirname "$SERVICE")" \
-    "$(dirname "$CONFIG")" "$(dirname "$POLICY")" "$CONTENT" "$SENSOR" "$SERVICE_STATE"
+    "$(dirname "$CONFIG")" "$(dirname "$POLICY")" "$CONTENT" "$SENSOR" "$SENSOR_INSTALL/old" "$SERVICE_STATE"
   printf 'old-agent\n' >"$AGENT"
   printf 'old-ctl\n' >"$CTL"
   printf 'old-service\n' >"$SERVICE"
@@ -115,6 +122,8 @@ seed_old_installation() {
   printf 'old-policy\n' >"$POLICY"
   printf 'old-content\n' >"$CONTENT/marker"
   printf 'old-sensor\n' >"$SENSOR/marker"
+  printf 'old-installed-sensor\n' >"$SENSOR_INSTALL/old/marker"
+  ln -s old "$SENSOR_INSTALL/current"
   : >"$SERVICE_STATE/active"
   : >"$SERVICE_STATE/enabled"
   : >"$SYSTEMCTL_LOG"
@@ -142,18 +151,21 @@ assert_old_installation() {
   grep -Fxq old-policy "$POLICY" || fail "policy was not preserved"
   grep -Fxq old-content "$CONTENT/marker" || fail "content was not rolled back"
   grep -Fxq old-sensor "$SENSOR/marker" || fail "sensor was not rolled back"
+  [[ "$(readlink "$SENSOR_INSTALL/current")" == "old" ]] || fail "installed sensor link was not rolled back"
+  grep -Fxq old-installed-sensor "$SENSOR_INSTALL/old/marker" || fail "installed sensor version was not rolled back"
   [[ -e "$SERVICE_STATE/active" && -e "$SERVICE_STATE/enabled" ]] || fail "service state was not restored"
 }
 
 make_sources
 make_commands
 
-for target_name in agent ctl service config content sensor; do
+for target_name in agent ctl service config content sensor sensor-install; do
   set_paths "commit-$target_name"
   seed_old_installation
   case "$target_name" in
     agent) target="$AGENT" ;; ctl) target="$CTL" ;; service) target="$SERVICE" ;;
     config) target="$CONFIG" ;; content) target="$CONTENT" ;; sensor) target="$SENSOR" ;;
+    sensor-install) target="$SENSOR_INSTALL" ;;
   esac
   if FAIL_COMMIT_TARGET="$target" FAIL_ONCE_STATE="$ROOT/fail-once" run_core >/dev/null 2>&1; then
     fail "$target_name commit failure was accepted"
@@ -207,6 +219,31 @@ if grep -Fxq 'stop sysarmor-agent' "$SYSTEMCTL_LOG"; then
 fi
 assert_old_installation
 mv "$WORK/policy.valid" "$WORK/source/policy"
+
+set_paths invalid-sensor
+seed_old_installation
+cp "$WORK/source/sensor/bin/tetra" "$WORK/tetra.valid"
+printf '\ntampered\n' >>"$WORK/source/sensor/bin/tetra"
+if run_core >/dev/null 2>&1; then
+  fail "sensor manifest checksum mismatch was accepted"
+fi
+if grep -Fxq 'stop sysarmor-agent' "$SYSTEMCTL_LOG"; then
+  fail "service was stopped before sensor validation"
+fi
+assert_old_installation
+mv "$WORK/tetra.valid" "$WORK/source/sensor/bin/tetra"
+chmod 0755 "$WORK/source/sensor/bin/tetra"
+
+set_paths successful-install
+mkdir -p "$SERVICE_STATE"
+: >"$SYSTEMCTL_LOG"
+run_core >/dev/null
+[[ "$(readlink "$ROOT/opt/agent/sensors/tetragon/current")" == "test" ]] || \
+  fail "successful install did not create a relative current sensor link"
+[[ -x "$ROOT/opt/agent/sensors/tetragon/test/bin/tetragon" ]] || \
+  fail "successful install did not stage the immutable sensor version"
+[[ -f "$ROOT/opt/agent/sensors/tetragon/test/manifest.json" ]] || \
+  fail "successful install did not stage the sensor manifest"
 
 set_paths policy
 mkdir -p "$SERVICE_STATE"

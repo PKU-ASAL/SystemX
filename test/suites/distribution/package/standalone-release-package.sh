@@ -51,8 +51,22 @@ test -x "$WORK/release/install.sh"
 test -x "$WORK/release/container/sysarmor-container-entrypoint"
 test -f "$WORK/release/configs/standalone-container.yaml"
 test -f "$WORK/release/content/default/content-manifest.json"
+if [[ -f "$REPO/configs/agent.example.yaml" ]]; then
+  test -f "$WORK/release/configs/agent.example.yaml"
+  jq -e '.files[] | select(.path == "configs/agent.example.yaml" and .sha256 != "")' \
+    "$WORK/release/manifest.json" >/dev/null
+fi
 grep -Fq '"signature_alg": "ed25519"' "$WORK/release/content/default/rulepack-cep-endpoint.json"
 grep -Fq 'Mulan Permissive Software License' "$WORK/release/LICENSE"
+while IFS= read -r packaged_file; do
+  rel="${packaged_file#"$WORK/release/"}"
+  [[ "$rel" == "manifest.json" || "$rel" == "manifest.sig" ]] && continue
+  jq -e --arg rel "$rel" '.files[] | select(.path == $rel and .sha256 != "")' \
+    "$WORK/release/manifest.json" >/dev/null || {
+      echo "[standalone-release-package][ERROR] unsigned package file: $rel" >&2
+      exit 1
+    }
+done < <(find "$WORK/release" -type f -print)
 
 write_upgrade_config() {
   local path="$1" marker="$2"
