@@ -77,6 +77,8 @@ PY
 
 echo "[e2e-agent-systemd-vm] installing agent from manager enrollment"
 vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent 2>/dev/null || true; sudo rm -rf /opt/sysarmor/agent /etc/sysarmor/agent /var/lib/sysarmor/agent /etc/systemd/system/sysarmor-agent.service; curl -fsSL '$INSTALL_URL' | sudo bash" >/dev/null
+echo "[e2e-agent-systemd-vm] enabling manager.tls_insecure for isolated HTTP topology"
+vagrant ssh node-a -c "printf '\nmanager:\n  tls_insecure: true\n' | sudo tee -a /etc/sysarmor/agent/agent.yaml >/dev/null; sudo systemctl restart sysarmor-agent"
 
 wait_contains() {
   local name="$1"
@@ -222,6 +224,8 @@ if ! grep -Fq '"status":"applied"' "$RESULTS/e2e-agent-systemd-vm.unenroll.json"
   cat "$RESULTS/e2e-agent-systemd-vm.unenroll.json" >&2
   exit 1
 fi
+wait_contains "manager endpoint unenrollment completion" '"unenrollment_status":"endpoint_completed"' "$RESULTS/e2e-agent-systemd-vm.enrollment-after-unenroll.json" \
+  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager enrollments list --tenant-id default --status issued"
 wait_contains "standalone policy after unenrollment" '"policyId":"standalone-default"' "$RESULTS/e2e-agent-systemd-vm.policy-after-unenroll.json" \
   vagrant ssh node-a -c "sudo /usr/local/bin/sysarmorctl --json policy current"
 if vagrant ssh node-a -c "sudo find /var/lib/sysarmor/agent/credentials -type f \( -name ca.pem -o -name agent.pem -o -name agent-key.pem \) -print -quit" \
@@ -260,6 +264,15 @@ health_after = load("e2e-agent-systemd-vm.health-after-restart.json", {})
 unenrollment = load("e2e-agent-systemd-vm.unenroll.json", {})
 standalone_after = load("e2e-agent-systemd-vm.policy-after-unenroll-restart.json", {})
 enrollment = load("e2e-agent-systemd-vm.enrollment.json", {}).get("enrollment", {})
+enrollments_after_unenroll = load("e2e-agent-systemd-vm.enrollment-after-unenroll.json", {}).get("enrollments", [])
+completed_enrollment = next(
+    (
+        item
+        for item in enrollments_after_unenroll
+        if item.get("enrollment_id") == enrollment.get("enrollment_id")
+    ),
+    {},
+)
 
 summary = {
     "suite": "functional-topology",
@@ -279,6 +292,7 @@ summary = {
     "sensor_running": (health.get("sensor_health") or {}).get("running"),
     "systemd_restart_verified": bool(health_after.get("agent_id") == agent_id),
     "online_unenrollment_applied": unenrollment.get("status") == "applied",
+    "manager_unenrollment_completed": completed_enrollment.get("unenrollment_status") == "endpoint_completed",
     "standalone_after_unenrollment_restart": standalone_after.get("policyId") == "standalone-default",
 }
 (root / "e2e-agent-systemd-vm.summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")

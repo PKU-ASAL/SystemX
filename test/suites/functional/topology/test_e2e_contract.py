@@ -66,6 +66,9 @@ class TopologyE2EContractTest(unittest.TestCase):
 
         self.assertIn("sysarmorctl --json unenroll --timeout 60s", script)
         self.assertIn('"status":"applied"', script)
+        self.assertIn("manager.tls_insecure", script)
+        self.assertIn('"unenrollment_status":"endpoint_completed"', script)
+        self.assertIn("e2e-agent-systemd-vm.enrollment-after-unenroll.json", script)
         self.assertIn('"policyId":"standalone-default"', script)
         self.assertIn("managed enrollment credentials removed", script)
         self.assertIn("standalone policy after unenrollment restart", script)

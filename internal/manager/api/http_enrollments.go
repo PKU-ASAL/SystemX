@@ -28,10 +28,12 @@ func (s *Server) enrollments(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("list enrollments: %v", err), http.StatusInternalServerError)
 			return
 		}
-		for i := range items {
-			items[i] = publicEnrollment(items[i])
+		views, err := s.enrollmentViews(items)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list unenrollment lifecycle: %v", err), http.StatusInternalServerError)
+			return
 		}
-		writeJSON(w, map[string]any{"enrollments": items})
+		writeJSON(w, map[string]any{"enrollments": views})
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "admin") {
 			return
@@ -282,6 +284,67 @@ func publicEnrollment(enrollment store.Enrollment) store.Enrollment {
 	enrollment.IssuedCAPEM = ""
 	enrollment.Labels = cloneStringMap(enrollment.Labels)
 	return enrollment
+}
+
+type enrollmentView struct {
+	store.Enrollment
+	UnenrollmentStatus string     `json:"unenrollment_status,omitempty"`
+	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
+	EndpointCompleted  *time.Time `json:"endpoint_completed_at,omitempty"`
+}
+
+type enrollmentKey struct {
+	tenantID, enrollmentID string
+}
+
+func (s *Server) enrollmentViews(enrollments []store.Enrollment) ([]enrollmentView, error) {
+	records, err := s.unenrollmentRecords(enrollments)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]enrollmentView, len(enrollments))
+	for i, enrollment := range enrollments {
+		record, ok := records[enrollmentKey{enrollment.TenantID, enrollment.EnrollmentID}]
+		views[i] = newEnrollmentView(enrollment, record, ok)
+	}
+	return views, nil
+}
+
+func (s *Server) unenrollmentRecords(enrollments []store.Enrollment) (map[enrollmentKey]store.UnenrollmentRecord, error) {
+	tenants := make(map[string]struct{})
+	for _, enrollment := range enrollments {
+		tenants[enrollment.TenantID] = struct{}{}
+	}
+	records := make(map[enrollmentKey]store.UnenrollmentRecord)
+	for tenantID := range tenants {
+		items, err := s.store.ListUnenrollmentsWithError(tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range items {
+			records[enrollmentKey{record.TenantID, record.EnrollmentID}] = record
+		}
+	}
+	return records, nil
+}
+
+func newEnrollmentView(enrollment store.Enrollment, record store.UnenrollmentRecord, ok bool) enrollmentView {
+	view := enrollmentView{Enrollment: publicEnrollment(enrollment)}
+	if !ok {
+		return view
+	}
+	view.UnenrollmentStatus = record.Status
+	view.RevokedAt = optionalTime(record.RevokedAt)
+	view.EndpointCompleted = optionalTime(record.EndpointCompletedAt)
+	return view
+}
+
+func optionalTime(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 func installURL(r *http.Request, ticket string) string {
