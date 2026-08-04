@@ -1014,11 +1014,17 @@ func TestRevokeEnrollmentMTLSIdentityAndIdempotencyMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	conflict := revokeEnrollmentRequest(certs.clientSerial)
+	conflict.CompletionTokenHash = strings.Repeat("b", 64)
+	if _, err := client.RevokeEnrollment(t.Context(), conflict); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("RevokeEnrollment(token hash conflict) error=%v, want PermissionDenied", err)
+	}
 	second, err := client.RevokeEnrollment(t.Context(), revokeEnrollmentRequest(certs.clientSerial))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.GetReceiptId() == "" || first.GetReceiptId() != second.GetReceiptId() || first.GetRevokedAt() != second.GetRevokedAt() {
+	if first.GetReceiptId() == "" || first.GetReceiptId() != second.GetReceiptId() || first.GetRevokedAt() != second.GetRevokedAt() ||
+		!first.GetCompletionRequired() || !second.GetCompletionRequired() {
 		t.Fatalf("first=%+v second=%+v, want stable revocation result", first, second)
 	}
 
@@ -1039,7 +1045,7 @@ func TestRevokeEnrollmentMTLSIdentityAndIdempotencyMatrix(t *testing.T) {
 }
 
 func revokeEnrollmentRequest(serial string) *controlplanev1.RevokeEnrollmentRequest {
-	return &controlplanev1.RevokeEnrollmentRequest{TenantId: "tenant-a", AgentId: "agent-a", EnrollmentId: "enroll-a", CertificateSerial: serial}
+	return &controlplanev1.RevokeEnrollmentRequest{TenantId: "tenant-a", AgentId: "agent-a", EnrollmentId: "enroll-a", CertificateSerial: serial, CompletionTokenHash: strings.Repeat("a", 64)}
 }
 
 type testMTLSFiles struct {

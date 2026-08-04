@@ -1366,6 +1366,10 @@ func TestRevokeAgentCertificateIsIdempotentAndRejectsIdentityConflict(t *testing
 	if err != nil || !ok || first.RevocationReceipt == "" || !first.RevokedAt.Equal(revokedAt) {
 		t.Fatalf("first revoke=%+v ok=%t err=%v", first, ok, err)
 	}
+	legacyRecord, ok, err := st.GetUnenrollmentWithError("tenant-a", "enroll-a")
+	if err != nil || !ok || legacyRecord.Status != UnenrollmentUnknownLegacy || legacyRecord.RevocationReceipt != first.RevocationReceipt {
+		t.Fatalf("legacy record=%+v ok=%t err=%v", legacyRecord, ok, err)
+	}
 	second, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-a", "42", revokedAt.Add(time.Hour))
 	if err != nil || !ok || second.RevocationReceipt != first.RevocationReceipt || !second.RevokedAt.Equal(first.RevokedAt) {
 		t.Fatalf("replayed revoke=%+v ok=%t err=%v", second, ok, err)

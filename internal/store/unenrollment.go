@@ -249,6 +249,16 @@ func upsertUnenrollmentSnapshot(records []UnenrollmentRecord, record Unenrollmen
 	return appendCopy(records, record)
 }
 
+func insertLegacyUnenrollmentSnapshot(records []UnenrollmentRecord, cert AgentCertificate) []UnenrollmentRecord {
+	if _, _, ok := findUnenrollmentIndex(records, cert.TenantID, cert.EnrollmentID); ok {
+		return records
+	}
+	record := UnenrollmentRecord{TenantID: cert.TenantID, AgentID: cert.AgentID, EnrollmentID: cert.EnrollmentID,
+		CertificateSerial: cert.SerialNumber, RevocationReceipt: cert.RevocationReceipt, Status: UnenrollmentUnknownLegacy,
+		RevokedAt: cert.RevokedAt, CreatedAt: cert.RevokedAt, UpdatedAt: cert.RevokedAt}
+	return appendCopy(records, record)
+}
+
 func defaultTenant(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

@@ -2486,6 +2486,7 @@ func (s *Store) RevokeAgentCertificate(tenantID, agentID, enrollmentID, serial s
 		}
 		s.mu.Lock()
 		s.Certificates = upsertAgentCertificateSnapshot(s.Certificates, cert)
+		s.Unenrollments = insertLegacyUnenrollmentSnapshot(s.Unenrollments, cert)
 		s.mu.Unlock()
 		return cert, true, nil
 	}
@@ -2498,19 +2499,17 @@ func (s *Store) RevokeAgentCertificate(tenantID, agentID, enrollmentID, serial s
 		if cert.AgentID != agentID || cert.EnrollmentID != enrollmentID {
 			return AgentCertificate{}, false, fmt.Errorf("%w: certificate identity mismatch", ErrConflict)
 		}
-		changed := false
 		if cert.RevokedAt.IsZero() {
 			cert.RevokedAt, cert.RevocationReceipt = revokedAt.UTC(), receipt
-			changed = true
 		} else if cert.RevocationReceipt == "" {
 			cert.RevocationReceipt = receipt
-			changed = true
 		}
-		if changed {
-			s.Certificates[i] = cert
-			if err := s.persistFileLocked(); err != nil {
-				return AgentCertificate{}, false, fmt.Errorf("persist certificate revocation: %w", err)
-			}
+		oldCerts, oldRecords := s.Certificates, s.Unenrollments
+		s.Certificates = replaceCertificate(oldCerts, i, cert)
+		s.Unenrollments = insertLegacyUnenrollmentSnapshot(oldRecords, cert)
+		if err := s.persistFileLocked(); err != nil {
+			s.Certificates, s.Unenrollments = oldCerts, oldRecords
+			return AgentCertificate{}, false, fmt.Errorf("persist certificate revocation: %w", err)
 		}
 		return cert, true, nil
 	}

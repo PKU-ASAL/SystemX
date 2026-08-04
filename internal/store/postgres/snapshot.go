@@ -440,14 +440,16 @@ func (b *tableBackend) RevokeAgentCertificate(ctx context.Context, tenantID, age
 		if revoked.AgentID != agentID || revoked.EnrollmentID != enrollmentID {
 			return fmt.Errorf("%w: certificate identity mismatch", store.ErrConflict)
 		}
-		if !revoked.RevokedAt.IsZero() && revoked.RevocationReceipt != "" {
-			return nil
-		}
 		if revoked.RevokedAt.IsZero() {
 			revoked.RevokedAt = revokedAt.UTC()
 		}
-		revoked.RevocationReceipt = receipt
-		return upsertAgentCertificate(ctx, tx, revoked)
+		if revoked.RevocationReceipt == "" {
+			revoked.RevocationReceipt = receipt
+		}
+		if err := upsertAgentCertificate(ctx, tx, revoked); err != nil {
+			return err
+		}
+		return insertLegacyUnenrollment(ctx, tx, revoked)
 	})
 	return revoked, found, err
 }

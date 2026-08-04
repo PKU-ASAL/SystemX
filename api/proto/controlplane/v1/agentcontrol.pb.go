@@ -24,13 +24,14 @@ const (
 )
 
 type RevokeEnrollmentRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TenantId          string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	AgentId           string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	EnrollmentId      string                 `protobuf:"bytes,3,opt,name=enrollment_id,json=enrollmentId,proto3" json:"enrollment_id,omitempty"`
-	CertificateSerial string                 `protobuf:"bytes,4,opt,name=certificate_serial,json=certificateSerial,proto3" json:"certificate_serial,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TenantId            string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	AgentId             string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	EnrollmentId        string                 `protobuf:"bytes,3,opt,name=enrollment_id,json=enrollmentId,proto3" json:"enrollment_id,omitempty"`
+	CertificateSerial   string                 `protobuf:"bytes,4,opt,name=certificate_serial,json=certificateSerial,proto3" json:"certificate_serial,omitempty"`
+	CompletionTokenHash string                 `protobuf:"bytes,5,opt,name=completion_token_hash,json=completionTokenHash,proto3" json:"completion_token_hash,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *RevokeEnrollmentRequest) Reset() {
@@ -91,13 +92,21 @@ func (x *RevokeEnrollmentRequest) GetCertificateSerial() string {
 	return ""
 }
 
+func (x *RevokeEnrollmentRequest) GetCompletionTokenHash() string {
+	if x != nil {
+		return x.CompletionTokenHash
+	}
+	return ""
+}
+
 type RevokeEnrollmentResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	RevokedAt     string                 `protobuf:"bytes,2,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
-	ReceiptId     string                 `protobuf:"bytes,3,opt,name=receipt_id,json=receiptId,proto3" json:"receipt_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Status             string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	RevokedAt          string                 `protobuf:"bytes,2,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	ReceiptId          string                 `protobuf:"bytes,3,opt,name=receipt_id,json=receiptId,proto3" json:"receipt_id,omitempty"`
+	CompletionRequired bool                   `protobuf:"varint,4,opt,name=completion_required,json=completionRequired,proto3" json:"completion_required,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RevokeEnrollmentResponse) Reset() {
@@ -149,6 +158,13 @@ func (x *RevokeEnrollmentResponse) GetReceiptId() string {
 		return x.ReceiptId
 	}
 	return ""
+}
+
+func (x *RevokeEnrollmentResponse) GetCompletionRequired() bool {
+	if x != nil {
+		return x.CompletionRequired
+	}
+	return false
 }
 
 type ControlFrame struct {
@@ -4587,18 +4603,20 @@ var File_api_proto_controlplane_v1_agentcontrol_proto protoreflect.FileDescripto
 
 const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\n" +
-	",api/proto/controlplane/v1/agentcontrol.proto\x12\x18sysarmor.controlplane.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"\xa5\x01\n" +
+	",api/proto/controlplane/v1/agentcontrol.proto\x12\x18sysarmor.controlplane.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"\xd9\x01\n" +
 	"\x17RevokeEnrollmentRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12#\n" +
 	"\renrollment_id\x18\x03 \x01(\tR\fenrollmentId\x12-\n" +
-	"\x12certificate_serial\x18\x04 \x01(\tR\x11certificateSerial\"p\n" +
+	"\x12certificate_serial\x18\x04 \x01(\tR\x11certificateSerial\x122\n" +
+	"\x15completion_token_hash\x18\x05 \x01(\tR\x13completionTokenHash\"\xa1\x01\n" +
 	"\x18RevokeEnrollmentResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
 	"revoked_at\x18\x02 \x01(\tR\trevokedAt\x12\x1d\n" +
 	"\n" +
-	"receipt_id\x18\x03 \x01(\tR\treceiptId\"\xbc\b\n" +
+	"receipt_id\x18\x03 \x01(\tR\treceiptId\x12/\n" +
+	"\x13completion_required\x18\x04 \x01(\bR\x12completionRequired\"\xbc\b\n" +
 	"\fControlFrame\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +

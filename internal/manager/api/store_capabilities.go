@@ -67,12 +67,14 @@ type policyControlStore interface {
 }
 
 type enrollmentStore interface {
+	CompleteAgentUnenrollment(string, string, string, string, string, string, time.Time) (store.UnenrollmentRecord, bool, error)
 	ConsumeEnrollmentBootstrap(string, string, string, time.Time) (store.Enrollment, bool, error)
 	CreateEnrollment(store.Enrollment) store.Enrollment
 	CommitEnrollmentIssue(string, string, store.Enrollment, store.AgentCertificate) (store.Enrollment, store.EnrollmentIssueResult, error)
 	GetEnrollmentByBootstrapTokenHashWithError(string) (store.Enrollment, bool, error)
 	GetEnrollmentByTokenHashWithError(string) (store.Enrollment, bool, error)
 	ListEnrollmentsWithError(string, string) ([]store.Enrollment, error)
+	ListUnenrollmentsWithError(string) ([]store.UnenrollmentRecord, error)
 	MarkEnrollmentUsed(string, time.Time) (store.Enrollment, bool)
 	RecordAgentCertificate(store.AgentCertificate) store.AgentCertificate
 }

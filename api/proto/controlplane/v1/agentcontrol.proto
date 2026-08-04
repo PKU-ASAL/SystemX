@@ -30,12 +30,14 @@ message RevokeEnrollmentRequest {
   string agent_id = 2;
   string enrollment_id = 3;
   string certificate_serial = 4;
+  string completion_token_hash = 5;
 }
 
 message RevokeEnrollmentResponse {
   string status = 1;
   string revoked_at = 2;
   string receipt_id = 3;
+  bool completion_required = 4;
 }
 
 message ControlFrame {

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,9 @@ func TestPostgresRevokeAgentCertificateMatrix(t *testing.T) {
 		got, found, err := backend.RevokeAgentCertificate(t.Context(), "tenant-a", "agent-a", "enroll-a", "42", revokedAt, "receipt-a")
 		if err != nil || !found || got.RevocationReceipt != "receipt-a" || !got.RevokedAt.Equal(revokedAt) {
 			t.Fatalf("certificate=%+v found=%t err=%v", got, found, err)
+		}
+		if queries := FakeAllQueries(); !strings.Contains(queries, "agent_unenrollments") {
+			t.Fatalf("revocation did not persist legacy lifecycle: %s", queries)
 		}
 		if commits, rollbacks := FakeTransactionCounts(); commits != 1 || rollbacks != 0 {
 			t.Fatalf("commits=%d rollbacks=%d", commits, rollbacks)

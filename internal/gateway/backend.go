@@ -48,6 +48,7 @@ type ControlStore interface {
 	AttachIncidentEvidence(string, store.LabelSelector, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool, error)
+	AuthorizeAgentUnenrollment(string, string, string, string, string, time.Time) (store.UnenrollmentRecord, bool, error)
 	EffectivePolicyWithError(string, string, string, string) (policymodel.Policy, bool, error)
 	GetEvidencePullbackWithError(string, string, string) (controlmodel.EvidencePullbackRequest, bool, error)
 	GetAgentCertificateWithError(string, string) (store.AgentCertificate, bool, error)

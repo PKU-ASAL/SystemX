@@ -189,3 +189,22 @@ endpoint_completed_at=EXCLUDED.endpoint_completed_at, updated_at=EXCLUDED.update
 	}
 	return nil
 }
+
+func insertLegacyUnenrollment(ctx context.Context, db sqlExecutor, cert store.AgentCertificate) error {
+	record := store.UnenrollmentRecord{TenantID: cert.TenantID, AgentID: cert.AgentID, EnrollmentID: cert.EnrollmentID,
+		CertificateSerial: cert.SerialNumber, RevocationReceipt: cert.RevocationReceipt, Status: store.UnenrollmentUnknownLegacy,
+		RevokedAt: cert.RevokedAt, CreatedAt: cert.RevokedAt, UpdatedAt: cert.RevokedAt}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("encode legacy agent unenrollment: %w", err)
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO agent_unenrollments
+(tenant_id, enrollment_id, agent_id, certificate_serial, status, revoked_at, created_at, updated_at, data)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id, enrollment_id) DO NOTHING`,
+		record.TenantID, record.EnrollmentID, record.AgentID, record.CertificateSerial, record.Status,
+		record.RevokedAt, record.CreatedAt, record.UpdatedAt, raw)
+	if err != nil {
+		return fmt.Errorf("insert legacy agent unenrollment: %w", err)
+	}
+	return nil
+}

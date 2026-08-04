@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +45,34 @@ func (s *ControlServer) RevokeEnrollment(ctx context.Context, req *controlplanev
 	if req.GetTenantId() != peerID.TenantID || req.GetAgentId() != peerID.AgentID || req.GetCertificateSerial() != peerID.CertificateSerial {
 		return nil, status.Error(codes.PermissionDenied, "certificate identity does not match revocation request")
 	}
+	if strings.TrimSpace(req.GetCompletionTokenHash()) == "" {
+		return s.revokeLegacyEnrollment(req)
+	}
+	if !validCompletionTokenHash(req.GetCompletionTokenHash()) {
+		return nil, status.Error(codes.InvalidArgument, "completion token hash is invalid")
+	}
+	record, found, err := s.backend.Store().AuthorizeAgentUnenrollment(req.GetTenantId(), req.GetAgentId(), req.GetEnrollmentId(),
+		req.GetCertificateSerial(), req.GetCompletionTokenHash(), time.Now().UTC())
+	if errors.Is(err, store.ErrConflict) {
+		return nil, status.Error(codes.PermissionDenied, "certificate enrollment identity mismatch")
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "authorize enrollment revocation: %v", err)
+	}
+	if !found {
+		return nil, status.Error(codes.NotFound, "agent certificate not found")
+	}
+	return &controlplanev1.RevokeEnrollmentResponse{
+		Status: "revoked", RevokedAt: record.RevokedAt.UTC().Format(time.RFC3339Nano), ReceiptId: record.RevocationReceipt, CompletionRequired: true,
+	}, nil
+}
+
+func validCompletionTokenHash(value string) bool {
+	raw, err := hex.DecodeString(strings.TrimSpace(value))
+	return err == nil && len(raw) == sha256.Size
+}
+
+func (s *ControlServer) revokeLegacyEnrollment(req *controlplanev1.RevokeEnrollmentRequest) (*controlplanev1.RevokeEnrollmentResponse, error) {
 	cert, found, err := s.backend.Store().RevokeAgentCertificate(
 		req.GetTenantId(), req.GetAgentId(), req.GetEnrollmentId(), req.GetCertificateSerial(), time.Now().UTC(),
 	)
