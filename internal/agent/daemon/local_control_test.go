@@ -116,6 +116,34 @@ func TestHealthResponseIncludesDefaultManifestVersion(t *testing.T) {
 	}
 }
 
+func TestHealthReportsUnenrollmentLifecycle(t *testing.T) {
+	store := coordinatorManagedStore(t)
+	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordUnenrollmentError(t.Context(), "manager unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{
+		Backend: "fake", Installed: true, Running: true, PolicyLoaded: true,
+	}})
+	bus, batcher, sender := newTestTelemetry(t, runner)
+	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor), bus: bus, batcher: batcher, sender: sender, startedAt: time.Now()}
+
+	response, err := server.Health(t.Context(), &controlplanev1.HealthRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := response.GetManagementLifecycle()
+	if lifecycle.GetMode() != "unenrolling" || lifecycle.GetTransitionPhase() != "revocation_pending" ||
+		lifecycle.GetRevocationConfirmed() || lifecycle.GetLastTransitionError() != "manager unavailable" || lifecycle.GetUpdatedAt() == "" {
+		t.Fatalf("management lifecycle = %+v", lifecycle)
+	}
+	if response.GetStatus() != "degraded" {
+		t.Fatalf("health status = %q, want degraded", response.GetStatus())
+	}
+}
+
 func TestLocalControlExplainCollectionPolicyDryRunDoesNotApply(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")

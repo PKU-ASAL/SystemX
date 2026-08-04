@@ -234,6 +234,16 @@ message HealthResponse {
   DetectionRuntimeHealth detection = 18;
   LocalStoreHealth local_store = 19;
   PendingPolicyStatus pending_policy = 20;
+  ManagementLifecycleStatus management_lifecycle = 21;
+}
+
+message ManagementLifecycleStatus {
+  string mode = 1;
+  string transition_phase = 2;
+  bool revocation_confirmed = 3;
+  string manager_completion_status = 4;
+  string last_transition_error = 5;
+  string updated_at = 6;
 }
 
 message LocalStoreHealth {

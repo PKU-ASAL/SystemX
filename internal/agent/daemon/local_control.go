@@ -152,9 +152,17 @@ func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.Hea
 	}
 	response := healthResponse(health)
 	if s.runner.localStore != nil {
-		response.LocalStore, err = s.runner.localStoreHealth(ctx)
+		if response.LocalStore, err = s.runner.localStoreHealth(ctx); err != nil {
+			return nil, err
+		}
+		if response.ManagementLifecycle, err = s.runner.managementLifecycleStatus(ctx); err != nil {
+			return nil, err
+		}
+		if managementLifecycleDegraded(response.ManagementLifecycle) {
+			response.Status = "degraded"
+		}
 	}
-	return response, err
+	return response, nil
 }
 
 func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
@@ -822,6 +830,27 @@ func (r *AgentRuntime) localStoreHealth(ctx context.Context) (*controlplanev1.Lo
 		SignalCount: stats.SignalCount, SealedSegmentCount: stats.SealedSegmentCount, OpenSegmentBytes: stats.OpenSegmentBytes,
 		UploadSegmentId: checkpoint.SegmentID, UploadRecordOffset: checkpoint.RecordOffset, DroppedBatchesStorage: stats.DroppedBatchesStorage,
 		DroppedEventsStorage: stats.DroppedEventsStorage}, nil
+}
+
+func (r *AgentRuntime) managementLifecycleStatus(ctx context.Context) (*controlplanev1.ManagementLifecycleStatus, error) {
+	enrollment, err := r.localStore.Enrollment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &controlplanev1.ManagementLifecycleStatus{
+		Mode:                string(enrollment.State),
+		TransitionPhase:     enrollment.TransitionPhase,
+		RevocationConfirmed: enrollment.RevocationConfirmed,
+		LastTransitionError: enrollment.LastTransitionError,
+		UpdatedAt:           timestampString(enrollment.UpdatedAt),
+	}, nil
+}
+
+func managementLifecycleDegraded(status *controlplanev1.ManagementLifecycleStatus) bool {
+	if status == nil {
+		return false
+	}
+	return status.GetTransitionPhase() != "" || status.GetLastTransitionError() != ""
 }
 
 func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {
