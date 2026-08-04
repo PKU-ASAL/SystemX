@@ -22,6 +22,7 @@ type Enrollment struct {
 	AgentID             string
 	EnrollmentID        string
 	CertificateSerial   string
+	ManagerURL          string
 	GatewayAddress      string
 	TLSCAPath           string
 	TLSCertPath         string
@@ -43,12 +44,12 @@ func (s *Store) Enrollment(ctx context.Context) (Enrollment, error) {
 	var revokedAt, updatedAt int64
 	err := s.db.QueryRowContext(ctx, `SELECT state, COALESCE(tenant_id,''), COALESCE(agent_id,''), COALESCE(gateway_address,''),
 COALESCE(tls_ca_path,''), COALESCE(tls_cert_path,''), COALESCE(tls_key_path,''), COALESCE(tls_server_name,''), upload_history,
-COALESCE(managed_from_seq,0), COALESCE(enrollment_id,''), COALESCE(certificate_serial,''), revocation_confirmed,
+COALESCE(managed_from_seq,0), COALESCE(enrollment_id,''), COALESCE(certificate_serial,''), COALESCE(manager_url,''), revocation_confirmed,
 COALESCE(revoked_at_ns,0), COALESCE(revocation_receipt,''), COALESCE(transition_phase,''), COALESCE(last_transition_error,''), updated_at_ns
 FROM enrollment WHERE singleton = 1`).Scan(
 		&enrollment.State, &enrollment.TenantID, &enrollment.AgentID, &enrollment.GatewayAddress,
 		&enrollment.TLSCAPath, &enrollment.TLSCertPath, &enrollment.TLSKeyPath, &enrollment.TLSServerName,
-		&uploadHistory, &enrollment.ManagedFromSequence, &enrollment.EnrollmentID, &enrollment.CertificateSerial,
+		&uploadHistory, &enrollment.ManagedFromSequence, &enrollment.EnrollmentID, &enrollment.CertificateSerial, &enrollment.ManagerURL,
 		&enrollment.RevocationConfirmed, &revokedAt, &enrollment.RevocationReceipt, &enrollment.TransitionPhase,
 		&enrollment.LastTransitionError, &updatedAt,
 	)
@@ -65,10 +66,10 @@ func (s *Store) SetEnrolling(ctx context.Context, enrollment Enrollment) error {
 	if err := validateManaged(enrollment); err != nil {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE enrollment SET state='enrolling', tenant_id=?, agent_id=?, enrollment_id=?, certificate_serial=?, gateway_address=?, tls_ca_path=?,
+	result, err := s.db.ExecContext(ctx, `UPDATE enrollment SET state='enrolling', tenant_id=?, agent_id=?, enrollment_id=?, certificate_serial=?, manager_url=?, gateway_address=?, tls_ca_path=?,
 tls_cert_path=?, tls_key_path=?, tls_server_name=?, upload_history=?, managed_from_seq=?, revocation_confirmed=0, revoked_at_ns=NULL,
 revocation_receipt=NULL, transition_phase='', last_transition_error='', updated_at_ns=? WHERE singleton=1 AND state='standalone'`,
-		enrollment.TenantID, enrollment.AgentID, enrollment.EnrollmentID, enrollment.CertificateSerial, enrollment.GatewayAddress, enrollment.TLSCAPath, enrollment.TLSCertPath,
+		enrollment.TenantID, enrollment.AgentID, enrollment.EnrollmentID, enrollment.CertificateSerial, enrollment.ManagerURL, enrollment.GatewayAddress, enrollment.TLSCAPath, enrollment.TLSCertPath,
 		enrollment.TLSKeyPath, enrollment.TLSServerName, enrollment.UploadHistory, enrollment.ManagedFromSequence, time.Now().UTC().UnixNano())
 	if err != nil {
 		return err
@@ -106,7 +107,12 @@ func (s *Store) ConfirmEnrollmentRevocation(ctx context.Context, receipt string,
 	if strings.TrimSpace(receipt) == "" || revokedAt.IsZero() {
 		return fmt.Errorf("revocation confirmation is incomplete")
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE enrollment SET revocation_confirmed=1, revoked_at_ns=?, revocation_receipt=?,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin revocation confirmation: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE enrollment SET revocation_confirmed=1, revoked_at_ns=?, revocation_receipt=?,
 transition_phase='revocation_confirmed', last_transition_error='', updated_at_ns=? WHERE singleton=1 AND state='unenrolling'`,
 		revokedAt.UTC().UnixNano(), receipt, time.Now().UTC().UnixNano())
 	if err != nil {
@@ -116,7 +122,11 @@ transition_phase='revocation_confirmed', last_transition_error='', updated_at_ns
 	if err != nil || rows == 0 {
 		return fmt.Errorf("revocation confirmation requires unenrolling state")
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx, `UPDATE unenrollment_completion SET revocation_receipt=?, updated_at_ns=?
+WHERE singleton=1 AND status='prepared'`, receipt, time.Now().UTC().UnixNano()); err != nil {
+		return fmt.Errorf("record completion revocation receipt: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *Store) RecordUnenrollmentError(ctx context.Context, message string) error {
@@ -147,8 +157,13 @@ ON CONFLICT(kind) DO UPDATE SET source=excluded.source, updated_at_ns=excluded.u
 	if _, err := tx.ExecContext(ctx, `DELETE FROM policy_desired WHERE kind=?`, kind); err != nil {
 		return fmt.Errorf("clear desired policies: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE unenrollment_completion SET status='ready',
+revocation_receipt=(SELECT revocation_receipt FROM enrollment WHERE singleton=1), last_error='', updated_at_ns=?
+WHERE singleton=1 AND status='prepared'`, time.Now().UTC().UnixNano()); err != nil {
+		return fmt.Errorf("mark unenrollment completion ready: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE enrollment SET state='standalone', tenant_id=NULL, agent_id=NULL, enrollment_id=NULL,
-certificate_serial=NULL, gateway_address=NULL, tls_ca_path=NULL, tls_cert_path=NULL, tls_key_path=NULL, tls_server_name=NULL,
+certificate_serial=NULL, manager_url=NULL, gateway_address=NULL, tls_ca_path=NULL, tls_cert_path=NULL, tls_key_path=NULL, tls_server_name=NULL,
 upload_history=0, managed_from_seq=NULL, revocation_confirmed=0, revoked_at_ns=NULL, revocation_receipt=NULL,
 transition_phase='', last_transition_error='', updated_at_ns=? WHERE singleton=1`, time.Now().UTC().UnixNano()); err != nil {
 		return fmt.Errorf("clear managed enrollment: %w", err)

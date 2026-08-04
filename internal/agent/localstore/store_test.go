@@ -2,9 +2,11 @@ package localstore
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestOpenCreatesSecureBaselineAndStandaloneIdentity(t *testing.T) {
@@ -60,6 +62,45 @@ func TestDeviceIdentitySurvivesReopen(t *testing.T) {
 	}
 	if got.DeviceID != want.DeviceID || got.CreatedAt != want.CreatedAt {
 		t.Fatalf("identity changed: got=%+v want=%+v", got, want)
+	}
+}
+
+func TestOpenMigratesV3EnrollmentToCompletionSchema(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "agent")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE schema_meta(version INTEGER PRIMARY KEY);
+INSERT INTO schema_meta(version) VALUES (3);
+CREATE TABLE enrollment (
+  singleton INTEGER PRIMARY KEY, state TEXT NOT NULL, tenant_id TEXT, agent_id TEXT, enrollment_id TEXT,
+  certificate_serial TEXT, gateway_address TEXT, tls_ca_path TEXT, tls_cert_path TEXT, tls_key_path TEXT,
+  tls_server_name TEXT, upload_history INTEGER NOT NULL, managed_from_seq INTEGER, revocation_confirmed INTEGER NOT NULL,
+  revoked_at_ns INTEGER, revocation_receipt TEXT, transition_phase TEXT, last_transition_error TEXT, updated_at_ns INTEGER NOT NULL
+);
+INSERT INTO enrollment VALUES (1,'managed','tenant-a','agent-a','enroll-a','42','gateway','/ca','/cert','/key','',0,1,0,NULL,NULL,'','',?);`, time.Now().UTC().UnixNano())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store := openStore(t, root)
+	defer store.Close()
+	enrollment, err := store.Enrollment(t.Context())
+	if err != nil || enrollment.State != StateManaged || enrollment.EnrollmentID != "enroll-a" || enrollment.ManagerURL != "" {
+		t.Fatalf("enrollment=%+v err=%v", enrollment, err)
+	}
+	if got := schemaVersion(t, store); got != 4 {
+		t.Fatalf("schema version=%d, want 4", got)
+	}
+	if _, ok, err := store.UnenrollmentCompletion(t.Context()); err != nil || ok {
+		t.Fatalf("completion ok=%t err=%v", ok, err)
 	}
 }
 

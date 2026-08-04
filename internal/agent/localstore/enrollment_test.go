@@ -1,6 +1,7 @@
 package localstore
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,4 +91,125 @@ func TestUnenrollmentRequiresDurableRevocationConfirmation(t *testing.T) {
 	if err != nil || !ok || source != PolicySourceStandalone {
 		t.Fatalf("active source=%q ok=%t err=%v", source, ok, err)
 	}
+}
+
+func TestPrepareUnenrollmentPersistsCompletionBeforeRevocation(t *testing.T) {
+	store := managedEnrollmentStore(t)
+	tokenHash := strings.Repeat("a", 64)
+
+	current, err := store.PrepareUnenrollment(t.Context(), "completion-token", tokenHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion, ok, err := store.UnenrollmentCompletion(t.Context())
+	if err != nil || !ok {
+		t.Fatalf("completion=%+v ok=%t err=%v", completion, ok, err)
+	}
+	if current.State != StateUnenrolling || current.TransitionPhase != "revocation_pending" || completion.Status != CompletionPrepared ||
+		completion.EnrollmentID != "enroll-a" || completion.ManagerURL != "https://manager.example" || completion.TokenHash != tokenHash {
+		t.Fatalf("enrollment=%+v completion=%+v", current, completion)
+	}
+}
+
+func TestCompleteUnenrollmentAtomicallyMarksCompletionReady(t *testing.T) {
+	store := managedEnrollmentStore(t)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err != nil {
+		t.Fatal(err)
+	}
+
+	enrollment, err := store.Enrollment(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion, ok, err := store.UnenrollmentCompletion(t.Context())
+	if err != nil || !ok {
+		t.Fatalf("completion=%+v ok=%t err=%v", completion, ok, err)
+	}
+	if enrollment.State != StateStandalone || completion.Status != CompletionReady || completion.RevocationReceipt != "receipt-a" {
+		t.Fatalf("enrollment=%+v completion=%+v", enrollment, completion)
+	}
+}
+
+func TestCompletionAcknowledgementRequiresMatchingEnrollment(t *testing.T) {
+	store := managedEnrollmentStore(t)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeUnenrollmentCompletion(t.Context(), "other-enrollment"); err == nil {
+		t.Fatal("mismatched enrollment acknowledged completion")
+	}
+	if _, ok, err := store.UnenrollmentCompletion(t.Context()); err != nil || !ok {
+		t.Fatalf("completion removed after mismatch: ok=%t err=%v", ok, err)
+	}
+	if err := store.AcknowledgeUnenrollmentCompletion(t.Context(), "enroll-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := store.UnenrollmentCompletion(t.Context()); err != nil || ok {
+		t.Fatalf("completion remains after acknowledgement: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestCompleteUnenrollmentKeepsPreparedCompletionOnPolicyFailure(t *testing.T) {
+	store := openStore(t, t.TempDir())
+	defer store.Close()
+	enrollment := Enrollment{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
+		ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
+	}
+	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ActivateManagedPolicy(t.Context(), policyRecord("endpoint", 2, `{"policy_id":"managed"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err == nil {
+		t.Fatal("completion without standalone policy succeeded")
+	}
+
+	current, err := store.Enrollment(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion, ok, err := store.UnenrollmentCompletion(t.Context())
+	if err != nil || !ok || current.State != StateUnenrolling || completion.Status != CompletionPrepared {
+		t.Fatalf("enrollment=%+v completion=%+v ok=%t err=%v", current, completion, ok, err)
+	}
+}
+
+func managedEnrollmentStore(t *testing.T) *Store {
+	t.Helper()
+	store := openStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.PutAndActivateStandalonePolicy(t.Context(), policyRecord("endpoint", 1, `{"policy_id":"standalone"}`)); err != nil {
+		t.Fatal(err)
+	}
+	enrollment := Enrollment{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
+		ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
+	}
+	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ActivateManagedPolicy(t.Context(), policyRecord("endpoint", 2, `{"policy_id":"managed"}`)); err != nil {
+		t.Fatal(err)
+	}
+	return store
 }

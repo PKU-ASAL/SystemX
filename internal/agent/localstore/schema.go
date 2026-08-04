@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const currentSchemaVersion = 3
+const currentSchemaVersion = 4
 
 const baselineSchema = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -25,8 +25,9 @@ CREATE TABLE IF NOT EXISTS enrollment (
   state TEXT NOT NULL CHECK (state IN ('standalone', 'enrolling', 'managed', 'unenrolling')),
 	  tenant_id TEXT,
 	  agent_id TEXT,
-	  enrollment_id TEXT,
-	  certificate_serial TEXT,
+  enrollment_id TEXT,
+  certificate_serial TEXT,
+  manager_url TEXT,
   gateway_address TEXT,
   tls_ca_path TEXT,
   tls_cert_path TEXT,
@@ -39,6 +40,22 @@ CREATE TABLE IF NOT EXISTS enrollment (
 	  revocation_receipt TEXT,
 	  transition_phase TEXT,
 	  last_transition_error TEXT,
+  updated_at_ns INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS unenrollment_completion (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  tenant_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  enrollment_id TEXT NOT NULL,
+  certificate_serial TEXT NOT NULL,
+  manager_url TEXT NOT NULL,
+  revocation_receipt TEXT,
+  completion_token TEXT NOT NULL,
+  completion_token_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('prepared', 'ready')),
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at_ns INTEGER NOT NULL,
   updated_at_ns INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS policy (
@@ -161,6 +178,12 @@ func (s *Store) applyBaseline(ctx context.Context) error {
 		if err := migrateEnrollmentRevocation(tx); err != nil {
 			return err
 		}
+		version = 3
+	}
+	if version == 3 {
+		if err := migrateUnenrollmentCompletion(tx); err != nil {
+			return err
+		}
 		version = currentSchemaVersion
 	}
 	if version != currentSchemaVersion {
@@ -227,6 +250,22 @@ DROP TABLE enrollment_v2;
 DELETE FROM schema_meta;
 INSERT INTO schema_meta(version) VALUES (3);`); err != nil {
 		return fmt.Errorf("migrate enrollment revocation state: %w", err)
+	}
+	return nil
+}
+
+func migrateUnenrollmentCompletion(tx *sql.Tx) error {
+	if _, err := tx.Exec(`ALTER TABLE enrollment ADD COLUMN manager_url TEXT;
+CREATE TABLE IF NOT EXISTS unenrollment_completion (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  tenant_id TEXT NOT NULL, agent_id TEXT NOT NULL, enrollment_id TEXT NOT NULL, certificate_serial TEXT NOT NULL,
+  manager_url TEXT NOT NULL, revocation_receipt TEXT, completion_token TEXT NOT NULL, completion_token_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('prepared', 'ready')), attempt_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT, created_at_ns INTEGER NOT NULL, updated_at_ns INTEGER NOT NULL
+);
+DELETE FROM schema_meta;
+INSERT INTO schema_meta(version) VALUES (4);`); err != nil {
+		return fmt.Errorf("migrate unenrollment completion state: %w", err)
 	}
 	return nil
 }
