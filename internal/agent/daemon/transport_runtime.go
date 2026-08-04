@@ -55,7 +55,7 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.Local.Export.RequestTimeout)
 	defer cancel()
 	session := NewControlChannel(manager, token, tlsCfg)
-	if err := session.Open(connectCtx); err != nil {
+	if err := session.open(connectCtx, ctx); err != nil {
 		return err
 	}
 	defer session.Close()
@@ -64,12 +64,13 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 		return err
 	}
 	for _, frame := range frames {
-		if err := r.handleControlFrame(ctx, session, frame); err != nil {
+		if err := r.handleControlFrame(ctx, session, identity, frame); err != nil {
 			return err
 		}
 	}
 	health, err := runner.collectHealth(ctx, r.sensor, r.bus, r.batcher, r.sender, r.startedAt)
 	if err == nil {
+		health = bindHealthToSession(health, identity)
 		if err := session.SendHealth(ctx, health); err != nil {
 			return err
 		}
@@ -109,7 +110,7 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 			}
 			return err
 		case frame := <-recvCh:
-			if err := r.handleControlFrame(ctx, session, frame); err != nil {
+			if err := r.handleControlFrame(ctx, session, identity, frame); err != nil {
 				return err
 			}
 		case <-ticker.C:
@@ -117,6 +118,7 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 			if err != nil {
 				return err
 			}
+			health = bindHealthToSession(health, identity)
 			if err := session.SendHealth(ctx, health); err != nil {
 				return err
 			}
@@ -146,7 +148,7 @@ func (r *TransportRuntime) runControlFlowForEnrollment(ctx context.Context, enro
 	}
 }
 
-func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *ControlChannel, frame *controlplanev1.ControlFrame) error {
+func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *ControlChannel, identity runtimeIdentity, frame *controlplanev1.ControlFrame) error {
 	runner := r.runner
 	switch frame.GetType() {
 	case "ack":
@@ -159,10 +161,10 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		if requestContext == nil {
 			requestContext = &controlplanev1.RequestContext{RequestId: frame.GetRequestId()}
 		}
-		ack := (&localControlServer{runner: runner, runtime: r.sensor, batcher: r.batcher}).applyEndpointPolicy(ctx, &controlplanev1.ApplyPolicyRequest{
+		ack := (&localControlServer{runner: runner, runtime: r.sensor, batcher: r.batcher}).applyEndpointPolicyInternal(ctx, &controlplanev1.ApplyPolicyRequest{
 			Context: requestContext, PolicyType: "endpoint", PolicyJson: frame.GetPolicyUpdate().GetRawJson(),
-		})
-		ack = runner.bindControlAckIdentity(ack)
+		}, localstore.PolicySourceManaged)
+		ack = bindControlAckToSession(ack, identity)
 		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
 		}
@@ -173,7 +175,7 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 	case "content_update":
 		req := contentUpdateFromControlFrame(frame)
 		ack := runner.applyContentUpdate(req)
-		ack = runner.bindControlAckIdentity(ack)
+		ack = bindControlAckToSession(ack, identity)
 		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
 		}

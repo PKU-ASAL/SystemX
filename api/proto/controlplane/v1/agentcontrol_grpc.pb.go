@@ -19,20 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentControlPlaneService_Connect_FullMethodName       = "/sysarmor.controlplane.v1.AgentControlPlaneService/Connect"
-	AgentControlPlaneService_Health_FullMethodName        = "/sysarmor.controlplane.v1.AgentControlPlaneService/Health"
-	AgentControlPlaneService_Capability_FullMethodName    = "/sysarmor.controlplane.v1.AgentControlPlaneService/Capability"
-	AgentControlPlaneService_CurrentPolicy_FullMethodName = "/sysarmor.controlplane.v1.AgentControlPlaneService/CurrentPolicy"
-	AgentControlPlaneService_ApplyPolicy_FullMethodName   = "/sysarmor.controlplane.v1.AgentControlPlaneService/ApplyPolicy"
-	AgentControlPlaneService_ApplyContent_FullMethodName  = "/sysarmor.controlplane.v1.AgentControlPlaneService/ApplyContent"
-	AgentControlPlaneService_ListContent_FullMethodName   = "/sysarmor.controlplane.v1.AgentControlPlaneService/ListContent"
-	AgentControlPlaneService_GetContent_FullMethodName    = "/sysarmor.controlplane.v1.AgentControlPlaneService/GetContent"
-	AgentControlPlaneService_GetEvent_FullMethodName      = "/sysarmor.controlplane.v1.AgentControlPlaneService/GetEvent"
-	AgentControlPlaneService_DebugProfile_FullMethodName  = "/sysarmor.controlplane.v1.AgentControlPlaneService/DebugProfile"
-	AgentControlPlaneService_WatchEvents_FullMethodName   = "/sysarmor.controlplane.v1.AgentControlPlaneService/WatchEvents"
-	AgentControlPlaneService_WatchSignals_FullMethodName  = "/sysarmor.controlplane.v1.AgentControlPlaneService/WatchSignals"
-	AgentControlPlaneService_Enroll_FullMethodName        = "/sysarmor.controlplane.v1.AgentControlPlaneService/Enroll"
-	AgentControlPlaneService_Unenroll_FullMethodName      = "/sysarmor.controlplane.v1.AgentControlPlaneService/Unenroll"
+	AgentControlPlaneService_Connect_FullMethodName          = "/sysarmor.controlplane.v1.AgentControlPlaneService/Connect"
+	AgentControlPlaneService_Health_FullMethodName           = "/sysarmor.controlplane.v1.AgentControlPlaneService/Health"
+	AgentControlPlaneService_Capability_FullMethodName       = "/sysarmor.controlplane.v1.AgentControlPlaneService/Capability"
+	AgentControlPlaneService_CurrentPolicy_FullMethodName    = "/sysarmor.controlplane.v1.AgentControlPlaneService/CurrentPolicy"
+	AgentControlPlaneService_ApplyPolicy_FullMethodName      = "/sysarmor.controlplane.v1.AgentControlPlaneService/ApplyPolicy"
+	AgentControlPlaneService_ApplyContent_FullMethodName     = "/sysarmor.controlplane.v1.AgentControlPlaneService/ApplyContent"
+	AgentControlPlaneService_ListContent_FullMethodName      = "/sysarmor.controlplane.v1.AgentControlPlaneService/ListContent"
+	AgentControlPlaneService_GetContent_FullMethodName       = "/sysarmor.controlplane.v1.AgentControlPlaneService/GetContent"
+	AgentControlPlaneService_GetEvent_FullMethodName         = "/sysarmor.controlplane.v1.AgentControlPlaneService/GetEvent"
+	AgentControlPlaneService_DebugProfile_FullMethodName     = "/sysarmor.controlplane.v1.AgentControlPlaneService/DebugProfile"
+	AgentControlPlaneService_WatchEvents_FullMethodName      = "/sysarmor.controlplane.v1.AgentControlPlaneService/WatchEvents"
+	AgentControlPlaneService_WatchSignals_FullMethodName     = "/sysarmor.controlplane.v1.AgentControlPlaneService/WatchSignals"
+	AgentControlPlaneService_Enroll_FullMethodName           = "/sysarmor.controlplane.v1.AgentControlPlaneService/Enroll"
+	AgentControlPlaneService_Unenroll_FullMethodName         = "/sysarmor.controlplane.v1.AgentControlPlaneService/Unenroll"
+	AgentControlPlaneService_RevokeEnrollment_FullMethodName = "/sysarmor.controlplane.v1.AgentControlPlaneService/RevokeEnrollment"
 )
 
 // AgentControlPlaneServiceClient is the client API for AgentControlPlaneService service.
@@ -53,6 +54,7 @@ type AgentControlPlaneServiceClient interface {
 	WatchSignals(ctx context.Context, in *WatchSignalsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SignalFrame], error)
 	Enroll(ctx context.Context, in *EnrollRequest, opts ...grpc.CallOption) (*ControlAck, error)
 	Unenroll(ctx context.Context, in *UnenrollRequest, opts ...grpc.CallOption) (*ControlAck, error)
+	RevokeEnrollment(ctx context.Context, in *RevokeEnrollmentRequest, opts ...grpc.CallOption) (*RevokeEnrollmentResponse, error)
 }
 
 type agentControlPlaneServiceClient struct {
@@ -224,6 +226,16 @@ func (c *agentControlPlaneServiceClient) Unenroll(ctx context.Context, in *Unenr
 	return out, nil
 }
 
+func (c *agentControlPlaneServiceClient) RevokeEnrollment(ctx context.Context, in *RevokeEnrollmentRequest, opts ...grpc.CallOption) (*RevokeEnrollmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeEnrollmentResponse)
+	err := c.cc.Invoke(ctx, AgentControlPlaneService_RevokeEnrollment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentControlPlaneServiceServer is the server API for AgentControlPlaneService service.
 // All implementations must embed UnimplementedAgentControlPlaneServiceServer
 // for forward compatibility.
@@ -242,6 +254,7 @@ type AgentControlPlaneServiceServer interface {
 	WatchSignals(*WatchSignalsRequest, grpc.ServerStreamingServer[SignalFrame]) error
 	Enroll(context.Context, *EnrollRequest) (*ControlAck, error)
 	Unenroll(context.Context, *UnenrollRequest) (*ControlAck, error)
+	RevokeEnrollment(context.Context, *RevokeEnrollmentRequest) (*RevokeEnrollmentResponse, error)
 	mustEmbedUnimplementedAgentControlPlaneServiceServer()
 }
 
@@ -293,6 +306,9 @@ func (UnimplementedAgentControlPlaneServiceServer) Enroll(context.Context, *Enro
 }
 func (UnimplementedAgentControlPlaneServiceServer) Unenroll(context.Context, *UnenrollRequest) (*ControlAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method Unenroll not implemented")
+}
+func (UnimplementedAgentControlPlaneServiceServer) RevokeEnrollment(context.Context, *RevokeEnrollmentRequest) (*RevokeEnrollmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeEnrollment not implemented")
 }
 func (UnimplementedAgentControlPlaneServiceServer) mustEmbedUnimplementedAgentControlPlaneServiceServer() {
 }
@@ -543,6 +559,24 @@ func _AgentControlPlaneService_Unenroll_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentControlPlaneService_RevokeEnrollment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeEnrollmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlPlaneServiceServer).RevokeEnrollment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControlPlaneService_RevokeEnrollment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlPlaneServiceServer).RevokeEnrollment(ctx, req.(*RevokeEnrollmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentControlPlaneService_ServiceDesc is the grpc.ServiceDesc for AgentControlPlaneService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -593,6 +627,10 @@ var AgentControlPlaneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Unenroll",
 			Handler:    _AgentControlPlaneService_Unenroll_Handler,
+		},
+		{
+			MethodName: "RevokeEnrollment",
+			Handler:    _AgentControlPlaneService_RevokeEnrollment_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

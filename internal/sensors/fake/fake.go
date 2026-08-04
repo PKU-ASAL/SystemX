@@ -54,12 +54,12 @@ func (s *Sensor) Capability(context.Context) (contract.Capability, error) {
 	}, nil
 }
 
-func (s *Sensor) Apply(_ context.Context, intent contract.CollectionIntent) error {
+func (s *Sensor) Apply(_ context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.intent = intent
 	s.policyLoaded = true
-	return nil
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
 }
 
 func (s *Sensor) Subscribe(ctx context.Context, intent contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {

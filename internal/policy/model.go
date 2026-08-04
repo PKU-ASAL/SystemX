@@ -10,8 +10,10 @@ import (
 )
 
 const (
-	DefaultPolicyID      = "default-edr-policy"
-	DefaultPolicyVersion = uint64(1)
+	DefaultPolicyID       = "default-edr-policy"
+	DefaultPolicyVersion  = uint64(1)
+	DefaultRuleSetRef     = "ruleset:cep-endpoint"
+	DefaultRuleSetVersion = "v1"
 )
 
 type RuleContent struct {
@@ -228,6 +230,14 @@ func DefaultPolicy(tenantID string) Policy {
 	}
 }
 
+func ManagerDefaultPolicy(tenantID string) Policy {
+	policy := DefaultPolicy(tenantID)
+	enabled := true
+	policy.Detection = DefaultDetectionPolicy()
+	policy.Detection.RuleSets = []RuleSetRef{{Ref: DefaultRuleSetRef, Version: DefaultRuleSetVersion, Enabled: &enabled}}
+	return policy
+}
+
 func DefaultDetectionPolicy() *DetectionPolicy {
 	return &DetectionPolicy{
 		PolicyID: "default-endpoint-detection",
@@ -238,7 +248,7 @@ func DefaultDetectionPolicy() *DetectionPolicy {
 
 func (p Policy) EndpointPolicy() EndpointPolicy {
 	normalized := Normalize(p)
-	collection := CollectionPolicy{Behaviors: []string{"process.exec", "process.exit", "process.fork", "file.read", "file.write", "network.connect"}, ObserveOnly: true}
+	collection := CollectionPolicy{Behaviors: []string{"process.exec", "process.exit", "process.fork", "file.read", "file.write", "file.chmod", "network.connect"}, ObserveOnly: true}
 	if normalized.Collection != nil {
 		collection = *normalized.Collection
 	}

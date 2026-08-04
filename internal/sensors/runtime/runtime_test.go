@@ -27,7 +27,7 @@ func TestManagerLifecycle(t *testing.T) {
 		Behaviors:   []string{"process.exec"},
 		ObserveOnly: true,
 	}
-	if err := rt.Apply(ctx, intent); err != nil {
+	if _, err := rt.Apply(ctx, intent); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if fake.applied.ScopeType != "host" || fake.applied.ScopeSelector != "" {
@@ -95,7 +95,7 @@ func TestManagerRejectsInvalidScope(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := newFakeSensor()
 			rt := New(fake)
-			err := rt.Apply(context.Background(), tc.intent)
+			_, err := rt.Apply(context.Background(), tc.intent)
 			if err == nil {
 				t.Fatal("Apply() error = nil")
 			}
@@ -123,10 +123,10 @@ func (f *fakeSensor) Capability(context.Context) (contract.Capability, error) {
 	return contract.Capability{Backend: "fake", Version: "test", SupportsExec: true, SupportsHealth: true}, nil
 }
 
-func (f *fakeSensor) Apply(_ context.Context, intent contract.CollectionIntent) error {
+func (f *fakeSensor) Apply(_ context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error) {
 	f.applied = intent
 	f.applyCount++
-	return nil
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
 }
 
 func (f *fakeSensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {

@@ -1,0 +1,31 @@
+package daemon
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
+)
+
+type endpointPolicyReconciler struct {
+	runtime    sensorruntime.Runtime
+	supervisor *sensorruntime.SubscriptionSupervisor
+}
+
+func (s *localControlServer) policyReconciler() endpointPolicyReconciler {
+	return endpointPolicyReconciler{runtime: s.runtime, supervisor: s.runner.currentSensorSupervisor()}
+}
+
+func (r endpointPolicyReconciler) Apply(ctx context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error) {
+	if r.supervisor != nil {
+		if err := r.supervisor.Reconcile(ctx, intent); err != nil {
+			return contract.ApplyResult{}, err
+		}
+		return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
+	}
+	if r.runtime == nil {
+		return contract.ApplyResult{}, fmt.Errorf("sensor runtime is unavailable")
+	}
+	return r.runtime.Apply(ctx, intent)
+}

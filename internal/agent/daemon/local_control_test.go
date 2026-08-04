@@ -213,6 +213,72 @@ func TestLocalControlApplyPolicyUpdatesCurrentPolicy(t *testing.T) {
 	}
 }
 
+func TestManagedAgentRejectsLocalEndpointPolicyMutation(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	setManagedEnrollmentForTest(t, store)
+	runner := &AgentRuntime{
+		Config:     config.Config{Agent: config.AgentConfig{ID: "agent-a", HostID: "host-a", TenantID: "tenant-a"}},
+		Sensor:     &healthOnlySensor{health: contract.Health{Backend: "fake", Running: true, Installed: true, PolicyLoaded: true}},
+		capability: contract.Capability{Backend: "fake", SupportsExec: true}, localStore: store,
+	}
+	installTestDetection(t, runner)
+	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor)}
+	ack := server.applyEndpointPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
+		PolicyType: "endpoint",
+		PolicyJson: `{"policy_id":"local-policy","version":2,"collection":{"behaviors":["process.exec"]},"detection":{"policy_id":"local-detection","version":1,"rulesets":[{"ref":"ruleset:cep-endpoint","enabled":true}]},"telemetry":{"max_batch_items":64,"max_batch_bytes":65536,"flush_interval":"1s"},"response":{}}`,
+	})
+	if ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "managed policy authority") {
+		t.Fatalf("ack=%+v", ack)
+	}
+}
+
+func TestManagedAgentRejectsLocalContentMutation(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	setManagedEnrollmentForTest(t, store)
+	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "agent-a", TenantID: "tenant-a"}}, localStore: store}
+	server := &localControlServer{runner: runner}
+	ack, err := server.ApplyContent(t.Context(), &controlplanev1.ApplyContentRequest{ContentJson: "{}", AllowUnsigned: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "managed policy authority") {
+		t.Fatalf("ack=%+v", ack)
+	}
+}
+
+func TestManagedTransitionWaitsForLocalPolicyMutation(t *testing.T) {
+	runner := &AgentRuntime{}
+	release, err := runner.beginLocalPolicyMutation(t.Context(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transitioned := make(chan struct{})
+	go func() {
+		runner.policyAuthorityMu.Lock()
+		close(transitioned)
+		runner.policyAuthorityMu.Unlock()
+	}()
+	select {
+	case <-transitioned:
+		t.Fatal("managed transition entered during local mutation")
+	case <-time.After(20 * time.Millisecond):
+	}
+	release()
+	select {
+	case <-transitioned:
+	case <-time.After(time.Second):
+		t.Fatal("managed transition remained blocked after local mutation")
+	}
+}
+
 func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "agent.sock")
@@ -742,7 +808,7 @@ type recordingCollectionSensor struct {
 	lastIntent contract.CollectionIntent
 }
 
-func (s *recordingCollectionSensor) Apply(ctx context.Context, intent contract.CollectionIntent) error {
+func (s *recordingCollectionSensor) Apply(ctx context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error) {
 	s.lastIntent = intent
 	return s.healthOnlySensor.Apply(ctx, intent)
 }

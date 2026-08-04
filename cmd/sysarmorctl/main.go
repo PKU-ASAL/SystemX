@@ -110,8 +110,8 @@ func usage() {
   sysarmorctl [--socket PATH] debug profile cpu --seconds 10 --output agent.cpu.pb.gz
   sysarmorctl [--socket PATH] event watch --include-recent --limit 10
   sysarmorctl [--socket PATH] signal watch --include-events --limit 10
-  sysarmorctl [--socket PATH] enroll --manager-url URL (--token TOKEN | --token-file PATH) [--upload-history]
-  sysarmorctl [--socket PATH] unenroll
+  sysarmorctl [--socket PATH] enroll --manager-url URL (--token TOKEN | --token-file PATH) [--upload-history] [--timeout DURATION]
+  sysarmorctl [--socket PATH] unenroll [--timeout DURATION]
 
   sysarmorctl [--manager-url URL] manager agents list
   sysarmorctl [--manager-url URL] manager policies assign --agent AGENT --policy-id POLICY --version N [--downlink]
@@ -150,7 +150,7 @@ func defaultAgentSock() string {
 }
 
 func isLocalAgentCommand(args []string) bool {
-	if len(args) == 1 && args[0] == "unenroll" {
+	if len(args) >= 1 && args[0] == "unenroll" {
 		return true
 	}
 	if len(args) >= 1 && args[0] == "enroll" {
@@ -267,7 +267,7 @@ func queryLocalAgentWithManager(socketPath, managerURL string, args []string) ([
 	if len(args) > 0 && args[0] == "enroll" {
 		return enrollLocalAgent(ctx, client, reqCtx, managerURL, args)
 	}
-	if len(args) == 1 && args[0] == "unenroll" {
+	if len(args) >= 1 && args[0] == "unenroll" {
 		resp, err := client.Unenroll(ctx, &controlplanev1.UnenrollRequest{Context: reqCtx})
 		if err != nil {
 			return nil, err
@@ -842,6 +842,9 @@ func watchFilter(args []string) *controlplanev1.WatchFilter {
 func commandTimeout(args []string, fallback time.Duration) time.Duration {
 	raw := flagValue(args, "--timeout")
 	if raw == "" {
+		if len(args) >= 1 && (args[0] == "enroll" || args[0] == "unenroll") {
+			return 60 * time.Second
+		}
 		if len(args) >= 3 && args[0] == "debug" && args[1] == "profile" {
 			seconds := uint64Flag(args, "--seconds", 10)
 			return time.Duration(seconds+5) * time.Second

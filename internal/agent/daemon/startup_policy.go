@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
+	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
@@ -12,6 +14,15 @@ import (
 func (r *AgentRuntime) loadStartupPolicy(ctx context.Context) (contract.CollectionIntent, policymodel.Policy, config.EffectiveTelemetry, error) {
 	if r.localStore == nil {
 		return r.loadLegacyRuntimePolicy()
+	}
+	if _, err := agentpolicy.EnsureStandaloneEndpointPolicy(ctx, r.localStore, r.Config.Policy.Path); err != nil {
+		_, source, ok, activeErr := r.localStore.ActivePolicy(ctx, "endpoint")
+		if activeErr != nil || !ok || source != localstore.PolicySourceManaged {
+			return contract.CollectionIntent{}, policymodel.Policy{}, config.EffectiveTelemetry{}, err
+		}
+		if r.Out != nil {
+			fmt.Fprintf(r.Out, "agent standalone fallback unavailable: %v\n", err)
+		}
 	}
 	endpoint, err := agentpolicy.LoadEffectiveEndpointPolicy(ctx, r.localStore, r.Config.Policy.Path)
 	if err != nil {
@@ -60,12 +71,18 @@ func (r *AgentRuntime) currentEndpointPolicy() agentpolicy.EndpointPolicy {
 	return r.endpointPolicy
 }
 
-func (r *AgentRuntime) persistEndpointPolicy(ctx context.Context, policy agentpolicy.EndpointPolicy) error {
+func (r *AgentRuntime) persistEndpointPolicy(ctx context.Context, source localstore.PolicySource, policy agentpolicy.EndpointPolicy) error {
 	if r.localStore == nil {
 		r.setEndpointPolicy(policy)
 		return nil
 	}
-	if err := agentpolicy.SaveEffectiveEndpointPolicy(ctx, r.localStore, policy); err != nil {
+	var err error
+	if source == localstore.PolicySourceManaged {
+		err = agentpolicy.ActivateManagedEndpointPolicy(ctx, r.localStore, policy)
+	} else {
+		err = agentpolicy.SaveEffectiveEndpointPolicy(ctx, r.localStore, policy)
+	}
+	if err != nil {
 		return err
 	}
 	r.setEndpointPolicy(policy)

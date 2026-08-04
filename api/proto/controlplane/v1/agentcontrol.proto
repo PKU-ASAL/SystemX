@@ -22,6 +22,20 @@ service AgentControlPlaneService {
   rpc WatchSignals(WatchSignalsRequest) returns (stream SignalFrame);
   rpc Enroll(EnrollRequest) returns (ControlAck);
   rpc Unenroll(UnenrollRequest) returns (ControlAck);
+  rpc RevokeEnrollment(RevokeEnrollmentRequest) returns (RevokeEnrollmentResponse);
+}
+
+message RevokeEnrollmentRequest {
+  string tenant_id = 1;
+  string agent_id = 2;
+  string enrollment_id = 3;
+  string certificate_serial = 4;
+}
+
+message RevokeEnrollmentResponse {
+  string status = 1;
+  string revoked_at = 2;
+  string receipt_id = 3;
 }
 
 message ControlFrame {
@@ -219,6 +233,7 @@ message HealthResponse {
   TelemetryBatcherHealth telemetry_batcher = 17;
   DetectionRuntimeHealth detection = 18;
   LocalStoreHealth local_store = 19;
+  PendingPolicyStatus pending_policy = 20;
 }
 
 message LocalStoreHealth {
@@ -267,6 +282,7 @@ message CurrentPolicyResponse {
   repeated string cloud_rules = 7;
   bool published = 8;
   string raw_json = 9;
+  PendingPolicyStatus pending_policy = 10;
 }
 
 message ResumeCursor {
@@ -493,4 +509,12 @@ message SignalFrame {
   uint64 sequence = 3;
   string observed_at = 4;
   sysarmor.signal.v1.Signal signal = 5;
+}
+
+message PendingPolicyStatus {
+  string status = 1;
+  string source = 2;
+  string policy_id = 3;
+  uint64 version = 4;
+  string digest = 5;
 }

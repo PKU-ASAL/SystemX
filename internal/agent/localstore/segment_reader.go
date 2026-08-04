@@ -3,6 +3,7 @@ package localstore
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,14 @@ type StoredBatch struct {
 	Batch    *dataplanev1.DataBatch
 }
 
+type tailMode uint8
+
+const (
+	tailStrict tailMode = iota
+	tailIgnore
+	tailTruncate
+)
+
 func (s *Store) ReadBatches(_ context.Context, opts ReadOptions) ([]StoredBatch, error) {
 	files, err := segmentFiles(filepath.Join(s.rootDir, "spool"))
 	if err != nil {
@@ -33,7 +42,11 @@ func (s *Store) ReadBatches(_ context.Context, opts ReadOptions) ([]StoredBatch,
 	}
 	var out []StoredBatch
 	for _, path := range files {
-		batches, err := readSegment(path, false)
+		mode := tailStrict
+		if strings.HasSuffix(path, ".open") {
+			mode = tailIgnore
+		}
+		batches, err := readSegment(path, mode)
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +73,11 @@ func (s *Store) recoverSegments(ctx context.Context) error {
 	}
 	for _, path := range files {
 		open := strings.HasSuffix(path, ".open")
-		batches, err := readSegment(path, open)
+		mode := tailStrict
+		if open {
+			mode = tailTruncate
+		}
+		batches, err := readSegment(path, mode)
 		if err != nil {
 			return err
 		}
@@ -114,9 +131,9 @@ func openRecoveredWriter(path string, batches []StoredBatch) (*segmentWriter, er
 	return writer, nil
 }
 
-func readSegment(path string, truncateTail bool) ([]StoredBatch, error) {
+func readSegment(path string, mode tailMode) ([]StoredBatch, error) {
 	flag := os.O_RDONLY
-	if truncateTail {
+	if mode == tailTruncate {
 		flag = os.O_RDWR
 	}
 	file, err := os.OpenFile(path, flag, 0)
@@ -132,10 +149,10 @@ func readSegment(path string, truncateTail bool) ([]StoredBatch, error) {
 	if err != nil {
 		return nil, err
 	}
-	return readRecords(file, segmentID, truncateTail)
+	return readRecords(file, segmentID, mode)
 }
 
-func readRecords(file *os.File, segmentID uint64, truncateTail bool) ([]StoredBatch, error) {
+func readRecords(file *os.File, segmentID uint64, mode tailMode) ([]StoredBatch, error) {
 	var out []StoredBatch
 	offset := int64(segmentHeaderSize)
 	for {
@@ -145,7 +162,7 @@ func readRecords(file *os.File, segmentID uint64, truncateTail bool) ([]StoredBa
 			return out, nil
 		}
 		if err != nil {
-			return truncateOrError(file, offset, truncateTail, out, err)
+			return handleIncompleteTail(file, offset, mode, out, err)
 		}
 		length := int(binary.BigEndian.Uint32(lengthRaw))
 		if length < recordFixedSize || length > maxBatchBytes {
@@ -153,7 +170,7 @@ func readRecords(file *os.File, segmentID uint64, truncateTail bool) ([]StoredBa
 		}
 		record := append(lengthRaw, make([]byte, length)...)
 		if _, err := io.ReadFull(file, record[4:]); err != nil {
-			return truncateOrError(file, offset, truncateTail, out, err)
+			return handleIncompleteTail(file, offset, mode, out, err)
 		}
 		batch, sequence, err := decodeRecord(record)
 		if err != nil {
@@ -164,12 +181,17 @@ func readRecords(file *os.File, segmentID uint64, truncateTail bool) ([]StoredBa
 	}
 }
 
-func truncateOrError(file *os.File, offset int64, allowed bool, batches []StoredBatch, cause error) ([]StoredBatch, error) {
-	if !allowed {
+func handleIncompleteTail(file *os.File, offset int64, mode tailMode, batches []StoredBatch, cause error) ([]StoredBatch, error) {
+	if !errors.Is(cause, io.EOF) && !errors.Is(cause, io.ErrUnexpectedEOF) {
 		return nil, cause
 	}
-	if err := file.Truncate(offset); err != nil {
-		return nil, err
+	if mode == tailStrict {
+		return nil, cause
+	}
+	if mode == tailTruncate {
+		if err := file.Truncate(offset); err != nil {
+			return nil, err
+		}
 	}
 	return batches, nil
 }

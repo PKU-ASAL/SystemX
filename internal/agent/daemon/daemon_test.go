@@ -40,6 +40,8 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestDetectionSuppressionConversion(t *testing.T) {
@@ -49,6 +51,22 @@ func TestDetectionSuppressionConversion(t *testing.T) {
 	})
 	if got.Within != 5*time.Minute || !slices.Equal(got.By, []string{"process.stable_id", "file.path"}) {
 		t.Fatalf("suppression = %+v", got)
+	}
+}
+
+func TestApplySupervisorHealthMarksSensorDegraded(t *testing.T) {
+	sensor := contract.Health{Backend: "tetragon", Running: true, PolicyLoaded: true, RestartCount: 2}
+	got := applySupervisorHealth(sensor, sensorruntime.SupervisorStatus{State: "degraded", LastError: "apply: unavailable", RestartCount: 3})
+	if got.Running || got.LastError != "apply: unavailable" || got.RestartCount != 5 {
+		t.Fatalf("sensor health = %+v", got)
+	}
+}
+
+func TestResolveSensorHealthKeepsHealthAvailableWhenSensorFails(t *testing.T) {
+	status := sensorruntime.SupervisorStatus{State: "degraded", LastError: "apply: unavailable", RestartCount: 2}
+	got, err := resolveSensorHealth(contract.Health{}, errors.New("health unavailable"), &status, "tetragon")
+	if err != nil || got.Backend != "tetragon" || got.Running || !strings.Contains(got.LastError, "health unavailable") {
+		t.Fatalf("sensor health = %+v err=%v", got, err)
 	}
 }
 
@@ -174,6 +192,23 @@ func TestAgentRuntimeSwitchesBatchIdentityAfterEnrollment(t *testing.T) {
 	standalone := runner.newDataBatch(time.Now())
 	if standalone.GetHeader().GetAgentId() != "device-a" || standalone.GetHeader().GetTenantId() != "local" {
 		t.Fatalf("standalone batch identity = %+v", standalone.GetHeader())
+	}
+}
+
+func TestManagedSessionUsesEnrollmentIdentityWhilePolicyPending(t *testing.T) {
+	sessionIdentity := runtimeIdentity{AgentID: "agent-a", HostID: "host-a", TenantID: "tenant-a"}
+	health := bindHealthToSession(agenthealth.AgentHealth{
+		AgentID: "device-a", HostID: "host-a", TenantID: "local",
+		PendingPolicy: agenthealth.PendingPolicyStatus{Status: "pending", Source: "managed"},
+	}, sessionIdentity)
+	if health.AgentID != "agent-a" || health.TenantID != "tenant-a" || health.HostID != "host-a" {
+		t.Fatalf("managed session health identity = %+v", health)
+	}
+	ack := bindControlAckToSession(&controlplanev1.ControlAck{
+		AgentId: "device-a", TenantId: "local", Status: "pending",
+	}, sessionIdentity)
+	if ack.GetAgentId() != "agent-a" || ack.GetTenantId() != "tenant-a" {
+		t.Fatalf("managed session ack identity = %+v", ack)
 	}
 }
 
@@ -390,6 +425,46 @@ func TestEndpointSignalIDsContinueAcrossDetectionReplacement(t *testing.T) {
 	}
 }
 
+func TestLocalStoreBatchSenderEnforcesCapacityBeforeAck(t *testing.T) {
+	root := t.TempDir()
+	store, err := localstore.Open(t.Context(), localstore.Options{
+		RootDir: root, MaxBytes: 1, MinFreeBytes: 1, SegmentSize: 128,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for sequence := uint64(1); sequence <= 3; sequence++ {
+		batch := &dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{
+			BatchId: fmt.Sprintf("seed-%d", sequence), EventSeqStart: sequence, EventSeqEnd: sequence,
+		}}
+		if _, err := store.AppendBatch(t.Context(), batch); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Seal(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.SaveCheckpoint(t.Context(), localstore.Checkpoint{SegmentID: 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	sender := &localStoreBatchSender{store: store}
+	ack, err := sender.SendBatch(&dataplanev1.DataBatch{Header: &dataplanev1.BatchHeader{
+		BatchId: "new-batch", EventSeqStart: 4, EventSeqEnd: 4,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ack.GetAccepted() {
+		t.Fatalf("ack=%+v", ack)
+	}
+	if _, err := os.Stat(filepath.Join(root, "spool", "0000000000000001.seg")); !os.IsNotExist(err) {
+		t.Fatalf("uploaded segment was not reclaimed, stat error=%v", err)
+	}
+}
+
 func openSequenceStore(t *testing.T, statePath string) *localstore.Store {
 	t.Helper()
 	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: statePath})
@@ -574,6 +649,55 @@ func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 	if !ok || got.Capability.Version != "long" || got.Sensor.EventsSeen != 7 {
 		t.Fatalf("stored long stream health = %+v ok=%t", got, ok)
 	}
+}
+
+func TestControlChannelHelloStopsWhenSessionContextIsCanceled(t *testing.T) {
+	received := make(chan struct{})
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, &blockingHelloControlServer{received: received})
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+
+	session := NewControlChannel(lis.Addr().String(), "", tlsconfig.ClientConfig{})
+	defer session.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := session.Hello(ctx, "default", "agent-a", "host", "")
+		done <- err
+	}()
+	select {
+	case <-received:
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive hello")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if status.Code(err) != codes.Canceled {
+			t.Fatalf("Hello() error=%v, want context canceled", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Hello() did not stop after session cancellation")
+	}
+}
+
+type blockingHelloControlServer struct {
+	controlplanev1.UnimplementedAgentControlPlaneServiceServer
+	received chan struct{}
+}
+
+func (s *blockingHelloControlServer) Connect(stream controlplanev1.AgentControlPlaneService_ConnectServer) error {
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	close(s.received)
+	<-stream.Context().Done()
+	return stream.Context().Err()
 }
 
 func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
@@ -863,7 +987,7 @@ func TestAgentRuntimeMarksHealthDegradedWhenParseThresholdExceeded(t *testing.T)
 	if _, err := rt.Probe(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.Apply(context.Background(), contract.CollectionIntent{ObserveOnly: true}); err != nil {
+	if _, err := rt.Apply(context.Background(), contract.CollectionIntent{ObserveOnly: true}); err != nil {
 		t.Fatal(err)
 	}
 	bus := telemetry.NewBus(1024)
@@ -1125,8 +1249,8 @@ func (s *capabilityErrorSensor) Capability(context.Context) (contract.Capability
 	return contract.Capability{}, s.err
 }
 
-func (s *capabilityErrorSensor) Apply(context.Context, contract.CollectionIntent) error {
-	return nil
+func (s *capabilityErrorSensor) Apply(context.Context, contract.CollectionIntent) (contract.ApplyResult, error) {
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
 }
 
 func (s *capabilityErrorSensor) Subscribe(context.Context, contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
@@ -1145,8 +1269,8 @@ func (s *healthOnlySensor) Capability(context.Context) (contract.Capability, err
 	return contract.Capability{Backend: s.health.Backend, Version: "test", SupportsHealth: true}, nil
 }
 
-func (s *healthOnlySensor) Apply(context.Context, contract.CollectionIntent) error {
-	return nil
+func (s *healthOnlySensor) Apply(context.Context, contract.CollectionIntent) (contract.ApplyResult, error) {
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
 }
 
 func (s *healthOnlySensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
@@ -1170,9 +1294,9 @@ func (s *eventSensor) Capability(context.Context) (contract.Capability, error) {
 	return contract.Capability{Backend: "test", Version: "test", SupportsExec: true, SupportsFile: true, SupportsHealth: true}, nil
 }
 
-func (s *eventSensor) Apply(context.Context, contract.CollectionIntent) error {
+func (s *eventSensor) Apply(context.Context, contract.CollectionIntent) (contract.ApplyResult, error) {
 	s.health.PolicyLoaded = true
-	return nil
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
 }
 
 func (s *eventSensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {

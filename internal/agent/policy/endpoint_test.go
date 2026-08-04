@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	policyModel "github.com/sysarmor/sysarmor-next-project/internal/policy"
@@ -32,6 +33,32 @@ func TestLoadEffectiveEndpointPolicyBootstrapsAndRestoresSQLite(t *testing.T) {
 	}
 	if first.PolicyID != "bootstrap" || second.PolicyID != "bootstrap" || second.Version != 1 {
 		t.Fatalf("first=%+v second=%+v", first, second)
+	}
+}
+
+func TestEnsureStandaloneEndpointPolicyDoesNotReplaceManagedActivation(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	managed, _ := ParseEndpointPolicy([]byte(`{"policy_id":"managed","version":7,"collection":{"behaviors":["file.write"]},"detection":{},"telemetry":{},"response":{}}`))
+	if err := store.SetEnrolling(t.Context(), localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateManagedEndpointPolicy(t.Context(), store, managed); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "bootstrap.json")
+	writeEndpointPolicy(t, path, `{"policy_id":"bootstrap-standalone","version":1,"collection":{"behaviors":["process.exec"]},"detection":{},"telemetry":{},"response":{}}`)
+	initialized, err := EnsureStandaloneEndpointPolicy(t.Context(), store, path)
+	if err != nil || !initialized {
+		t.Fatalf("EnsureStandaloneEndpointPolicy() initialized=%t err=%v", initialized, err)
+	}
+	active, source, err := LoadActiveEndpointPolicy(t.Context(), store)
+	standalone, ok, slotErr := LoadEndpointPolicy(t.Context(), store, localstore.PolicySourceStandalone)
+	if err != nil || source != localstore.PolicySourceManaged || active.PolicyID != "managed" || slotErr != nil || !ok || standalone.PolicyID != "bootstrap-standalone" {
+		t.Fatalf("active=%+v source=%q standalone=%+v ok=%t errors=%v/%v", active, source, standalone, ok, err, slotErr)
 	}
 }
 
@@ -62,6 +89,77 @@ func TestEffectiveEndpointPolicyPreservesStructuredCollectionBehaviors(t *testin
 	}
 	if len(intent.Behaviors) != 1 || intent.Behaviors[0] != "process.exec" || len(intent.BehaviorFilters[0].BinaryPrefixes) != 1 {
 		t.Fatalf("restored collection intent = %+v", intent)
+	}
+}
+
+func TestEndpointPolicySourcesPreserveStandaloneWhenManagedActivates(t *testing.T) {
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	standalone, _ := ParseEndpointPolicy([]byte(`{"policy_id":"standalone","version":1,"collection":{"behaviors":["process.exec"]},"detection":{},"telemetry":{},"response":{}}`))
+	managed, _ := ParseEndpointPolicy([]byte(`{"policy_id":"managed","version":5,"collection":{"behaviors":["file.write"]},"detection":{},"telemetry":{},"response":{}}`))
+	if err := SaveEffectiveEndpointPolicy(t.Context(), store, standalone); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetEnrolling(t.Context(), localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateManagedEndpointPolicy(t.Context(), store, managed); err != nil {
+		t.Fatal(err)
+	}
+	active, source, err := LoadActiveEndpointPolicy(t.Context(), store)
+	if err != nil || source != localstore.PolicySourceManaged || active.PolicyID != "managed" {
+		t.Fatalf("active=%+v source=%q err=%v", active, source, err)
+	}
+	preserved, ok, err := LoadEndpointPolicy(t.Context(), store, localstore.PolicySourceStandalone)
+	if err != nil || !ok || preserved.PolicyID != "standalone" {
+		t.Fatalf("standalone=%+v ok=%t err=%v", preserved, ok, err)
+	}
+}
+
+func TestLoadEffectiveEndpointPolicyFollowsActivationAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	standalone, _ := ParseEndpointPolicy([]byte(`{"policy_id":"standalone","version":1,"collection":{"behaviors":["process.exec"]},"detection":{},"telemetry":{},"response":{}}`))
+	managed, _ := ParseEndpointPolicy([]byte(`{"policy_id":"managed","version":5,"collection":{"behaviors":["file.write"]},"detection":{},"telemetry":{},"response":{}}`))
+	if err := SaveEffectiveEndpointPolicy(t.Context(), store, standalone); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetEnrolling(t.Context(), localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateManagedEndpointPolicy(t.Context(), store, managed); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = localstore.Open(t.Context(), localstore.Options{RootDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	active, err := LoadEffectiveEndpointPolicy(t.Context(), store, filepath.Join(t.TempDir(), "missing.json"))
+	if err != nil || active.PolicyID != "managed" {
+		t.Fatalf("managed restart policy=%+v err=%v", active, err)
+	}
+	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := LoadEffectiveEndpointPolicy(t.Context(), store, filepath.Join(t.TempDir(), "missing.json"))
+	if err != nil || restored.PolicyID != "standalone" {
+		t.Fatalf("standalone restart policy=%+v err=%v", restored, err)
 	}
 }
 

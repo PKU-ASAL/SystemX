@@ -10,14 +10,18 @@ import (
 type EnrollmentState string
 
 const (
-	StateStandalone EnrollmentState = "standalone"
-	StateManaged    EnrollmentState = "managed"
+	StateStandalone  EnrollmentState = "standalone"
+	StateEnrolling   EnrollmentState = "enrolling"
+	StateManaged     EnrollmentState = "managed"
+	StateUnenrolling EnrollmentState = "unenrolling"
 )
 
 type Enrollment struct {
 	State               EnrollmentState
 	TenantID            string
 	AgentID             string
+	EnrollmentID        string
+	CertificateSerial   string
 	GatewayAddress      string
 	TLSCAPath           string
 	TLSCertPath         string
@@ -25,41 +29,131 @@ type Enrollment struct {
 	TLSServerName       string
 	UploadHistory       bool
 	ManagedFromSequence uint64
+	RevocationConfirmed bool
+	RevokedAt           time.Time
+	RevocationReceipt   string
+	TransitionPhase     string
+	LastTransitionError string
 	UpdatedAt           time.Time
 }
 
 func (s *Store) Enrollment(ctx context.Context) (Enrollment, error) {
 	var enrollment Enrollment
 	var uploadHistory int
-	var updatedAt int64
+	var revokedAt, updatedAt int64
 	err := s.db.QueryRowContext(ctx, `SELECT state, COALESCE(tenant_id,''), COALESCE(agent_id,''), COALESCE(gateway_address,''),
 COALESCE(tls_ca_path,''), COALESCE(tls_cert_path,''), COALESCE(tls_key_path,''), COALESCE(tls_server_name,''), upload_history,
-COALESCE(managed_from_seq,0), updated_at_ns FROM enrollment WHERE singleton = 1`).Scan(
+COALESCE(managed_from_seq,0), COALESCE(enrollment_id,''), COALESCE(certificate_serial,''), revocation_confirmed,
+COALESCE(revoked_at_ns,0), COALESCE(revocation_receipt,''), COALESCE(transition_phase,''), COALESCE(last_transition_error,''), updated_at_ns
+FROM enrollment WHERE singleton = 1`).Scan(
 		&enrollment.State, &enrollment.TenantID, &enrollment.AgentID, &enrollment.GatewayAddress,
 		&enrollment.TLSCAPath, &enrollment.TLSCertPath, &enrollment.TLSKeyPath, &enrollment.TLSServerName,
-		&uploadHistory, &enrollment.ManagedFromSequence, &updatedAt,
+		&uploadHistory, &enrollment.ManagedFromSequence, &enrollment.EnrollmentID, &enrollment.CertificateSerial,
+		&enrollment.RevocationConfirmed, &revokedAt, &enrollment.RevocationReceipt, &enrollment.TransitionPhase,
+		&enrollment.LastTransitionError, &updatedAt,
 	)
 	enrollment.UploadHistory = uploadHistory != 0
+	enrollment.RevokedAt = time.Unix(0, revokedAt).UTC()
+	if revokedAt == 0 {
+		enrollment.RevokedAt = time.Time{}
+	}
 	enrollment.UpdatedAt = time.Unix(0, updatedAt).UTC()
 	return enrollment, err
 }
 
-func (s *Store) SetManaged(ctx context.Context, enrollment Enrollment) error {
+func (s *Store) SetEnrolling(ctx context.Context, enrollment Enrollment) error {
 	if err := validateManaged(enrollment); err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	_, err := s.db.ExecContext(ctx, `UPDATE enrollment SET state='managed', tenant_id=?, agent_id=?, gateway_address=?, tls_ca_path=?,
-tls_cert_path=?, tls_key_path=?, tls_server_name=?, upload_history=?, managed_from_seq=?, updated_at_ns=? WHERE singleton=1`,
-		enrollment.TenantID, enrollment.AgentID, enrollment.GatewayAddress, enrollment.TLSCAPath, enrollment.TLSCertPath,
-		enrollment.TLSKeyPath, enrollment.TLSServerName, enrollment.UploadHistory, enrollment.ManagedFromSequence, now.UnixNano())
+	result, err := s.db.ExecContext(ctx, `UPDATE enrollment SET state='enrolling', tenant_id=?, agent_id=?, enrollment_id=?, certificate_serial=?, gateway_address=?, tls_ca_path=?,
+tls_cert_path=?, tls_key_path=?, tls_server_name=?, upload_history=?, managed_from_seq=?, revocation_confirmed=0, revoked_at_ns=NULL,
+revocation_receipt=NULL, transition_phase='', last_transition_error='', updated_at_ns=? WHERE singleton=1 AND state='standalone'`,
+		enrollment.TenantID, enrollment.AgentID, enrollment.EnrollmentID, enrollment.CertificateSerial, enrollment.GatewayAddress, enrollment.TLSCAPath, enrollment.TLSCertPath,
+		enrollment.TLSKeyPath, enrollment.TLSServerName, enrollment.UploadHistory, enrollment.ManagedFromSequence, time.Now().UTC().UnixNano())
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("enrollment can only start from standalone state")
+	}
+	return nil
+}
+
+func (s *Store) BeginUnenrollment(ctx context.Context) (Enrollment, error) {
+	current, err := s.Enrollment(ctx)
+	if err != nil {
+		return Enrollment{}, err
+	}
+	if current.State == StateUnenrolling {
+		return current, nil
+	}
+	if current.State != StateManaged {
+		return Enrollment{}, fmt.Errorf("unenrollment requires managed state")
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE enrollment SET state='unenrolling', revocation_confirmed=0,
+transition_phase='revocation_pending', last_transition_error='', updated_at_ns=? WHERE singleton=1 AND state='managed'`, time.Now().UTC().UnixNano())
+	if err != nil {
+		return Enrollment{}, fmt.Errorf("begin unenrollment: %w", err)
+	}
+	return s.Enrollment(ctx)
+}
+
+func (s *Store) ConfirmEnrollmentRevocation(ctx context.Context, receipt string, revokedAt time.Time) error {
+	if strings.TrimSpace(receipt) == "" || revokedAt.IsZero() {
+		return fmt.Errorf("revocation confirmation is incomplete")
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE enrollment SET revocation_confirmed=1, revoked_at_ns=?, revocation_receipt=?,
+transition_phase='revocation_confirmed', last_transition_error='', updated_at_ns=? WHERE singleton=1 AND state='unenrolling'`,
+		revokedAt.UTC().UnixNano(), receipt, time.Now().UTC().UnixNano())
+	if err != nil {
+		return fmt.Errorf("confirm enrollment revocation: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows == 0 {
+		return fmt.Errorf("revocation confirmation requires unenrolling state")
+	}
+	return nil
+}
+
+func (s *Store) RecordUnenrollmentError(ctx context.Context, message string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE enrollment SET last_transition_error=?, updated_at_ns=?
+WHERE singleton=1 AND state='unenrolling'`, strings.TrimSpace(message), time.Now().UTC().UnixNano())
 	return err
 }
 
-func (s *Store) SetStandalone(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE enrollment SET state='standalone', tenant_id=NULL, agent_id=NULL, gateway_address=NULL,
-tls_ca_path=NULL, tls_cert_path=NULL, tls_key_path=NULL, tls_server_name=NULL, upload_history=0, managed_from_seq=NULL, updated_at_ns=? WHERE singleton=1`, time.Now().UTC().UnixNano())
-	return err
+func (s *Store) CompleteUnenrollment(ctx context.Context, kind string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin unenrollment completion: %w", err)
+	}
+	defer tx.Rollback()
+	var confirmed bool
+	if err := tx.QueryRowContext(ctx, `SELECT revocation_confirmed FROM enrollment WHERE singleton=1 AND state='unenrolling'`).Scan(&confirmed); err != nil || !confirmed {
+		return fmt.Errorf("manager revocation confirmation is required")
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO policy_activation(kind, source, updated_at_ns)
+SELECT kind, source, ? FROM policy_slots WHERE kind=? AND source='standalone'
+ON CONFLICT(kind) DO UPDATE SET source=excluded.source, updated_at_ns=excluded.updated_at_ns`, time.Now().UTC().UnixNano(), kind)
+	if err != nil {
+		return fmt.Errorf("activate standalone policy: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
+		return fmt.Errorf("standalone policy slot %q does not exist", kind)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM policy_desired WHERE kind=?`, kind); err != nil {
+		return fmt.Errorf("clear desired policies: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE enrollment SET state='standalone', tenant_id=NULL, agent_id=NULL, enrollment_id=NULL,
+certificate_serial=NULL, gateway_address=NULL, tls_ca_path=NULL, tls_cert_path=NULL, tls_key_path=NULL, tls_server_name=NULL,
+upload_history=0, managed_from_seq=NULL, revocation_confirmed=0, revoked_at_ns=NULL, revocation_receipt=NULL,
+transition_phase='', last_transition_error='', updated_at_ns=? WHERE singleton=1`, time.Now().UTC().UnixNano()); err != nil {
+		return fmt.Errorf("clear managed enrollment: %w", err)
+	}
+	return tx.Commit()
 }
 
 func validateManaged(enrollment Enrollment) error {

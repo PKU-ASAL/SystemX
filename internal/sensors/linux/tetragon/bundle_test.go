@@ -58,12 +58,47 @@ func TestCapabilityVerifiesBundleAndUpdatesHealth(t *testing.T) {
 func TestCapabilityInstallsBundleWhenInstallDirConfigured(t *testing.T) {
 	dir := writeBundle(t, "v1.2.3", "tetragon-bin", "tetra-bin")
 	installDir := filepath.Join(t.TempDir(), "sensors")
+	if _, err := InstallBundle(BundleConfig{BundleDir: dir, InstallDir: installDir}); err != nil {
+		t.Fatal(err)
+	}
 	backend := NewBackendWithBundle("policy.yaml", "", "", BundleConfig{BundleDir: dir, InstallDir: installDir})
 	if _, err := backend.Capability(nil); err != nil {
-		t.Fatalf("Capability() error = %v", err)
+		t.Fatalf("Capability() verification error = %v", err)
+	}
+	versionDir := filepath.Join(installDir, "tetragon", "v1.2.3")
+	if backend.Bundle.TetraPath != filepath.Join(versionDir, "bin", "tetra") || backend.Bundle.TetragonPath != filepath.Join(versionDir, "bin", "tetragon") {
+		t.Fatalf("verified executable paths were not bound: %+v", backend.Bundle)
 	}
 	assertFileContains(t, filepath.Join(installDir, "tetragon", "current", "bin", "tetragon"), "tetragon-bin")
 	assertFileContains(t, filepath.Join(installDir, "tetragon", "current", "bin", "tetra"), "tetra-bin")
+}
+
+func TestCapabilityRejectsUnstagedBundleWhenInstallDirConfigured(t *testing.T) {
+	dir := writeBundle(t, "v1.2.3", "tetragon-bin", "tetra-bin")
+	installDir := filepath.Join(t.TempDir(), "sensors")
+	backend := NewBackendWithBundle("policy.yaml", "", "", BundleConfig{BundleDir: dir, InstallDir: installDir})
+	if _, err := backend.Capability(nil); err == nil || !strings.Contains(err.Error(), "staged") {
+		t.Fatalf("Capability() error = %v, want staged bundle error", err)
+	}
+	if _, err := os.Stat(installDir); !os.IsNotExist(err) {
+		t.Fatalf("agent startup created install directory: err=%v", err)
+	}
+}
+
+func TestCapabilityRejectsCurrentOutsideInstallDirectory(t *testing.T) {
+	external := writeBundle(t, "v1.2.3", "tetragon-bin", "tetra-bin")
+	installDir := filepath.Join(t.TempDir(), "sensors")
+	root := filepath.Join(installDir, "tetragon")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle("policy.yaml", "", "", BundleConfig{BundleDir: external, InstallDir: installDir})
+	if _, err := backend.Capability(nil); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("Capability() error = %v, want outside install directory", err)
+	}
 }
 
 func TestInstallBundleCopiesVersionAndPointsCurrent(t *testing.T) {

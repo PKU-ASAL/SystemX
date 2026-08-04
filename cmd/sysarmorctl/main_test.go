@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
@@ -78,6 +79,42 @@ func TestLocalEnrollmentCommandsUseAgentSocket(t *testing.T) {
 	}
 	if _, err := queryLocalAgentWithManager(socketPath, "", []string{"unenroll"}); err != nil || fake.unenrollReq == nil {
 		t.Fatalf("unenroll err=%v req=%+v", err, fake.unenrollReq)
+	}
+}
+
+func TestLocalEnrollmentWaitsForPendingPolicyActivation(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	lis, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	fake := &fakeAgentControlServer{enrollStatus: "pending", healthModes: []string{"enrolling", "managed"}}
+	controlplanev1.RegisterAgentControlPlaneServiceServer(server, fake)
+	go server.Serve(lis)
+	defer server.Stop()
+
+	body, err := queryLocalAgentWithManager(socketPath, "", []string{"enroll", "--manager-url", "https://manager.example", "--token", "secret", "--timeout", "1s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"status":"applied"`) || fake.healthCalls != 2 {
+		t.Fatalf("body=%s health_calls=%d", body, fake.healthCalls)
+	}
+}
+
+func TestEnrollmentCommandTimeoutDefaultsToPolicyActivationWindow(t *testing.T) {
+	if got := commandTimeout([]string{"enroll"}, 5*time.Second); got != 60*time.Second {
+		t.Fatalf("enroll timeout = %s, want 60s", got)
+	}
+	if got := commandTimeout([]string{"unenroll"}, 5*time.Second); got != 60*time.Second {
+		t.Fatalf("unenroll timeout = %s, want 60s", got)
+	}
+	if got := commandTimeout([]string{"unenroll", "--timeout", "90s"}, 5*time.Second); got != 90*time.Second {
+		t.Fatalf("explicit unenroll timeout = %s, want 90s", got)
+	}
+	if got := commandTimeout([]string{"agent", "health"}, 5*time.Second); got != 5*time.Second {
+		t.Fatalf("agent health timeout = %s, want 5s", got)
 	}
 }
 
@@ -796,11 +833,31 @@ type fakeAgentControlServer struct {
 	watchSignalReq  *controlplanev1.WatchSignalsRequest
 	enrollReq       *controlplanev1.EnrollRequest
 	unenrollReq     *controlplanev1.UnenrollRequest
+	enrollStatus    string
+	healthModes     []string
+	healthCalls     int
 }
 
 func (s *fakeAgentControlServer) Enroll(ctx context.Context, req *controlplanev1.EnrollRequest) (*controlplanev1.ControlAck, error) {
 	s.enrollReq = req
-	return &controlplanev1.ControlAck{Status: "applied", AgentId: req.GetAgentId(), TenantId: req.GetTenantId()}, nil
+	status := s.enrollStatus
+	if status == "" {
+		status = "applied"
+	}
+	return &controlplanev1.ControlAck{Status: status, AgentId: req.GetAgentId(), TenantId: req.GetTenantId(), Message: "waiting for manager endpoint policy"}, nil
+}
+
+func (s *fakeAgentControlServer) Health(context.Context, *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
+	mode := "standalone"
+	if len(s.healthModes) > 0 {
+		index := s.healthCalls
+		if index >= len(s.healthModes) {
+			index = len(s.healthModes) - 1
+		}
+		mode = s.healthModes[index]
+	}
+	s.healthCalls++
+	return &controlplanev1.HealthResponse{AgentId: "agent-a", TenantId: "default", LocalStore: &controlplanev1.LocalStoreHealth{Mode: mode}}, nil
 }
 
 func (s *fakeAgentControlServer) Unenroll(ctx context.Context, req *controlplanev1.UnenrollRequest) (*controlplanev1.ControlAck, error) {

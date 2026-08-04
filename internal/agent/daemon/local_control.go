@@ -34,6 +34,7 @@ import (
 )
 
 func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, source any, rest ...any) (func(), error) {
+	coordinator := r.configureEnrollmentCoordinator(ctx, rt)
 	bus, batcher, sender, startedAt := r.localControlTelemetryArgs(source, rest...)
 	socketPath := r.Config.Control.SocketPath
 	if socketPath == "" {
@@ -55,12 +56,13 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 	}
 	server := grpc.NewServer()
 	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &localControlServer{
-		runner:    r,
-		runtime:   rt,
-		bus:       bus,
-		batcher:   batcher,
-		sender:    sender,
-		startedAt: startedAt,
+		runner:     r,
+		enrollment: coordinator,
+		runtime:    rt,
+		bus:        bus,
+		batcher:    batcher,
+		sender:     sender,
+		startedAt:  startedAt,
 	})
 	done := make(chan struct{})
 	go func() {
@@ -117,13 +119,30 @@ func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*tele
 
 type localControlServer struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
-	runner    *AgentRuntime
-	runtime   sensorruntime.Runtime
-	bus       *telemetry.Bus
-	batcher   *telemetry.Batcher
-	sender    *telemetry.Sender
-	startedAt time.Time
-	profileMu sync.Mutex
+	runner     *AgentRuntime
+	enrollment *enrollmentCoordinator
+	runtime    sensorruntime.Runtime
+	bus        *telemetry.Bus
+	batcher    *telemetry.Batcher
+	sender     *telemetry.Sender
+	startedAt  time.Time
+	profileMu  sync.Mutex
+}
+
+func (r *AgentRuntime) configureEnrollmentCoordinator(ctx context.Context, rt sensorruntime.Runtime) *enrollmentCoordinator {
+	r.enrollmentCoordinatorMu.Lock()
+	defer r.enrollmentCoordinatorMu.Unlock()
+	if r.enrollmentCoordinator == nil {
+		r.enrollmentCoordinator = newEnrollmentCoordinator(ctx, r, rt)
+	}
+	return r.enrollmentCoordinator
+}
+
+func (s *localControlServer) enrollmentCoordinator(ctx context.Context) *enrollmentCoordinator {
+	if s.enrollment != nil {
+		return s.enrollment
+	}
+	return s.runner.configureEnrollmentCoordinator(ctx, s.runtime)
 }
 
 func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
@@ -270,6 +289,10 @@ func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlplan
 	if err != nil {
 		return nil, err
 	}
+	pending, err := s.runner.pendingPolicyStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &controlplanev1.CurrentPolicyResponse{
 		PolicyId: policy.PolicyID,
 		Version:  policy.Version,
@@ -278,10 +301,11 @@ func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlplan
 			Type:     policy.Scope.Type,
 			Selector: policy.Scope.Selector,
 		},
-		Mode:       policy.Mode,
-		CloudRules: append([]string(nil), policy.CloudRules...),
-		Published:  policy.Published,
-		RawJson:    string(raw),
+		Mode:          policy.Mode,
+		CloudRules:    append([]string(nil), policy.CloudRules...),
+		Published:     policy.Published,
+		RawJson:       string(raw),
+		PendingPolicy: pendingPolicyMessage(pending),
 	}, nil
 }
 
@@ -294,12 +318,27 @@ func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev
 		policyType = "endpoint"
 	}
 	if policyType == "collection" {
+		release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
+		if err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "collection", err.Error()), nil
+		}
+		defer release()
 		return s.applyCollectionPolicy(ctx, req), nil
 	}
 	if policyType == "detection" {
+		release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
+		if err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "detection", err.Error()), nil
+		}
+		defer release()
 		return s.applyDetectionPolicy(ctx, req), nil
 	}
 	if policyType == "telemetry" {
+		release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
+		if err != nil {
+			return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", err.Error()), nil
+		}
+		defer release()
 		return s.applyTelemetryPolicy(ctx, req, nil), nil
 	}
 	if policyType == "endpoint" {
@@ -351,6 +390,14 @@ func (s *localControlServer) reconfigureTelemetryBatcher() {
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
+	if req == nil {
+		return s.runner.applyContentUpdate(req), nil
+	}
+	release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
+	if err != nil {
+		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
+	}
+	defer release()
 	return s.runner.applyContentUpdate(req), nil
 }
 
@@ -503,15 +550,15 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 		}
 		return collectionAck(s.runner.Config, req.GetContext(), policy, status, message, false, compileReport, &detectionReport.Coverage)
 	}
-	if err := s.runtime.Apply(ctx, intent); err != nil {
+	if _, err := s.policyReconciler().Apply(ctx, intent); err != nil {
 		return rejectedAck(s.runner.Config, req.GetContext(), "collection", "apply collection policy: "+err.Error())
 	}
 	if s.runner.localStore != nil {
 		next := s.runner.currentEndpointPolicy()
 		next.Collection = policy
 		next.Version++
-		if err := s.runner.persistEndpointPolicy(ctx, next); err != nil {
-			_ = s.runtime.Apply(ctx, s.runner.currentCollectionIntent())
+		if err := s.runner.persistEndpointPolicy(ctx, localstore.PolicySourceStandalone, next); err != nil {
+			_, _ = s.policyReconciler().Apply(ctx, s.runner.currentCollectionIntent())
 			return collectionAck(s.runner.Config, req.GetContext(), policy, "rejected", "persist collection policy: "+err.Error(), false, compileReport, nil)
 		}
 	}
@@ -552,7 +599,7 @@ func (s *localControlServer) applyDetectionPolicy(ctx context.Context, req *cont
 		endpoint := s.runner.currentEndpointPolicy()
 		endpoint.Detection = next
 		endpoint.Version++
-		if err := s.runner.persistEndpointPolicy(ctx, endpoint); err != nil {
+		if err := s.runner.persistEndpointPolicy(ctx, localstore.PolicySourceStandalone, endpoint); err != nil {
 			return detectionAck(s.runner.Config, req.GetContext(), active, "rejected", "persist detection policy: "+err.Error(), false, report)
 		}
 	}
@@ -574,7 +621,7 @@ func (r *AgentRuntime) persistTelemetryPolicy(ctx context.Context, policy policy
 	endpoint := r.currentEndpointPolicy()
 	endpoint.Telemetry = policy
 	endpoint.Version++
-	if err := r.persistEndpointPolicy(ctx, endpoint); err != nil {
+	if err := r.persistEndpointPolicy(ctx, localstore.PolicySourceStandalone, endpoint); err != nil {
 		return err
 	}
 	r.setEffectiveTelemetry(effective)
@@ -1179,6 +1226,7 @@ func healthResponse(health agenthealth.AgentHealth) *controlplanev1.HealthRespon
 		PolicyId:      health.PolicyID,
 		PolicyVersion: health.PolicyVersion,
 		PolicyMode:    health.PolicyMode,
+		PendingPolicy: pendingPolicyMessage(health.PendingPolicy),
 		UptimeSeconds: health.UptimeSeconds,
 		Capability:    capabilityMessage(health.Capability),
 		Sensor: &controlplanev1.SensorHealth{

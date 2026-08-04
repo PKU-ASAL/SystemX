@@ -80,6 +80,9 @@ func (s *localStoreBatchSender) SendBatch(batch *dataplanev1.DataBatch) (*datapl
 	if err := s.store.AppendSignals(context.Background(), batch.GetSignals()); err != nil {
 		return nil, err
 	}
+	if _, err := s.store.EnforceCapacity(context.Background()); err != nil {
+		return nil, fmt.Errorf("enforce local storage capacity: %w", err)
+	}
 	if s.onCommit != nil {
 		s.onCommit(batch)
 	}
@@ -91,30 +94,36 @@ type Options struct {
 }
 
 type AgentRuntime struct {
-	Config             config.Config
-	Sensor             contract.Sensor
-	Out                io.Writer
-	capability         contract.Capability
-	localStore         *localstore.Store
-	network            *networkSupervisor
-	mu                 sync.RWMutex
-	detectionUpdateMu  sync.Mutex
-	identity           runtimeIdentity
-	standaloneIdentity runtimeIdentity
-	normalizer         *normalize.Normalizer
-	telemetryBatcher   *telemetry.Batcher
-	managedControl     *TransportRuntime
-	endpointPolicy     policy.EndpointPolicy
-	effectiveTelemetry config.EffectiveTelemetry
-	policy             policymodel.Policy
-	detection          *detection.Engine
-	collection         contract.CollectionIntent
-	content            *agentcontent.Store
-	featureFlags       agenthealth.RuntimeFeatureFlags
-	detectionStatus    agenthealth.DetectionHealth
-	eventSeq           uint64
-	signalSeq          uint64
-	telemetrySeq       uint64
+	Config                  config.Config
+	Sensor                  contract.Sensor
+	Out                     io.Writer
+	capability              contract.Capability
+	localStore              *localstore.Store
+	network                 *networkSupervisor
+	mu                      sync.RWMutex
+	detectionUpdateMu       sync.Mutex
+	enrollmentCoordinatorMu sync.Mutex
+	enrollmentCoordinator   *enrollmentCoordinator
+	policyAuthorityMu       sync.RWMutex
+	identity                runtimeIdentity
+	standaloneIdentity      runtimeIdentity
+	normalizer              *normalize.Normalizer
+	telemetryBatcher        *telemetry.Batcher
+	managedControl          *TransportRuntime
+	sensorSupervisor        *sensorruntime.SubscriptionSupervisor
+	pendingEndpoint         *preparedEndpointPolicy
+	revokeEnrollment        func(context.Context, localstore.Enrollment) (string, time.Time, error)
+	endpointPolicy          policy.EndpointPolicy
+	effectiveTelemetry      config.EffectiveTelemetry
+	policy                  policymodel.Policy
+	detection               *detection.Engine
+	collection              contract.CollectionIntent
+	content                 *agentcontent.Store
+	featureFlags            agenthealth.RuntimeFeatureFlags
+	detectionStatus         agenthealth.DetectionHealth
+	eventSeq                uint64
+	signalSeq               uint64
+	telemetrySeq            uint64
 }
 
 func (r *AgentRuntime) withDetectionUpdateTransaction(fn func()) {
@@ -211,7 +220,8 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	rt := sensorruntime.New(r.Sensor)
 	capability, err := rt.Probe(ctx)
 	if err != nil {
-		return failStartup("probe", err)
+		capability = contract.Capability{Backend: r.Config.Sensor.Backend, Version: "unknown"}
+		r.reportSensorDegraded("probe", err)
 	}
 	r.capability = capability
 	intent, effectivePolicy, effectiveTelemetry, err := r.loadStartupPolicy(ctx)
@@ -230,14 +240,20 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	if err := r.applyStartupDetection(effectivePolicy); err != nil {
 		return failStartup("detection", err)
 	}
-	if err := rt.Apply(ctx, intent); err != nil {
-		return failStartup("apply", err)
-	}
 	longControl := r.Config.Manager.Transport == "grpc"
-	events, err := rt.Subscribe(ctx)
+	sensorSupervisor := sensorruntime.NewSubscriptionSupervisor(sensorruntime.AdaptManager(rt), intent, sensorruntime.RetryOptions{})
+	r.setSensorSupervisor(sensorSupervisor)
+	sensorSupervisor.OnApplied(r.completePendingEndpointPolicy)
+	pending, hasPending, err := (&localControlServer{runner: r, runtime: rt}).loadPendingManagedEndpointPolicy(ctx)
 	if err != nil {
-		return failStartup("subscribe", err)
+		return failStartup("pending_policy", err)
 	}
+	if hasPending {
+		r.setPendingEndpointPolicy(pending)
+		sensorSupervisor.UpdateIntent(pending.intent)
+	}
+	sensorSupervisor.Start(ctx)
+	events := sensorSupervisor.Events()
 	appender, err := r.batchSender()
 	if err != nil {
 		return failStartup("data_plane", err)
@@ -273,18 +289,34 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	endpointRuntime := NewEndpointRuntime(r, norm)
 	transportRuntime := NewTransportRuntime(r, rt, bus, batcher, sender, startedAt, scopeType, scopeSelector)
 	if r.localStore != nil {
+		go transportRuntime.RunDataFlow(dataPlaneCtx)
 		r.managedControl = transportRuntime
-		r.network = newNetworkSupervisor(dataPlaneCtx, r.runManagedNetwork)
+		r.network = newNetworkSupervisor(dataPlaneCtx, transportRuntime.RunControlFlow, r.runManagedNetwork)
 		enrollment, err := r.localStore.Enrollment(ctx)
 		if err != nil {
 			return failStartup("enrollment", err)
 		}
+		if enrollment.State == localstore.StateUnenrolling && enrollment.RevocationConfirmed {
+			if err := r.configureEnrollmentCoordinator(ctx, rt).Resume(ctx); err != nil {
+				return failStartup("unenrollment_finalize", err)
+			}
+			intent, effectivePolicy, effectiveTelemetry, err = r.loadStartupPolicy(ctx)
+			if err != nil {
+				return failStartup("standalone_policy", err)
+			}
+			r.setEffectiveTelemetry(effectiveTelemetry)
+			enrollment, err = r.localStore.Enrollment(ctx)
+			if err != nil {
+				return failStartup("enrollment", err)
+			}
+		}
 		r.applyEnrollmentIdentity(enrollment)
 		r.network.ApplyEnrollment(enrollment)
-		defer r.network.StopManaged()
+		defer r.network.Stop()
+	} else {
+		go transportRuntime.RunDataFlow(dataPlaneCtx)
+		go transportRuntime.RunControlFlow(dataPlaneCtx)
 	}
-	go transportRuntime.RunDataFlow(dataPlaneCtx)
-	go transportRuntime.RunControlFlow(dataPlaneCtx)
 	r.applyRuntimePolicy(effectivePolicy)
 	if r.Out != nil {
 		fmt.Fprintf(r.Out, "agent daemon started: agent=%s host=%s tenant=%s sensor=%s version=%s behaviors=%d policy=%s version=%d mode=%s\n",
@@ -363,6 +395,12 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 					health.Sensor.Backend, health.Sensor.Running, health.Sensor.PolicyLoaded, health.Sensor.EventsSeen, health.TelemetryBatcher.QueuedBatches, health.TelemetryBatcher.DroppedBatches, health.TelemetryBatcher.LastError, health.TelemetrySender.LastError)
 			}
 		}
+	}
+}
+
+func (r *AgentRuntime) reportSensorDegraded(stage string, err error) {
+	if r.Out != nil {
+		fmt.Fprintf(r.Out, "agent sensor degraded: stage=%s error=%v; retrying in background\n", stage, err)
 	}
 }
 
@@ -479,7 +517,14 @@ func waitForSenderDrained(sender *telemetry.Sender, timeout time.Duration) bool 
 
 func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runtime, source any, rest ...any) (agenthealth.AgentHealth, error) {
 	bus, batcher, sender, startedAt := r.healthTelemetryArgs(source, rest...)
-	sensor, err := rt.Health(ctx)
+	supervisor := r.currentSensorSupervisor()
+	var supervisorStatus *sensorruntime.SupervisorStatus
+	if supervisor != nil {
+		status := supervisor.Status()
+		supervisorStatus = &status
+	}
+	sensor, healthErr := rt.Health(ctx)
+	sensor, err := resolveSensorHealth(sensor, healthErr, supervisorStatus, r.Config.Sensor.Backend)
 	if err != nil {
 		return agenthealth.AgentHealth{}, err
 	}
@@ -504,6 +549,13 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 	if cepDegraded {
 		status = "degraded"
 	}
+	pendingPolicy, err := r.pendingPolicyStatus(ctx)
+	if err != nil {
+		return agenthealth.AgentHealth{}, err
+	}
+	if pendingPolicy.Status != "" {
+		status = "degraded"
+	}
 	now := time.Now().UTC()
 	identity := r.currentIdentity()
 	return agenthealth.AgentHealth{
@@ -515,6 +567,7 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 		PolicyID:      r.activePolicy().PolicyID,
 		PolicyVersion: r.activePolicy().Version,
 		PolicyMode:    r.policyMode(),
+		PendingPolicy: pendingPolicy,
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 		ObservedAt:    now,
 		Sensor: agenthealth.SensorHealth{
@@ -599,6 +652,38 @@ func (r *AgentRuntime) collectHealth(ctx context.Context, rt sensorruntime.Runti
 			SignalSubscribers:    busStats.SignalSubscribers,
 		},
 	}, nil
+}
+
+func (r *AgentRuntime) currentSensorSupervisor() *sensorruntime.SubscriptionSupervisor {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.sensorSupervisor
+}
+
+func applySupervisorHealth(sensor contract.Health, status sensorruntime.SupervisorStatus) contract.Health {
+	sensor.RestartCount += status.RestartCount
+	if status.State == "degraded" {
+		sensor.Running = false
+		sensor.LastError = status.LastError
+	}
+	return sensor
+}
+
+func resolveSensorHealth(sensor contract.Health, healthErr error, status *sensorruntime.SupervisorStatus, backend string) (contract.Health, error) {
+	if healthErr != nil && status == nil {
+		return contract.Health{}, healthErr
+	}
+	if healthErr != nil {
+		sensor.Backend = backend
+		sensor.LastError = healthErr.Error()
+	}
+	if status != nil {
+		sensor = applySupervisorHealth(sensor, *status)
+		if healthErr != nil {
+			sensor.LastError += "; health: " + healthErr.Error()
+		}
+	}
+	return sensor, nil
 }
 
 func (r *AgentRuntime) healthTelemetryArgs(source any, rest ...any) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender, time.Time) {
@@ -712,9 +797,18 @@ func (r *AgentRuntime) setDetection(engine *detection.Engine) {
 }
 
 func (r *AgentRuntime) setCollectionIntent(intent contract.CollectionIntent) {
+	intent = r.withCollectionCapabilities(intent)
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.collection = r.withCollectionCapabilities(intent)
+	r.collection = intent
+	r.mu.Unlock()
+}
+
+func (r *AgentRuntime) setSensorSupervisor(supervisor *sensorruntime.SubscriptionSupervisor) {
+	r.mu.Lock()
+	r.sensorSupervisor = supervisor
+	intent := r.collection
+	r.mu.Unlock()
+	supervisor.UpdateIntent(intent)
 }
 
 func (r *AgentRuntime) currentCollectionIntent() contract.CollectionIntent {
@@ -847,10 +941,15 @@ func (r *AgentRuntime) managerTLS() tlsconfig.ClientConfig {
 func (r *AgentRuntime) runManagedNetwork(ctx context.Context, enrollment localstore.Enrollment) {
 	tlsCfg := tlsconfig.ClientConfig{CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName}
 	sender := dataappend.NewGRPCAppenderWithTLS(enrollment.GatewayAddress, r.Config.Local.Export.RequestTimeout, "", tlsCfg)
-	go (&exportPipeline{store: r.localStore, exporter: &cloudExporter{sender: sender}, fromSequence: enrollment.ManagedFromSequence, tenantID: enrollment.TenantID, agentID: enrollment.AgentID}).Run(ctx)
+	exportDone := make(chan struct{})
+	go func() {
+		defer close(exportDone)
+		(&exportPipeline{store: r.localStore, exporter: &cloudExporter{sender: sender}, fromSequence: enrollment.ManagedFromSequence, tenantID: enrollment.TenantID, agentID: enrollment.AgentID}).Run(ctx)
+	}()
 	if r.managedControl != nil {
 		r.managedControl.runControlFlowForEnrollment(ctx, enrollment, tlsCfg)
 	}
+	<-exportDone
 }
 
 func newBatchSender(manager, transport string, timeout time.Duration, token string, tlsCfg tlsconfig.ClientConfig) (dataappend.BatchSender, error) {

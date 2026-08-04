@@ -28,6 +28,7 @@ type enrollmentCertificate struct {
 	EnrollmentID      string `json:"enrollment_id"`
 	TenantID          string `json:"tenant_id"`
 	AgentID           string `json:"agent_id"`
+	SerialNumber      string `json:"serial_number"`
 	GatewayAddress    string `json:"gateway_address"`
 	GatewayServerName string `json:"gateway_server_name"`
 	CertificatePEM    string `json:"certificate_pem"`
@@ -74,7 +75,7 @@ func requestEnrollmentCertificate(ctx context.Context, managerURL, token, stateP
 		return enrollmentCertificate{}, nil, "", fmt.Errorf("decode enrollment response: %w", err)
 	}
 	if certificate.SchemaVersion != "sysarmor.enrollment/v2" || certificate.EnrollmentID == "" ||
-		certificate.TenantID == "" || certificate.AgentID == "" || certificate.GatewayAddress == "" {
+		certificate.TenantID == "" || certificate.AgentID == "" || certificate.SerialNumber == "" || certificate.GatewayAddress == "" {
 		return enrollmentCertificate{}, nil, "", fmt.Errorf("enrollment response is incomplete")
 	}
 	if err := validateEnrollmentCertificate(certificate, key); err != nil {
@@ -176,6 +177,9 @@ func validateEnrollmentCertificate(response enrollmentCertificate, key *ecdsa.Pr
 	wantCN := fmt.Sprintf("tenant_id:%s,agent_id:%s", response.TenantID, response.AgentID)
 	if cert.Subject.CommonName != wantCN {
 		return fmt.Errorf("enrollment certificate identity mismatch")
+	}
+	if cert.SerialNumber.String() != response.SerialNumber {
+		return fmt.Errorf("enrollment certificate serial mismatch")
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
