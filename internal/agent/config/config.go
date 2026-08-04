@@ -354,6 +354,15 @@ func assign(cfg *Config, section, key, value string) error {
 		return assignLocalStorage(&cfg.Local.Storage, key, value)
 	case "local.export":
 		return assignLocalExport(&cfg.Local.Export, key, value)
+	case "manager":
+		if key != "tls_insecure" {
+			return unknown(section, key)
+		}
+		insecure, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("manager.tls_insecure: %w", err)
+		}
+		cfg.Manager.TLSInsecure = insecure
 	case "control":
 		switch key {
 		case "socket_path":
