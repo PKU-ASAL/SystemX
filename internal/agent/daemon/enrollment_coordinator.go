@@ -125,6 +125,9 @@ func (c *enrollmentCoordinator) unenrollLocked(ctx context.Context) (enrollmentR
 	if err := c.completeConfirmed(c.lifecycleCtx, current); err != nil {
 		return c.result("rejected", err.Error()), false
 	}
+	if completion.TokenHash == "" {
+		return c.result("applied", "manager revoked legacy enrollment; agent returned to standalone mode"), false
+	}
 	return enrollmentResult{}, true
 }
 
@@ -151,6 +154,11 @@ func (c *enrollmentCoordinator) existingEnrollment(ctx context.Context) (enrollm
 	}
 	switch enrollment.State {
 	case localstore.StateStandalone:
+		if _, pending, err := c.runner.localStore.UnenrollmentCompletion(ctx); err != nil {
+			return c.result("rejected", "read unenrollment completion: "+err.Error()), true
+		} else if pending {
+			return c.result("pending", "manager unenrollment completion is pending acknowledgement"), true
+		}
 		return enrollmentResult{}, false
 	case localstore.StateEnrolling:
 		return c.result("pending", "enrollment is already waiting for manager endpoint policy"), true
@@ -192,6 +200,13 @@ func (c *enrollmentCoordinator) prepareUnenrollment(ctx context.Context) (locals
 	current, err := c.runner.localStore.Enrollment(ctx)
 	if err != nil {
 		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, err
+	}
+	if current.UnenrollmentProtocol == localstore.UnenrollmentProtocolLegacyMTLS {
+		current, err = c.runner.localStore.BeginUnenrollment(ctx)
+		return current, localstore.UnenrollmentCompletion{}, err
+	}
+	if current.UnenrollmentProtocol != localstore.UnenrollmentProtocolCompletionV1 {
+		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, fmt.Errorf("unsupported unenrollment protocol %q", current.UnenrollmentProtocol)
 	}
 	if current.State == localstore.StateUnenrolling {
 		completion, ok, err := c.runner.localStore.UnenrollmentCompletion(ctx)

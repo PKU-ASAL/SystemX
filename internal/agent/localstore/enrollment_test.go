@@ -17,11 +17,14 @@ func TestSetEnrollingValidatesManagedFields(t *testing.T) {
 	if err := store.SetEnrolling(t.Context(), invalid); err == nil {
 		t.Fatal("incomplete managed enrollment accepted")
 	}
-	want := Enrollment{
-		State: StateEnrolling, TenantID: "default", AgentID: "agent-a", GatewayAddress: "gateway:9444",
-		TLSCAPath: "/pki/ca.pem", TLSCertPath: "/pki/agent.pem", TLSKeyPath: "/pki/agent-key.pem",
-		ManagedFromSequence: 42,
-	}
+	want := testManagedEnrollment()
+	want.State = StateEnrolling
+	want.TenantID = "default"
+	want.GatewayAddress = "gateway:9444"
+	want.TLSCAPath = "/pki/ca.pem"
+	want.TLSCertPath = "/pki/agent.pem"
+	want.TLSKeyPath = "/pki/agent-key.pem"
+	want.ManagedFromSequence = 42
 	if err := store.SetEnrolling(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
@@ -30,10 +33,31 @@ func TestSetEnrollingValidatesManagedFields(t *testing.T) {
 	}
 }
 
+func TestSetEnrollingRequiresCompletionIdentity(t *testing.T) {
+	valid := testManagedEnrollment()
+	tests := map[string]func(*Enrollment){
+		"manager URL":        func(enrollment *Enrollment) { enrollment.ManagerURL = "" },
+		"enrollment ID":      func(enrollment *Enrollment) { enrollment.EnrollmentID = "" },
+		"certificate serial": func(enrollment *Enrollment) { enrollment.CertificateSerial = "" },
+	}
+	for name, invalidate := range tests {
+		t.Run(name, func(t *testing.T) {
+			store := openStore(t, t.TempDir())
+			defer store.Close()
+			enrollment := valid
+			invalidate(&enrollment)
+			if err := store.SetEnrolling(t.Context(), enrollment); err == nil {
+				t.Fatal("incomplete completion identity accepted")
+			}
+		})
+	}
+}
+
 func TestEnrollmentCanRemainPendingPolicyAuthority(t *testing.T) {
 	store := openStore(t, t.TempDir())
 	defer store.Close()
-	want := Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway:9444", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}
+	want := testManagedEnrollment()
+	want.GatewayAddress = "gateway:9444"
 	if err := store.SetEnrolling(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +70,7 @@ func TestEnrollmentCanRemainPendingPolicyAuthority(t *testing.T) {
 func TestSetEnrollingRejectsManagedEnrollment(t *testing.T) {
 	store := openStore(t, t.TempDir())
 	defer store.Close()
-	enrollment := Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}
+	enrollment := testManagedEnrollment()
 	activateManagedPolicyForTest(t, store, policyRecord("endpoint", 1, `{"policy_id":"managed"}`))
 	if err := store.SetEnrolling(t.Context(), enrollment); err == nil {
 		t.Fatal("managed enrollment was demoted to enrolling")
@@ -60,17 +84,14 @@ func TestUnenrollmentRequiresDurableRevocationConfirmation(t *testing.T) {
 	if err := store.PutAndActivateStandalonePolicy(t.Context(), standalone); err != nil {
 		t.Fatal(err)
 	}
-	enrollment := Enrollment{
-		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
-		GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
-	}
+	enrollment := testManagedEnrollment()
 	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ActivateManagedPolicy(t.Context(), policyRecord("endpoint", 2, `{"policy_id":"managed"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err == nil {
@@ -164,10 +185,7 @@ func TestCompletionAcknowledgementRequiresMatchingEnrollment(t *testing.T) {
 func TestCompleteUnenrollmentKeepsPreparedCompletionOnPolicyFailure(t *testing.T) {
 	store := openStore(t, t.TempDir())
 	defer store.Close()
-	enrollment := Enrollment{
-		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
-		ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
-	}
+	enrollment := testManagedEnrollment()
 	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +212,63 @@ func TestCompleteUnenrollmentKeepsPreparedCompletionOnPolicyFailure(t *testing.T
 	}
 }
 
+func TestConfirmRevocationRequiresPreparedCompletionForNewEnrollment(t *testing.T) {
+	store := managedEnrollmentStore(t)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(t.Context(), `DELETE FROM unenrollment_completion`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err == nil {
+		t.Fatal("revocation confirmation without prepared completion succeeded")
+	}
+	current, err := store.Enrollment(t.Context())
+	if err != nil || current.RevocationConfirmed {
+		t.Fatalf("enrollment=%+v err=%v", current, err)
+	}
+}
+
+func TestCompleteUnenrollmentRequiresPreparedCompletionForNewEnrollment(t *testing.T) {
+	store := managedEnrollmentStore(t)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(t.Context(), `DELETE FROM unenrollment_completion`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err == nil {
+		t.Fatal("unenrollment without prepared completion succeeded")
+	}
+	current, err := store.Enrollment(t.Context())
+	if err != nil || current.State != StateUnenrolling {
+		t.Fatalf("enrollment=%+v err=%v", current, err)
+	}
+}
+
+func TestSetEnrollingRejectsPendingCompletion(t *testing.T) {
+	store := managedEnrollmentStore(t)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err != nil {
+		t.Fatal(err)
+	}
+	next := Enrollment{
+		TenantID: "tenant-b", AgentID: "agent-b", EnrollmentID: "enroll-b", CertificateSerial: "43",
+		ManagerURL: "https://manager-b.example", GatewayAddress: "gateway-b", TLSCAPath: "/ca-b", TLSCertPath: "/cert-b", TLSKeyPath: "/key-b",
+	}
+	if err := store.SetEnrolling(t.Context(), next); err == nil {
+		t.Fatal("enrollment with pending completion succeeded")
+	}
+}
+
 func managedEnrollmentStore(t *testing.T) *Store {
 	t.Helper()
 	store := openStore(t, t.TempDir())
@@ -201,10 +276,7 @@ func managedEnrollmentStore(t *testing.T) *Store {
 	if err := store.PutAndActivateStandalonePolicy(t.Context(), policyRecord("endpoint", 1, `{"policy_id":"standalone"}`)); err != nil {
 		t.Fatal(err)
 	}
-	enrollment := Enrollment{
-		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
-		ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
-	}
+	enrollment := testManagedEnrollment()
 	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
 		t.Fatal(err)
 	}
@@ -212,4 +284,11 @@ func managedEnrollmentStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	return store
+}
+
+func testManagedEnrollment() Enrollment {
+	return Enrollment{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
+		ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
+	}
 }

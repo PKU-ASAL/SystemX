@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 const baselineSchema = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS enrollment (
   enrollment_id TEXT,
   certificate_serial TEXT,
   manager_url TEXT,
+  unenrollment_protocol TEXT NOT NULL DEFAULT 'completion_v1' CHECK (unenrollment_protocol IN ('legacy_mtls', 'completion_v1')),
   gateway_address TEXT,
   tls_ca_path TEXT,
   tls_cert_path TEXT,
@@ -184,6 +185,15 @@ func (s *Store) applyBaseline(ctx context.Context) error {
 		if err := migrateUnenrollmentCompletion(tx); err != nil {
 			return err
 		}
+		if err := migrateUnenrollmentProtocol(tx, true); err != nil {
+			return err
+		}
+		version = currentSchemaVersion
+	}
+	if version == 4 {
+		if err := migrateUnenrollmentProtocol(tx, false); err != nil {
+			return err
+		}
 		version = currentSchemaVersion
 	}
 	if version != currentSchemaVersion {
@@ -266,6 +276,23 @@ CREATE TABLE IF NOT EXISTS unenrollment_completion (
 DELETE FROM schema_meta;
 INSERT INTO schema_meta(version) VALUES (4);`); err != nil {
 		return fmt.Errorf("migrate unenrollment completion state: %w", err)
+	}
+	return nil
+}
+
+func migrateUnenrollmentProtocol(tx *sql.Tx, legacy bool) error {
+	if _, err := tx.Exec(`ALTER TABLE enrollment ADD COLUMN unenrollment_protocol TEXT NOT NULL DEFAULT 'completion_v1'
+CHECK (unenrollment_protocol IN ('legacy_mtls', 'completion_v1'));`); err != nil {
+		return fmt.Errorf("add unenrollment protocol: %w", err)
+	}
+	if legacy {
+		if _, err := tx.Exec(`UPDATE enrollment SET unenrollment_protocol='legacy_mtls' WHERE state!='standalone'`); err != nil {
+			return fmt.Errorf("mark migrated legacy unenrollment protocol: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM schema_meta;
+INSERT INTO schema_meta(version) VALUES (5);`); err != nil {
+		return fmt.Errorf("record unenrollment protocol migration: %w", err)
 	}
 	return nil
 }

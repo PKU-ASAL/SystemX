@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
@@ -703,6 +704,10 @@ func TestEnrollmentCertificateIsIdempotentForSameCSR(t *testing.T) {
 	enrollments := st.ListEnrollments("default", "issued")
 	if len(enrollments) != 1 || enrollments[0].IssuedAt.IsZero() {
 		t.Fatalf("issued enrollments = %+v", enrollments)
+	}
+	certificate, ok, err := st.GetAgentCertificateWithError("default", first.SerialNumber)
+	if err != nil || !ok || certificate.UnenrollmentProtocol != controlmodel.UnenrollmentProtocolCompletionV1 {
+		t.Fatalf("issued certificate=%+v ok=%t err=%v", certificate, ok, err)
 	}
 }
 

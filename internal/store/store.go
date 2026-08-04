@@ -161,17 +161,18 @@ type Artifact struct {
 }
 
 type AgentCertificate struct {
-	TenantID          string    `json:"tenant_id"`
-	AgentID           string    `json:"agent_id"`
-	EnrollmentID      string    `json:"enrollment_id,omitempty"`
-	SerialNumber      string    `json:"serial_number"`
-	Subject           string    `json:"subject,omitempty"`
-	NotBefore         time.Time `json:"not_before"`
-	NotAfter          time.Time `json:"not_after"`
-	CreatedAt         time.Time `json:"created_at"`
-	RevokedAt         time.Time `json:"revoked_at,omitempty"`
-	RevocationReceipt string    `json:"revocation_receipt,omitempty"`
-	CertificatePEM    string    `json:"certificate_pem,omitempty"`
+	TenantID             string    `json:"tenant_id"`
+	AgentID              string    `json:"agent_id"`
+	EnrollmentID         string    `json:"enrollment_id,omitempty"`
+	SerialNumber         string    `json:"serial_number"`
+	UnenrollmentProtocol string    `json:"unenrollment_protocol,omitempty"`
+	Subject              string    `json:"subject,omitempty"`
+	NotBefore            time.Time `json:"not_before"`
+	NotAfter             time.Time `json:"not_after"`
+	CreatedAt            time.Time `json:"created_at"`
+	RevokedAt            time.Time `json:"revoked_at,omitempty"`
+	RevocationReceipt    string    `json:"revocation_receipt,omitempty"`
+	CertificatePEM       string    `json:"certificate_pem,omitempty"`
 }
 
 type State struct {
@@ -2573,6 +2574,7 @@ func normalizeAgentCertificate(cert AgentCertificate) AgentCertificate {
 	cert.AgentID = strings.TrimSpace(cert.AgentID)
 	cert.EnrollmentID = strings.TrimSpace(cert.EnrollmentID)
 	cert.SerialNumber = strings.TrimSpace(cert.SerialNumber)
+	cert.UnenrollmentProtocol = strings.TrimSpace(cert.UnenrollmentProtocol)
 	cert.Subject = strings.TrimSpace(cert.Subject)
 	return cert
 }

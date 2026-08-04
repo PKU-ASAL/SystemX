@@ -98,15 +98,15 @@ WHERE singleton=1 AND enrollment_id=? AND status='ready'`, strings.TrimSpace(enr
 }
 
 type completionIdentity struct {
-	TenantID, AgentID, EnrollmentID, CertificateSerial, ManagerURL string
+	TenantID, AgentID, EnrollmentID, CertificateSerial, ManagerURL, Protocol string
 }
 
 func enrollmentCompletionIdentity(ctx context.Context, tx *sql.Tx) (EnrollmentState, completionIdentity, error) {
 	var state EnrollmentState
 	var identity completionIdentity
 	err := tx.QueryRowContext(ctx, `SELECT state, COALESCE(tenant_id,''), COALESCE(agent_id,''),
-COALESCE(enrollment_id,''), COALESCE(certificate_serial,''), COALESCE(manager_url,'') FROM enrollment WHERE singleton=1`).
-		Scan(&state, &identity.TenantID, &identity.AgentID, &identity.EnrollmentID, &identity.CertificateSerial, &identity.ManagerURL)
+COALESCE(enrollment_id,''), COALESCE(certificate_serial,''), COALESCE(manager_url,''), unenrollment_protocol FROM enrollment WHERE singleton=1`).
+		Scan(&state, &identity.TenantID, &identity.AgentID, &identity.EnrollmentID, &identity.CertificateSerial, &identity.ManagerURL, &identity.Protocol)
 	if err != nil {
 		return "", completionIdentity{}, fmt.Errorf("read enrollment for completion: %w", err)
 	}
@@ -114,7 +114,8 @@ COALESCE(enrollment_id,''), COALESCE(certificate_serial,''), COALESCE(manager_ur
 }
 
 func insertPreparedCompletion(ctx context.Context, tx *sql.Tx, identity completionIdentity, token, tokenHash string) error {
-	if strings.TrimSpace(identity.ManagerURL) == "" || strings.TrimSpace(identity.EnrollmentID) == "" || strings.TrimSpace(identity.CertificateSerial) == "" {
+	if identity.Protocol != UnenrollmentProtocolCompletionV1 || strings.TrimSpace(identity.ManagerURL) == "" ||
+		strings.TrimSpace(identity.EnrollmentID) == "" || strings.TrimSpace(identity.CertificateSerial) == "" {
 		return fmt.Errorf("enrollment completion identity is incomplete")
 	}
 	now := time.Now().UTC().UnixNano()

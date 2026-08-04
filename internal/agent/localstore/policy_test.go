@@ -23,7 +23,7 @@ func activateManagedPolicyForTest(t *testing.T, store *Store, policy PolicyRecor
 		t.Fatal(err)
 	}
 	if enrollment.State == StateStandalone {
-		enrollment = Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}
+		enrollment = testManagedEnrollment()
 		if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
 			t.Fatal(err)
 		}
@@ -188,6 +188,10 @@ CREATE TABLE policy(kind TEXT PRIMARY KEY, version INTEGER NOT NULL, document_js
 	if err != nil || !ok || source != PolicySourceManaged || active.Version != legacy.Version {
 		t.Fatalf("active=%+v source=%q ok=%t err=%v", active, source, ok, err)
 	}
+	enrollment, err := store.Enrollment(t.Context())
+	if err != nil || enrollment.UnenrollmentProtocol != UnenrollmentProtocolLegacyMTLS || enrollment.EnrollmentID != "" || enrollment.CertificateSerial != "" {
+		t.Fatalf("migrated enrollment=%+v err=%v", enrollment, err)
+	}
 	if _, ok, err := store.PolicySlot(t.Context(), "endpoint", PolicySourceStandalone); err != nil || ok {
 		t.Fatalf("fabricated standalone fallback ok=%t err=%v", ok, err)
 	}
@@ -209,7 +213,7 @@ func TestPutAndActivateStandalonePolicyIsAtomic(t *testing.T) {
 func TestManagedPolicyActivationPromotesEnrollmentAtomically(t *testing.T) {
 	store := openStore(t, t.TempDir())
 	defer store.Close()
-	enrollment := Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}
+	enrollment := testManagedEnrollment()
 	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
 		t.Fatal(err)
 	}

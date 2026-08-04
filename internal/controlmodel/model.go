@@ -8,6 +8,9 @@ import (
 )
 
 const (
+	UnenrollmentProtocolLegacyMTLS   = "legacy_mtls"
+	UnenrollmentProtocolCompletionV1 = "completion_v1"
+
 	EvidencePullbackStatusPending   = "pending"
 	EvidencePullbackStatusCompleted = "completed"
 	EvidencePullbackStatusFailed    = "failed"

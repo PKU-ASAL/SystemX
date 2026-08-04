@@ -111,6 +111,8 @@ sudo sysarmorctl unenroll
 
 生产环境的 Manager URL 必须使用 HTTPS。`manager.tls_insecure: true` 只用于明确接受明文 HTTP 风险的隔离测试环境，默认关闭。
 
+旧 schema 中已纳管的 Agent 会在迁移时持久化为 `legacy_mtls` 退管协议；Manager 升级前签发、尚无协议字段的证书记录同样按 legacy 处理。Gateway 仅信任当前 mTLS peer identity，并从 Manager 证书记录补全旧本地状态缺失的 enrollment ID 和证书序列号。证书仍必须由 Manager 授权吊销，Manager 将其记录为 `unknown_legacy`，但无法补建 endpoint completion 回执。后续新 enrollment 在 Agent 与 Manager 证书记录两侧均固定使用 `completion_v1` 完整闭环，任一侧协议不匹配都会拒绝退管。
+
 ## 故障边界
 
 - 注册失败不能破坏已有 standalone 身份和本地数据。

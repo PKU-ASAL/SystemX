@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
+	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 )
 
 func TestCompletionReporterRetriesReadyOutboxAfterRestart(t *testing.T) {
@@ -47,6 +48,45 @@ func TestCompletionReporterRetriesReadyOutboxAfterRestart(t *testing.T) {
 	}
 	if _, ok, err := store.UnenrollmentCompletion(t.Context()); err != nil || ok || attempts.Load() != 2 {
 		t.Fatalf("completion remains=%t attempts=%d err=%v", ok, attempts.Load(), err)
+	}
+}
+
+func TestCompletionReporterRecoversReadyOutboxAfterStoreReopen(t *testing.T) {
+	root := t.TempDir()
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agentpolicy.SaveEffectiveEndpointPolicy(t.Context(), store, parseEndpointPolicy(t, standaloneEndpointPolicyJSON)); err != nil {
+		t.Fatal(err)
+	}
+	setManagedEnrollmentForTest(t, store)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := localstore.Open(t.Context(), localstore.Options{RootDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reporter := newUnenrollmentCompletionReporter(reopened, func(context.Context, localstore.UnenrollmentCompletion) error {
+		return nil
+	}, time.Millisecond, 10*time.Millisecond)
+	if sent, err := reporter.ReportOnce(t.Context()); err != nil || !sent {
+		t.Fatalf("reopened report sent=%t err=%v", sent, err)
+	}
+	if _, ok, err := reopened.UnenrollmentCompletion(t.Context()); err != nil || ok {
+		t.Fatalf("completion remains after reopened report: ok=%t err=%v", ok, err)
 	}
 }
 

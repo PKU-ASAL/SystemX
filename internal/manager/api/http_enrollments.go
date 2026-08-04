@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
@@ -186,15 +187,16 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 	proposed.IssuedSerialNumber = cert.SerialNumber.String()
 	proposed.IssuedNotAfter = cert.NotAfter
 	certificate := store.AgentCertificate{
-		TenantID:       defaultString(enrollment.TenantID, "default"),
-		AgentID:        enrollment.AgentID,
-		EnrollmentID:   enrollment.EnrollmentID,
-		SerialNumber:   cert.SerialNumber.String(),
-		Subject:        cert.Subject.String(),
-		NotBefore:      cert.NotBefore,
-		NotAfter:       cert.NotAfter,
-		CreatedAt:      issuedAt,
-		CertificatePEM: string(certPEM),
+		TenantID:             defaultString(enrollment.TenantID, "default"),
+		AgentID:              enrollment.AgentID,
+		EnrollmentID:         enrollment.EnrollmentID,
+		SerialNumber:         cert.SerialNumber.String(),
+		UnenrollmentProtocol: controlmodel.UnenrollmentProtocolCompletionV1,
+		Subject:              cert.Subject.String(),
+		NotBefore:            cert.NotBefore,
+		NotAfter:             cert.NotAfter,
+		CreatedAt:            issuedAt,
+		CertificatePEM:       string(certPEM),
 	}
 	enrollment, result, err := s.store.CommitEnrollmentIssue(tokenHash, keyHash, proposed, certificate)
 	if err != nil {

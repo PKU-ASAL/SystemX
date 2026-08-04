@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -54,6 +56,50 @@ func TestEnrollmentCoordinatorPersistsCompletionBeforeRevocation(t *testing.T) {
 	}
 }
 
+func TestEnrollmentCoordinatorRejectsEnrollmentBeforeRemoteRequestWhileCompletionIsPending(t *testing.T) {
+	store := coordinatorManagedStore(t)
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Unix(100, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteUnenrollment(t.Context(), "endpoint"); err != nil {
+		t.Fatal(err)
+	}
+	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
+
+	result := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor)).Enroll(t.Context(), "://invalid", "token", false)
+	if result.Status != "pending" || !strings.Contains(result.Message, "completion") {
+		t.Fatalf("Enroll() result=%+v", result)
+	}
+}
+
+func TestEnrollmentCoordinatorUnenrollsMigratedLegacyEnrollment(t *testing.T) {
+	store := legacyCoordinatorManagedStore(t)
+	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
+	var reportCalls atomic.Int32
+	runner.reportUnenrollment = func(context.Context) (bool, error) {
+		reportCalls.Add(1)
+		return true, nil
+	}
+	runner.revokeEnrollment = func(_ context.Context, enrollment localstore.Enrollment, tokenHash string) (string, time.Time, error) {
+		if tokenHash != "" || enrollment.EnrollmentID != "" || enrollment.CertificateSerial != "" {
+			t.Fatalf("legacy revocation enrollment=%+v token hash=%q", enrollment, tokenHash)
+		}
+		return "legacy-receipt", time.Now().UTC(), nil
+	}
+
+	result := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor)).Unenroll(t.Context())
+	current, err := store.Enrollment(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "applied" || current.State != localstore.StateStandalone || reportCalls.Load() != 0 {
+		t.Fatalf("result=%+v enrollment=%+v reportCalls=%d", result, current, reportCalls.Load())
+	}
+}
+
 func TestEnrollmentCoordinatorDoesNotReportBeforeLocalCompletion(t *testing.T) {
 	store := coordinatorManagedStore(t)
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
@@ -78,7 +124,7 @@ func TestEnrollmentCoordinatorDoesNotReportBeforeLocalCompletion(t *testing.T) {
 
 func TestEnrollmentCoordinatorResumesConfirmedUnenrollmentWithoutRevocationRPC(t *testing.T) {
 	store := coordinatorManagedStore(t)
-	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Now().UTC()); err != nil {
@@ -106,7 +152,7 @@ func TestEnrollmentCoordinatorResumesConfirmedUnenrollmentWithoutRevocationRPC(t
 
 func TestEnrollmentCoordinatorNeverRestartsManagedFlowAfterRevocationConfirmation(t *testing.T) {
 	store := coordinatorManagedStore(t)
-	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Now().UTC()); err != nil {
@@ -139,7 +185,7 @@ func TestEnrollmentCoordinatorNeverRestartsManagedFlowAfterRevocationConfirmatio
 
 func TestEnrollmentCoordinatorDoesNotReconnectManagedWhenLocalCompletionFails(t *testing.T) {
 	store := coordinatorManagedStore(t)
-	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Now().UTC()); err != nil {
@@ -318,5 +364,39 @@ func coordinatorManagedStore(t *testing.T) *localstore.Store {
 		t.Fatal(err)
 	}
 	setManagedEnrollmentForTest(t, store)
+	return store
+}
+
+func legacyCoordinatorManagedStore(t *testing.T) *localstore.Store {
+	t.Helper()
+	root := t.TempDir()
+	store, err := localstore.Open(t.Context(), localstore.Options{RootDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agentpolicy.SaveEffectiveEndpointPolicy(t.Context(), store, parseEndpointPolicy(t, standaloneEndpointPolicyJSON)); err != nil {
+		t.Fatal(err)
+	}
+	setManagedEnrollmentForTest(t, store)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE enrollment SET enrollment_id=NULL, certificate_serial=NULL,
+manager_url=NULL, unenrollment_protocol='legacy_mtls' WHERE singleton=1 AND state='managed'`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = localstore.Open(t.Context(), localstore.Options{RootDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
 	return store
 }

@@ -42,11 +42,31 @@ func (s *ControlServer) RevokeEnrollment(ctx context.Context, req *controlplanev
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "mTLS agent identity is required")
 	}
-	if req.GetTenantId() != peerID.TenantID || req.GetAgentId() != peerID.AgentID || req.GetCertificateSerial() != peerID.CertificateSerial {
+	if req.GetTenantId() != peerID.TenantID || req.GetAgentId() != peerID.AgentID {
 		return nil, status.Error(codes.PermissionDenied, "certificate identity does not match revocation request")
 	}
+	registered, found, err := s.backend.Store().GetAgentCertificateWithError(peerID.TenantID, peerID.CertificateSerial)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "read agent certificate: %v", err)
+	}
+	if !found || registered.AgentID != peerID.AgentID {
+		return nil, status.Error(codes.PermissionDenied, "agent certificate is not registered")
+	}
+	protocol := strings.TrimSpace(registered.UnenrollmentProtocol)
+	if protocol == "" {
+		protocol = controlmodel.UnenrollmentProtocolLegacyMTLS
+	}
 	if strings.TrimSpace(req.GetCompletionTokenHash()) == "" {
-		return s.revokeLegacyEnrollment(req)
+		if protocol != controlmodel.UnenrollmentProtocolLegacyMTLS {
+			return nil, status.Error(codes.PermissionDenied, "certificate does not allow legacy unenrollment")
+		}
+		return s.revokeLegacyEnrollment(peerID, registered, req)
+	}
+	if protocol != controlmodel.UnenrollmentProtocolCompletionV1 {
+		return nil, status.Error(codes.PermissionDenied, "certificate requires legacy unenrollment")
+	}
+	if req.GetCertificateSerial() != peerID.CertificateSerial {
+		return nil, status.Error(codes.PermissionDenied, "certificate identity does not match revocation request")
 	}
 	if !validCompletionTokenHash(req.GetCompletionTokenHash()) {
 		return nil, status.Error(codes.InvalidArgument, "completion token hash is invalid")
@@ -72,9 +92,15 @@ func validCompletionTokenHash(value string) bool {
 	return err == nil && len(raw) == sha256.Size
 }
 
-func (s *ControlServer) revokeLegacyEnrollment(req *controlplanev1.RevokeEnrollmentRequest) (*controlplanev1.RevokeEnrollmentResponse, error) {
+func (s *ControlServer) revokeLegacyEnrollment(peerID tlsconfig.PeerIdentity, registered store.AgentCertificate, req *controlplanev1.RevokeEnrollmentRequest) (*controlplanev1.RevokeEnrollmentResponse, error) {
+	if serial := strings.TrimSpace(req.GetCertificateSerial()); serial != "" && serial != peerID.CertificateSerial {
+		return nil, status.Error(codes.PermissionDenied, "certificate identity does not match revocation request")
+	}
+	if enrollmentID := strings.TrimSpace(req.GetEnrollmentId()); enrollmentID != "" && enrollmentID != registered.EnrollmentID {
+		return nil, status.Error(codes.PermissionDenied, "certificate enrollment identity mismatch")
+	}
 	cert, found, err := s.backend.Store().RevokeAgentCertificate(
-		req.GetTenantId(), req.GetAgentId(), req.GetEnrollmentId(), req.GetCertificateSerial(), time.Now().UTC(),
+		registered.TenantID, registered.AgentID, registered.EnrollmentID, registered.SerialNumber, time.Now().UTC(),
 	)
 	if errors.Is(err, store.ErrConflict) {
 		return nil, status.Error(codes.PermissionDenied, "certificate enrollment identity mismatch")

@@ -975,7 +975,8 @@ func TestRevokeEnrollmentMTLSIdentityAndIdempotencyMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store.Store{}
-	st.RecordAgentCertificate(store.AgentCertificate{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: certs.clientSerial})
+	st.RecordAgentCertificate(store.AgentCertificate{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: certs.clientSerial,
+		UnenrollmentProtocol: controlmodel.UnenrollmentProtocolCompletionV1})
 	grpcServer := grpc.NewServer(serverOpt)
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(gateway.NewRuntime(gateway.RuntimeOptions{Store: st})))
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

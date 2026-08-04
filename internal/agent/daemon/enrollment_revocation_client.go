@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
@@ -33,7 +34,8 @@ func revokeEnrollmentOnline(ctx context.Context, enrollment localstore.Enrollmen
 		return "", time.Time{}, fmt.Errorf("revoke enrollment certificate: %w", err)
 	}
 	revokedAt, err := time.Parse(time.RFC3339Nano, response.GetRevokedAt())
-	if err != nil || response.GetReceiptId() == "" || response.GetStatus() != "revoked" || !response.GetCompletionRequired() {
+	completionRequired := strings.TrimSpace(completionTokenHash) != ""
+	if err != nil || response.GetReceiptId() == "" || response.GetStatus() != "revoked" || response.GetCompletionRequired() != completionRequired {
 		return "", time.Time{}, fmt.Errorf("manager revocation response is invalid")
 	}
 	return response.GetReceiptId(), revokedAt.UTC(), nil

@@ -43,7 +43,7 @@ func TestEnsureStandaloneEndpointPolicyDoesNotReplaceManagedActivation(t *testin
 	}
 	defer store.Close()
 	managed, _ := ParseEndpointPolicy([]byte(`{"policy_id":"managed","version":7,"collection":{"behaviors":["file.write"]},"detection":{},"telemetry":{},"response":{}}`))
-	if err := store.SetEnrolling(t.Context(), localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}); err != nil {
+	if err := store.SetEnrolling(t.Context(), endpointTestEnrollment()); err != nil {
 		t.Fatal(err)
 	}
 	if err := ActivateManagedEndpointPolicy(t.Context(), store, managed); err != nil {
@@ -103,7 +103,7 @@ func TestEndpointPolicySourcesPreserveStandaloneWhenManagedActivates(t *testing.
 	if err := SaveEffectiveEndpointPolicy(t.Context(), store, standalone); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetEnrolling(t.Context(), localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}); err != nil {
+	if err := store.SetEnrolling(t.Context(), endpointTestEnrollment()); err != nil {
 		t.Fatal(err)
 	}
 	if err := ActivateManagedEndpointPolicy(t.Context(), store, managed); err != nil {
@@ -130,7 +130,7 @@ func TestLoadEffectiveEndpointPolicyFollowsActivationAcrossRestart(t *testing.T)
 	if err := SaveEffectiveEndpointPolicy(t.Context(), store, standalone); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetEnrolling(t.Context(), localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}); err != nil {
+	if err := store.SetEnrolling(t.Context(), endpointTestEnrollment()); err != nil {
 		t.Fatal(err)
 	}
 	if err := ActivateManagedEndpointPolicy(t.Context(), store, managed); err != nil {
@@ -148,7 +148,7 @@ func TestLoadEffectiveEndpointPolicyFollowsActivationAcrossRestart(t *testing.T)
 	if err != nil || active.PolicyID != "managed" {
 		t.Fatalf("managed restart policy=%+v err=%v", active, err)
 	}
-	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
+	if _, err := store.PrepareUnenrollment(t.Context(), "completion-token", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ConfirmEnrollmentRevocation(t.Context(), "receipt-a", time.Now().UTC()); err != nil {
@@ -160,6 +160,13 @@ func TestLoadEffectiveEndpointPolicyFollowsActivationAcrossRestart(t *testing.T)
 	restored, err := LoadEffectiveEndpointPolicy(t.Context(), store, filepath.Join(t.TempDir(), "missing.json"))
 	if err != nil || restored.PolicyID != "standalone" {
 		t.Fatalf("standalone restart policy=%+v err=%v", restored, err)
+	}
+}
+
+func endpointTestEnrollment() localstore.Enrollment {
+	return localstore.Enrollment{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42",
+		ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key",
 	}
 }
 
