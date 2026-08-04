@@ -16,6 +16,7 @@ import (
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -32,6 +33,31 @@ const maxControlReplayCache = 1024
 
 func NewControlServer(backend Backend) controlplanev1.AgentControlPlaneServiceServer {
 	return &ControlServer{backend: backend}
+}
+
+func (s *ControlServer) RevokeEnrollment(ctx context.Context, req *controlplanev1.RevokeEnrollmentRequest) (*controlplanev1.RevokeEnrollmentResponse, error) {
+	peerID, ok := tlsconfig.PeerAgentIdentity(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "mTLS agent identity is required")
+	}
+	if req.GetTenantId() != peerID.TenantID || req.GetAgentId() != peerID.AgentID || req.GetCertificateSerial() != peerID.CertificateSerial {
+		return nil, status.Error(codes.PermissionDenied, "certificate identity does not match revocation request")
+	}
+	cert, found, err := s.backend.Store().RevokeAgentCertificate(
+		req.GetTenantId(), req.GetAgentId(), req.GetEnrollmentId(), req.GetCertificateSerial(), time.Now().UTC(),
+	)
+	if errors.Is(err, store.ErrConflict) {
+		return nil, status.Error(codes.PermissionDenied, "certificate enrollment identity mismatch")
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "revoke enrollment certificate: %v", err)
+	}
+	if !found {
+		return nil, status.Error(codes.NotFound, "agent certificate not found")
+	}
+	return &controlplanev1.RevokeEnrollmentResponse{
+		Status: "revoked", RevokedAt: cert.RevokedAt.UTC().Format(time.RFC3339Nano), ReceiptId: cert.RevocationReceipt,
+	}, nil
 }
 
 func (s *ControlServer) Connect(stream controlplanev1.AgentControlPlaneService_ConnectServer) error {
@@ -172,6 +198,9 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 	if hasPeer {
+		if err := validatePeerCertificate(s.backend.Store(), peerID); err != nil {
+			return nil, err
+		}
 		reqCtx := frame.GetContext()
 		version := ""
 		hostID := ""
@@ -202,7 +231,31 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 		}
 		scope := ctx.GetScope()
 		st := s.backend.Store()
-		policy, _ := st.EffectivePolicy(tenantID, ctx.GetAgentId(), scope.GetType(), scope.GetSelector())
+		policy, _, err := st.EffectivePolicyWithError(tenantID, ctx.GetAgentId(), scope.GetType(), scope.GetSelector())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "read effective policy: %v", err)
+		}
+		responses, err := st.PendingResponsesWithError(tenantID, ctx.GetAgentId())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "read pending responses: %v", err)
+		}
+		pullbacks, err := st.PendingEvidencePullbacksWithError(tenantID, ctx.GetAgentId())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "read pending evidence pullbacks: %v", err)
+		}
+		commands, err := st.PendingControlCommandsWithError(tenantID, ctx.GetAgentId())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "read pending control commands: %v", err)
+		}
+		sessions, err := st.ListAgentSessionsWithError(tenantID, ctx.GetAgentId())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "read resume cursor: %v", err)
+		}
+		resume := ResumeCursor{TenantID: tenantID, AgentID: ctx.GetAgentId()}
+		if len(sessions) > 0 {
+			resume.SessionID = sessions[0].SessionID
+			resume.ResumeCursor = sessions[0].LastAckCursor
+		}
 		st.AddAgent(store.AgentIdentity{AgentID: ctx.GetAgentId(), TenantID: tenantID})
 		session := st.RecordControlSessionOpen(tenantID, ctx.GetAgentId(), "control", time.Now().UTC())
 		s.backend.TouchHotSession(session)
@@ -217,9 +270,9 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 			RequestId:       frame.GetRequestId(),
 			Context:         &controlplanev1.RequestContext{TenantId: tenantID, AgentId: ctx.GetAgentId(), Scope: ctx.GetScope()},
 			ContractVersion: 1,
-			Resume:          resumeCursorFrame(s.backend.ResumeCursor(tenantID, ctx.GetAgentId())),
+			Resume:          resumeCursorFrame(resume),
 		}}
-		for _, cmd := range st.PendingResponses(tenantID, ctx.GetAgentId()) {
+		for _, cmd := range responses {
 			replies = append(replies, &controlplanev1.ControlFrame{
 				Type:            "response_command",
 				RequestId:       frame.GetRequestId(),
@@ -228,7 +281,7 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 				ResponseCommand: responseCommandControlFrame(cmd),
 			})
 		}
-		for _, req := range st.PendingEvidencePullbacks(tenantID, ctx.GetAgentId()) {
+		for _, req := range pullbacks {
 			replies = append(replies, &controlplanev1.ControlFrame{
 				Type:             "evidence_pullback",
 				RequestId:        frame.GetRequestId(),
@@ -237,7 +290,7 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 				EvidencePullback: evidencePullbackControlFrame(req),
 			})
 		}
-		for _, cmd := range st.PendingControlCommands(tenantID, ctx.GetAgentId()) {
+		for _, cmd := range commands {
 			cmdFrame, err := controlCommandFrame(cmd, ctx.GetScope())
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "build control command frame: %v", err)
@@ -297,7 +350,10 @@ func (s *ControlServer) handleFrame(ctx context.Context, frame *controlplanev1.C
 			return nil, status.Error(codes.InvalidArgument, "evidence_pullback_result request_id is required")
 		}
 		st := s.backend.Store()
-		req, ok := st.GetEvidencePullback(result.RequestID, result.TenantID, result.AgentID)
+		req, ok, err := st.GetEvidencePullbackWithError(result.RequestID, result.TenantID, result.AgentID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "read evidence pullback request: %v", err)
+		}
 		if !ok {
 			return nil, status.Error(codes.NotFound, "evidence pullback request not found")
 		}
@@ -587,6 +643,13 @@ func agentHealthFromControl(in *controlplanev1.HealthResponse) agenthealth.Agent
 		PolicyID:      in.GetPolicyId(),
 		PolicyVersion: in.GetPolicyVersion(),
 		PolicyMode:    in.GetPolicyMode(),
+		PendingPolicy: agenthealth.PendingPolicyStatus{
+			Status:   in.GetPendingPolicy().GetStatus(),
+			Source:   in.GetPendingPolicy().GetSource(),
+			PolicyID: in.GetPendingPolicy().GetPolicyId(),
+			Version:  in.GetPendingPolicy().GetVersion(),
+			Digest:   in.GetPendingPolicy().GetDigest(),
+		},
 		UptimeSeconds: in.GetUptimeSeconds(),
 		Capability:    sensorCapabilityFromControl(in.GetCapability()),
 		Sensor: agenthealth.SensorHealth{

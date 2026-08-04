@@ -8,6 +8,8 @@ import (
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func validatePeerDataIdentity(ctx context.Context, header *dataplanev1.BatchHeader) (tlsconfig.PeerIdentity, bool, error) {
@@ -49,4 +51,18 @@ func agentIdentityFromPeer(peerID tlsconfig.PeerIdentity, hostID, version string
 		AuthType:     "mtls",
 		CertIdentity: peerID.Principal,
 	}
+}
+
+func validatePeerCertificate(controlStore ControlStore, peerID tlsconfig.PeerIdentity) error {
+	cert, ok, err := controlStore.GetAgentCertificateWithError(peerID.TenantID, peerID.CertificateSerial)
+	if err != nil {
+		return status.Errorf(codes.Internal, "read agent certificate: %v", err)
+	}
+	if !ok || cert.AgentID != peerID.AgentID {
+		return status.Error(codes.PermissionDenied, "agent certificate is not registered")
+	}
+	if !cert.RevokedAt.IsZero() {
+		return status.Error(codes.PermissionDenied, "agent certificate is revoked")
+	}
+	return nil
 }

@@ -24,9 +24,10 @@ type ClientConfig struct {
 }
 
 type PeerIdentity struct {
-	TenantID  string
-	AgentID   string
-	Principal string
+	TenantID          string
+	AgentID           string
+	Principal         string
+	CertificateSerial string
 }
 
 func ClientCredentials(cfg ClientConfig) (credentials.TransportCredentials, error) {
@@ -91,10 +92,12 @@ func PeerAgentIdentity(ctx context.Context) (PeerIdentity, bool) {
 	cert := info.State.PeerCertificates[0]
 	for _, uri := range cert.URIs {
 		if id, ok := identityFromURI(uri); ok {
+			id.CertificateSerial = cert.SerialNumber.String()
 			return id, true
 		}
 	}
 	if id, ok := identityFromCommonName(cert.Subject.CommonName); ok {
+		id.CertificateSerial = cert.SerialNumber.String()
 		return id, true
 	}
 	return PeerIdentity{}, false

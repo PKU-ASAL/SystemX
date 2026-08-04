@@ -72,8 +72,16 @@ func (s *Server) uiDeployOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenantID := defaultString(r.URL.Query().Get("tenant_id"), "default")
-	artifacts := s.store.ListArtifacts(tenantID, "agent", "")
-	enrollments := s.store.ListEnrollments(tenantID, "")
+	artifacts, err := s.store.ListArtifactsWithError(tenantID, "agent", "")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("list deploy artifacts: %v", err), http.StatusInternalServerError)
+		return
+	}
+	enrollments, err := s.store.ListEnrollmentsWithError(tenantID, "")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("list deploy enrollments: %v", err), http.StatusInternalServerError)
+		return
+	}
 	for i := range enrollments {
 		enrollments[i] = publicEnrollment(enrollments[i])
 	}

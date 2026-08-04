@@ -85,9 +85,57 @@ func TestPolicyAssignmentPersistenceFailureReturnsInternalServerError(t *testing
 	}
 }
 
+func TestPolicyAssignmentConflictReturnsConflict(t *testing.T) {
+	st := &store.Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-conflict", Version: 1, Published: true}}}
+	handler := newAdminTestServer(st).Handler()
+	st.AttachBackend(context.Background(), httpFailingBackend{operation: "assignment_conflict"}, store.Info{Backend: "test"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-assignments", strings.NewReader(`{"tenant_id":"default","agent_id":"agent-a","policy_id":"policy-conflict","policy_version":1,"downlink":true,"command_id":"control-conflict"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("policy assignment status=%d body=%q, want 409", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEnrollmentArtifactAndChannelReadsFailClosed(t *testing.T) {
+	for name, path := range map[string]string{
+		"enrollments": "/api/v1/enrollments?tenant_id=default",
+		"artifacts":   "/api/v1/artifacts?tenant_id=default",
+		"channels":    "/api/v1/channels?tenant_id=default",
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := &store.Store{}
+			st.AttachBackend(context.Background(), httpFailingBackend{operation: "security_read"}, store.Info{Backend: "test"})
+			rec := httptest.NewRecorder()
+			newAdminTestServer(st).Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status=%d body=%q, want 500", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 type httpFailingBackend struct {
 	store.Backend
 	operation string
+}
+
+func (b httpFailingBackend) ListEnrollments(context.Context, string, string) ([]store.Enrollment, error) {
+	return nil, b.failure("security_read")
+}
+
+func (b httpFailingBackend) ListArtifacts(context.Context, string, string, string) ([]store.Artifact, error) {
+	return nil, b.failure("security_read")
+}
+
+func (b httpFailingBackend) ListChannels(context.Context, string) ([]store.ArtifactChannel, error) {
+	return nil, b.failure("security_read")
+}
+
+func (b httpFailingBackend) ListAgents(context.Context) ([]store.AgentIdentity, error) {
+	return nil, b.failure("rollout")
 }
 
 func (b httpFailingBackend) WriteResponse(context.Context, responsemodel.Command, *responsemodel.Ack) error {
@@ -134,8 +182,11 @@ func (b httpFailingBackend) CommitPolicyPublication(context.Context, policymodel
 	return b.failure("policy")
 }
 
-func (b httpFailingBackend) CommitPolicyAssignment(context.Context, policymodel.Assignment, policymodel.AuditRecord, *controlmodel.ControlCommand) error {
-	return b.failure("assignment")
+func (b httpFailingBackend) CommitPolicyAssignment(context.Context, policymodel.Assignment, policymodel.AuditRecord, *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error) {
+	if b.operation == "assignment_conflict" {
+		return nil, store.ErrConflict
+	}
+	return nil, b.failure("assignment")
 }
 
 func (httpFailingBackend) GetAgentHealth(context.Context, string, string) (agenthealth.AgentHealth, bool, error) {

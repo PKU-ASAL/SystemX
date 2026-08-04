@@ -160,16 +160,17 @@ type Artifact struct {
 }
 
 type AgentCertificate struct {
-	TenantID       string    `json:"tenant_id"`
-	AgentID        string    `json:"agent_id"`
-	EnrollmentID   string    `json:"enrollment_id,omitempty"`
-	SerialNumber   string    `json:"serial_number"`
-	Subject        string    `json:"subject,omitempty"`
-	NotBefore      time.Time `json:"not_before"`
-	NotAfter       time.Time `json:"not_after"`
-	CreatedAt      time.Time `json:"created_at"`
-	RevokedAt      time.Time `json:"revoked_at,omitempty"`
-	CertificatePEM string    `json:"certificate_pem,omitempty"`
+	TenantID          string    `json:"tenant_id"`
+	AgentID           string    `json:"agent_id"`
+	EnrollmentID      string    `json:"enrollment_id,omitempty"`
+	SerialNumber      string    `json:"serial_number"`
+	Subject           string    `json:"subject,omitempty"`
+	NotBefore         time.Time `json:"not_before"`
+	NotAfter          time.Time `json:"not_after"`
+	CreatedAt         time.Time `json:"created_at"`
+	RevokedAt         time.Time `json:"revoked_at,omitempty"`
+	RevocationReceipt string    `json:"revocation_receipt,omitempty"`
+	CertificatePEM    string    `json:"certificate_pem,omitempty"`
 }
 
 type State struct {
@@ -460,12 +461,49 @@ func (s *Store) EnsureDefaultPolicy(tenantID string) {
 	if len(s.Rules) == 0 {
 		s.Rules = policymodel.DefaultRules()
 	}
-	for _, policy := range s.Policies {
+	for i, policy := range s.Policies {
 		if policy.TenantID == tenantID && policy.PolicyID == policymodel.DefaultPolicyID && policy.Version == policymodel.DefaultPolicyVersion {
+			if !managerDefaultPolicyUsable(policy) {
+				s.Policies[i] = policymodel.Normalize(policymodel.ManagerDefaultPolicy(tenantID))
+			}
 			return
 		}
 	}
-	s.Policies = append(s.Policies, policymodel.Normalize(policymodel.DefaultPolicy(tenantID)))
+	s.Policies = append(s.Policies, policymodel.Normalize(policymodel.ManagerDefaultPolicy(tenantID)))
+}
+
+func (s *Store) EnsureDefaultPolicyWithError(tenantID string) error {
+	s.EnsureDefaultPolicy(tenantID)
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	backend, ctx := s.backendCtx()
+	if backend == nil {
+		return nil
+	}
+	existing, ok, err := backend.GetPolicy(ctxOrBackground(ctx), tenantID, policymodel.DefaultPolicyID, policymodel.DefaultPolicyVersion)
+	if err != nil {
+		return fmt.Errorf("read default policy: %w", err)
+	}
+	if ok && managerDefaultPolicyUsable(existing) {
+		return nil
+	}
+	policy := policymodel.Normalize(policymodel.ManagerDefaultPolicy(tenantID))
+	if err := backend.WritePolicy(ctxOrBackground(ctx), policy); err != nil {
+		return fmt.Errorf("persist default policy: %w", err)
+	}
+	return nil
+}
+
+func managerDefaultPolicyUsable(policy policymodel.Policy) bool {
+	if !policy.Published || policy.Detection == nil {
+		return false
+	}
+	for _, ruleset := range policy.Detection.RuleSets {
+		if ruleset.Ref == policymodel.DefaultRuleSetRef {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) UpsertRule(rule policymodel.RuleContent) {
@@ -611,6 +649,17 @@ func (s *Store) ListPolicyAudits(tenantID, policyID string) []policymodel.AuditR
 	return out
 }
 
+func (s *Store) ListPolicyAuditsWithError(tenantID, policyID string) ([]policymodel.AuditRecord, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		audits, err := backend.ListPolicyAudits(ctx, tenantID, policyID)
+		if err != nil {
+			return nil, fmt.Errorf("list policy audits: %w", err)
+		}
+		return audits, nil
+	}
+	return s.ListPolicyAudits(tenantID, policyID), nil
+}
+
 func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
 	if backend, ctx := s.backendCtx(); backend != nil {
 		if policies, err := backend.ListPolicies(ctx, tenantID); err == nil {
@@ -636,6 +685,17 @@ func (s *Store) ListPolicies(tenantID string) []policymodel.Policy {
 		return out[i].TenantID < out[j].TenantID
 	})
 	return out
+}
+
+func (s *Store) ListPoliciesWithError(tenantID string) ([]policymodel.Policy, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		policies, err := backend.ListPolicies(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("list policies: %w", err)
+		}
+		return policies, nil
+	}
+	return s.ListPolicies(tenantID), nil
 }
 
 func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymodel.Policy, bool) {
@@ -667,6 +727,18 @@ func (s *Store) GetPolicy(tenantID, policyID string, version uint64) (policymode
 		}
 	}
 	return latest, ok
+}
+
+func (s *Store) GetPolicyWithError(tenantID, policyID string, version uint64) (policymodel.Policy, bool, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		policy, ok, err := backend.GetPolicy(ctx, tenantID, policyID, version)
+		if err != nil {
+			return policymodel.Policy{}, false, fmt.Errorf("get policy: %w", err)
+		}
+		return policy, ok, nil
+	}
+	policy, ok := s.GetPolicy(tenantID, policyID, version)
+	return policy, ok, nil
 }
 
 func (s *Store) PublishPolicy(tenantID, policyID string, version uint64, published bool) (policymodel.Policy, bool, error) {
@@ -797,6 +869,17 @@ func (s *Store) ListAssignments(tenantID, agentID string) []policymodel.Assignme
 	return out
 }
 
+func (s *Store) ListAssignmentsWithError(tenantID, agentID string) ([]policymodel.Assignment, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		assignments, err := backend.ListAssignments(ctx, tenantID, agentID)
+		if err != nil {
+			return nil, fmt.Errorf("list policy assignments: %w", err)
+		}
+		return assignments, nil
+	}
+	return s.ListAssignments(tenantID, agentID), nil
+}
+
 func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool) {
 	if backend, ctx := s.backendCtx(); backend != nil {
 		if policy, ok, err := backend.EffectivePolicy(ctx, tenantID, agentID, scopeType, scopeSelector); err == nil && ok {
@@ -827,7 +910,19 @@ func (s *Store) EffectivePolicy(tenantID, agentID, scopeType, scopeSelector stri
 	if policy, ok := s.publishedPolicy(tenantID, policymodel.DefaultPolicyID, 0); ok {
 		return policy, true
 	}
-	return policymodel.DefaultPolicy(tenantID), true
+	return policymodel.ManagerDefaultPolicy(tenantID), true
+}
+
+func (s *Store) EffectivePolicyWithError(tenantID, agentID, scopeType, scopeSelector string) (policymodel.Policy, bool, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		policy, ok, err := backend.EffectivePolicy(ctx, tenantID, agentID, scopeType, scopeSelector)
+		if err != nil {
+			return policymodel.Policy{}, false, fmt.Errorf("read effective policy: %w", err)
+		}
+		return policy, ok, nil
+	}
+	policy, ok := s.EffectivePolicy(tenantID, agentID, scopeType, scopeSelector)
+	return policy, ok, nil
 }
 
 func (s *Store) CreateResponse(cmd responsemodel.Command) (responsemodel.Command, error) {
@@ -966,6 +1061,17 @@ func (s *Store) ListResponses(tenantID, agentID string) []responsemodel.AuditRec
 	return out
 }
 
+func (s *Store) ListResponsesWithError(tenantID, agentID string) ([]responsemodel.AuditRecord, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		records, err := backend.ListResponses(ctx, tenantID, agentID)
+		if err != nil {
+			return nil, fmt.Errorf("list responses: %w", err)
+		}
+		return records, nil
+	}
+	return s.ListResponses(tenantID, agentID), nil
+}
+
 func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Command {
 	if backend, ctx := s.backendCtx(); backend != nil {
 		if records, err := backend.ListResponses(ctx, tenantID, agentID); err == nil {
@@ -995,6 +1101,17 @@ func (s *Store) PendingResponses(tenantID, agentID string) []responsemodel.Comma
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
 	return out
+}
+
+func (s *Store) PendingResponsesWithError(tenantID, agentID string) ([]responsemodel.Command, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		records, err := backend.ListResponses(ctx, tenantID, agentID)
+		if err != nil {
+			return nil, fmt.Errorf("list pending responses: %w", err)
+		}
+		return pendingResponsesFromAudit(records), nil
+	}
+	return s.PendingResponses(tenantID, agentID), nil
 }
 
 func pendingResponsesFromAudit(records []responsemodel.AuditRecord) []responsemodel.Command {
@@ -1159,6 +1276,11 @@ func (s *Store) CreateEvidencePullback(req controlmodel.EvidencePullbackRequest)
 }
 
 func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []controlmodel.EvidencePullbackRequest {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		if pullbacks, err := backend.ListEvidencePullbacks(ctx, tenantID, agentID); err == nil {
+			return pullbacks
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]controlmodel.EvidencePullbackRequest, 0, len(s.Pullbacks))
@@ -1175,6 +1297,17 @@ func (s *Store) ListEvidencePullbacks(tenantID, agentID string) []controlmodel.E
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
 	return out
+}
+
+func (s *Store) ListEvidencePullbacksWithError(tenantID, agentID string) ([]controlmodel.EvidencePullbackRequest, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		pullbacks, err := backend.ListEvidencePullbacks(ctx, tenantID, agentID)
+		if err != nil {
+			return nil, fmt.Errorf("list evidence pullbacks: %w", err)
+		}
+		return pullbacks, nil
+	}
+	return s.ListEvidencePullbacks(tenantID, agentID), nil
 }
 
 func (s *Store) GetEvidencePullback(requestID, tenantID, agentID string) (controlmodel.EvidencePullbackRequest, bool) {
@@ -1198,6 +1331,26 @@ func (s *Store) GetEvidencePullback(requestID, tenantID, agentID string) (contro
 	return controlmodel.EvidencePullbackRequest{}, false
 }
 
+func (s *Store) GetEvidencePullbackWithError(requestID, tenantID, agentID string) (controlmodel.EvidencePullbackRequest, bool, error) {
+	if requestID == "" {
+		return controlmodel.EvidencePullbackRequest{}, false, nil
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		pullbacks, err := backend.ListEvidencePullbacks(ctx, tenantID, agentID)
+		if err != nil {
+			return controlmodel.EvidencePullbackRequest{}, false, fmt.Errorf("get evidence pullback: %w", err)
+		}
+		for _, req := range pullbacks {
+			if req.RequestID == requestID {
+				return req, true, nil
+			}
+		}
+		return controlmodel.EvidencePullbackRequest{}, false, nil
+	}
+	req, ok := s.GetEvidencePullback(requestID, tenantID, agentID)
+	return req, ok, nil
+}
+
 func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []controlmodel.EvidencePullbackRequest {
 	all := s.ListEvidencePullbacks(tenantID, agentID)
 	out := make([]controlmodel.EvidencePullbackRequest, 0, len(all))
@@ -1207,6 +1360,20 @@ func (s *Store) PendingEvidencePullbacks(tenantID, agentID string) []controlmode
 		}
 	}
 	return out
+}
+
+func (s *Store) PendingEvidencePullbacksWithError(tenantID, agentID string) ([]controlmodel.EvidencePullbackRequest, error) {
+	all, err := s.ListEvidencePullbacksWithError(tenantID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]controlmodel.EvidencePullbackRequest, 0, len(all))
+	for _, req := range all {
+		if req.Status == controlmodel.EvidencePullbackStatusPending {
+			out = append(out, req)
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) CompleteEvidencePullback(result controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool) {
@@ -1340,6 +1507,17 @@ func (s *Store) ListControlCommands(tenantID, agentID, commandType string) []con
 	return out
 }
 
+func (s *Store) ListControlCommandsWithError(tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		commands, err := backend.ListControlCommands(ctx, tenantID, agentID, commandType)
+		if err != nil {
+			return nil, fmt.Errorf("list control commands: %w", err)
+		}
+		return commands, nil
+	}
+	return s.ListControlCommands(tenantID, agentID, commandType), nil
+}
+
 func (s *Store) PendingControlCommands(tenantID, agentID string) []controlmodel.ControlCommand {
 	all := s.ListControlCommands(tenantID, agentID, "")
 	out := make([]controlmodel.ControlCommand, 0, len(all))
@@ -1350,6 +1528,20 @@ func (s *Store) PendingControlCommands(tenantID, agentID string) []controlmodel.
 		out = append(out, cmd)
 	}
 	return out
+}
+
+func (s *Store) PendingControlCommandsWithError(tenantID, agentID string) ([]controlmodel.ControlCommand, error) {
+	all, err := s.ListControlCommandsWithError(tenantID, agentID, "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]controlmodel.ControlCommand, 0, len(all))
+	for _, cmd := range all {
+		if !controlmodel.ControlCommandTerminalStatus(cmd.Status) {
+			out = append(out, cmd)
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) MarkControlCommandSent(commandID, tenantID, agentID string, sentAt time.Time) (controlmodel.ControlCommand, bool) {
@@ -1774,6 +1966,17 @@ func (s *Store) ListAgents() []AgentIdentity {
 	return out
 }
 
+func (s *Store) ListAgentsWithError() ([]AgentIdentity, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		agents, err := backend.ListAgents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list agents: %w", err)
+		}
+		return agents, nil
+	}
+	return s.ListAgents(), nil
+}
+
 func (s *Store) ListAgentSessions(tenantID, agentID string) []AgentSession {
 	if backend, ctx := s.backendCtx(); backend != nil {
 		if sessions, err := backend.ListAgentSessions(ctx, tenantID, agentID); err == nil {
@@ -1799,6 +2002,17 @@ func (s *Store) ListAgentSessions(tenantID, agentID string) []AgentSession {
 		return out[i].TenantID < out[j].TenantID
 	})
 	return out
+}
+
+func (s *Store) ListAgentSessionsWithError(tenantID, agentID string) ([]AgentSession, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		sessions, err := backend.ListAgentSessions(ctx, tenantID, agentID)
+		if err != nil {
+			return nil, fmt.Errorf("list agent sessions: %w", err)
+		}
+		return sessions, nil
+	}
+	return s.ListAgentSessions(tenantID, agentID), nil
 }
 
 func (s *Store) CreateEnrollment(enrollment Enrollment) Enrollment {
@@ -1852,6 +2066,17 @@ func (s *Store) ListEnrollments(tenantID, status string) []Enrollment {
 	return out
 }
 
+func (s *Store) ListEnrollmentsWithError(tenantID, status string) ([]Enrollment, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		enrollments, err := backend.ListEnrollments(ctx, tenantID, status)
+		if err != nil {
+			return nil, fmt.Errorf("list enrollments: %w", err)
+		}
+		return enrollments, nil
+	}
+	return s.ListEnrollments(tenantID, status), nil
+}
+
 func (s *Store) GetEnrollmentByTokenHash(tokenHash string) (Enrollment, bool) {
 	tokenHash = strings.TrimSpace(tokenHash)
 	if tokenHash == "" {
@@ -1870,6 +2095,22 @@ func (s *Store) GetEnrollmentByTokenHash(tokenHash string) (Enrollment, bool) {
 		}
 	}
 	return Enrollment{}, false
+}
+
+func (s *Store) GetEnrollmentByTokenHashWithError(tokenHash string) (Enrollment, bool, error) {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return Enrollment{}, false, nil
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		enrollment, ok, err := backend.GetEnrollmentByTokenHash(ctx, tokenHash)
+		if err != nil {
+			return Enrollment{}, false, fmt.Errorf("get enrollment by token: %w", err)
+		}
+		return enrollment, ok, nil
+	}
+	enrollment, ok := s.GetEnrollmentByTokenHash(tokenHash)
+	return enrollment, ok, nil
 }
 
 func (s *Store) MarkEnrollmentUsed(tokenHash string, usedAt time.Time) (Enrollment, bool) {
@@ -1983,6 +2224,17 @@ func (s *Store) ListArtifacts(tenantID, kind, status string) []Artifact {
 	return out
 }
 
+func (s *Store) ListArtifactsWithError(tenantID, kind, status string) ([]Artifact, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		artifacts, err := backend.ListArtifacts(ctx, tenantID, kind, status)
+		if err != nil {
+			return nil, fmt.Errorf("list artifacts: %w", err)
+		}
+		return artifacts, nil
+	}
+	return s.ListArtifacts(tenantID, kind, status), nil
+}
+
 func (s *Store) GetArtifact(tenantID, artifactID string) (Artifact, bool) {
 	tenantID = strings.TrimSpace(tenantID)
 	artifactID = strings.TrimSpace(artifactID)
@@ -2005,6 +2257,26 @@ func (s *Store) GetArtifact(tenantID, artifactID string) (Artifact, bool) {
 		}
 	}
 	return Artifact{}, false
+}
+
+func (s *Store) GetArtifactWithError(tenantID, artifactID string) (Artifact, bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	artifactID = strings.TrimSpace(artifactID)
+	if artifactID == "" {
+		return Artifact{}, false, nil
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		artifact, ok, err := backend.GetArtifact(ctx, tenantID, artifactID)
+		if err != nil {
+			return Artifact{}, false, fmt.Errorf("get artifact: %w", err)
+		}
+		return artifact, ok, nil
+	}
+	artifact, ok := s.GetArtifact(tenantID, artifactID)
+	return artifact, ok, nil
 }
 
 func normalizeEnrollment(enrollment Enrollment) Enrollment {
@@ -2113,6 +2385,17 @@ func (s *Store) ListChannels(tenantID string) []ArtifactChannel {
 	return out
 }
 
+func (s *Store) ListChannelsWithError(tenantID string) ([]ArtifactChannel, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		channels, err := backend.ListChannels(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("list channels: %w", err)
+		}
+		return channels, nil
+	}
+	return s.ListChannels(tenantID), nil
+}
+
 func (s *Store) GetChannel(tenantID, channelName string) (ArtifactChannel, bool) {
 	tenantID = strings.TrimSpace(tenantID)
 	channelName = strings.TrimSpace(channelName)
@@ -2137,6 +2420,26 @@ func (s *Store) GetChannel(tenantID, channelName string) (ArtifactChannel, bool)
 	return ArtifactChannel{}, false
 }
 
+func (s *Store) GetChannelWithError(tenantID, channelName string) (ArtifactChannel, bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	channelName = strings.TrimSpace(channelName)
+	if channelName == "" {
+		return ArtifactChannel{}, false, nil
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		channel, ok, err := backend.GetChannel(ctx, tenantID, channelName)
+		if err != nil {
+			return ArtifactChannel{}, false, fmt.Errorf("get channel: %w", err)
+		}
+		return channel, ok, nil
+	}
+	channel, ok := s.GetChannel(tenantID, channelName)
+	return channel, ok, nil
+}
+
 func (s *Store) RecordAgentCertificate(cert AgentCertificate) AgentCertificate {
 	cert = normalizeAgentCertificate(cert)
 	if cert.TenantID == "" || cert.AgentID == "" || cert.SerialNumber == "" {
@@ -2156,6 +2459,97 @@ func (s *Store) RecordAgentCertificate(cert AgentCertificate) AgentCertificate {
 	}
 	s.Certificates = append(s.Certificates, cert)
 	return cert
+}
+
+func (s *Store) RevokeAgentCertificate(tenantID, agentID, enrollmentID, serial string, revokedAt time.Time) (AgentCertificate, bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	agentID, enrollmentID, serial = strings.TrimSpace(agentID), strings.TrimSpace(enrollmentID), strings.TrimSpace(serial)
+	if agentID == "" || enrollmentID == "" || serial == "" {
+		return AgentCertificate{}, false, fmt.Errorf("certificate revocation identity is incomplete")
+	}
+	if revokedAt.IsZero() {
+		revokedAt = time.Now().UTC()
+	}
+	receipt := certificateRevocationReceipt(tenantID, agentID, enrollmentID, serial)
+	s.durableMu.Lock()
+	defer s.durableMu.Unlock()
+	if backend, ctx := s.backendCtx(); backend != nil {
+		cert, ok, err := backend.RevokeAgentCertificate(ctx, tenantID, agentID, enrollmentID, serial, revokedAt, receipt)
+		if err != nil || !ok {
+			return AgentCertificate{}, ok, err
+		}
+		s.mu.Lock()
+		s.Certificates = upsertAgentCertificateSnapshot(s.Certificates, cert)
+		s.mu.Unlock()
+		return cert, true, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, cert := range s.Certificates {
+		if cert.TenantID != tenantID || cert.SerialNumber != serial {
+			continue
+		}
+		if cert.AgentID != agentID || cert.EnrollmentID != enrollmentID {
+			return AgentCertificate{}, false, fmt.Errorf("%w: certificate identity mismatch", ErrConflict)
+		}
+		changed := false
+		if cert.RevokedAt.IsZero() {
+			cert.RevokedAt, cert.RevocationReceipt = revokedAt.UTC(), receipt
+			changed = true
+		} else if cert.RevocationReceipt == "" {
+			cert.RevocationReceipt = receipt
+			changed = true
+		}
+		if changed {
+			s.Certificates[i] = cert
+			if err := s.persistFileLocked(); err != nil {
+				return AgentCertificate{}, false, fmt.Errorf("persist certificate revocation: %w", err)
+			}
+		}
+		return cert, true, nil
+	}
+	return AgentCertificate{}, false, nil
+}
+
+func (s *Store) GetAgentCertificateWithError(tenantID, serial string) (AgentCertificate, bool, error) {
+	tenantID, serial = strings.TrimSpace(tenantID), strings.TrimSpace(serial)
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		cert, ok, err := backend.GetAgentCertificate(ctx, tenantID, serial)
+		if err != nil {
+			return AgentCertificate{}, false, fmt.Errorf("get agent certificate: %w", err)
+		}
+		return cert, ok, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, cert := range s.Certificates {
+		if cert.TenantID == tenantID && cert.SerialNumber == serial {
+			return cert, true, nil
+		}
+	}
+	return AgentCertificate{}, false, nil
+}
+
+func certificateRevocationReceipt(tenantID, agentID, enrollmentID, serial string) string {
+	sum := sha256.Sum256([]byte(tenantID + "\x00" + agentID + "\x00" + enrollmentID + "\x00" + serial))
+	return "revoke-" + hex.EncodeToString(sum[:16])
+}
+
+func upsertAgentCertificateSnapshot(certs []AgentCertificate, cert AgentCertificate) []AgentCertificate {
+	out := append([]AgentCertificate(nil), certs...)
+	for i, existing := range out {
+		if existing.TenantID == cert.TenantID && existing.SerialNumber == cert.SerialNumber {
+			out[i] = cert
+			return out
+		}
+	}
+	return append(out, cert)
 }
 
 func normalizeChannel(channel ArtifactChannel) ArtifactChannel {
@@ -2213,6 +2607,17 @@ func (s *Store) ListAgentHealth() []agenthealth.AgentHealth {
 	return out
 }
 
+func (s *Store) ListAgentHealthWithError() ([]agenthealth.AgentHealth, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		health, err := backend.ListAgentHealth(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list agent health: %w", err)
+		}
+		return health, nil
+	}
+	return s.ListAgentHealth(), nil
+}
+
 func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealth, bool) {
 	if backend, ctx := s.backendCtx(); backend != nil {
 		if health, ok, err := backend.GetAgentHealth(ctx, tenantID, agentID); err == nil {
@@ -2240,6 +2645,18 @@ func (s *Store) GetAgentHealth(tenantID, agentID string) (agenthealth.AgentHealt
 		}
 	}
 	return found, ok
+}
+
+func (s *Store) GetAgentHealthWithError(tenantID, agentID string) (agenthealth.AgentHealth, bool, error) {
+	if backend, ctx := s.backendCtx(); backend != nil {
+		health, ok, err := backend.GetAgentHealth(ctx, tenantID, agentID)
+		if err != nil {
+			return agenthealth.AgentHealth{}, false, fmt.Errorf("get agent health: %w", err)
+		}
+		return health, ok, nil
+	}
+	health, ok := s.GetAgentHealth(tenantID, agentID)
+	return health, ok, nil
 }
 
 // ListEvents reads from the in-process working set only. Telemetry is not

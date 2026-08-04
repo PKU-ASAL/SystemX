@@ -74,7 +74,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	managerSrv, err := managerapi.NewProductionServerWithSearch(st, searcher)
+	managerSrv, err := managerServerForBackend(*storeBackend, st, searcher)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configure production manager: %v\n", err)
 		os.Exit(1)
@@ -89,6 +89,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "manager serve: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func managerServerForBackend(kind string, st managerapi.ManagerStore, searcher platformopensearch.Searcher) (*managerapi.Server, error) {
+	if kind == backend.KindMemory {
+		return managerapi.NewServerWithSearch(st, searcher), nil
+	}
+	return managerapi.NewProductionServerWithSearch(st, searcher)
 }
 
 func newManagerHTTPServer(listen string, handler http.Handler) *http.Server {

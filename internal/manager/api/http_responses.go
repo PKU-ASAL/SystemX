@@ -14,10 +14,20 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		q := r.URL.Query()
 		if q.Get("pending") == "true" {
-			writeJSON(w, s.store.PendingResponses(q.Get("tenant_id"), q.Get("agent_id")))
+			responses, err := s.store.PendingResponsesWithError(q.Get("tenant_id"), q.Get("agent_id"))
+			if err != nil {
+				http.Error(w, fmt.Sprintf("read pending responses: %v", err), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, responses)
 			return
 		}
-		writeJSON(w, s.store.ListResponses(q.Get("tenant_id"), q.Get("agent_id")))
+		responses, err := s.store.ListResponsesWithError(q.Get("tenant_id"), q.Get("agent_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read responses: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, responses)
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "responder") {
 			return
@@ -130,7 +140,10 @@ func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command
 	if cmd.TenantID == "" {
 		cmd.TenantID = "default"
 	}
-	if health, ok := s.store.GetAgentHealth(cmd.TenantID, cmd.AgentID); ok {
+	if health, ok, err := s.store.GetAgentHealthWithError(cmd.TenantID, cmd.AgentID); err != nil {
+		http.Error(w, fmt.Sprintf("read agent health: %v", err), http.StatusInternalServerError)
+		return
+	} else if ok {
 		if cmd.Scope.Type == "" && cmd.Scope.Selector == "" {
 			cmd.Scope = responsemodel.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector}
 		}
@@ -143,7 +156,10 @@ func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command
 		return
 	}
 	responsePolicy := responsemodel.DefaultPolicy()
-	if policy, ok := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector); ok {
+	if policy, ok, err := s.store.EffectivePolicyWithError(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector); err != nil {
+		http.Error(w, fmt.Sprintf("read effective policy: %v", err), http.StatusInternalServerError)
+		return
+	} else if ok {
 		responsePolicy = policy.Response
 		if len(responsePolicy.AllowedActions) == 0 && len(responsePolicy.AllowedModes) == 0 {
 			responsePolicy = responsemodel.DefaultPolicy()
@@ -154,7 +170,11 @@ func (s *Server) createResponse(w http.ResponseWriter, cmd responsemodel.Command
 		}
 	}
 	if cmd.PolicyID == "" {
-		policy, _ := s.store.EffectivePolicy(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
+		policy, _, err := s.store.EffectivePolicyWithError(cmd.TenantID, cmd.AgentID, cmd.Scope.Type, cmd.Scope.Selector)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read effective policy: %v", err), http.StatusInternalServerError)
+			return
+		}
 		cmd.PolicyID = policy.PolicyID
 		cmd.PolicyVersion = policy.Version
 	}

@@ -39,7 +39,7 @@ func (s *Store) PublishPolicyWithAudit(tenantID, policyID string, version uint64
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	policies, _ := upsertPolicySnapshot(s.Policies, policy)
-	audits := append(append([]policymodel.AuditRecord(nil), s.PolicyAudits...), audit)
+	audits := upsertPolicyAuditSnapshot(s.PolicyAudits, audit)
 	if err := s.applyPolicyStateLocked(policies, nil, audits, nil); err != nil {
 		return policymodel.Policy{}, false, fmt.Errorf("commit policy publication: %w", err)
 	}
@@ -111,14 +111,16 @@ func (s *Store) AssignPolicyWithAudit(assignment policymodel.Assignment, audit p
 		return policymodel.Assignment{}, nil, false, err
 	}
 	if backend != nil {
-		if err := backend.CommitPolicyAssignment(ctxOrBackground(ctx), assignment, audit, preparedCommand); err != nil {
+		persistedCommand, err := backend.CommitPolicyAssignment(ctxOrBackground(ctx), assignment, audit, preparedCommand)
+		if err != nil {
 			return policymodel.Assignment{}, nil, false, fmt.Errorf("commit policy assignment: %w", err)
 		}
+		preparedCommand = persistedCommand
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assignments = upsertAssignmentSnapshot(s.Assignments, assignment)
-	audits := append(append([]policymodel.AuditRecord(nil), s.PolicyAudits...), audit)
+	audits := upsertPolicyAuditSnapshot(s.PolicyAudits, audit)
 	commands := append([]controlmodel.ControlCommand(nil), s.ControlCommands...)
 	if preparedCommand != nil {
 		commands = upsertControlCommandSnapshot(commands, *preparedCommand)
@@ -220,6 +222,17 @@ func upsertAssignmentSnapshot(assignments []policymodel.Assignment, assignment p
 		}
 	}
 	return append(out, assignment)
+}
+
+func upsertPolicyAuditSnapshot(audits []policymodel.AuditRecord, audit policymodel.AuditRecord) []policymodel.AuditRecord {
+	out := append([]policymodel.AuditRecord(nil), audits...)
+	for i, existing := range out {
+		if existing.TenantID == audit.TenantID && existing.AuditID == audit.AuditID {
+			out[i] = audit
+			return out
+		}
+	}
+	return append(out, audit)
 }
 
 func (s *Store) applyPolicyStateLocked(policies []policymodel.Policy, assignments []policymodel.Assignment, audits []policymodel.AuditRecord, commands []controlmodel.ControlCommand) error {

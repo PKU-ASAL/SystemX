@@ -529,7 +529,7 @@ func TestOpenPostgresRollsBackPolicyAssignmentWhenAuditWriteFails(t *testing.T) 
 	}
 }
 
-func TestOpenPostgresRollsBackPolicyAssignmentOnControlCommandConflict(t *testing.T) {
+func TestOpenPostgresCommitsIdenticalPolicyAssignmentCommandReplay(t *testing.T) {
 	fakeSetExecError(nil)
 	fakeSetSnapshot(nil)
 	result, err := Open(context.Background(), Options{
@@ -543,6 +543,52 @@ func TestOpenPostgresRollsBackPolicyAssignmentOnControlCommandConflict(t *testin
 	if _, err := result.Store.UpsertPolicyWithError(policy); err != nil {
 		t.Fatal(err)
 	}
+	assignment := policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: policy.PolicyID, PolicyVersion: 1}
+	audit := policymodel.AuditRecord{AuditID: "audit-command-replay", Action: "policy.assign"}
+	command := &controlmodel.ControlCommand{CommandID: "control-command-replay", Type: controlmodel.ControlCommandTypePolicyUpdate}
+	_, firstCommand, ok, err := result.Store.AssignPolicyWithAudit(assignment, audit, command)
+	if err != nil || !ok || firstCommand == nil {
+		t.Fatalf("initial AssignPolicyWithAudit command=%+v ok=%t err=%v", firstCommand, ok, err)
+	}
+	fakeReturnZeroRowsContaining("INSERT INTO control_commands")
+	_, replayedCommand, ok, err := result.Store.AssignPolicyWithAudit(assignment, audit, command)
+
+	commits, rollbacks := fakeTransactionCounts()
+	if err != nil || !ok || commits != 1 || rollbacks != 0 {
+		t.Fatalf("AssignPolicyWithAudit ok=%t err=%v commits=%d rollbacks=%d", ok, err, commits, rollbacks)
+	}
+	if replayedCommand == nil || !replayedCommand.CreatedAt.Equal(firstCommand.CreatedAt) {
+		t.Fatalf("replayed command = %+v, want original %+v", replayedCommand, firstCommand)
+	}
+	if len(result.Store.Assignments) != 1 || len(result.Store.PolicyAudits) != 1 || len(result.Store.ControlCommands) != 1 {
+		t.Fatalf("replayed transaction not published: assignments=%+v audits=%+v commands=%+v", result.Store.Assignments, result.Store.PolicyAudits, result.Store.ControlCommands)
+	}
+}
+
+func TestOpenPostgresRejectsPolicyAssignmentCommandPayloadConflict(t *testing.T) {
+	fakeSetExecError(nil)
+	fakeSetSnapshot(nil)
+	result, err := Open(context.Background(), Options{
+		Kind: KindPostgres, PostgresDriver: fakeDriverName, PostgresDSN: "test-dsn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := policymodel.DefaultPolicy("default")
+	policy.PolicyID, policy.Version, policy.Published = "policy-command-conflict", 1, true
+	if _, err := result.Store.UpsertPolicyWithError(policy); err != nil {
+		t.Fatal(err)
+	}
+	existing, err := json.Marshal(controlmodel.ControlCommand{
+		CommandID: "control-command-conflict",
+		TenantID:  "default",
+		AgentID:   "agent-other",
+		Type:      controlmodel.ControlCommandTypePolicyUpdate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeSetControlCommandRows(existing)
 	fakeReturnZeroRowsContaining("INSERT INTO control_commands")
 
 	_, _, ok, err := result.Store.AssignPolicyWithAudit(
@@ -552,11 +598,8 @@ func TestOpenPostgresRollsBackPolicyAssignmentOnControlCommandConflict(t *testin
 	)
 
 	commits, rollbacks := fakeTransactionCounts()
-	if err == nil || ok || !strings.Contains(err.Error(), "already exists") || commits != 0 || rollbacks != 1 {
+	if !errors.Is(err, store.ErrConflict) || ok || commits != 0 || rollbacks != 1 {
 		t.Fatalf("AssignPolicyWithAudit ok=%t err=%v commits=%d rollbacks=%d", ok, err, commits, rollbacks)
-	}
-	if len(result.Store.Assignments) != 0 || len(result.Store.PolicyAudits) != 0 || len(result.Store.ControlCommands) != 0 {
-		t.Fatalf("conflicting transaction published memory state: assignments=%+v audits=%+v commands=%+v", result.Store.Assignments, result.Store.PolicyAudits, result.Store.ControlCommands)
 	}
 }
 
@@ -1635,6 +1678,15 @@ func fakeSetAssignmentRows(rows ...[]byte) {
 	}
 }
 
+func fakeSetControlCommandRows(rows ...[]byte) {
+	fakeState.Lock()
+	defer fakeState.Unlock()
+	fakeState.controlCommandRows = nil
+	for _, row := range rows {
+		fakeState.controlCommandRows = append(fakeState.controlCommandRows, append([]byte(nil), row...))
+	}
+}
+
 func cloneDriverBytes(value driver.Value) driver.Value {
 	switch data := value.(type) {
 	case []byte:
@@ -1711,6 +1763,9 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 	if fakeState.execErr != nil && (fakeState.execErrQuery == "" || strings.Contains(s.query, fakeState.execErrQuery)) {
 		return nil, fakeState.execErr
 	}
+	if fakeState.zeroRowsQuery != "" && strings.Contains(s.query, fakeState.zeroRowsQuery) {
+		return driver.RowsAffected(0), nil
+	}
 	if strings.Contains(s.query, "INSERT INTO sysarmor_state") && len(args) >= 3 {
 		switch data := args[2].Value.(type) {
 		case []byte:
@@ -1786,9 +1841,6 @@ func (s fakeStmt) ExecContext(_ context.Context, args []driver.NamedValue) (driv
 		case string:
 			upsertFakeControlCommandRow([]byte(data))
 		}
-	}
-	if fakeState.zeroRowsQuery != "" && strings.Contains(s.query, fakeState.zeroRowsQuery) {
-		return driver.RowsAffected(0), nil
 	}
 	return driver.RowsAffected(1), nil
 }

@@ -17,7 +17,7 @@ import (
 type Store interface {
 	ControlStore
 	BindAgentIdentity(store.AgentIdentity) error
-	ListAgentSessions(string, string) []store.AgentSession
+	ListAgentSessionsWithError(string, string) ([]store.AgentSession, error)
 	RecordDataBatchAppend(store.AgentIdentity, string, string, time.Time) store.AgentSession
 }
 
@@ -92,14 +92,17 @@ func (r *Runtime) TouchHotSession(session store.AgentSession) {
 	})
 }
 
-func (r *Runtime) ResumeCursor(tenantID, agentID string) ResumeCursor {
+func (r *Runtime) ResumeCursor(tenantID, agentID string) (ResumeCursor, error) {
 	resume := ResumeCursor{TenantID: tenantID, AgentID: agentID}
-	sessions := r.store.ListAgentSessions(tenantID, agentID)
+	sessions, err := r.store.ListAgentSessionsWithError(tenantID, agentID)
+	if err != nil {
+		return ResumeCursor{}, err
+	}
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
 		resume.ResumeCursor = sessions[0].LastAckCursor
 	}
-	return resume
+	return resume, nil
 }
 
 func (r *Runtime) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, transport string) (DataAppendResult, error) {
@@ -108,7 +111,11 @@ func (r *Runtime) AppendDataBatchWithTransport(batch *dataplanev1.DataBatch, tra
 		return DataAppendResult{}, err
 	}
 	header := batch.GetHeader()
-	if r.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId()) {
+	duplicate, err := r.isDuplicateBatch(header.GetTenantId(), header.GetAgentId(), header.GetBatchId())
+	if err != nil {
+		return DataAppendResult{}, err
+	}
+	if duplicate {
 		session := r.store.RecordDataBatchAppend(store.AgentIdentityFromDataBatch(batch), header.GetBatchId(), transport, time.Now().UTC())
 		r.TouchHotSession(session)
 		r.metrics.duplicateBatches.Add(1)
@@ -182,16 +189,20 @@ func (r *Runtime) processLocal(batch *dataplanev1.DataBatch) (DataAppendResult, 
 	}, nil
 }
 
-func (r *Runtime) isDuplicateBatch(tenantID, agentID, batchID string) bool {
+func (r *Runtime) isDuplicateBatch(tenantID, agentID, batchID string) (bool, error) {
 	if batchID == "" {
-		return false
+		return false, nil
 	}
-	for _, session := range r.store.ListAgentSessions(tenantID, agentID) {
+	sessions, err := r.store.ListAgentSessionsWithError(tenantID, agentID)
+	if err != nil {
+		return false, fmt.Errorf("list agent sessions: %w", err)
+	}
+	for _, session := range sessions {
 		if session.LastAckCursor == batchID {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func validateUploadIdentity(batch *dataplanev1.DataBatch) error {

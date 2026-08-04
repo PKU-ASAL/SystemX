@@ -11,7 +11,11 @@ import (
 
 func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	effective, _ := s.store.EffectivePolicy(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
+	effective, _, err := s.store.EffectivePolicyWithError(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read effective policy: %v", err), http.StatusInternalServerError)
+		return
+	}
 	policy := effective.DetectionPolicy()
 	if policy.Converge == nil {
 		policy.Converge = &policyv1.ConvergeParams{CrossLineage: true}

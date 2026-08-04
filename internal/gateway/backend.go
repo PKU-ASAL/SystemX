@@ -39,7 +39,6 @@ type Backend interface {
 	AppendDataBatchWithTransport(*dataplanev1.DataBatch, string) (DataAppendResult, error)
 	BindAgentIdentity(store.AgentIdentity) error
 	Store() ControlStore
-	ResumeCursor(string, string) ResumeCursor
 	TouchHotSession(store.AgentSession)
 }
 
@@ -49,13 +48,16 @@ type ControlStore interface {
 	AttachIncidentEvidence(string, store.LabelSelector, *incidentv1.EvidenceSubgraph) (*incidentv1.Incident, bool)
 	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
 	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool, error)
-	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
-	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
+	EffectivePolicyWithError(string, string, string, string) (policymodel.Policy, bool, error)
+	GetEvidencePullbackWithError(string, string, string) (controlmodel.EvidencePullbackRequest, bool, error)
+	GetAgentCertificateWithError(string, string) (store.AgentCertificate, bool, error)
+	ListAgentSessionsWithError(string, string) ([]store.AgentSession, error)
 	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)
-	PendingControlCommands(string, string) []controlmodel.ControlCommand
-	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
-	PendingResponses(string, string) []responsemodel.Command
+	PendingControlCommandsWithError(string, string) ([]controlmodel.ControlCommand, error)
+	PendingEvidencePullbacksWithError(string, string) ([]controlmodel.EvidencePullbackRequest, error)
+	PendingResponsesWithError(string, string) ([]responsemodel.Command, error)
 	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession
+	RevokeAgentCertificate(string, string, string, string, time.Time) (store.AgentCertificate, bool, error)
 	Save() error
 	UpsertAgentHealth(agenthealth.AgentHealth)
 }

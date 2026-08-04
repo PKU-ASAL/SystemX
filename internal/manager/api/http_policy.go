@@ -2,12 +2,14 @@ package managerapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +26,11 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if policyID := q.Get("policy_id"); policyID != "" {
 			version := parseUint(q.Get("version"))
-			policy, ok := s.store.GetPolicy(q.Get("tenant_id"), policyID, version)
+			policy, ok, err := s.store.GetPolicyWithError(q.Get("tenant_id"), policyID, version)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("read policy: %v", err), http.StatusInternalServerError)
+				return
+			}
 			if !ok {
 				http.Error(w, "policy not found", http.StatusNotFound)
 				return
@@ -32,7 +38,12 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, policy)
 			return
 		}
-		writeJSON(w, s.store.ListPolicies(q.Get("tenant_id")))
+		policies, err := s.store.ListPoliciesWithError(q.Get("tenant_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read policies: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, policies)
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "policy_admin") {
 			return
@@ -112,14 +123,24 @@ func (s *Server) policyAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	writeJSON(w, s.store.ListPolicyAudits(q.Get("tenant_id"), q.Get("policy_id")))
+	audits, err := s.store.ListPolicyAuditsWithError(q.Get("tenant_id"), q.Get("policy_id"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read policy audits: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, audits)
 }
 
 func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		writeJSON(w, s.store.ListAssignments(q.Get("tenant_id"), q.Get("agent_id")))
+		assignments, err := s.store.ListAssignmentsWithError(q.Get("tenant_id"), q.Get("agent_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read policy assignments: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, assignments)
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "policy_admin") {
 			return
@@ -148,6 +169,10 @@ func (s *Server) policyAssignments(w http.ResponseWriter, r *http.Request) {
 			Reason: req.Reason,
 		}, command)
 		if err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 			http.Error(w, fmt.Sprintf("save policy assignment: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -191,7 +216,11 @@ func (s *Server) effectivePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	policy, ok := s.store.EffectivePolicy(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
+	policy, ok, err := s.store.EffectivePolicyWithError(q.Get("tenant_id"), q.Get("agent_id"), q.Get("scope_type"), q.Get("scope_selector"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read effective policy: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok {
 		http.Error(w, "effective policy not found", http.StatusNotFound)
 		return

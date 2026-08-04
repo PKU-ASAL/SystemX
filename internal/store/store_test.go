@@ -831,6 +831,47 @@ func (failingPolicyBackend) WritePolicy(context.Context, policymodel.Policy) err
 	return errors.New("backend down")
 }
 
+func TestEnsureDefaultPolicyWithErrorPersistsManagerDefault(t *testing.T) {
+	backend := &defaultPolicyBackend{}
+	st := &Store{}
+	st.AttachBackend(t.Context(), backend, Info{Backend: "test"})
+	if err := st.EnsureDefaultPolicyWithError("default"); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.writes) != 1 || !managerDefaultPolicyUsable(backend.writes[0]) {
+		t.Fatalf("default policy writes = %+v", backend.writes)
+	}
+}
+
+func TestEnsureDefaultPolicyWithErrorReturnsBackendFailure(t *testing.T) {
+	backend := &defaultPolicyBackend{writeErr: errors.New("backend down")}
+	st := &Store{}
+	st.AttachBackend(t.Context(), backend, Info{Backend: "test"})
+	err := st.EnsureDefaultPolicyWithError("default")
+	if err == nil || !strings.Contains(err.Error(), "persist default policy") {
+		t.Fatalf("EnsureDefaultPolicyWithError error = %v", err)
+	}
+}
+
+type defaultPolicyBackend struct {
+	Backend
+	existing policymodel.Policy
+	writes   []policymodel.Policy
+	writeErr error
+}
+
+func (b *defaultPolicyBackend) GetPolicy(context.Context, string, string, uint64) (policymodel.Policy, bool, error) {
+	return b.existing, b.existing.PolicyID != "", nil
+}
+
+func (b *defaultPolicyBackend) WritePolicy(_ context.Context, policy policymodel.Policy) error {
+	if b.writeErr != nil {
+		return b.writeErr
+	}
+	b.writes = append(b.writes, policy)
+	return nil
+}
+
 func TestCreateResponseReturnsBackendFailure(t *testing.T) {
 	st := &Store{}
 	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "response"}, Info{Backend: "test"})
@@ -1315,6 +1356,70 @@ func TestPendingResponsesLoadsFromBackend(t *testing.T) {
 	}
 }
 
+func TestRevokeAgentCertificateIsIdempotentAndRejectsIdentityConflict(t *testing.T) {
+	st := &Store{}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: "42",
+	})
+	revokedAt := time.Unix(100, 0).UTC()
+	first, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-a", "42", revokedAt)
+	if err != nil || !ok || first.RevocationReceipt == "" || !first.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("first revoke=%+v ok=%t err=%v", first, ok, err)
+	}
+	second, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-a", "42", revokedAt.Add(time.Hour))
+	if err != nil || !ok || second.RevocationReceipt != first.RevocationReceipt || !second.RevokedAt.Equal(first.RevokedAt) {
+		t.Fatalf("replayed revoke=%+v ok=%t err=%v", second, ok, err)
+	}
+	if _, _, err := st.RevokeAgentCertificate("tenant-a", "agent-other", "enroll-a", "42", revokedAt); !errors.Is(err, ErrConflict) {
+		t.Fatalf("identity conflict error=%v, want ErrConflict", err)
+	}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-legacy", SerialNumber: "43", RevokedAt: revokedAt,
+	})
+	legacy, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-legacy", "43", revokedAt.Add(time.Hour))
+	if err != nil || !ok || legacy.RevocationReceipt == "" || !legacy.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("legacy revoked certificate=%+v ok=%t err=%v", legacy, ok, err)
+	}
+}
+
+func TestPendingResponsesWithErrorReturnsBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "response_read"}, Info{Backend: "test"})
+
+	if _, err := st.PendingResponsesWithError("default", "agent-a"); err == nil {
+		t.Fatal("PendingResponsesWithError error = nil, want backend failure")
+	}
+}
+
+func TestSecurityControlReadsWithErrorReturnBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "security_read"}, Info{Backend: "test"})
+
+	checks := []struct {
+		name string
+		read func() error
+	}{
+		{"enrollments", func() error { _, err := st.ListEnrollmentsWithError("default", ""); return err }},
+		{"enrollment token", func() error { _, _, err := st.GetEnrollmentByTokenHashWithError("hash"); return err }},
+		{"bootstrap token", func() error { _, _, err := st.GetEnrollmentByBootstrapTokenHashWithError("hash"); return err }},
+		{"artifacts", func() error { _, err := st.ListArtifactsWithError("default", "", ""); return err }},
+		{"artifact", func() error { _, _, err := st.GetArtifactWithError("default", "artifact-a"); return err }},
+		{"channels", func() error { _, err := st.ListChannelsWithError("default"); return err }},
+		{"channel", func() error { _, _, err := st.GetChannelWithError("default", "stable"); return err }},
+		{"evidence pullback", func() error {
+			_, _, err := st.GetEvidencePullbackWithError("request-a", "default", "agent-a")
+			return err
+		}},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if err := check.read(); err == nil {
+				t.Fatal("error=nil, want backend failure")
+			}
+		})
+	}
+}
+
 type restartingControlPlaneBackend struct {
 	Backend
 	policy      policymodel.Policy
@@ -1341,14 +1446,53 @@ func (b *restartingControlPlaneBackend) CommitPolicyPublication(_ context.Contex
 	return nil
 }
 
-func (b *restartingControlPlaneBackend) CommitPolicyAssignment(_ context.Context, assignment policymodel.Assignment, _ policymodel.AuditRecord, _ *controlmodel.ControlCommand) error {
+func (b *restartingControlPlaneBackend) CommitPolicyAssignment(_ context.Context, assignment policymodel.Assignment, _ policymodel.AuditRecord, command *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error) {
 	b.assigned = assignment
-	return nil
+	return command, nil
 }
 
 type failingControlPlaneBackend struct {
 	Backend
 	operation string
+}
+
+func (b failingControlPlaneBackend) ListEnrollments(context.Context, string, string) ([]Enrollment, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetEnrollmentByTokenHash(context.Context, string) (Enrollment, bool, error) {
+	return Enrollment{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetEnrollmentByBootstrapTokenHash(context.Context, string) (Enrollment, bool, error) {
+	return Enrollment{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) ListArtifacts(context.Context, string, string, string) ([]Artifact, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetArtifact(context.Context, string, string) (Artifact, bool, error) {
+	return Artifact{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) ListChannels(context.Context, string) ([]ArtifactChannel, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetChannel(context.Context, string, string) (ArtifactChannel, bool, error) {
+	return ArtifactChannel{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) ListEvidencePullbacks(context.Context, string, string) ([]controlmodel.EvidencePullbackRequest, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) readFailure() error {
+	if b.operation == "security_read" {
+		return errors.New("backend down")
+	}
+	return nil
 }
 
 func (b failingControlPlaneBackend) WriteResponse(context.Context, responsemodel.Command, *responsemodel.Ack) error {
@@ -1393,7 +1537,10 @@ func (b failingControlPlaneBackend) CreateControlCommand(context.Context, contro
 	return true, nil
 }
 
-func (failingControlPlaneBackend) ListResponses(context.Context, string, string) ([]responsemodel.AuditRecord, error) {
+func (b failingControlPlaneBackend) ListResponses(context.Context, string, string) ([]responsemodel.AuditRecord, error) {
+	if b.operation == "response_read" {
+		return nil, errors.New("backend down")
+	}
 	return nil, nil
 }
 
@@ -1416,11 +1563,11 @@ func (b failingControlPlaneBackend) CommitPolicyPublication(context.Context, pol
 	return nil
 }
 
-func (b failingControlPlaneBackend) CommitPolicyAssignment(context.Context, policymodel.Assignment, policymodel.AuditRecord, *controlmodel.ControlCommand) error {
+func (b failingControlPlaneBackend) CommitPolicyAssignment(_ context.Context, _ policymodel.Assignment, _ policymodel.AuditRecord, command *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error) {
 	if b.operation == "assignment_commit" {
-		return errors.New("backend down")
+		return nil, errors.New("backend down")
 	}
-	return nil
+	return command, nil
 }
 
 func TestPolicyAssignmentAndEffectivePolicy(t *testing.T) {

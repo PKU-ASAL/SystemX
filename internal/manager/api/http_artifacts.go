@@ -21,7 +21,12 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		writeJSON(w, map[string]any{"artifacts": s.store.ListArtifacts(q.Get("tenant_id"), q.Get("kind"), q.Get("status"))})
+		artifacts, err := s.store.ListArtifactsWithError(q.Get("tenant_id"), q.Get("kind"), q.Get("status"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list artifacts: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"artifacts": artifacts})
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "admin") {
 			return
@@ -61,7 +66,11 @@ func (s *Server) artifactByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		artifact, ok := s.store.GetArtifact(tenantID, artifactID)
+		artifact, ok, err := s.store.GetArtifactWithError(tenantID, artifactID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("get artifact: %v", err), http.StatusInternalServerError)
+			return
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -184,7 +193,11 @@ func (s *Server) downloadArtifact(w http.ResponseWriter, r *http.Request, tenant
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	artifact, ok := s.store.GetArtifact(tenantID, artifactID)
+	artifact, ok, err := s.store.GetArtifactWithError(tenantID, artifactID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("get artifact: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok || artifact.Status == "revoked" {
 		http.NotFound(w, r)
 		return
@@ -214,7 +227,11 @@ func (s *Server) updateArtifactStatus(w http.ResponseWriter, r *http.Request, te
 	if !s.requireOperator(w, r, "admin") {
 		return
 	}
-	artifact, ok := s.store.GetArtifact(tenantID, artifactID)
+	artifact, ok, err := s.store.GetArtifactWithError(tenantID, artifactID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("get artifact: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return

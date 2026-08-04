@@ -23,7 +23,11 @@ func (s *Server) enrollments(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		items := s.store.ListEnrollments(q.Get("tenant_id"), q.Get("status"))
+		items, err := s.store.ListEnrollmentsWithError(q.Get("tenant_id"), q.Get("status"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list enrollments: %v", err), http.StatusInternalServerError)
+			return
+		}
 		for i := range items {
 			items[i] = publicEnrollment(items[i])
 		}
@@ -101,7 +105,11 @@ func (s *Server) enrollmentArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := enrollmentArtifactToken(r)
-	enrollment, ok := s.store.GetEnrollmentByTokenHash(enrollmentTokenHash(token))
+	enrollment, ok, err := s.store.GetEnrollmentByTokenHashWithError(enrollmentTokenHash(token))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read enrollment: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if token == "" || !ok || enrollment.Status != "active" || enrollment.ArtifactID == "" {
 		http.NotFound(w, r)
 		return
@@ -110,7 +118,11 @@ func (s *Server) enrollmentArtifact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "enrollment expired", http.StatusGone)
 		return
 	}
-	artifact, ok := s.store.GetArtifact(enrollment.TenantID, enrollment.ArtifactID)
+	artifact, ok, err := s.store.GetArtifactWithError(enrollment.TenantID, enrollment.ArtifactID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read enrollment artifact: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok || artifact.Status != "active" {
 		http.NotFound(w, r)
 		return
@@ -143,7 +155,11 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 	}
 	token := strings.TrimSpace(req.Token)
 	tokenHash := enrollmentTokenHash(token)
-	enrollment, ok := s.store.GetEnrollmentByTokenHash(tokenHash)
+	enrollment, ok, err := s.store.GetEnrollmentByTokenHashWithError(tokenHash)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read enrollment: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok || (enrollment.Status != "active" && enrollment.Status != "issued") {
 		http.Error(w, "enrollment not found", http.StatusNotFound)
 		return

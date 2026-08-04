@@ -64,7 +64,7 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 
 	rec = getInstallScript(t, handler, created.InstallURL)
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") {
+	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") || !strings.Contains(body, "--timeout 60s") {
 		t.Fatalf("install script response = %d body=%s", rec.Code, body)
 	}
 	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, `"$tmp/install.sh" --profile "$SYSARMOR_INSTALL_PROFILE"`) {

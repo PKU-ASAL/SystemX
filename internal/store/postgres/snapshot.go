@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -110,6 +111,12 @@ func (b *tableBackend) ListResponses(ctx context.Context, tenantID, agentID stri
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 	return queryResponses(ctx, b.db, tenantID, agentID)
+}
+
+func (b *tableBackend) ListEvidencePullbacks(ctx context.Context, tenantID, agentID string) ([]controlmodel.EvidencePullbackRequest, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	return queryEvidencePullbacks(ctx, b.db, tenantID, agentID)
 }
 
 func (b *tableBackend) ListControlCommands(ctx context.Context, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error) {
@@ -254,6 +261,24 @@ func (b *tableBackend) GetChannel(ctx context.Context, tenantID, channel string)
 	return queryChannel(ctx, b.db, tenantID, channel)
 }
 
+func (b *tableBackend) GetAgentCertificate(ctx context.Context, tenantID, serial string) (store.AgentCertificate, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	var raw []byte
+	err := b.db.QueryRowContext(ctx, `SELECT data FROM agent_certificates WHERE tenant_id=$1 AND serial_number=$2`, tenantID, serial).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return store.AgentCertificate{}, false, nil
+	}
+	if err != nil {
+		return store.AgentCertificate{}, false, fmt.Errorf("query agent certificate: %w", err)
+	}
+	var cert store.AgentCertificate
+	if err := json.Unmarshal(raw, &cert); err != nil {
+		return store.AgentCertificate{}, false, fmt.Errorf("decode agent certificate: %w", err)
+	}
+	return cert, true, nil
+}
+
 func (b *tableBackend) WriteResponse(ctx context.Context, cmd responsemodel.Command, ack *responsemodel.Ack) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
@@ -307,10 +332,11 @@ func (b *tableBackend) CommitPolicyPublication(ctx context.Context, policy polic
 	})
 }
 
-func (b *tableBackend) CommitPolicyAssignment(ctx context.Context, assignment policymodel.Assignment, audit policymodel.AuditRecord, command *controlmodel.ControlCommand) error {
+func (b *tableBackend) CommitPolicyAssignment(ctx context.Context, assignment policymodel.Assignment, audit policymodel.AuditRecord, command *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	return b.withTransaction(ctx, func(tx *sql.Tx) error {
+	persistedCommand := command
+	err := b.withTransaction(ctx, func(tx *sql.Tx) error {
 		if err := upsertPolicyAssignment(ctx, tx, assignment); err != nil {
 			return err
 		}
@@ -323,11 +349,39 @@ func (b *tableBackend) CommitPolicyAssignment(ctx context.Context, assignment po
 				return err
 			}
 			if !created {
-				return fmt.Errorf("control command %s already exists", command.CommandID)
+				existing, err := findControlCommand(ctx, tx, command.TenantID, command.CommandID)
+				if err != nil {
+					return err
+				}
+				if existing == nil || !sameControlCommandRequest(*existing, *command) {
+					return fmt.Errorf("%w: control command %s has different payload", store.ErrConflict, command.CommandID)
+				}
+				persistedCommand = existing
 			}
 		}
 		return nil
 	})
+	return persistedCommand, err
+}
+
+func findControlCommand(ctx context.Context, db sqlExecutor, tenantID, commandID string) (*controlmodel.ControlCommand, error) {
+	commands, err := queryControlCommands(ctx, db, tenantID, "", "")
+	if err != nil {
+		return nil, err
+	}
+	for _, command := range commands {
+		if command.CommandID == commandID {
+			return &command, nil
+		}
+	}
+	return nil, nil
+}
+
+func sameControlCommandRequest(a, b controlmodel.ControlCommand) bool {
+	return a.CommandID == b.CommandID && a.TenantID == b.TenantID && a.AgentID == b.AgentID &&
+		a.Type == b.Type && a.PolicyID == b.PolicyID && a.PolicyVersion == b.PolicyVersion &&
+		a.ContentRef == b.ContentRef && a.ContentKind == b.ContentKind && a.ContentVersion == b.ContentVersion &&
+		a.Actor == b.Actor && a.Reason == b.Reason && bytes.Equal(a.PayloadJSON, b.PayloadJSON)
 }
 
 func (b *tableBackend) withTransaction(ctx context.Context, apply func(*sql.Tx) error) error {
@@ -364,6 +418,38 @@ func (b *tableBackend) WriteAgentCertificate(ctx context.Context, cert store.Age
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 	return upsertAgentCertificate(ctx, b.db, cert)
+}
+
+func (b *tableBackend) RevokeAgentCertificate(ctx context.Context, tenantID, agentID, enrollmentID, serial string, revokedAt time.Time, receipt string) (store.AgentCertificate, bool, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	var revoked store.AgentCertificate
+	var found bool
+	err := b.withTransaction(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `SELECT data FROM agent_certificates WHERE tenant_id=$1 AND serial_number=$2 FOR UPDATE`, tenantID, serial)
+		var raw []byte
+		if err := row.Scan(&raw); err == sql.ErrNoRows {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("read agent certificate for revocation: %w", err)
+		}
+		if err := json.Unmarshal(raw, &revoked); err != nil {
+			return fmt.Errorf("decode agent certificate for revocation: %w", err)
+		}
+		found = true
+		if revoked.AgentID != agentID || revoked.EnrollmentID != enrollmentID {
+			return fmt.Errorf("%w: certificate identity mismatch", store.ErrConflict)
+		}
+		if !revoked.RevokedAt.IsZero() && revoked.RevocationReceipt != "" {
+			return nil
+		}
+		if revoked.RevokedAt.IsZero() {
+			revoked.RevokedAt = revokedAt.UTC()
+		}
+		revoked.RevocationReceipt = receipt
+		return upsertAgentCertificate(ctx, tx, revoked)
+	})
+	return revoked, found, err
 }
 
 // saveTables projects the full platform-state snapshot in a single transaction
@@ -577,6 +663,35 @@ ORDER BY created_at ASC, command_id ASC
 	return out, nil
 }
 
+func queryEvidencePullbacks(ctx context.Context, db sqlExecutor, tenantID, agentID string) ([]controlmodel.EvidencePullbackRequest, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT data FROM evidence_pullbacks
+WHERE ($1 = '' OR tenant_id = $1)
+  AND ($2 = '' OR agent_id = $2)
+ORDER BY created_at ASC, request_id ASC
+`, tenantID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("query postgres evidence pullbacks: %w", err)
+	}
+	defer rows.Close()
+	out := []controlmodel.EvidencePullbackRequest{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan postgres evidence pullback: %w", err)
+		}
+		var request controlmodel.EvidencePullbackRequest
+		if err := json.Unmarshal(raw, &request); err != nil {
+			return nil, fmt.Errorf("decode postgres evidence pullback: %w", err)
+		}
+		out = append(out, request)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postgres evidence pullbacks: %w", err)
+	}
+	return out, nil
+}
+
 func queryPolicies(ctx context.Context, db sqlExecutor, tenantID string) ([]policymodel.Policy, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT data FROM policies
@@ -698,7 +813,7 @@ func queryEffectivePolicy(ctx context.Context, db sqlExecutor, tenantID, agentID
 	if policy, ok, err := queryPublishedPolicy(ctx, db, tenantID, policymodel.DefaultPolicyID, 0); err != nil || ok {
 		return policy, ok, err
 	}
-	return policymodel.DefaultPolicy(tenantID), true, nil
+	return policymodel.ManagerDefaultPolicy(tenantID), true, nil
 }
 
 func queryPolicyAssignments(ctx context.Context, db sqlExecutor, tenantID, agentID string) ([]policymodel.Assignment, error) {

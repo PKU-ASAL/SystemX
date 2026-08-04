@@ -39,7 +39,10 @@ func (s *Server) createEnrollment(r *http.Request, req enrollmentRequest, actor 
 	}
 	artifactID := strings.TrimSpace(req.ArtifactID)
 	if channelName := strings.TrimSpace(req.Channel); channelName != "" {
-		channel, ok := s.store.GetChannel(enrollment.TenantID, channelName)
+		channel, ok, err := s.store.GetChannelWithError(enrollment.TenantID, channelName)
+		if err != nil {
+			return enrollmentCreation{}, creationError(http.StatusInternalServerError, fmt.Errorf("read channel: %w", err))
+		}
 		if !ok && (!deployRequest || artifactID == "") {
 			return enrollmentCreation{}, creationError(http.StatusBadRequest, fmt.Errorf("channel not found"))
 		}
@@ -53,7 +56,10 @@ func (s *Server) createEnrollment(r *http.Request, req enrollmentRequest, actor 
 	}
 	var artifact *store.Artifact
 	if artifactID != "" {
-		resolved, ok := s.store.GetArtifact(enrollment.TenantID, artifactID)
+		resolved, ok, err := s.store.GetArtifactWithError(enrollment.TenantID, artifactID)
+		if err != nil {
+			return enrollmentCreation{}, creationError(http.StatusInternalServerError, fmt.Errorf("read artifact: %w", err))
+		}
 		if !ok || resolved.Status != "active" {
 			return enrollmentCreation{}, creationError(http.StatusBadRequest, fmt.Errorf("active artifact not found"))
 		}

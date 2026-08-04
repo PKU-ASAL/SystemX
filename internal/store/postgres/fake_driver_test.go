@@ -19,6 +19,10 @@ var fakeSQLState struct {
 	lastQuery string
 	queries   []string
 	execErr   error
+	queryErr  error
+	queryRows [][]driver.Value
+	commits   int
+	rollbacks int
 }
 
 func FakeSetExecError(err error) {
@@ -27,6 +31,31 @@ func FakeSetExecError(err error) {
 	fakeSQLState.lastQuery = ""
 	fakeSQLState.queries = nil
 	fakeSQLState.execErr = err
+	fakeSQLState.queryErr = nil
+	fakeSQLState.queryRows = nil
+	fakeSQLState.commits = 0
+	fakeSQLState.rollbacks = 0
+}
+
+func FakeSetQueryResult(rows [][]byte, err error) {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.lastQuery = ""
+	fakeSQLState.queries = nil
+	fakeSQLState.execErr = nil
+	fakeSQLState.queryErr = err
+	fakeSQLState.queryRows = make([][]driver.Value, 0, len(rows))
+	for _, row := range rows {
+		fakeSQLState.queryRows = append(fakeSQLState.queryRows, []driver.Value{row})
+	}
+	fakeSQLState.commits = 0
+	fakeSQLState.rollbacks = 0
+}
+
+func FakeTransactionCounts() (int, int) {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	return fakeSQLState.commits, fakeSQLState.rollbacks
 }
 
 func FakeLastQuery() string {
@@ -85,29 +114,54 @@ func (s fakeSQLStmt) Exec([]driver.Value) (driver.Result, error) {
 }
 
 func (s fakeSQLStmt) Query([]driver.Value) (driver.Rows, error) {
-	return fakeSQLRows{}, nil
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.lastQuery = s.query
+	fakeSQLState.queries = append(fakeSQLState.queries, s.query)
+	if fakeSQLState.queryErr != nil {
+		return nil, fakeSQLState.queryErr
+	}
+	rows := make([][]driver.Value, len(fakeSQLState.queryRows))
+	for i := range fakeSQLState.queryRows {
+		rows[i] = append([]driver.Value(nil), fakeSQLState.queryRows[i]...)
+	}
+	return &fakeSQLRows{rows: rows}, nil
 }
 
 type fakeSQLTx struct{}
 
 func (fakeSQLTx) Commit() error {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.commits++
 	return nil
 }
 
 func (fakeSQLTx) Rollback() error {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.rollbacks++
 	return nil
 }
 
-type fakeSQLRows struct{}
+type fakeSQLRows struct {
+	rows [][]driver.Value
+	next int
+}
 
-func (fakeSQLRows) Columns() []string {
+func (*fakeSQLRows) Columns() []string {
+	return []string{"data"}
+}
+
+func (*fakeSQLRows) Close() error {
 	return nil
 }
 
-func (fakeSQLRows) Close() error {
+func (r *fakeSQLRows) Next(dest []driver.Value) error {
+	if r.next >= len(r.rows) {
+		return io.EOF
+	}
+	copy(dest, r.rows[r.next])
+	r.next++
 	return nil
-}
-
-func (fakeSQLRows) Next([]driver.Value) error {
-	return io.EOF
 }
