@@ -90,14 +90,16 @@ func TestOpenPostgresRunsMigrationAndPersistsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(postgres) error = %v", err)
 	}
-	if result.Migration.Version != 1 {
-		t.Fatalf("migration version = %d, want 1", result.Migration.Version)
+	if result.Migration.Version != 2 {
+		t.Fatalf("migration version = %d, want 2", result.Migration.Version)
 	}
 	if result.Store == nil || result.Store.Info().Backend != KindPostgres {
 		t.Fatalf("store info = %+v", result.Store.Info())
 	}
 	if execLog := fakeExecLog(); strings.Contains(execLog, "CREATE TABLE IF NOT EXISTS incidents") {
 		t.Fatalf("postgres migration still creates incident reports: %s", execLog)
+	} else if !strings.Contains(execLog, "CREATE TABLE IF NOT EXISTS agent_unenrollments") {
+		t.Fatalf("postgres migration omitted agent unenrollment lifecycle: %s", execLog)
 	}
 	if _, err := result.Store.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-pg",
