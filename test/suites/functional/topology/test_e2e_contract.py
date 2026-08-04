@@ -43,6 +43,33 @@ class TopologyE2EContractTest(unittest.TestCase):
                 )
                 self.assertIn("--content-key-id topology-test", script)
 
+    def test_vm_topology_closes_managed_policy_rollout(self):
+        script = (Path(__file__).resolve().parent / "e2e-systemd-vm.sh").read_text()
+
+        self.assertIn("manager policies assign", script)
+        self.assertIn("--downlink", script)
+        self.assertIn("topology-rollout-policy", script)
+        self.assertIn("/api/v1/policy-rollouts", script)
+        self.assertIn("rollout-pending.json", script)
+        self.assertIn("rollout-applied.json", script)
+        self.assertIn("rollout-after-restart.json", script)
+
+    def test_vm_topology_waits_for_sensor_policy_before_workload(self):
+        script = (Path(__file__).resolve().parent / "e2e-systemd-vm.sh").read_text()
+
+        self.assertIn('"policy_loaded":true', script)
+        self.assertIn("sudo /bin/true", script)
+        self.assertIn("SYSARMOR_TOPOLOGY_WAIT_SECONDS:-120", script)
+
+    def test_vm_topology_closes_online_unenrollment_and_restart(self):
+        script = (Path(__file__).resolve().parent / "e2e-systemd-vm.sh").read_text()
+
+        self.assertIn("sysarmorctl --json unenroll --timeout 60s", script)
+        self.assertIn('"status":"applied"', script)
+        self.assertIn('"policyId":"standalone-default"', script)
+        self.assertIn("managed enrollment credentials removed", script)
+        self.assertIn("standalone policy after unenrollment restart", script)
+
 
 if __name__ == "__main__":
     unittest.main()
