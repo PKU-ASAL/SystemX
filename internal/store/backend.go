@@ -43,6 +43,8 @@ type Backend interface {
 	ListChannels(ctx context.Context, tenantID string) ([]ArtifactChannel, error)
 	GetChannel(ctx context.Context, tenantID, channel string) (ArtifactChannel, bool, error)
 	GetAgentCertificate(ctx context.Context, tenantID, serial string) (AgentCertificate, bool, error)
+	GetUnenrollment(ctx context.Context, tenantID, enrollmentID string) (UnenrollmentRecord, bool, error)
+	ListUnenrollments(ctx context.Context, tenantID string) ([]UnenrollmentRecord, error)
 
 	CreateResponse(ctx context.Context, cmd responsemodel.Command) (bool, error)
 	WriteResponse(ctx context.Context, cmd responsemodel.Command, ack *responsemodel.Ack) error
@@ -58,6 +60,8 @@ type Backend interface {
 	WriteChannel(ctx context.Context, channel ArtifactChannel) error
 	WriteAgentCertificate(ctx context.Context, cert AgentCertificate) error
 	RevokeAgentCertificate(ctx context.Context, tenantID, agentID, enrollmentID, serial string, revokedAt time.Time, receipt string) (AgentCertificate, bool, error)
+	AuthorizeAgentUnenrollment(ctx context.Context, tenantID, agentID, enrollmentID, serial, tokenHash string, revokedAt time.Time, receipt string) (AgentCertificate, UnenrollmentRecord, bool, error)
+	CompleteAgentUnenrollment(ctx context.Context, tenantID, agentID, enrollmentID, serial, receipt, tokenHash string, completedAt time.Time) (UnenrollmentRecord, bool, error)
 }
 
 type MetricsBackend interface {

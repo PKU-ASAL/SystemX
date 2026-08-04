@@ -1382,6 +1382,60 @@ func TestRevokeAgentCertificateIsIdempotentAndRejectsIdentityConflict(t *testing
 	}
 }
 
+func TestAuthorizeAgentUnenrollmentIsIdempotent(t *testing.T) {
+	st := &Store{}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: "42",
+	})
+	tokenHash := strings.Repeat("a", 64)
+	revokedAt := time.Unix(100, 0).UTC()
+
+	first, ok, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", tokenHash, revokedAt)
+	if err != nil || !ok || first.Status != UnenrollmentRevokedEndpointPending || first.RevocationReceipt == "" || !first.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("first=%+v ok=%t err=%v", first, ok, err)
+	}
+	replayed, ok, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", tokenHash, revokedAt.Add(time.Hour))
+	if err != nil || !ok || replayed.RevocationReceipt != first.RevocationReceipt || !replayed.RevokedAt.Equal(first.RevokedAt) {
+		t.Fatalf("replayed=%+v ok=%t err=%v", replayed, ok, err)
+	}
+	if _, _, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", strings.Repeat("b", 64), revokedAt); !errors.Is(err, ErrConflict) {
+		t.Fatalf("token hash conflict error=%v, want ErrConflict", err)
+	}
+	certificate, ok, err := st.GetAgentCertificateWithError("tenant-a", "42")
+	if err != nil || !ok || certificate.RevocationReceipt != first.RevocationReceipt || !certificate.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("certificate=%+v ok=%t err=%v", certificate, ok, err)
+	}
+}
+
+func TestCompleteAgentUnenrollmentValidatesBindingsAndIsIdempotent(t *testing.T) {
+	st := &Store{}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: "42",
+	})
+	tokenHash := strings.Repeat("a", 64)
+	record, ok, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", tokenHash, time.Unix(100, 0).UTC())
+	if err != nil || !ok {
+		t.Fatalf("authorize=%+v ok=%t err=%v", record, ok, err)
+	}
+	if _, _, err := st.CompleteAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", record.RevocationReceipt, strings.Repeat("b", 64), time.Unix(200, 0).UTC()); !errors.Is(err, ErrConflict) {
+		t.Fatalf("completion conflict error=%v, want ErrConflict", err)
+	}
+	pending, ok, err := st.GetUnenrollmentWithError("tenant-a", "enroll-a")
+	if err != nil || !ok || pending.Status != UnenrollmentRevokedEndpointPending {
+		t.Fatalf("pending=%+v ok=%t err=%v", pending, ok, err)
+	}
+
+	completedAt := time.Unix(200, 0).UTC()
+	completed, ok, err := st.CompleteAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", record.RevocationReceipt, tokenHash, completedAt)
+	if err != nil || !ok || completed.Status != UnenrollmentEndpointCompleted || !completed.EndpointCompletedAt.Equal(completedAt) {
+		t.Fatalf("completed=%+v ok=%t err=%v", completed, ok, err)
+	}
+	replayed, ok, err := st.CompleteAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", record.RevocationReceipt, tokenHash, completedAt.Add(time.Hour))
+	if err != nil || !ok || !replayed.EndpointCompletedAt.Equal(completedAt) {
+		t.Fatalf("replayed=%+v ok=%t err=%v", replayed, ok, err)
+	}
+}
+
 func TestPendingResponsesWithErrorReturnsBackendFailure(t *testing.T) {
 	st := &Store{}
 	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "response_read"}, Info{Backend: "test"})

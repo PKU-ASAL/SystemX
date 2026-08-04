@@ -1,12 +1,30 @@
 package migrations
 
-const PostgresVersion = 1
+const PostgresVersion = 2
 
 type Migration struct {
 	Version int
 	Name    string
 	SQL     string
 }
+
+const AgentUnenrollmentsSchema = `
+CREATE TABLE IF NOT EXISTS agent_unenrollments (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  enrollment_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  certificate_serial TEXT NOT NULL,
+  status TEXT NOT NULL,
+  revoked_at TIMESTAMPTZ NOT NULL,
+  endpoint_completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (tenant_id, enrollment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_unenrollments_agent ON agent_unenrollments (tenant_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_unenrollments_status ON agent_unenrollments (tenant_id, status);
+`
 
 const PostgresSchema = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -281,10 +299,11 @@ CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions (tenant_i
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_workload ON rarity_baseline (tenant_id, workload_key);
 CREATE INDEX IF NOT EXISTS idx_rarity_baseline_signal ON rarity_baseline (tenant_id, signal_name);
 
-`
+` + AgentUnenrollmentsSchema
 
 func Ordered() []Migration {
 	return []Migration{
 		{Version: 1, Name: "current_control_plane_baseline", SQL: PostgresSchema},
+		{Version: 2, Name: "agent_unenrollment_lifecycle", SQL: AgentUnenrollmentsSchema},
 	}
 }

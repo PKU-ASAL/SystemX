@@ -53,6 +53,7 @@ type Store struct {
 	Artifacts       []Artifact
 	Channels        []ArtifactChannel
 	Certificates    []AgentCertificate
+	Unenrollments   []UnenrollmentRecord
 	Metrics         Metrics
 	RarityBaseline  rarity.Baseline
 }
@@ -192,6 +193,7 @@ type State struct {
 	Artifacts       []Artifact                             `json:"artifacts,omitempty"`
 	Channels        []ArtifactChannel                      `json:"channels,omitempty"`
 	Certificates    []AgentCertificate                     `json:"certificates,omitempty"`
+	Unenrollments   []UnenrollmentRecord                   `json:"unenrollments,omitempty"`
 	Metrics         Metrics                                `json:"metrics"`
 	RarityBaseline  rarity.Baseline                        `json:"rarity_baseline,omitempty"`
 }
@@ -277,6 +279,7 @@ func (s *Store) ImportState(state State) error {
 	s.Artifacts = state.Artifacts
 	s.Channels = state.Channels
 	s.Certificates = state.Certificates
+	s.Unenrollments = state.Unenrollments
 	s.Metrics = state.Metrics
 	s.RarityBaseline = state.RarityBaseline.Snapshot()
 	return nil
@@ -2971,6 +2974,7 @@ func (s *Store) exportStateLocked() (State, error) {
 	}
 	state.Channels = append([]ArtifactChannel(nil), s.Channels...)
 	state.Certificates = append([]AgentCertificate(nil), s.Certificates...)
+	state.Unenrollments = append([]UnenrollmentRecord(nil), s.Unenrollments...)
 	for _, agent := range s.Agents {
 		raw, err := json.Marshal(agent)
 		if err != nil {
