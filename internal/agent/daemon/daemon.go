@@ -104,6 +104,7 @@ type AgentRuntime struct {
 	detectionUpdateMu       sync.Mutex
 	enrollmentCoordinatorMu sync.Mutex
 	enrollmentCoordinator   *enrollmentCoordinator
+	completionReporter      *unenrollmentCompletionReporter
 	policyAuthorityMu       sync.RWMutex
 	identity                runtimeIdentity
 	standaloneIdentity      runtimeIdentity
@@ -112,7 +113,8 @@ type AgentRuntime struct {
 	managedControl          *TransportRuntime
 	sensorSupervisor        *sensorruntime.SubscriptionSupervisor
 	pendingEndpoint         *preparedEndpointPolicy
-	revokeEnrollment        func(context.Context, localstore.Enrollment) (string, time.Time, error)
+	revokeEnrollment        func(context.Context, localstore.Enrollment, string) (string, time.Time, error)
+	reportUnenrollment      func(context.Context) (bool, error)
 	endpointPolicy          policy.EndpointPolicy
 	effectiveTelemetry      config.EffectiveTelemetry
 	policy                  policymodel.Policy
@@ -210,6 +212,9 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	}
 	if opts.Out != nil {
 		r.Out = opts.Out
+	}
+	if r.localStore != nil {
+		defer r.startUnenrollmentCompletionReporter(ctx)()
 	}
 	startedAt := time.Now()
 	reporter := r.healthReporter()

@@ -327,7 +327,7 @@ func openEndpointPolicyStore(t *testing.T) *localstore.Store {
 
 func newEndpointPolicyRunner(t *testing.T, store *localstore.Store, sensor contract.Sensor) *AgentRuntime {
 	t.Helper()
-	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "device-a", TenantID: "local"}, Telemetry: config.DefaultTelemetryConfig()}, Sensor: sensor, localStore: store, capability: contract.Capability{Backend: "fake", SupportsExec: true}}
+	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "device-a", TenantID: "local"}, Telemetry: config.DefaultTelemetryConfig()}, Sensor: sensor, localStore: store, capability: contract.Capability{Backend: "fake", SupportsExec: true}, reportUnenrollment: func(context.Context) (bool, error) { return true, nil }}
 	installTestDetection(t, runner)
 	return runner
 }

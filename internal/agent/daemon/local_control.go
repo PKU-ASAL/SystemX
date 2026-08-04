@@ -837,20 +837,36 @@ func (r *AgentRuntime) managementLifecycleStatus(ctx context.Context) (*controlp
 	if err != nil {
 		return nil, err
 	}
-	return &controlplanev1.ManagementLifecycleStatus{
+	status := &controlplanev1.ManagementLifecycleStatus{
 		Mode:                string(enrollment.State),
 		TransitionPhase:     enrollment.TransitionPhase,
 		RevocationConfirmed: enrollment.RevocationConfirmed,
 		LastTransitionError: enrollment.LastTransitionError,
 		UpdatedAt:           timestampString(enrollment.UpdatedAt),
-	}, nil
+	}
+	completion, ok, err := r.localStore.UnenrollmentCompletion(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		if completion.Status == localstore.CompletionPrepared {
+			status.ManagerCompletionStatus = "revocation_pending"
+		} else if completion.Status == localstore.CompletionReady {
+			status.ManagerCompletionStatus = "endpoint_completion_pending"
+		}
+		status.UpdatedAt = timestampString(completion.UpdatedAt)
+		if completion.LastError != "" {
+			status.LastTransitionError = completion.LastError
+		}
+	}
+	return status, nil
 }
 
 func managementLifecycleDegraded(status *controlplanev1.ManagementLifecycleStatus) bool {
 	if status == nil {
 		return false
 	}
-	return status.GetTransitionPhase() != "" || status.GetLastTransitionError() != ""
+	return status.GetTransitionPhase() != "" || status.GetManagerCompletionStatus() != "" || status.GetLastTransitionError() != ""
 }
 
 func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {

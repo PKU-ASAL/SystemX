@@ -2,6 +2,10 @@ package daemon
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -38,6 +42,10 @@ func (c *enrollmentCoordinator) Enroll(ctx context.Context, managerURL, token st
 	if result, handled := c.existingEnrollment(ctx); handled {
 		return result
 	}
+	managerURL, err := normalizeManagerURL(managerURL)
+	if err != nil {
+		return c.result("rejected", err.Error())
+	}
 	certificate, keyPEM, pendingKeyPath, err := requestEnrollmentCertificate(ctx, managerURL, token, c.runner.Config.Local.StatePath)
 	if err != nil {
 		return c.result("rejected", err.Error())
@@ -54,7 +62,7 @@ func (c *enrollmentCoordinator) Enroll(ctx context.Context, managerURL, token st
 	if uploadHistory {
 		fromSequence = stats.OldestEventSequence
 	}
-	enrollment := localstore.Enrollment{State: localstore.StateEnrolling, TenantID: certificate.TenantID, AgentID: certificate.AgentID, EnrollmentID: certificate.EnrollmentID, CertificateSerial: certificate.SerialNumber, GatewayAddress: certificate.GatewayAddress, TLSCAPath: paths.CA, TLSCertPath: paths.Certificate, TLSKeyPath: paths.Key, TLSServerName: certificate.GatewayServerName, UploadHistory: uploadHistory, ManagedFromSequence: fromSequence}
+	enrollment := localstore.Enrollment{State: localstore.StateEnrolling, TenantID: certificate.TenantID, AgentID: certificate.AgentID, EnrollmentID: certificate.EnrollmentID, CertificateSerial: certificate.SerialNumber, ManagerURL: managerURL, GatewayAddress: certificate.GatewayAddress, TLSCAPath: paths.CA, TLSCertPath: paths.Certificate, TLSKeyPath: paths.Key, TLSServerName: certificate.GatewayServerName, UploadHistory: uploadHistory, ManagedFromSequence: fromSequence}
 	if c.runner.network != nil {
 		c.runner.network.Stop()
 	}
@@ -84,29 +92,40 @@ func (c *enrollmentCoordinator) Unenroll(ctx context.Context) enrollmentResult {
 		return c.result("rejected", "local store is unavailable")
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	current, err := c.runner.localStore.BeginUnenrollment(ctx)
+	result, locallyComplete := c.unenrollLocked(ctx)
+	c.mu.Unlock()
+	if !locallyComplete {
+		return result
+	}
+	if _, err := c.reportCompletion(ctx); err != nil {
+		return c.result("pending", "agent returned to standalone mode; manager completion is pending: "+err.Error())
+	}
+	return c.result("applied", "manager confirmed endpoint unenrollment completion")
+}
+
+func (c *enrollmentCoordinator) unenrollLocked(ctx context.Context) (enrollmentResult, bool) {
+	current, completion, err := c.prepareUnenrollment(ctx)
 	if err != nil {
-		return c.result("rejected", err.Error())
+		return c.result("rejected", err.Error()), false
 	}
 	if !current.RevocationConfirmed {
 		revoke := c.runner.revokeEnrollment
 		if revoke == nil {
 			revoke = revokeEnrollmentOnline
 		}
-		receipt, revokedAt, err := revoke(ctx, current)
+		receipt, revokedAt, err := revoke(ctx, current, completion.TokenHash)
 		if err != nil {
 			_ = c.runner.localStore.RecordUnenrollmentError(ctx, err.Error())
-			return c.result("pending", "manager certificate revocation is pending: "+err.Error())
+			return c.result("pending", "manager certificate revocation is pending: "+err.Error()), false
 		}
 		if err := c.runner.localStore.ConfirmEnrollmentRevocation(ctx, receipt, revokedAt); err != nil {
-			return c.result("rejected", err.Error())
+			return c.result("rejected", err.Error()), false
 		}
 	}
 	if err := c.completeConfirmed(c.lifecycleCtx, current); err != nil {
-		return c.result("rejected", err.Error())
+		return c.result("rejected", err.Error()), false
 	}
-	return c.result("applied", "manager revoked enrollment certificate; agent returned to standalone mode")
+	return enrollmentResult{}, true
 }
 
 func (c *enrollmentCoordinator) Resume(ctx context.Context) error {
@@ -167,6 +186,59 @@ func (c *enrollmentCoordinator) completeConfirmed(ctx context.Context, current l
 	}
 	c.runner.applyEnrollmentIdentity(standalone)
 	return nil
+}
+
+func (c *enrollmentCoordinator) prepareUnenrollment(ctx context.Context) (localstore.Enrollment, localstore.UnenrollmentCompletion, error) {
+	current, err := c.runner.localStore.Enrollment(ctx)
+	if err != nil {
+		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, err
+	}
+	if current.State == localstore.StateUnenrolling {
+		completion, ok, err := c.runner.localStore.UnenrollmentCompletion(ctx)
+		if err != nil {
+			return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, fmt.Errorf("read prepared unenrollment completion: %w", err)
+		}
+		if !ok {
+			return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, fmt.Errorf("prepared unenrollment completion does not exist")
+		}
+		return current, completion, nil
+	}
+	token, tokenHash, err := newUnenrollmentCompletionToken()
+	if err != nil {
+		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, err
+	}
+	current, err = c.runner.localStore.PrepareUnenrollment(ctx, token, tokenHash)
+	if err != nil {
+		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, err
+	}
+	completion, ok, err := c.runner.localStore.UnenrollmentCompletion(ctx)
+	if err != nil {
+		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, fmt.Errorf("read prepared unenrollment completion: %w", err)
+	}
+	if !ok {
+		return localstore.Enrollment{}, localstore.UnenrollmentCompletion{}, fmt.Errorf("prepared unenrollment completion does not exist")
+	}
+	return current, completion, nil
+}
+
+func newUnenrollmentCompletionToken() (string, string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", "", fmt.Errorf("generate unenrollment completion token: %w", err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(raw)
+	hash := sha256.Sum256([]byte(token))
+	return token, hex.EncodeToString(hash[:]), nil
+}
+
+func (c *enrollmentCoordinator) reportCompletion(ctx context.Context) (bool, error) {
+	if c.runner.reportUnenrollment != nil {
+		return c.runner.reportUnenrollment(ctx)
+	}
+	if c.runner.completionReporter == nil {
+		return false, fmt.Errorf("unenrollment completion reporter is unavailable")
+	}
+	return c.runner.completionReporter.ReportOnce(ctx)
 }
 
 func (c *enrollmentCoordinator) result(status, message string) enrollmentResult {

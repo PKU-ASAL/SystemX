@@ -18,7 +18,7 @@ import (
 func TestEnrollmentCoordinatorKeepsManagedAuthorityWhileRevocationIsPending(t *testing.T) {
 	store := coordinatorManagedStore(t)
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "", time.Time{}, context.DeadlineExceeded
 	}
 	coordinator := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor))
@@ -37,6 +37,45 @@ func TestEnrollmentCoordinatorKeepsManagedAuthorityWhileRevocationIsPending(t *t
 	}
 }
 
+func TestEnrollmentCoordinatorPersistsCompletionBeforeRevocation(t *testing.T) {
+	store := coordinatorManagedStore(t)
+	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
+	runner.reportUnenrollment = func(context.Context) (bool, error) { return true, nil }
+	runner.revokeEnrollment = func(_ context.Context, _ localstore.Enrollment, tokenHash string) (string, time.Time, error) {
+		completion, ok, err := store.UnenrollmentCompletion(t.Context())
+		if err != nil || !ok || completion.Status != localstore.CompletionPrepared || completion.TokenHash != tokenHash {
+			t.Fatalf("completion=%+v ok=%t err=%v", completion, ok, err)
+		}
+		return "receipt-a", time.Now().UTC(), nil
+	}
+
+	if result := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor)).Unenroll(t.Context()); result.Status != "applied" {
+		t.Fatalf("Unenroll() result=%+v", result)
+	}
+}
+
+func TestEnrollmentCoordinatorDoesNotReportBeforeLocalCompletion(t *testing.T) {
+	store := coordinatorManagedStore(t)
+	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
+		return "receipt-a", time.Now().UTC(), nil
+	}
+	var reportCalls atomic.Int32
+	runner.reportUnenrollment = func(context.Context) (bool, error) {
+		reportCalls.Add(1)
+		return true, nil
+	}
+	coordinator := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor))
+	coordinator.completeUnenrollment = func(context.Context, string) error { return errors.New("sqlite commit failed") }
+
+	if result := coordinator.Unenroll(t.Context()); result.Status != "rejected" {
+		t.Fatalf("Unenroll() result=%+v", result)
+	}
+	if reportCalls.Load() != 0 {
+		t.Fatalf("completion reports=%d, want 0", reportCalls.Load())
+	}
+}
+
 func TestEnrollmentCoordinatorResumesConfirmedUnenrollmentWithoutRevocationRPC(t *testing.T) {
 	store := coordinatorManagedStore(t)
 	if _, err := store.BeginUnenrollment(t.Context()); err != nil {
@@ -47,7 +86,7 @@ func TestEnrollmentCoordinatorResumesConfirmedUnenrollmentWithoutRevocationRPC(t
 	}
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
 	var revokeCalls atomic.Int32
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		revokeCalls.Add(1)
 		return "", time.Time{}, context.Canceled
 	}
@@ -138,7 +177,7 @@ func TestEnrollmentCoordinatorSuccessfulUnenrollmentRemovesCredentials(t *testin
 		}
 	}
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "receipt-a", time.Now().UTC(), nil
 	}
 	coordinator := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor))
@@ -159,7 +198,7 @@ func TestEnrollmentCoordinatorCompletesConfirmedUnenrollmentAfterRequestCancella
 	releaseApply := make(chan struct{})
 	sensor := &requestCancellationSensor{applyStarted: applyStarted, releaseApply: releaseApply}
 	runner := newEndpointPolicyRunner(t, store, sensor)
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "receipt-a", time.Now().UTC(), nil
 	}
 	coordinator := newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(sensor))
@@ -183,7 +222,7 @@ func TestEnrollmentCoordinatorCompletesConfirmedUnenrollmentAfterRequestCancella
 func TestEnrollmentCoordinatorDoesNotHoldPolicyAuthorityWhileReconcilingStandalone(t *testing.T) {
 	store := coordinatorManagedStore(t)
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "receipt-a", time.Now().UTC(), nil
 	}
 	apply := make(chan struct{})

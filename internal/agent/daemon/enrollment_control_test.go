@@ -25,7 +25,7 @@ func TestUnenrollDoesNotWaitForManagedFlowWhileHoldingPolicyAuthority(t *testing
 	}
 	setManagedEnrollmentForTest(t, store)
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "receipt-a", time.Now().UTC(), nil
 	}
 	runner.setEndpointPolicy(standalone)
@@ -63,7 +63,7 @@ func TestUnenrollRemainsManagedWhenManagerRevocationIsUnconfirmed(t *testing.T) 
 	}
 	setManagedEnrollmentForTest(t, store)
 	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
-	runner.revokeEnrollment = func(context.Context, localstore.Enrollment) (string, time.Time, error) {
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "", time.Time{}, context.DeadlineExceeded
 	}
 	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor)}
@@ -111,7 +111,7 @@ func TestEnrollRejectsManagedAgentWithoutRequestingAnotherCertificate(t *testing
 }
 
 func testRemoteEnrollment() localstore.Enrollment {
-	return localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}
+	return localstore.Enrollment{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", CertificateSerial: "42", ManagerURL: "https://manager.example", GatewayAddress: "gateway", TLSCAPath: "/ca", TLSCertPath: "/cert", TLSKeyPath: "/key"}
 }
 
 func setManagedEnrollmentForTest(t *testing.T, store *localstore.Store) {

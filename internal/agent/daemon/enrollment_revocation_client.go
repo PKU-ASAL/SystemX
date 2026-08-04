@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func revokeEnrollmentOnline(ctx context.Context, enrollment localstore.Enrollment) (string, time.Time, error) {
+func revokeEnrollmentOnline(ctx context.Context, enrollment localstore.Enrollment, completionTokenHash string) (string, time.Time, error) {
 	creds, err := tlsconfig.ClientCredentials(tlsconfig.ClientConfig{
 		CAFile: enrollment.TLSCAPath, CertFile: enrollment.TLSCertPath, KeyFile: enrollment.TLSKeyPath, ServerName: enrollment.TLSServerName,
 	})
@@ -27,12 +27,13 @@ func revokeEnrollmentOnline(ctx context.Context, enrollment localstore.Enrollmen
 	defer conn.Close()
 	response, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).RevokeEnrollment(dialCtx, &controlplanev1.RevokeEnrollmentRequest{
 		TenantId: enrollment.TenantID, AgentId: enrollment.AgentID, EnrollmentId: enrollment.EnrollmentID, CertificateSerial: enrollment.CertificateSerial,
+		CompletionTokenHash: completionTokenHash,
 	})
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("revoke enrollment certificate: %w", err)
 	}
 	revokedAt, err := time.Parse(time.RFC3339Nano, response.GetRevokedAt())
-	if err != nil || response.GetReceiptId() == "" || response.GetStatus() != "revoked" {
+	if err != nil || response.GetReceiptId() == "" || response.GetStatus() != "revoked" || !response.GetCompletionRequired() {
 		return "", time.Time{}, fmt.Errorf("manager revocation response is invalid")
 	}
 	return response.GetReceiptId(), revokedAt.UTC(), nil

@@ -146,11 +146,24 @@ func parseEnrollmentKey(data []byte) (*ecdsa.PrivateKey, error) {
 }
 
 func enrollmentEndpoint(base string) (string, error) {
-	u, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("manager_url must be an absolute HTTP(S) URL")
+	base, err := normalizeManagerURL(base)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/api/v1/enrollment-certificate"
+	return u.String(), nil
+}
+
+func normalizeManagerURL(base string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return "", fmt.Errorf("manager_url must be an absolute HTTP(S) URL")
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String(), nil
