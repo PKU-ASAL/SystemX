@@ -202,6 +202,21 @@ class MonorepoLayoutContractTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((root / name).is_file(), f"missing tetragon/{name}")
 
+    def test_sysarmorctl_responsibility_files(self):
+        root = self.repo / "apps/cli/cmd/sysarmorctl"
+        expected = (
+            "local.go",
+            "payload.go",
+            "manager.go",
+            "manager_policy.go",
+            "manager_control.go",
+            "manager_artifact.go",
+            "http.go",
+        )
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertTrue((root / name).is_file(), f"missing sysarmorctl/{name}")
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",
