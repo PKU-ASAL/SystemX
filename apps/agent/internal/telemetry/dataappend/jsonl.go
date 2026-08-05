@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/detection"
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/normalize"
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/ringbuffer"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/detection"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/event/normalize"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry/ringbuffer"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"

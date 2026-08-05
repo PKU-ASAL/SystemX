@@ -3,7 +3,7 @@ package daemon
 import (
 	"fmt"
 
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/normalize"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/event/normalize"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"

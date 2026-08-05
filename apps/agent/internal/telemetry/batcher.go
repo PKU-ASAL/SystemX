@@ -8,7 +8,7 @@ import (
 
 	"github.com/sysarmor/sysarmor-next-project/packages/contracts/schema"
 
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/dataappend"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry/dataappend"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	"google.golang.org/protobuf/proto"
 )

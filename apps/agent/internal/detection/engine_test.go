@@ -17,7 +17,7 @@ import (
 )
 
 func TestRepositoryDefaultPolicyCoversDefaultDetectionContent(t *testing.T) {
-	raw, err := os.ReadFile("../../../../../deployments/agent/policy.json")
+	raw, err := os.ReadFile("../../../../deployments/agent/policy.json")
 	if err != nil {
 		t.Fatal(err)
 	}

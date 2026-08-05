@@ -6,7 +6,7 @@ import (
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/content"
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/detection"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/detection"
 	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 

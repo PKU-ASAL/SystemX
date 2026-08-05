@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/matcher"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/detection/matcher"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
 )

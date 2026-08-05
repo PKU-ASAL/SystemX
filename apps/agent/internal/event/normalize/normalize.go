@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	endpointctx "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/context"
+	endpointctx "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/event/context"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"

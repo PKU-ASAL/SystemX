@@ -22,8 +22,8 @@ run_bench() {
   ) | tee "$out"
 }
 
-run_bench detection ./apps/agent/internal/endpoint/detection 'BenchmarkEngineProcess'
-run_bench matcher ./apps/agent/internal/endpoint/matcher .
+run_bench detection ./apps/agent/internal/detection 'BenchmarkEngineProcess'
+run_bench matcher ./apps/agent/internal/detection/matcher .
 
 cat > "$OUT_DIR/summary.txt" <<EOF
 run_id=$RUN_ID

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/ringbuffer"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry/ringbuffer"
 )
 
 func TestReadProtoJSONLStoresSensorRawRefs(t *testing.T) {
