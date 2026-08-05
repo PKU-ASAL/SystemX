@@ -23,16 +23,17 @@ make web-build
 
 | 目录 | 负责内容 |
 |---|---|
-| `cmd/` | 薄可执行入口和依赖组装 |
+| `apps/*/cmd/` | 各产品的薄可执行入口和依赖组装 |
 | `packages/contracts/proto/` | Agent 数据面与控制面 wire contract |
 | `apps/agent/internal/` | 配置、本地状态、注册、Policy 和 daemon 生命周期 |
 | `apps/agent/internal/endpoint/` | 事件规范化、匹配和端侧检测 |
-| `apps/agent/internal/sensors/` | Sensor contract 与平台适配器 |
-| `internal/gateway/` | Agent-facing mTLS gRPC |
-| `internal/workers/` | 持久遥测消费、分析和投影 |
-| `internal/manager/` | Operator API、鉴权和控制面流程 |
-| `internal/store/` | PostgreSQL 控制面持久化 |
-| `internal/platform/` | Kafka、Redis、OpenSearch adapter |
+| `apps/agent/internal/sensors/` | Sensor 运行时与平台适配器实现 |
+| `apps/manager/internal/gateway/` | Agent-facing mTLS gRPC |
+| `apps/manager/internal/ingest/` | 持久遥测消费和投影 |
+| `apps/manager/internal/analytics/` | 云端关联、证据图和事件分析 |
+| `apps/manager/internal/` | Operator API、鉴权和控制面流程 |
+| `apps/manager/internal/store/` | PostgreSQL 控制面持久化 |
+| `apps/manager/internal/platform/` | Kafka、Redis、OpenSearch adapter |
 | `deployments/` | 安装器、镜像、Compose、PKI 和运行配置 |
 | `web/manager/` | Manager Console 与认证 BFF |
 | `configs/` | Policy/rule 元数据示例，不自动加载 |
@@ -40,11 +41,11 @@ make web-build
 
 边界规则：
 
-- `cmd/` 只组装服务，业务逻辑进入对应 `internal/` package。
+- `apps/*/cmd/` 只组装服务，业务逻辑进入所属应用的 `internal/` package。
 - Endpoint 不直接读取平台数据库；端云交互只经过已定义协议。
 - 浏览器调用同源 BFF，不直接调用 Manager。
 - protobuf 是 Agent wire contract 的事实来源。
-- test-only topology 留在 `test/`，正式运行资产留在 `deployments/`。
+- 应用白盒集成测试进入所属 `apps/*/integration/`，环境 E2E 留在 `test/`，正式运行资产留在 `deployments/`。
 - `configs/` 文件只有通过明确 loader/apply 路径后才具有运行效果。
 
 ## 常用构建命令
@@ -112,7 +113,7 @@ make release-stable VERSION=1.0.0 RC=1
 4. 同步 producer、consumer、兼容性检查和契约测试。
 5. 按[API 参考](../reference/api.md)的 consumer-first 顺序规划发布。
 
-Manager HTTP 字段变化还必须同步 `internal/manager/api/` handler 测试与 `web/manager/lib/api/` typed client。页面组件不拼接 Manager URL 或授权 header。
+Manager HTTP 字段变化还必须同步 `apps/manager/internal/api/` handler 测试与 `web/manager/lib/api/` typed client。页面组件不拼接 Manager URL 或授权 header。
 
 ## 修改 Agent 配置
 

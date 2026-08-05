@@ -27,8 +27,6 @@ import (
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/tamper"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry"
-	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
-	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
@@ -36,7 +34,6 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/grpc"
@@ -590,20 +587,10 @@ func TestAgentRuntimeRefreshesEndpointPolicy(t *testing.T) {
 }
 
 func TestControlChannelKeepsLongLivedContract(t *testing.T) {
-	st := &store.Store{}
-	linkSrv := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
-	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
+	server := &healthControlContractServer{received: make(chan *controlplanev1.HealthResponse, 1)}
+	address := startControlContractServer(t, server)
 
-	session := NewControlChannel(lis.Addr().String(), "", tlsconfig.ClientConfig{})
+	session := NewControlChannel(address, "", tlsconfig.ClientConfig{})
 	defer session.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -645,9 +632,9 @@ func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 	if ack.GetType() != "ack" || ack.GetSequence() != 3 || ack.GetAck().GetStatus() != "accepted" {
 		t.Fatalf("health ack = %+v", ack)
 	}
-	got, ok := st.GetAgentHealth("default", "agent-long-control")
-	if !ok || got.Capability.Version != "long" || got.Sensor.EventsSeen != 7 {
-		t.Fatalf("stored long stream health = %+v ok=%t", got, ok)
+	got := <-server.received
+	if got.GetCapability().GetVersion() != "long" || got.GetSensor().GetEventsSeen() != 7 {
+		t.Fatalf("received long stream health = %+v", got)
 	}
 }
 
@@ -701,32 +688,13 @@ func (s *blockingHelloControlServer) Connect(stream controlplanev1.AgentControlP
 }
 
 func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
-	st := &store.Store{}
-	if _, err := st.CreateResponse(responsemodel.Command{
-		ResponseID: "resp-runner-long",
-		TenantID:   "default",
-		AgentID:    "agent-runner-long",
-		Action:     "collect",
-		Target:     "process:p1",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	linkSrv := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
-	grpcServer := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(linkSrv))
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
+	server := &responseControlContractServer{observed: make(chan responseControlObservation, 1)}
+	address := startControlContractServer(t, server)
 
 	runner := &AgentRuntime{
 		Config: config.Config{
 			Agent:   config.AgentConfig{ID: "agent-runner-long", HostID: "host-runner-long", TenantID: "default"},
-			Manager: config.ManagerConfig{Address: lis.Addr().String(), Transport: "grpc"},
+			Manager: config.ManagerConfig{Address: address, Transport: "grpc"},
 			Local:   config.LocalConfig{Export: config.LocalExportConfig{RetryInitial: 10 * time.Millisecond, RetryMax: 20 * time.Millisecond, RequestTimeout: time.Second, MaxInflight: 1}},
 			Health:  config.HealthConfig{Interval: 10 * time.Millisecond},
 		},
@@ -745,30 +713,23 @@ func TestAgentRuntimeControlChannelProcessesPendingResponse(t *testing.T) {
 	go func() {
 		done <- NewTransportRuntime(runner, rt, batcher, sender, time.Now().UTC(), "host", "").RunControlChannel(ctx)
 	}()
-	deadline := time.After(time.Second)
-	for {
-		audits := st.ListResponses("default", "agent-runner-long")
-		if len(audits) == 1 && audits[0].Ack != nil {
-			cancel()
-			err := <-done
-			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Fatalf("RunControlChannel() error = %v", err)
-			}
-			ack := audits[0].Ack
-			if ack.ResponseID != "resp-runner-long" || !ack.Accepted || !ack.ObserveOnly || ack.Executed {
-				t.Fatalf("ack = %+v", ack)
-			}
-			if health, ok := st.GetAgentHealth("default", "agent-runner-long"); !ok || health.Capability.Version != "long" {
-				t.Fatalf("health = %+v ok=%t", health, ok)
-			}
-			return
-		}
-		select {
-		case <-deadline:
-			cancel()
-			t.Fatalf("response ack not observed; audits=%+v", audits)
-		case <-time.After(10 * time.Millisecond):
-		}
+	var observation responseControlObservation
+	select {
+	case observation = <-server.observed:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("response ack not observed")
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunControlChannel() error = %v", err)
+	}
+	ack := observation.ack
+	if ack.GetResponseId() != "resp-runner-long" || !ack.GetAccepted() || !ack.GetObserveOnly() || ack.GetExecuted() {
+		t.Fatalf("ack = %+v", ack)
+	}
+	if observation.capability.GetSensor().GetVersion() != "long" {
+		t.Fatalf("capability = %+v", observation.capability)
 	}
 }
 

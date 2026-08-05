@@ -11,10 +11,10 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
-	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
-	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
-	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/api"
+	managerauth "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/auth"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/platform/opensearch"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/store/backend"
 )
 
 var version = "dev"

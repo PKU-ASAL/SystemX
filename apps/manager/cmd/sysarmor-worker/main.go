@@ -13,10 +13,10 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
-	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
-	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
-	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/ingest"
+	platformkafka "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/platform/kafka"
+	platformopensearch "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/platform/opensearch"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/store/backend"
 )
 
 var version = "dev"

@@ -120,6 +120,47 @@ class MonorepoLayoutContractTest(unittest.TestCase):
                 violations.append(str(source.relative_to(self.repo)))
         self.assertEqual([], violations, f"agent imports manager implementation: {violations}")
 
+    def test_manager_implementation_is_owned_by_manager_app(self):
+        expected = (
+            "apps/manager/internal/api",
+            "apps/manager/internal/auth",
+            "apps/manager/internal/gateway",
+            "apps/manager/internal/store",
+            "apps/manager/internal/analytics",
+            "apps/manager/internal/ingest",
+            "apps/manager/internal/platform",
+            "apps/manager/internal/distribution",
+            "apps/manager/integration",
+        )
+
+        for path in expected:
+            with self.subTest(path=path):
+                self.assertTrue((self.repo / path).is_dir(), f"missing {path}")
+
+    def test_legacy_manager_implementation_paths_are_absent(self):
+        legacy = (
+            "internal/manager",
+            "internal/gateway",
+            "internal/store",
+            "internal/analytics",
+            "internal/workers/ingest",
+            "internal/platform",
+            "internal/distribution",
+            "test/suites/functional/platform/agent_gateway_manager_test.go",
+        )
+
+        for path in legacy:
+            with self.subTest(path=path):
+                self.assertFalse((self.repo / path).exists(), f"legacy path remains: {path}")
+
+    def test_manager_does_not_import_agent_implementation(self):
+        manager = self.repo / "apps/manager"
+        violations = []
+        for source in manager.rglob("*.go"):
+            if "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/" in source.read_text():
+                violations.append(str(source.relative_to(self.repo)))
+        self.assertEqual([], violations, f"manager imports agent implementation: {violations}")
+
 
 if __name__ == "__main__":
     unittest.main()

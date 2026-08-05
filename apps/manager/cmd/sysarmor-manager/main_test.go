@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/store"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/store/backend"
 )
 
 func TestNewManagerHTTPServerConfiguresTimeouts(t *testing.T) {

@@ -15,12 +15,12 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
-	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
-	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
-	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
-	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/gateway"
+	ingestworker "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/ingest"
+	platformkafka "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/platform/kafka"
+	platformredis "github.com/sysarmor/sysarmor-next-project/apps/manager/internal/platform/redis"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/store"
+	"github.com/sysarmor/sysarmor-next-project/apps/manager/internal/store/backend"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/grpc"
 )

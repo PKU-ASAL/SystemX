@@ -13,20 +13,15 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
-	managerstore "github.com/sysarmor/sysarmor-next-project/internal/store"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 const standaloneEndpointPolicyJSON = `{"policy_id":"standalone","version":1,"collection":{"behaviors":["process.exec"]},"detection":{"rulesets":[{"ref":"ruleset:cep-endpoint"}]},"telemetry":{},"response":{}}`
 
 func TestManagerDefaultEndpointPolicyPassesStrictPreparation(t *testing.T) {
-	manager := &managerstore.Store{}
-	manager.EnsureDefaultPolicy("default")
-	policy, ok := manager.EffectivePolicy("default", "agent-a", "host", "")
-	if !ok {
-		t.Fatal("manager default policy is unavailable")
-	}
+	policy := policymodel.ManagerDefaultPolicy("default")
 	document, err := json.Marshal(policy.EndpointPolicy())
 	if err != nil {
 		t.Fatal(err)
