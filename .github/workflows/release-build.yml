@@ -108,7 +108,7 @@ jobs:
             printf '%s\n' "$CONTENT_SIGNING_KEY_PEM" >"$content_key"
           fi
 
-          CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmor-agent ./cmd/sysarmor-agent
+          CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmor-agent ./apps/agent/cmd/sysarmor-agent
           CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o dist/bin/sysarmorctl ./cmd/sysarmorctl
           agent_version="$(dist/bin/sysarmor-agent version)"
           ctl_version="$(dist/bin/sysarmorctl version)"

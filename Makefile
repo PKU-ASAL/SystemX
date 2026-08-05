@@ -71,11 +71,11 @@ build:
 
 build-agent-binary:
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-agent ./cmd/sysarmor-agent
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-agent ./apps/agent/cmd/sysarmor-agent
 
 build-agent-tools: build-agent-binary
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmorctl ./cmd/sysarmorctl
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-content-sign ./cmd/sysarmor-content-sign
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-content-sign ./apps/agent/cmd/sysarmor-content-sign
 
 install-agent: build-agent-tools
 	sudo SYSARMOR_AGENT_BIN=$(BIN_DIR)/sysarmor-agent SYSARMOR_CTL_BIN=$(BIN_DIR)/sysarmorctl SYSARMOR_CONTENT_SIGN_BIN=$(BIN_DIR)/sysarmor-content-sign deployments/agent/install-agent.sh
@@ -88,11 +88,11 @@ uninstall-agent:
 	sudo systemctl daemon-reload
 
 build-binary: build-agent-binary
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-gateway ./cmd/sysarmor-gateway
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-manager ./cmd/sysarmor-manager
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-worker ./cmd/sysarmor-worker
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmorctl ./cmd/sysarmorctl
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-content-sign ./cmd/sysarmor-content-sign
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-gateway ./apps/manager/cmd/sysarmor-gateway
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-manager ./apps/manager/cmd/sysarmor-manager
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-worker ./apps/manager/cmd/sysarmor-worker
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmorctl ./apps/cli/cmd/sysarmorctl
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-content-sign ./apps/agent/cmd/sysarmor-content-sign
 
 business-docx:
 	bash tools/docs/build-business-docx.sh "$(BUSINESS_DOCX_SOURCE)" "$(BUSINESS_DOCX_OUTPUT)"

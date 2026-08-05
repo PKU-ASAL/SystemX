@@ -13,7 +13,7 @@ make_fake_executable() {
 }
 
 mkdir -p "$WORK/bin"
-(cd "$REPO" && go build -o "$WORK/bin/sysarmor-agent" ./cmd/sysarmor-agent)
+(cd "$REPO" && go build -o "$WORK/bin/sysarmor-agent" ./apps/agent/cmd/sysarmor-agent)
 make_fake_executable "$WORK/bin/sysarmorctl"
 make_fake_executable "$WORK/tetragon/tetragon-v1.7.0/bin/tetragon"
 make_fake_executable "$WORK/tetragon/tetragon-v1.7.0/bin/tetra"

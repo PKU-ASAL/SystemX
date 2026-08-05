@@ -106,7 +106,7 @@ install -m 0644 "$HERE/standalone.yaml" "$ROOT/configs/standalone.yaml"
 install -m 0644 "$HERE/standalone-container.yaml" "$ROOT/configs/standalone-container.yaml"
 install -m 0644 "$HERE/policy.json" "$ROOT/policies/policy.json"
 
-go build -o "$WORK/sysarmor-content-sign" "$REPO/cmd/sysarmor-content-sign"
+go build -o "$WORK/sysarmor-content-sign" "$REPO/apps/agent/cmd/sysarmor-content-sign"
 content_public_key="$(openssl pkey -in "$CONTENT_SIGNING_KEY" -pubout -outform DER | tail -c 32 | base64 -w0)"
 for config_file in "$ROOT/configs/standalone.yaml" "$ROOT/configs/standalone-container.yaml"; do
   cat >>"$config_file" <<EOF
