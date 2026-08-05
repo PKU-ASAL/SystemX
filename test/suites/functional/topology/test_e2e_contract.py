@@ -1,5 +1,15 @@
+import hashlib
+import json
+import sqlite3
 import unittest
 from pathlib import Path
+
+
+def rc5_fixture_dir():
+    return (
+        Path(__file__).resolve().parents[3]
+        / "fixtures/agent/upgrades/v0.1.0-rc.5"
+    )
 
 
 class TopologyE2EContractTest(unittest.TestCase):
@@ -73,6 +83,41 @@ class TopologyE2EContractTest(unittest.TestCase):
         self.assertIn("managed enrollment credentials removed", script)
         self.assertIn("standalone policy after unenrollment restart", script)
 
+    def test_rc5_managed_fixture_is_authentic_schema_v1(self):
+        root = rc5_fixture_dir()
+        manifest_path = root / "manifest.json"
+        self.assertTrue(manifest_path.exists(), f"missing rc.5 manifest: {manifest_path}")
+
+        manifest = json.loads(manifest_path.read_text())
+        fixture = root / manifest["fixture_file"]
+        self.assertTrue(fixture.exists(), f"missing rc.5 fixture: {fixture}")
+        raw = fixture.read_bytes()
+
+        self.assertEqual(manifest["format"], "sysarmor.agent-upgrade-fixture/v1")
+        self.assertEqual(manifest["source_tag"], "v0.1.0-rc.5")
+        self.assertEqual(
+            manifest["source_commit"],
+            "454b69d6c01f778add5836e0af1c9ba3299fd5b1",
+        )
+        self.assertEqual(manifest["schema_version"], 1)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), manifest["sha256"])
+
+        db = sqlite3.connect(":memory:")
+        self.addCleanup(db.close)
+        db.executescript(raw.decode())
+        self.assertEqual(db.execute("SELECT version FROM schema_meta").fetchone(), (1,))
+        self.assertEqual(
+            db.execute("SELECT state FROM enrollment WHERE singleton=1").fetchone(),
+            ("managed",),
+        )
+        columns = {row[1] for row in db.execute("PRAGMA table_info(enrollment)")}
+        new_fields = {
+            "enrollment_id",
+            "certificate_serial",
+            "manager_url",
+            "unenrollment_protocol",
+        }
+        self.assertTrue(new_fields.isdisjoint(columns))
 
 if __name__ == "__main__":
     unittest.main()
