@@ -202,8 +202,11 @@ apps/
 │       └── telemetry/
 │           ├── dataappend/                       # DataBatch、发送与确认
 │           ├── ringbuffer/                       # 近期数据内存缓冲
+│           ├── batch.go                          # 批次身份、序列与标签
 │           ├── batcher.go
 │           ├── bus.go
+│           ├── exporter.go                       # 本地与远程 BatchSender
+│           ├── pipeline.go                       # 端点数据管线编排
 │           └── *_test.go
 ├── manager/
 │   ├── cmd/
@@ -307,7 +310,7 @@ test/
 - monorepo、topology、控制面和发行 workflow 合同
 - 本地 distribution 测试与适用的 E2E 测试
 - 修改过的 Shell 脚本语法检查
-- `gofmt -l apps packages`
+- `find apps packages -path '*/node_modules' -prune -o -type f -name '*.go' -exec gofmt -l {} +`
 - `git diff --check`
 - 六个目标文件及新文件的职责和规模复核
 
