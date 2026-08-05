@@ -190,6 +190,18 @@ class MonorepoLayoutContractTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((root / name).is_file(), f"missing postgres/{name}")
 
+    def test_tetragon_backend_responsibility_files(self):
+        root = self.repo / "apps/agent/internal/sensors/linux/tetragon"
+        expected = (
+            "capability.go",
+            "tracing_policy.go",
+            "tracing_policy_render.go",
+            "runtime.go",
+        )
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertTrue((root / name).is_file(), f"missing tetragon/{name}")
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",
