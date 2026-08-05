@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element -- Avatar sources may use arbitrary identity-provider hosts. */
 import { twMerge } from 'tailwind-merge'
 
 export interface AvatarProps {
