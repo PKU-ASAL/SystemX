@@ -2,24 +2,24 @@
 
 ## 目的与结论
 
-本轮治理在 `refactor/product-monorepo-layout` 分支内完成，不创建 PR，不改变 SysArmor 的公开 API、包路径、协议、持久化格式、部署拓扑或运行行为。
+本轮治理在 `refactor/product-monorepo-layout` 分支内完成，不创建 PR，不改变 SysArmor 的外部 API、协议、持久化格式、部署拓扑或运行行为。Agent 内部 package 路径按职责调整，但不改变可执行文件名称或用户接口。
 
-六个超大生产文件采用“同 package、按领域职责拆文件”的方式治理。拆分优先保持语义内聚，500 行仅作为识别职责混杂的提示，不作为机械门禁。`packages/` 增加准入规则和自动化依赖边界检查；当前没有足够的维护团队，因此不增加 `CODEOWNERS`。
+六个超大生产文件按领域职责治理：Manager Store、PostgreSQL Store、Tetragon Backend 和 CLI 在现有 package 内拆分；Agent 控制路径建立明确的 package 边界。拆分优先保持语义内聚，500 行仅作为识别职责混杂的提示，不作为机械门禁。`packages/` 增加准入规则和自动化依赖边界检查；当前没有足够的维护团队，因此不增加 `CODEOWNERS`。
 
 ## 约束
 
-- 保持现有导出类型、函数和方法签名不变。
-- 保持现有 package 名称和 import path 不变。
-- 不引入新的接口层、依赖注入框架、Go module 或前端 workspace。
+- 保持外部 API 和跨产品共享类型、函数、方法签名不变；Agent 内部允许增加最小能力接口。
+- 保持跨产品共享 package 和外部接口路径不变；允许调整 `apps/agent/internal` 内部 package 路径。
+- 不引入通用接口层、依赖注入框架、Go module 或前端 workspace；只为 `control` 与两个 API 适配器建立最小能力接口。
 - 不顺带修复或重写业务逻辑；发现独立缺陷时记录并另行处理。
 - 只移动完整声明及其紧密辅助逻辑，不把同一事务或状态机机械切开。
 - 每个拆分关注点形成可独立验证和回退的原子提交。
 
 ## 方案选择
 
-采用同 package 内按职责拆文件。
+Manager Store、PostgreSQL Store、Tetragon Backend 和 CLI 采用同 package 内按职责拆文件。Agent 控制路径采用核心控制逻辑与传输适配器分离的 package 边界。
 
-未选择子 package 拆分，因为 Manager Store 与 AgentRuntime 共享锁、状态和事务上下文。当前直接建立子 package 会迫使内部状态公开化或引入大量窄接口，增加架构复杂度和行为漂移风险。
+Manager Store 不直接拆成多个子 package，因为它仍共享锁、状态和事务上下文。Agent 控制路径已经存在远程通道复用本地 Server 实现的反向边界，因此需要建立 `control`、`localapi`、`remoteapi` 三个平级 package，并通过窄能力依赖解除传输与业务逻辑耦合。
 
 未选择按行数切分，因为文件边界必须表达变化原因和领域语义，而不是满足任意行数。
 
@@ -27,76 +27,93 @@
 
 ### Manager Store
 
-`apps/manager/internal/store/store.go` 最终只保留 Store 核心状态、打开与 backend 绑定等生命周期逻辑。现有声明按以下领域移动到同 package 文件：
+`apps/manager/internal/store/store.go` 最终只保留 Store 核心状态、打开与 backend 绑定等生命周期逻辑。现有声明按中等粒度领域移动：
 
-- `models.go`：通用状态与领域数据结构。
-- `policy.go`：默认策略、策略 CRUD、发布、分配和审计。
-- `response.go`：Response 创建、审批、查询和确认。
-- `control_command.go`：控制命令创建、状态转换、查询和确认。
-- `evidence.go`：Evidence pullback 生命周期。
-- `agent_state.go`：Agent 身份、会话和健康状态。
-- `enrollment.go`：注册记录及规范化。
+- `models.go`：State 与通用领域结构。
+- `policy.go`：Policy、Assignment 和 Audit。
+- `control.go`：Response、Control Command 和 Evidence pullback。
+- `agent.go`：Agent 身份、会话和健康状态。
+- `enrollment.go`：Enrollment、Certificate 和吊销。
 - `artifact.go`：Artifact 与 Channel。
-- `certificate.go`：Agent 证书和吊销。
-- `telemetry_state.go`：Event、Signal、Incident、派生投影和指标。
-- `persistence.go`：文件持久化、State 导入导出和原子写入。
-- `keys.go`：稳定键、标签匹配和确定性排序辅助逻辑。
+- `telemetry.go`：Event、Signal、Incident、派生投影和 Metrics。
+- `persistence.go`：文件 State 导入、导出、稳定键和原子持久化。
 
 已有 `agent.go`、`policy_commit.go`、`enrollment_bootstrap.go`、`enrollment_issue.go` 和 `unenrollment.go` 的职责保持不变，避免重复抽象。
 
 ### PostgreSQL Store
 
-`apps/manager/internal/store/postgres/snapshot.go` 保留 table backend 的构造和兼容入口，具体 SQL 按领域拆分：
+`apps/manager/internal/store/postgres/snapshot.go` 保留 table backend 的构造、事务辅助和完整 State projection 入口，具体 SQL 按领域拆分：
 
-- `backend.go`：backend 类型、超时和事务辅助。
-- `agent_state.go`：Agent、Health 和 Session 查询与 projection。
-- `policy.go`：Policy、Assignment、Audit 查询与写入。
+- `policy.go`：Policy、Assignment 和 Audit。
 - `control.go`：Response、Control Command 和 Evidence pullback。
-- `enrollment.go`：注册消费、签发提交和查询。
-- `artifact.go`：Artifact、Channel 和 Certificate。
-- `metrics.go`：Metrics 与 Rarity baseline。
-- `projection.go`：完整 State projection 的编排入口。
+- `identity.go`：Agent、Health、Session、Enrollment 和 Certificate。
+- `artifact.go`：Artifact 与 Channel。
+- `telemetry.go`：Metrics、Rarity baseline 及其 projection。
 
 SQL 语句、事务范围、锁语义和错误返回保持原样。
 
 ### Agent Daemon
 
-`apps/agent/internal/daemon/daemon.go` 保留 `Options`、`AgentRuntime`、构造函数和主运行生命周期。其他职责拆为：
-
-- `health.go`：启动、运行和关闭健康状态采集。
-- `runtime_state.go`：策略、Detection、Collection 和 Supervisor 的并发状态访问。
-- `detection_runtime.go`：Detection engine 构建、内容转换和应用状态。
-- `data_batch.go`：批次、序列、标签和发送端创建。
-- `managed_network.go`：Manager TLS 和 managed network 启动。
-- `response_runtime.go`：Response 执行与 Evidence pullback。
-- `sensor_factory.go`：Sensor 和重启策略构造。
+`apps/agent/internal/daemon` 是 composition root，只保留 `AgentRuntime`、构造、启动、停止、健康聚合和依赖装配。它创建 `control` 控制器、`localapi` Server 和 `remoteapi` Session，不承载 Policy、Content、Response 或 Enrollment 业务规则。
 
 `Run` 的阶段顺序、清理顺序和失败报告路径保持不变。
 
-### Agent Local Control
+### Agent Control
 
-`apps/agent/internal/daemon/local_control.go` 保留 Unix gRPC server 的启动、依赖装配和服务类型。RPC 与转换按职责拆为：
+`apps/agent/internal/control` 承载本地和远程入口共享的控制用例：
 
-- `local_control_health.go`：Health、Capability 和 DebugProfile。
-- `local_control_policy.go`：CurrentPolicy、ApplyPolicy 和各策略层应用。
-- `local_control_content.go`：Content 应用、事务和查询。
-- `local_control_watch.go`：Event/Signal 查询、watch 和过滤。
-- `local_control_status.go`：Store 与 managed lifecycle 状态。
-- `local_control_messages.go`：Ack、Health、Capability 和报告的协议转换。
-- `local_control_validation.go`：请求上下文及 telemetry policy 校验。
+- `types.go`：内部命令、结果和能力依赖。
+- `policy.go`：Policy 准备、应用、持久化、激活和回滚。
+- `content.go`：Detection Content 更新事务。
+- `response.go`：Response 与 Evidence pullback 执行。
+- `enrollment.go`：注册、退管和 Policy authority 切换。
+- `status.go`：Policy、Health、Capability 和 management lifecycle 快照。
 
-所有 RPC 仍由同一个 `localControlServer` 实现，不增加服务间转发。
+`control` 可以依赖 `policy`、`content`、`detection`、`sensors`、`telemetry` 和 `localstore`，禁止依赖 `localapi` 或 `remoteapi`。Policy 与 Content 控制流程不接收 gRPC stream 或 Server 类型。
+
+### Agent Local API
+
+`apps/agent/internal/localapi` 是本机 Unix socket gRPC 适配器：
+
+- `server.go`：Server 生命周期与 RPC 注册。
+- `handlers.go`：请求校验并调用 `control` 能力。
+- `watch.go`：Event/Signal 本地查询与流式 Watch。
+- `codec.go`：protobuf 与内部命令、结果的转换。
+
+Local API 在 managed 模式下仍保持可用；写操作是否允许由 `control` 的 Policy authority 判断，适配器不复制该规则。
+
+### Agent Remote API
+
+`apps/agent/internal/remoteapi` 是 Agent 到 Manager 的 mTLS 长连接适配器：
+
+- `client.go`：连接、身份和传输配置。
+- `session.go`：长连接、重连、resume 与生命周期。
+- `commands.go`：远程命令分发到 `control`。
+- `reports.go`：Health、Capability、Ack 和完成状态上报。
+- `codec.go`：ControlFrame 与内部命令、结果的转换。
+
+`remoteapi` 禁止构造或调用 `localapi` Server。`localapi` 与 `remoteapi` 只能平行依赖 `control`，不能互相依赖。
+
+### Agent Event、Detection 与 Telemetry
+
+取消 `apps/agent/internal/endpoint` 这一冗余中间层：
+
+- `event/context`：进程上下文、lineage 和实体关联状态。
+- `event/normalize`：Sensor Event 到 Canonical Event 的规范化。
+- `detection`：端点 Detection Engine、规则编译与关联。
+- `detection/matcher`：Detection 条件匹配。
+- `telemetry/dataappend`：DataBatch 构造、发送和确认。
+- `telemetry/ringbuffer`：本地近期 Event/Signal 内存缓冲。
+
+Agent 已经表达 endpoint 产品边界，因此不再用 `endpoint` 目录重复表达相同概念。数据方向固定为 `sensor -> event -> detection -> telemetry`。
 
 ### Tetragon Backend
 
-`apps/agent/internal/sensors/linux/tetragon/backend.go` 保留 `Backend`、构造、核心 Sensor 接口方法和共享状态。其他职责拆为：
+`apps/agent/internal/sensors/linux/tetragon/backend.go` 保留 `Backend`、构造和核心 Sensor 接口。其他职责按中等粒度拆为：
 
-- `capability.go`：Collection 能力、编译报告和 selector 分类。
-- `collection_intent.go`：scope 解析、intent 匹配和过滤辅助。
+- `capability.go`：Collection 能力、编译报告、scope 和 selector。
 - `tracing_policy.go`：TracingPolicy 生成、写入、应用、校验和删除。
-- `event_source.go`：CLI/gRPC 事件源打开和订阅读取。
-- `managed_process.go`：bundle 准备、托管进程启动与就绪等待。
-- `runtime_status.go`：Health、计数器和错误状态。
+- `runtime.go`：bundle 准备、托管进程、事件源、Health 和计数器。
 
 现有 `bundle.go`、`grpc_events.go` 和 `supervisor.go` 保持其既有边界。
 
@@ -104,19 +121,17 @@ SQL 语句、事务范围、锁语义和错误返回保持原样。
 
 `apps/cli/cmd/sysarmorctl/main.go` 只保留程序入口、一级命令路由、usage 和默认地址。其他职责拆为：
 
-- `local_agent.go`：本地 Agent gRPC 查询与流式调用。
-- `watch.go`：Event/Signal watch 输出和事件引用展开。
-- `payload.go`：Policy、Collection 和 Content payload 构造。
-- `flags.go`：参数读取、超时和请求上下文。
-- `manager.go`：Manager 一级领域路由。
-- `manager_agents.go`、`manager_policies.go`、`manager_control.go`、`manager_artifacts.go`：各领域请求构造。
+- `local.go`：本地 Agent gRPC 查询、Watch 和事件引用展开。
+- `payload.go`：Policy、Collection、Content payload 和参数解析。
+- `manager.go`：Manager 通用查询与领域路由。
+- `manager_policy.go`、`manager_control.go`、`manager_artifact.go`：领域请求构造。
 - `http.go`：HTTP GET、JSON、multipart、raw body 和鉴权 Header。
 
 CLI 命令、参数、输出 JSON、退出码、默认值和环境变量保持不变。
 
 ## 重构后的目标目录
 
-下列目录树是本轮治理完成后的完整目标结构。`*_test.go` 继续与被测职责同 package 放置；本轮以移动生产声明为主，不为了让测试文件与生产文件一一对应而机械拆分现有测试。
+下列目录树是本轮治理完成后的目标结构。`*_test.go` 与被测 package 放置，但不为了让测试文件与生产文件一一对应而机械拆分现有测试。
 
 ```text
 apps/
@@ -125,61 +140,56 @@ apps/
 │   │   ├── sysarmor-agent/
 │   │   └── sysarmor-content-sign/
 │   └── internal/
-│       ├── config/
-│       ├── content/
 │       ├── daemon/
-│       │   ├── daemon.go                         # Runtime 类型、构造和主生命周期
-│       │   ├── health.go                         # 启动、运行和关闭健康状态
-│       │   ├── runtime_state.go                  # 并发运行状态访问
-│       │   ├── detection_runtime.go              # Detection 构建与应用
-│       │   ├── data_batch.go                     # DataBatch、标签、序列和 sender
-│       │   ├── managed_network.go                # Manager TLS 与 managed network
-│       │   ├── response_runtime.go               # Response 与 Evidence pullback 执行
-│       │   ├── sensor_factory.go                 # Sensor 与重启策略构造
-│       │   ├── local_control.go                  # Unix gRPC server 启动与装配
-│       │   ├── local_control_health.go           # Health、Capability、DebugProfile
-│       │   ├── local_control_policy.go           # Policy 查询与应用
-│       │   ├── local_control_content.go          # Content 事务与查询
-│       │   ├── local_control_watch.go            # Event/Signal 查询、watch 与过滤
-│       │   ├── local_control_status.go           # Store 与 management lifecycle 状态
-│       │   ├── local_control_messages.go         # gRPC message 与 ack 转换
-│       │   ├── local_control_validation.go       # 请求与 telemetry policy 校验
-│       │   ├── control_channel.go
-│       │   ├── control_frame_convert.go
-│       │   ├── endpoint_policy_control.go
-│       │   ├── endpoint_runtime.go
-│       │   ├── enrollment_client.go
-│       │   ├── enrollment_control.go
-│       │   ├── enrollment_coordinator.go
-│       │   ├── enrollment_revocation_client.go
-│       │   ├── export_pipeline.go
-│       │   ├── exporter.go
-│       │   ├── local_runtime.go
-│       │   ├── network_supervisor.go
-│       │   ├── policy_observation.go
-│       │   ├── policy_reconciler.go
-│       │   ├── runtime_identity.go
-│       │   ├── startup_content.go
-│       │   ├── startup_policy.go
-│       │   ├── transport_runtime.go
-│       │   ├── transport_runtime_component.go
-│       │   ├── unenrollment_completion_client.go
-│       │   ├── unenrollment_completion_reporter.go
+│       │   ├── daemon.go                         # Runtime、构造和依赖装配
+│       │   ├── startup.go                        # 启动顺序
+│       │   ├── shutdown.go                       # Drain、停止和清理
+│       │   ├── health.go                         # 整体健康聚合
 │       │   └── *_test.go
-│       ├── endpoint/
-│       ├── localstore/
-│       ├── policy/
+│       ├── control/
+│       │   ├── types.go                          # 内部命令、结果和依赖
+│       │   ├── policy.go                         # Policy 控制闭环
+│       │   ├── content.go                        # Content 更新事务
+│       │   ├── response.go                       # Response 与 Evidence
+│       │   ├── enrollment.go                     # 注册、退管和 authority
+│       │   ├── status.go                         # Policy、Health、Capability 状态
+│       │   └── *_test.go
+│       ├── localapi/
+│       │   ├── server.go                         # Unix socket gRPC Server
+│       │   ├── handlers.go                       # 本地查询与控制 Handler
+│       │   ├── watch.go                          # Event/Signal Watch
+│       │   ├── codec.go                          # protobuf 转换与校验
+│       │   └── *_test.go
+│       ├── remoteapi/
+│       │   ├── client.go                         # Manager mTLS Client
+│       │   ├── session.go                        # 长连接、重连和 resume
+│       │   ├── commands.go                       # 远程命令分发
+│       │   ├── reports.go                        # Health、Capability 和 Ack
+│       │   ├── codec.go                          # ControlFrame 转换
+│       │   └── *_test.go
+│       ├── config/
+│       ├── content/                              # 签名 Security Content
+│       ├── event/
+│       │   ├── context/                          # 进程上下文与 lineage
+│       │   └── normalize/                        # Sensor Event 规范化
+│       ├── detection/
+│       │   ├── matcher/                          # 条件匹配
+│       │   ├── engine.go                         # Detection Engine
+│       │   ├── compiled.go
+│       │   ├── condition_tree.go
+│       │   ├── correlate.go
+│       │   ├── validation.go
+│       │   └── *_test.go
+│       ├── localstore/                           # SQLite、Event segment 与 checkpoint
+│       ├── policy/                               # Policy 模型解析与编译
 │       ├── sensors/
 │       │   ├── fake/
 │       │   ├── runtime/
 │       │   └── linux/tetragon/
-│       │       ├── backend.go                    # Backend 与核心 Sensor 接口
-│       │       ├── capability.go                 # 能力与 selector 编译报告
-│       │       ├── collection_intent.go          # Scope、intent 与过滤
+│       │       ├── backend.go                    # Sensor 接口与 Backend 状态
+│       │       ├── capability.go                 # Collection 能力与编译报告
 │       │       ├── tracing_policy.go             # TracingPolicy 生命周期
-│       │       ├── event_source.go               # CLI/gRPC 事件源
-│       │       ├── managed_process.go            # Bundle 与托管进程生命周期
-│       │       ├── runtime_status.go              # Health、计数器与错误状态
+│       │       ├── runtime.go                    # 进程、事件源和运行状态
 │       │       ├── adapter.go
 │       │       ├── bundle.go
 │       │       ├── grpc_events.go
@@ -190,6 +200,11 @@ apps/
 │       │       └── *_test.go
 │       ├── tamper/
 │       └── telemetry/
+│           ├── dataappend/                       # DataBatch、发送与确认
+│           ├── ringbuffer/                       # 近期数据内存缓冲
+│           ├── batcher.go
+│           ├── bus.go
+│           └── *_test.go
 ├── manager/
 │   ├── cmd/
 │   │   ├── sysarmor-gateway/
@@ -207,18 +222,13 @@ apps/
 │       └── store/
 │           ├── store.go                          # Store 核心状态与生命周期
 │           ├── models.go                         # State 与领域数据结构
-│           ├── policy.go                         # Policy、Assignment 与 Audit
-│           ├── response.go                       # Response 生命周期
-│           ├── control_command.go                # Control Command 生命周期
-│           ├── evidence.go                       # Evidence pullback 生命周期
-│           ├── agent_state.go                    # Agent、Health 与 Session
-│           ├── enrollment.go                     # Enrollment 状态
+│           ├── policy.go                         # Policy、Assignment 和 Audit
+│           ├── control.go                        # Response、Command 和 Evidence
+│           ├── agent.go                          # Agent、Health 和 Session
+│           ├── enrollment.go                     # Enrollment 和 Certificate
 │           ├── artifact.go                       # Artifact 与 Channel
-│           ├── certificate.go                    # Agent Certificate 与吊销
-│           ├── telemetry_state.go                # Event、Signal、Incident 与 Metrics
+│           ├── telemetry.go                      # Event、Signal、Incident 和 Metrics
 │           ├── persistence.go                    # 文件 State 导入、导出与原子持久化
-│           ├── keys.go                           # 稳定键、标签和排序 helper
-│           ├── agent.go
 │           ├── backend.go
 │           ├── enrollment_bootstrap.go
 │           ├── enrollment_issue.go
@@ -228,14 +238,11 @@ apps/
 │           ├── migrations/
 │           ├── postgres/
 │           │   ├── snapshot.go                   # Table Store 兼容入口
-│           │   ├── backend.go                    # Backend、超时和事务
-│           │   ├── projection.go                 # 完整 State projection 编排
-│           │   ├── agent_state.go                # Agent、Health 与 Session SQL
-│           │   ├── policy.go                     # Policy、Assignment 与 Audit SQL
-│           │   ├── control.go                    # Response、Command 与 Evidence SQL
-│           │   ├── enrollment.go                 # Enrollment SQL 与签发事务
-│           │   ├── artifact.go                   # Artifact、Channel 与 Certificate SQL
-│           │   ├── metrics.go                    # Metrics 与 Rarity SQL
+│           │   ├── policy.go                     # Policy、Assignment 和 Audit SQL
+│           │   ├── control.go                    # Response、Command 和 Evidence SQL
+│           │   ├── identity.go                   # Agent、Enrollment 和 Certificate SQL
+│           │   ├── artifact.go                   # Artifact 与 Channel SQL
+│           │   ├── telemetry.go                  # Telemetry、Metrics 和 Rarity SQL
 │           │   ├── migrate.go
 │           │   ├── unenrollment.go
 │           │   └── *_test.go
@@ -243,15 +250,12 @@ apps/
 ├── cli/
 │   └── cmd/sysarmorctl/
 │       ├── main.go                               # 入口、一级路由、usage 与默认地址
-│       ├── local_agent.go                        # 本地 Agent gRPC 客户端
-│       ├── watch.go                              # Event/Signal 流输出
-│       ├── payload.go                            # Policy 与 Content payload
-│       ├── flags.go                              # 参数、超时和请求上下文
-│       ├── manager.go                            # Manager 领域路由
-│       ├── manager_agents.go                     # Agent、Health、Enrollment API
-│       ├── manager_policies.go                   # Policy API
-│       ├── manager_control.go                    # Response 与 Control Command API
-│       ├── manager_artifacts.go                  # Artifact 与 Channel API
+│       ├── local.go                              # 本地 Agent 调用与 Watch
+│       ├── payload.go                            # Policy、Content 与参数解析
+│       ├── manager.go                            # Manager 通用查询
+│       ├── manager_policy.go                     # Policy API
+│       ├── manager_control.go                    # Response 与 Command API
+│       ├── manager_artifact.go                   # Artifact 与 Channel API
 │       ├── http.go                               # HTTP transport 与鉴权 Header
 │       ├── enrollment.go
 │       └── *_test.go
@@ -276,7 +280,7 @@ test/
     └── test_monorepo_layout.py                   # 目录与 packages 依赖合同
 ```
 
-该目录树表达职责归属，不表示所有同级目录都必须拆成独立 package。新文件仍使用其所在目录的原 package，共享同一内部状态；只有真实跨产品稳定契约才允许进入 `packages/`。
+该目录树表达职责归属。`control`、`localapi` 和 `remoteapi` 是独立 package；Manager Store、PostgreSQL Store、Tetragon 和 CLI 的职责拆分仍在各自现有 package 内完成。只有真实跨产品稳定契约才允许进入 `packages/`。
 
 ## packages 准入规则
 
@@ -310,7 +314,7 @@ test/
 ## 风险与控制
 
 - **移动遗漏**：以完整 Go declaration 为单位移动，并在每个领域后编译测试。
-- **初始化或方法解析变化**：保持 package、标识符和声明内容不变，不使用 `init` 重排。
+- **初始化或方法解析变化**：保持初始化顺序和运行语义，不使用 `init` 重排；内部方法迁移由定向合同测试保护。
 - **事务漂移**：PostgreSQL 事务闭包整体移动，不拆事务内部步骤。
 - **锁语义漂移**：Store 和 AgentRuntime 的加锁代码与被保护操作整体移动。
 - **CLI 输出漂移**：复用现有测试，并对命令路由与 JSON 输出运行定向测试。
@@ -320,6 +324,6 @@ test/
 
 - 六个目标文件显著缩小，剩余内容具有单一、可解释的职责。
 - 新文件名称能够表达领域或生命周期边界，不按任意行号命名。
-- 导出 API、包依赖方向和运行行为不变。
+- 外部 API 和运行行为不变；内部包依赖方向符合设计合同。
 - `packages/` 准入规则可见，`packages/* -> apps/*` 依赖由合同测试阻止。
 - 全量验证通过，工作树中没有测试生成物。
