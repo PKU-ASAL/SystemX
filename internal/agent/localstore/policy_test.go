@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +195,107 @@ CREATE TABLE policy(kind TEXT PRIMARY KEY, version INTEGER NOT NULL, document_js
 	}
 	if _, ok, err := store.PolicySlot(t.Context(), "endpoint", PolicySourceStandalone); err != nil || ok {
 		t.Fatalf("fabricated standalone fallback ok=%t err=%v", ok, err)
+	}
+}
+
+func TestOpenMigratesLegacyEndpointDetectionDefaults(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "agent")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := policyRecord("endpoint", 7, `{"policy_id":"managed-legacy","version":7,"collection":{"behaviors":["process.exec"]},"detection":{},"telemetry":{},"response":{}}`)
+	if _, err := db.Exec(`CREATE TABLE schema_meta(version INTEGER PRIMARY KEY); INSERT INTO schema_meta(version) VALUES (1);
+CREATE TABLE enrollment(singleton INTEGER PRIMARY KEY, state TEXT NOT NULL, tenant_id TEXT, agent_id TEXT, gateway_address TEXT, tls_ca_path TEXT, tls_cert_path TEXT, tls_key_path TEXT, tls_server_name TEXT, upload_history INTEGER NOT NULL, managed_from_seq INTEGER, updated_at_ns INTEGER NOT NULL);
+INSERT INTO enrollment VALUES (1,'managed','tenant-a','agent-a','gateway','/ca','/cert','/key','',0,1,1);
+CREATE TABLE policy(kind TEXT PRIMARY KEY, version INTEGER NOT NULL, document_json BLOB NOT NULL, digest TEXT NOT NULL, updated_at_ns INTEGER NOT NULL);`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO policy VALUES (?, ?, ?, ?, 1)`, legacy.Kind, legacy.Version, legacy.Document, legacy.Digest); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store := openStore(t, root)
+	defer store.Close()
+	migrated, ok, err := store.PolicySlot(t.Context(), "endpoint", PolicySourceManaged)
+	if err != nil || !ok {
+		t.Fatalf("managed slot ok=%t err=%v", ok, err)
+	}
+	var document struct {
+		Detection struct {
+			PolicyID string `json:"policy_id"`
+			Version  uint64 `json:"version"`
+			Mode     string `json:"mode"`
+			RuleSets []struct {
+				Ref     string `json:"ref"`
+				Version string `json:"version"`
+				Enabled *bool  `json:"enabled"`
+			} `json:"rulesets"`
+		} `json:"detection"`
+	}
+	if err := json.Unmarshal(migrated.Document, &document); err != nil {
+		t.Fatal(err)
+	}
+	detection := document.Detection
+	if detection.PolicyID != "default-endpoint-detection" || detection.Version != 1 || detection.Mode != "observe" ||
+		len(detection.RuleSets) != 1 || detection.RuleSets[0].Ref != "ruleset:cep-endpoint" ||
+		detection.RuleSets[0].Version != "v1" || detection.RuleSets[0].Enabled == nil || !*detection.RuleSets[0].Enabled {
+		t.Fatalf("migrated detection=%+v", detection)
+	}
+	wantDigest := sha256.Sum256(migrated.Document)
+	if migrated.Digest != hex.EncodeToString(wantDigest[:]) {
+		t.Fatalf("migrated digest=%q want=%q", migrated.Digest, hex.EncodeToString(wantDigest[:]))
+	}
+	var legacyDocument []byte
+	var legacyDigest string
+	if err := store.db.QueryRow(`SELECT document_json, digest FROM policy WHERE kind='endpoint'`).Scan(&legacyDocument, &legacyDigest); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(legacyDocument, migrated.Document) || legacyDigest != migrated.Digest {
+		t.Fatalf("legacy policy and managed slot diverged")
+	}
+}
+
+func TestLegacyEndpointDetectionMigrationPreservesExplicitRuleSets(t *testing.T) {
+	document := []byte(`{"policy_id":"legacy","version":1,"detection":{"policy_id":"custom","version":3,"mode":"enforce","rulesets":[{"ref":"ruleset:custom","version":"v2","enabled":true}]}}`)
+	migrated, changed, err := addLegacyDetectionDefaults(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed || !bytes.Equal(migrated, document) {
+		t.Fatalf("explicit detection ruleset was rewritten: changed=%t document=%s", changed, migrated)
+	}
+}
+
+func TestOpenRejectsLegacyEndpointPolicyDigestMismatch(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "agent")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_meta(version INTEGER PRIMARY KEY); INSERT INTO schema_meta(version) VALUES (1);
+CREATE TABLE policy(kind TEXT PRIMARY KEY, version INTEGER NOT NULL, document_json BLOB NOT NULL, digest TEXT NOT NULL, updated_at_ns INTEGER NOT NULL);
+INSERT INTO policy VALUES ('endpoint', 1, '{"policy_id":"legacy","version":1,"detection":{}}', 'tampered', 1);`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(t.Context(), Options{RootDir: root})
+	if store != nil {
+		_ = store.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("Open() error=%v, want digest mismatch", err)
 	}
 }
 
