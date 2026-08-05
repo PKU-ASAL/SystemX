@@ -48,9 +48,14 @@ if [[ "$ENV_NAME" == "vm-topology" ]]; then
   echo ">>> 准备 VM topology deployment 源码包"
   mkdir -p "$PLATFORM_UPLOAD_DIR" "$PLATFORM_IMAGES_DIR"
   rsync -a --delete \
+    --exclude '.agents/' \
+    --exclude '.codex/' \
     --exclude '.git/' \
     --exclude '.vagrant/' \
     --exclude '.cache/' \
+    --exclude '.run/' \
+    --exclude '.scratchpad/' \
+    --exclude '.superpowers/' \
     --exclude 'dist/' \
     --exclude 'test/.results/' \
     --exclude 'test/environments/vm-topology/deploy/' \
