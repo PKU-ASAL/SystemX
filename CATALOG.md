@@ -58,7 +58,7 @@
 | 部署与 PKI | `docs/operations/deployment.md` |
 | 运维与 OpenSearch 演进 | `docs/operations/maintenance.md` |
 | 配置字段与运行路径 | `docs/reference/configuration.md` |
-| API 与 Schema 演进 | `docs/reference/api.md` 和 `api/proto/` |
+| API 与 Schema 演进 | `docs/reference/api.md` 和 `packages/contracts/proto/` |
 | CLI | `docs/reference/cli.md` 和 `sysarmorctl --help` |
 | 测试方法 | `docs/development/testing.md` |
 | 测试数据格式 | `test/data/README.md` |
