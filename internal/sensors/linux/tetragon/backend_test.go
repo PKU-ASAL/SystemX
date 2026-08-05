@@ -973,6 +973,47 @@ func TestBackendApplyPreparesPolicyWhenManagedSensorStopped(t *testing.T) {
 	}
 }
 
+func TestBackendApplyDefersPolicyChangeForManagedSensor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed sensor readiness test requires /bin/sh")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	invokedPath := filepath.Join(dir, "tetra-invoked")
+	tetraPath := filepath.Join(dir, "tetra")
+	if err := os.WriteFile(tetraPath, []byte("#!/bin/sh\ntouch '"+invokedPath+"'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{
+		TetraPath: tetraPath, TetragonPath: filepath.Join(dir, "tetragon"),
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := backend.sensorSupervisor.Start(ctx, ProcessSpec{
+		Name: "starting-tetragon", Path: "/bin/sh", Args: []string{"-c", "sleep 30"},
+	}); err != nil {
+		t.Fatalf("start sensor process: %v", err)
+	}
+	defer backend.sensorSupervisor.Stop(context.Background())
+	backend.policyLoaded = true
+	backend.runtimePolicyApplied = true
+	backend.running = true
+
+	intent := contract.CollectionIntent{Behaviors: []string{"network.connect"}, ObserveOnly: true}
+	applyCtx, applyCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer applyCancel()
+	result, err := backend.Apply(applyCtx, intent)
+	if err != nil || result.State != contract.ApplyStateDeferred {
+		t.Fatalf("Apply() result = %+v error = %v, want deferred policy for managed sensor", result, err)
+	}
+	if _, err := os.Stat(invokedPath); !os.IsNotExist(err) {
+		t.Fatalf("managed sensor policy change invoked tetra before resubscribe: err=%v", err)
+	}
+}
+
 func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed policy cleanup test requires /bin/sh")

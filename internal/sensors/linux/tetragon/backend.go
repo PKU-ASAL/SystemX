@@ -463,7 +463,7 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) (
 	b.runtimePolicyApplied = false
 	b.lastError = ""
 	b.mu.Unlock()
-	if b.Bundle.TetragonPath != "" && !b.sensorSupervisor.Status().Running {
+	if b.Bundle.TetragonPath != "" {
 		return contract.ApplyResult{State: contract.ApplyStateDeferred}, nil
 	}
 	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
@@ -473,7 +473,7 @@ func (b *Backend) canLiveApply() bool {
 	if b.Bundle.TetraPath == "" || b.EventSource != "" {
 		return false
 	}
-	return b.Bundle.TetragonPath == "" || b.sensorSupervisor.Status().Running
+	return b.Bundle.TetragonPath == ""
 }
 
 func (b *Backend) prepareBundle() (BundleVerification, error) {

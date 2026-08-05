@@ -230,6 +230,52 @@ func TestSubscriptionSupervisorPassesLifecycleContextToAppliedCallback(t *testin
 	}
 }
 
+func TestSubscriptionSupervisorDoesNotNotifySupersededRevision(t *testing.T) {
+	rt := &supersededApplyRuntime{
+		firstApplyStarted: make(chan struct{}),
+		releaseFirstApply: make(chan struct{}),
+	}
+	initial := contract.CollectionIntent{Behaviors: []string{"process.exec"}}
+	latest := contract.CollectionIntent{Behaviors: []string{"file.write"}}
+	supervisor := NewSubscriptionSupervisor(rt, initial, RetryOptions{Initial: time.Millisecond, Max: time.Millisecond})
+	notified := make(chan contract.CollectionIntent, 1)
+	supervisor.OnApplied(func(_ context.Context, intent contract.CollectionIntent) error {
+		notified <- intent
+		return nil
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	supervisor.Start(ctx)
+	<-rt.firstApplyStarted
+
+	done := make(chan error, 1)
+	go func() { done <- supervisor.Reconcile(ctx, latest) }()
+	waitForSupervisorRevision(t, supervisor, 2)
+	close(rt.releaseFirstApply)
+
+	if err := <-done; err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	select {
+	case intent := <-notified:
+		t.Fatalf("superseded revision notified as applied: %+v", intent)
+	default:
+	}
+}
+
+func waitForSupervisorRevision(t *testing.T, supervisor *SubscriptionSupervisor, want uint64) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		_, revision := supervisor.currentIntent()
+		if revision == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("supervisor revision did not reach %d", want)
+}
+
 type flakyRuntime struct {
 	applyFailures int
 	applyCalls    int32
@@ -254,6 +300,12 @@ type closedStreamRuntime struct{ calls chan time.Time }
 type subscribeErrorRuntime struct{}
 
 type deferredApplyRuntime struct{}
+
+type supersededApplyRuntime struct {
+	firstApplyStarted chan struct{}
+	releaseFirstApply chan struct{}
+	applyCalls        atomic.Int32
+}
 
 type intentRuntime struct {
 	applied chan contract.CollectionIntent
@@ -333,6 +385,27 @@ func (*subscribeErrorRuntime) Subscribe(context.Context, contract.CollectionInte
 
 func (*deferredApplyRuntime) Apply(context.Context, contract.CollectionIntent) (contract.ApplyResult, error) {
 	return contract.ApplyResult{State: contract.ApplyStateDeferred}, nil
+}
+
+func (r *supersededApplyRuntime) Apply(ctx context.Context, _ contract.CollectionIntent) (contract.ApplyResult, error) {
+	if r.applyCalls.Add(1) == 1 {
+		close(r.firstApplyStarted)
+		select {
+		case <-r.releaseFirstApply:
+		case <-ctx.Done():
+			return contract.ApplyResult{}, ctx.Err()
+		}
+	}
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
+}
+
+func (*supersededApplyRuntime) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	stream := make(chan contract.EventEnvelope)
+	go func() {
+		<-ctx.Done()
+		close(stream)
+	}()
+	return stream, nil
 }
 
 func (*deferredApplyRuntime) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {

@@ -210,6 +210,14 @@ func (s *SubscriptionSupervisor) run(ctx context.Context) {
 			backoff = nextBackoff(backoff, s.retry.Max)
 			continue
 		}
+		_, currentRevision := s.currentIntent()
+		if currentRevision != revision {
+			cancelSubscribe()
+			if !waitStreamClosed(ctx, stream) {
+				return
+			}
+			continue
+		}
 		if s.shouldNotify(revision) {
 			if err := s.notifyApplied(ctx, intent); err != nil {
 				cancelSubscribe()

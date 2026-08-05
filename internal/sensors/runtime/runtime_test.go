@@ -70,6 +70,40 @@ func TestManagerRequiresApplyBeforeSubscribe(t *testing.T) {
 	}
 }
 
+func TestManagerSubscriptionWaitsForSensorCleanup(t *testing.T) {
+	sensor := &delayedCleanupSensor{
+		fakeSensor:     newFakeSensor(),
+		cleanupStarted: make(chan struct{}),
+		releaseCleanup: make(chan struct{}),
+	}
+	rt := New(sensor)
+	if _, err := rt.Apply(t.Context(), contract.CollectionIntent{}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	events, err := rt.Subscribe(ctx)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	cancel()
+	<-sensor.cleanupStarted
+
+	select {
+	case <-events:
+		t.Fatal("manager stream closed before sensor cleanup completed")
+	default:
+	}
+	close(sensor.releaseCleanup)
+	select {
+	case _, ok := <-events:
+		if ok {
+			t.Fatal("manager stream emitted an event while closing")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("manager stream did not close after sensor cleanup")
+	}
+}
+
 func TestManagerRejectsInvalidScope(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -115,6 +149,12 @@ type fakeSensor struct {
 	applyCount int
 }
 
+type delayedCleanupSensor struct {
+	*fakeSensor
+	cleanupStarted chan struct{}
+	releaseCleanup chan struct{}
+}
+
 func newFakeSensor() *fakeSensor {
 	return &fakeSensor{events: make(chan contract.EventEnvelope, 1)}
 }
@@ -141,6 +181,17 @@ func (f *fakeSensor) Subscribe(ctx context.Context, _ contract.CollectionIntent)
 				out <- ev
 			}
 		}
+	}()
+	return out, nil
+}
+
+func (s *delayedCleanupSensor) Subscribe(ctx context.Context, _ contract.CollectionIntent) (<-chan contract.EventEnvelope, error) {
+	out := make(chan contract.EventEnvelope)
+	go func() {
+		<-ctx.Done()
+		close(s.cleanupStarted)
+		<-s.releaseCleanup
+		close(out)
 	}()
 	return out, nil
 }

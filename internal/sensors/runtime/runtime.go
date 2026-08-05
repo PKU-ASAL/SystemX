@@ -84,6 +84,7 @@ func (m *Manager) Subscribe(ctx context.Context) (<-chan contract.EventEnvelope,
 		for {
 			select {
 			case <-subCtx.Done():
+				drainEventStream(in)
 				return
 			case ev, ok := <-in:
 				if !ok {
@@ -93,11 +94,21 @@ func (m *Manager) Subscribe(ctx context.Context) (<-chan contract.EventEnvelope,
 					ev.ReceivedAt = time.Now().UTC()
 				}
 				m.eventsSeen.Add(1)
-				out <- ev
+				select {
+				case out <- ev:
+				case <-subCtx.Done():
+					drainEventStream(in)
+					return
+				}
 			}
 		}
 	}()
 	return out, nil
+}
+
+func drainEventStream(events <-chan contract.EventEnvelope) {
+	for range events {
+	}
 }
 
 func (m *Manager) Enforce(ctx context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {

@@ -203,6 +203,7 @@ func (s *ProcessSupervisor) runProcess(ctx context.Context, spec ProcessSpec) er
 	procCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(procCtx, spec.Path, spec.Args...)
+	configureProcessGroup(cmd)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
 	logFile, err := openProcessLog(spec.LogPath)
