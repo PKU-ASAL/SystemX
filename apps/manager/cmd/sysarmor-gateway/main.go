@@ -20,8 +20,8 @@ import (
 	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/backend"
-	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/grpc"
 )
 

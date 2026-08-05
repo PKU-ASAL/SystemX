@@ -7,8 +7,8 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 func (r *AgentRuntime) loadStartupPolicy(ctx context.Context) (contract.CollectionIntent, policymodel.Policy, config.EffectiveTelemetry, error) {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 func TestSubscriptionSupervisorRetriesApplyAndRecovers(t *testing.T) {

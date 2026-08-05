@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
 )
 
 func (s *Server) enrollments(w http.ResponseWriter, r *http.Request) {

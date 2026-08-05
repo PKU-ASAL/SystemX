@@ -7,16 +7,16 @@ import (
 	"reflect"
 	"strings"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/linux/tetragon"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 type preparedEndpointPolicy struct {

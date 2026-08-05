@@ -7,11 +7,11 @@ import (
 	"io"
 	"time"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
-	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
+	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

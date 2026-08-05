@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 func (s *Server) responses(w http.ResponseWriter, r *http.Request) {

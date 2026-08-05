@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 type recordingSearcher struct {

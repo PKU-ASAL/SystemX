@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 type EffectiveTelemetry struct {

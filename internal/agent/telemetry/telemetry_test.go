@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/contracts/schema"
 )
 
 func TestBusSnapshotsAndWatchesFrames(t *testing.T) {

@@ -157,4 +157,4 @@ sudo sysarmorctl policy apply --file /path/to/policy.json --dry-run
 
 ## `configs/` 的边界
 
-`configs/` 保存策略和规则元数据示例，运行时不会自动发现或加载该目录。Agent 默认值在 `deployments/agent/`，wire contract 在 `api/proto/`，可执行测试内容在 `test/data/`。没有显式 loader 或 apply 流程时，不要把 `configs/` 中的文件视为已部署策略。
+`configs/` 保存策略和规则元数据示例，运行时不会自动发现或加载该目录。Agent 默认值在 `deployments/agent/`，wire contract 在 `packages/contracts/proto/`，可执行测试内容在 `test/data/`。没有显式 loader 或 apply 流程时，不要把 `configs/` 中的文件视为已部署策略。

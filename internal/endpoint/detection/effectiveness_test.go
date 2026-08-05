@@ -3,9 +3,9 @@ package detection
 import (
 	"testing"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 func TestRuleEngineEffectivenessScenarios(t *testing.T) {

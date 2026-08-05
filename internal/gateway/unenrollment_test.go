@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"

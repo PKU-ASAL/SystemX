@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 type CollectionPolicy = policymodel.CollectionPolicy

@@ -1,6 +1,6 @@
 package dataappend
 
-import dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
+import dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 
 func AckCommitted(ack *dataplanev1.DataAck) bool {
 	if ack == nil {

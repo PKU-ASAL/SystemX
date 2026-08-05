@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
-	policyModel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	policyModel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func TestLoadEffectiveEndpointPolicyBootstrapsAndRestoresSQLite(t *testing.T) {

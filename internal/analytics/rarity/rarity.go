@@ -2,7 +2,7 @@ package rarity
 
 import "strings"
 
-import signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+import signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 
 type Scorer interface {
 	Score(signals []*signalv1.Signal) float32

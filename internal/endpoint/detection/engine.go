@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 const defaultMaxCEPGroups = 4096

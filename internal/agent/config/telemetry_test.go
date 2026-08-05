@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func TestResolveTelemetryUsesConfigBaselineAndPartialPolicy(t *testing.T) {

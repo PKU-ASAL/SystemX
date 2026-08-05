@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
+	"github.com/sysarmor/sysarmor-next-project/packages/contracts/schema"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	"google.golang.org/protobuf/proto"
 )
 

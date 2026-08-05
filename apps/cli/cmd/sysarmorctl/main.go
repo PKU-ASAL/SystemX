@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

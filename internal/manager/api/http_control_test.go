@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
 )
 
 func TestControlCommandsAPICreatesAuditableDownlink(t *testing.T) {

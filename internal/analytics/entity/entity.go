@@ -3,7 +3,7 @@ package entity
 import (
 	"strings"
 
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 func Normalize(ref *signalv1.EntityRef) *signalv1.EntityRef {

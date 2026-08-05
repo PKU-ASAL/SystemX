@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
 )
 
 func BenchmarkAppendBatch1000EPS(b *testing.B) {

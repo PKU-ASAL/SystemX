@@ -3,8 +3,8 @@ package graph
 import (
 	"testing"
 
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 func TestFromSignalsBuildsEvidenceGraphEdges(t *testing.T) {

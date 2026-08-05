@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
-	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func (s *Store) PublishPolicyWithAudit(tenantID, policyID string, version uint64, published bool, audit policymodel.AuditRecord) (policymodel.Policy, bool, error) {

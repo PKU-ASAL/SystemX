@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/gateway"
 	"github.com/sysarmor/sysarmor-next-project/internal/manager/api"
 	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

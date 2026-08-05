@@ -7,7 +7,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func newContentStore(cfg config.Config) (*agentcontent.Store, error) {

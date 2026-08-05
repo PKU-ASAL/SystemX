@@ -3,7 +3,7 @@ package normalize
 import (
 	"testing"
 
-	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
 )
 
 func TestNormalizePreservesArgvBoundaryTrust(t *testing.T) {

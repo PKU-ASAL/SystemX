@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func TestPolicyAPIAssignmentAndCloudRuleDisable(t *testing.T) {

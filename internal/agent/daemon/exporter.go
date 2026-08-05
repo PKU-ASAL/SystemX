@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 )
 
 type ExportResult struct {

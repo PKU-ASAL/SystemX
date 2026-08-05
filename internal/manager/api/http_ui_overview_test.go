@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1"
 )
 
 func TestUIOverviewReturnsManagerSummary(t *testing.T) {

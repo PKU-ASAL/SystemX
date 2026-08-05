@@ -4,13 +4,13 @@ import (
 	"errors"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 var ErrInvalidUpload = errors.New("invalid upload")

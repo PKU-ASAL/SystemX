@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 func TestBackendHasNoLegacyScopeFields(t *testing.T) {

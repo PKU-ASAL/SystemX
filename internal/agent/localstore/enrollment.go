@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
 )
 
 type EnrollmentState string

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

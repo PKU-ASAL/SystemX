@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) {

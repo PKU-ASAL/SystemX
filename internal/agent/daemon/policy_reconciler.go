@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 type endpointPolicyReconciler struct {

@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 )
 
 type PolicyRollout struct {

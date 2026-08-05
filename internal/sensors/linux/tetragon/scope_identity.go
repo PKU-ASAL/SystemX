@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 var containerIDPattern = regexp.MustCompile(`[0-9a-fA-F]{32,64}`)

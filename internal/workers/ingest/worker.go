@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/contracts/schema"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

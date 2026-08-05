@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
 )
 
 type envelope struct {

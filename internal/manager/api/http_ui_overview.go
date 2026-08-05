@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

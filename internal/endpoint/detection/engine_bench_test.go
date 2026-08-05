@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 func BenchmarkEngineProcessDefaultContentMixed(b *testing.B) {

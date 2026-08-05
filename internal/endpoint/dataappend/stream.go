@@ -7,16 +7,16 @@ import (
 	"io"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
+	"github.com/sysarmor/sysarmor-next-project/packages/contracts/schema"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/internal/sensors/linux/tetragon"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 type BatchSender interface {

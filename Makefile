@@ -2,7 +2,7 @@
 
 .PHONY: api build build-agent-binary build-agent-tools build-binary business-docx install-agent uninstall-agent test test-help test-doctor test-unit test-functional test-detection test-performance test-distribution test-release test-opensearch-lifecycle test-business-docx up deploy down status reset clean clean-bin pki auth-init doctor release release-rc release-stable check-github-release-inputs web-install web-dev web-up web-build web-preview web-status web-stop help
 
-PROTO_FILES := $(shell find api/proto -name '*.proto' | sort)
+PROTO_FILES := $(shell find packages/contracts/proto -name '*.proto' | sort)
 GOCACHE ?= /tmp/sysarmor-go-cache
 GOBIN_PATH := $(shell go env GOPATH)/bin
 BIN_DIR ?= dist/bin

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 const SignalName = "sensor_tamper_or_blindness"

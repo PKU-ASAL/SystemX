@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/detection"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

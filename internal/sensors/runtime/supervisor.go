@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 type RetryOptions struct {

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package sysarmor.sensor.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1;sensorv1";
+
+message RawProcess {
+  uint32 pid = 1;
+  uint32 ppid = 2;
+  string binary = 3;
+  repeated string argv = 4;
+  uint32 uid = 5;
+  uint64 start_time_ns = 6;
+  string cgroup = 7;
+  string sensor_exec_id = 8;
+  string sensor_parent_exec_id = 9;
+  bool argv_boundaries_trusted = 10;
+}
+
+message RawObject {
+  string path = 1;
+  string dst = 2;
+  uint32 target_pid = 3;
+}
+
+message SensorEvent {
+  uint64 mono_ns = 1;
+  reserved 2;
+  RawProcess proc = 3;
+  RawObject object = 4;
+  string container_id = 5;
+  string raw_ref = 6;
+  string behavior = 7;
+}
+
+message SensorHealth {
+  uint64 dropped_events = 1;
+  double events_per_sec = 2;
+}

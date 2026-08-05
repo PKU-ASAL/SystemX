@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 )
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

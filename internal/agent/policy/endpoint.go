@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 const endpointPolicyKind = "endpoint"

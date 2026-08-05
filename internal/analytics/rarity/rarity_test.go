@@ -3,7 +3,7 @@ package rarity
 import (
 	"testing"
 
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 func TestCountScorerKeepsUniqueSignalRisk(t *testing.T) {

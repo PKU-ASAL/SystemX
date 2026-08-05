@@ -13,8 +13,8 @@ import (
 
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 func TestEnrollmentCoordinatorKeepsManagedAuthorityWhileRevocationIsPending(t *testing.T) {

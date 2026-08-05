@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	sensorv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/sensor/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 const runtimeTracingPolicyName = "sysarmor-runtime-collection"

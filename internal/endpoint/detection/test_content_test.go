@@ -7,8 +7,8 @@ import (
 	"time"
 
 	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 const testRuleSetRef = "ruleset:cep-endpoint"

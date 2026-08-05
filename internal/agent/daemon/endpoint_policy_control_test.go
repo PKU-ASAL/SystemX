@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/config"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/internal/sensors/runtime"
 	managerstore "github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 const standaloneEndpointPolicyJSON = `{"policy_id":"standalone","version":1,"collection":{"behaviors":["process.exec"]},"detection":{"rulesets":[{"ref":"ruleset:cep-endpoint"}]},"telemetry":{},"response":{}}`

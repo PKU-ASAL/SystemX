@@ -24,7 +24,7 @@ make web-build
 | 目录 | 负责内容 |
 |---|---|
 | `cmd/` | 薄可执行入口和依赖组装 |
-| `api/proto/` | Agent 数据面与控制面 wire contract |
+| `packages/contracts/proto/` | Agent 数据面与控制面 wire contract |
 | `internal/agent/` | 配置、本地状态、注册、Policy 和 daemon 生命周期 |
 | `internal/endpoint/` | 事件规范化、匹配和端侧检测 |
 | `internal/sensors/` | Sensor contract 与平台适配器 |
@@ -51,7 +51,7 @@ make web-build
 
 | 命令 | 结果 |
 |---|---|
-| `make api` | 从 `api/proto/*.proto` 生成 Go protobuf 和 gRPC 代码 |
+| `make api` | 从 `packages/contracts/proto/*.proto` 生成 Go protobuf 和 gRPC 代码 |
 | `make build-agent-binary` | 构建 `dist/bin/sysarmor-agent` |
 | `make build-agent-tools` | 构建 Agent 和 `sysarmorctl` |
 | `make build-binary` | 构建 Agent、Gateway、Manager、Worker、CLI |
@@ -107,7 +107,7 @@ make release-stable VERSION=1.0.0 RC=1
 ## 修改协议
 
 1. 先确定变化属于 `schema_version`、`analysis_version` 还是 OpenSearch mapping。
-2. 修改 `api/proto/`；不得复用字段编号或名称。
+2. 修改 `packages/contracts/proto/`；不得复用字段编号或名称。
 3. 运行 `make api`，不要手工编辑 `*.pb.go`。
 4. 同步 producer、consumer、兼容性检查和契约测试。
 5. 按[API 参考](../reference/api.md)的 consumer-first 顺序规划发布。

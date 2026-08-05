@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
 )
 
 type compiledCorrelateRuntime struct {

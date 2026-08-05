@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	"github.com/sysarmor/sysarmor-next-project/internal/store/migrations"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 const snapshotStateKey = "default"

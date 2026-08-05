@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 	platformkafka "github.com/sysarmor/sysarmor-next-project/internal/platform/kafka"
 	platformredis "github.com/sysarmor/sysarmor-next-project/internal/platform/redis"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 	ingestworker "github.com/sysarmor/sysarmor-next-project/internal/workers/ingest"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

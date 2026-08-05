@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 func TestResponseCreatePersistenceFailureReturnsInternalServerError(t *testing.T) {

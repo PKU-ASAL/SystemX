@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
 )
 
 func TestEnrollmentQueryExposesCompletionWithoutTokenHash(t *testing.T) {

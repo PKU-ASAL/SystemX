@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
 )
 
 func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {

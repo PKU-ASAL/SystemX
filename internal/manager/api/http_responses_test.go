@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	managerauth "github.com/sysarmor/sysarmor-next-project/internal/manager/auth"
-	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 func TestResponsePolicyCanRequireApproval(t *testing.T) {

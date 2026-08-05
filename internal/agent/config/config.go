@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sysarmor/sysarmor-next-project/internal/sensors/contract"
+	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
 type Config struct {

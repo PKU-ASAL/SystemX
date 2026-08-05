@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/internal/agent/policy"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 )
 
 func (r *AgentRuntime) pendingPolicyStatus(ctx context.Context) (agenthealth.PendingPolicyStatus, error) {

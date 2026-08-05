@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
+	policyv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/policy/v1"
 )
 
 func (s *Server) recompute(w http.ResponseWriter, r *http.Request) {

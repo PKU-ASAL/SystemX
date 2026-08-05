@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
-	"github.com/sysarmor/sysarmor-next-project/internal/contracts/schema"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/ringbuffer"
+	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/contracts/schema"
 )
 
 type recordingUploader struct {

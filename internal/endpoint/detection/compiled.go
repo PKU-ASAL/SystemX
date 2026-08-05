@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/matcher"
-	"github.com/sysarmor/sysarmor-next-project/internal/eventmodel"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
 )
 
 type compiledRuntime struct {

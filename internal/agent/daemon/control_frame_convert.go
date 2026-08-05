@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
+	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 )
 
 func responseCommandFromControl(in *controlplanev1.ResponseCommand) (responsemodel.Command, error) {

@@ -1,10 +1,10 @@
 package correlate
 
 import (
-	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
-	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/entity"
+	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
+	policyv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/policy/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 type View struct {

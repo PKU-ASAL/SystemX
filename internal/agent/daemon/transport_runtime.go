@@ -7,9 +7,9 @@ import (
 	"io"
 	"time"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
-	"github.com/sysarmor/sysarmor-next-project/internal/tlsconfig"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
+	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/protobuf/proto"
 )
 

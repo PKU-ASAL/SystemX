@@ -1,9 +1,9 @@
 package evidence
 
 import (
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/graph"
+	incidentv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 func FromSignals(signals []*signalv1.Signal) *incidentv1.EvidenceSubgraph {

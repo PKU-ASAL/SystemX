@@ -3,9 +3,9 @@ package ingest
 import (
 	"testing"
 
-	policyv1 "github.com/sysarmor/sysarmor-next-project/api/proto/policy/v1"
-	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
+	policyv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/policy/v1"
+	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
 func TestAnalyzeFilelessC2ProducesCloudSignalsAndIncident(t *testing.T) {

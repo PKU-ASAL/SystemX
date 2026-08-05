@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 )
 
 func TestControlConnectionStateBoundsReplayCache(t *testing.T) {

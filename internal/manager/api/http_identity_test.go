@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 )
 
 func TestStoreStatusAPI(t *testing.T) {

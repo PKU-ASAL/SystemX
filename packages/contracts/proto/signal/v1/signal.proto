@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package sysarmor.signal.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1;signalv1";
+
+enum SignalWhere {
+  SIGNAL_WHERE_UNSPECIFIED = 0;
+  SIGNAL_WHERE_ENDPOINT = 1;
+  SIGNAL_WHERE_CLOUD = 2;
+}
+
+message EntityRef {
+  string kind = 1;
+  string key = 2;
+  string role = 3;
+}
+
+message EvidenceBundle {
+  string id = 1;
+  repeated string event_refs = 2;
+  repeated string raw_refs = 3;
+  repeated EntityRef entities = 4;
+  string summary = 5;
+}
+
+message ResponseIntent {
+  string response_intent = 1;
+  string recommended_action = 2;
+  uint32 confidence = 3;
+  string reason = 4;
+}
+
+message ContentRef {
+  string ref = 1;
+  string version = 2;
+  string digest = 3;
+}
+
+message Signal {
+  string id = 1;
+  string name = 2;
+  SignalWhere where = 3;
+  uint32 base_risk = 4;
+  float local_rarity = 5;
+  float global_rarity = 6;
+  string lineage_id = 7;
+  repeated EntityRef entities = 8;
+  repeated string event_refs = 9;
+  repeated string signal_refs = 10;
+  bool terminal = 11;
+  EvidenceBundle evidence = 12;
+  reserved 13;
+  reserved "scenario";
+  bool cross_lineage = 14;
+  ResponseIntent response_intent = 15;
+  string rule_id = 16;
+  uint64 rule_version = 17;
+  string ruleset_ref = 18;
+  repeated ContentRef context_refs = 19;
+  repeated ContentRef ioc_refs = 20;
+  string severity = 21;
+  uint32 confidence = 22;
+  string mode = 23;
+  map<string, string> labels = 24;
+}
