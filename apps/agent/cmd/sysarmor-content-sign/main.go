@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
+	agentcontent "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/content"
 )
 
 func main() {

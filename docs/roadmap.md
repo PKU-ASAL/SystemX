@@ -46,7 +46,7 @@ Agent 和 Sensor 是所有安全能力的执行基础。系统不能只依靠 Ag
 ### 当前证据
 
 - [systemd Agent unit](../deployments/agent/systemd/sysarmor-agent.service)
-- [Sensor 篡改与失明检测](../internal/agent/tamper/tamper.go)
+- [Sensor 篡改与失明检测](../apps/agent/internal/tamper/tamper.go)
 - [真实 Tetragon Agent 生命周期测试](../test/suites/functional/endpoint/e2e-real-tetragon-owned-vm.sh)
 
 ### 边界

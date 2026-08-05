@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	agentcontent "github.com/sysarmor/sysarmor-next-project/internal/agent/content"
+	agentcontent "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/content"
 )
 
 func TestRunSignsContentForStoreValidation(t *testing.T) {

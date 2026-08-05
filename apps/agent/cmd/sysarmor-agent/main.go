@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	agentconfig "github.com/sysarmor/sysarmor-next-project/internal/agent/config"
-	"github.com/sysarmor/sysarmor-next-project/internal/agent/daemon"
-	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/dataappend"
+	agentconfig "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/config"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/daemon"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/endpoint/dataappend"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 )

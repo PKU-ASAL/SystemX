@@ -25,9 +25,9 @@ make web-build
 |---|---|
 | `cmd/` | 薄可执行入口和依赖组装 |
 | `packages/contracts/proto/` | Agent 数据面与控制面 wire contract |
-| `internal/agent/` | 配置、本地状态、注册、Policy 和 daemon 生命周期 |
-| `internal/endpoint/` | 事件规范化、匹配和端侧检测 |
-| `internal/sensors/` | Sensor contract 与平台适配器 |
+| `apps/agent/internal/` | 配置、本地状态、注册、Policy 和 daemon 生命周期 |
+| `apps/agent/internal/endpoint/` | 事件规范化、匹配和端侧检测 |
+| `apps/agent/internal/sensors/` | Sensor contract 与平台适配器 |
 | `internal/gateway/` | Agent-facing mTLS gRPC |
 | `internal/workers/` | 持久遥测消费、分析和投影 |
 | `internal/manager/` | Operator API、鉴权和控制面流程 |
@@ -116,7 +116,7 @@ Manager HTTP 字段变化还必须同步 `internal/manager/api/` handler 测试�
 
 ## 修改 Agent 配置
 
-Agent 配置解析器位于 `internal/agent/config/`，采用严格 key 校验。新增字段需要同时完成：
+Agent 配置解析器位于 `apps/agent/internal/config/`，采用严格 key 校验。新增字段需要同时完成：
 
 1. 配置结构、默认值、解析和 Validate 规则。
 2. 正常值、边界值、未知值和冲突值测试。
