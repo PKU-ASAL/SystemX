@@ -36,7 +36,7 @@ def test_packages_governance_is_documented(self):
         self.assertIn(phrase, text)
 ```
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout.MonorepoLayoutTest.test_packages_governance_is_documented -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Expected: FAIL，原因是 `packages/README.md` 不存在。
 
@@ -46,7 +46,7 @@ Expected: FAIL，原因是 `packages/README.md` 不存在。
 
 - [ ] **Step 3: 验证并提交**
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Run: `git add packages/README.md test/contracts/test_monorepo_layout.py && git commit -m "test(architecture): define shared package boundaries"`
 
@@ -75,7 +75,7 @@ def test_agent_data_pipeline_layout(self):
     self.assertFalse((root / "endpoint").exists())
 ```
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout.MonorepoLayoutTest.test_agent_data_pipeline_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Expected: FAIL，原因是新目录尚不存在。
 
@@ -91,7 +91,7 @@ Run: `go fmt ./apps/agent/...`
 
 Run: `go test ./apps/agent/... -count=1`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Run: `rg 'apps/agent/internal/endpoint' --glob '*.go'`
 
@@ -147,7 +147,7 @@ Run: `go fmt ./apps/manager/internal/store/...`
 
 Run: `go test -race ./apps/manager/internal/store -count=1`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Run: `git add apps/manager/internal/store test/contracts && git commit -m "refactor(manager): split store by domain"`
 
@@ -195,7 +195,7 @@ Run: `go fmt ./apps/manager/internal/store/postgres`
 
 Run: `go test -race ./apps/manager/internal/store/... -count=1`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Run: `git add apps/manager/internal/store/postgres test/contracts && git commit -m "refactor(manager): split postgres store by domain"`
 
@@ -238,7 +238,7 @@ Run: `go fmt ./apps/agent/internal/sensors/linux/tetragon`
 
 Run: `go test -race ./apps/agent/internal/sensors/... -count=1`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Run: `git add apps/agent/internal/sensors/linux/tetragon test/contracts && git commit -m "refactor(agent): split tetragon backend responsibilities"`
 
@@ -291,6 +291,6 @@ Run: `go build ./apps/cli/cmd/sysarmorctl`
 
 Run: `go test -race ./apps/manager/internal/store/... ./apps/agent/internal/sensors/... ./apps/agent/internal/event/... ./apps/agent/internal/detection/... ./apps/agent/internal/telemetry/... -count=1`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Run: `git add apps/cli/cmd/sysarmorctl test/contracts && git commit -m "refactor(cli): split sysarmorctl command domains"`

@@ -80,6 +80,14 @@ class MonorepoLayoutContractTest(unittest.TestCase):
                 violations.append(str(source.relative_to(self.repo)))
         self.assertEqual([], violations, f"packages import apps: {violations}")
 
+    def test_packages_governance_is_documented(self):
+        readme = self.repo / "packages/README.md"
+        self.assertTrue(readme.is_file())
+        text = readme.read_text()
+        for phrase in ("跨产品", "apps/", "稳定契约", "生命周期"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+
     def test_agent_implementation_is_owned_by_agent_app(self):
         expected = (
             "apps/agent/internal/config",

@@ -249,7 +249,7 @@ Run: `go fmt ./apps/agent/internal/remoteapi ./apps/agent/internal/daemon`
 
 Run: `go test -race ./apps/agent/internal/remoteapi ./apps/agent/internal/control ./apps/agent/internal/daemon -count=1`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 - [ ] **Step 5: 提交**
 
@@ -306,7 +306,7 @@ Run: `find apps packages -path '*/node_modules' -prune -o -type f -name '*.go' -
 
 Run: `git diff --check`
 
-Run: `python3 -m unittest test.contracts.test_monorepo_layout -v`
+Run: `python3 test/contracts/test_monorepo_layout.py`
 
 Expected: 前两项无输出，合同 PASS。
 
