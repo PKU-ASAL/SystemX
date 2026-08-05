@@ -7,11 +7,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,6 +120,7 @@ func TestAgentDataPlaneServiceMTLSBindsBatchIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store.Store{}
+	st.RecordAgentCertificate(store.AgentCertificate{TenantID: "default", AgentID: "grpc-agent", EnrollmentID: "enroll-data", SerialNumber: certs.clientSerial})
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st, LocalProcessor: ingestworker.NewProcessor(st, nil)})
 	grpcServer := grpc.NewServer(serverOpt)
 	dataplanev1.RegisterAgentDataPlaneServiceServer(grpcServer, gateway.NewDataServer(server))
@@ -147,6 +150,13 @@ func TestAgentDataPlaneServiceMTLSBindsBatchIdentity(t *testing.T) {
 	if _, err := appendStreamBatch(context.Background(), conn, grpcDataBatch("mtls-ok", "grpc-agent", "grpc-host", nil)); err != nil {
 		t.Fatalf("StreamBatches() matching mTLS identity error = %v", err)
 	}
+	if _, ok, err := st.RevokeAgentCertificate("default", "grpc-agent", "enroll-data", certs.clientSerial, time.Now().UTC()); err != nil || !ok {
+		t.Fatalf("revoke test certificate ok=%t err=%v", ok, err)
+	}
+	_, err = appendStreamBatch(context.Background(), conn, grpcDataBatch("mtls-revoked", "grpc-agent", "grpc-host", nil))
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("StreamBatches() revoked mTLS identity error = %v, want permission denied", err)
+	}
 	_, err = appendStreamBatch(context.Background(), conn, grpcDataBatch("mtls-denied", "other-agent", "grpc-host", nil))
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("StreamBatches() mismatched mTLS identity error = %v, want permission denied", err)
@@ -160,6 +170,7 @@ func TestControlPlaneConnectMTLSBindsFrameIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := &store.Store{}
+	st.RecordAgentCertificate(store.AgentCertificate{TenantID: "default", AgentID: "control-agent", EnrollmentID: "enroll-control", SerialNumber: certs.clientSerial})
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer(serverOpt)
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
@@ -277,10 +288,17 @@ func TestControlPlaneConnectAcceptsHealthReport(t *testing.T) {
 		Sequence:        1,
 		Context:         &controlplanev1.RequestContext{TenantId: "default", AgentId: "control-agent", Scope: &controlplanev1.Scope{Type: "host"}},
 		Health: &controlplanev1.HealthResponse{
-			AgentId:    "control-agent",
-			HostId:     "control-host",
-			TenantId:   "default",
-			Status:     "ok",
+			AgentId:  "control-agent",
+			HostId:   "control-host",
+			TenantId: "default",
+			Status:   "ok",
+			PendingPolicy: &controlplanev1.PendingPolicyStatus{
+				Status:   "pending",
+				Source:   "managed",
+				PolicyId: "managed-policy",
+				Version:  7,
+				Digest:   "sha256:pending",
+			},
 			Scope:      &controlplanev1.Scope{Type: "host"},
 			ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
 			Capability: &controlplanev1.SensorCapability{Backend: "fake", Version: "dev", SupportsHealth: true},
@@ -300,10 +318,21 @@ func TestControlPlaneConnectAcceptsHealthReport(t *testing.T) {
 	if !ok || got.Status != "ok" || got.Sensor.EventsSeen != 9 || got.Capability.Version != "dev" {
 		t.Fatalf("agent health = %+v ok=%t", got, ok)
 	}
+	if got.PendingPolicy.Status != "pending" || got.PendingPolicy.Source != "managed" || got.PendingPolicy.PolicyID != "managed-policy" || got.PendingPolicy.Version != 7 || got.PendingPolicy.Digest != "sha256:pending" {
+		t.Fatalf("pending policy = %+v, want complete managed pending status", got.PendingPolicy)
+	}
 }
 
 func TestControlPlaneConnectAcceptsAgentAck(t *testing.T) {
 	st := &store.Store{}
+	if _, err := st.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID: "content-update-1",
+		TenantID:  "default",
+		AgentID:   "ack-agent",
+		Type:      controlmodel.ControlCommandTypeContentUpdate,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
@@ -482,13 +511,15 @@ func TestControlPlaneConnectSequenceRejectsReplayAndGap(t *testing.T) {
 func TestControlPlaneConnectReconnectReturnsResumeAndPendingCommands(t *testing.T) {
 	st := &store.Store{}
 	st.RecordDataBatchAppend(store.AgentIdentity{TenantID: "default", AgentID: "reconnect-agent"}, "batch-before-reconnect", "grpc", time.Unix(10, 0).UTC())
-	st.CreateResponse(responsemodel.Command{
+	if _, err := st.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-reconnect",
 		TenantID:   "default",
 		AgentID:    "reconnect-agent",
 		Action:     "collect",
 		Target:     "process:p1",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
@@ -548,13 +579,15 @@ func TestControlPlaneConnectReconnectReturnsResumeAndPendingCommands(t *testing.
 
 func TestControlPlaneConnectSendsPendingControlCommandAndPersistsAck(t *testing.T) {
 	st := &store.Store{}
-	st.CreateControlCommand(controlmodel.ControlCommand{
+	if _, err := st.CreateControlCommand(controlmodel.ControlCommand{
 		CommandID:   "ctrl-content-stream",
 		TenantID:    "default",
 		AgentID:     "control-command-agent",
 		Type:        controlmodel.ControlCommandTypeContentUpdate,
 		PayloadJSON: []byte(`{"api_version":"sysarmor.content/v1","kind":"iocpack","metadata":{"id":"ioc:test","version":"v1"},"spec":{"value_type":"ip","values":["10.0.0.1"]}}`),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
@@ -605,6 +638,9 @@ func TestControlPlaneConnectSendsPendingControlCommandAndPersistsAck(t *testing.
 	if cmdFrame.GetType() != "content_update" || cmdFrame.GetRequestId() != "ctrl-content-stream" || cmdFrame.GetContentUpdate().GetContentJson() == "" {
 		t.Fatalf("control command frame = %+v", cmdFrame)
 	}
+	if cmdFrame.GetContentUpdate().GetAllowUnsigned() {
+		t.Fatalf("content update unexpectedly allows unsigned content")
+	}
 	if got := st.ListControlCommands("default", "control-command-agent", ""); len(got) != 1 || got[0].Status != controlmodel.ControlCommandStatusSent {
 		t.Fatalf("commands after send = %+v", got)
 	}
@@ -636,6 +672,175 @@ func TestControlPlaneConnectSendsPendingControlCommandAndPersistsAck(t *testing.
 	if len(got) != 1 || got[0].Status != controlmodel.ControlCommandStatusApplied || got[0].AckMessage != "content applied" || got[0].AckPolicyID != "ioc:test" {
 		t.Fatalf("commands after ack = %+v", got)
 	}
+}
+
+func TestControlPlaneConnectControlAckPersistenceFailureReturnsInternal(t *testing.T) {
+	st := &store.Store{ControlCommands: []controlmodel.ControlCommand{{
+		CommandID: "ctrl-fail", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusPending,
+	}}}
+	st.AttachBackend(context.Background(), failingControlCommandBackend{}, store.Info{Backend: "test"})
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type: "ack", RequestId: "ctrl-fail", ContractVersion: 1, Sequence: 1,
+		Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"},
+		Ack:     &controlplanev1.ControlAck{RequestId: "ctrl-fail", TenantId: "default", AgentId: "agent-a", Status: "applied"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.GetAck().GetStatus() != "rejected" || reply.GetError().GetCode() != codes.Internal.String() {
+		t.Fatalf("ack reply = %+v, want rejected internal error", reply)
+	}
+	if st.ControlCommands[0].Status != controlmodel.ControlCommandStatusPending {
+		t.Fatalf("control command after failed ack = %+v", st.ControlCommands[0])
+	}
+}
+
+func TestControlPlaneHelloFailsClosedWhenEffectivePolicyReadFails(t *testing.T) {
+	st := &store.Store{}
+	st.AttachBackend(context.Background(), failingHelloBackend{}, store.Info{Backend: "test"})
+	stream, cleanup := openControlStream(t, st)
+	defer cleanup()
+
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type: "hello", RequestId: "hello-store-down", ContractVersion: 1, Sequence: 1,
+		Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.GetAck().GetStatus() != "rejected" || reply.GetError().GetCode() != codes.Internal.String() {
+		t.Fatalf("hello reply = %+v, want rejected internal error", reply)
+	}
+}
+
+func TestControlPlaneConnectMissingControlAckReturnsNotFound(t *testing.T) {
+	st := &store.Store{}
+	stream, cleanup := openControlStream(t, st)
+	defer cleanup()
+
+	if err := stream.Send(&controlplanev1.ControlFrame{
+		Type: "ack", RequestId: "missing-control", ContractVersion: 1, Sequence: 1,
+		Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"},
+		Ack:     &controlplanev1.ControlAck{RequestId: "missing-control", TenantId: "default", AgentId: "agent-a", Status: "applied"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.GetAck().GetStatus() != "rejected" || reply.GetError().GetCode() != codes.NotFound.String() {
+		t.Fatalf("ack reply = %+v, want rejected not found", reply)
+	}
+}
+
+func TestControlPlaneConnectRejectsMismatchedAckIdentity(t *testing.T) {
+	tests := []struct {
+		name  string
+		frame *controlplanev1.ControlFrame
+	}{
+		{
+			name: "response ack",
+			frame: &controlplanev1.ControlFrame{
+				Type: "response_ack", RequestId: "response-identity", ContractVersion: 1, Sequence: 1,
+				Context:     &controlplanev1.RequestContext{TenantId: "tenant-a", AgentId: "agent-a"},
+				ResponseAck: &controlplanev1.ResponseAck{ResponseId: "response-identity", TenantId: "tenant-b", AgentId: "agent-a"},
+			},
+		},
+		{
+			name: "control ack",
+			frame: &controlplanev1.ControlFrame{
+				Type: "ack", RequestId: "control-identity", ContractVersion: 1, Sequence: 1,
+				Context: &controlplanev1.RequestContext{TenantId: "tenant-a", AgentId: "agent-a"},
+				Ack:     &controlplanev1.ControlAck{RequestId: "control-identity", TenantId: "tenant-a", AgentId: "agent-b", Status: "applied"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, cleanup := openControlStream(t, &store.Store{})
+			defer cleanup()
+			if err := stream.Send(tt.frame); err != nil {
+				t.Fatal(err)
+			}
+			reply, err := stream.Recv()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reply.GetAck().GetStatus() != "rejected" || reply.GetError().GetCode() != codes.PermissionDenied.String() {
+				t.Fatalf("ack reply = %+v, want rejected permission denied", reply)
+			}
+		})
+	}
+}
+
+func openControlStream(t *testing.T, st *store.Store) (controlplanev1.AgentControlPlaneService_ConnectClient, func()) {
+	t.Helper()
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() { _ = grpcServer.Serve(lis) }()
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		grpcServer.Stop()
+		t.Fatal(err)
+	}
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(context.Background())
+	if err != nil {
+		_ = conn.Close()
+		grpcServer.Stop()
+		t.Fatal(err)
+	}
+	return stream, func() {
+		_ = conn.Close()
+		grpcServer.Stop()
+	}
+}
+
+type failingControlCommandBackend struct{ store.Backend }
+
+func (failingControlCommandBackend) CreateControlCommand(context.Context, controlmodel.ControlCommand) (bool, error) {
+	return false, errors.New("backend down")
+}
+
+func (failingControlCommandBackend) WriteControlCommand(context.Context, controlmodel.ControlCommand) error {
+	return errors.New("backend down")
+}
+
+type failingHelloBackend struct{ store.Backend }
+
+func (failingHelloBackend) EffectivePolicy(context.Context, string, string, string, string) (policymodel.Policy, bool, error) {
+	return policymodel.Policy{}, false, errors.New("backend down")
 }
 
 func TestControlPlaneConnectRequiresRequestID(t *testing.T) {
@@ -683,12 +888,174 @@ func TestControlPlaneConnectRequiresRequestID(t *testing.T) {
 	}
 }
 
+func TestRevokeEnrollmentRequiresMTLSIdentity(t *testing.T) {
+	st := &store.Store{}
+	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_, err = controlplanev1.NewAgentControlPlaneServiceClient(conn).RevokeEnrollment(context.Background(), &controlplanev1.RevokeEnrollmentRequest{
+		TenantId: "tenant-a", AgentId: "agent-a", EnrollmentId: "enroll-a", CertificateSerial: "42",
+	})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("RevokeEnrollment error=%v, want Unauthenticated", err)
+	}
+}
+
+func TestEvidencePullbackResultFailsClosedWhenStoreReadFails(t *testing.T) {
+	st := &store.Store{Pullbacks: []controlmodel.EvidencePullbackRequest{{RequestID: "pullback-a", TenantID: "default", AgentID: "agent-a", Status: controlmodel.EvidencePullbackStatusPending}}}
+	st.AttachBackend(t.Context(), evidenceReadFailureBackend{}, store.Info{Backend: "test"})
+	grpcServer := grpc.NewServer()
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(gateway.NewRuntime(gateway.RuntimeOptions{Store: st})))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+	conn, err := grpc.DialContext(t.Context(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{Type: "evidence_pullback_result", RequestId: "result-a", ContractVersion: 1, Sequence: 1, Context: &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a"}, EvidenceResult: &controlplanev1.EvidencePullbackResult{RequestId: "pullback-a", TenantId: "default", AgentId: "agent-a", Ok: true}}); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.GetAck().GetStatus() != "rejected" || frame.GetError().GetCode() != codes.Internal.String() {
+		t.Fatalf("frame=%+v, want Internal rejection", frame)
+	}
+}
+
+type evidenceReadFailureBackend struct{ store.Backend }
+
+func (evidenceReadFailureBackend) ListEvidencePullbacks(context.Context, string, string) ([]controlmodel.EvidencePullbackRequest, error) {
+	return nil, errors.New("backend down")
+}
+
+func (evidenceReadFailureBackend) SaveState(context.Context, store.State) error { return nil }
+
+func TestDataBatchFailsClosedWhenSessionReadFails(t *testing.T) {
+	st := &store.Store{}
+	st.AttachBackend(t.Context(), sessionReadFailureBackend{}, store.Info{Backend: "test"})
+	runtime := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
+
+	_, err := runtime.AppendDataBatchWithTransport(grpcDataBatch("batch-a", "agent-a", "host-a", nil), "grpc_stream")
+	if err == nil || !strings.Contains(err.Error(), "list agent sessions") {
+		t.Fatalf("AppendDataBatchWithTransport() error = %v, want session read failure", err)
+	}
+}
+
+type sessionReadFailureBackend struct{ store.Backend }
+
+func (sessionReadFailureBackend) ListAgentSessions(context.Context, string, string) ([]store.AgentSession, error) {
+	return nil, errors.New("backend down")
+}
+
+func (sessionReadFailureBackend) SaveState(context.Context, store.State) error { return nil }
+
+func TestRevokeEnrollmentMTLSIdentityAndIdempotencyMatrix(t *testing.T) {
+	certs := writeTestMTLSFiles(t, "tenant-a", "agent-a")
+	serverOpt, err := tlsconfig.ServerOption(certs.serverCert, certs.serverKey, certs.ca, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &store.Store{}
+	st.RecordAgentCertificate(store.AgentCertificate{TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: certs.clientSerial,
+		UnenrollmentProtocol: controlmodel.UnenrollmentProtocolCompletionV1})
+	grpcServer := grpc.NewServer(serverOpt)
+	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(gateway.NewRuntime(gateway.RuntimeOptions{Store: st})))
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = grpcServer.Serve(lis) }()
+	defer grpcServer.Stop()
+	creds, err := tlsconfig.ClientCredentials(tlsconfig.ClientConfig{CAFile: certs.ca, CertFile: certs.clientCert, KeyFile: certs.clientKey, ServerName: "localhost"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := grpc.DialContext(t.Context(), lis.Addr().String(), grpc.WithTransportCredentials(creds), grpc.WithBlock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := controlplanev1.NewAgentControlPlaneServiceClient(conn)
+
+	for name, mutate := range map[string]func(*controlplanev1.RevokeEnrollmentRequest){
+		"tenant":     func(req *controlplanev1.RevokeEnrollmentRequest) { req.TenantId = "tenant-other" },
+		"agent":      func(req *controlplanev1.RevokeEnrollmentRequest) { req.AgentId = "agent-other" },
+		"serial":     func(req *controlplanev1.RevokeEnrollmentRequest) { req.CertificateSerial = "999" },
+		"enrollment": func(req *controlplanev1.RevokeEnrollmentRequest) { req.EnrollmentId = "enroll-other" },
+	} {
+		t.Run(name+" mismatch", func(t *testing.T) {
+			req := revokeEnrollmentRequest(certs.clientSerial)
+			mutate(req)
+			if _, err := client.RevokeEnrollment(t.Context(), req); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("RevokeEnrollment() error=%v, want PermissionDenied", err)
+			}
+		})
+	}
+
+	first, err := client.RevokeEnrollment(t.Context(), revokeEnrollmentRequest(certs.clientSerial))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflict := revokeEnrollmentRequest(certs.clientSerial)
+	conflict.CompletionTokenHash = strings.Repeat("b", 64)
+	if _, err := client.RevokeEnrollment(t.Context(), conflict); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("RevokeEnrollment(token hash conflict) error=%v, want PermissionDenied", err)
+	}
+	second, err := client.RevokeEnrollment(t.Context(), revokeEnrollmentRequest(certs.clientSerial))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.GetReceiptId() == "" || first.GetReceiptId() != second.GetReceiptId() || first.GetRevokedAt() != second.GetRevokedAt() ||
+		!first.GetCompletionRequired() || !second.GetCompletionRequired() {
+		t.Fatalf("first=%+v second=%+v, want stable revocation result", first, second)
+	}
+
+	stream, err := client.Connect(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&controlplanev1.ControlFrame{Type: "hello", RequestId: "revoked-control", ContractVersion: 1, Sequence: 1, Context: &controlplanev1.RequestContext{TenantId: "tenant-a", AgentId: "agent-a", Scope: &controlplanev1.Scope{Type: "host"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.GetAck().GetStatus() != "rejected" || frame.GetError().GetCode() != codes.PermissionDenied.String() {
+		t.Fatalf("revoked control frame=%+v, want PermissionDenied rejection", frame)
+	}
+}
+
+func revokeEnrollmentRequest(serial string) *controlplanev1.RevokeEnrollmentRequest {
+	return &controlplanev1.RevokeEnrollmentRequest{TenantId: "tenant-a", AgentId: "agent-a", EnrollmentId: "enroll-a", CertificateSerial: serial, CompletionTokenHash: strings.Repeat("a", 64)}
+}
+
 type testMTLSFiles struct {
-	ca         string
-	serverCert string
-	serverKey  string
-	clientCert string
-	clientKey  string
+	ca           string
+	serverCert   string
+	serverKey    string
+	clientCert   string
+	clientKey    string
+	clientSerial string
 }
 
 func writeTestMTLSFiles(t *testing.T, tenantID, agentID string) testMTLSFiles {
@@ -699,11 +1066,12 @@ func writeTestMTLSFiles(t *testing.T, tenantID, agentID string) testMTLSFiles {
 	identityURI := &url.URL{Scheme: "spiffe", Host: "sysarmor.local", Path: "/tenant/" + tenantID + "/agent/" + agentID}
 	clientCert, clientKey := newTestCert(t, caCert, caKey, tenantID+"/"+agentID, []*url.URL{identityURI}, nil)
 	files := testMTLSFiles{
-		ca:         filepath.Join(dir, "ca.pem"),
-		serverCert: filepath.Join(dir, "server.pem"),
-		serverKey:  filepath.Join(dir, "server-key.pem"),
-		clientCert: filepath.Join(dir, "client.pem"),
-		clientKey:  filepath.Join(dir, "client-key.pem"),
+		ca:           filepath.Join(dir, "ca.pem"),
+		serverCert:   filepath.Join(dir, "server.pem"),
+		serverKey:    filepath.Join(dir, "server-key.pem"),
+		clientCert:   filepath.Join(dir, "client.pem"),
+		clientKey:    filepath.Join(dir, "client-key.pem"),
+		clientSerial: clientCert.SerialNumber.String(),
 	}
 	writePEM(t, files.ca, "CERTIFICATE", caCert.Raw)
 	writePEM(t, files.serverCert, "CERTIFICATE", serverCert.Raw)
@@ -784,7 +1152,9 @@ func TestControlPlaneConnectHelloReturnsPolicyUpdate(t *testing.T) {
 	policy.PolicyID = "control-policy"
 	policy.Version = 9
 	st.UpsertPolicy(policy)
-	st.AssignPolicy(policymodel.Assignment{TenantID: "default", AgentID: "control-agent", PolicyID: "control-policy", PolicyVersion: 9})
+	if _, ok, err := st.AssignPolicy(policymodel.Assignment{TenantID: "default", AgentID: "control-agent", PolicyID: "control-policy", PolicyVersion: 9}); err != nil || !ok {
+		t.Fatalf("AssignPolicy ok=%t err=%v", ok, err)
+	}
 	server := gateway.NewRuntime(gateway.RuntimeOptions{Store: st})
 	grpcServer := grpc.NewServer()
 	controlplanev1.RegisterAgentControlPlaneServiceServer(grpcServer, gateway.NewControlServer(server))
@@ -924,7 +1294,7 @@ func TestDataAckClassifiesRetryableBackendError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamBatches() error = %v, want structured retryable DataAck", err)
 	}
-	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_RETRYABLE || ack.GetReasonCode() != "retryable_server_error" || !ack.GetRetryable() || ack.GetRetryAfterMs() == 0 || ack.GetBatchId() != "retryable-batch" || ack.GetContractVersion() != "dataplane.v1" {
+	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_RETRYABLE || ack.GetReasonCode() != "retryable_server_error" || !ack.GetRetryable() || ack.GetRetryAfterMs() == 0 || ack.GetBatchId() != "retryable-batch" || ack.GetCommittedCursor() != "" || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want retryable server error", ack)
 	}
 }
@@ -954,7 +1324,7 @@ func TestDataAckClassifiesNonRetryableBackendError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamBatches() error = %v, want structured non-retryable DataAck", err)
 	}
-	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "server_error" || ack.GetRetryable() || ack.GetRetryAfterMs() != 0 || ack.GetBatchId() != "server-reject-batch" || ack.GetContractVersion() != "dataplane.v1" {
+	if ack.GetAccepted() || ack.GetStatus() != dataplanev1.DataAck_STATUS_REJECTED || ack.GetReasonCode() != "server_error" || ack.GetRetryable() || ack.GetRetryAfterMs() != 0 || ack.GetBatchId() != "server-reject-batch" || ack.GetCommittedCursor() != "" || ack.GetContractVersion() != "dataplane.v1" {
 		t.Fatalf("ack = %+v, want non-retryable server error", ack)
 	}
 }

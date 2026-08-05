@@ -60,9 +60,14 @@ func (s *Server) uiOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	metrics := s.store.MetricsSnapshot()
 	info := s.store.Info()
+	agents, err := s.overviewAgents()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read agent overview: %v", err), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, overviewResponse{
 		GeneratedAt: time.Now().UTC(),
-		Agents:      s.overviewAgents(),
+		Agents:      agents,
 		Telemetry: overviewTelemetry{
 			Events24h:  metrics.EventsIngested,
 			Signals24h: metrics.SignalsEmitted,
@@ -75,12 +80,18 @@ func (s *Server) uiOverview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) overviewAgents() overviewAgentsSummary {
-	agents := s.store.ListAgents()
+func (s *Server) overviewAgents() (overviewAgentsSummary, error) {
+	agents, err := s.store.ListAgentsWithError()
+	if err != nil {
+		return overviewAgentsSummary{}, err
+	}
 	summary := overviewAgentsSummary{Total: len(agents)}
 
 	for _, agent := range agents {
-		health, ok := s.store.GetAgentHealth(agent.TenantID, agent.AgentID)
+		health, ok, err := s.store.GetAgentHealthWithError(agent.TenantID, agent.AgentID)
+		if err != nil {
+			return overviewAgentsSummary{}, err
+		}
 		if !ok {
 			summary.Offline++
 			continue
@@ -95,7 +106,7 @@ func (s *Server) overviewAgents() overviewAgentsSummary {
 		}
 	}
 
-	return summary
+	return summary, nil
 }
 
 func (s *Server) overviewIncidents(ctx context.Context, tenantID string) (overviewIncidents, error) {

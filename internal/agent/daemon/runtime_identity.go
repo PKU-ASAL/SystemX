@@ -2,9 +2,28 @@ package daemon
 
 import (
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
+	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	"github.com/sysarmor/sysarmor-next-project/internal/agent/localstore"
 	"github.com/sysarmor/sysarmor-next-project/internal/endpoint/normalize"
 )
+
+func bindControlAckToSession(ack *controlplanev1.ControlAck, identity runtimeIdentity) *controlplanev1.ControlAck {
+	if ack == nil {
+		return nil
+	}
+	ack.AgentId = identity.AgentID
+	ack.TenantId = identity.TenantID
+	return ack
+}
+
+func bindHealthToSession(health agenthealth.AgentHealth, identity runtimeIdentity) agenthealth.AgentHealth {
+	health.AgentID = identity.AgentID
+	health.TenantID = identity.TenantID
+	if identity.HostID != "" {
+		health.HostID = identity.HostID
+	}
+	return health
+}
 
 type runtimeIdentity struct {
 	AgentID  string
@@ -13,13 +32,7 @@ type runtimeIdentity struct {
 }
 
 func (r *AgentRuntime) bindControlAckIdentity(ack *controlplanev1.ControlAck) *controlplanev1.ControlAck {
-	if ack == nil {
-		return nil
-	}
-	identity := r.currentIdentity()
-	ack.AgentId = identity.AgentID
-	ack.TenantId = identity.TenantID
-	return ack
+	return bindControlAckToSession(ack, r.currentIdentity())
 }
 
 func (r *AgentRuntime) setRuntimeIdentity(identity runtimeIdentity) {
@@ -45,7 +58,7 @@ func (r *AgentRuntime) currentIdentity() runtimeIdentity {
 
 func (r *AgentRuntime) applyEnrollmentIdentity(enrollment localstore.Enrollment) {
 	identity := r.standaloneRuntimeIdentity()
-	if enrollment.State == localstore.StateManaged {
+	if enrollment.State == localstore.StateManaged || enrollment.State == localstore.StateUnenrolling {
 		identity.AgentID = enrollment.AgentID
 		identity.TenantID = enrollment.TenantID
 	}

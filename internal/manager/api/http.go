@@ -11,8 +11,6 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
 	ingest "github.com/sysarmor/sysarmor-next-project/internal/analytics/ingest"
-	"github.com/sysarmor/sysarmor-next-project/internal/analytics/rarity"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	platformopensearch "github.com/sysarmor/sysarmor-next-project/internal/platform/opensearch"
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
@@ -36,76 +34,6 @@ type Server struct {
 	caKey          *rsa.PrivateKey
 	localTelemetry bool
 }
-
-type ManagerStore interface {
-	AckResponse(responsemodel.Ack) (responsemodel.Command, bool)
-	AddAgent(store.AgentIdentity)
-	AddEvent(*eventv1.CanonicalEvent) bool
-	AddSignal(*signalv1.Signal) bool
-	ApproveResponse(string, string, string, bool, string, string, string) (responsemodel.Command, bool)
-	AssignPolicy(policymodel.Assignment) (policymodel.Assignment, bool)
-	AckControlCommand(controlmodel.ControlCommandAck) (controlmodel.ControlCommand, bool)
-	CancelControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
-	CompleteEvidencePullback(controlmodel.EvidencePullbackResult) (controlmodel.EvidencePullbackRequest, bool)
-	CreateControlCommand(controlmodel.ControlCommand) controlmodel.ControlCommand
-	CreateEnrollment(store.Enrollment) store.Enrollment
-	CommitEnrollmentIssue(string, string, store.Enrollment, store.AgentCertificate) (store.Enrollment, store.EnrollmentIssueResult, error)
-	MarkEnrollmentUsed(string, time.Time) (store.Enrollment, bool)
-	RecordAgentCertificate(store.AgentCertificate) store.AgentCertificate
-	CreateEvidencePullback(controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackRequest
-	CreateResponse(responsemodel.Command) responsemodel.Command
-	DeleteByLabels(store.LabelSelector)
-	EffectivePolicy(string, string, string, string) (policymodel.Policy, bool)
-	EnsureDefaultPolicy(string)
-	GetAgentHealth(string, string) (agenthealth.AgentHealth, bool)
-	GetEvidencePullback(string, string, string) (controlmodel.EvidencePullbackRequest, bool)
-	GetEnrollmentByTokenHash(string) (store.Enrollment, bool)
-	GetEnrollmentByBootstrapTokenHash(string) (store.Enrollment, bool)
-	ConsumeEnrollmentBootstrap(string, string, string, time.Time) (store.Enrollment, bool, error)
-	GetArtifact(string, string) (store.Artifact, bool)
-	GetChannel(string, string) (store.ArtifactChannel, bool)
-	GetPolicy(string, string, uint64) (policymodel.Policy, bool)
-	GetSignal(string) (*signalv1.Signal, bool)
-	Info() store.Info
-	ListAgentHealth() []agenthealth.AgentHealth
-	ListAgents() []store.AgentIdentity
-	ListAssignments(string, string) []policymodel.Assignment
-	ListControlCommands(string, string, string) []controlmodel.ControlCommand
-	ListEvents(store.LabelSelector, string) []*eventv1.CanonicalEvent
-	ListIncidents(store.LabelSelector) []*incidentv1.Incident
-	ListEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
-	ListAgentSessions(string, string) []store.AgentSession
-	ListEnrollments(string, string) []store.Enrollment
-	ListArtifacts(string, string, string) []store.Artifact
-	ListChannels(string) []store.ArtifactChannel
-	ListPolicies(string) []policymodel.Policy
-	ListPolicyAudits(string, string) []policymodel.AuditRecord
-	ListResponses(string, string) []responsemodel.AuditRecord
-	ListRules(string) []policymodel.RuleContent
-	ListSignals(store.LabelSelector, string, bool) []*signalv1.Signal
-	MetricsSnapshot() store.Metrics
-	MarkControlCommandSent(string, string, string, time.Time) (controlmodel.ControlCommand, bool)
-	PendingControlCommands(string, string) []controlmodel.ControlCommand
-	PendingEvidencePullbacks(string, string) []controlmodel.EvidencePullbackRequest
-	PendingResponses(string, string) []responsemodel.Command
-	PublishPolicy(string, string, uint64, bool) (policymodel.Policy, bool)
-	CloseAgentSession(string, string, time.Time) store.AgentSession
-	RecordDataBatchAppend(store.AgentIdentity, string, string, time.Time) store.AgentSession
-	RecordAgentSessionSeen(string, string, time.Time) store.AgentSession
-	RecordControlSessionOpen(string, string, string, time.Time) store.AgentSession
-	RecordPolicyAudit(policymodel.AuditRecord) policymodel.AuditRecord
-	RarityBaselineSnapshot() rarity.Baseline
-	RetryControlCommand(string, string, string, string, string) (controlmodel.ControlCommand, bool)
-	ExpireControlCommand(string, string, string, string) (controlmodel.ControlCommand, bool)
-	ResetMetrics() error
-	Save() error
-	UpsertAgentHealth(agenthealth.AgentHealth)
-	UpsertArtifact(store.Artifact) store.Artifact
-	UpsertChannel(store.ArtifactChannel) store.ArtifactChannel
-	UpsertPolicy(policymodel.Policy) policymodel.Policy
-}
-
-var _ ManagerStore = (*store.Store)(nil)
 
 type responseDecisionRequest struct {
 	SignalID string              `json:"signal_id"`
@@ -231,8 +159,27 @@ func NewServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) 
 	return s
 }
 
-func NewProductionServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) *Server {
-	return newServer(st, searcher)
+func NewProductionServerWithSearch(st ManagerStore, searcher platformopensearch.Searcher) (*Server, error) {
+	s := newServer(st, searcher)
+	var err error
+	if s.artifactPub, err = readRequiredFile("SYSARMOR_ARTIFACT_PUBLIC_KEY"); err != nil {
+		return nil, err
+	}
+	if s.caCertPEM, err = readRequiredFile("SYSARMOR_AGENT_CA_CERT"); err != nil {
+		return nil, err
+	}
+	caKeyPEM, err := readRequiredFile("SYSARMOR_AGENT_CA_KEY")
+	if err != nil {
+		return nil, err
+	}
+	s.caCert, s.caKey, err = parseCARequired(s.caCertPEM, caKeyPEM)
+	if err != nil {
+		return nil, err
+	}
+	if err := st.EnsureDefaultPolicyWithError("default"); err != nil {
+		return nil, fmt.Errorf("initialize production default policy: %w", err)
+	}
+	return s, nil
 }
 
 func newServer(st ManagerStore, searcher platformopensearch.Searcher) *Server {
@@ -265,29 +212,49 @@ func readOptionalFile(path string) []byte {
 	return data
 }
 
+func readRequiredFile(envName string) ([]byte, error) {
+	path := strings.TrimSpace(os.Getenv(envName))
+	if path == "" {
+		return nil, fmt.Errorf("%s is required", envName)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", envName, err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("%s is empty", envName)
+	}
+	return data, nil
+}
+
 func parseCA(certPEM, keyPEM []byte) (*x509.Certificate, *rsa.PrivateKey) {
+	cert, key, _ := parseCARequired(certPEM, keyPEM)
+	return cert, key
+}
+
+func parseCARequired(certPEM, keyPEM []byte) (*x509.Certificate, *rsa.PrivateKey, error) {
 	certBlock, _ := pem.Decode(certPEM)
 	keyBlock, _ := pem.Decode(keyPEM)
 	if certBlock == nil || keyBlock == nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("decode agent CA cert/key PEM")
 	}
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("parse agent CA cert: %w", err)
 	}
 	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
 	if err != nil {
 		parsed, parseErr := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
 		if parseErr != nil {
-			return nil, nil
+			return nil, nil, fmt.Errorf("parse agent CA key: %w", err)
 		}
 		rsaKey, ok := parsed.(*rsa.PrivateKey)
 		if !ok {
-			return nil, nil
+			return nil, nil, fmt.Errorf("agent CA key must be RSA")
 		}
 		key = rsaKey
 	}
-	return cert, key
+	return cert, key, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -305,8 +272,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/enrollments", s.enrollments)
 	mux.HandleFunc("/api/v1/enrollment-artifact", s.enrollmentArtifact)
 	mux.HandleFunc("/api/v1/enrollment-certificate", s.enrollmentCertificate)
+	mux.HandleFunc("/api/v1/unenrollment-completions", s.unenrollmentCompletion)
 	mux.HandleFunc("/api/v1/agent-install.sh", s.agentInstallScript)
 	mux.HandleFunc("/api/v1/policy-assignments", s.policyAssignments)
+	mux.HandleFunc("/api/v1/policy-rollouts", s.policyRollouts)
 	mux.HandleFunc("/api/v1/effective-policy", s.effectivePolicy)
 	mux.HandleFunc("/api/v1/responses", s.responses)
 	mux.HandleFunc("/api/v1/response-decisions", s.responseDecisions)
@@ -330,7 +299,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/metrics", s.metrics)
 	mux.HandleFunc("/api/v1/store-status", s.storeStatus)
 	mux.HandleFunc("/api/v1/rarity-baseline", s.rarityBaseline)
-	return normalizeAPIErrors(requireProductionPrincipal(mux))
+	return limitRequestBody(normalizeAPIErrors(requireProductionPrincipal(mux)), maxManagerRequestBody)
 }
 
 func parseLabelSelector(values []string) store.LabelSelector {

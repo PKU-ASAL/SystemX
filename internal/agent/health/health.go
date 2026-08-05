@@ -11,6 +11,7 @@ type AgentHealth struct {
 	PolicyID         string                 `json:"policy_id,omitempty"`
 	PolicyVersion    uint64                 `json:"policy_version,omitempty"`
 	PolicyMode       string                 `json:"policy_mode,omitempty"`
+	PendingPolicy    PendingPolicyStatus    `json:"pending_policy,omitempty"`
 	UptimeSeconds    int64                  `json:"uptime_seconds"`
 	Capability       SensorCapability       `json:"sensor_capability,omitempty"`
 	Sensor           SensorHealth           `json:"sensor_health"`
@@ -21,6 +22,14 @@ type AgentHealth struct {
 	CEP              CEPHealth              `json:"cep_health"`
 	Streams          LocalStreamHealth      `json:"stream_health"`
 	ObservedAt       time.Time              `json:"observed_at"`
+}
+
+type PendingPolicyStatus struct {
+	Status   string `json:"status,omitempty"`
+	Source   string `json:"source,omitempty"`
+	PolicyID string `json:"policy_id,omitempty"`
+	Version  uint64 `json:"version,omitempty"`
+	Digest   string `json:"digest,omitempty"`
 }
 
 type DetectionHealth struct {

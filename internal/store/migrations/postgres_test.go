@@ -15,6 +15,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		"policy_assignments",
 		"policy_audit",
 		"enrollments",
+		"agent_unenrollments",
 		"artifacts",
 		"events",
 		"signals",
@@ -56,7 +57,7 @@ func TestPostgresSchemaCoversV3StoreTables(t *testing.T) {
 		}
 	}
 	ordered := Ordered()
-	if len(ordered) != 1 || ordered[0].Version != 1 || ordered[0].Name != "current_control_plane_baseline" {
+	if len(ordered) != 2 || ordered[0].Version != 1 || ordered[1].Version != 2 || ordered[1].Name != "agent_unenrollment_lifecycle" {
 		t.Fatalf("ordered migrations = %+v", ordered)
 	}
 }

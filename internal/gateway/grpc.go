@@ -49,6 +49,9 @@ func (s *DataServer) handleBatch(ctx context.Context, batch *dataplanev1.DataBat
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 	if hasPeer {
+		if err := validatePeerCertificate(s.backend.Store(), peerID); err != nil {
+			return nil, err
+		}
 		header := batch.GetHeader()
 		agent := agentIdentityFromPeer(peerID, header.GetHostId(), header.GetLabels()["agent_version"])
 		if err := s.backend.BindAgentIdentity(agent); err != nil {
@@ -91,13 +94,17 @@ func dataAck(batch *dataplanev1.DataBatch, ackStatus dataplanev1.DataAck_Status,
 		batchID = batch.GetHeader().GetBatchId()
 	}
 	accepted := ackStatus == dataplanev1.DataAck_STATUS_ACCEPTED || ackStatus == dataplanev1.DataAck_STATUS_DUPLICATE
+	committedCursor := ""
+	if accepted {
+		committedCursor = batchID
+	}
 	return &dataplanev1.DataAck{
 		BatchId:         batchID,
 		Accepted:        accepted,
 		Status:          ackStatus,
 		Message:         message,
 		ReasonCode:      reason,
-		CommittedCursor: batchID,
+		CommittedCursor: committedCursor,
 		ServerTime:      time.Now().UTC().Format(time.RFC3339Nano),
 		AcceptedEvents:  uint64(result.AcceptedEvents),
 		AcceptedSignals: uint64(result.AcceptedSignals),

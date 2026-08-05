@@ -12,7 +12,7 @@ import (
 
 type Runtime interface {
 	Probe(ctx context.Context) (contract.Capability, error)
-	Apply(ctx context.Context, intent contract.CollectionIntent) error
+	Apply(ctx context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error)
 	Subscribe(ctx context.Context) (<-chan contract.EventEnvelope, error)
 	Enforce(ctx context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error)
 	Health(ctx context.Context) (contract.Health, error)
@@ -40,22 +40,23 @@ func (m *Manager) Probe(ctx context.Context) (contract.Capability, error) {
 	return m.sensor.Capability(ctx)
 }
 
-func (m *Manager) Apply(ctx context.Context, intent contract.CollectionIntent) error {
+func (m *Manager) Apply(ctx context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error) {
 	if m.sensor == nil {
-		return fmt.Errorf("sensor is nil")
+		return contract.ApplyResult{}, fmt.Errorf("sensor is nil")
 	}
 	normalized, err := intent.NormalizeScope()
 	if err != nil {
-		return err
+		return contract.ApplyResult{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.sensor.Apply(ctx, normalized); err != nil {
-		return err
+	result, applyErr := m.sensor.Apply(ctx, normalized)
+	if applyErr != nil {
+		return contract.ApplyResult{}, applyErr
 	}
 	m.intent = normalized
 	m.applied = true
-	return nil
+	return result, nil
 }
 
 func (m *Manager) Subscribe(ctx context.Context) (<-chan contract.EventEnvelope, error) {
@@ -83,6 +84,7 @@ func (m *Manager) Subscribe(ctx context.Context) (<-chan contract.EventEnvelope,
 		for {
 			select {
 			case <-subCtx.Done():
+				drainEventStream(in)
 				return
 			case ev, ok := <-in:
 				if !ok {
@@ -92,11 +94,21 @@ func (m *Manager) Subscribe(ctx context.Context) (<-chan contract.EventEnvelope,
 					ev.ReceivedAt = time.Now().UTC()
 				}
 				m.eventsSeen.Add(1)
-				out <- ev
+				select {
+				case out <- ev:
+				case <-subCtx.Done():
+					drainEventStream(in)
+					return
+				}
 			}
 		}
 	}()
 	return out, nil
+}
+
+func drainEventStream(events <-chan contract.EventEnvelope) {
+	for range events {
+	}
 }
 
 func (m *Manager) Enforce(ctx context.Context, cmd contract.EnforcementCmd) (contract.EnforcementAck, error) {

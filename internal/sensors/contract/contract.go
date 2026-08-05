@@ -9,9 +9,20 @@ import (
 	sensorv1 "github.com/sysarmor/sysarmor-next-project/api/proto/sensor/v1"
 )
 
+type ApplyState string
+
+const (
+	ApplyStateApplied  ApplyState = "applied"
+	ApplyStateDeferred ApplyState = "deferred"
+)
+
+type ApplyResult struct {
+	State ApplyState
+}
+
 type Sensor interface {
 	Capability(ctx context.Context) (Capability, error)
-	Apply(ctx context.Context, intent CollectionIntent) error
+	Apply(ctx context.Context, intent CollectionIntent) (ApplyResult, error)
 	Subscribe(ctx context.Context, intent CollectionIntent) (<-chan EventEnvelope, error)
 	Enforce(ctx context.Context, cmd EnforcementCmd) (EnforcementAck, error)
 	Health(ctx context.Context) (Health, error)

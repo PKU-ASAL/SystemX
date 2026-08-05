@@ -107,6 +107,12 @@ sudo sysarmorctl unenroll
 
 取消注册会移除平台凭据并回到 standalone 模式，不应停止本地采集、检测或删除本地历史。需要清除安装和数据时使用独立卸载流程。
 
+退管是一个可恢复的两阶段闭环：Manager 先吊销证书并记录 `revoked_endpoint_pending`，Agent 再原子恢复 standalone 策略、删除凭据并持久化完成通知。通知失败时本地命令返回 `pending`，Agent 会在重启后继续重试；Manager 的 enrollment 查询在确认后显示 `unenrollment_status=endpoint_completed`、`revoked_at` 和 `endpoint_completed_at`。
+
+生产环境的 Manager URL 必须使用 HTTPS。`manager.tls_insecure: true` 只用于明确接受明文 HTTP 风险的隔离测试环境，默认关闭。
+
+旧 schema 中已纳管的 Agent 会在迁移时持久化为 `legacy_mtls` 退管协议；Manager 升级前签发、尚无协议字段的证书记录同样按 legacy 处理。Gateway 仅信任当前 mTLS peer identity，并从 Manager 证书记录补全旧本地状态缺失的 enrollment ID 和证书序列号。证书仍必须由 Manager 授权吊销，Manager 将其记录为 `unknown_legacy`，但无法补建 endpoint completion 回执。后续新 enrollment 在 Agent 与 Manager 证书记录两侧均固定使用 `completion_v1` 完整闭环，任一侧协议不匹配都会拒绝退管。
+
 ## 故障边界
 
 - 注册失败不能破坏已有 standalone 身份和本地数据。
@@ -115,5 +121,6 @@ sudo sysarmorctl unenroll
 - Gateway 未确认 batch 时不能推进上传 checkpoint。
 - 重复确认和重试必须收敛到同一批次状态。
 - 取消注册必须清理云凭据，但不能静默清理本地 Event 或 Signal。
+- Manager 未持久化 `endpoint_completed` 前，退管控制闭环不算完成。
 
 诊断、恢复和卸载步骤见[维护指南](../operations/maintenance.md)。

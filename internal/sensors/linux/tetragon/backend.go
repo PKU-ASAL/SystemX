@@ -95,6 +95,8 @@ func (b *Backend) Capability(context.Context) (contract.Capability, error) {
 		}
 		b.mu.Lock()
 		b.installed = true
+		b.Bundle.TetraPath = verified.TetraPath
+		b.Bundle.TetragonPath = verified.TetragonPath
 		b.lastError = ""
 		if b.Version == "unknown" {
 			b.Version = verified.Version
@@ -407,34 +409,34 @@ func (b *Backend) verifyConfiguredExecutables() error {
 	return nil
 }
 
-func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) error {
+func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) (contract.ApplyResult, error) {
 	if b.PolicyPath == "" {
 		err := fmt.Errorf("tetragon policy path is required")
 		b.setError(err)
-		return err
+		return contract.ApplyResult{}, err
 	}
 	normalized, err := intent.NormalizeScope()
 	if err != nil {
 		b.setError(err)
-		return err
+		return contract.ApplyResult{}, err
 	}
 	normalized, err = resolveNamespaceScope(normalized)
 	if err != nil {
 		b.setError(err)
-		return err
+		return contract.ApplyResult{}, err
 	}
 	if err := validateSupportedScope(normalized); err != nil {
 		b.setError(err)
-		return err
+		return contract.ApplyResult{}, err
 	}
 	selfContainerID, err := resolveNamespaceSelfContainerID(normalized)
 	if err != nil {
 		b.setError(err)
-		return err
+		return contract.ApplyResult{}, err
 	}
 	if _, err := os.Stat(b.PolicyPath); err != nil {
 		b.setError(err)
-		return fmt.Errorf("verify tetragon policy: %w", err)
+		return contract.ApplyResult{}, fmt.Errorf("verify tetragon policy: %w", err)
 	}
 	b.mu.Lock()
 	b.namespaceSelfContainerID = selfContainerID
@@ -442,10 +444,10 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 	oldIntent := b.intent
 	oldRuntimePolicyApplied := b.runtimePolicyApplied
 	b.mu.Unlock()
-	if loaded && b.Bundle.TetraPath != "" && b.EventSource == "" {
+	if loaded && b.canLiveApply() {
 		if err := b.liveApplyTracingPolicy(ctx, oldIntent, normalized, oldRuntimePolicyApplied); err != nil {
 			b.setError(err)
-			return err
+			return contract.ApplyResult{}, err
 		}
 		b.mu.Lock()
 		b.intent = normalized
@@ -453,7 +455,7 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 		b.runtimePolicyApplied = needsTracingPolicy(normalized)
 		b.lastError = ""
 		b.mu.Unlock()
-		return nil
+		return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
 	}
 	b.mu.Lock()
 	b.intent = normalized
@@ -461,22 +463,46 @@ func (b *Backend) Apply(ctx context.Context, intent contract.CollectionIntent) e
 	b.runtimePolicyApplied = false
 	b.lastError = ""
 	b.mu.Unlock()
-	return nil
+	if b.Bundle.TetragonPath != "" {
+		return contract.ApplyResult{State: contract.ApplyStateDeferred}, nil
+	}
+	return contract.ApplyResult{State: contract.ApplyStateApplied}, nil
+}
+
+func (b *Backend) canLiveApply() bool {
+	if b.Bundle.TetraPath == "" || b.EventSource != "" {
+		return false
+	}
+	return b.Bundle.TetragonPath == ""
 }
 
 func (b *Backend) prepareBundle() (BundleVerification, error) {
 	if b.Bundle.InstallDir != "" {
-		installed, err := InstallBundle(b.Bundle)
-		if err != nil {
-			return BundleVerification{}, err
+		rootDir := filepath.Join(b.Bundle.InstallDir, "tetragon")
+		currentDir := filepath.Join(rootDir, "current")
+		if !dirExists(currentDir) {
+			return BundleVerification{}, fmt.Errorf("tetragon bundle is not staged at %s", currentDir)
 		}
-		b.Bundle.TetraPath = installed.TetraPath
-		b.Bundle.TetragonPath = installed.TetragonPath
-		return BundleVerification{
-			Version:      installed.Version,
-			TetraPath:    installed.TetraPath,
-			TetragonPath: installed.TetragonPath,
-		}, nil
+		versionDir, err := filepath.EvalSymlinks(currentDir)
+		if err != nil {
+			return BundleVerification{}, fmt.Errorf("resolve staged tetragon bundle: %w", err)
+		}
+		rootDir, err = filepath.Abs(rootDir)
+		if err != nil {
+			return BundleVerification{}, fmt.Errorf("resolve tetragon install directory: %w", err)
+		}
+		versionDir, err = filepath.Abs(versionDir)
+		if err != nil {
+			return BundleVerification{}, fmt.Errorf("resolve tetragon version directory: %w", err)
+		}
+		if filepath.Dir(versionDir) != rootDir || filepath.Base(versionDir) == "current" {
+			return BundleVerification{}, fmt.Errorf("staged tetragon bundle points outside install directory: %s", versionDir)
+		}
+		return VerifyBundle(BundleConfig{
+			BundleDir:    versionDir,
+			TetraPath:    filepath.Join(versionDir, "bin", "tetra"),
+			TetragonPath: filepath.Join(versionDir, "bin", "tetragon"),
+		})
 	}
 	return VerifyBundle(b.Bundle)
 }
@@ -613,7 +639,8 @@ func (b *Backend) ensureIntent(ctx context.Context, intent contract.CollectionIn
 	if loaded || hasIntent {
 		return nil
 	}
-	return b.Apply(ctx, normalized)
+	_, err = b.Apply(ctx, normalized)
+	return err
 }
 
 func validateSupportedScope(intent contract.CollectionIntent) error {

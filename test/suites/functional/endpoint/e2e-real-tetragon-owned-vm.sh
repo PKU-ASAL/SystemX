@@ -105,6 +105,12 @@ sudo systemctl daemon-reload" >/dev/null
 vagrant ssh node-a -c "if ! sudo SYSARMOR_AGENT_BIN=/tmp/sysarmor-agent.upload SYSARMOR_CTL_BIN=/tmp/sysarmorctl.upload SYSARMOR_CONTENT_SIGN_BIN=/tmp/sysarmor-content-sign.upload SYSARMOR_AGENT_CONFIG=/tmp/sysarmor-agent.yaml SYSARMOR_COLLECTION_POLICY=/tmp/sysarmor-deployments.upload/agent/policy.json SYSARMOR_TETRAGON_BUNDLE_DIR='$TETRAGON_BUNDLE_DIR' SYSARMOR_TETRAGON_INSTALL_DIR='$TETRAGON_INSTALL_DIR' SYSARMOR_TETRAGON_ARCHIVE=/tmp/sysarmor-tetragon.upload bash /tmp/sysarmor-deployments.upload/agent/install-agent.sh >/tmp/sysarmor-install-agent.log 2>&1; then sudo cat /tmp/sysarmor-install-agent.log >&2; exit 1; fi" >/dev/null
 vagrant ssh node-a -c "sudo test -f '$TETRAGON_BUNDLE_DIR/manifest.json'" >/dev/null
 vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent" >/dev/null
+TETRAGON_VERSION="$(vagrant ssh node-a -c "sudo readlink '$TETRAGON_INSTALL_DIR/tetragon/current'" | tr -d '\r')"
+[[ -n "$TETRAGON_VERSION" && "$TETRAGON_VERSION" != */* ]] || {
+  echo "[e2e-agent-real-tetragon-owned-vm][ERROR] invalid installed Tetragon version link: $TETRAGON_VERSION" >&2
+  exit 1
+}
+TETRAGON_PROCESS_PATH="$TETRAGON_INSTALL_DIR/tetragon/$TETRAGON_VERSION/bin/tetragon"
 
 wait_contains() {
   local name="$1"
@@ -232,7 +238,7 @@ wait_contains "agent current policy" '"policyId":"standalone-default"' "$RESULTS
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy current --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent-owned tracing policy" 'sysarmor-runtime-collection' "$RESULTS/e2e-agent-real-tetragon-owned-vm.tracingpolicy.txt" \
   vagrant ssh node-a -c "sudo '$TETRA_PATH' tracingpolicy list"
-wait_contains "agent-owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps.txt" \
+wait_contains "agent-owned tetragon process" "$TETRAGON_PROCESS_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 
 start_c2_fixture
@@ -366,12 +372,14 @@ wait_contains "agent-health running after restart" '"running":true' "$RESULTS/e2
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent-health policy after restart" '"policyLoaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-restart.json" \
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
-wait_contains "owned tetragon process after restart" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-restart.txt" \
+wait_contains "current policy after restart" '"policyId":"standalone-default"' "$RESULTS/e2e-agent-real-tetragon-owned-vm.policy-after-restart.json" \
+  vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json policy current --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
+wait_contains "owned tetragon process after restart" "$TETRAGON_PROCESS_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-restart.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 
 echo "[e2e-agent-real-tetragon-owned-vm] verifying service stop cleans owned Tetragon process"
 vagrant ssh node-a -c "sudo systemctl stop sysarmor-agent" >/dev/null
-wait_absent "owned tetragon process" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-stop.txt" \
+wait_absent "owned tetragon process" "$TETRAGON_PROCESS_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-stop.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 wait_absent "owned tetra getevents process" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-stop.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetra | grep getevents | grep -v grep"
@@ -382,7 +390,7 @@ wait_contains "agent-health capability after service start" '"bpffsAvailable":tr
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
 wait_contains "agent-health policy after service start" '"policyLoaded":true' "$RESULTS/e2e-agent-real-tetragon-owned-vm.health-after-service-start.json" \
   vagrant ssh node-a -c "sudo sysarmorctl --socket '$AGENT_SOCK' --json agent health --agent-id '$AGENT_ID' --tenant-id '$TENANT_ID'"
-wait_contains "owned tetragon process after service start" "$TETRAGON_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-service-start.txt" \
+wait_contains "owned tetragon process after service start" "$TETRAGON_PROCESS_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.ps-after-service-start.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetragon | grep -v grep"
 wait_absent "owned tetra getevents process after service start" "$TETRA_PATH" "$RESULTS/e2e-agent-real-tetragon-owned-vm.tetra-after-service-start.txt" \
   vagrant ssh node-a -c "ps -ef | grep tetra | grep getevents | grep -v grep"

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -22,6 +23,22 @@ func (s *Store) GetEnrollmentByBootstrapTokenHash(tokenHash string) (Enrollment,
 		}
 	}
 	return Enrollment{}, false
+}
+
+func (s *Store) GetEnrollmentByBootstrapTokenHashWithError(tokenHash string) (Enrollment, bool, error) {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return Enrollment{}, false, nil
+	}
+	if backend, ctx := s.backendCtx(); backend != nil {
+		enrollment, ok, err := backend.GetEnrollmentByBootstrapTokenHash(ctx, tokenHash)
+		if err != nil {
+			return Enrollment{}, false, fmt.Errorf("get enrollment by bootstrap token: %w", err)
+		}
+		return enrollment, ok, nil
+	}
+	enrollment, ok := s.GetEnrollmentByBootstrapTokenHash(tokenHash)
+	return enrollment, ok, nil
 }
 
 func (s *Store) ConsumeEnrollmentBootstrap(bootstrapHash, enrollmentHash, enrollmentPreview string, fetchedAt time.Time) (Enrollment, bool, error) {

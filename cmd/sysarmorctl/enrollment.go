@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1"
 )
@@ -29,6 +30,7 @@ func parseEnrollmentArgs(defaultManagerURL string, args []string) (enrollmentCLI
 	token := flags.String("token", "", "one-time enrollment token")
 	tokenFile := flags.String("token-file", "", "file containing one-time enrollment token")
 	uploadHistory := flags.Bool("upload-history", false, "upload local history created before enrollment")
+	_ = flags.Duration("timeout", 0, "maximum time to wait for manager policy activation")
 	managerOwned := make(map[string]*string, 4)
 	for _, name := range []string{"tenant", "agent-id", "gateway", "gateway-server-name"} {
 		managerOwned[name] = flags.String(name, "", "configured by the Manager enrollment")
@@ -96,8 +98,34 @@ func enrollLocalAgent(ctx context.Context, client controlplanev1.AgentControlPla
 	if err != nil {
 		return nil, err
 	}
-	if resp.GetStatus() != "applied" {
+	switch resp.GetStatus() {
+	case "applied":
+		return marshalProtoJSON(resp)
+	case "pending":
+		return waitForManagedEnrollment(ctx, client, reqCtx, resp)
+	default:
 		return nil, fmt.Errorf("enrollment rejected: %s", resp.GetMessage())
 	}
-	return marshalProtoJSON(resp)
+}
+
+func waitForManagedEnrollment(ctx context.Context, client controlplanev1.AgentControlPlaneServiceClient, reqCtx *controlplanev1.RequestContext, pending *controlplanev1.ControlAck) ([]byte, error) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		health, err := client.Health(ctx, &controlplanev1.HealthRequest{Context: reqCtx})
+		if err != nil {
+			return nil, fmt.Errorf("check enrollment activation: %w", err)
+		}
+		if health.GetLocalStore().GetMode() == "managed" {
+			return marshalProtoJSON(&controlplanev1.ControlAck{
+				RequestId: pending.GetRequestId(), TenantId: health.GetTenantId(), AgentId: health.GetAgentId(), Status: "applied",
+				Message: "enrollment completed after manager endpoint policy activation", PolicyId: health.GetPolicyId(), PolicyVersion: health.GetPolicyVersion(),
+			})
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("wait for manager endpoint policy activation: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }

@@ -20,6 +20,26 @@ import (
 
 const SchemaVersion = "sysarmor.agent.distribution/v1"
 
+const (
+	maxArchiveFileBytes     = 512 * 1024 * 1024
+	maxArchiveTotalBytes    = 1024 * 1024 * 1024
+	maxArchiveEntries       = 10_000
+	maxArchiveMetadataBytes = 4 * 1024 * 1024
+)
+
+type inspectLimits struct {
+	MaxFileBytes     int64
+	MaxTotalBytes    int64
+	MaxEntries       int
+	MaxMetadataBytes int64
+}
+
+type archiveIndex struct {
+	entries  map[string]byte
+	digests  map[string]string
+	metadata map[string][]byte
+}
+
 type Manifest struct {
 	SchemaVersion string            `json:"schema_version"`
 	Name          string            `json:"name"`
@@ -59,8 +79,13 @@ type InspectResult struct {
 	Signed   bool
 }
 
-func InspectTarGz(path string, publicKeyPEM []byte) (InspectResult, error) {
-	f, err := os.Open(path)
+func InspectTarGz(archivePath string, publicKeyPEM []byte) (InspectResult, error) {
+	return inspectTarGzWithLimits(archivePath, publicKeyPEM, inspectLimits{})
+}
+
+func inspectTarGzWithLimits(archivePath string, publicKeyPEM []byte, limits inspectLimits) (InspectResult, error) {
+	limits = normalizeInspectLimits(limits)
+	f, err := os.Open(archivePath)
 	if err != nil {
 		return InspectResult{}, err
 	}
@@ -70,31 +95,95 @@ func InspectTarGz(path string, publicKeyPEM []byte) (InspectResult, error) {
 		return InspectResult{}, fmt.Errorf("open gzip: %w", err)
 	}
 	defer gz.Close()
+	index, err := readArchiveIndex(tar.NewReader(gz), limits)
+	if err != nil {
+		return InspectResult{}, err
+	}
+	return inspectArchiveIndex(index, publicKeyPEM)
+}
 
-	files := map[string][]byte{}
-	tr := tar.NewReader(gz)
+func normalizeInspectLimits(limits inspectLimits) inspectLimits {
+	if limits.MaxFileBytes <= 0 {
+		limits.MaxFileBytes = maxArchiveFileBytes
+	}
+	if limits.MaxTotalBytes <= 0 {
+		limits.MaxTotalBytes = maxArchiveTotalBytes
+	}
+	if limits.MaxEntries <= 0 {
+		limits.MaxEntries = maxArchiveEntries
+	}
+	if limits.MaxMetadataBytes <= 0 {
+		limits.MaxMetadataBytes = maxArchiveMetadataBytes
+	}
+	return limits
+}
+
+func readArchiveIndex(tr *tar.Reader, limits inspectLimits) (archiveIndex, error) {
+	index := archiveIndex{entries: map[string]byte{}, digests: map[string]string{}, metadata: map[string][]byte{}}
+	var totalBytes int64
+	entryCount := 0
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			break
+			return index, nil
 		}
 		if err != nil {
-			return InspectResult{}, fmt.Errorf("read tar: %w", err)
+			return archiveIndex{}, fmt.Errorf("read tar: %w", err)
 		}
-		if hdr.Typeflag != tar.TypeReg {
+		if hdr.Typeflag == tar.TypeDir && (hdr.Name == "." || hdr.Name == "./") {
 			continue
+		}
+		entryCount++
+		if entryCount > limits.MaxEntries {
+			return archiveIndex{}, fmt.Errorf("archive entry limit exceeded: %d > %d", entryCount, limits.MaxEntries)
 		}
 		clean, err := cleanArchivePath(hdr.Name)
 		if err != nil {
-			return InspectResult{}, err
+			return archiveIndex{}, err
 		}
-		data, err := io.ReadAll(io.LimitReader(tr, 512*1024*1024))
-		if err != nil {
-			return InspectResult{}, fmt.Errorf("read %s: %w", hdr.Name, err)
+		if _, exists := index.entries[clean]; exists {
+			return archiveIndex{}, fmt.Errorf("duplicate archive entry: %s", clean)
 		}
-		files[clean] = data
+		index.entries[clean] = hdr.Typeflag
+		if hdr.Typeflag == tar.TypeDir {
+			continue
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			return archiveIndex{}, fmt.Errorf("unsupported archive entry %s type %c", clean, hdr.Typeflag)
+		}
+		if hdr.Size > limits.MaxFileBytes {
+			return archiveIndex{}, fmt.Errorf("%s exceeds archive file size limit: %d > %d", clean, hdr.Size, limits.MaxFileBytes)
+		}
+		if hdr.Size > limits.MaxTotalBytes-totalBytes {
+			return archiveIndex{}, fmt.Errorf("archive total uncompressed size limit exceeded: %d > %d", totalBytes+hdr.Size, limits.MaxTotalBytes)
+		}
+		totalBytes += hdr.Size
+		if err := readIndexedFile(tr, hdr, clean, limits, &index); err != nil {
+			return archiveIndex{}, err
+		}
 	}
-	raw, ok := files["manifest.json"]
+}
+
+func readIndexedFile(tr *tar.Reader, hdr *tar.Header, clean string, limits inspectLimits, index *archiveIndex) error {
+	hash := sha256.New()
+	if clean == "manifest.json" || clean == "manifest.sig" {
+		if hdr.Size > limits.MaxMetadataBytes {
+			return fmt.Errorf("%s exceeds archive metadata size limit: %d > %d", clean, hdr.Size, limits.MaxMetadataBytes)
+		}
+		data, err := io.ReadAll(io.TeeReader(tr, hash))
+		if err != nil {
+			return fmt.Errorf("read %s: %w", hdr.Name, err)
+		}
+		index.metadata[clean] = data
+	} else if _, err := io.Copy(hash, tr); err != nil {
+		return fmt.Errorf("read %s: %w", hdr.Name, err)
+	}
+	index.digests[clean] = hex.EncodeToString(hash.Sum(nil))
+	return nil
+}
+
+func inspectArchiveIndex(index archiveIndex, publicKeyPEM []byte) (InspectResult, error) {
+	raw, ok := index.metadata["manifest.json"]
 	if !ok {
 		return InspectResult{}, fmt.Errorf("manifest.json is required")
 	}
@@ -105,7 +194,7 @@ func InspectTarGz(path string, publicKeyPEM []byte) (InspectResult, error) {
 	if err := Validate(manifest); err != nil {
 		return InspectResult{}, err
 	}
-	sig, signed := files["manifest.sig"]
+	sig, signed := index.metadata["manifest.sig"]
 	if len(publicKeyPEM) > 0 {
 		if !signed {
 			return InspectResult{}, fmt.Errorf("manifest.sig is required")
@@ -119,13 +208,28 @@ func InspectTarGz(path string, publicKeyPEM []byte) (InspectResult, error) {
 		if err != nil {
 			return InspectResult{}, err
 		}
-		data, ok := files[clean]
+		digest, ok := index.digests[clean]
 		if !ok {
 			return InspectResult{}, fmt.Errorf("manifest file missing: %s", spec.Path)
 		}
-		sum := sha256.Sum256(data)
-		if !strings.EqualFold(hex.EncodeToString(sum[:]), spec.SHA256) {
+		if !strings.EqualFold(digest, spec.SHA256) {
 			return InspectResult{}, fmt.Errorf("manifest file sha256 mismatch: %s", spec.Path)
+		}
+	}
+	allowed := map[string]bool{"manifest.json": true}
+	if signed {
+		allowed["manifest.sig"] = true
+	}
+	for _, spec := range manifest.Files {
+		clean, _ := cleanArchivePath(spec.Path)
+		allowed[clean] = true
+		for dir := path.Dir(clean); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			allowed[dir] = true
+		}
+	}
+	for entry := range index.entries {
+		if !allowed[entry] {
+			return InspectResult{}, fmt.Errorf("unexpected archive entry: %s", entry)
 		}
 	}
 	return InspectResult{Manifest: manifest, Signed: signed}, nil

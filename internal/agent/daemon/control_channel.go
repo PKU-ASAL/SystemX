@@ -31,6 +31,10 @@ func NewControlChannel(manager, token string, tlsCfg tlsconfig.ClientConfig) *Co
 }
 
 func (s *ControlChannel) Open(ctx context.Context) error {
+	return s.open(ctx, ctx)
+}
+
+func (s *ControlChannel) open(dialCtx, sessionCtx context.Context) error {
 	if s == nil {
 		return fmt.Errorf("control channel session is nil")
 	}
@@ -38,17 +42,17 @@ func (s *ControlChannel) Open(ctx context.Context) error {
 		return nil
 	}
 	if s.token != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-sysarmor-agent-token", s.token)
+		sessionCtx = metadata.AppendToOutgoingContext(sessionCtx, "x-sysarmor-agent-token", s.token)
 	}
 	creds, err := tlsconfig.ClientCredentials(s.tls)
 	if err != nil {
 		return err
 	}
-	conn, err := grpc.DialContext(ctx, s.manager, grpc.WithTransportCredentials(creds), grpc.WithBlock())
+	conn, err := grpc.DialContext(dialCtx, s.manager, grpc.WithTransportCredentials(creds), grpc.WithBlock())
 	if err != nil {
 		return err
 	}
-	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(context.WithoutCancel(ctx))
+	stream, err := controlplanev1.NewAgentControlPlaneServiceClient(conn).Connect(sessionCtx)
 	if err != nil {
 		_ = conn.Close()
 		return err

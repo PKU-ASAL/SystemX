@@ -11,6 +11,7 @@ import (
 )
 
 const maxAuthenticatedBody = 4 << 20
+const maxManagerRequestBody = 128 << 20
 
 func (s *Server) HandlerWithAuth(verifier *managerauth.Verifier) http.Handler {
 	base := s.Handler()
@@ -49,6 +50,19 @@ func bindPrincipalTenant(next http.Handler) http.Handler {
 	})
 }
 
+func limitRequestBody(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if maxBytes > 0 && r.Body != nil {
+			if r.ContentLength > maxBytes {
+				writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "Request body too large")
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func requireProductionPrincipal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" || isEnrollmentTokenEndpoint(r.URL.Path) {
@@ -64,7 +78,8 @@ func requireProductionPrincipal(next http.Handler) http.Handler {
 }
 
 func isEnrollmentTokenEndpoint(path string) bool {
-	return path == "/api/v1/enrollment-artifact" || path == "/api/v1/enrollment-certificate" || path == "/api/v1/agent-install.sh"
+	return path == "/api/v1/enrollment-artifact" || path == "/api/v1/enrollment-certificate" ||
+		path == "/api/v1/unenrollment-completions" || path == "/api/v1/agent-install.sh"
 }
 
 func bindJSONTenant(w http.ResponseWriter, r *http.Request, tenantID string) bool {

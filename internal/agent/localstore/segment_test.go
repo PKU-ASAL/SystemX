@@ -1,12 +1,20 @@
 package localstore
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/api/proto/dataplane/v1"
 )
+
+func TestIncompleteTailHandlingDoesNotSwallowReadFailure(t *testing.T) {
+	cause := errors.New("read failure")
+	if _, err := handleIncompleteTail(nil, 0, tailIgnore, nil, cause); !errors.Is(err, cause) {
+		t.Fatalf("tailIgnore error = %v, want %v", err, cause)
+	}
+}
 
 func TestSegmentAppendRotateAndReadRoundTrip(t *testing.T) {
 	root := t.TempDir()
@@ -71,6 +79,45 @@ func TestRecoveryTruncatesIncompleteTail(t *testing.T) {
 	batches, err := store.ReadBatches(t.Context(), ReadOptions{Limit: 10})
 	if err != nil || len(batches) != 1 {
 		t.Fatalf("batches=%d err=%v", len(batches), err)
+	}
+}
+
+func TestReadBatchesToleratesIncompleteOpenSegmentTail(t *testing.T) {
+	root := t.TempDir()
+	store := openStore(t, root)
+	t.Cleanup(func() { _ = store.Close() })
+	if _, err := store.AppendBatch(t.Context(), testBatch(1)); err != nil {
+		t.Fatal(err)
+	}
+	openFiles, err := filepath.Glob(filepath.Join(root, "spool", "*.open"))
+	if err != nil || len(openFiles) != 1 {
+		t.Fatalf("open files=%v err=%v", openFiles, err)
+	}
+	file, err := os.OpenFile(openFiles[0], os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte{0, 0, 0, 100, 1, 2, 3}); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(openFiles[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	batches, err := store.ReadBatches(t.Context(), ReadOptions{Limit: 10})
+	if err != nil || len(batches) != 1 || batches[0].Batch.GetHeader().GetBatchId() != "batch-1" {
+		t.Fatalf("batches=%v err=%v", batches, err)
+	}
+	after, err := os.Stat(openFiles[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() {
+		t.Fatalf("live read changed open segment size from %d to %d", before.Size(), after.Size())
 	}
 }
 

@@ -19,6 +19,12 @@ var fakeSQLState struct {
 	lastQuery string
 	queries   []string
 	execErr   error
+	execErrAt int
+	execCalls int
+	queryErr  error
+	queryRows [][]driver.Value
+	commits   int
+	rollbacks int
 }
 
 func FakeSetExecError(err error) {
@@ -27,6 +33,54 @@ func FakeSetExecError(err error) {
 	fakeSQLState.lastQuery = ""
 	fakeSQLState.queries = nil
 	fakeSQLState.execErr = err
+	fakeSQLState.execErrAt = 0
+	fakeSQLState.execCalls = 0
+	fakeSQLState.queryErr = nil
+	fakeSQLState.queryRows = nil
+	fakeSQLState.commits = 0
+	fakeSQLState.rollbacks = 0
+}
+
+func FakeSetExecErrorAt(call int, err error) {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.lastQuery = ""
+	fakeSQLState.queries = nil
+	fakeSQLState.execErr = err
+	fakeSQLState.execErrAt = call
+	fakeSQLState.execCalls = 0
+	fakeSQLState.commits = 0
+	fakeSQLState.rollbacks = 0
+}
+
+func FakeSetQueryResult(rows [][]byte, err error) {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.lastQuery = ""
+	fakeSQLState.queries = nil
+	fakeSQLState.execErr = nil
+	fakeSQLState.execErrAt = 0
+	fakeSQLState.execCalls = 0
+	fakeSQLState.queryErr = err
+	fakeSQLState.queryRows = make([][]driver.Value, 0, len(rows))
+	for _, row := range rows {
+		fakeSQLState.queryRows = append(fakeSQLState.queryRows, []driver.Value{row})
+	}
+	fakeSQLState.commits = 0
+	fakeSQLState.rollbacks = 0
+}
+
+func FakeSetQueryValues(rows [][]driver.Value, err error) {
+	FakeSetQueryResult(nil, err)
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.queryRows = rows
+}
+
+func FakeTransactionCounts() (int, int) {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	return fakeSQLState.commits, fakeSQLState.rollbacks
 }
 
 func FakeLastQuery() string {
@@ -78,36 +132,73 @@ func (s fakeSQLStmt) Exec([]driver.Value) (driver.Result, error) {
 	defer fakeSQLState.Unlock()
 	fakeSQLState.lastQuery = s.query
 	fakeSQLState.queries = append(fakeSQLState.queries, s.query)
-	if fakeSQLState.execErr != nil && !strings.Contains(s.query, "pg_advisory") {
+	if !strings.Contains(s.query, "pg_advisory") {
+		fakeSQLState.execCalls++
+	}
+	if fakeSQLState.execErr != nil && !strings.Contains(s.query, "pg_advisory") &&
+		(fakeSQLState.execErrAt == 0 || fakeSQLState.execCalls == fakeSQLState.execErrAt) {
 		return nil, fakeSQLState.execErr
 	}
 	return driver.RowsAffected(1), nil
 }
 
 func (s fakeSQLStmt) Query([]driver.Value) (driver.Rows, error) {
-	return fakeSQLRows{}, nil
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.lastQuery = s.query
+	fakeSQLState.queries = append(fakeSQLState.queries, s.query)
+	if fakeSQLState.queryErr != nil {
+		return nil, fakeSQLState.queryErr
+	}
+	rows := make([][]driver.Value, len(fakeSQLState.queryRows))
+	for i := range fakeSQLState.queryRows {
+		rows[i] = append([]driver.Value(nil), fakeSQLState.queryRows[i]...)
+	}
+	return &fakeSQLRows{rows: rows}, nil
 }
 
 type fakeSQLTx struct{}
 
 func (fakeSQLTx) Commit() error {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.commits++
 	return nil
 }
 
 func (fakeSQLTx) Rollback() error {
+	fakeSQLState.Lock()
+	defer fakeSQLState.Unlock()
+	fakeSQLState.rollbacks++
 	return nil
 }
 
-type fakeSQLRows struct{}
+type fakeSQLRows struct {
+	rows [][]driver.Value
+	next int
+}
 
-func (fakeSQLRows) Columns() []string {
+func (r *fakeSQLRows) Columns() []string {
+	count := 1
+	if len(r.rows) > 0 && len(r.rows[0]) > 0 {
+		count = len(r.rows[0])
+	}
+	columns := make([]string, count)
+	for i := range columns {
+		columns[i] = "data"
+	}
+	return columns
+}
+
+func (*fakeSQLRows) Close() error {
 	return nil
 }
 
-func (fakeSQLRows) Close() error {
+func (r *fakeSQLRows) Next(dest []driver.Value) error {
+	if r.next >= len(r.rows) {
+		return io.EOF
+	}
+	copy(dest, r.rows[r.next])
+	r.next++
 	return nil
-}
-
-func (fakeSQLRows) Next([]driver.Value) error {
-	return io.EOF
 }

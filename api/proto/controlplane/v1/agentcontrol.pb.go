@@ -23,6 +23,150 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type RevokeEnrollmentRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TenantId            string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	AgentId             string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	EnrollmentId        string                 `protobuf:"bytes,3,opt,name=enrollment_id,json=enrollmentId,proto3" json:"enrollment_id,omitempty"`
+	CertificateSerial   string                 `protobuf:"bytes,4,opt,name=certificate_serial,json=certificateSerial,proto3" json:"certificate_serial,omitempty"`
+	CompletionTokenHash string                 `protobuf:"bytes,5,opt,name=completion_token_hash,json=completionTokenHash,proto3" json:"completion_token_hash,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *RevokeEnrollmentRequest) Reset() {
+	*x = RevokeEnrollmentRequest{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeEnrollmentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeEnrollmentRequest) ProtoMessage() {}
+
+func (x *RevokeEnrollmentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeEnrollmentRequest.ProtoReflect.Descriptor instead.
+func (*RevokeEnrollmentRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *RevokeEnrollmentRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentRequest) GetEnrollmentId() string {
+	if x != nil {
+		return x.EnrollmentId
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentRequest) GetCertificateSerial() string {
+	if x != nil {
+		return x.CertificateSerial
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentRequest) GetCompletionTokenHash() string {
+	if x != nil {
+		return x.CompletionTokenHash
+	}
+	return ""
+}
+
+type RevokeEnrollmentResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Status             string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	RevokedAt          string                 `protobuf:"bytes,2,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	ReceiptId          string                 `protobuf:"bytes,3,opt,name=receipt_id,json=receiptId,proto3" json:"receipt_id,omitempty"`
+	CompletionRequired bool                   `protobuf:"varint,4,opt,name=completion_required,json=completionRequired,proto3" json:"completion_required,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *RevokeEnrollmentResponse) Reset() {
+	*x = RevokeEnrollmentResponse{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeEnrollmentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeEnrollmentResponse) ProtoMessage() {}
+
+func (x *RevokeEnrollmentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeEnrollmentResponse.ProtoReflect.Descriptor instead.
+func (*RevokeEnrollmentResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *RevokeEnrollmentResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentResponse) GetRevokedAt() string {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentResponse) GetReceiptId() string {
+	if x != nil {
+		return x.ReceiptId
+	}
+	return ""
+}
+
+func (x *RevokeEnrollmentResponse) GetCompletionRequired() bool {
+	if x != nil {
+		return x.CompletionRequired
+	}
+	return false
+}
+
 type ControlFrame struct {
 	state            protoimpl.MessageState   `protogen:"open.v1"`
 	Type             string                   `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
@@ -48,7 +192,7 @@ type ControlFrame struct {
 
 func (x *ControlFrame) Reset() {
 	*x = ControlFrame{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[0]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -60,7 +204,7 @@ func (x *ControlFrame) String() string {
 func (*ControlFrame) ProtoMessage() {}
 
 func (x *ControlFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[0]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -73,7 +217,7 @@ func (x *ControlFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlFrame.ProtoReflect.Descriptor instead.
 func (*ControlFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{0}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ControlFrame) GetType() string {
@@ -207,7 +351,7 @@ type ControlError struct {
 
 func (x *ControlError) Reset() {
 	*x = ControlError{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[1]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -219,7 +363,7 @@ func (x *ControlError) String() string {
 func (*ControlError) ProtoMessage() {}
 
 func (x *ControlError) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[1]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -232,7 +376,7 @@ func (x *ControlError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlError.ProtoReflect.Descriptor instead.
 func (*ControlError) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{1}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ControlError) GetCode() string {
@@ -273,7 +417,7 @@ type Scope struct {
 
 func (x *Scope) Reset() {
 	*x = Scope{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[2]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -285,7 +429,7 @@ func (x *Scope) String() string {
 func (*Scope) ProtoMessage() {}
 
 func (x *Scope) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[2]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -298,7 +442,7 @@ func (x *Scope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Scope.ProtoReflect.Descriptor instead.
 func (*Scope) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{2}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Scope) GetType() string {
@@ -327,7 +471,7 @@ type RequestContext struct {
 
 func (x *RequestContext) Reset() {
 	*x = RequestContext{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[3]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -339,7 +483,7 @@ func (x *RequestContext) String() string {
 func (*RequestContext) ProtoMessage() {}
 
 func (x *RequestContext) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[3]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -352,7 +496,7 @@ func (x *RequestContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestContext.ProtoReflect.Descriptor instead.
 func (*RequestContext) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{3}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RequestContext) GetRequestId() string {
@@ -401,7 +545,7 @@ type SensorCapability struct {
 
 func (x *SensorCapability) Reset() {
 	*x = SensorCapability{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[4]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +557,7 @@ func (x *SensorCapability) String() string {
 func (*SensorCapability) ProtoMessage() {}
 
 func (x *SensorCapability) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[4]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -426,7 +570,7 @@ func (x *SensorCapability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SensorCapability.ProtoReflect.Descriptor instead.
 func (*SensorCapability) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{4}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SensorCapability) GetBackend() string {
@@ -513,7 +657,7 @@ type CollectionBehaviorCapability struct {
 
 func (x *CollectionBehaviorCapability) Reset() {
 	*x = CollectionBehaviorCapability{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[5]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +669,7 @@ func (x *CollectionBehaviorCapability) String() string {
 func (*CollectionBehaviorCapability) ProtoMessage() {}
 
 func (x *CollectionBehaviorCapability) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[5]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +682,7 @@ func (x *CollectionBehaviorCapability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectionBehaviorCapability.ProtoReflect.Descriptor instead.
 func (*CollectionBehaviorCapability) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{5}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CollectionBehaviorCapability) GetBehavior() string {
@@ -603,7 +747,7 @@ type SensorHealth struct {
 
 func (x *SensorHealth) Reset() {
 	*x = SensorHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[6]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -615,7 +759,7 @@ func (x *SensorHealth) String() string {
 func (*SensorHealth) ProtoMessage() {}
 
 func (x *SensorHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[6]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -628,7 +772,7 @@ func (x *SensorHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SensorHealth.ProtoReflect.Descriptor instead.
 func (*SensorHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{6}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SensorHealth) GetBackend() string {
@@ -731,7 +875,7 @@ type TelemetryBusHealth struct {
 
 func (x *TelemetryBusHealth) Reset() {
 	*x = TelemetryBusHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[7]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -743,7 +887,7 @@ func (x *TelemetryBusHealth) String() string {
 func (*TelemetryBusHealth) ProtoMessage() {}
 
 func (x *TelemetryBusHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[7]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -756,7 +900,7 @@ func (x *TelemetryBusHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryBusHealth.ProtoReflect.Descriptor instead.
 func (*TelemetryBusHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{7}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TelemetryBusHealth) GetEventCapacity() uint64 {
@@ -842,7 +986,7 @@ type TelemetryBatcherHealth struct {
 
 func (x *TelemetryBatcherHealth) Reset() {
 	*x = TelemetryBatcherHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -854,7 +998,7 @@ func (x *TelemetryBatcherHealth) String() string {
 func (*TelemetryBatcherHealth) ProtoMessage() {}
 
 func (x *TelemetryBatcherHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[8]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -867,7 +1011,7 @@ func (x *TelemetryBatcherHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryBatcherHealth.ProtoReflect.Descriptor instead.
 func (*TelemetryBatcherHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{8}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TelemetryBatcherHealth) GetPendingEvents() uint64 {
@@ -1018,7 +1162,7 @@ type TelemetrySenderHealth struct {
 
 func (x *TelemetrySenderHealth) Reset() {
 	*x = TelemetrySenderHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1030,7 +1174,7 @@ func (x *TelemetrySenderHealth) String() string {
 func (*TelemetrySenderHealth) ProtoMessage() {}
 
 func (x *TelemetrySenderHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[9]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1043,7 +1187,7 @@ func (x *TelemetrySenderHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetrySenderHealth.ProtoReflect.Descriptor instead.
 func (*TelemetrySenderHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{9}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TelemetrySenderHealth) GetSentBatches() uint64 {
@@ -1106,7 +1250,7 @@ type TelemetryPolicy struct {
 
 func (x *TelemetryPolicy) Reset() {
 	*x = TelemetryPolicy{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1118,7 +1262,7 @@ func (x *TelemetryPolicy) String() string {
 func (*TelemetryPolicy) ProtoMessage() {}
 
 func (x *TelemetryPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[10]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1131,7 +1275,7 @@ func (x *TelemetryPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryPolicy.ProtoReflect.Descriptor instead.
 func (*TelemetryPolicy) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{10}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TelemetryPolicy) GetMaxBatchItems() uint32 {
@@ -1170,7 +1314,7 @@ type CEPHealth struct {
 
 func (x *CEPHealth) Reset() {
 	*x = CEPHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1326,7 @@ func (x *CEPHealth) String() string {
 func (*CEPHealth) ProtoMessage() {}
 
 func (x *CEPHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[11]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1339,7 @@ func (x *CEPHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CEPHealth.ProtoReflect.Descriptor instead.
 func (*CEPHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{11}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CEPHealth) GetActiveGroups() uint64 {
@@ -1259,7 +1403,7 @@ type DetectionContentRef struct {
 
 func (x *DetectionContentRef) Reset() {
 	*x = DetectionContentRef{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +1415,7 @@ func (x *DetectionContentRef) String() string {
 func (*DetectionContentRef) ProtoMessage() {}
 
 func (x *DetectionContentRef) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[12]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +1428,7 @@ func (x *DetectionContentRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectionContentRef.ProtoReflect.Descriptor instead.
 func (*DetectionContentRef) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{12}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DetectionContentRef) GetRef() string {
@@ -1330,7 +1474,7 @@ type DetectionRuntimeHealth struct {
 
 func (x *DetectionRuntimeHealth) Reset() {
 	*x = DetectionRuntimeHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1342,7 +1486,7 @@ func (x *DetectionRuntimeHealth) String() string {
 func (*DetectionRuntimeHealth) ProtoMessage() {}
 
 func (x *DetectionRuntimeHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[13]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1355,7 +1499,7 @@ func (x *DetectionRuntimeHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectionRuntimeHealth.ProtoReflect.Descriptor instead.
 func (*DetectionRuntimeHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{13}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DetectionRuntimeHealth) GetPolicyId() string {
@@ -1429,7 +1573,7 @@ type LocalStreamHealth struct {
 
 func (x *LocalStreamHealth) Reset() {
 	*x = LocalStreamHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1441,7 +1585,7 @@ func (x *LocalStreamHealth) String() string {
 func (*LocalStreamHealth) ProtoMessage() {}
 
 func (x *LocalStreamHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[14]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1454,7 +1598,7 @@ func (x *LocalStreamHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalStreamHealth.ProtoReflect.Descriptor instead.
 func (*LocalStreamHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{14}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *LocalStreamHealth) GetEventCapacity() uint64 {
@@ -1564,7 +1708,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[15]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1576,7 +1720,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[15]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1589,7 +1733,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{15}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *HealthRequest) GetContext() *RequestContext {
@@ -1600,33 +1744,35 @@ func (x *HealthRequest) GetContext() *RequestContext {
 }
 
 type HealthResponse struct {
-	state            protoimpl.MessageState  `protogen:"open.v1"`
-	AgentId          string                  `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	HostId           string                  `protobuf:"bytes,2,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
-	TenantId         string                  `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	Scope            *Scope                  `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
-	Status           string                  `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
-	PolicyId         string                  `protobuf:"bytes,6,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
-	PolicyVersion    uint64                  `protobuf:"varint,7,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
-	PolicyMode       string                  `protobuf:"bytes,8,opt,name=policy_mode,json=policyMode,proto3" json:"policy_mode,omitempty"`
-	UptimeSeconds    int64                   `protobuf:"varint,9,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
-	Capability       *SensorCapability       `protobuf:"bytes,10,opt,name=capability,proto3" json:"capability,omitempty"`
-	Sensor           *SensorHealth           `protobuf:"bytes,11,opt,name=sensor,proto3" json:"sensor,omitempty"`
-	TelemetryBus     *TelemetryBusHealth     `protobuf:"bytes,12,opt,name=telemetry_bus,json=telemetryBus,proto3" json:"telemetry_bus,omitempty"`
-	TelemetrySender  *TelemetrySenderHealth  `protobuf:"bytes,13,opt,name=telemetry_sender,json=telemetrySender,proto3" json:"telemetry_sender,omitempty"`
-	ObservedAt       string                  `protobuf:"bytes,14,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	Cep              *CEPHealth              `protobuf:"bytes,15,opt,name=cep,proto3" json:"cep,omitempty"`
-	Streams          *LocalStreamHealth      `protobuf:"bytes,16,opt,name=streams,proto3" json:"streams,omitempty"`
-	TelemetryBatcher *TelemetryBatcherHealth `protobuf:"bytes,17,opt,name=telemetry_batcher,json=telemetryBatcher,proto3" json:"telemetry_batcher,omitempty"`
-	Detection        *DetectionRuntimeHealth `protobuf:"bytes,18,opt,name=detection,proto3" json:"detection,omitempty"`
-	LocalStore       *LocalStoreHealth       `protobuf:"bytes,19,opt,name=local_store,json=localStore,proto3" json:"local_store,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state               protoimpl.MessageState     `protogen:"open.v1"`
+	AgentId             string                     `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	HostId              string                     `protobuf:"bytes,2,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
+	TenantId            string                     `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Scope               *Scope                     `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
+	Status              string                     `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	PolicyId            string                     `protobuf:"bytes,6,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	PolicyVersion       uint64                     `protobuf:"varint,7,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	PolicyMode          string                     `protobuf:"bytes,8,opt,name=policy_mode,json=policyMode,proto3" json:"policy_mode,omitempty"`
+	UptimeSeconds       int64                      `protobuf:"varint,9,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	Capability          *SensorCapability          `protobuf:"bytes,10,opt,name=capability,proto3" json:"capability,omitempty"`
+	Sensor              *SensorHealth              `protobuf:"bytes,11,opt,name=sensor,proto3" json:"sensor,omitempty"`
+	TelemetryBus        *TelemetryBusHealth        `protobuf:"bytes,12,opt,name=telemetry_bus,json=telemetryBus,proto3" json:"telemetry_bus,omitempty"`
+	TelemetrySender     *TelemetrySenderHealth     `protobuf:"bytes,13,opt,name=telemetry_sender,json=telemetrySender,proto3" json:"telemetry_sender,omitempty"`
+	ObservedAt          string                     `protobuf:"bytes,14,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Cep                 *CEPHealth                 `protobuf:"bytes,15,opt,name=cep,proto3" json:"cep,omitempty"`
+	Streams             *LocalStreamHealth         `protobuf:"bytes,16,opt,name=streams,proto3" json:"streams,omitempty"`
+	TelemetryBatcher    *TelemetryBatcherHealth    `protobuf:"bytes,17,opt,name=telemetry_batcher,json=telemetryBatcher,proto3" json:"telemetry_batcher,omitempty"`
+	Detection           *DetectionRuntimeHealth    `protobuf:"bytes,18,opt,name=detection,proto3" json:"detection,omitempty"`
+	LocalStore          *LocalStoreHealth          `protobuf:"bytes,19,opt,name=local_store,json=localStore,proto3" json:"local_store,omitempty"`
+	PendingPolicy       *PendingPolicyStatus       `protobuf:"bytes,20,opt,name=pending_policy,json=pendingPolicy,proto3" json:"pending_policy,omitempty"`
+	ManagementLifecycle *ManagementLifecycleStatus `protobuf:"bytes,21,opt,name=management_lifecycle,json=managementLifecycle,proto3" json:"management_lifecycle,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[16]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1638,7 +1784,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[16]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1651,7 +1797,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{16}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *HealthResponse) GetAgentId() string {
@@ -1787,6 +1933,104 @@ func (x *HealthResponse) GetLocalStore() *LocalStoreHealth {
 	return nil
 }
 
+func (x *HealthResponse) GetPendingPolicy() *PendingPolicyStatus {
+	if x != nil {
+		return x.PendingPolicy
+	}
+	return nil
+}
+
+func (x *HealthResponse) GetManagementLifecycle() *ManagementLifecycleStatus {
+	if x != nil {
+		return x.ManagementLifecycle
+	}
+	return nil
+}
+
+type ManagementLifecycleStatus struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Mode                    string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	TransitionPhase         string                 `protobuf:"bytes,2,opt,name=transition_phase,json=transitionPhase,proto3" json:"transition_phase,omitempty"`
+	RevocationConfirmed     bool                   `protobuf:"varint,3,opt,name=revocation_confirmed,json=revocationConfirmed,proto3" json:"revocation_confirmed,omitempty"`
+	ManagerCompletionStatus string                 `protobuf:"bytes,4,opt,name=manager_completion_status,json=managerCompletionStatus,proto3" json:"manager_completion_status,omitempty"`
+	LastTransitionError     string                 `protobuf:"bytes,5,opt,name=last_transition_error,json=lastTransitionError,proto3" json:"last_transition_error,omitempty"`
+	UpdatedAt               string                 `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ManagementLifecycleStatus) Reset() {
+	*x = ManagementLifecycleStatus{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagementLifecycleStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagementLifecycleStatus) ProtoMessage() {}
+
+func (x *ManagementLifecycleStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagementLifecycleStatus.ProtoReflect.Descriptor instead.
+func (*ManagementLifecycleStatus) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ManagementLifecycleStatus) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *ManagementLifecycleStatus) GetTransitionPhase() string {
+	if x != nil {
+		return x.TransitionPhase
+	}
+	return ""
+}
+
+func (x *ManagementLifecycleStatus) GetRevocationConfirmed() bool {
+	if x != nil {
+		return x.RevocationConfirmed
+	}
+	return false
+}
+
+func (x *ManagementLifecycleStatus) GetManagerCompletionStatus() string {
+	if x != nil {
+		return x.ManagerCompletionStatus
+	}
+	return ""
+}
+
+func (x *ManagementLifecycleStatus) GetLastTransitionError() string {
+	if x != nil {
+		return x.LastTransitionError
+	}
+	return ""
+}
+
+func (x *ManagementLifecycleStatus) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
 type LocalStoreHealth struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	Mode                  string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
@@ -1808,7 +2052,7 @@ type LocalStoreHealth struct {
 
 func (x *LocalStoreHealth) Reset() {
 	*x = LocalStoreHealth{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[17]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1820,7 +2064,7 @@ func (x *LocalStoreHealth) String() string {
 func (*LocalStoreHealth) ProtoMessage() {}
 
 func (x *LocalStoreHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[17]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1833,7 +2077,7 @@ func (x *LocalStoreHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalStoreHealth.ProtoReflect.Descriptor instead.
 func (*LocalStoreHealth) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{17}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *LocalStoreHealth) GetMode() string {
@@ -1936,7 +2180,7 @@ type CapabilityRequest struct {
 
 func (x *CapabilityRequest) Reset() {
 	*x = CapabilityRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[18]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1948,7 +2192,7 @@ func (x *CapabilityRequest) String() string {
 func (*CapabilityRequest) ProtoMessage() {}
 
 func (x *CapabilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[18]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1961,7 +2205,7 @@ func (x *CapabilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityRequest.ProtoReflect.Descriptor instead.
 func (*CapabilityRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{18}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CapabilityRequest) GetContext() *RequestContext {
@@ -1987,7 +2231,7 @@ type CapabilityResponse struct {
 
 func (x *CapabilityResponse) Reset() {
 	*x = CapabilityResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[19]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1999,7 +2243,7 @@ func (x *CapabilityResponse) String() string {
 func (*CapabilityResponse) ProtoMessage() {}
 
 func (x *CapabilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[19]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2012,7 +2256,7 @@ func (x *CapabilityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityResponse.ProtoReflect.Descriptor instead.
 func (*CapabilityResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{19}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *CapabilityResponse) GetAgentId() string {
@@ -2080,7 +2324,7 @@ type CurrentPolicyRequest struct {
 
 func (x *CurrentPolicyRequest) Reset() {
 	*x = CurrentPolicyRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[20]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2092,7 +2336,7 @@ func (x *CurrentPolicyRequest) String() string {
 func (*CurrentPolicyRequest) ProtoMessage() {}
 
 func (x *CurrentPolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[20]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2105,7 +2349,7 @@ func (x *CurrentPolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CurrentPolicyRequest.ProtoReflect.Descriptor instead.
 func (*CurrentPolicyRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{20}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CurrentPolicyRequest) GetContext() *RequestContext {
@@ -2126,13 +2370,14 @@ type CurrentPolicyResponse struct {
 	CloudRules    []string               `protobuf:"bytes,7,rep,name=cloud_rules,json=cloudRules,proto3" json:"cloud_rules,omitempty"`
 	Published     bool                   `protobuf:"varint,8,opt,name=published,proto3" json:"published,omitempty"`
 	RawJson       string                 `protobuf:"bytes,9,opt,name=raw_json,json=rawJson,proto3" json:"raw_json,omitempty"`
+	PendingPolicy *PendingPolicyStatus   `protobuf:"bytes,10,opt,name=pending_policy,json=pendingPolicy,proto3" json:"pending_policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CurrentPolicyResponse) Reset() {
 	*x = CurrentPolicyResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[21]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2144,7 +2389,7 @@ func (x *CurrentPolicyResponse) String() string {
 func (*CurrentPolicyResponse) ProtoMessage() {}
 
 func (x *CurrentPolicyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[21]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2157,7 +2402,7 @@ func (x *CurrentPolicyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CurrentPolicyResponse.ProtoReflect.Descriptor instead.
 func (*CurrentPolicyResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{21}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CurrentPolicyResponse) GetPolicyId() string {
@@ -2223,6 +2468,13 @@ func (x *CurrentPolicyResponse) GetRawJson() string {
 	return ""
 }
 
+func (x *CurrentPolicyResponse) GetPendingPolicy() *PendingPolicyStatus {
+	if x != nil {
+		return x.PendingPolicy
+	}
+	return nil
+}
+
 type ResumeCursor struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
@@ -2235,7 +2487,7 @@ type ResumeCursor struct {
 
 func (x *ResumeCursor) Reset() {
 	*x = ResumeCursor{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[22]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2247,7 +2499,7 @@ func (x *ResumeCursor) String() string {
 func (*ResumeCursor) ProtoMessage() {}
 
 func (x *ResumeCursor) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[22]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2260,7 +2512,7 @@ func (x *ResumeCursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeCursor.ProtoReflect.Descriptor instead.
 func (*ResumeCursor) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{22}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ResumeCursor) GetTenantId() string {
@@ -2301,7 +2553,7 @@ type ResponseScope struct {
 
 func (x *ResponseScope) Reset() {
 	*x = ResponseScope{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[23]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2313,7 +2565,7 @@ func (x *ResponseScope) String() string {
 func (*ResponseScope) ProtoMessage() {}
 
 func (x *ResponseScope) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[23]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2326,7 +2578,7 @@ func (x *ResponseScope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseScope.ProtoReflect.Descriptor instead.
 func (*ResponseScope) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{23}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ResponseScope) GetType() string {
@@ -2370,7 +2622,7 @@ type ResponseCommand struct {
 
 func (x *ResponseCommand) Reset() {
 	*x = ResponseCommand{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[24]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2382,7 +2634,7 @@ func (x *ResponseCommand) String() string {
 func (*ResponseCommand) ProtoMessage() {}
 
 func (x *ResponseCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[24]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2395,7 +2647,7 @@ func (x *ResponseCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseCommand.ProtoReflect.Descriptor instead.
 func (*ResponseCommand) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{24}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ResponseCommand) GetResponseId() string {
@@ -2548,7 +2800,7 @@ type ResponseAck struct {
 
 func (x *ResponseAck) Reset() {
 	*x = ResponseAck{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[25]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2560,7 +2812,7 @@ func (x *ResponseAck) String() string {
 func (*ResponseAck) ProtoMessage() {}
 
 func (x *ResponseAck) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[25]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2573,7 +2825,7 @@ func (x *ResponseAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseAck.ProtoReflect.Descriptor instead.
 func (*ResponseAck) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{25}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ResponseAck) GetResponseId() string {
@@ -2657,7 +2909,7 @@ type EvidencePullbackRequest struct {
 
 func (x *EvidencePullbackRequest) Reset() {
 	*x = EvidencePullbackRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[26]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2669,7 +2921,7 @@ func (x *EvidencePullbackRequest) String() string {
 func (*EvidencePullbackRequest) ProtoMessage() {}
 
 func (x *EvidencePullbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[26]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2682,7 +2934,7 @@ func (x *EvidencePullbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvidencePullbackRequest.ProtoReflect.Descriptor instead.
 func (*EvidencePullbackRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{26}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *EvidencePullbackRequest) GetRequestId() string {
@@ -2770,7 +3022,7 @@ type EvidencePullbackResult struct {
 
 func (x *EvidencePullbackResult) Reset() {
 	*x = EvidencePullbackResult{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[27]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2782,7 +3034,7 @@ func (x *EvidencePullbackResult) String() string {
 func (*EvidencePullbackResult) ProtoMessage() {}
 
 func (x *EvidencePullbackResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[27]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2795,7 +3047,7 @@ func (x *EvidencePullbackResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvidencePullbackResult.ProtoReflect.Descriptor instead.
 func (*EvidencePullbackResult) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{27}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *EvidencePullbackResult) GetRequestId() string {
@@ -2860,7 +3112,7 @@ type ApplyPolicyRequest struct {
 
 func (x *ApplyPolicyRequest) Reset() {
 	*x = ApplyPolicyRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[28]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2872,7 +3124,7 @@ func (x *ApplyPolicyRequest) String() string {
 func (*ApplyPolicyRequest) ProtoMessage() {}
 
 func (x *ApplyPolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[28]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2885,7 +3137,7 @@ func (x *ApplyPolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPolicyRequest.ProtoReflect.Descriptor instead.
 func (*ApplyPolicyRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{28}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ApplyPolicyRequest) GetContext() *RequestContext {
@@ -2935,7 +3187,7 @@ type ApplyContentRequest struct {
 
 func (x *ApplyContentRequest) Reset() {
 	*x = ApplyContentRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[29]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2947,7 +3199,7 @@ func (x *ApplyContentRequest) String() string {
 func (*ApplyContentRequest) ProtoMessage() {}
 
 func (x *ApplyContentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[29]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2960,7 +3212,7 @@ func (x *ApplyContentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyContentRequest.ProtoReflect.Descriptor instead.
 func (*ApplyContentRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{29}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ApplyContentRequest) GetContext() *RequestContext {
@@ -3006,7 +3258,7 @@ type ContentRecord struct {
 
 func (x *ContentRecord) Reset() {
 	*x = ContentRecord{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[30]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3018,7 +3270,7 @@ func (x *ContentRecord) String() string {
 func (*ContentRecord) ProtoMessage() {}
 
 func (x *ContentRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[30]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3031,7 +3283,7 @@ func (x *ContentRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentRecord.ProtoReflect.Descriptor instead.
 func (*ContentRecord) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{30}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ContentRecord) GetRef() string {
@@ -3093,7 +3345,7 @@ type ListContentRequest struct {
 
 func (x *ListContentRequest) Reset() {
 	*x = ListContentRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[31]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3105,7 +3357,7 @@ func (x *ListContentRequest) String() string {
 func (*ListContentRequest) ProtoMessage() {}
 
 func (x *ListContentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[31]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3118,7 +3370,7 @@ func (x *ListContentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListContentRequest.ProtoReflect.Descriptor instead.
 func (*ListContentRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{31}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListContentRequest) GetContext() *RequestContext {
@@ -3144,7 +3396,7 @@ type ListContentResponse struct {
 
 func (x *ListContentResponse) Reset() {
 	*x = ListContentResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[32]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3156,7 +3408,7 @@ func (x *ListContentResponse) String() string {
 func (*ListContentResponse) ProtoMessage() {}
 
 func (x *ListContentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[32]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3169,7 +3421,7 @@ func (x *ListContentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListContentResponse.ProtoReflect.Descriptor instead.
 func (*ListContentResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{32}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListContentResponse) GetRecords() []*ContentRecord {
@@ -3189,7 +3441,7 @@ type GetContentRequest struct {
 
 func (x *GetContentRequest) Reset() {
 	*x = GetContentRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[33]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3201,7 +3453,7 @@ func (x *GetContentRequest) String() string {
 func (*GetContentRequest) ProtoMessage() {}
 
 func (x *GetContentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[33]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3214,7 +3466,7 @@ func (x *GetContentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetContentRequest.ProtoReflect.Descriptor instead.
 func (*GetContentRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{33}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetContentRequest) GetContext() *RequestContext {
@@ -3240,7 +3492,7 @@ type ContentGetResponse struct {
 
 func (x *ContentGetResponse) Reset() {
 	*x = ContentGetResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[34]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3252,7 +3504,7 @@ func (x *ContentGetResponse) String() string {
 func (*ContentGetResponse) ProtoMessage() {}
 
 func (x *ContentGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[34]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3265,7 +3517,7 @@ func (x *ContentGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentGetResponse.ProtoReflect.Descriptor instead.
 func (*ContentGetResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{34}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ContentGetResponse) GetRecord() *ContentRecord {
@@ -3289,7 +3541,7 @@ type AppliedSection struct {
 
 func (x *AppliedSection) Reset() {
 	*x = AppliedSection{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[35]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3301,7 +3553,7 @@ func (x *AppliedSection) String() string {
 func (*AppliedSection) ProtoMessage() {}
 
 func (x *AppliedSection) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[35]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3314,7 +3566,7 @@ func (x *AppliedSection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppliedSection.ProtoReflect.Descriptor instead.
 func (*AppliedSection) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{35}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AppliedSection) GetName() string {
@@ -3377,7 +3629,7 @@ type ControlAck struct {
 
 func (x *ControlAck) Reset() {
 	*x = ControlAck{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[36]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3389,7 +3641,7 @@ func (x *ControlAck) String() string {
 func (*ControlAck) ProtoMessage() {}
 
 func (x *ControlAck) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[36]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3402,7 +3654,7 @@ func (x *ControlAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlAck.ProtoReflect.Descriptor instead.
 func (*ControlAck) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{36}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ControlAck) GetRequestId() string {
@@ -3488,7 +3740,7 @@ type WatchFilter struct {
 
 func (x *WatchFilter) Reset() {
 	*x = WatchFilter{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[37]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3500,7 +3752,7 @@ func (x *WatchFilter) String() string {
 func (*WatchFilter) ProtoMessage() {}
 
 func (x *WatchFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[37]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3513,7 +3765,7 @@ func (x *WatchFilter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchFilter.ProtoReflect.Descriptor instead.
 func (*WatchFilter) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{37}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *WatchFilter) GetAfterSequence() uint64 {
@@ -3565,7 +3817,7 @@ type WatchEventsRequest struct {
 
 func (x *WatchEventsRequest) Reset() {
 	*x = WatchEventsRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[38]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3577,7 +3829,7 @@ func (x *WatchEventsRequest) String() string {
 func (*WatchEventsRequest) ProtoMessage() {}
 
 func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[38]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3590,7 +3842,7 @@ func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchEventsRequest.ProtoReflect.Descriptor instead.
 func (*WatchEventsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{38}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *WatchEventsRequest) GetContext() *RequestContext {
@@ -3645,7 +3897,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[39]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3657,7 +3909,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[39]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3670,7 +3922,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{39}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GetEventRequest) GetContext() *RequestContext {
@@ -3696,7 +3948,7 @@ type EventGetResponse struct {
 
 func (x *EventGetResponse) Reset() {
 	*x = EventGetResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3708,7 +3960,7 @@ func (x *EventGetResponse) String() string {
 func (*EventGetResponse) ProtoMessage() {}
 
 func (x *EventGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[40]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3721,7 +3973,7 @@ func (x *EventGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventGetResponse.ProtoReflect.Descriptor instead.
 func (*EventGetResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{40}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *EventGetResponse) GetFrame() *EventFrame {
@@ -3743,7 +3995,7 @@ type DebugProfileRequest struct {
 
 func (x *DebugProfileRequest) Reset() {
 	*x = DebugProfileRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3755,7 +4007,7 @@ func (x *DebugProfileRequest) String() string {
 func (*DebugProfileRequest) ProtoMessage() {}
 
 func (x *DebugProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[41]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3768,7 +4020,7 @@ func (x *DebugProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DebugProfileRequest.ProtoReflect.Descriptor instead.
 func (*DebugProfileRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{41}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *DebugProfileRequest) GetContext() *RequestContext {
@@ -3813,7 +4065,7 @@ type DebugProfileResponse struct {
 
 func (x *DebugProfileResponse) Reset() {
 	*x = DebugProfileResponse{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3825,7 +4077,7 @@ func (x *DebugProfileResponse) String() string {
 func (*DebugProfileResponse) ProtoMessage() {}
 
 func (x *DebugProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[42]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3838,7 +4090,7 @@ func (x *DebugProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DebugProfileResponse.ProtoReflect.Descriptor instead.
 func (*DebugProfileResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{42}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *DebugProfileResponse) GetProfileType() string {
@@ -3896,7 +4148,7 @@ type EventFrame struct {
 
 func (x *EventFrame) Reset() {
 	*x = EventFrame{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[43]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3908,7 +4160,7 @@ func (x *EventFrame) String() string {
 func (*EventFrame) ProtoMessage() {}
 
 func (x *EventFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[43]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3921,7 +4173,7 @@ func (x *EventFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventFrame.ProtoReflect.Descriptor instead.
 func (*EventFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{43}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *EventFrame) GetTenantId() string {
@@ -3974,7 +4226,7 @@ type WatchSignalsRequest struct {
 
 func (x *WatchSignalsRequest) Reset() {
 	*x = WatchSignalsRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[44]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3986,7 +4238,7 @@ func (x *WatchSignalsRequest) String() string {
 func (*WatchSignalsRequest) ProtoMessage() {}
 
 func (x *WatchSignalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[44]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3999,7 +4251,7 @@ func (x *WatchSignalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSignalsRequest.ProtoReflect.Descriptor instead.
 func (*WatchSignalsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{44}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *WatchSignalsRequest) GetContext() *RequestContext {
@@ -4067,7 +4319,7 @@ type EnrollRequest struct {
 
 func (x *EnrollRequest) Reset() {
 	*x = EnrollRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[45]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4079,7 +4331,7 @@ func (x *EnrollRequest) String() string {
 func (*EnrollRequest) ProtoMessage() {}
 
 func (x *EnrollRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[45]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4092,7 +4344,7 @@ func (x *EnrollRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollRequest.ProtoReflect.Descriptor instead.
 func (*EnrollRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{45}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *EnrollRequest) GetContext() *RequestContext {
@@ -4160,7 +4412,7 @@ type UnenrollRequest struct {
 
 func (x *UnenrollRequest) Reset() {
 	*x = UnenrollRequest{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[46]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4172,7 +4424,7 @@ func (x *UnenrollRequest) String() string {
 func (*UnenrollRequest) ProtoMessage() {}
 
 func (x *UnenrollRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[46]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4185,7 +4437,7 @@ func (x *UnenrollRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnenrollRequest.ProtoReflect.Descriptor instead.
 func (*UnenrollRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{46}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *UnenrollRequest) GetContext() *RequestContext {
@@ -4208,7 +4460,7 @@ type SignalFrame struct {
 
 func (x *SignalFrame) Reset() {
 	*x = SignalFrame{}
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[47]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4220,7 +4472,7 @@ func (x *SignalFrame) String() string {
 func (*SignalFrame) ProtoMessage() {}
 
 func (x *SignalFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[47]
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4233,7 +4485,7 @@ func (x *SignalFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalFrame.ProtoReflect.Descriptor instead.
 func (*SignalFrame) Descriptor() ([]byte, []int) {
-	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{47}
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *SignalFrame) GetTenantId() string {
@@ -4271,11 +4523,100 @@ func (x *SignalFrame) GetSignal() *v11.Signal {
 	return nil
 }
 
+type PendingPolicyStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Source        string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	PolicyId      string                 `protobuf:"bytes,3,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	Version       uint64                 `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	Digest        string                 `protobuf:"bytes,5,opt,name=digest,proto3" json:"digest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PendingPolicyStatus) Reset() {
+	*x = PendingPolicyStatus{}
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingPolicyStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingPolicyStatus) ProtoMessage() {}
+
+func (x *PendingPolicyStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingPolicyStatus.ProtoReflect.Descriptor instead.
+func (*PendingPolicyStatus) Descriptor() ([]byte, []int) {
+	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *PendingPolicyStatus) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *PendingPolicyStatus) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *PendingPolicyStatus) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+func (x *PendingPolicyStatus) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *PendingPolicyStatus) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
 var File_api_proto_controlplane_v1_agentcontrol_proto protoreflect.FileDescriptor
 
 const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\n" +
-	",api/proto/controlplane/v1/agentcontrol.proto\x12\x18sysarmor.controlplane.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"\xbc\b\n" +
+	",api/proto/controlplane/v1/agentcontrol.proto\x12\x18sysarmor.controlplane.v1\x1a\x1eapi/proto/event/v1/event.proto\x1a api/proto/signal/v1/signal.proto\"\xd9\x01\n" +
+	"\x17RevokeEnrollmentRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12#\n" +
+	"\renrollment_id\x18\x03 \x01(\tR\fenrollmentId\x12-\n" +
+	"\x12certificate_serial\x18\x04 \x01(\tR\x11certificateSerial\x122\n" +
+	"\x15completion_token_hash\x18\x05 \x01(\tR\x13completionTokenHash\"\xa1\x01\n" +
+	"\x18RevokeEnrollmentResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"revoked_at\x18\x02 \x01(\tR\trevokedAt\x12\x1d\n" +
+	"\n" +
+	"receipt_id\x18\x03 \x01(\tR\treceiptId\x12/\n" +
+	"\x13completion_required\x18\x04 \x01(\bR\x12completionRequired\"\xbc\b\n" +
 	"\fControlFrame\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +
@@ -4432,7 +4773,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x0esignal_evicted\x18\r \x01(\x04R\rsignalEvicted\x12-\n" +
 	"\x12signal_subscribers\x18\x0e \x01(\x04R\x11signalSubscribers\"S\n" +
 	"\rHealthRequest\x12B\n" +
-	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\x92\b\n" +
+	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\xd0\t\n" +
 	"\x0eHealthResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12\x1b\n" +
@@ -4458,7 +4799,17 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x11telemetry_batcher\x18\x11 \x01(\v20.sysarmor.controlplane.v1.TelemetryBatcherHealthR\x10telemetryBatcher\x12N\n" +
 	"\tdetection\x18\x12 \x01(\v20.sysarmor.controlplane.v1.DetectionRuntimeHealthR\tdetection\x12K\n" +
 	"\vlocal_store\x18\x13 \x01(\v2*.sysarmor.controlplane.v1.LocalStoreHealthR\n" +
-	"localStore\"\xcb\x04\n" +
+	"localStore\x12T\n" +
+	"\x0epending_policy\x18\x14 \x01(\v2-.sysarmor.controlplane.v1.PendingPolicyStatusR\rpendingPolicy\x12f\n" +
+	"\x14management_lifecycle\x18\x15 \x01(\v23.sysarmor.controlplane.v1.ManagementLifecycleStatusR\x13managementLifecycle\"\x9c\x02\n" +
+	"\x19ManagementLifecycleStatus\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\tR\x04mode\x12)\n" +
+	"\x10transition_phase\x18\x02 \x01(\tR\x0ftransitionPhase\x121\n" +
+	"\x14revocation_confirmed\x18\x03 \x01(\bR\x13revocationConfirmed\x12:\n" +
+	"\x19manager_completion_status\x18\x04 \x01(\tR\x17managerCompletionStatus\x122\n" +
+	"\x15last_transition_error\x18\x05 \x01(\tR\x13lastTransitionError\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x06 \x01(\tR\tupdatedAt\"\xcb\x04\n" +
 	"\x10LocalStoreHealth\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12#\n" +
@@ -4486,7 +4837,7 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\x1asupported_response_actions\x18\b \x03(\tR\x18supportedResponseActions\x12i\n" +
 	"\x14collection_behaviors\x18\t \x03(\v26.sysarmor.controlplane.v1.CollectionBehaviorCapabilityR\x13collectionBehaviorsJ\x04\b\a\x10\b\"Z\n" +
 	"\x14CurrentPolicyRequest\x12B\n" +
-	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\xb7\x02\n" +
+	"\acontext\x18\x01 \x01(\v2(.sysarmor.controlplane.v1.RequestContextR\acontext\"\x8d\x03\n" +
 	"\x15CurrentPolicyResponse\x12\x1b\n" +
 	"\tpolicy_id\x18\x01 \x01(\tR\bpolicyId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\x12\x1b\n" +
@@ -4497,7 +4848,9 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\vcloud_rules\x18\a \x03(\tR\n" +
 	"cloudRules\x12\x1c\n" +
 	"\tpublished\x18\b \x01(\bR\tpublished\x12\x19\n" +
-	"\braw_json\x18\t \x01(\tR\arawJson\"\x8a\x01\n" +
+	"\braw_json\x18\t \x01(\tR\arawJson\x12T\n" +
+	"\x0epending_policy\x18\n" +
+	" \x01(\v2-.sysarmor.controlplane.v1.PendingPolicyStatusR\rpendingPolicy\"\x8a\x01\n" +
 	"\fResumeCursor\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
@@ -4695,7 +5048,13 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\bsequence\x18\x03 \x01(\x04R\bsequence\x12\x1f\n" +
 	"\vobserved_at\x18\x04 \x01(\tR\n" +
 	"observedAt\x122\n" +
-	"\x06signal\x18\x05 \x01(\v2\x1a.sysarmor.signal.v1.SignalR\x06signal2\xa3\v\n" +
+	"\x06signal\x18\x05 \x01(\v2\x1a.sysarmor.signal.v1.SignalR\x06signal\"\x94\x01\n" +
+	"\x13PendingPolicyStatus\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12\x1b\n" +
+	"\tpolicy_id\x18\x03 \x01(\tR\bpolicyId\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\x04R\aversion\x12\x16\n" +
+	"\x06digest\x18\x05 \x01(\tR\x06digest2\x9e\f\n" +
 	"\x18AgentControlPlaneService\x12]\n" +
 	"\aConnect\x12&.sysarmor.controlplane.v1.ControlFrame\x1a&.sysarmor.controlplane.v1.ControlFrame(\x010\x01\x12[\n" +
 	"\x06Health\x12'.sysarmor.controlplane.v1.HealthRequest\x1a(.sysarmor.controlplane.v1.HealthResponse\x12g\n" +
@@ -4712,7 +5071,8 @@ const file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc = "" +
 	"\vWatchEvents\x12,.sysarmor.controlplane.v1.WatchEventsRequest\x1a$.sysarmor.controlplane.v1.EventFrame0\x01\x12f\n" +
 	"\fWatchSignals\x12-.sysarmor.controlplane.v1.WatchSignalsRequest\x1a%.sysarmor.controlplane.v1.SignalFrame0\x01\x12W\n" +
 	"\x06Enroll\x12'.sysarmor.controlplane.v1.EnrollRequest\x1a$.sysarmor.controlplane.v1.ControlAck\x12[\n" +
-	"\bUnenroll\x12).sysarmor.controlplane.v1.UnenrollRequest\x1a$.sysarmor.controlplane.v1.ControlAckBTZRgithub.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1;controlplanev1b\x06proto3"
+	"\bUnenroll\x12).sysarmor.controlplane.v1.UnenrollRequest\x1a$.sysarmor.controlplane.v1.ControlAck\x12y\n" +
+	"\x10RevokeEnrollment\x121.sysarmor.controlplane.v1.RevokeEnrollmentRequest\x1a2.sysarmor.controlplane.v1.RevokeEnrollmentResponseBTZRgithub.com/sysarmor/sysarmor-next-project/api/proto/controlplane/v1;controlplanev1b\x06proto3"
 
 var (
 	file_api_proto_controlplane_v1_agentcontrol_proto_rawDescOnce sync.Once
@@ -4726,150 +5086,159 @@ func file_api_proto_controlplane_v1_agentcontrol_proto_rawDescGZIP() []byte {
 	return file_api_proto_controlplane_v1_agentcontrol_proto_rawDescData
 }
 
-var file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
+var file_api_proto_controlplane_v1_agentcontrol_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
 var file_api_proto_controlplane_v1_agentcontrol_proto_goTypes = []any{
-	(*ControlFrame)(nil),                 // 0: sysarmor.controlplane.v1.ControlFrame
-	(*ControlError)(nil),                 // 1: sysarmor.controlplane.v1.ControlError
-	(*Scope)(nil),                        // 2: sysarmor.controlplane.v1.Scope
-	(*RequestContext)(nil),               // 3: sysarmor.controlplane.v1.RequestContext
-	(*SensorCapability)(nil),             // 4: sysarmor.controlplane.v1.SensorCapability
-	(*CollectionBehaviorCapability)(nil), // 5: sysarmor.controlplane.v1.CollectionBehaviorCapability
-	(*SensorHealth)(nil),                 // 6: sysarmor.controlplane.v1.SensorHealth
-	(*TelemetryBusHealth)(nil),           // 7: sysarmor.controlplane.v1.TelemetryBusHealth
-	(*TelemetryBatcherHealth)(nil),       // 8: sysarmor.controlplane.v1.TelemetryBatcherHealth
-	(*TelemetrySenderHealth)(nil),        // 9: sysarmor.controlplane.v1.TelemetrySenderHealth
-	(*TelemetryPolicy)(nil),              // 10: sysarmor.controlplane.v1.TelemetryPolicy
-	(*CEPHealth)(nil),                    // 11: sysarmor.controlplane.v1.CEPHealth
-	(*DetectionContentRef)(nil),          // 12: sysarmor.controlplane.v1.DetectionContentRef
-	(*DetectionRuntimeHealth)(nil),       // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth
-	(*LocalStreamHealth)(nil),            // 14: sysarmor.controlplane.v1.LocalStreamHealth
-	(*HealthRequest)(nil),                // 15: sysarmor.controlplane.v1.HealthRequest
-	(*HealthResponse)(nil),               // 16: sysarmor.controlplane.v1.HealthResponse
-	(*LocalStoreHealth)(nil),             // 17: sysarmor.controlplane.v1.LocalStoreHealth
-	(*CapabilityRequest)(nil),            // 18: sysarmor.controlplane.v1.CapabilityRequest
-	(*CapabilityResponse)(nil),           // 19: sysarmor.controlplane.v1.CapabilityResponse
-	(*CurrentPolicyRequest)(nil),         // 20: sysarmor.controlplane.v1.CurrentPolicyRequest
-	(*CurrentPolicyResponse)(nil),        // 21: sysarmor.controlplane.v1.CurrentPolicyResponse
-	(*ResumeCursor)(nil),                 // 22: sysarmor.controlplane.v1.ResumeCursor
-	(*ResponseScope)(nil),                // 23: sysarmor.controlplane.v1.ResponseScope
-	(*ResponseCommand)(nil),              // 24: sysarmor.controlplane.v1.ResponseCommand
-	(*ResponseAck)(nil),                  // 25: sysarmor.controlplane.v1.ResponseAck
-	(*EvidencePullbackRequest)(nil),      // 26: sysarmor.controlplane.v1.EvidencePullbackRequest
-	(*EvidencePullbackResult)(nil),       // 27: sysarmor.controlplane.v1.EvidencePullbackResult
-	(*ApplyPolicyRequest)(nil),           // 28: sysarmor.controlplane.v1.ApplyPolicyRequest
-	(*ApplyContentRequest)(nil),          // 29: sysarmor.controlplane.v1.ApplyContentRequest
-	(*ContentRecord)(nil),                // 30: sysarmor.controlplane.v1.ContentRecord
-	(*ListContentRequest)(nil),           // 31: sysarmor.controlplane.v1.ListContentRequest
-	(*ListContentResponse)(nil),          // 32: sysarmor.controlplane.v1.ListContentResponse
-	(*GetContentRequest)(nil),            // 33: sysarmor.controlplane.v1.GetContentRequest
-	(*ContentGetResponse)(nil),           // 34: sysarmor.controlplane.v1.ContentGetResponse
-	(*AppliedSection)(nil),               // 35: sysarmor.controlplane.v1.AppliedSection
-	(*ControlAck)(nil),                   // 36: sysarmor.controlplane.v1.ControlAck
-	(*WatchFilter)(nil),                  // 37: sysarmor.controlplane.v1.WatchFilter
-	(*WatchEventsRequest)(nil),           // 38: sysarmor.controlplane.v1.WatchEventsRequest
-	(*GetEventRequest)(nil),              // 39: sysarmor.controlplane.v1.GetEventRequest
-	(*EventGetResponse)(nil),             // 40: sysarmor.controlplane.v1.EventGetResponse
-	(*DebugProfileRequest)(nil),          // 41: sysarmor.controlplane.v1.DebugProfileRequest
-	(*DebugProfileResponse)(nil),         // 42: sysarmor.controlplane.v1.DebugProfileResponse
-	(*EventFrame)(nil),                   // 43: sysarmor.controlplane.v1.EventFrame
-	(*WatchSignalsRequest)(nil),          // 44: sysarmor.controlplane.v1.WatchSignalsRequest
-	(*EnrollRequest)(nil),                // 45: sysarmor.controlplane.v1.EnrollRequest
-	(*UnenrollRequest)(nil),              // 46: sysarmor.controlplane.v1.UnenrollRequest
-	(*SignalFrame)(nil),                  // 47: sysarmor.controlplane.v1.SignalFrame
-	nil,                                  // 48: sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
-	nil,                                  // 49: sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
-	nil,                                  // 50: sysarmor.controlplane.v1.WatchFilter.LabelsEntry
-	(*v1.CanonicalEvent)(nil),            // 51: sysarmor.event.v1.CanonicalEvent
-	(*v11.Signal)(nil),                   // 52: sysarmor.signal.v1.Signal
+	(*RevokeEnrollmentRequest)(nil),      // 0: sysarmor.controlplane.v1.RevokeEnrollmentRequest
+	(*RevokeEnrollmentResponse)(nil),     // 1: sysarmor.controlplane.v1.RevokeEnrollmentResponse
+	(*ControlFrame)(nil),                 // 2: sysarmor.controlplane.v1.ControlFrame
+	(*ControlError)(nil),                 // 3: sysarmor.controlplane.v1.ControlError
+	(*Scope)(nil),                        // 4: sysarmor.controlplane.v1.Scope
+	(*RequestContext)(nil),               // 5: sysarmor.controlplane.v1.RequestContext
+	(*SensorCapability)(nil),             // 6: sysarmor.controlplane.v1.SensorCapability
+	(*CollectionBehaviorCapability)(nil), // 7: sysarmor.controlplane.v1.CollectionBehaviorCapability
+	(*SensorHealth)(nil),                 // 8: sysarmor.controlplane.v1.SensorHealth
+	(*TelemetryBusHealth)(nil),           // 9: sysarmor.controlplane.v1.TelemetryBusHealth
+	(*TelemetryBatcherHealth)(nil),       // 10: sysarmor.controlplane.v1.TelemetryBatcherHealth
+	(*TelemetrySenderHealth)(nil),        // 11: sysarmor.controlplane.v1.TelemetrySenderHealth
+	(*TelemetryPolicy)(nil),              // 12: sysarmor.controlplane.v1.TelemetryPolicy
+	(*CEPHealth)(nil),                    // 13: sysarmor.controlplane.v1.CEPHealth
+	(*DetectionContentRef)(nil),          // 14: sysarmor.controlplane.v1.DetectionContentRef
+	(*DetectionRuntimeHealth)(nil),       // 15: sysarmor.controlplane.v1.DetectionRuntimeHealth
+	(*LocalStreamHealth)(nil),            // 16: sysarmor.controlplane.v1.LocalStreamHealth
+	(*HealthRequest)(nil),                // 17: sysarmor.controlplane.v1.HealthRequest
+	(*HealthResponse)(nil),               // 18: sysarmor.controlplane.v1.HealthResponse
+	(*ManagementLifecycleStatus)(nil),    // 19: sysarmor.controlplane.v1.ManagementLifecycleStatus
+	(*LocalStoreHealth)(nil),             // 20: sysarmor.controlplane.v1.LocalStoreHealth
+	(*CapabilityRequest)(nil),            // 21: sysarmor.controlplane.v1.CapabilityRequest
+	(*CapabilityResponse)(nil),           // 22: sysarmor.controlplane.v1.CapabilityResponse
+	(*CurrentPolicyRequest)(nil),         // 23: sysarmor.controlplane.v1.CurrentPolicyRequest
+	(*CurrentPolicyResponse)(nil),        // 24: sysarmor.controlplane.v1.CurrentPolicyResponse
+	(*ResumeCursor)(nil),                 // 25: sysarmor.controlplane.v1.ResumeCursor
+	(*ResponseScope)(nil),                // 26: sysarmor.controlplane.v1.ResponseScope
+	(*ResponseCommand)(nil),              // 27: sysarmor.controlplane.v1.ResponseCommand
+	(*ResponseAck)(nil),                  // 28: sysarmor.controlplane.v1.ResponseAck
+	(*EvidencePullbackRequest)(nil),      // 29: sysarmor.controlplane.v1.EvidencePullbackRequest
+	(*EvidencePullbackResult)(nil),       // 30: sysarmor.controlplane.v1.EvidencePullbackResult
+	(*ApplyPolicyRequest)(nil),           // 31: sysarmor.controlplane.v1.ApplyPolicyRequest
+	(*ApplyContentRequest)(nil),          // 32: sysarmor.controlplane.v1.ApplyContentRequest
+	(*ContentRecord)(nil),                // 33: sysarmor.controlplane.v1.ContentRecord
+	(*ListContentRequest)(nil),           // 34: sysarmor.controlplane.v1.ListContentRequest
+	(*ListContentResponse)(nil),          // 35: sysarmor.controlplane.v1.ListContentResponse
+	(*GetContentRequest)(nil),            // 36: sysarmor.controlplane.v1.GetContentRequest
+	(*ContentGetResponse)(nil),           // 37: sysarmor.controlplane.v1.ContentGetResponse
+	(*AppliedSection)(nil),               // 38: sysarmor.controlplane.v1.AppliedSection
+	(*ControlAck)(nil),                   // 39: sysarmor.controlplane.v1.ControlAck
+	(*WatchFilter)(nil),                  // 40: sysarmor.controlplane.v1.WatchFilter
+	(*WatchEventsRequest)(nil),           // 41: sysarmor.controlplane.v1.WatchEventsRequest
+	(*GetEventRequest)(nil),              // 42: sysarmor.controlplane.v1.GetEventRequest
+	(*EventGetResponse)(nil),             // 43: sysarmor.controlplane.v1.EventGetResponse
+	(*DebugProfileRequest)(nil),          // 44: sysarmor.controlplane.v1.DebugProfileRequest
+	(*DebugProfileResponse)(nil),         // 45: sysarmor.controlplane.v1.DebugProfileResponse
+	(*EventFrame)(nil),                   // 46: sysarmor.controlplane.v1.EventFrame
+	(*WatchSignalsRequest)(nil),          // 47: sysarmor.controlplane.v1.WatchSignalsRequest
+	(*EnrollRequest)(nil),                // 48: sysarmor.controlplane.v1.EnrollRequest
+	(*UnenrollRequest)(nil),              // 49: sysarmor.controlplane.v1.UnenrollRequest
+	(*SignalFrame)(nil),                  // 50: sysarmor.controlplane.v1.SignalFrame
+	(*PendingPolicyStatus)(nil),          // 51: sysarmor.controlplane.v1.PendingPolicyStatus
+	nil,                                  // 52: sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
+	nil,                                  // 53: sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
+	nil,                                  // 54: sysarmor.controlplane.v1.WatchFilter.LabelsEntry
+	(*v1.CanonicalEvent)(nil),            // 55: sysarmor.event.v1.CanonicalEvent
+	(*v11.Signal)(nil),                   // 56: sysarmor.signal.v1.Signal
 }
 var file_api_proto_controlplane_v1_agentcontrol_proto_depIdxs = []int32{
-	3,  // 0: sysarmor.controlplane.v1.ControlFrame.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	16, // 1: sysarmor.controlplane.v1.ControlFrame.health:type_name -> sysarmor.controlplane.v1.HealthResponse
-	19, // 2: sysarmor.controlplane.v1.ControlFrame.capability:type_name -> sysarmor.controlplane.v1.CapabilityResponse
-	36, // 3: sysarmor.controlplane.v1.ControlFrame.ack:type_name -> sysarmor.controlplane.v1.ControlAck
-	21, // 4: sysarmor.controlplane.v1.ControlFrame.policy_update:type_name -> sysarmor.controlplane.v1.CurrentPolicyResponse
-	29, // 5: sysarmor.controlplane.v1.ControlFrame.content_update:type_name -> sysarmor.controlplane.v1.ApplyContentRequest
-	24, // 6: sysarmor.controlplane.v1.ControlFrame.response_command:type_name -> sysarmor.controlplane.v1.ResponseCommand
-	26, // 7: sysarmor.controlplane.v1.ControlFrame.evidence_pullback:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest
-	22, // 8: sysarmor.controlplane.v1.ControlFrame.resume:type_name -> sysarmor.controlplane.v1.ResumeCursor
-	25, // 9: sysarmor.controlplane.v1.ControlFrame.response_ack:type_name -> sysarmor.controlplane.v1.ResponseAck
-	27, // 10: sysarmor.controlplane.v1.ControlFrame.evidence_result:type_name -> sysarmor.controlplane.v1.EvidencePullbackResult
-	1,  // 11: sysarmor.controlplane.v1.ControlFrame.error:type_name -> sysarmor.controlplane.v1.ControlError
-	2,  // 12: sysarmor.controlplane.v1.RequestContext.scope:type_name -> sysarmor.controlplane.v1.Scope
-	12, // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth.content_refs:type_name -> sysarmor.controlplane.v1.DetectionContentRef
-	3,  // 14: sysarmor.controlplane.v1.HealthRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	2,  // 15: sysarmor.controlplane.v1.HealthResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
-	4,  // 16: sysarmor.controlplane.v1.HealthResponse.capability:type_name -> sysarmor.controlplane.v1.SensorCapability
-	6,  // 17: sysarmor.controlplane.v1.HealthResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorHealth
-	7,  // 18: sysarmor.controlplane.v1.HealthResponse.telemetry_bus:type_name -> sysarmor.controlplane.v1.TelemetryBusHealth
-	9,  // 19: sysarmor.controlplane.v1.HealthResponse.telemetry_sender:type_name -> sysarmor.controlplane.v1.TelemetrySenderHealth
-	11, // 20: sysarmor.controlplane.v1.HealthResponse.cep:type_name -> sysarmor.controlplane.v1.CEPHealth
-	14, // 21: sysarmor.controlplane.v1.HealthResponse.streams:type_name -> sysarmor.controlplane.v1.LocalStreamHealth
-	8,  // 22: sysarmor.controlplane.v1.HealthResponse.telemetry_batcher:type_name -> sysarmor.controlplane.v1.TelemetryBatcherHealth
-	13, // 23: sysarmor.controlplane.v1.HealthResponse.detection:type_name -> sysarmor.controlplane.v1.DetectionRuntimeHealth
-	17, // 24: sysarmor.controlplane.v1.HealthResponse.local_store:type_name -> sysarmor.controlplane.v1.LocalStoreHealth
-	3,  // 25: sysarmor.controlplane.v1.CapabilityRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	2,  // 26: sysarmor.controlplane.v1.CapabilityResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
-	4,  // 27: sysarmor.controlplane.v1.CapabilityResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorCapability
-	5,  // 28: sysarmor.controlplane.v1.CapabilityResponse.collection_behaviors:type_name -> sysarmor.controlplane.v1.CollectionBehaviorCapability
-	3,  // 29: sysarmor.controlplane.v1.CurrentPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	2,  // 30: sysarmor.controlplane.v1.CurrentPolicyResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
-	23, // 31: sysarmor.controlplane.v1.ResponseCommand.scope:type_name -> sysarmor.controlplane.v1.ResponseScope
-	48, // 32: sysarmor.controlplane.v1.ResponseCommand.labels:type_name -> sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
-	49, // 33: sysarmor.controlplane.v1.EvidencePullbackRequest.labels:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
-	3,  // 34: sysarmor.controlplane.v1.ApplyPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	10, // 35: sysarmor.controlplane.v1.ApplyPolicyRequest.telemetry:type_name -> sysarmor.controlplane.v1.TelemetryPolicy
-	3,  // 36: sysarmor.controlplane.v1.ApplyContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	3,  // 37: sysarmor.controlplane.v1.ListContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	30, // 38: sysarmor.controlplane.v1.ListContentResponse.records:type_name -> sysarmor.controlplane.v1.ContentRecord
-	3,  // 39: sysarmor.controlplane.v1.GetContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	30, // 40: sysarmor.controlplane.v1.ContentGetResponse.record:type_name -> sysarmor.controlplane.v1.ContentRecord
-	35, // 41: sysarmor.controlplane.v1.ControlAck.sections:type_name -> sysarmor.controlplane.v1.AppliedSection
-	50, // 42: sysarmor.controlplane.v1.WatchFilter.labels:type_name -> sysarmor.controlplane.v1.WatchFilter.LabelsEntry
-	3,  // 43: sysarmor.controlplane.v1.WatchEventsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	37, // 44: sysarmor.controlplane.v1.WatchEventsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
-	3,  // 45: sysarmor.controlplane.v1.GetEventRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	43, // 46: sysarmor.controlplane.v1.EventGetResponse.frame:type_name -> sysarmor.controlplane.v1.EventFrame
-	3,  // 47: sysarmor.controlplane.v1.DebugProfileRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	51, // 48: sysarmor.controlplane.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
-	3,  // 49: sysarmor.controlplane.v1.WatchSignalsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	37, // 50: sysarmor.controlplane.v1.WatchSignalsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
-	3,  // 51: sysarmor.controlplane.v1.EnrollRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	3,  // 52: sysarmor.controlplane.v1.UnenrollRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
-	52, // 53: sysarmor.controlplane.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
-	0,  // 54: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:input_type -> sysarmor.controlplane.v1.ControlFrame
-	15, // 55: sysarmor.controlplane.v1.AgentControlPlaneService.Health:input_type -> sysarmor.controlplane.v1.HealthRequest
-	18, // 56: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:input_type -> sysarmor.controlplane.v1.CapabilityRequest
-	20, // 57: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:input_type -> sysarmor.controlplane.v1.CurrentPolicyRequest
-	28, // 58: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:input_type -> sysarmor.controlplane.v1.ApplyPolicyRequest
-	29, // 59: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:input_type -> sysarmor.controlplane.v1.ApplyContentRequest
-	31, // 60: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:input_type -> sysarmor.controlplane.v1.ListContentRequest
-	33, // 61: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:input_type -> sysarmor.controlplane.v1.GetContentRequest
-	39, // 62: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:input_type -> sysarmor.controlplane.v1.GetEventRequest
-	41, // 63: sysarmor.controlplane.v1.AgentControlPlaneService.DebugProfile:input_type -> sysarmor.controlplane.v1.DebugProfileRequest
-	38, // 64: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:input_type -> sysarmor.controlplane.v1.WatchEventsRequest
-	44, // 65: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:input_type -> sysarmor.controlplane.v1.WatchSignalsRequest
-	45, // 66: sysarmor.controlplane.v1.AgentControlPlaneService.Enroll:input_type -> sysarmor.controlplane.v1.EnrollRequest
-	46, // 67: sysarmor.controlplane.v1.AgentControlPlaneService.Unenroll:input_type -> sysarmor.controlplane.v1.UnenrollRequest
-	0,  // 68: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:output_type -> sysarmor.controlplane.v1.ControlFrame
-	16, // 69: sysarmor.controlplane.v1.AgentControlPlaneService.Health:output_type -> sysarmor.controlplane.v1.HealthResponse
-	19, // 70: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:output_type -> sysarmor.controlplane.v1.CapabilityResponse
-	21, // 71: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:output_type -> sysarmor.controlplane.v1.CurrentPolicyResponse
-	36, // 72: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:output_type -> sysarmor.controlplane.v1.ControlAck
-	36, // 73: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:output_type -> sysarmor.controlplane.v1.ControlAck
-	32, // 74: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:output_type -> sysarmor.controlplane.v1.ListContentResponse
-	34, // 75: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:output_type -> sysarmor.controlplane.v1.ContentGetResponse
-	40, // 76: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:output_type -> sysarmor.controlplane.v1.EventGetResponse
-	42, // 77: sysarmor.controlplane.v1.AgentControlPlaneService.DebugProfile:output_type -> sysarmor.controlplane.v1.DebugProfileResponse
-	43, // 78: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:output_type -> sysarmor.controlplane.v1.EventFrame
-	47, // 79: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:output_type -> sysarmor.controlplane.v1.SignalFrame
-	36, // 80: sysarmor.controlplane.v1.AgentControlPlaneService.Enroll:output_type -> sysarmor.controlplane.v1.ControlAck
-	36, // 81: sysarmor.controlplane.v1.AgentControlPlaneService.Unenroll:output_type -> sysarmor.controlplane.v1.ControlAck
-	68, // [68:82] is the sub-list for method output_type
-	54, // [54:68] is the sub-list for method input_type
-	54, // [54:54] is the sub-list for extension type_name
-	54, // [54:54] is the sub-list for extension extendee
-	0,  // [0:54] is the sub-list for field type_name
+	5,  // 0: sysarmor.controlplane.v1.ControlFrame.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	18, // 1: sysarmor.controlplane.v1.ControlFrame.health:type_name -> sysarmor.controlplane.v1.HealthResponse
+	22, // 2: sysarmor.controlplane.v1.ControlFrame.capability:type_name -> sysarmor.controlplane.v1.CapabilityResponse
+	39, // 3: sysarmor.controlplane.v1.ControlFrame.ack:type_name -> sysarmor.controlplane.v1.ControlAck
+	24, // 4: sysarmor.controlplane.v1.ControlFrame.policy_update:type_name -> sysarmor.controlplane.v1.CurrentPolicyResponse
+	32, // 5: sysarmor.controlplane.v1.ControlFrame.content_update:type_name -> sysarmor.controlplane.v1.ApplyContentRequest
+	27, // 6: sysarmor.controlplane.v1.ControlFrame.response_command:type_name -> sysarmor.controlplane.v1.ResponseCommand
+	29, // 7: sysarmor.controlplane.v1.ControlFrame.evidence_pullback:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest
+	25, // 8: sysarmor.controlplane.v1.ControlFrame.resume:type_name -> sysarmor.controlplane.v1.ResumeCursor
+	28, // 9: sysarmor.controlplane.v1.ControlFrame.response_ack:type_name -> sysarmor.controlplane.v1.ResponseAck
+	30, // 10: sysarmor.controlplane.v1.ControlFrame.evidence_result:type_name -> sysarmor.controlplane.v1.EvidencePullbackResult
+	3,  // 11: sysarmor.controlplane.v1.ControlFrame.error:type_name -> sysarmor.controlplane.v1.ControlError
+	4,  // 12: sysarmor.controlplane.v1.RequestContext.scope:type_name -> sysarmor.controlplane.v1.Scope
+	14, // 13: sysarmor.controlplane.v1.DetectionRuntimeHealth.content_refs:type_name -> sysarmor.controlplane.v1.DetectionContentRef
+	5,  // 14: sysarmor.controlplane.v1.HealthRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	4,  // 15: sysarmor.controlplane.v1.HealthResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
+	6,  // 16: sysarmor.controlplane.v1.HealthResponse.capability:type_name -> sysarmor.controlplane.v1.SensorCapability
+	8,  // 17: sysarmor.controlplane.v1.HealthResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorHealth
+	9,  // 18: sysarmor.controlplane.v1.HealthResponse.telemetry_bus:type_name -> sysarmor.controlplane.v1.TelemetryBusHealth
+	11, // 19: sysarmor.controlplane.v1.HealthResponse.telemetry_sender:type_name -> sysarmor.controlplane.v1.TelemetrySenderHealth
+	13, // 20: sysarmor.controlplane.v1.HealthResponse.cep:type_name -> sysarmor.controlplane.v1.CEPHealth
+	16, // 21: sysarmor.controlplane.v1.HealthResponse.streams:type_name -> sysarmor.controlplane.v1.LocalStreamHealth
+	10, // 22: sysarmor.controlplane.v1.HealthResponse.telemetry_batcher:type_name -> sysarmor.controlplane.v1.TelemetryBatcherHealth
+	15, // 23: sysarmor.controlplane.v1.HealthResponse.detection:type_name -> sysarmor.controlplane.v1.DetectionRuntimeHealth
+	20, // 24: sysarmor.controlplane.v1.HealthResponse.local_store:type_name -> sysarmor.controlplane.v1.LocalStoreHealth
+	51, // 25: sysarmor.controlplane.v1.HealthResponse.pending_policy:type_name -> sysarmor.controlplane.v1.PendingPolicyStatus
+	19, // 26: sysarmor.controlplane.v1.HealthResponse.management_lifecycle:type_name -> sysarmor.controlplane.v1.ManagementLifecycleStatus
+	5,  // 27: sysarmor.controlplane.v1.CapabilityRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	4,  // 28: sysarmor.controlplane.v1.CapabilityResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
+	6,  // 29: sysarmor.controlplane.v1.CapabilityResponse.sensor:type_name -> sysarmor.controlplane.v1.SensorCapability
+	7,  // 30: sysarmor.controlplane.v1.CapabilityResponse.collection_behaviors:type_name -> sysarmor.controlplane.v1.CollectionBehaviorCapability
+	5,  // 31: sysarmor.controlplane.v1.CurrentPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	4,  // 32: sysarmor.controlplane.v1.CurrentPolicyResponse.scope:type_name -> sysarmor.controlplane.v1.Scope
+	51, // 33: sysarmor.controlplane.v1.CurrentPolicyResponse.pending_policy:type_name -> sysarmor.controlplane.v1.PendingPolicyStatus
+	26, // 34: sysarmor.controlplane.v1.ResponseCommand.scope:type_name -> sysarmor.controlplane.v1.ResponseScope
+	52, // 35: sysarmor.controlplane.v1.ResponseCommand.labels:type_name -> sysarmor.controlplane.v1.ResponseCommand.LabelsEntry
+	53, // 36: sysarmor.controlplane.v1.EvidencePullbackRequest.labels:type_name -> sysarmor.controlplane.v1.EvidencePullbackRequest.LabelsEntry
+	5,  // 37: sysarmor.controlplane.v1.ApplyPolicyRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	12, // 38: sysarmor.controlplane.v1.ApplyPolicyRequest.telemetry:type_name -> sysarmor.controlplane.v1.TelemetryPolicy
+	5,  // 39: sysarmor.controlplane.v1.ApplyContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	5,  // 40: sysarmor.controlplane.v1.ListContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	33, // 41: sysarmor.controlplane.v1.ListContentResponse.records:type_name -> sysarmor.controlplane.v1.ContentRecord
+	5,  // 42: sysarmor.controlplane.v1.GetContentRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	33, // 43: sysarmor.controlplane.v1.ContentGetResponse.record:type_name -> sysarmor.controlplane.v1.ContentRecord
+	38, // 44: sysarmor.controlplane.v1.ControlAck.sections:type_name -> sysarmor.controlplane.v1.AppliedSection
+	54, // 45: sysarmor.controlplane.v1.WatchFilter.labels:type_name -> sysarmor.controlplane.v1.WatchFilter.LabelsEntry
+	5,  // 46: sysarmor.controlplane.v1.WatchEventsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	40, // 47: sysarmor.controlplane.v1.WatchEventsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
+	5,  // 48: sysarmor.controlplane.v1.GetEventRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	46, // 49: sysarmor.controlplane.v1.EventGetResponse.frame:type_name -> sysarmor.controlplane.v1.EventFrame
+	5,  // 50: sysarmor.controlplane.v1.DebugProfileRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	55, // 51: sysarmor.controlplane.v1.EventFrame.event:type_name -> sysarmor.event.v1.CanonicalEvent
+	5,  // 52: sysarmor.controlplane.v1.WatchSignalsRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	40, // 53: sysarmor.controlplane.v1.WatchSignalsRequest.filter:type_name -> sysarmor.controlplane.v1.WatchFilter
+	5,  // 54: sysarmor.controlplane.v1.EnrollRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	5,  // 55: sysarmor.controlplane.v1.UnenrollRequest.context:type_name -> sysarmor.controlplane.v1.RequestContext
+	56, // 56: sysarmor.controlplane.v1.SignalFrame.signal:type_name -> sysarmor.signal.v1.Signal
+	2,  // 57: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:input_type -> sysarmor.controlplane.v1.ControlFrame
+	17, // 58: sysarmor.controlplane.v1.AgentControlPlaneService.Health:input_type -> sysarmor.controlplane.v1.HealthRequest
+	21, // 59: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:input_type -> sysarmor.controlplane.v1.CapabilityRequest
+	23, // 60: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:input_type -> sysarmor.controlplane.v1.CurrentPolicyRequest
+	31, // 61: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:input_type -> sysarmor.controlplane.v1.ApplyPolicyRequest
+	32, // 62: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:input_type -> sysarmor.controlplane.v1.ApplyContentRequest
+	34, // 63: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:input_type -> sysarmor.controlplane.v1.ListContentRequest
+	36, // 64: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:input_type -> sysarmor.controlplane.v1.GetContentRequest
+	42, // 65: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:input_type -> sysarmor.controlplane.v1.GetEventRequest
+	44, // 66: sysarmor.controlplane.v1.AgentControlPlaneService.DebugProfile:input_type -> sysarmor.controlplane.v1.DebugProfileRequest
+	41, // 67: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:input_type -> sysarmor.controlplane.v1.WatchEventsRequest
+	47, // 68: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:input_type -> sysarmor.controlplane.v1.WatchSignalsRequest
+	48, // 69: sysarmor.controlplane.v1.AgentControlPlaneService.Enroll:input_type -> sysarmor.controlplane.v1.EnrollRequest
+	49, // 70: sysarmor.controlplane.v1.AgentControlPlaneService.Unenroll:input_type -> sysarmor.controlplane.v1.UnenrollRequest
+	0,  // 71: sysarmor.controlplane.v1.AgentControlPlaneService.RevokeEnrollment:input_type -> sysarmor.controlplane.v1.RevokeEnrollmentRequest
+	2,  // 72: sysarmor.controlplane.v1.AgentControlPlaneService.Connect:output_type -> sysarmor.controlplane.v1.ControlFrame
+	18, // 73: sysarmor.controlplane.v1.AgentControlPlaneService.Health:output_type -> sysarmor.controlplane.v1.HealthResponse
+	22, // 74: sysarmor.controlplane.v1.AgentControlPlaneService.Capability:output_type -> sysarmor.controlplane.v1.CapabilityResponse
+	24, // 75: sysarmor.controlplane.v1.AgentControlPlaneService.CurrentPolicy:output_type -> sysarmor.controlplane.v1.CurrentPolicyResponse
+	39, // 76: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyPolicy:output_type -> sysarmor.controlplane.v1.ControlAck
+	39, // 77: sysarmor.controlplane.v1.AgentControlPlaneService.ApplyContent:output_type -> sysarmor.controlplane.v1.ControlAck
+	35, // 78: sysarmor.controlplane.v1.AgentControlPlaneService.ListContent:output_type -> sysarmor.controlplane.v1.ListContentResponse
+	37, // 79: sysarmor.controlplane.v1.AgentControlPlaneService.GetContent:output_type -> sysarmor.controlplane.v1.ContentGetResponse
+	43, // 80: sysarmor.controlplane.v1.AgentControlPlaneService.GetEvent:output_type -> sysarmor.controlplane.v1.EventGetResponse
+	45, // 81: sysarmor.controlplane.v1.AgentControlPlaneService.DebugProfile:output_type -> sysarmor.controlplane.v1.DebugProfileResponse
+	46, // 82: sysarmor.controlplane.v1.AgentControlPlaneService.WatchEvents:output_type -> sysarmor.controlplane.v1.EventFrame
+	50, // 83: sysarmor.controlplane.v1.AgentControlPlaneService.WatchSignals:output_type -> sysarmor.controlplane.v1.SignalFrame
+	39, // 84: sysarmor.controlplane.v1.AgentControlPlaneService.Enroll:output_type -> sysarmor.controlplane.v1.ControlAck
+	39, // 85: sysarmor.controlplane.v1.AgentControlPlaneService.Unenroll:output_type -> sysarmor.controlplane.v1.ControlAck
+	1,  // 86: sysarmor.controlplane.v1.AgentControlPlaneService.RevokeEnrollment:output_type -> sysarmor.controlplane.v1.RevokeEnrollmentResponse
+	72, // [72:87] is the sub-list for method output_type
+	57, // [57:72] is the sub-list for method input_type
+	57, // [57:57] is the sub-list for extension type_name
+	57, // [57:57] is the sub-list for extension extendee
+	0,  // [0:57] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_controlplane_v1_agentcontrol_proto_init() }
@@ -4883,7 +5252,7 @@ func file_api_proto_controlplane_v1_agentcontrol_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc), len(file_api_proto_controlplane_v1_agentcontrol_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   51,
+			NumMessages:   55,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

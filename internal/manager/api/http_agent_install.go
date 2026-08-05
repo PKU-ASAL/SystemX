@@ -80,7 +80,7 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 /usr/local/bin/sysarmorctl --socket /run/sysarmor/agent/control.sock enroll \
-  --manager-url %s --token-file "$ENROLLMENT_TOKEN_FILE"
+  --manager-url %s --token-file "$ENROLLMENT_TOKEN_FILE" --timeout 60s
 `, artifactLine, artifactSHA, profile, tokenFile, dependencies, artifactDownload, publicKey, manifestCheck, labels, lifecycle, shellQuote(managerURL))
 }
 

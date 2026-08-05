@@ -13,7 +13,12 @@ func (s *Server) evidencePullbacks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		writeJSON(w, s.store.ListEvidencePullbacks(q.Get("tenant_id"), q.Get("agent_id")))
+		pullbacks, err := s.store.ListEvidencePullbacksWithError(q.Get("tenant_id"), q.Get("agent_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read evidence pullbacks: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, pullbacks)
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "incident_admin") {
 			return
@@ -51,7 +56,12 @@ func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		writeJSON(w, s.store.ListControlCommands(q.Get("tenant_id"), q.Get("agent_id"), q.Get("type")))
+		commands, err := s.store.ListControlCommandsWithError(q.Get("tenant_id"), q.Get("agent_id"), q.Get("type"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read control commands: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, commands)
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "control_admin") {
 			return
@@ -70,9 +80,9 @@ func (s *Server) controlCommands(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		out := s.store.CreateControlCommand(cmd)
-		if err := s.store.Save(); err != nil {
-			http.Error(w, fmt.Sprintf("save store: %v", err), http.StatusInternalServerError)
+		out, err := s.store.CreateControlCommand(cmd)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("save control command: %v", err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, out)
@@ -139,7 +149,10 @@ func (s *Server) controlCommandFromRequest(r *http.Request, req controlCommandRe
 			if policyID == "" {
 				return controlmodel.ControlCommand{}, fmt.Errorf("policy_id or payload_json is required for policy_update")
 			}
-			policy, ok := s.store.GetPolicy(tenantID, policyID, policyVersion)
+			policy, ok, err := s.store.GetPolicyWithError(tenantID, policyID, policyVersion)
+			if err != nil {
+				return controlmodel.ControlCommand{}, fmt.Errorf("read policy: %w", err)
+			}
 			if !ok {
 				return controlmodel.ControlCommand{}, fmt.Errorf("policy not found")
 			}

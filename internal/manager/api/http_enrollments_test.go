@@ -21,8 +21,79 @@ import (
 	"testing"
 	"time"
 
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
+
+func TestEnrollmentQueryExposesCompletionWithoutTokenHash(t *testing.T) {
+	st := &store.Store{}
+	now := time.Unix(100, 0).UTC()
+	st.CreateEnrollment(store.Enrollment{
+		EnrollmentID: "enroll-completed", TenantID: "default", AgentID: "agent-completed", Status: "issued", TokenHash: strings.Repeat("b", 64),
+	})
+	st.RecordAgentCertificate(store.AgentCertificate{
+		TenantID: "default", AgentID: "agent-completed", EnrollmentID: "enroll-completed", SerialNumber: "42",
+	})
+	tokenHash := strings.Repeat("a", 64)
+	record, ok, err := st.AuthorizeAgentUnenrollment("default", "agent-completed", "enroll-completed", "42", tokenHash, now)
+	if err != nil || !ok {
+		t.Fatalf("authorize unenrollment ok=%t err=%v", ok, err)
+	}
+	completedAt := now.Add(time.Minute)
+	if _, ok, err = st.CompleteAgentUnenrollment("default", "agent-completed", "enroll-completed", "42", record.RevocationReceipt, tokenHash, completedAt); err != nil || !ok {
+		t.Fatalf("complete unenrollment ok=%t err=%v", ok, err)
+	}
+
+	rec := get(t, newAdminTestServer(st).Handler(), "/api/v1/enrollments?tenant_id=default")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list enrollments status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Enrollments []struct {
+			EnrollmentID       string     `json:"enrollment_id"`
+			UnenrollmentStatus string     `json:"unenrollment_status"`
+			RevokedAt          *time.Time `json:"revoked_at"`
+			EndpointCompleted  *time.Time `json:"endpoint_completed_at"`
+		} `json:"enrollments"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Enrollments) != 1 || response.Enrollments[0].EnrollmentID != "enroll-completed" ||
+		response.Enrollments[0].UnenrollmentStatus != store.UnenrollmentEndpointCompleted ||
+		response.Enrollments[0].RevokedAt == nil || !response.Enrollments[0].RevokedAt.Equal(now) ||
+		response.Enrollments[0].EndpointCompleted == nil || !response.Enrollments[0].EndpointCompleted.Equal(completedAt) {
+		t.Fatalf("enrollment projection=%+v", response.Enrollments)
+	}
+	body := rec.Body.String()
+	for _, forbidden := range []string{"completion_token", tokenHash, record.RevocationReceipt} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("enrollment response leaked %q: %s", forbidden, body)
+		}
+	}
+}
+
+func TestEnrollmentQueryFailsWhenUnenrollmentProjectionFails(t *testing.T) {
+	st := &failingUnenrollmentListStore{Store: &store.Store{}}
+	st.CreateEnrollment(store.Enrollment{EnrollmentID: "enroll-a", TenantID: "default", Status: "issued", TokenHash: strings.Repeat("b", 64)})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/enrollments?tenant_id=default", nil)
+	rec := httptest.NewRecorder()
+	newAdminTestServer(st).Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("list enrollments status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "unenrollment backend unavailable") {
+		t.Fatalf("list enrollments leaked backend error: %s", rec.Body.String())
+	}
+}
+
+type failingUnenrollmentListStore struct {
+	*store.Store
+}
+
+func (*failingUnenrollmentListStore) ListUnenrollmentsWithError(string) ([]store.UnenrollmentRecord, error) {
+	return nil, fmt.Errorf("unenrollment backend unavailable")
+}
 
 func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 	st := &store.Store{}
@@ -64,7 +135,7 @@ func TestEnrollmentCreateListAndInstallScript(t *testing.T) {
 
 	rec = getInstallScript(t, handler, created.InstallURL)
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") {
+	if rec.Code != http.StatusOK || !strings.Contains(body, "manifest.json") || !strings.Contains(body, "--token-file") || !strings.Contains(body, "--timeout 60s") {
 		t.Fatalf("install script response = %d body=%s", rec.Code, body)
 	}
 	if created.Enrollment.Profile != "linux-systemd" || !strings.Contains(body, `"$tmp/install.sh" --profile "$SYSARMOR_INSTALL_PROFILE"`) {
@@ -633,6 +704,10 @@ func TestEnrollmentCertificateIsIdempotentForSameCSR(t *testing.T) {
 	enrollments := st.ListEnrollments("default", "issued")
 	if len(enrollments) != 1 || enrollments[0].IssuedAt.IsZero() {
 		t.Fatalf("issued enrollments = %+v", enrollments)
+	}
+	certificate, ok, err := st.GetAgentCertificateWithError("default", first.SerialNumber)
+	if err != nil || !ok || certificate.UnenrollmentProtocol != controlmodel.UnenrollmentProtocolCompletionV1 {
+		t.Fatalf("issued certificate=%+v ok=%t err=%v", certificate, ok, err)
 	}
 }
 

@@ -1,6 +1,11 @@
 package store
 
 import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+
 	eventv1 "github.com/sysarmor/sysarmor-next-project/api/proto/event/v1"
 	incidentv1 "github.com/sysarmor/sysarmor-next-project/api/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/api/proto/signal/v1"
@@ -155,7 +160,7 @@ func TestEvidencePullbacksPersistAcrossStateExport(t *testing.T) {
 
 func TestControlCommandsPersistAndAck(t *testing.T) {
 	st := &Store{}
-	st.CreateControlCommand(controlmodel.ControlCommand{
+	if _, err := st.CreateControlCommand(controlmodel.ControlCommand{
 		CommandID:   "ctrl-a",
 		TenantID:    "default",
 		AgentID:     "agent-a",
@@ -163,22 +168,24 @@ func TestControlCommandsPersistAndAck(t *testing.T) {
 		PayloadJSON: []byte(`{"kind":"iocpack"}`),
 		Actor:       "operator",
 		Reason:      "hot update",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 1 || got[0].CommandID != "ctrl-a" {
 		t.Fatalf("pending commands = %+v", got)
 	}
 	if cmd, ok := st.MarkControlCommandSent("ctrl-a", "default", "agent-a", time.Unix(10, 0).UTC()); !ok || cmd.Status != controlmodel.ControlCommandStatusSent || cmd.SentAt.IsZero() || cmd.LastSentAt.IsZero() || cmd.AttemptCount != 1 {
 		t.Fatalf("sent command = %+v ok=%t", cmd, ok)
 	}
-	if cmd, ok := st.AckControlCommand(controlmodel.ControlCommandAck{
+	if cmd, ok, err := st.AckControlCommand(controlmodel.ControlCommandAck{
 		CommandID:  "ctrl-a",
 		TenantID:   "default",
 		AgentID:    "agent-a",
 		Status:     "rejected",
 		Message:    "bad content",
 		ObservedAt: time.Unix(20, 0).UTC(),
-	}); !ok || cmd.Status != controlmodel.ControlCommandStatusRejected || cmd.Error != "bad content" || cmd.AckedAt.IsZero() {
-		t.Fatalf("acked command = %+v ok=%t", cmd, ok)
+	}); err != nil || !ok || cmd.Status != controlmodel.ControlCommandStatusRejected || cmd.Error != "bad content" || cmd.AckedAt.IsZero() {
+		t.Fatalf("acked command = %+v ok=%t err=%v", cmd, ok, err)
 	}
 	if got := st.PendingControlCommands("default", "agent-a"); len(got) != 0 {
 		t.Fatalf("pending after ack = %+v", got)
@@ -199,13 +206,15 @@ func TestControlCommandsPersistAndAck(t *testing.T) {
 
 func TestControlCommandLifecycleActions(t *testing.T) {
 	st := &Store{}
-	st.CreateControlCommand(controlmodel.ControlCommand{
+	if _, err := st.CreateControlCommand(controlmodel.ControlCommand{
 		CommandID:   "ctrl-life",
 		TenantID:    "default",
 		AgentID:     "agent-a",
 		Type:        controlmodel.ControlCommandTypePolicyUpdate,
 		PayloadJSON: []byte(`{"policy_id":"p1","version":1}`),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if cmd, ok := st.CancelControlCommand("ctrl-life", "default", "agent-a", "operator", "bad rollout"); !ok || cmd.Status != controlmodel.ControlCommandStatusCanceled || cmd.CanceledAt.IsZero() || cmd.Actor != "operator" || cmd.Error != "bad rollout" {
 		t.Fatalf("cancel command = %+v ok=%t", cmd, ok)
 	}
@@ -228,7 +237,7 @@ func TestControlCommandLifecycleActions(t *testing.T) {
 
 func TestApproveResponseMovesPendingApprovalToPending(t *testing.T) {
 	st := &Store{}
-	st.CreateResponse(responsemodel.Command{
+	if _, err := st.CreateResponse(responsemodel.Command{
 		ResponseID:       "resp-approve",
 		TenantID:         "default",
 		AgentID:          "agent-a",
@@ -237,7 +246,9 @@ func TestApproveResponseMovesPendingApprovalToPending(t *testing.T) {
 		Status:           "pending_approval",
 		ApprovalRequired: true,
 		ApprovalStatus:   "required",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if got := st.PendingResponses("default", "agent-a"); len(got) != 0 {
 		t.Fatalf("pending before approval = %+v", got)
 	}
@@ -255,14 +266,16 @@ func TestApproveResponseMovesPendingApprovalToPending(t *testing.T) {
 
 func TestApproveResponseRejectsNonApprovalCommand(t *testing.T) {
 	st := &Store{}
-	st.CreateResponse(responsemodel.Command{
+	if _, err := st.CreateResponse(responsemodel.Command{
 		ResponseID: "resp-denied",
 		TenantID:   "default",
 		AgentID:    "agent-a",
 		Action:     "kill",
 		Mode:       "observe",
 		Status:     "denied",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := st.ApproveResponse("default", "agent-a", "resp-denied", true, "analyst", "", "no bypass"); ok {
 		t.Fatal("ApproveResponse ok = true for non-approval command")
 	}
@@ -274,7 +287,7 @@ func TestApproveResponseRejectsNonApprovalCommand(t *testing.T) {
 
 func TestApproveResponseRequiresThresholdAndAllowedRole(t *testing.T) {
 	st := &Store{}
-	st.CreateResponse(responsemodel.Command{
+	if _, err := st.CreateResponse(responsemodel.Command{
 		ResponseID:        "resp-multi-approve",
 		TenantID:          "default",
 		AgentID:           "agent-a",
@@ -285,7 +298,9 @@ func TestApproveResponseRequiresThresholdAndAllowedRole(t *testing.T) {
 		ApprovalStatus:    "required",
 		ApprovalThreshold: 2,
 		ApprovalRoles:     []string{"responder", "security_admin"},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := st.ApproveResponse("default", "agent-a", "resp-multi-approve", true, "observer", "viewer", "wrong role"); ok {
 		t.Fatal("ApproveResponse ok = true for wrong role")
 	}
@@ -706,6 +721,913 @@ func TestDeleteByLabels(t *testing.T) {
 	}
 }
 
+func TestUpsertPolicyWithErrorReturnsBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingPolicyBackend{}, Info{Backend: "test"})
+
+	_, err := st.UpsertPolicyWithError(policymodel.Policy{TenantID: "default", PolicyID: "policy-fail", Version: 1})
+	if err == nil || !strings.Contains(err.Error(), "write policy") {
+		t.Fatalf("UpsertPolicyWithError error = %v, want backend write failure", err)
+	}
+	if got := st.Policies; len(got) != 0 {
+		t.Fatalf("policies after failed write = %+v, want rollback", got)
+	}
+}
+
+func TestUpsertPolicyWithErrorPublishesOnlyAfterBackendCommit(t *testing.T) {
+	backend := newOrderedPolicyBackend()
+	st := &Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-race", Version: 1, Mode: "old"}}}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+	firstDone := make(chan error, 1)
+
+	go func() {
+		_, err := st.UpsertPolicyWithError(policymodel.Policy{TenantID: "default", PolicyID: "policy-race", Version: 1, Mode: "first"})
+		firstDone <- err
+	}()
+	<-backend.firstStarted
+	st.mu.RLock()
+	got := st.Policies[0]
+	st.mu.RUnlock()
+	if got.Mode != "old" {
+		t.Fatalf("policy before backend commit = %+v, want previous durable state", got)
+	}
+	close(backend.releaseFirst)
+	if err := <-firstDone; err == nil {
+		t.Fatal("UpsertPolicyWithError error = nil, want backend failure")
+	}
+}
+
+func TestPublishPolicyBackendWriteDoesNotBlockStoreReads(t *testing.T) {
+	backend := &blockingPolicyWriteBackend{started: make(chan struct{}), release: make(chan struct{})}
+	st := &Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-blocked", Version: 1}}}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+	writeDone := make(chan error, 1)
+	go func() {
+		_, _, err := st.PublishPolicy("default", "policy-blocked", 1, true)
+		writeDone <- err
+	}()
+	<-backend.started
+	readDone := make(chan struct{})
+	go func() {
+		st.mu.RLock()
+		st.mu.RUnlock()
+		close(readDone)
+	}()
+	select {
+	case <-readDone:
+	case <-time.After(100 * time.Millisecond):
+		close(backend.release)
+		<-writeDone
+		t.Fatal("store read blocked by policy backend write")
+	}
+	close(backend.release)
+	if err := <-writeDone; err != nil {
+		t.Fatalf("PublishPolicy error = %v", err)
+	}
+}
+
+type blockingPolicyWriteBackend struct {
+	Backend
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingPolicyWriteBackend) WritePolicy(context.Context, policymodel.Policy) error {
+	close(b.started)
+	<-b.release
+	return nil
+}
+
+type orderedPolicyBackend struct {
+	Backend
+	mu           sync.Mutex
+	calls        int
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+}
+
+func newOrderedPolicyBackend() *orderedPolicyBackend {
+	return &orderedPolicyBackend{firstStarted: make(chan struct{}), releaseFirst: make(chan struct{})}
+}
+
+func (b *orderedPolicyBackend) WritePolicy(context.Context, policymodel.Policy) error {
+	b.mu.Lock()
+	b.calls++
+	call := b.calls
+	b.mu.Unlock()
+	if call == 1 {
+		close(b.firstStarted)
+		<-b.releaseFirst
+		return errors.New("first write failed")
+	}
+	return nil
+}
+
+type failingPolicyBackend struct {
+	Backend
+}
+
+func (failingPolicyBackend) WritePolicy(context.Context, policymodel.Policy) error {
+	return errors.New("backend down")
+}
+
+func TestEnsureDefaultPolicyWithErrorPersistsManagerDefault(t *testing.T) {
+	backend := &defaultPolicyBackend{}
+	st := &Store{}
+	st.AttachBackend(t.Context(), backend, Info{Backend: "test"})
+	if err := st.EnsureDefaultPolicyWithError("default"); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.writes) != 1 || !managerDefaultPolicyUsable(backend.writes[0]) {
+		t.Fatalf("default policy writes = %+v", backend.writes)
+	}
+}
+
+func TestEnsureDefaultPolicyWithErrorReturnsBackendFailure(t *testing.T) {
+	backend := &defaultPolicyBackend{writeErr: errors.New("backend down")}
+	st := &Store{}
+	st.AttachBackend(t.Context(), backend, Info{Backend: "test"})
+	err := st.EnsureDefaultPolicyWithError("default")
+	if err == nil || !strings.Contains(err.Error(), "persist default policy") {
+		t.Fatalf("EnsureDefaultPolicyWithError error = %v", err)
+	}
+}
+
+type defaultPolicyBackend struct {
+	Backend
+	existing policymodel.Policy
+	writes   []policymodel.Policy
+	writeErr error
+}
+
+func (b *defaultPolicyBackend) GetPolicy(context.Context, string, string, uint64) (policymodel.Policy, bool, error) {
+	return b.existing, b.existing.PolicyID != "", nil
+}
+
+func (b *defaultPolicyBackend) WritePolicy(_ context.Context, policy policymodel.Policy) error {
+	if b.writeErr != nil {
+		return b.writeErr
+	}
+	b.writes = append(b.writes, policy)
+	return nil
+}
+
+func TestCreateResponseReturnsBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "response"}, Info{Backend: "test"})
+
+	_, err := st.CreateResponse(responsemodel.Command{ResponseID: "response-fail", TenantID: "default", AgentID: "agent-a"})
+	if err == nil || !strings.Contains(err.Error(), "write response") {
+		t.Fatalf("CreateResponse error = %v, want backend write failure", err)
+	}
+	if len(st.Responses) != 0 {
+		t.Fatalf("responses after failed write = %+v, want unchanged", st.Responses)
+	}
+}
+
+func TestCreateResponseReturnsFilePersistenceFailure(t *testing.T) {
+	st := &Store{path: t.TempDir()}
+
+	_, err := st.CreateResponse(responsemodel.Command{ResponseID: "response-fail", TenantID: "default", AgentID: "agent-a"})
+	if err == nil || !strings.Contains(err.Error(), "write response") {
+		t.Fatalf("CreateResponse error = %v, want file write failure", err)
+	}
+	if len(st.Responses) != 0 {
+		t.Fatalf("responses after failed file write = %+v, want unchanged", st.Responses)
+	}
+}
+
+func TestAckResponseReturnsFilePersistenceFailure(t *testing.T) {
+	st := &Store{path: t.TempDir(), Responses: []responsemodel.Command{{ResponseID: "response-file", TenantID: "default", AgentID: "agent-a", Status: "pending"}}}
+	_, ok, err := st.AckResponse(responsemodel.Ack{ResponseID: "response-file", TenantID: "default", AgentID: "agent-a"})
+	if err == nil || ok || st.Responses[0].Status != "pending" || len(st.ResponseAcks) != 0 {
+		t.Fatalf("AckResponse ok=%t err=%v responses=%+v acks=%+v", ok, err, st.Responses, st.ResponseAcks)
+	}
+}
+
+func TestControlCommandWritesReturnFilePersistenceFailure(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		st := &Store{path: t.TempDir()}
+		_, err := st.CreateControlCommand(controlmodel.ControlCommand{CommandID: "control-file", TenantID: "default", AgentID: "agent-a"})
+		if err == nil || len(st.ControlCommands) != 0 {
+			t.Fatalf("CreateControlCommand err=%v commands=%+v", err, st.ControlCommands)
+		}
+	})
+	t.Run("ack", func(t *testing.T) {
+		st := &Store{path: t.TempDir(), ControlCommands: []controlmodel.ControlCommand{{CommandID: "control-file", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusPending}}}
+		_, ok, err := st.AckControlCommand(controlmodel.ControlCommandAck{CommandID: "control-file", TenantID: "default", AgentID: "agent-a"})
+		if err == nil || ok || st.ControlCommands[0].Status != controlmodel.ControlCommandStatusPending {
+			t.Fatalf("AckControlCommand ok=%t err=%v commands=%+v", ok, err, st.ControlCommands)
+		}
+	})
+}
+
+func TestPolicyCommitsReturnFilePersistenceFailure(t *testing.T) {
+	t.Run("publish", func(t *testing.T) {
+		st := &Store{path: t.TempDir(), Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-file", Version: 1}}}
+		_, ok, err := st.PublishPolicyWithAudit("default", "policy-file", 1, true, policymodel.AuditRecord{Action: "policy.publish"})
+		if err == nil || ok || st.Policies[0].Published || len(st.PolicyAudits) != 0 {
+			t.Fatalf("PublishPolicyWithAudit ok=%t err=%v policies=%+v audits=%+v", ok, err, st.Policies, st.PolicyAudits)
+		}
+	})
+	t.Run("assign", func(t *testing.T) {
+		st := &Store{path: t.TempDir(), Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-file", Version: 1, Published: true}}}
+		_, _, ok, err := st.AssignPolicyWithAudit(
+			policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: "policy-file", PolicyVersion: 1},
+			policymodel.AuditRecord{Action: "policy.assign"},
+			&controlmodel.ControlCommand{CommandID: "control-file", Type: controlmodel.ControlCommandTypePolicyUpdate},
+		)
+		if err == nil || ok || len(st.Assignments) != 0 || len(st.PolicyAudits) != 0 || len(st.ControlCommands) != 0 {
+			t.Fatalf("AssignPolicyWithAudit ok=%t err=%v assignments=%+v audits=%+v commands=%+v", ok, err, st.Assignments, st.PolicyAudits, st.ControlCommands)
+		}
+	})
+}
+
+func TestResponsesUseTenantScopedIdentity(t *testing.T) {
+	st := &Store{}
+	for _, cmd := range []responsemodel.Command{
+		{ResponseID: "shared", TenantID: "tenant-a", AgentID: "agent-a"},
+		{ResponseID: "shared", TenantID: "tenant-b", AgentID: "agent-b"},
+	} {
+		if _, err := st.CreateResponse(cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(st.Responses) != 2 {
+		t.Fatalf("responses = %+v, want one per tenant", st.Responses)
+	}
+	if _, ok, err := st.AckResponse(responsemodel.Ack{ResponseID: "shared", TenantID: "tenant-b", AgentID: "agent-b"}); err != nil || !ok {
+		t.Fatalf("AckResponse ok=%t err=%v", ok, err)
+	}
+	if st.Responses[0].Status == "acked" || st.Responses[1].Status != "acked" {
+		t.Fatalf("tenant-scoped response states = %+v", st.Responses)
+	}
+}
+
+func TestCreateResponseDoesNotReopenAckedCommand(t *testing.T) {
+	st := &Store{}
+	cmd := responsemodel.Command{ResponseID: "response-idempotent", TenantID: "default", AgentID: "agent-a"}
+	if _, err := st.CreateResponse(cmd); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := st.AckResponse(responsemodel.Ack{ResponseID: cmd.ResponseID, TenantID: cmd.TenantID, AgentID: cmd.AgentID}); err != nil || !ok {
+		t.Fatalf("AckResponse ok=%t err=%v", ok, err)
+	}
+	got, err := st.CreateResponse(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "acked" || len(st.ResponseAcks) != 1 {
+		t.Fatalf("response after duplicate create = %+v acks=%+v", got, st.ResponseAcks)
+	}
+}
+
+func TestCreateResponseReturnsBackendWinnerAfterConcurrentConflict(t *testing.T) {
+	backend := &responseCreateConflictBackend{winner: responsemodel.AuditRecord{Command: responsemodel.Command{
+		ResponseID: "response-conflict", TenantID: "default", AgentID: "agent-winner", Status: "acked",
+	}, Ack: &responsemodel.Ack{ResponseID: "response-conflict", TenantID: "default", AgentID: "agent-winner"}}}
+	st := &Store{}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got, err := st.CreateResponse(responsemodel.Command{
+		ResponseID: "response-conflict", TenantID: "default", AgentID: "agent-loser", Status: "pending",
+	})
+
+	if err != nil || got.AgentID != "agent-winner" || got.Status != "acked" {
+		t.Fatalf("CreateResponse got=%+v err=%v, want backend winner", got, err)
+	}
+}
+
+func TestCreateResponseIgnoresStaleBackendCache(t *testing.T) {
+	backend := &responseCreateConflictBackend{listCalls: 1, winner: responsemodel.AuditRecord{Command: responsemodel.Command{
+		ResponseID: "response-stale", TenantID: "default", AgentID: "agent-a", Status: "acked",
+	}, Ack: &responsemodel.Ack{ResponseID: "response-stale", TenantID: "default", AgentID: "agent-a"}}}
+	st := &Store{Responses: []responsemodel.Command{{ResponseID: "response-stale", TenantID: "default", AgentID: "agent-a", Status: "pending"}}}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got, err := st.CreateResponse(responsemodel.Command{ResponseID: "response-stale", TenantID: "default", AgentID: "agent-a"})
+
+	if err != nil || got.Status != "acked" {
+		t.Fatalf("CreateResponse got=%+v err=%v, want backend terminal state", got, err)
+	}
+}
+
+type responseCreateConflictBackend struct {
+	Backend
+	winner    responsemodel.AuditRecord
+	listCalls int
+}
+
+func (b *responseCreateConflictBackend) ListResponses(context.Context, string, string) ([]responsemodel.AuditRecord, error) {
+	b.listCalls++
+	if b.listCalls == 1 {
+		return nil, nil
+	}
+	return []responsemodel.AuditRecord{b.winner}, nil
+}
+
+func (*responseCreateConflictBackend) WriteResponse(context.Context, responsemodel.Command, *responsemodel.Ack) error {
+	return nil
+}
+
+func (*responseCreateConflictBackend) CreateResponse(context.Context, responsemodel.Command) (bool, error) {
+	return false, nil
+}
+
+func TestControlCommandsUseTenantScopedIdentityAndPreserveTerminalState(t *testing.T) {
+	st := &Store{}
+	for _, cmd := range []controlmodel.ControlCommand{
+		{CommandID: "shared", TenantID: "tenant-a", AgentID: "agent-a"},
+		{CommandID: "shared", TenantID: "tenant-b", AgentID: "agent-b"},
+	} {
+		if _, err := st.CreateControlCommand(cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(st.ControlCommands) != 2 {
+		t.Fatalf("control commands = %+v, want one per tenant", st.ControlCommands)
+	}
+	if _, ok, err := st.AckControlCommand(controlmodel.ControlCommandAck{CommandID: "shared", TenantID: "tenant-b", AgentID: "agent-b"}); err != nil || !ok {
+		t.Fatalf("AckControlCommand ok=%t err=%v", ok, err)
+	}
+	got, err := st.CreateControlCommand(controlmodel.ControlCommand{CommandID: "shared", TenantID: "tenant-b", AgentID: "agent-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != controlmodel.ControlCommandStatusApplied || st.ControlCommands[0].Status != controlmodel.ControlCommandStatusPending {
+		t.Fatalf("control commands after duplicate create = %+v", st.ControlCommands)
+	}
+}
+
+func TestCreateControlCommandReturnsBackendWinnerAfterConcurrentConflict(t *testing.T) {
+	backend := &controlCreateConflictBackend{winner: controlmodel.ControlCommand{
+		CommandID: "control-conflict", TenantID: "default", AgentID: "agent-winner", Status: controlmodel.ControlCommandStatusApplied,
+	}}
+	st := &Store{}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got, err := st.CreateControlCommand(controlmodel.ControlCommand{
+		CommandID: "control-conflict", TenantID: "default", AgentID: "agent-loser", Status: controlmodel.ControlCommandStatusPending,
+	})
+
+	if err != nil || got.AgentID != "agent-winner" || got.Status != controlmodel.ControlCommandStatusApplied {
+		t.Fatalf("CreateControlCommand got=%+v err=%v, want backend winner", got, err)
+	}
+}
+
+func TestCreateControlCommandIgnoresStaleBackendCache(t *testing.T) {
+	backend := &controlCreateConflictBackend{listCalls: 1, winner: controlmodel.ControlCommand{
+		CommandID: "control-stale", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusApplied,
+	}}
+	st := &Store{ControlCommands: []controlmodel.ControlCommand{{
+		CommandID: "control-stale", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusPending,
+	}}}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got, err := st.CreateControlCommand(controlmodel.ControlCommand{CommandID: "control-stale", TenantID: "default", AgentID: "agent-a"})
+
+	if err != nil || got.Status != controlmodel.ControlCommandStatusApplied {
+		t.Fatalf("CreateControlCommand got=%+v err=%v, want backend terminal state", got, err)
+	}
+}
+
+type controlCreateConflictBackend struct {
+	Backend
+	winner    controlmodel.ControlCommand
+	listCalls int
+}
+
+func (b *controlCreateConflictBackend) ListControlCommands(context.Context, string, string, string) ([]controlmodel.ControlCommand, error) {
+	b.listCalls++
+	if b.listCalls == 1 {
+		return nil, nil
+	}
+	return []controlmodel.ControlCommand{b.winner}, nil
+}
+
+func (*controlCreateConflictBackend) CreateControlCommand(context.Context, controlmodel.ControlCommand) (bool, error) {
+	return false, nil
+}
+
+func TestCreateResponseBackendWriteDoesNotBlockStoreReads(t *testing.T) {
+	backend := &blockingResponseBackend{started: make(chan struct{}), release: make(chan struct{})}
+	st := &Store{}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := st.CreateResponse(responsemodel.Command{ResponseID: "response-blocked", TenantID: "default", AgentID: "agent-a"})
+		writeDone <- err
+	}()
+	<-backend.started
+	readDone := make(chan struct{})
+	go func() {
+		st.mu.RLock()
+		st.mu.RUnlock()
+		close(readDone)
+	}()
+	select {
+	case <-readDone:
+	case <-time.After(100 * time.Millisecond):
+		close(backend.release)
+		<-writeDone
+		t.Fatal("store read blocked by response backend write")
+	}
+	close(backend.release)
+	if err := <-writeDone; err != nil {
+		t.Fatalf("CreateResponse error = %v", err)
+	}
+}
+
+func TestSaveSerializesWithDurableControlWrites(t *testing.T) {
+	backend := &blockingSaveBackend{
+		saveStarted: make(chan struct{}), releaseSave: make(chan struct{}), ackStarted: make(chan struct{}),
+	}
+	st := &Store{ControlCommands: []controlmodel.ControlCommand{{
+		CommandID: "control-save-race", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusPending,
+	}}}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+	saveDone := make(chan error, 1)
+	go func() { saveDone <- st.Save() }()
+	<-backend.saveStarted
+	ackDone := make(chan error, 1)
+	go func() {
+		_, _, err := st.AckControlCommand(controlmodel.ControlCommandAck{CommandID: "control-save-race", TenantID: "default", AgentID: "agent-a"})
+		ackDone <- err
+	}()
+	select {
+	case <-backend.ackStarted:
+		close(backend.releaseSave)
+		<-saveDone
+		<-ackDone
+		t.Fatal("control ACK reached backend before concurrent Save completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(backend.releaseSave)
+	if err := <-saveDone; err != nil {
+		t.Fatalf("Save error = %v", err)
+	}
+	if err := <-ackDone; err != nil {
+		t.Fatalf("AckControlCommand error = %v", err)
+	}
+}
+
+type blockingSaveBackend struct {
+	Backend
+	saveStarted chan struct{}
+	releaseSave chan struct{}
+	ackStarted  chan struct{}
+}
+
+func (b *blockingSaveBackend) SaveState(context.Context, State) error {
+	close(b.saveStarted)
+	<-b.releaseSave
+	return nil
+}
+
+func (b *blockingSaveBackend) WriteControlCommand(context.Context, controlmodel.ControlCommand) error {
+	close(b.ackStarted)
+	return nil
+}
+
+type blockingResponseBackend struct {
+	Backend
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingResponseBackend) ListResponses(context.Context, string, string) ([]responsemodel.AuditRecord, error) {
+	return nil, nil
+}
+
+func (b *blockingResponseBackend) WriteResponse(context.Context, responsemodel.Command, *responsemodel.Ack) error {
+	return nil
+}
+
+func (b *blockingResponseBackend) CreateResponse(context.Context, responsemodel.Command) (bool, error) {
+	close(b.started)
+	<-b.release
+	return true, nil
+}
+
+func TestAckResponseReturnsBackendFailure(t *testing.T) {
+	st := &Store{Responses: []responsemodel.Command{{ResponseID: "response-fail", TenantID: "default", AgentID: "agent-a", Status: "pending"}}}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "response"}, Info{Backend: "test"})
+
+	_, ok, err := st.AckResponse(responsemodel.Ack{ResponseID: "response-fail", AgentID: "agent-a"})
+	if err == nil || ok || !strings.Contains(err.Error(), "write response ack") {
+		t.Fatalf("AckResponse ok=%t error=%v, want backend write failure", ok, err)
+	}
+	if st.Responses[0].Status != "pending" || len(st.ResponseAcks) != 0 {
+		t.Fatalf("response state after failed ack = responses=%+v acks=%+v", st.Responses, st.ResponseAcks)
+	}
+}
+
+func TestCreateControlCommandReturnsBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "control"}, Info{Backend: "test"})
+
+	_, err := st.CreateControlCommand(controlmodel.ControlCommand{CommandID: "control-fail", TenantID: "default", AgentID: "agent-a"})
+	if err == nil || !strings.Contains(err.Error(), "write control command") {
+		t.Fatalf("CreateControlCommand error = %v, want backend write failure", err)
+	}
+	if len(st.ControlCommands) != 0 {
+		t.Fatalf("control commands after failed write = %+v, want unchanged", st.ControlCommands)
+	}
+}
+
+func TestAckControlCommandReturnsBackendFailure(t *testing.T) {
+	st := &Store{ControlCommands: []controlmodel.ControlCommand{{CommandID: "control-fail", TenantID: "default", AgentID: "agent-a", Status: controlmodel.ControlCommandStatusPending}}}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "control"}, Info{Backend: "test"})
+
+	_, ok, err := st.AckControlCommand(controlmodel.ControlCommandAck{CommandID: "control-fail", TenantID: "default", AgentID: "agent-a"})
+	if err == nil || ok || !strings.Contains(err.Error(), "write control command ack") {
+		t.Fatalf("AckControlCommand ok=%t error=%v, want backend write failure", ok, err)
+	}
+	if st.ControlCommands[0].Status != controlmodel.ControlCommandStatusPending {
+		t.Fatalf("control command after failed ack = %+v, want pending", st.ControlCommands[0])
+	}
+}
+
+func TestPublishPolicyReturnsBackendFailure(t *testing.T) {
+	st := &Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-fail", Version: 1}}}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "policy"}, Info{Backend: "test"})
+
+	_, ok, err := st.PublishPolicy("default", "policy-fail", 1, true)
+	if err == nil || ok || !strings.Contains(err.Error(), "write policy publication") {
+		t.Fatalf("PublishPolicy ok=%t error=%v, want backend write failure", ok, err)
+	}
+	if st.Policies[0].Published {
+		t.Fatalf("policy after failed publish = %+v, want unpublished", st.Policies[0])
+	}
+}
+
+func TestAssignPolicyReturnsBackendFailure(t *testing.T) {
+	st := &Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-fail", Version: 1, Published: true}}}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "assignment"}, Info{Backend: "test"})
+
+	_, ok, err := st.AssignPolicy(policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: "policy-fail", PolicyVersion: 1})
+	if err == nil || ok || !strings.Contains(err.Error(), "write policy assignment") {
+		t.Fatalf("AssignPolicy ok=%t error=%v, want backend write failure", ok, err)
+	}
+	if len(st.Assignments) != 0 {
+		t.Fatalf("assignments after failed write = %+v, want unchanged", st.Assignments)
+	}
+}
+
+func TestPublishPolicyWithAuditRollsBackOnCommitFailure(t *testing.T) {
+	st := &Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-fail", Version: 1}}}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "publication_commit"}, Info{Backend: "test"})
+
+	_, ok, err := st.PublishPolicyWithAudit("default", "policy-fail", 1, true, policymodel.AuditRecord{Action: "policy.publish"})
+	if err == nil || ok || !strings.Contains(err.Error(), "commit policy publication") {
+		t.Fatalf("PublishPolicyWithAudit ok=%t error=%v, want commit failure", ok, err)
+	}
+	if st.Policies[0].Published || len(st.PolicyAudits) != 0 {
+		t.Fatalf("publication after failed commit = policies=%+v audits=%+v", st.Policies, st.PolicyAudits)
+	}
+}
+
+func TestAssignPolicyWithAuditRollsBackOnCommitFailure(t *testing.T) {
+	st := &Store{Policies: []policymodel.Policy{{TenantID: "default", PolicyID: "policy-fail", Version: 1, Published: true}}}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "assignment_commit"}, Info{Backend: "test"})
+	command := &controlmodel.ControlCommand{CommandID: "control-fail", Type: controlmodel.ControlCommandTypePolicyUpdate}
+
+	_, _, ok, err := st.AssignPolicyWithAudit(
+		policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: "policy-fail", PolicyVersion: 1},
+		policymodel.AuditRecord{Action: "policy.assign"},
+		command,
+	)
+	if err == nil || ok || !strings.Contains(err.Error(), "commit policy assignment") {
+		t.Fatalf("AssignPolicyWithAudit ok=%t error=%v, want commit failure", ok, err)
+	}
+	if len(st.Assignments) != 0 || len(st.PolicyAudits) != 0 || len(st.ControlCommands) != 0 {
+		t.Fatalf("assignment after failed commit = assignments=%+v audits=%+v commands=%+v", st.Assignments, st.PolicyAudits, st.ControlCommands)
+	}
+}
+
+func TestPublishPolicyWithAuditLoadsPolicyFromBackend(t *testing.T) {
+	backend := &restartingControlPlaneBackend{policy: policymodel.Policy{
+		TenantID: "default", PolicyID: "policy-restart", Version: 3,
+	}}
+	st := &Store{}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got, ok, err := st.PublishPolicyWithAudit("default", "policy-restart", 3, true, policymodel.AuditRecord{Action: "policy.publish"})
+
+	if err != nil || !ok || !got.Published || backend.published.PolicyID != "policy-restart" {
+		t.Fatalf("PublishPolicyWithAudit got=%+v ok=%t err=%v committed=%+v", got, ok, err, backend.published)
+	}
+}
+
+func TestAssignPolicyWithAuditLoadsPolicyAndAssignmentFromBackend(t *testing.T) {
+	createdAt := time.Unix(100, 0).UTC()
+	backend := &restartingControlPlaneBackend{
+		policy: policymodel.Policy{TenantID: "default", PolicyID: "policy-restart", Version: 3, Published: true},
+		assignments: []policymodel.Assignment{{
+			AssignmentID: "existing-assignment", TenantID: "default", AgentID: "agent-a",
+			PolicyID: "policy-restart", PolicyVersion: 3, CreatedAt: createdAt,
+		}},
+	}
+	st := &Store{}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got, _, ok, err := st.AssignPolicyWithAudit(
+		policymodel.Assignment{TenantID: "default", AgentID: "agent-a", PolicyID: "policy-restart", PolicyVersion: 3},
+		policymodel.AuditRecord{Action: "policy.assign"}, nil,
+	)
+
+	if err != nil || !ok || !got.CreatedAt.Equal(createdAt) || backend.assigned.PolicyID != "policy-restart" {
+		t.Fatalf("AssignPolicyWithAudit got=%+v ok=%t err=%v committed=%+v", got, ok, err, backend.assigned)
+	}
+}
+
+func TestPendingResponsesLoadsFromBackend(t *testing.T) {
+	backend := &restartingControlPlaneBackend{responses: []responsemodel.AuditRecord{
+		{Command: responsemodel.Command{ResponseID: "pending-restart", TenantID: "default", AgentID: "agent-a", Status: "pending"}},
+		{Command: responsemodel.Command{ResponseID: "acked-restart", TenantID: "default", AgentID: "agent-a", Status: "pending"}, Ack: &responsemodel.Ack{ResponseID: "acked-restart", TenantID: "default", AgentID: "agent-a"}},
+	}}
+	st := &Store{}
+	st.AttachBackend(context.Background(), backend, Info{Backend: "test"})
+
+	got := st.PendingResponses("default", "agent-a")
+
+	if len(got) != 1 || got[0].ResponseID != "pending-restart" {
+		t.Fatalf("PendingResponses = %+v, want backend pending response", got)
+	}
+}
+
+func TestRevokeAgentCertificateIsIdempotentAndRejectsIdentityConflict(t *testing.T) {
+	st := &Store{}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: "42",
+	})
+	revokedAt := time.Unix(100, 0).UTC()
+	first, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-a", "42", revokedAt)
+	if err != nil || !ok || first.RevocationReceipt == "" || !first.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("first revoke=%+v ok=%t err=%v", first, ok, err)
+	}
+	legacyRecord, ok, err := st.GetUnenrollmentWithError("tenant-a", "enroll-a")
+	if err != nil || !ok || legacyRecord.Status != UnenrollmentUnknownLegacy || legacyRecord.RevocationReceipt != first.RevocationReceipt {
+		t.Fatalf("legacy record=%+v ok=%t err=%v", legacyRecord, ok, err)
+	}
+	second, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-a", "42", revokedAt.Add(time.Hour))
+	if err != nil || !ok || second.RevocationReceipt != first.RevocationReceipt || !second.RevokedAt.Equal(first.RevokedAt) {
+		t.Fatalf("replayed revoke=%+v ok=%t err=%v", second, ok, err)
+	}
+	if _, _, err := st.RevokeAgentCertificate("tenant-a", "agent-other", "enroll-a", "42", revokedAt); !errors.Is(err, ErrConflict) {
+		t.Fatalf("identity conflict error=%v, want ErrConflict", err)
+	}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-legacy", SerialNumber: "43", RevokedAt: revokedAt,
+	})
+	legacy, ok, err := st.RevokeAgentCertificate("tenant-a", "agent-a", "enroll-legacy", "43", revokedAt.Add(time.Hour))
+	if err != nil || !ok || legacy.RevocationReceipt == "" || !legacy.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("legacy revoked certificate=%+v ok=%t err=%v", legacy, ok, err)
+	}
+}
+
+func TestAuthorizeAgentUnenrollmentIsIdempotent(t *testing.T) {
+	st := &Store{}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: "42",
+	})
+	tokenHash := strings.Repeat("a", 64)
+	revokedAt := time.Unix(100, 0).UTC()
+
+	first, ok, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", tokenHash, revokedAt)
+	if err != nil || !ok || first.Status != UnenrollmentRevokedEndpointPending || first.RevocationReceipt == "" || !first.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("first=%+v ok=%t err=%v", first, ok, err)
+	}
+	replayed, ok, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", tokenHash, revokedAt.Add(time.Hour))
+	if err != nil || !ok || replayed.RevocationReceipt != first.RevocationReceipt || !replayed.RevokedAt.Equal(first.RevokedAt) {
+		t.Fatalf("replayed=%+v ok=%t err=%v", replayed, ok, err)
+	}
+	if _, _, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", strings.Repeat("b", 64), revokedAt); !errors.Is(err, ErrConflict) {
+		t.Fatalf("token hash conflict error=%v, want ErrConflict", err)
+	}
+	certificate, ok, err := st.GetAgentCertificateWithError("tenant-a", "42")
+	if err != nil || !ok || certificate.RevocationReceipt != first.RevocationReceipt || !certificate.RevokedAt.Equal(revokedAt) {
+		t.Fatalf("certificate=%+v ok=%t err=%v", certificate, ok, err)
+	}
+}
+
+func TestCompleteAgentUnenrollmentValidatesBindingsAndIsIdempotent(t *testing.T) {
+	st := &Store{}
+	st.RecordAgentCertificate(AgentCertificate{
+		TenantID: "tenant-a", AgentID: "agent-a", EnrollmentID: "enroll-a", SerialNumber: "42",
+	})
+	tokenHash := strings.Repeat("a", 64)
+	record, ok, err := st.AuthorizeAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", tokenHash, time.Unix(100, 0).UTC())
+	if err != nil || !ok {
+		t.Fatalf("authorize=%+v ok=%t err=%v", record, ok, err)
+	}
+	if _, _, err := st.CompleteAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", record.RevocationReceipt, strings.Repeat("b", 64), time.Unix(200, 0).UTC()); !errors.Is(err, ErrConflict) {
+		t.Fatalf("completion conflict error=%v, want ErrConflict", err)
+	}
+	pending, ok, err := st.GetUnenrollmentWithError("tenant-a", "enroll-a")
+	if err != nil || !ok || pending.Status != UnenrollmentRevokedEndpointPending {
+		t.Fatalf("pending=%+v ok=%t err=%v", pending, ok, err)
+	}
+
+	completedAt := time.Unix(200, 0).UTC()
+	completed, ok, err := st.CompleteAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", record.RevocationReceipt, tokenHash, completedAt)
+	if err != nil || !ok || completed.Status != UnenrollmentEndpointCompleted || !completed.EndpointCompletedAt.Equal(completedAt) {
+		t.Fatalf("completed=%+v ok=%t err=%v", completed, ok, err)
+	}
+	replayed, ok, err := st.CompleteAgentUnenrollment("tenant-a", "agent-a", "enroll-a", "42", record.RevocationReceipt, tokenHash, completedAt.Add(time.Hour))
+	if err != nil || !ok || !replayed.EndpointCompletedAt.Equal(completedAt) {
+		t.Fatalf("replayed=%+v ok=%t err=%v", replayed, ok, err)
+	}
+}
+
+func TestPendingResponsesWithErrorReturnsBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "response_read"}, Info{Backend: "test"})
+
+	if _, err := st.PendingResponsesWithError("default", "agent-a"); err == nil {
+		t.Fatal("PendingResponsesWithError error = nil, want backend failure")
+	}
+}
+
+func TestSecurityControlReadsWithErrorReturnBackendFailure(t *testing.T) {
+	st := &Store{}
+	st.AttachBackend(context.Background(), failingControlPlaneBackend{operation: "security_read"}, Info{Backend: "test"})
+
+	checks := []struct {
+		name string
+		read func() error
+	}{
+		{"enrollments", func() error { _, err := st.ListEnrollmentsWithError("default", ""); return err }},
+		{"enrollment token", func() error { _, _, err := st.GetEnrollmentByTokenHashWithError("hash"); return err }},
+		{"bootstrap token", func() error { _, _, err := st.GetEnrollmentByBootstrapTokenHashWithError("hash"); return err }},
+		{"artifacts", func() error { _, err := st.ListArtifactsWithError("default", "", ""); return err }},
+		{"artifact", func() error { _, _, err := st.GetArtifactWithError("default", "artifact-a"); return err }},
+		{"channels", func() error { _, err := st.ListChannelsWithError("default"); return err }},
+		{"channel", func() error { _, _, err := st.GetChannelWithError("default", "stable"); return err }},
+		{"evidence pullback", func() error {
+			_, _, err := st.GetEvidencePullbackWithError("request-a", "default", "agent-a")
+			return err
+		}},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if err := check.read(); err == nil {
+				t.Fatal("error=nil, want backend failure")
+			}
+		})
+	}
+}
+
+type restartingControlPlaneBackend struct {
+	Backend
+	policy      policymodel.Policy
+	assignments []policymodel.Assignment
+	responses   []responsemodel.AuditRecord
+	published   policymodel.Policy
+	assigned    policymodel.Assignment
+}
+
+func (b *restartingControlPlaneBackend) GetPolicy(context.Context, string, string, uint64) (policymodel.Policy, bool, error) {
+	return b.policy, b.policy.PolicyID != "", nil
+}
+
+func (b *restartingControlPlaneBackend) ListAssignments(context.Context, string, string) ([]policymodel.Assignment, error) {
+	return append([]policymodel.Assignment(nil), b.assignments...), nil
+}
+
+func (b *restartingControlPlaneBackend) ListResponses(context.Context, string, string) ([]responsemodel.AuditRecord, error) {
+	return append([]responsemodel.AuditRecord(nil), b.responses...), nil
+}
+
+func (b *restartingControlPlaneBackend) CommitPolicyPublication(_ context.Context, policy policymodel.Policy, _ policymodel.AuditRecord) error {
+	b.published = policy
+	return nil
+}
+
+func (b *restartingControlPlaneBackend) CommitPolicyAssignment(_ context.Context, assignment policymodel.Assignment, _ policymodel.AuditRecord, command *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error) {
+	b.assigned = assignment
+	return command, nil
+}
+
+type failingControlPlaneBackend struct {
+	Backend
+	operation string
+}
+
+func (b failingControlPlaneBackend) ListEnrollments(context.Context, string, string) ([]Enrollment, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetEnrollmentByTokenHash(context.Context, string) (Enrollment, bool, error) {
+	return Enrollment{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetEnrollmentByBootstrapTokenHash(context.Context, string) (Enrollment, bool, error) {
+	return Enrollment{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) ListArtifacts(context.Context, string, string, string) ([]Artifact, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetArtifact(context.Context, string, string) (Artifact, bool, error) {
+	return Artifact{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) ListChannels(context.Context, string) ([]ArtifactChannel, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) GetChannel(context.Context, string, string) (ArtifactChannel, bool, error) {
+	return ArtifactChannel{}, false, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) ListEvidencePullbacks(context.Context, string, string) ([]controlmodel.EvidencePullbackRequest, error) {
+	return nil, b.readFailure()
+}
+
+func (b failingControlPlaneBackend) readFailure() error {
+	if b.operation == "security_read" {
+		return errors.New("backend down")
+	}
+	return nil
+}
+
+func (b failingControlPlaneBackend) WriteResponse(context.Context, responsemodel.Command, *responsemodel.Ack) error {
+	if b.operation == "response" {
+		return errors.New("backend down")
+	}
+	return nil
+}
+
+func (b failingControlPlaneBackend) CreateResponse(context.Context, responsemodel.Command) (bool, error) {
+	if b.operation == "response" {
+		return false, errors.New("backend down")
+	}
+	return true, nil
+}
+
+func (b failingControlPlaneBackend) WritePolicy(context.Context, policymodel.Policy) error {
+	if b.operation == "policy" {
+		return errors.New("backend down")
+	}
+	return nil
+}
+
+func (b failingControlPlaneBackend) WriteAssignment(context.Context, policymodel.Assignment) error {
+	if b.operation == "assignment" {
+		return errors.New("backend down")
+	}
+	return nil
+}
+
+func (b failingControlPlaneBackend) WriteControlCommand(context.Context, controlmodel.ControlCommand) error {
+	if b.operation == "control" {
+		return errors.New("backend down")
+	}
+	return nil
+}
+
+func (b failingControlPlaneBackend) CreateControlCommand(context.Context, controlmodel.ControlCommand) (bool, error) {
+	if b.operation == "control" {
+		return false, errors.New("backend down")
+	}
+	return true, nil
+}
+
+func (b failingControlPlaneBackend) ListResponses(context.Context, string, string) ([]responsemodel.AuditRecord, error) {
+	if b.operation == "response_read" {
+		return nil, errors.New("backend down")
+	}
+	return nil, nil
+}
+
+func (failingControlPlaneBackend) ListControlCommands(context.Context, string, string, string) ([]controlmodel.ControlCommand, error) {
+	return nil, nil
+}
+
+func (failingControlPlaneBackend) GetPolicy(context.Context, string, string, uint64) (policymodel.Policy, bool, error) {
+	return policymodel.Policy{}, false, nil
+}
+
+func (failingControlPlaneBackend) ListAssignments(context.Context, string, string) ([]policymodel.Assignment, error) {
+	return nil, nil
+}
+
+func (b failingControlPlaneBackend) CommitPolicyPublication(context.Context, policymodel.Policy, policymodel.AuditRecord) error {
+	if b.operation == "publication_commit" {
+		return errors.New("backend down")
+	}
+	return nil
+}
+
+func (b failingControlPlaneBackend) CommitPolicyAssignment(_ context.Context, _ policymodel.Assignment, _ policymodel.AuditRecord, command *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error) {
+	if b.operation == "assignment_commit" {
+		return nil, errors.New("backend down")
+	}
+	return command, nil
+}
+
 func TestPolicyAssignmentAndEffectivePolicy(t *testing.T) {
 	st := &Store{}
 	st.EnsureDefaultPolicy("default")
@@ -721,14 +1643,14 @@ func TestPolicyAssignmentAndEffectivePolicy(t *testing.T) {
 	custom.Version = 2
 	custom.CloudRules = []string{"web_shell_chain"}
 	st.UpsertPolicy(custom)
-	assignment, ok := st.AssignPolicy(policymodel.Assignment{
+	assignment, ok, err := st.AssignPolicy(policymodel.Assignment{
 		TenantID:      "default",
 		Scope:         policymodel.ScopeSelector{Type: "container", Selector: "abc123"},
 		PolicyID:      "cloud-no-cross",
 		PolicyVersion: 2,
 	})
-	if !ok || assignment.PolicyVersion != 2 {
-		t.Fatalf("assignment = %+v ok=%t", assignment, ok)
+	if err != nil || !ok || assignment.PolicyVersion != 2 {
+		t.Fatalf("assignment = %+v ok=%t err=%v", assignment, ok, err)
 	}
 	policy, ok := st.EffectivePolicy("default", "agent-a", "container", "abc123")
 	if !ok || policy.PolicyID != "cloud-no-cross" || len(policy.CloudRules) != 1 || policy.CloudRules[0] != "web_shell_chain" {
@@ -748,28 +1670,28 @@ func TestPolicyDraftMustBePublishedBeforeAssignment(t *testing.T) {
 	draft.Version = 2
 	draft.Published = false
 	st.UpsertPolicy(draft)
-	if _, ok := st.AssignPolicy(policymodel.Assignment{
+	if _, ok, err := st.AssignPolicy(policymodel.Assignment{
 		TenantID:      "default",
 		AgentID:       "agent-a",
 		PolicyID:      "draft-policy",
 		PolicyVersion: 2,
-	}); ok {
-		t.Fatal("AssignPolicy ok = true for draft policy")
+	}); err != nil || ok {
+		t.Fatalf("AssignPolicy ok=%t err=%v for draft policy", ok, err)
 	}
 	if effective, ok := st.EffectivePolicy("default", "agent-a", "", ""); !ok || effective.PolicyID != policymodel.DefaultPolicyID {
 		t.Fatalf("effective policy = %+v ok=%t", effective, ok)
 	}
-	published, ok := st.PublishPolicy("default", "draft-policy", 2, true)
-	if !ok || !published.Published {
-		t.Fatalf("PublishPolicy = %+v ok=%t", published, ok)
+	published, ok, err := st.PublishPolicy("default", "draft-policy", 2, true)
+	if err != nil || !ok || !published.Published {
+		t.Fatalf("PublishPolicy = %+v ok=%t err=%v", published, ok, err)
 	}
-	if _, ok := st.AssignPolicy(policymodel.Assignment{
+	if _, ok, err := st.AssignPolicy(policymodel.Assignment{
 		TenantID:      "default",
 		AgentID:       "agent-a",
 		PolicyID:      "draft-policy",
 		PolicyVersion: 2,
-	}); !ok {
-		t.Fatal("AssignPolicy ok = false after publish")
+	}); err != nil || !ok {
+		t.Fatalf("AssignPolicy ok=%t err=%v after publish", ok, err)
 	}
 	if effective, ok := st.EffectivePolicy("default", "agent-a", "", ""); !ok || effective.PolicyID != "draft-policy" || !effective.Published {
 		t.Fatalf("effective policy = %+v ok=%t", effective, ok)

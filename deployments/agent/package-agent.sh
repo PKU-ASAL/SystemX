@@ -149,14 +149,15 @@ file_json() {
   printf '    {"path": "%s", "mode": "%s", "sha256": "%s"}' "$rel" "$mode" "$sum"
 }
 
-sensor_files="$(file_json "sensors/tetragon/install-bundle.sh" "0755"),
-$(file_json "sensors/tetragon/bundle.env" "0644")"
-if [[ "$TETRAGON_MODE" == "bundled" ]]; then
-  sensor_files="$sensor_files,
-$(file_json "sensors/tetragon/bin/tetragon" "0755"),
-$(file_json "sensors/tetragon/bin/tetra" "0755"),
-$(file_json "sensors/tetragon/manifest.json" "0644")"
-fi
+sensor_files=""
+while IFS= read -r sensor_file; do
+  sensor_rel="${sensor_file#"$ROOT/"}"
+  sensor_mode="0644"
+  [[ -x "$sensor_file" ]] && sensor_mode="0755"
+  [[ -z "$sensor_files" ]] || sensor_files="$sensor_files,"
+  sensor_files="$sensor_files
+$(file_json "$sensor_rel" "$sensor_mode")"
+done < <(find "$ROOT/sensors/tetragon" -type f -print | sort)
 
 content_files="$(file_json "content/default/content-manifest.json" "0644")"
 for content_file in "$ROOT/content/default"/*.json; do
@@ -167,6 +168,12 @@ for content_file in "$ROOT/content/default"/*.json; do
   content_files="$content_files,
 $(file_json "$content_rel" "0644")"
 done
+
+example_config_file=""
+if [[ -f "$ROOT/configs/agent.example.yaml" ]]; then
+  example_config_file=",
+$(file_json "configs/agent.example.yaml" "0644")"
+fi
 
 cat > "$ROOT/manifest.json" <<EOF
 {
@@ -201,7 +208,7 @@ $(file_json "bin/sysarmorctl" "0755"),
 $(file_json "container/sysarmor-container-entrypoint" "0755"),
 $(file_json "systemd/sysarmor-agent.service" "0644"),
 $(file_json "configs/standalone.yaml" "0644"),
-$(file_json "configs/standalone-container.yaml" "0644"),
+$(file_json "configs/standalone-container.yaml" "0644")$example_config_file,
 $(file_json "policies/policy.json" "0644"),
 $content_files,
 $sensor_files

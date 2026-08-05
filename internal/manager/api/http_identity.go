@@ -42,7 +42,11 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 	scopeType := q.Get("scope_type")
 	scopeSelector := q.Get("scope_selector")
 	healthStatus := q.Get("health_status")
-	agents := s.store.ListAgents()
+	agents, err := s.store.ListAgentsWithError()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read agents: %v", err), http.StatusInternalServerError)
+		return
+	}
 	out := make([]AgentListItem, 0, len(agents))
 	for _, agent := range agents {
 		if tenantID != "" && agent.TenantID != tenantID {
@@ -56,7 +60,12 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 			AuthType:     agent.AuthType,
 			CertIdentity: agent.CertIdentity,
 		}
-		if health, ok := s.store.GetAgentHealth(agent.TenantID, agent.AgentID); ok {
+		health, ok, err := s.store.GetAgentHealthWithError(agent.TenantID, agent.AgentID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read agent health: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if ok {
 			item.HealthStatus = health.Status
 			item.Scope = health.Scope
 			item.Capability = health.Capability
@@ -101,10 +110,19 @@ func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		agentID := q.Get("agent_id")
 		if agentID == "" {
-			writeJSON(w, s.store.ListAgentHealth())
+			health, err := s.store.ListAgentHealthWithError()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("read agent health: %v", err), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, health)
 			return
 		}
-		health, ok := s.store.GetAgentHealth(q.Get("tenant_id"), agentID)
+		health, ok, err := s.store.GetAgentHealthWithError(q.Get("tenant_id"), agentID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read agent health: %v", err), http.StatusInternalServerError)
+			return
+		}
 		if !ok {
 			http.Error(w, "agent health not found", http.StatusNotFound)
 			return
@@ -154,7 +172,12 @@ func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	writeJSON(w, map[string]any{"sessions": s.store.ListAgentSessions(q.Get("tenant_id"), q.Get("agent_id"))})
+	sessions, err := s.store.ListAgentSessionsWithError(q.Get("tenant_id"), q.Get("agent_id"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read agent sessions: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"sessions": sessions})
 }
 
 func (s *Server) dataResume(w http.ResponseWriter, r *http.Request) {
@@ -172,17 +195,25 @@ func (s *Server) dataResume(w http.ResponseWriter, r *http.Request) {
 	if tenantID == "" {
 		tenantID = "default"
 	}
-	writeJSON(w, s.resumeCursor(tenantID, agentID))
+	resume, err := s.resumeCursor(tenantID, agentID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, resume)
 }
 
-func (s *Server) resumeCursor(tenantID, agentID string) DataResume {
+func (s *Server) resumeCursor(tenantID, agentID string) (DataResume, error) {
 	resume := DataResume{TenantID: tenantID, AgentID: agentID}
-	sessions := s.store.ListAgentSessions(tenantID, agentID)
+	sessions, err := s.store.ListAgentSessionsWithError(tenantID, agentID)
+	if err != nil {
+		return DataResume{}, fmt.Errorf("read agent sessions: %w", err)
+	}
 	if len(sessions) > 0 {
 		resume.SessionID = sessions[0].SessionID
 		resume.ResumeCursor = sessions[0].LastAckCursor
 	}
-	return resume
+	return resume, nil
 }
 
 func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {

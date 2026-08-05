@@ -40,6 +40,25 @@ class StartVMContractTest(unittest.TestCase):
             script,
         )
 
+    def test_topology_excludes_local_working_state_from_platform_archive(self):
+        script = (Path(__file__).resolve().parent / "start-vm.sh").read_text()
+
+        for directory in (
+            ".agents/",
+            ".codex/",
+            ".run/",
+            ".scratchpad/",
+            ".superpowers/",
+        ):
+            with self.subTest(directory=directory):
+                self.assertIn(f"--exclude '{directory}'", script)
+
+    def test_topology_platform_archive_is_ignored(self):
+        repo = Path(__file__).resolve().parents[3]
+        gitignore = (repo / ".gitignore").read_text().splitlines()
+
+        self.assertIn("test/environments/vm-topology/deploy/platform.tar", gitignore)
+
     def test_builds_all_binaries_before_starting_endpoint_vm(self):
         harness_dir = Path(__file__).resolve().parent
         repo = harness_dir.parents[2]

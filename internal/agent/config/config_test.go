@@ -343,8 +343,26 @@ sensor:
   backend: fake
   mode: managed
 `)
-	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "unknown section \"manager\"") {
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "unknown config key manager.transport") {
 		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestLoadFileParsesExplicitInsecureManagerTransport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.yaml")
+	write(t, path, `
+manager:
+  tls_insecure: true
+sensor:
+  backend: fake
+  mode: managed
+`)
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Manager.TLSInsecure {
+		t.Fatal("manager.tls_insecure was not applied")
 	}
 }
 

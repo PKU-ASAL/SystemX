@@ -3,11 +3,14 @@ package tetragon
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -187,6 +190,60 @@ func TestProcessSupervisorStopsRestartLoopAndProcess(t *testing.T) {
 	if status := supervisor.Status(); status.Running || status.LastExit != "stopped" {
 		t.Fatalf("status after stop = %+v", status)
 	}
+}
+
+func TestProcessSupervisorStopsRestartLoopProcessGroup(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process group cleanup is Linux-specific")
+	}
+	sh := requireShell(t)
+	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
+	supervisor := &ProcessSupervisor{}
+	err := supervisor.StartRestarting(t.Context(), ProcessSpec{
+		Name: "process-tree",
+		Path: sh,
+		Args: []string{"-c", "sleep 30 & child=$!; printf '%s' \"$child\" > \"$CHILD_PID\"; wait"},
+		Env:  []string{"CHILD_PID=" + childPIDPath},
+	}, RestartPolicy{MaxRestarts: 2, Delay: time.Millisecond})
+	if err != nil {
+		t.Fatalf("StartRestarting() error = %v", err)
+	}
+	childPID := waitForProcessPID(t, childPIDPath)
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := supervisor.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	waitForProcessExit(t, childPID)
+}
+
+func waitForProcessPID(t *testing.T, path string) int {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			pid, err := strconv.Atoi(string(data))
+			if err == nil {
+				return pid
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for child process PID")
+	return 0
+}
+
+func waitForProcessExit(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("child process %d remained after supervisor stop", pid)
 }
 
 func TestProcessSupervisorRejectsDuplicateRestartLoop(t *testing.T) {

@@ -32,6 +32,12 @@ class EndpointE2EContractTest(unittest.TestCase):
         self.assertIn('\'"policyId":"standalone-default"\'', self.script)
         self.assertNotIn("default-edr-policy", self.script)
 
+    def test_restart_restores_sensor_and_effective_policy(self):
+        self.assertIn("health-after-restart.json", self.script)
+        self.assertIn('\'"policyLoaded":true\'', self.script)
+        self.assertIn("policy-after-restart.json", self.script)
+        self.assertIn("policy current --agent-id '$AGENT_ID'", self.script)
+
     def test_single_node_environment_starts_c2_fixture(self):
         self.assertIn("ip address replace 10.66.0.99/32 dev lo", self.script)
         self.assertIn("systemd-run --unit sysarmor-test-c2-http", self.script)

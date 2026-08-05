@@ -31,7 +31,7 @@ func TestIncidentReportsRequireSearchBackend(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents?tenant_id=default", nil)
 	rec := httptest.NewRecorder()
 	req = req.WithContext(managerauth.WithPrincipal(req.Context(), managerauth.Principal{Subject: "viewer", TenantID: "default", Roles: []string{"viewer"}}))
-	NewProductionServerWithSearch(&store.Store{}, nil).Handler().ServeHTTP(rec, req)
+	newServer(&store.Store{}, nil).Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}

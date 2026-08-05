@@ -1,0 +1,8 @@
+{
+  "format": "sysarmor.agent-upgrade-fixture/v1",
+  "source_tag": "v0.1.0-rc.5",
+  "source_commit": "454b69d6c01f778add5836e0af1c9ba3299fd5b1",
+  "schema_version": 1,
+  "fixture_file": "agent-managed-v1.sql",
+  "sha256": "7510b30439ed74b0ccb42c521c090a79062148b95c4f737f86db531d78bf97e0"
+}

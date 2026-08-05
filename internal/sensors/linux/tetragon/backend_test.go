@@ -567,7 +567,7 @@ func TestBackendAppliesGeneratedTracingPolicy(t *testing.T) {
 		Behaviors:   []string{"process.exec", "network.connect", "file.open"},
 		ObserveOnly: true,
 	}
-	if err := backend.Apply(context.Background(), intent); err != nil {
+	if _, err := backend.Apply(context.Background(), intent); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	events, err := backend.Subscribe(context.Background(), intent)
@@ -626,7 +626,7 @@ func TestBackendAppliesNamespaceSelfTracingPolicy(t *testing.T) {
 		ScopeSelector: "self",
 		ObserveOnly:   true,
 	}
-	if err := backend.Apply(context.Background(), intent); err != nil {
+	if _, err := backend.Apply(context.Background(), intent); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	events, err := backend.Subscribe(context.Background(), intent)
@@ -913,7 +913,7 @@ func TestBackendLiveApplyReplacesGeneratedTracingPolicy(t *testing.T) {
 		FilePrefixes: []string{"/old"},
 		ObserveOnly:  true,
 	}
-	if err := backend.Apply(context.Background(), oldIntent); err != nil {
+	if _, err := backend.Apply(context.Background(), oldIntent); err != nil {
 		t.Fatalf("initial Apply() error = %v", err)
 	}
 	backend.mu.Lock()
@@ -925,7 +925,7 @@ func TestBackendLiveApplyReplacesGeneratedTracingPolicy(t *testing.T) {
 		SocketFamilies: []string{"AF_INET"},
 		ObserveOnly:    true,
 	}
-	if err := backend.Apply(context.Background(), newIntent); err != nil {
+	if _, err := backend.Apply(context.Background(), newIntent); err != nil {
 		t.Fatalf("live Apply() error = %v", err)
 	}
 	ops, err := os.ReadFile(opsPath)
@@ -941,6 +941,76 @@ func TestBackendLiveApplyReplacesGeneratedTracingPolicy(t *testing.T) {
 	}
 	if !strings.Contains(string(applied), "security_socket_connect") || strings.Contains(string(applied), "/old") {
 		t.Fatalf("applied policy =\n%s", string(applied))
+	}
+}
+
+func TestBackendApplyPreparesPolicyWhenManagedSensorStopped(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	invokedPath := filepath.Join(dir, "tetra-invoked")
+	tetraPath := filepath.Join(dir, "tetra")
+	if err := os.WriteFile(tetraPath, []byte("#!/bin/sh\ntouch '"+invokedPath+"'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{
+		TetraPath: tetraPath, TetragonPath: filepath.Join(dir, "tetragon"),
+	})
+	backend.policyLoaded = true
+	backend.runtimePolicyApplied = true
+	intent := contract.CollectionIntent{Behaviors: []string{"network.connect"}, ObserveOnly: true}
+	result, err := backend.Apply(context.Background(), intent)
+	if err != nil || result.State != contract.ApplyStateDeferred {
+		t.Fatalf("Apply() result = %+v error = %v, want deferred policy while managed sensor is stopped", result, err)
+	}
+	if _, err := os.Stat(invokedPath); !os.IsNotExist(err) {
+		t.Fatalf("stopped managed sensor invoked tetra: err=%v", err)
+	}
+	if backend.policyLoaded || backend.runtimePolicyApplied || len(backend.intent.Behaviors) != 1 || backend.intent.Behaviors[0] != "network.connect" {
+		t.Fatalf("prepared backend state = loaded=%t runtime=%t intent=%+v", backend.policyLoaded, backend.runtimePolicyApplied, backend.intent)
+	}
+}
+
+func TestBackendApplyDefersPolicyChangeForManagedSensor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed sensor readiness test requires /bin/sh")
+	}
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "collection.yaml")
+	if err := os.WriteFile(policyPath, []byte("kind: TracingPolicy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	invokedPath := filepath.Join(dir, "tetra-invoked")
+	tetraPath := filepath.Join(dir, "tetra")
+	if err := os.WriteFile(tetraPath, []byte("#!/bin/sh\ntouch '"+invokedPath+"'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backend := NewBackendWithBundle(policyPath, "", "test", BundleConfig{
+		TetraPath: tetraPath, TetragonPath: filepath.Join(dir, "tetragon"),
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := backend.sensorSupervisor.Start(ctx, ProcessSpec{
+		Name: "starting-tetragon", Path: "/bin/sh", Args: []string{"-c", "sleep 30"},
+	}); err != nil {
+		t.Fatalf("start sensor process: %v", err)
+	}
+	defer backend.sensorSupervisor.Stop(context.Background())
+	backend.policyLoaded = true
+	backend.runtimePolicyApplied = true
+	backend.running = true
+
+	intent := contract.CollectionIntent{Behaviors: []string{"network.connect"}, ObserveOnly: true}
+	applyCtx, applyCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer applyCancel()
+	result, err := backend.Apply(applyCtx, intent)
+	if err != nil || result.State != contract.ApplyStateDeferred {
+		t.Fatalf("Apply() result = %+v error = %v, want deferred policy for managed sensor", result, err)
+	}
+	if _, err := os.Stat(invokedPath); !os.IsNotExist(err) {
+		t.Fatalf("managed sensor policy change invoked tetra before resubscribe: err=%v", err)
 	}
 }
 
@@ -971,7 +1041,7 @@ func TestBackendDeletesGeneratedTracingPolicyOnStop(t *testing.T) {
 		Behaviors:   []string{"process.exec"},
 		ObserveOnly: true,
 	}
-	if err := backend.Apply(context.Background(), intent); err != nil {
+	if _, err := backend.Apply(context.Background(), intent); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1029,7 +1099,7 @@ func TestBackendRejectsUnverifiedGeneratedTracingPolicy(t *testing.T) {
 		Behaviors:   []string{"network.connect"},
 		ObserveOnly: true,
 	}
-	if err := backend.Apply(context.Background(), intent); err != nil {
+	if _, err := backend.Apply(context.Background(), intent); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if _, err := backend.Subscribe(context.Background(), intent); err == nil || !strings.Contains(err.Error(), "not listed") {

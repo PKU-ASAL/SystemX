@@ -14,7 +14,12 @@ func (s *Server) channels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		writeJSON(w, map[string]any{"channels": s.store.ListChannels(q.Get("tenant_id"))})
+		channels, err := s.store.ListChannelsWithError(q.Get("tenant_id"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list channels: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"channels": channels})
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "admin") {
 			return
@@ -32,7 +37,11 @@ func (s *Server) channels(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "channel and artifact_id are required", http.StatusBadRequest)
 			return
 		}
-		artifact, ok := s.store.GetArtifact(tenantID, req.ArtifactID)
+		artifact, ok, err := s.store.GetArtifactWithError(tenantID, req.ArtifactID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("get artifact: %v", err), http.StatusInternalServerError)
+			return
+		}
 		if !ok || artifact.Status != "active" {
 			http.Error(w, "active artifact not found", http.StatusBadRequest)
 			return

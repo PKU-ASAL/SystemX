@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	agenthealth "github.com/sysarmor/sysarmor-next-project/internal/agent/health"
@@ -9,6 +10,8 @@ import (
 	policymodel "github.com/sysarmor/sysarmor-next-project/internal/policy"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/internal/response"
 )
+
+var ErrConflict = errors.New("store conflict")
 
 // Backend is the durable persistence boundary for platform state. A nil Backend
 // means the Store is a pure in-memory/file store. Telemetry (events and signals)
@@ -23,6 +26,7 @@ type Backend interface {
 	GetAgentHealth(ctx context.Context, tenantID, agentID string) (agenthealth.AgentHealth, bool, error)
 	ListAgentSessions(ctx context.Context, tenantID, agentID string) ([]AgentSession, error)
 	ListResponses(ctx context.Context, tenantID, agentID string) ([]responsemodel.AuditRecord, error)
+	ListEvidencePullbacks(ctx context.Context, tenantID, agentID string) ([]controlmodel.EvidencePullbackRequest, error)
 	ListControlCommands(ctx context.Context, tenantID, agentID, commandType string) ([]controlmodel.ControlCommand, error)
 	ListPolicies(ctx context.Context, tenantID string) ([]policymodel.Policy, error)
 	ListAssignments(ctx context.Context, tenantID, agentID string) ([]policymodel.Assignment, error)
@@ -38,15 +42,26 @@ type Backend interface {
 	GetArtifact(ctx context.Context, tenantID, artifactID string) (Artifact, bool, error)
 	ListChannels(ctx context.Context, tenantID string) ([]ArtifactChannel, error)
 	GetChannel(ctx context.Context, tenantID, channel string) (ArtifactChannel, bool, error)
+	GetAgentCertificate(ctx context.Context, tenantID, serial string) (AgentCertificate, bool, error)
+	GetUnenrollment(ctx context.Context, tenantID, enrollmentID string) (UnenrollmentRecord, bool, error)
+	ListUnenrollments(ctx context.Context, tenantID string) ([]UnenrollmentRecord, error)
 
+	CreateResponse(ctx context.Context, cmd responsemodel.Command) (bool, error)
 	WriteResponse(ctx context.Context, cmd responsemodel.Command, ack *responsemodel.Ack) error
+	CreateControlCommand(ctx context.Context, cmd controlmodel.ControlCommand) (bool, error)
+	WriteControlCommand(ctx context.Context, cmd controlmodel.ControlCommand) error
 	WritePolicy(ctx context.Context, policy policymodel.Policy) error
 	WriteAssignment(ctx context.Context, assignment policymodel.Assignment) error
 	WritePolicyAudit(ctx context.Context, audit policymodel.AuditRecord) error
+	CommitPolicyPublication(ctx context.Context, policy policymodel.Policy, audit policymodel.AuditRecord) error
+	CommitPolicyAssignment(ctx context.Context, assignment policymodel.Assignment, audit policymodel.AuditRecord, command *controlmodel.ControlCommand) (*controlmodel.ControlCommand, error)
 	WriteEnrollment(ctx context.Context, enrollment Enrollment) error
 	WriteArtifact(ctx context.Context, artifact Artifact) error
 	WriteChannel(ctx context.Context, channel ArtifactChannel) error
 	WriteAgentCertificate(ctx context.Context, cert AgentCertificate) error
+	RevokeAgentCertificate(ctx context.Context, tenantID, agentID, enrollmentID, serial string, revokedAt time.Time, receipt string) (AgentCertificate, bool, error)
+	AuthorizeAgentUnenrollment(ctx context.Context, tenantID, agentID, enrollmentID, serial, tokenHash string, revokedAt time.Time, receipt string) (AgentCertificate, UnenrollmentRecord, bool, error)
+	CompleteAgentUnenrollment(ctx context.Context, tenantID, agentID, enrollmentID, serial, receipt, tokenHash string, completedAt time.Time) (UnenrollmentRecord, bool, error)
 }
 
 type MetricsBackend interface {

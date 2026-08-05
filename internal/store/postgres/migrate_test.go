@@ -14,8 +14,8 @@ func TestApplyMigrationsExecutesPostgresSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyMigrations() error = %v", err)
 	}
-	if got.Version != 1 {
-		t.Fatalf("migration version = %d, want 1", got.Version)
+	if got.Version != 2 {
+		t.Fatalf("migration version = %d, want 2", got.Version)
 	}
 	query := FakeAllQueries()
 	for _, want := range []string{
@@ -23,6 +23,8 @@ func TestApplyMigrationsExecutesPostgresSchema(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS agents",
 		"CREATE TABLE IF NOT EXISTS response_audit",
 		"INSERT INTO schema_migrations (version) VALUES (1)",
+		"CREATE TABLE IF NOT EXISTS agent_unenrollments",
+		"INSERT INTO schema_migrations (version) VALUES (2)",
 		"SELECT pg_advisory_unlock",
 	} {
 		if !strings.Contains(query, want) {

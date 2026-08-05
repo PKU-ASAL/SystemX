@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	controlmodel "github.com/sysarmor/sysarmor-next-project/internal/controlmodel"
 	"github.com/sysarmor/sysarmor-next-project/internal/store"
 )
 
@@ -23,11 +24,17 @@ func (s *Server) enrollments(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		items := s.store.ListEnrollments(q.Get("tenant_id"), q.Get("status"))
-		for i := range items {
-			items[i] = publicEnrollment(items[i])
+		items, err := s.store.ListEnrollmentsWithError(q.Get("tenant_id"), q.Get("status"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list enrollments: %v", err), http.StatusInternalServerError)
+			return
 		}
-		writeJSON(w, map[string]any{"enrollments": items})
+		views, err := s.enrollmentViews(items)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("list unenrollment lifecycle: %v", err), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"enrollments": views})
 	case http.MethodPost:
 		if !s.requireOperator(w, r, "admin") {
 			return
@@ -101,7 +108,11 @@ func (s *Server) enrollmentArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := enrollmentArtifactToken(r)
-	enrollment, ok := s.store.GetEnrollmentByTokenHash(enrollmentTokenHash(token))
+	enrollment, ok, err := s.store.GetEnrollmentByTokenHashWithError(enrollmentTokenHash(token))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read enrollment: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if token == "" || !ok || enrollment.Status != "active" || enrollment.ArtifactID == "" {
 		http.NotFound(w, r)
 		return
@@ -110,7 +121,11 @@ func (s *Server) enrollmentArtifact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "enrollment expired", http.StatusGone)
 		return
 	}
-	artifact, ok := s.store.GetArtifact(enrollment.TenantID, enrollment.ArtifactID)
+	artifact, ok, err := s.store.GetArtifactWithError(enrollment.TenantID, enrollment.ArtifactID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read enrollment artifact: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok || artifact.Status != "active" {
 		http.NotFound(w, r)
 		return
@@ -143,7 +158,11 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 	}
 	token := strings.TrimSpace(req.Token)
 	tokenHash := enrollmentTokenHash(token)
-	enrollment, ok := s.store.GetEnrollmentByTokenHash(tokenHash)
+	enrollment, ok, err := s.store.GetEnrollmentByTokenHashWithError(tokenHash)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read enrollment: %v", err), http.StatusInternalServerError)
+		return
+	}
 	if !ok || (enrollment.Status != "active" && enrollment.Status != "issued") {
 		http.Error(w, "enrollment not found", http.StatusNotFound)
 		return
@@ -168,15 +187,16 @@ func (s *Server) enrollmentCertificate(w http.ResponseWriter, r *http.Request) {
 	proposed.IssuedSerialNumber = cert.SerialNumber.String()
 	proposed.IssuedNotAfter = cert.NotAfter
 	certificate := store.AgentCertificate{
-		TenantID:       defaultString(enrollment.TenantID, "default"),
-		AgentID:        enrollment.AgentID,
-		EnrollmentID:   enrollment.EnrollmentID,
-		SerialNumber:   cert.SerialNumber.String(),
-		Subject:        cert.Subject.String(),
-		NotBefore:      cert.NotBefore,
-		NotAfter:       cert.NotAfter,
-		CreatedAt:      issuedAt,
-		CertificatePEM: string(certPEM),
+		TenantID:             defaultString(enrollment.TenantID, "default"),
+		AgentID:              enrollment.AgentID,
+		EnrollmentID:         enrollment.EnrollmentID,
+		SerialNumber:         cert.SerialNumber.String(),
+		UnenrollmentProtocol: controlmodel.UnenrollmentProtocolCompletionV1,
+		Subject:              cert.Subject.String(),
+		NotBefore:            cert.NotBefore,
+		NotAfter:             cert.NotAfter,
+		CreatedAt:            issuedAt,
+		CertificatePEM:       string(certPEM),
 	}
 	enrollment, result, err := s.store.CommitEnrollmentIssue(tokenHash, keyHash, proposed, certificate)
 	if err != nil {
@@ -266,6 +286,67 @@ func publicEnrollment(enrollment store.Enrollment) store.Enrollment {
 	enrollment.IssuedCAPEM = ""
 	enrollment.Labels = cloneStringMap(enrollment.Labels)
 	return enrollment
+}
+
+type enrollmentView struct {
+	store.Enrollment
+	UnenrollmentStatus string     `json:"unenrollment_status,omitempty"`
+	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
+	EndpointCompleted  *time.Time `json:"endpoint_completed_at,omitempty"`
+}
+
+type enrollmentKey struct {
+	tenantID, enrollmentID string
+}
+
+func (s *Server) enrollmentViews(enrollments []store.Enrollment) ([]enrollmentView, error) {
+	records, err := s.unenrollmentRecords(enrollments)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]enrollmentView, len(enrollments))
+	for i, enrollment := range enrollments {
+		record, ok := records[enrollmentKey{enrollment.TenantID, enrollment.EnrollmentID}]
+		views[i] = newEnrollmentView(enrollment, record, ok)
+	}
+	return views, nil
+}
+
+func (s *Server) unenrollmentRecords(enrollments []store.Enrollment) (map[enrollmentKey]store.UnenrollmentRecord, error) {
+	tenants := make(map[string]struct{})
+	for _, enrollment := range enrollments {
+		tenants[enrollment.TenantID] = struct{}{}
+	}
+	records := make(map[enrollmentKey]store.UnenrollmentRecord)
+	for tenantID := range tenants {
+		items, err := s.store.ListUnenrollmentsWithError(tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range items {
+			records[enrollmentKey{record.TenantID, record.EnrollmentID}] = record
+		}
+	}
+	return records, nil
+}
+
+func newEnrollmentView(enrollment store.Enrollment, record store.UnenrollmentRecord, ok bool) enrollmentView {
+	view := enrollmentView{Enrollment: publicEnrollment(enrollment)}
+	if !ok {
+		return view
+	}
+	view.UnenrollmentStatus = record.Status
+	view.RevokedAt = optionalTime(record.RevokedAt)
+	view.EndpointCompleted = optionalTime(record.EndpointCompletedAt)
+	return view
+}
+
+func optionalTime(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 func installURL(r *http.Request, ticket string) string {
