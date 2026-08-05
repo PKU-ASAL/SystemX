@@ -176,6 +176,20 @@ class MonorepoLayoutContractTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((root / name).is_file(), f"missing store/{name}")
 
+    def test_postgres_store_domain_files(self):
+        root = self.repo / "apps/manager/internal/store/postgres"
+        expected = (
+            "policy.go",
+            "control.go",
+            "identity.go",
+            "enrollment.go",
+            "artifact.go",
+            "telemetry.go",
+        )
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertTrue((root / name).is_file(), f"missing postgres/{name}")
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",
