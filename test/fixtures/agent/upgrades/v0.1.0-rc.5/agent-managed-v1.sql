@@ -80,4 +80,4 @@ VALUES (1,'managed','default','rc5-agent-fixture','10.66.0.10:9444',
 INSERT INTO policy(kind,version,document_json,digest,updated_at_ns)
 VALUES ('endpoint',1,
   '{"policy_id":"rc5-managed-policy","version":1,"collection":{"behaviors":["process.exec","process.exit","process.fork","file.read","file.write","network.connect"],"observe_only":true},"detection":{},"telemetry":{},"response":{}}',
-  'rc5-managed-policy-fixture',1);
+  'f6a449a61f8e28829a0026aec0da60bda27db4eff18321faadf323b5657601b4',1);

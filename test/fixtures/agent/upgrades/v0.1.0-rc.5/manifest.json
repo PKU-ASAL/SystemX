@@ -4,5 +4,5 @@
   "source_commit": "454b69d6c01f778add5836e0af1c9ba3299fd5b1",
   "schema_version": 1,
   "fixture_file": "agent-managed-v1.sql",
-  "sha256": "6ab7e020245d6d92ea4ded7f18611ba2a04c69a11fe27a1682d824954956e7ab"
+  "sha256": "7510b30439ed74b0ccb42c521c090a79062148b95c4f737f86db531d78bf97e0"
 }

@@ -184,7 +184,37 @@ wait_agent_pid() {
   printf '%s\n' "$pid"
 }
 
+health_is_ready_after() {
+  local observed_after="$1"
+  local agent_id="$2"
+  local payload
+  payload="$(vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager health get --agent-id $agent_id --tenant-id default")" || return 1
+  python3 - "$observed_after" "$payload" <<'PY'
+import datetime
+import json
+import sys
+
+def parse_timestamp(value):
+    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+health = json.loads(sys.argv[2])
+sensor = health.get("sensor_health") or {}
+if parse_timestamp(health.get("observed_at", "")) <= parse_timestamp(sys.argv[1]):
+    raise SystemExit(1)
+if sensor.get("running") is not True or sensor.get("policy_loaded") is not True:
+    raise SystemExit(1)
+print(json.dumps(health, separators=(",", ":")))
+PY
+}
+
 PID_BEFORE="$(wait_agent_pid)"
+HEALTH_BEFORE_RESTART="$RESULTS/e2e-agent-systemd-vm.health-before-restart.json"
+vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default" >"$HEALTH_BEFORE_RESTART"
+HEALTH_OBSERVED_BEFORE="$(python3 - "$HEALTH_BEFORE_RESTART" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))["observed_at"])
+PY
+)"
 
 echo "[e2e-agent-systemd-vm] verifying systemd restarts agent"
 if ! vagrant ssh node-a -c "sudo systemctl kill -s TERM sysarmor-agent" >/dev/null; then
@@ -211,8 +241,8 @@ until [[ -n "$PID_AFTER" && "$PID_AFTER" != "0" && "$PID_AFTER" != "$PID_BEFORE"
   PID_AFTER="$(read_agent_pid)"
 done
 
-wait_contains "agent-health after systemd restart" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \
-  vagrant ssh mgr -c "$MANAGER_CTL --manager-url 127.0.0.1:9443 --json manager health get --agent-id $AGENT_ID --tenant-id default"
+wait_contains "fresh ready agent-health after systemd restart" "\"agent_id\":\"$AGENT_ID\"" "$RESULTS/e2e-agent-systemd-vm.health-after-restart.json" \
+  health_is_ready_after "$HEALTH_OBSERVED_BEFORE" "$AGENT_ID"
 wait_contains "managed policy rollout after restart" '"status":"applied"' "$RESULTS/e2e-agent-systemd-vm.rollout-after-restart.json" \
   vagrant ssh mgr -c "curl -sf -H 'Authorization: Bearer $MANAGER_JWT' 'http://127.0.0.1:9443/api/v1/policy-rollouts?tenant_id=default&agent_id=$AGENT_ID&status=applied'"
 
@@ -239,6 +269,9 @@ vagrant ssh node-a -c "sudo systemctl restart sysarmor-agent"
 wait_contains "standalone policy after unenrollment restart" '"policyId":"standalone-default"' "$RESULTS/e2e-agent-systemd-vm.policy-after-unenroll-restart.json" \
   vagrant ssh node-a -c "sudo /usr/local/bin/sysarmorctl --json policy current"
 
+source "$HERE/legacy-managed-upgrade-unenrollment.sh"
+run_legacy_managed_upgrade_unenrollment
+
 vagrant ssh node-a -c "sudo systemctl status sysarmor-agent --no-pager -l" > "$RESULTS/e2e-agent-systemd-vm.systemd.txt" 2>&1 || true
 vagrant ssh node-a -c "sudo journalctl -u sysarmor-agent --no-pager -n 120" > "$RESULTS/e2e-agent-systemd-vm.journal.txt" 2>&1 || true
 
@@ -263,6 +296,7 @@ health = load("e2e-agent-systemd-vm.health.json", {})
 health_after = load("e2e-agent-systemd-vm.health-after-restart.json", {})
 unenrollment = load("e2e-agent-systemd-vm.unenroll.json", {})
 standalone_after = load("e2e-agent-systemd-vm.policy-after-unenroll-restart.json", {})
+legacy_summary = load("e2e-agent-systemd-vm.legacy.summary.json", {})
 enrollment = load("e2e-agent-systemd-vm.enrollment.json", {}).get("enrollment", {})
 enrollments_after_unenroll = load("e2e-agent-systemd-vm.enrollment-after-unenroll.json", {}).get("enrollments", [])
 completed_enrollment = next(
@@ -294,6 +328,11 @@ summary = {
     "online_unenrollment_applied": unenrollment.get("status") == "applied",
     "manager_unenrollment_completed": completed_enrollment.get("unenrollment_status") == "endpoint_completed",
     "standalone_after_unenrollment_restart": standalone_after.get("policyId") == "standalone-default",
+    "legacy_fixture_source": legacy_summary.get("legacy_fixture_source"),
+    "legacy_schema_migrated": legacy_summary.get("legacy_schema_migrated", False),
+    "legacy_mtls_unenrollment_applied": legacy_summary.get("legacy_mtls_unenrollment_applied", False),
+    "manager_legacy_status_unknown": legacy_summary.get("manager_legacy_status_unknown", False),
+    "legacy_standalone_after_restart": legacy_summary.get("legacy_standalone_after_restart", False),
 }
 (root / "e2e-agent-systemd-vm.summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
 PY
