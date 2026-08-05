@@ -249,7 +249,7 @@ func (r *AgentRuntime) Run(ctx context.Context, opts Options) error {
 	sensorSupervisor := sensorruntime.NewSubscriptionSupervisor(sensorruntime.AdaptManager(rt), intent, sensorruntime.RetryOptions{})
 	r.setSensorSupervisor(sensorSupervisor)
 	sensorSupervisor.OnApplied(r.completePendingEndpointPolicy)
-	pending, hasPending, err := (&localControlServer{runner: r, runtime: rt}).loadPendingManagedEndpointPolicy(ctx)
+	pending, hasPending, err := newPolicyController(r, rt, nil).loadPendingManagedEndpointPolicy(ctx)
 	if err != nil {
 		return failStartup("pending_policy", err)
 	}

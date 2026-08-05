@@ -13,7 +13,7 @@ type endpointPolicyReconciler struct {
 	supervisor *sensorruntime.SubscriptionSupervisor
 }
 
-func (s *localControlServer) policyReconciler() endpointPolicyReconciler {
+func (s *policyController) policyReconciler() endpointPolicyReconciler {
 	return endpointPolicyReconciler{runtime: s.runtime, supervisor: s.runner.currentSensorSupervisor()}
 }
 

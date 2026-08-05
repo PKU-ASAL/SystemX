@@ -217,6 +217,13 @@ class MonorepoLayoutContractTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((root / name).is_file(), f"missing sysarmorctl/{name}")
 
+    def test_agent_control_contract_files(self):
+        root = self.repo / "apps/agent/internal/control"
+        expected = ("types.go", "policy.go", "content.go")
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertTrue((root / name).is_file(), f"missing control/{name}")
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",

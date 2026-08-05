@@ -17,6 +17,7 @@ import (
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/config"
 	agentcontent "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/content"
+	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/detection"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
@@ -318,44 +319,11 @@ func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlplan
 }
 
 func (s *localControlServer) ApplyPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) (*controlplanev1.ControlAck, error) {
-	if err := s.validateContext(req.GetContext()); err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "policy", err.Error()), nil
-	}
-	policyType := strings.TrimSpace(req.GetPolicyType())
-	if policyType == "" {
-		policyType = "endpoint"
-	}
-	if policyType == "collection" {
-		release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
-		if err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "collection", err.Error()), nil
-		}
-		defer release()
-		return s.applyCollectionPolicy(ctx, req), nil
-	}
-	if policyType == "detection" {
-		release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
-		if err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "detection", err.Error()), nil
-		}
-		defer release()
-		return s.applyDetectionPolicy(ctx, req), nil
-	}
-	if policyType == "telemetry" {
-		release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
-		if err != nil {
-			return rejectedAck(s.runner.Config, req.GetContext(), "telemetry", err.Error()), nil
-		}
-		defer release()
-		return s.applyTelemetryPolicy(ctx, req, nil), nil
-	}
-	if policyType == "endpoint" {
-		return s.applyEndpointPolicy(ctx, req), nil
-	}
-	return rejectedAck(s.runner.Config, req.GetContext(), "policy", fmt.Sprintf("unsupported policy type %q", policyType)), nil
+	controller := newPolicyController(s.runner, s.runtime, s.batcher)
+	return controlAck(controller.ApplyPolicy(ctx, policyCommand(req, agentcontrol.PolicySourceStandalone))), nil
 }
 
-func (s *localControlServer) applyTelemetryPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.TelemetryPolicy) *controlplanev1.ControlAck {
+func (s *policyController) applyTelemetryPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest, fallback *policymodel.TelemetryPolicy) *controlplanev1.ControlAck {
 	if fallback == nil && strings.TrimSpace(req.GetPolicyJson()) != "" {
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(req.GetPolicyJson()), &raw); err != nil {
@@ -389,7 +357,7 @@ func (s *localControlServer) applyTelemetryPolicy(ctx context.Context, req *cont
 	return telemetryAck(s.runner.Config, req.GetContext(), "applied", "telemetry policy applied", *telemetryPolicy)
 }
 
-func (s *localControlServer) reconfigureTelemetryBatcher() {
+func (s *policyController) reconfigureTelemetryBatcher() {
 	if s == nil || s.batcher == nil {
 		return
 	}
@@ -517,7 +485,7 @@ func (s *localControlServer) GetEvent(ctx context.Context, req *controlplanev1.G
 	return &controlplanev1.EventGetResponse{Frame: frame}, nil
 }
 
-func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+func (s *policyController) applyCollectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
 	s.runner.detectionUpdateMu.Lock()
 	defer s.runner.detectionUpdateMu.Unlock()
 	policy, err := agentpolicy.ParseCollectionPolicyJSON([]byte(req.GetPolicyJson()), s.runner.Config.Sensor.ObserveOnly)
@@ -580,7 +548,7 @@ func (s *localControlServer) applyCollectionPolicy(ctx context.Context, req *con
 	return collectionAck(s.runner.Config, req.GetContext(), policy, "applied", "collection policy applied", false, compileReport, &report.Coverage)
 }
 
-func (s *localControlServer) applyDetectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+func (s *policyController) applyDetectionPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
 	s.runner.detectionUpdateMu.Lock()
 	defer s.runner.detectionUpdateMu.Unlock()
 	var envelope struct {

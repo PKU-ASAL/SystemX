@@ -255,10 +255,13 @@ func TestManagedAgentRejectsLocalEndpointPolicyMutation(t *testing.T) {
 	}
 	installTestDetection(t, runner)
 	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor)}
-	ack := server.applyEndpointPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
+	ack, err := server.ApplyPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
 		PolicyType: "endpoint",
 		PolicyJson: `{"policy_id":"local-policy","version":2,"collection":{"behaviors":["process.exec"]},"detection":{"policy_id":"local-detection","version":1,"rulesets":[{"ref":"ruleset:cep-endpoint","enabled":true}]},"telemetry":{"max_batch_items":64,"max_batch_bytes":65536,"flush_interval":"1s"},"response":{}}`,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "managed policy authority") {
 		t.Fatalf("ack=%+v", ack)
 	}
@@ -366,7 +369,7 @@ func TestApplyTelemetryPolicyPersistsUnifiedEndpointPolicy(t *testing.T) {
 	defer store.Close()
 	runner := &AgentRuntime{localStore: store, Config: config.Config{Telemetry: config.TelemetryConfig{MaxBatchItems: 256, MaxBatchBytes: 256 << 10, FlushInterval: time.Second}}}
 	runner.setEndpointPolicy(agentpolicy.EndpointPolicy{PolicyID: "endpoint-a", Version: 1})
-	ack := (&localControlServer{runner: runner}).applyTelemetryPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
+	ack := newPolicyController(runner, nil, nil).applyTelemetryPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
 		PolicyType: "telemetry", PolicyJson: `{"max_batch_items":512,"max_batch_bytes":524288,"flush_interval":"2s"}`,
 	}, nil)
 	if ack.GetStatus() != "applied" {
@@ -599,7 +602,7 @@ func TestDetectionPolicyWaitsForContentTransaction(t *testing.T) {
 		capability: contract.Capability{Backend: "fake", SupportsExec: true},
 	}
 	runner.applyRuntimePolicy(policymodel.DefaultPolicy("default"))
-	server := &localControlServer{runner: runner}
+	controller := newPolicyController(runner, nil, nil)
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	go runner.withDetectionUpdateTransaction(func() {
@@ -609,7 +612,7 @@ func TestDetectionPolicyWaitsForContentTransaction(t *testing.T) {
 	<-entered
 	done := make(chan *controlplanev1.ControlAck, 1)
 	go func() {
-		done <- server.applyDetectionPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
+		done <- controller.applyDetectionPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
 			Context:    &controlplanev1.RequestContext{TenantId: "default"},
 			PolicyJson: `{"policy_id":"concurrent-policy","version":2,"mode":"observe"}`,
 		})

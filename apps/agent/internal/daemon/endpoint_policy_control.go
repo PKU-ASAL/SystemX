@@ -29,16 +29,7 @@ type preparedEndpointPolicy struct {
 	compile   contract.CollectionCompileReport
 }
 
-func (s *localControlServer) applyEndpointPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
-	release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
-	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "policy", err.Error())
-	}
-	defer release()
-	return s.applyEndpointPolicyInternal(ctx, req, localstore.PolicySourceStandalone)
-}
-
-func (s *localControlServer) applyEndpointPolicyInternal(ctx context.Context, req *controlplanev1.ApplyPolicyRequest, source localstore.PolicySource) *controlplanev1.ControlAck {
+func (s *policyController) applyEndpointPolicyInternal(ctx context.Context, req *controlplanev1.ApplyPolicyRequest, source localstore.PolicySource) *controlplanev1.ControlAck {
 	if source == localstore.PolicySourceManaged {
 		return s.applyManagedEndpointPolicy(ctx, req)
 	}
@@ -63,7 +54,7 @@ func (s *localControlServer) applyEndpointPolicyInternal(ctx context.Context, re
 	return appliedAck(s.runner.Config, req.GetContext(), prepared.runtime, prepared.report.Status, "endpoint policy applied", true)
 }
 
-func (s *localControlServer) applyManagedEndpointPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
+func (s *policyController) applyManagedEndpointPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) *controlplanev1.ControlAck {
 	s.runner.policyAuthorityMu.Lock()
 	s.runner.detectionUpdateMu.Lock()
 	prepared, err := s.prepareEndpointPolicy(req.GetPolicyJson())
@@ -114,16 +105,16 @@ func (r *AgentRuntime) completePendingEndpointPolicyLocked(ctx context.Context, 
 	if err := agentpolicy.ActivateManagedEndpointPolicy(ctx, r.localStore, pending.policy); err != nil {
 		return err
 	}
-	server := &localControlServer{runner: r}
+	controller := newPolicyController(r, nil, nil)
 	r.setEndpointPolicy(pending.policy)
-	server.commitEndpointPolicy(*pending)
+	controller.commitEndpointPolicy(*pending)
 	r.mu.Lock()
 	r.pendingEndpoint = nil
 	r.mu.Unlock()
-	return server.promoteManagedAuthority(ctx)
+	return controller.promoteManagedAuthority(ctx)
 }
 
-func (s *localControlServer) promoteManagedAuthority(ctx context.Context) error {
+func (s *policyController) promoteManagedAuthority(ctx context.Context) error {
 	if s.runner.localStore == nil {
 		return nil
 	}
@@ -141,18 +132,18 @@ func (s *localControlServer) promoteManagedAuthority(ctx context.Context) error 
 	return nil
 }
 
-func (s *localControlServer) restoreStandaloneEndpointPolicy(ctx context.Context) error {
+func (s *policyController) restoreStandaloneEndpointPolicy(ctx context.Context) error {
 	return s.restoreStandaloneEndpointPolicyWithActivation(ctx, func(ctx context.Context) error {
 		return s.runner.localStore.ActivateStandalonePolicy(ctx, "endpoint")
 	})
 }
 
-func (s *localControlServer) restoreStandaloneEndpointPolicyWithActivation(ctx context.Context, activate func(context.Context) error) error {
+func (s *policyController) restoreStandaloneEndpointPolicyWithActivation(ctx context.Context, activate func(context.Context) error) error {
 	return restoreStandaloneEndpointPolicyWithActivation(ctx, s.runner, s.runtime, activate)
 }
 
 func restoreStandaloneEndpointPolicyWithActivation(ctx context.Context, runner *AgentRuntime, runtime sensorruntime.Runtime, activate func(context.Context) error) error {
-	s := &localControlServer{runner: runner, runtime: runtime}
+	s := newPolicyController(runner, runtime, nil)
 	policy, ok, err := agentpolicy.LoadEndpointPolicy(ctx, s.runner.localStore, localstore.PolicySourceStandalone)
 	if err != nil {
 		return fmt.Errorf("load standalone endpoint policy: %w", err)
@@ -195,7 +186,7 @@ func applyAndActivateIntent(ctx context.Context, previous, next contract.Collect
 	return nil
 }
 
-func (s *localControlServer) loadPendingManagedEndpointPolicy(ctx context.Context) (preparedEndpointPolicy, bool, error) {
+func (s *policyController) loadPendingManagedEndpointPolicy(ctx context.Context) (preparedEndpointPolicy, bool, error) {
 	if s.runner.localStore == nil {
 		return preparedEndpointPolicy{}, false, nil
 	}
@@ -230,7 +221,7 @@ func (r *AgentRuntime) beginLocalPolicyMutation(ctx context.Context, mutation bo
 	return r.policyAuthorityMu.RUnlock, nil
 }
 
-func (s *localControlServer) prepareEndpointPolicy(document string) (preparedEndpointPolicy, error) {
+func (s *policyController) prepareEndpointPolicy(document string) (preparedEndpointPolicy, error) {
 	policy, err := agentpolicy.ParseEndpointPolicy([]byte(document))
 	if err != nil {
 		return preparedEndpointPolicy{}, err
@@ -261,7 +252,7 @@ func (s *localControlServer) prepareEndpointPolicy(document string) (preparedEnd
 	return preparedEndpointPolicy{policy: policy, intent: intent, runtime: runtimePolicy, detection: engine, report: report, telemetry: effective, compile: compile}, nil
 }
 
-func (s *localControlServer) commitEndpointPolicy(prepared preparedEndpointPolicy) {
+func (s *policyController) commitEndpointPolicy(prepared preparedEndpointPolicy) {
 	s.runner.setCollectionIntent(prepared.intent)
 	s.runner.setPolicy(prepared.runtime)
 	s.runner.setDetection(prepared.detection)

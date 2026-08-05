@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
@@ -161,9 +162,10 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		if requestContext == nil {
 			requestContext = &controlplanev1.RequestContext{RequestId: frame.GetRequestId()}
 		}
-		ack := (&localControlServer{runner: runner, runtime: r.sensor, batcher: r.batcher}).applyEndpointPolicyInternal(ctx, &controlplanev1.ApplyPolicyRequest{
+		controller := newPolicyController(runner, r.sensor, r.batcher)
+		ack := controlAck(controller.ApplyPolicy(ctx, policyCommand(&controlplanev1.ApplyPolicyRequest{
 			Context: requestContext, PolicyType: "endpoint", PolicyJson: frame.GetPolicyUpdate().GetRawJson(),
-		}, localstore.PolicySourceManaged)
+		}, agentcontrol.PolicySourceManaged)))
 		ack = bindControlAckToSession(ack, identity)
 		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
