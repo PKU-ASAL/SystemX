@@ -74,7 +74,7 @@ build-agent-binary:
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-agent ./apps/agent/cmd/sysarmor-agent
 
 build-agent-tools: build-agent-binary
-	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmorctl ./cmd/sysarmorctl
+	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmorctl ./apps/cli/cmd/sysarmorctl
 	CGO_ENABLED=0 GOCACHE=$(GOCACHE) go build -o $(BIN_DIR)/sysarmor-content-sign ./apps/agent/cmd/sysarmor-content-sign
 
 install-agent: build-agent-tools

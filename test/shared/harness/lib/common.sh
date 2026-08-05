@@ -115,9 +115,15 @@ sa_wait_no_glob() {
 }
 
 sa_build_go_bins() {
-  local pkg
+  local app pkg
   for pkg in "$@"; do
-    GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/$pkg" "$REPO_ROOT/cmd/$pkg"
+    case "$pkg" in
+      sysarmor-agent|sysarmor-content-sign) app="agent" ;;
+      sysarmor-gateway|sysarmor-manager|sysarmor-worker) app="manager" ;;
+      sysarmorctl) app="cli" ;;
+      *) echo "unsupported SysArmor binary: $pkg" >&2; return 2 ;;
+    esac
+    GOCACHE="${GOCACHE:-/tmp/sysarmor-go-cache}" CGO_ENABLED=0 go build -o "$BIN/$pkg" "$REPO_ROOT/apps/$app/cmd/$pkg"
   done
 }
 

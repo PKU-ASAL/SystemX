@@ -170,6 +170,19 @@ class MonorepoLayoutContractTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertFalse((self.repo / path).exists(), f"legacy product root remains: {path}")
 
+    def test_build_inputs_do_not_reference_legacy_command_paths(self):
+        build_inputs = (
+            "Makefile",
+            ".github/workflows/release-build.yml",
+            "test/shared/harness/lib/common.sh",
+        )
+        violations = []
+        for path in build_inputs:
+            content = (self.repo / path).read_text()
+            if "./cmd/" in content or "$REPO_ROOT/cmd/" in content:
+                violations.append(path)
+        self.assertEqual([], violations, f"legacy command paths in build inputs: {violations}")
+
 
 if __name__ == "__main__":
     unittest.main()
