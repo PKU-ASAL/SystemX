@@ -161,6 +161,21 @@ class MonorepoLayoutContractTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue((self.repo / path).is_dir(), f"missing {path}")
 
+    def test_manager_store_domain_files(self):
+        root = self.repo / "apps/manager/internal/store"
+        expected = (
+            "models.go",
+            "policy.go",
+            "control.go",
+            "enrollment.go",
+            "artifact.go",
+            "telemetry.go",
+            "persistence.go",
+        )
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertTrue((root / name).is_file(), f"missing store/{name}")
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",
