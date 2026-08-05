@@ -366,15 +366,8 @@ func (s *policyController) reconfigureTelemetryBatcher() {
 }
 
 func (s *localControlServer) ApplyContent(ctx context.Context, req *controlplanev1.ApplyContentRequest) (*controlplanev1.ControlAck, error) {
-	if req == nil {
-		return s.runner.applyContentUpdate(req), nil
-	}
-	release, err := s.runner.beginLocalPolicyMutation(ctx, !req.GetDryRun())
-	if err != nil {
-		return rejectedAck(s.runner.Config, req.GetContext(), "content", err.Error()), nil
-	}
-	defer release()
-	return s.runner.applyContentUpdate(req), nil
+	controller := newContentController(s.runner)
+	return controlAck(controller.ApplyContent(ctx, contentCommand(req, agentcontrol.PolicySourceStandalone))), nil
 }
 
 func (r *AgentRuntime) applyContentUpdate(req *controlplanev1.ApplyContentRequest) *controlplanev1.ControlAck {
@@ -451,7 +444,10 @@ func (s *localControlServer) ListContent(ctx context.Context, req *controlplanev
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return nil, err
 	}
-	records := s.runner.contentStore().List(strings.TrimSpace(req.GetKind()))
+	records, err := newContentController(s.runner).ListContent(ctx, req.GetKind())
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*controlplanev1.ContentRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, contentRecordMessage(record))
@@ -463,7 +459,10 @@ func (s *localControlServer) GetContent(ctx context.Context, req *controlplanev1
 	if err := s.validateContext(req.GetContext()); err != nil {
 		return nil, err
 	}
-	record, ok := s.runner.contentStore().Get(strings.TrimSpace(req.GetRef()))
+	record, ok, err := newContentController(s.runner).GetContent(ctx, req.GetRef())
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, fmt.Errorf("content ref %q not found", req.GetRef())
 	}

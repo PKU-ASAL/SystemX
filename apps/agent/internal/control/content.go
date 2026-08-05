@@ -11,6 +11,7 @@ type ContentCommand struct {
 	Document      string
 	DryRun        bool
 	AllowUnsigned bool
+	Source        PolicySource
 }
 
 type ContentController interface {

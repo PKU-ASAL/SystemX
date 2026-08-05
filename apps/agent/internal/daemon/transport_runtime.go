@@ -176,7 +176,8 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		return nil
 	case "content_update":
 		req := contentUpdateFromControlFrame(frame)
-		ack := runner.applyContentUpdate(req)
+		controller := newContentController(runner)
+		ack := controlAck(controller.ApplyContent(ctx, contentCommand(req, agentcontrol.PolicySourceManaged)))
 		ack = bindControlAckToSession(ack, identity)
 		if err := session.SendControlAck(ctx, ack); err != nil {
 			return err
