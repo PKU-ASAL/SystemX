@@ -1,9 +1,9 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 RUN corepack enable
-COPY web/manager/package.json web/manager/pnpm-lock.yaml ./
+COPY apps/console/package.json apps/console/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY web/manager/ ./
+COPY apps/console/ ./
 RUN umask 077 && printf '%s\n' build-only-not-a-runtime-secret >/tmp/build-secret \
     && printf '%s\n' build-admin >/tmp/build-username \
     && printf '%s\n' build-password >/tmp/build-password

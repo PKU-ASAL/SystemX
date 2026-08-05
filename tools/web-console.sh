@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WEB_DIR="${WEB_DIR:-$ROOT_DIR/web/manager}"
+WEB_DIR="${WEB_DIR:-$ROOT_DIR/apps/console}"
 WEB_HOST="${WEB_HOST:-127.0.0.1}"
 WEB_DEV_PORT="${WEB_DEV_PORT:-5173}"
 WEB_PREVIEW_PORT="${WEB_PREVIEW_PORT:-4173}"

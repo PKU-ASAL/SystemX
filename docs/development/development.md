@@ -35,7 +35,7 @@ make web-build
 | `apps/manager/internal/store/` | PostgreSQL 控制面持久化 |
 | `apps/manager/internal/platform/` | Kafka、Redis、OpenSearch adapter |
 | `deployments/` | 安装器、镜像、Compose、PKI 和运行配置 |
-| `web/manager/` | Manager Console 与认证 BFF |
+| `apps/console/` | Manager Console 与认证 BFF |
 | `configs/` | Policy/rule 元数据示例，不自动加载 |
 | `test/` | Unit、Functional、Detection、Performance、Distribution 验证与 Release 门禁 |
 
@@ -113,7 +113,7 @@ make release-stable VERSION=1.0.0 RC=1
 4. 同步 producer、consumer、兼容性检查和契约测试。
 5. 按[API 参考](../reference/api.md)的 consumer-first 顺序规划发布。
 
-Manager HTTP 字段变化还必须同步 `apps/manager/internal/api/` handler 测试与 `web/manager/lib/api/` typed client。页面组件不拼接 Manager URL 或授权 header。
+Manager HTTP 字段变化还必须同步 `apps/manager/internal/api/` handler 测试与 `apps/console/lib/api/` typed client。页面组件不拼接 Manager URL 或授权 header。
 
 ## 修改 Agent 配置
 
@@ -128,7 +128,7 @@ Agent 配置解析器位于 `apps/agent/internal/config/`，采用严格 key 校
 
 ## Manager Console
 
-`web/manager` 是 Next.js + React 项目，包管理器为 pnpm。推荐从仓库根目录运行：
+`apps/console` 是 Next.js + React 项目，包管理器为 pnpm。推荐从仓库根目录运行：
 
 ```bash
 make web-install

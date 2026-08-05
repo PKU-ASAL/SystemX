@@ -161,6 +161,15 @@ class MonorepoLayoutContractTest(unittest.TestCase):
                 violations.append(str(source.relative_to(self.repo)))
         self.assertEqual([], violations, f"manager imports agent implementation: {violations}")
 
+    def test_console_is_owned_by_apps(self):
+        self.assertTrue((self.repo / "apps/console").is_dir(), "missing apps/console")
+        self.assertFalse((self.repo / "web/manager").exists(), "legacy path remains: web/manager")
+
+    def test_legacy_product_roots_are_absent(self):
+        for path in ("cmd", "api", "internal", "web"):
+            with self.subTest(path=path):
+                self.assertFalse((self.repo / path).exists(), f"legacy product root remains: {path}")
+
 
 if __name__ == "__main__":
     unittest.main()
