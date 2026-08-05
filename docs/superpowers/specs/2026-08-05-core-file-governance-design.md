@@ -114,6 +114,170 @@ SQL 语句、事务范围、锁语义和错误返回保持原样。
 
 CLI 命令、参数、输出 JSON、退出码、默认值和环境变量保持不变。
 
+## 重构后的目标目录
+
+下列目录树是本轮治理完成后的完整目标结构。`*_test.go` 继续与被测职责同 package 放置；本轮以移动生产声明为主，不为了让测试文件与生产文件一一对应而机械拆分现有测试。
+
+```text
+apps/
+├── agent/
+│   ├── cmd/
+│   │   ├── sysarmor-agent/
+│   │   └── sysarmor-content-sign/
+│   └── internal/
+│       ├── config/
+│       ├── content/
+│       ├── daemon/
+│       │   ├── daemon.go                         # Runtime 类型、构造和主生命周期
+│       │   ├── health.go                         # 启动、运行和关闭健康状态
+│       │   ├── runtime_state.go                  # 并发运行状态访问
+│       │   ├── detection_runtime.go              # Detection 构建与应用
+│       │   ├── data_batch.go                     # DataBatch、标签、序列和 sender
+│       │   ├── managed_network.go                # Manager TLS 与 managed network
+│       │   ├── response_runtime.go               # Response 与 Evidence pullback 执行
+│       │   ├── sensor_factory.go                 # Sensor 与重启策略构造
+│       │   ├── local_control.go                  # Unix gRPC server 启动与装配
+│       │   ├── local_control_health.go           # Health、Capability、DebugProfile
+│       │   ├── local_control_policy.go           # Policy 查询与应用
+│       │   ├── local_control_content.go          # Content 事务与查询
+│       │   ├── local_control_watch.go            # Event/Signal 查询、watch 与过滤
+│       │   ├── local_control_status.go           # Store 与 management lifecycle 状态
+│       │   ├── local_control_messages.go         # gRPC message 与 ack 转换
+│       │   ├── local_control_validation.go       # 请求与 telemetry policy 校验
+│       │   ├── control_channel.go
+│       │   ├── control_frame_convert.go
+│       │   ├── endpoint_policy_control.go
+│       │   ├── endpoint_runtime.go
+│       │   ├── enrollment_client.go
+│       │   ├── enrollment_control.go
+│       │   ├── enrollment_coordinator.go
+│       │   ├── enrollment_revocation_client.go
+│       │   ├── export_pipeline.go
+│       │   ├── exporter.go
+│       │   ├── local_runtime.go
+│       │   ├── network_supervisor.go
+│       │   ├── policy_observation.go
+│       │   ├── policy_reconciler.go
+│       │   ├── runtime_identity.go
+│       │   ├── startup_content.go
+│       │   ├── startup_policy.go
+│       │   ├── transport_runtime.go
+│       │   ├── transport_runtime_component.go
+│       │   ├── unenrollment_completion_client.go
+│       │   ├── unenrollment_completion_reporter.go
+│       │   └── *_test.go
+│       ├── endpoint/
+│       ├── localstore/
+│       ├── policy/
+│       ├── sensors/
+│       │   ├── fake/
+│       │   ├── runtime/
+│       │   └── linux/tetragon/
+│       │       ├── backend.go                    # Backend 与核心 Sensor 接口
+│       │       ├── capability.go                 # 能力与 selector 编译报告
+│       │       ├── collection_intent.go          # Scope、intent 与过滤
+│       │       ├── tracing_policy.go             # TracingPolicy 生命周期
+│       │       ├── event_source.go               # CLI/gRPC 事件源
+│       │       ├── managed_process.go            # Bundle 与托管进程生命周期
+│       │       ├── runtime_status.go              # Health、计数器与错误状态
+│       │       ├── adapter.go
+│       │       ├── bundle.go
+│       │       ├── grpc_events.go
+│       │       ├── process_group_linux.go
+│       │       ├── process_group_other.go
+│       │       ├── scope_identity.go
+│       │       ├── supervisor.go
+│       │       └── *_test.go
+│       ├── tamper/
+│       └── telemetry/
+├── manager/
+│   ├── cmd/
+│   │   ├── sysarmor-gateway/
+│   │   ├── sysarmor-manager/
+│   │   └── sysarmor-worker/
+│   ├── integration/
+│   └── internal/
+│       ├── analytics/
+│       ├── api/
+│       ├── auth/
+│       ├── distribution/
+│       ├── gateway/
+│       ├── ingest/
+│       ├── platform/
+│       └── store/
+│           ├── store.go                          # Store 核心状态与生命周期
+│           ├── models.go                         # State 与领域数据结构
+│           ├── policy.go                         # Policy、Assignment 与 Audit
+│           ├── response.go                       # Response 生命周期
+│           ├── control_command.go                # Control Command 生命周期
+│           ├── evidence.go                       # Evidence pullback 生命周期
+│           ├── agent_state.go                    # Agent、Health 与 Session
+│           ├── enrollment.go                     # Enrollment 状态
+│           ├── artifact.go                       # Artifact 与 Channel
+│           ├── certificate.go                    # Agent Certificate 与吊销
+│           ├── telemetry_state.go                # Event、Signal、Incident 与 Metrics
+│           ├── persistence.go                    # 文件 State 导入、导出与原子持久化
+│           ├── keys.go                           # 稳定键、标签和排序 helper
+│           ├── agent.go
+│           ├── backend.go
+│           ├── enrollment_bootstrap.go
+│           ├── enrollment_issue.go
+│           ├── policy_commit.go
+│           ├── unenrollment.go
+│           ├── backend/
+│           ├── migrations/
+│           ├── postgres/
+│           │   ├── snapshot.go                   # Table Store 兼容入口
+│           │   ├── backend.go                    # Backend、超时和事务
+│           │   ├── projection.go                 # 完整 State projection 编排
+│           │   ├── agent_state.go                # Agent、Health 与 Session SQL
+│           │   ├── policy.go                     # Policy、Assignment 与 Audit SQL
+│           │   ├── control.go                    # Response、Command 与 Evidence SQL
+│           │   ├── enrollment.go                 # Enrollment SQL 与签发事务
+│           │   ├── artifact.go                   # Artifact、Channel 与 Certificate SQL
+│           │   ├── metrics.go                    # Metrics 与 Rarity SQL
+│           │   ├── migrate.go
+│           │   ├── unenrollment.go
+│           │   └── *_test.go
+│           └── *_test.go
+├── cli/
+│   └── cmd/sysarmorctl/
+│       ├── main.go                               # 入口、一级路由、usage 与默认地址
+│       ├── local_agent.go                        # 本地 Agent gRPC 客户端
+│       ├── watch.go                              # Event/Signal 流输出
+│       ├── payload.go                            # Policy 与 Content payload
+│       ├── flags.go                              # 参数、超时和请求上下文
+│       ├── manager.go                            # Manager 领域路由
+│       ├── manager_agents.go                     # Agent、Health、Enrollment API
+│       ├── manager_policies.go                   # Policy API
+│       ├── manager_control.go                    # Response 与 Control Command API
+│       ├── manager_artifacts.go                  # Artifact 与 Channel API
+│       ├── http.go                               # HTTP transport 与鉴权 Header
+│       ├── enrollment.go
+│       └── *_test.go
+└── console/                                      # 本轮不调整内部目录
+
+packages/
+├── README.md                                     # 共享包准入与依赖规则
+├── contracts/
+│   ├── controlmodel/
+│   ├── health/
+│   ├── proto/
+│   └── schema/
+├── eventmodel/
+├── policy/
+├── response/
+├── sensor-sdk/
+│   └── contract/
+└── tlsconfig/
+
+test/
+└── contracts/
+    └── test_monorepo_layout.py                   # 目录与 packages 依赖合同
+```
+
+该目录树表达职责归属，不表示所有同级目录都必须拆成独立 package。新文件仍使用其所在目录的原 package，共享同一内部状态；只有真实跨产品稳定契约才允许进入 `packages/`。
+
 ## packages 准入规则
 
 新增 `packages/README.md`，定义以下准入条件：
