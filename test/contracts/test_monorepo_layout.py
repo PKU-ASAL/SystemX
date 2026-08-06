@@ -246,6 +246,10 @@ class MonorepoLayoutContractTest(unittest.TestCase):
                     path = f"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/{target}"
                     self.assertNotIn(path, text, f"{source} imports forbidden {target}")
 
+    def test_agent_local_control_file_is_bounded(self):
+        path = self.repo / "apps/agent/internal/daemon/local_control.go"
+        self.assertLessEqual(len(path.read_text().splitlines()), 500)
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",
