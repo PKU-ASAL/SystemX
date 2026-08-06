@@ -221,18 +221,18 @@ gh pr create --base dev --head refactor/product-monorepo-layout \
   --title "refactor: adopt product monorepo architecture" \
   --body '## 目的/结论
 
-将仓库迁移到 apps/packages/deployments 产品 monorepo 布局，并完成核心大文件与 Agent 控制边界治理。
+将仓库迁移到 apps/packages/deployments 产品 monorepo 布局，完成核心大文件治理，并建立 Agent 第一阶段控制边界。
 
 ## 改动
 
 - 按 Agent、Manager、Console 和 CLI 建立产品边界
 - 建立 packages 准入与自动依赖合同
 - 按领域拆分 Manager Store、Tetragon backend 和 CLI
-- 建立 control、localapi、remoteapi 平级边界并收敛 daemon
+- 建立 control、localapi、remoteapi 平级边界，将 daemon 收敛为第一阶段 composition root
 
 ## 影响与风险
 
-外部 protobuf、持久化 schema、CLI 行为和部署拓扑保持不变。主要风险是目录迁移造成构建路径漂移，以及控制 DTO 转换丢失字段；均由结构合同、race 测试和真实控制链路 E2E 覆盖。
+外部 protobuf、持久化 schema、CLI 行为和部署拓扑保持不变。Policy、Content、Response、Enrollment 的部分具体编排和 Remote session 生命周期仍在 daemon，后续由独立 P1-A 分支迁移。当前主要风险是目录迁移造成构建路径漂移，以及控制 DTO 转换丢失字段；均由结构合同、race 测试和真实控制链路 E2E 覆盖。
 
 ## 验收
 

@@ -2,7 +2,7 @@
 
 ## 目的与结论
 
-本轮治理在 `refactor/product-monorepo-layout` 分支内完成，不创建 PR，不改变 SysArmor 的外部 API、协议、持久化格式、部署拓扑或运行行为。Agent 内部 package 路径按职责调整，但不改变可执行文件名称或用户接口。
+本设计在 `refactor/product-monorepo-layout` 分支内实施，不改变 SysArmor 的外部 API、协议、持久化格式、部署拓扑或运行行为。Agent 内部 package 路径按职责调整，但不改变可执行文件名称或用户接口。
 
 六个超大生产文件按领域职责治理：Manager Store、PostgreSQL Store、Tetragon Backend 和 CLI 在现有 package 内拆分；Agent 控制路径建立明确的 package 边界。拆分优先保持语义内聚，500 行仅作为识别职责混杂的提示，不作为机械门禁。`packages/` 增加准入规则和自动化依赖边界检查；当前没有足够的维护团队，因此不增加 `CODEOWNERS`。
 
@@ -23,7 +23,13 @@ Manager Store 不直接拆成多个子 package，因为它仍共享锁、状态�
 
 未选择按行数切分，因为文件边界必须表达变化原因和领域语义，而不是满足任意行数。
 
-## 文件职责设计
+## 实现状态（2026-08-06）
+
+Manager Store、PostgreSQL Store、Tetragon Backend、CLI 和 Agent 数据链路的结构拆分已经完成。`control`、`localapi`、`remoteapi` 的依赖方向和传输边界也已经建立，但 `control` 当前主要提供传输无关的命令、结果和 controller 接口；Policy、Content、Response、Enrollment 的具体用例编排，以及 Remote session、重试和报告生命周期，仍有部分保留在 `daemon`。
+
+因此，下述 Agent Daemon、Control 和 Remote API 描述是目标职责，不是当前分支已经完全达到的状态。剩余收口由 [EDR Architecture Program Design](2026-08-06-edr-architecture-program-design.md) 的 P1-A 独立分支完成。
+
+## 目标文件职责设计
 
 ### Manager Store
 
@@ -54,13 +60,13 @@ SQL 语句、事务范围、锁语义和错误返回保持原样。
 
 ### Agent Daemon
 
-`apps/agent/internal/daemon` 是 composition root，只保留 `AgentRuntime`、构造、启动、停止、健康聚合和依赖装配。它创建 `control` 控制器、`localapi` Server 和 `remoteapi` Session，不承载 Policy、Content、Response 或 Enrollment 业务规则。
+`apps/agent/internal/daemon` 最终作为 composition root，只保留 `AgentRuntime`、构造、启动、停止、健康聚合和依赖装配。它创建 `control` 控制器、`localapi` Server 和 `remoteapi` Session，不承载 Policy、Content、Response 或 Enrollment 业务规则。
 
 `Run` 的阶段顺序、清理顺序和失败报告路径保持不变。
 
 ### Agent Control
 
-`apps/agent/internal/control` 承载本地和远程入口共享的控制用例：
+`apps/agent/internal/control` 最终承载本地和远程入口共享的控制用例：
 
 - `types.go`：内部命令、结果和能力依赖。
 - `policy.go`：Policy 准备、应用、持久化、激活和回滚。
@@ -84,7 +90,7 @@ Local API 在 managed 模式下仍保持可用；写操作是否允许由 `contr
 
 ### Agent Remote API
 
-`apps/agent/internal/remoteapi` 是 Agent 到 Manager 的 mTLS 长连接适配器：
+`apps/agent/internal/remoteapi` 最终完整承载 Agent 到 Manager 的 mTLS 长连接适配：
 
 - `client.go`：连接、身份和传输配置。
 - `session.go`：长连接、重连、resume 与生命周期。
@@ -131,7 +137,7 @@ CLI 命令、参数、输出 JSON、退出码、默认值和环境变量保持�
 
 ## 重构后的目标目录
 
-下列目录树是本轮治理完成后的目标结构。`*_test.go` 与被测 package 放置，但不为了让测试文件与生产文件一一对应而机械拆分现有测试。
+下列目录树是 P1-A 完成后的跨阶段目标结构，不代表当前分支的实际文件清单。`*_test.go` 与被测 package 放置，但不为了让测试文件与生产文件一一对应而机械拆分现有测试。
 
 ```text
 apps/
