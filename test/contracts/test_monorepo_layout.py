@@ -229,18 +229,19 @@ class MonorepoLayoutContractTest(unittest.TestCase):
         self.assertTrue((root / "localapi").is_dir(), "missing agent localapi")
 
     def test_agent_local_api_uses_narrow_read_services(self):
-        handlers = (self.repo / "apps/agent/internal/localapi/handlers.go").read_text()
+        localapi = self.repo / "apps/agent/internal/localapi"
+        sources = "\n".join(path.read_text() for path in localapi.glob("*.go"))
         for declaration in (
             "type StatusService interface",
-            "type TelemetryService interface",
+            "type TelemetryReader interface",
             "type DebugService interface",
             "Status     StatusService",
-            "Telemetry  TelemetryService",
+            "Telemetry  TelemetryReader",
             "Debug      DebugService",
         ):
             with self.subTest(declaration=declaration):
-                self.assertIn(declaration, handlers)
-        self.assertNotIn("Legacy", handlers)
+                self.assertIn(declaration, sources)
+        self.assertNotIn("Legacy", sources)
 
     def test_agent_remote_api_adapter_directory(self):
         root = self.repo / "apps/agent/internal"
@@ -259,6 +260,14 @@ class MonorepoLayoutContractTest(unittest.TestCase):
                 for target in targets:
                     path = f"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/{target}"
                     self.assertNotIn(path, text, f"{source} imports forbidden {target}")
+
+    def test_agent_daemon_does_not_own_local_api_watch_streams(self):
+        daemon = self.repo / "apps/agent/internal/daemon"
+        violations = []
+        for source in daemon.glob("*.go"):
+            if "AgentControlPlaneService_Watch" in source.read_text():
+                violations.append(str(source.relative_to(self.repo)))
+        self.assertEqual([], violations, f"daemon owns local API watch streams: {violations}")
 
     def test_agent_local_control_file_is_bounded(self):
         path = self.repo / "apps/agent/internal/daemon/local_control.go"

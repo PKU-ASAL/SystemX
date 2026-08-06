@@ -15,19 +15,13 @@ type recordingPolicyController struct {
 
 type recordingReadServices struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
-	statusCalls    int
-	telemetryCalls int
-	debugCalls     int
+	statusCalls int
+	debugCalls  int
 }
 
 func (r *recordingReadServices) Health(context.Context, *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
 	r.statusCalls++
 	return &controlplanev1.HealthResponse{Status: "healthy"}, nil
-}
-
-func (r *recordingReadServices) GetEvent(context.Context, *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error) {
-	r.telemetryCalls++
-	return &controlplanev1.EventGetResponse{}, nil
 }
 
 func (r *recordingReadServices) DebugProfile(context.Context, *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
@@ -61,18 +55,19 @@ func TestHandlerApplyPolicyUsesStandaloneSource(t *testing.T) {
 
 func TestHandlerRoutesReadsToNarrowServices(t *testing.T) {
 	services := &recordingReadServices{}
-	handler := NewHandler(Dependencies{Status: services, Telemetry: services, Debug: services})
+	telemetry := &recordingTelemetryReader{}
+	handler := NewHandler(Dependencies{Status: services, Telemetry: telemetry, Debug: services})
 	if _, err := handler.Health(t.Context(), &controlplanev1.HealthRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := handler.GetEvent(t.Context(), &controlplanev1.GetEventRequest{}); err != nil {
+	if _, err := handler.GetEvent(t.Context(), &controlplanev1.GetEventRequest{EventId: "event-a"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := handler.DebugProfile(t.Context(), &controlplanev1.DebugProfileRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	if services.statusCalls != 1 || services.telemetryCalls != 1 || services.debugCalls != 1 {
-		t.Fatalf("status=%d telemetry=%d debug=%d", services.statusCalls, services.telemetryCalls, services.debugCalls)
+	if services.statusCalls != 1 || telemetry.eventCalls != 1 || services.debugCalls != 1 {
+		t.Fatalf("status=%d telemetry=%d debug=%d", services.statusCalls, telemetry.eventCalls, services.debugCalls)
 	}
 }
 

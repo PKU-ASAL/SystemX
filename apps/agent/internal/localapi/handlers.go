@@ -13,19 +13,13 @@ type StatusService interface {
 	Capability(context.Context, *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error)
 }
 
-type TelemetryService interface {
-	GetEvent(context.Context, *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error)
-	WatchEvents(*controlplanev1.WatchEventsRequest, controlplanev1.AgentControlPlaneService_WatchEventsServer) error
-	WatchSignals(*controlplanev1.WatchSignalsRequest, controlplanev1.AgentControlPlaneService_WatchSignalsServer) error
-}
-
 type DebugService interface {
 	DebugProfile(context.Context, *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error)
 }
 
 type Dependencies struct {
 	Status     StatusService
-	Telemetry  TelemetryService
+	Telemetry  TelemetryReader
 	Debug      DebugService
 	Policy     agentcontrol.PolicyController
 	Content    agentcontrol.ContentController
@@ -116,32 +110,11 @@ func (h *Handler) GetContent(ctx context.Context, req *controlplanev1.GetContent
 	return &controlplanev1.ContentGetResponse{Record: contentRecordMessage(record)}, nil
 }
 
-func (h *Handler) GetEvent(ctx context.Context, req *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error) {
-	if h.deps.Telemetry == nil {
-		return nil, fmt.Errorf("local api telemetry handler is unavailable")
-	}
-	return h.deps.Telemetry.GetEvent(ctx, req)
-}
-
 func (h *Handler) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
 	if h.deps.Debug == nil {
 		return nil, fmt.Errorf("local api debug handler is unavailable")
 	}
 	return h.deps.Debug.DebugProfile(ctx, req)
-}
-
-func (h *Handler) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
-	if h.deps.Telemetry == nil {
-		return fmt.Errorf("local api telemetry handler is unavailable")
-	}
-	return h.deps.Telemetry.WatchEvents(req, stream)
-}
-
-func (h *Handler) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
-	if h.deps.Telemetry == nil {
-		return fmt.Errorf("local api telemetry handler is unavailable")
-	}
-	return h.deps.Telemetry.WatchSignals(req, stream)
 }
 
 func (h *Handler) Enroll(ctx context.Context, req *controlplanev1.EnrollRequest) (*controlplanev1.ControlAck, error) {
