@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,18 +26,14 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/tamper"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry/dataappend"
-	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 	dataplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/dataplane/v1"
 	eventv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/event/v1"
-	incidentv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1"
 	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/eventmodel"
 	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
-	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type localHealthReporter struct{}
@@ -1333,70 +1328,6 @@ func requiredBehaviors(events []agentcontent.RequiredEvent) []string {
 		out = append(out, behavior)
 	}
 	return out
-}
-
-func (r *AgentRuntime) executeResponse(ctx context.Context, cmd responsemodel.Command) responsemodel.Ack {
-	cmd = responsemodel.NormalizeCommand(cmd)
-	if cmd.Mode == "" {
-		cmd.Mode = responsemodel.DefaultMode
-	}
-	if cmd.Mode != "enforce" {
-		return responsemodel.Ack{
-			ResponseID:  cmd.ResponseID,
-			TenantID:    r.Config.Agent.TenantID,
-			AgentID:     r.Config.Agent.ID,
-			Accepted:    true,
-			ObserveOnly: true,
-			Executed:    false,
-			Message:     fmt.Sprintf("observe-only response accepted; would execute action=%s target=%s", cmd.Action, cmd.Target),
-			ObservedAt:  time.Now().UTC(),
-		}
-	}
-	ack, err := r.Sensor.Enforce(ctx, responsemodel.ToEnforcement(cmd))
-	if err != nil {
-		ack = contract.UnsupportedAck(responsemodel.ToEnforcement(cmd), err.Error())
-	}
-	out := responsemodel.FromEnforcementAck(cmd, ack)
-	out.TenantID = r.Config.Agent.TenantID
-	out.AgentID = r.Config.Agent.ID
-	return out
-}
-
-func (r *AgentRuntime) collectEvidencePullback(req controlmodel.EvidencePullbackRequest) controlmodel.EvidencePullbackResult {
-	result := controlmodel.EvidencePullbackResult{
-		RequestID:  req.RequestID,
-		TenantID:   r.Config.Agent.TenantID,
-		AgentID:    r.Config.Agent.ID,
-		OK:         true,
-		Message:    "collected target evidence",
-		ObservedAt: time.Now().UTC(),
-	}
-	if req.Target == "" {
-		result.Message = "collected no target evidence"
-		return result
-	}
-	evidence := &incidentv1.EvidenceSubgraph{
-		Nodes: []*incidentv1.GraphNode{{
-			Id:    req.Target,
-			Kind:  evidenceKindFromTarget(req.Target),
-			Label: req.Target,
-		}},
-	}
-	data, err := protojson.Marshal(evidence)
-	if err != nil {
-		result.OK = false
-		result.Message = fmt.Sprintf("encode evidence: %v", err)
-		return result
-	}
-	result.Evidence = json.RawMessage(data)
-	return result
-}
-
-func evidenceKindFromTarget(target string) string {
-	if idx := strings.Index(target, ":"); idx > 0 {
-		return target[:idx]
-	}
-	return "entity"
 }
 
 func sensorFromConfig(cfg config.Config) (contract.Sensor, error) {

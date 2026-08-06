@@ -197,7 +197,7 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		if err != nil {
 			return err
 		}
-		ack := runner.executeResponse(ctx, cmd)
+		ack := newResponseController(runner).ExecuteResponse(ctx, cmd)
 		if err := session.SendResponseAck(ctx, ack); err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *Cont
 		if err != nil {
 			return err
 		}
-		result := runner.collectEvidencePullback(req)
+		result := newResponseController(runner).CollectEvidence(ctx, req)
 		if err := session.SendEvidenceResult(ctx, result); err != nil {
 			return err
 		}
