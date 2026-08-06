@@ -25,7 +25,10 @@ func (r *recordingReadServices) Health(context.Context, *controlplanev1.HealthRe
 
 func (r *recordingPolicyController) ApplyPolicy(_ context.Context, command agentcontrol.PolicyCommand) agentcontrol.Result {
 	r.command = command
-	return agentcontrol.Result{RequestID: command.Context.RequestID, Status: "applied", PolicyID: "policy-a", Version: 7}
+	return agentcontrol.Result{
+		RequestID: command.Context.RequestID, Status: "applied", PolicyID: "policy-a", Version: 7,
+		Sections: []agentcontrol.SectionResult{{Name: "telemetry", Status: "applied", Details: []string{"section-detail"}}},
+	}
 }
 
 func (r *recordingPolicyController) CurrentPolicy(context.Context) (agentcontrol.PolicySnapshot, error) {
@@ -36,13 +39,22 @@ func TestHandlerApplyPolicyUsesStandaloneSource(t *testing.T) {
 	controller := &recordingPolicyController{}
 	handler := NewHandler(Dependencies{Policy: controller})
 	ack, err := handler.ApplyPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
-		Context:    &controlplanev1.RequestContext{RequestId: "request-a", TenantId: "tenant-a", AgentId: "agent-a"},
-		PolicyType: "endpoint", PolicyJson: `{"policy_id":"policy-a"}`,
+		Context: &controlplanev1.RequestContext{
+			RequestId: "request-a", TenantId: "tenant-a", AgentId: "agent-a",
+			Scope: &controlplanev1.Scope{Type: "container", Selector: "container-a"},
+		},
+		PolicyType: "telemetry", PolicyJson: `{"policy_id":"policy-a"}`,
+		Telemetry: &controlplanev1.TelemetryPolicy{
+			MaxBatchItems: 64, MaxBatchBytes: 65536, FlushInterval: "2s",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if controller.command.Source != agentcontrol.PolicySourceStandalone || controller.command.Context.RequestID != "request-a" || ack.GetPolicyVersion() != 7 {
+	if controller.command.Source != agentcontrol.PolicySourceStandalone || controller.command.Context.RequestID != "request-a" || ack.GetPolicyVersion() != 7 ||
+		controller.command.Context.Scope == nil || controller.command.Context.Scope.Type != "container" || controller.command.Context.Scope.Selector != "container-a" ||
+		controller.command.Telemetry == nil || controller.command.Telemetry.MaxBatchItems != 64 || controller.command.Telemetry.MaxBatchBytes != 65536 || controller.command.Telemetry.FlushInterval != "2s" ||
+		len(ack.GetSections()) != 1 || len(ack.GetSections()[0].GetDetails()) != 1 || ack.GetSections()[0].GetDetails()[0] != "section-detail" {
 		t.Fatalf("command=%+v ack=%+v", controller.command, ack)
 	}
 }

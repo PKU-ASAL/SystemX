@@ -14,7 +14,14 @@ type PolicyCommand struct {
 	PolicyType string
 	Document   string
 	DryRun     bool
+	Telemetry  *TelemetryPolicy
 	Source     PolicySource
+}
+
+type TelemetryPolicy struct {
+	MaxBatchItems uint32
+	MaxBatchBytes uint32
+	FlushInterval string
 }
 
 type PendingPolicy struct {

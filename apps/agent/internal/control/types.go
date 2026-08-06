@@ -1,9 +1,15 @@
 package control
 
+type Scope struct {
+	Type     string
+	Selector string
+}
+
 type RequestContext struct {
 	RequestID string
 	TenantID  string
 	AgentID   string
+	Scope     *Scope
 }
 
 type SectionResult struct {
@@ -11,6 +17,7 @@ type SectionResult struct {
 	Status          string
 	Message         string
 	RequiresRestart bool
+	Details         []string
 	ReportJSON      string
 }
 

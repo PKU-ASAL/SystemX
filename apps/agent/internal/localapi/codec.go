@@ -7,10 +7,17 @@ import (
 )
 
 func policyCommand(req *controlplanev1.ApplyPolicyRequest) agentcontrol.PolicyCommand {
-	return agentcontrol.PolicyCommand{
+	command := agentcontrol.PolicyCommand{
 		Context: controlRequestContext(req.GetContext()), PolicyType: req.GetPolicyType(),
 		Document: req.GetPolicyJson(), DryRun: req.GetDryRun(), Source: agentcontrol.PolicySourceStandalone,
 	}
+	if req.GetTelemetry() != nil {
+		command.Telemetry = &agentcontrol.TelemetryPolicy{
+			MaxBatchItems: req.GetTelemetry().GetMaxBatchItems(), MaxBatchBytes: req.GetTelemetry().GetMaxBatchBytes(),
+			FlushInterval: req.GetTelemetry().GetFlushInterval(),
+		}
+	}
+	return command
 }
 
 func contentCommand(req *controlplanev1.ApplyContentRequest) agentcontrol.ContentCommand {
@@ -32,7 +39,11 @@ func unenrollmentCommand(req *controlplanev1.UnenrollRequest) agentcontrol.Unenr
 }
 
 func controlRequestContext(req *controlplanev1.RequestContext) agentcontrol.RequestContext {
-	return agentcontrol.RequestContext{RequestID: req.GetRequestId(), TenantID: req.GetTenantId(), AgentID: req.GetAgentId()}
+	ctx := agentcontrol.RequestContext{RequestID: req.GetRequestId(), TenantID: req.GetTenantId(), AgentID: req.GetAgentId()}
+	if req.GetScope() != nil {
+		ctx.Scope = &agentcontrol.Scope{Type: req.GetScope().GetType(), Selector: req.GetScope().GetSelector()}
+	}
+	return ctx
 }
 
 func controlAck(result agentcontrol.Result) *controlplanev1.ControlAck {
@@ -44,7 +55,7 @@ func controlAck(result agentcontrol.Result) *controlplanev1.ControlAck {
 	for _, section := range result.Sections {
 		ack.Sections = append(ack.Sections, &controlplanev1.AppliedSection{
 			Name: section.Name, Status: section.Status, Message: section.Message,
-			RequiresRestart: section.RequiresRestart, ReportJson: section.ReportJSON,
+			RequiresRestart: section.RequiresRestart, Details: append([]string(nil), section.Details...), ReportJson: section.ReportJSON,
 		})
 	}
 	return ack

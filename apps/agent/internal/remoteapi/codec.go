@@ -60,11 +60,19 @@ func controlRequestContext(frame *controlplanev1.ControlFrame) agentcontrol.Requ
 	if requestID == "" {
 		requestID = frame.GetRequestId()
 	}
-	return agentcontrol.RequestContext{RequestID: requestID, TenantID: req.GetTenantId(), AgentID: req.GetAgentId()}
+	ctx := agentcontrol.RequestContext{RequestID: requestID, TenantID: req.GetTenantId(), AgentID: req.GetAgentId()}
+	if req.GetScope() != nil {
+		ctx.Scope = &agentcontrol.Scope{Type: req.GetScope().GetType(), Selector: req.GetScope().GetSelector()}
+	}
+	return ctx
 }
 
 func controlRequestContextFromRequest(req *controlplanev1.RequestContext) agentcontrol.RequestContext {
-	return agentcontrol.RequestContext{RequestID: req.GetRequestId(), TenantID: req.GetTenantId(), AgentID: req.GetAgentId()}
+	ctx := agentcontrol.RequestContext{RequestID: req.GetRequestId(), TenantID: req.GetTenantId(), AgentID: req.GetAgentId()}
+	if req.GetScope() != nil {
+		ctx.Scope = &agentcontrol.Scope{Type: req.GetScope().GetType(), Selector: req.GetScope().GetSelector()}
+	}
+	return ctx
 }
 
 func controlAck(result agentcontrol.Result) *controlplanev1.ControlAck {
@@ -76,7 +84,7 @@ func controlAck(result agentcontrol.Result) *controlplanev1.ControlAck {
 	for _, section := range result.Sections {
 		ack.Sections = append(ack.Sections, &controlplanev1.AppliedSection{
 			Name: section.Name, Status: section.Status, Message: section.Message,
-			RequiresRestart: section.RequiresRestart, ReportJson: section.ReportJSON,
+			RequiresRestart: section.RequiresRestart, Details: append([]string(nil), section.Details...), ReportJson: section.ReportJSON,
 		})
 	}
 	return ack

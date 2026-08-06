@@ -45,13 +45,17 @@ func TestDispatcherBuildsManagedPolicyCommand(t *testing.T) {
 	dispatcher := NewDispatcher(Dependencies{Policy: controller}, nil)
 	result, handled, err := dispatcher.Dispatch(t.Context(), Identity{TenantID: "tenant-a", AgentID: "agent-a"}, &controlplanev1.ControlFrame{
 		Type: "policy_update", RequestId: "request-a",
-		Context:      &controlplanev1.RequestContext{TenantId: "tenant-a", AgentId: "agent-a"},
+		Context: &controlplanev1.RequestContext{
+			TenantId: "tenant-a", AgentId: "agent-a",
+			Scope: &controlplanev1.Scope{Type: "container", Selector: "container-a"},
+		},
 		PolicyUpdate: &controlplanev1.CurrentPolicyResponse{RawJson: `{"policy_id":"policy-a"}`},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !handled || controller.command.Source != agentcontrol.PolicySourceManaged || result.Status != "applied" || result.TenantID != "tenant-a" || result.AgentID != "agent-a" {
+	if !handled || controller.command.Source != agentcontrol.PolicySourceManaged || result.Status != "applied" || result.TenantID != "tenant-a" || result.AgentID != "agent-a" ||
+		controller.command.Context.Scope == nil || controller.command.Context.Scope.Type != "container" || controller.command.Context.Scope.Selector != "container-a" {
 		t.Fatalf("command=%+v result=%+v handled=%t", controller.command, result, handled)
 	}
 }
@@ -88,7 +92,7 @@ func TestControlAckPreservesControlResult(t *testing.T) {
 		Details: []string{"detail-a"}, ReportJSON: `{"status":"ok"}`,
 		Sections: []agentcontrol.SectionResult{{
 			Name: "detection", Status: "applied", Message: "ok",
-			RequiresRestart: true, ReportJSON: `{"restarted":true}`,
+			RequiresRestart: true, Details: []string{"section-detail"}, ReportJSON: `{"restarted":true}`,
 		}},
 	}
 	want := &controlplanev1.ControlAck{
@@ -97,7 +101,7 @@ func TestControlAckPreservesControlResult(t *testing.T) {
 		Details: []string{"detail-a"}, ReportJson: `{"status":"ok"}`,
 		Sections: []*controlplanev1.AppliedSection{{
 			Name: "detection", Status: "applied", Message: "ok",
-			RequiresRestart: true, ReportJson: `{"restarted":true}`,
+			RequiresRestart: true, Details: []string{"section-detail"}, ReportJson: `{"restarted":true}`,
 		}},
 	}
 	if got := controlAck(result); !proto.Equal(got, want) {

@@ -91,7 +91,7 @@ func (c *policyController) CurrentPolicy(ctx context.Context) (agentcontrol.Poli
 }
 
 func applyPolicyRequest(command agentcontrol.PolicyCommand) *controlplanev1.ApplyPolicyRequest {
-	return &controlplanev1.ApplyPolicyRequest{
+	req := &controlplanev1.ApplyPolicyRequest{
 		Context: &controlplanev1.RequestContext{
 			RequestId: command.Context.RequestID,
 			TenantId:  command.Context.TenantID,
@@ -101,6 +101,16 @@ func applyPolicyRequest(command agentcontrol.PolicyCommand) *controlplanev1.Appl
 		PolicyJson: command.Document,
 		DryRun:     command.DryRun,
 	}
+	if command.Context.Scope != nil {
+		req.Context.Scope = &controlplanev1.Scope{Type: command.Context.Scope.Type, Selector: command.Context.Scope.Selector}
+	}
+	if command.Telemetry != nil {
+		req.Telemetry = &controlplanev1.TelemetryPolicy{
+			MaxBatchItems: command.Telemetry.MaxBatchItems, MaxBatchBytes: command.Telemetry.MaxBatchBytes,
+			FlushInterval: command.Telemetry.FlushInterval,
+		}
+	}
+	return req
 }
 
 func controlResult(ack *controlplanev1.ControlAck) agentcontrol.Result {
@@ -118,7 +128,7 @@ func controlResult(ack *controlplanev1.ControlAck) agentcontrol.Result {
 		}
 		result.Sections = append(result.Sections, agentcontrol.SectionResult{
 			Name: section.GetName(), Status: section.GetStatus(), Message: section.GetMessage(),
-			RequiresRestart: section.GetRequiresRestart(), ReportJSON: section.GetReportJson(),
+			RequiresRestart: section.GetRequiresRestart(), Details: append([]string(nil), section.GetDetails()...), ReportJSON: section.GetReportJson(),
 		})
 	}
 	return result

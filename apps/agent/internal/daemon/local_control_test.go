@@ -334,7 +334,11 @@ func TestLocalControlApplyTelemetryPolicyContract(t *testing.T) {
 	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
 		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-telemetry"},
 		PolicyType: "telemetry",
-		PolicyJson: `{"max_batch_items":64,"max_batch_bytes":131072,"flush_interval":"2s"}`,
+		Telemetry: &controlplanev1.TelemetryPolicy{
+			MaxBatchItems: 64,
+			MaxBatchBytes: 131072,
+			FlushInterval: "2s",
+		},
 	})
 	if err != nil {
 		t.Fatalf("ApplyPolicy(telemetry) error = %v", err)
@@ -437,7 +441,10 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 		}
 	}
 	ack, err := client.ApplyPolicy(context.Background(), &controlplanev1.ApplyPolicyRequest{
-		Context:    &controlplanev1.RequestContext{TenantId: "default", AgentId: "agent-a", RequestId: "req-collection"},
+		Context: &controlplanev1.RequestContext{
+			TenantId: "default", AgentId: "agent-a", RequestId: "req-collection",
+			Scope: &controlplanev1.Scope{Type: "container", Selector: "container-a"},
+		},
 		PolicyType: "collection",
 		PolicyJson: `{
 			"policy_id":"collection-a",
@@ -468,6 +475,9 @@ func TestLocalControlApplyCollectionPolicyUpdatesSensorRuntime(t *testing.T) {
 		t.Fatalf("ack details = %v", ack.Details)
 	}
 	got := sensor.lastIntent
+	if got.ScopeType != "container" || got.ScopeSelector != "container-a" {
+		t.Fatalf("intent scope = %q/%q", got.ScopeType, got.ScopeSelector)
+	}
 	if len(got.Behaviors) != 2 || got.Behaviors[0] != "network.connect" {
 		t.Fatalf("intent behaviors = %v", got.Behaviors)
 	}
