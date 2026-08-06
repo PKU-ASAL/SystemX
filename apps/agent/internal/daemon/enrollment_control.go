@@ -9,8 +9,8 @@ import (
 )
 
 func (s *localControlServer) Enroll(ctx context.Context, req *controlplanev1.EnrollRequest) (*controlplanev1.ControlAck, error) {
-	result := s.enrollmentCoordinator(ctx).Enroll(ctx, req.GetManagerUrl(), req.GetEnrollmentToken(), req.GetUploadHistory())
-	return enrollmentAck(req.GetContext(), result.Status, result.Message, result.Identity), nil
+	controller := newEnrollmentController(s.enrollmentCoordinator(ctx))
+	return controlAck(controller.Enroll(ctx, enrollmentCommand(req))), nil
 }
 
 func rollbackEnrollmentFailure(paths credentialPaths, created bool, cause error) error {
@@ -21,8 +21,8 @@ func rollbackEnrollmentFailure(paths credentialPaths, created bool, cause error)
 }
 
 func (s *localControlServer) Unenroll(ctx context.Context, req *controlplanev1.UnenrollRequest) (*controlplanev1.ControlAck, error) {
-	result := s.enrollmentCoordinator(ctx).Unenroll(ctx)
-	return enrollmentAck(req.GetContext(), result.Status, result.Message, result.Identity), nil
+	controller := newEnrollmentController(s.enrollmentCoordinator(ctx))
+	return controlAck(controller.Unenroll(ctx, unenrollmentCommand(req))), nil
 }
 
 func removeCredentials(paths credentialPaths) []string {
@@ -36,8 +36,4 @@ func removeCredentials(paths credentialPaths) []string {
 		}
 	}
 	return failures
-}
-
-func enrollmentAck(req *controlplanev1.RequestContext, status, message string, identity runtimeIdentity) *controlplanev1.ControlAck {
-	return &controlplanev1.ControlAck{RequestId: requestID(req), TenantId: identity.TenantID, AgentId: identity.AgentID, Status: status, Message: message}
 }

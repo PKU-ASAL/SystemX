@@ -9,12 +9,33 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/config"
+	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
+
+func TestEnrollmentControllerKeepsManagedAuthorityUntilRevocation(t *testing.T) {
+	store := openEndpointPolicyStore(t)
+	defer store.Close()
+	if err := agentpolicy.SaveEffectiveEndpointPolicy(t.Context(), store, parseEndpointPolicy(t, standaloneEndpointPolicyJSON)); err != nil {
+		t.Fatal(err)
+	}
+	setManagedEnrollmentForTest(t, store)
+	runner := newEndpointPolicyRunner(t, store, &healthOnlySensor{health: contract.Health{Backend: "fake"}})
+	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
+		return "", time.Time{}, context.DeadlineExceeded
+	}
+	controller := newEnrollmentController(newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor)))
+	result := controller.Unenroll(t.Context(), agentcontrol.UnenrollmentCommand{})
+	enrollment, err := store.Enrollment(t.Context())
+	_, source, ok, activeErr := store.ActivePolicy(t.Context(), "endpoint")
+	if result.Status != "pending" || err != nil || enrollment.State != localstore.StateUnenrolling || enrollment.RevocationConfirmed || activeErr != nil || !ok || source != localstore.PolicySourceManaged {
+		t.Fatalf("result=%+v enrollment=%+v source=%q ok=%t errors=%v/%v", result, enrollment, source, ok, err, activeErr)
+	}
+}
 
 func TestUnenrollDoesNotWaitForManagedFlowWhileHoldingPolicyAuthority(t *testing.T) {
 	store := openEndpointPolicyStore(t)
