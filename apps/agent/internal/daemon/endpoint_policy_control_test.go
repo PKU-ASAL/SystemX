@@ -146,7 +146,7 @@ func TestCurrentPolicyReportsPendingManagedPolicy(t *testing.T) {
 	if ack.GetStatus() != "pending" {
 		t.Fatalf("ack=%+v", ack)
 	}
-	server := &localControlServer{runner: runner, runtime: controller.runtime}
+	server := &localStatusService{runner: runner, runtime: controller.runtime}
 	current, err := server.CurrentPolicy(t.Context(), &controlplanev1.CurrentPolicyRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestHealthReportsPendingManagedPolicy(t *testing.T) {
 	if ack.GetStatus() != "pending" {
 		t.Fatalf("ack=%+v", ack)
 	}
-	server := &localControlServer{runner: runner, runtime: controller.runtime}
+	server := &localStatusService{runner: runner, runtime: controller.runtime}
 	health, err := server.Health(t.Context(), &controlplanev1.HealthRequest{})
 	if err != nil {
 		t.Fatal(err)

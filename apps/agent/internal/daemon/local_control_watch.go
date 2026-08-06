@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,8 +14,23 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 )
 
-func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
-	if err := s.validateContext(req.GetContext()); err != nil {
+func (s *localTelemetryService) GetEvent(ctx context.Context, req *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error) {
+	if err := s.runner.validateControlContext(req.GetContext()); err != nil {
+		return nil, err
+	}
+	eventID := strings.TrimSpace(req.GetEventId())
+	if eventID == "" {
+		return nil, fmt.Errorf("event id is required")
+	}
+	frame, ok := s.eventFrameByID(eventID)
+	if !ok {
+		return nil, fmt.Errorf("event %q not found in telemetry buffer", eventID)
+	}
+	return &controlplanev1.EventGetResponse{Frame: frame}, nil
+}
+
+func (s *localTelemetryService) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
+	if err := s.runner.validateControlContext(req.GetContext()); err != nil {
 		return err
 	}
 	sent := uint32(0)
@@ -78,8 +94,8 @@ func (s *localControlServer) WatchEvents(req *controlplanev1.WatchEventsRequest,
 	}
 }
 
-func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
-	if err := s.validateContext(req.GetContext()); err != nil {
+func (s *localTelemetryService) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
+	if err := s.runner.validateControlContext(req.GetContext()); err != nil {
 		return err
 	}
 	sent := uint32(0)
@@ -143,7 +159,7 @@ func (s *localControlServer) WatchSignals(req *controlplanev1.WatchSignalsReques
 	}
 }
 
-func (s *localControlServer) eventFrameByID(eventID string) (*controlplanev1.EventFrame, bool) {
+func (s *localTelemetryService) eventFrameByID(eventID string) (*controlplanev1.EventFrame, bool) {
 	if s.runner.localStore != nil {
 		frames, err := s.runner.localStore.QueryEvents(context.Background(), localstore.EventQuery{Limit: 1000})
 		if err == nil {
@@ -163,7 +179,7 @@ func (s *localControlServer) eventFrameByID(eventID string) (*controlplanev1.Eve
 	return nil, false
 }
 
-func (s *localControlServer) recentEvents(req *controlplanev1.WatchEventsRequest) ([]*dataplanev1.EventFrame, error) {
+func (s *localTelemetryService) recentEvents(req *controlplanev1.WatchEventsRequest) ([]*dataplanev1.EventFrame, error) {
 	if s.runner.localStore == nil {
 		return s.bus.SnapshotEvents(), nil
 	}
@@ -174,7 +190,7 @@ func (s *localControlServer) recentEvents(req *controlplanev1.WatchEventsRequest
 	return s.runner.localStore.QueryEvents(context.Background(), localstore.EventQuery{Behavior: req.GetBehavior(), AfterSequence: req.GetFilter().GetAfterSequence(), Limit: limit})
 }
 
-func (s *localControlServer) recentSignals(req *controlplanev1.WatchSignalsRequest) ([]*dataplanev1.SignalFrame, error) {
+func (s *localTelemetryService) recentSignals(req *controlplanev1.WatchSignalsRequest) ([]*dataplanev1.SignalFrame, error) {
 	if s.runner.localStore == nil {
 		return s.bus.SnapshotSignals(), nil
 	}
@@ -185,7 +201,7 @@ func (s *localControlServer) recentSignals(req *controlplanev1.WatchSignalsReque
 	return s.runner.localStore.QuerySignals(context.Background(), localstore.SignalQuery{RuleID: req.GetRuleId(), Limit: limit})
 }
 
-func (s *localControlServer) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {
+func (s *localTelemetryService) watchAfterBatchID(filter *controlplanev1.WatchFilter, includeRecent bool) string {
 	return ""
 }
 

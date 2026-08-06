@@ -228,6 +228,20 @@ class MonorepoLayoutContractTest(unittest.TestCase):
         root = self.repo / "apps/agent/internal"
         self.assertTrue((root / "localapi").is_dir(), "missing agent localapi")
 
+    def test_agent_local_api_uses_narrow_read_services(self):
+        handlers = (self.repo / "apps/agent/internal/localapi/handlers.go").read_text()
+        for declaration in (
+            "type StatusService interface",
+            "type TelemetryService interface",
+            "type DebugService interface",
+            "Status     StatusService",
+            "Telemetry  TelemetryService",
+            "Debug      DebugService",
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertIn(declaration, handlers)
+        self.assertNotIn("Legacy", handlers)
+
     def test_agent_remote_api_adapter_directory(self):
         root = self.repo / "apps/agent/internal"
         self.assertTrue((root / "remoteapi").is_dir(), "missing agent remoteapi")

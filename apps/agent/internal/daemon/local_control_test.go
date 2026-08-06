@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/config"
+	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/event/normalize"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
@@ -128,7 +129,7 @@ func TestHealthReportsUnenrollmentLifecycle(t *testing.T) {
 		Backend: "fake", Installed: true, Running: true, PolicyLoaded: true,
 	}})
 	bus, batcher, sender := newTestTelemetry(t, runner)
-	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor), bus: bus, batcher: batcher, sender: sender, startedAt: time.Now()}
+	server := &localStatusService{runner: runner, runtime: sensorruntime.New(runner.Sensor), bus: bus, batcher: batcher, sender: sender, startedAt: time.Now()}
 
 	response, err := server.Health(t.Context(), &controlplanev1.HealthRequest{})
 	if err != nil {
@@ -254,16 +255,13 @@ func TestManagedAgentRejectsLocalEndpointPolicyMutation(t *testing.T) {
 		capability: contract.Capability{Backend: "fake", SupportsExec: true}, localStore: store,
 	}
 	installTestDetection(t, runner)
-	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor)}
-	ack, err := server.ApplyPolicy(t.Context(), &controlplanev1.ApplyPolicyRequest{
-		PolicyType: "endpoint",
-		PolicyJson: `{"policy_id":"local-policy","version":2,"collection":{"behaviors":["process.exec"]},"detection":{"policy_id":"local-detection","version":1,"rulesets":[{"ref":"ruleset:cep-endpoint","enabled":true}]},"telemetry":{"max_batch_items":64,"max_batch_bytes":65536,"flush_interval":"1s"},"response":{}}`,
+	controller := newPolicyController(runner, sensorruntime.New(runner.Sensor), nil)
+	result := controller.ApplyPolicy(t.Context(), agentcontrol.PolicyCommand{
+		PolicyType: "endpoint", Source: agentcontrol.PolicySourceStandalone,
+		Document: `{"policy_id":"local-policy","version":2,"collection":{"behaviors":["process.exec"]},"detection":{"policy_id":"local-detection","version":1,"rulesets":[{"ref":"ruleset:cep-endpoint","enabled":true}]},"telemetry":{"max_batch_items":64,"max_batch_bytes":65536,"flush_interval":"1s"},"response":{}}`,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "managed policy authority") {
-		t.Fatalf("ack=%+v", ack)
+	if result.Status != "rejected" || !strings.Contains(result.Message, "managed policy authority") {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
@@ -275,13 +273,11 @@ func TestManagedAgentRejectsLocalContentMutation(t *testing.T) {
 	defer store.Close()
 	setManagedEnrollmentForTest(t, store)
 	runner := &AgentRuntime{Config: config.Config{Agent: config.AgentConfig{ID: "agent-a", TenantID: "tenant-a"}}, localStore: store}
-	server := &localControlServer{runner: runner}
-	ack, err := server.ApplyContent(t.Context(), &controlplanev1.ApplyContentRequest{ContentJson: "{}", AllowUnsigned: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "managed policy authority") {
-		t.Fatalf("ack=%+v", ack)
+	result := newContentController(runner).ApplyContent(t.Context(), agentcontrol.ContentCommand{
+		Document: "{}", AllowUnsigned: true, Source: agentcontrol.PolicySourceStandalone,
+	})
+	if result.Status != "rejected" || !strings.Contains(result.Message, "managed policy authority") {
+		t.Fatalf("result=%+v", result)
 	}
 }
 

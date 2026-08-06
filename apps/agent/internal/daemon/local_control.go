@@ -8,24 +8,26 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localapi"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/telemetry"
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 )
 
 func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, source any, rest ...any) (func(), error) {
 	coordinator := r.configureEnrollmentCoordinator(ctx, rt)
 	bus, batcher, sender, startedAt := r.localControlTelemetryArgs(source, rest...)
 	socketPath := r.Config.Control.SocketPath
-	legacy := &localControlServer{
-		runner:     r,
-		enrollment: coordinator,
-		runtime:    rt,
-		bus:        bus,
-		batcher:    batcher,
-		sender:     sender,
-		startedAt:  startedAt,
+	statusService := &localStatusService{
+		runner:    r,
+		runtime:   rt,
+		bus:       bus,
+		batcher:   batcher,
+		sender:    sender,
+		startedAt: startedAt,
 	}
+	telemetryService := &localTelemetryService{runner: r, bus: bus}
+	debugService := &localDebugService{runner: r}
 	handler := localapi.NewHandler(localapi.Dependencies{
-		Legacy:     legacy,
+		Status:     statusService,
+		Telemetry:  telemetryService,
+		Debug:      debugService,
 		Policy:     newPolicyController(r, rt, batcher),
 		Content:    newContentController(r),
 		Enrollment: newEnrollmentController(coordinator),
@@ -69,16 +71,23 @@ func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*tele
 	return bus, batcher, sender, startedAt
 }
 
-type localControlServer struct {
-	controlplanev1.UnimplementedAgentControlPlaneServiceServer
-	runner     *AgentRuntime
-	enrollment *enrollmentCoordinator
-	runtime    sensorruntime.Runtime
-	bus        *telemetry.Bus
-	batcher    *telemetry.Batcher
-	sender     *telemetry.Sender
-	startedAt  time.Time
-	profileMu  sync.Mutex
+type localStatusService struct {
+	runner    *AgentRuntime
+	runtime   sensorruntime.Runtime
+	bus       *telemetry.Bus
+	batcher   *telemetry.Batcher
+	sender    *telemetry.Sender
+	startedAt time.Time
+}
+
+type localTelemetryService struct {
+	runner *AgentRuntime
+	bus    *telemetry.Bus
+}
+
+type localDebugService struct {
+	runner    *AgentRuntime
+	profileMu sync.Mutex
 }
 
 func (r *AgentRuntime) configureEnrollmentCoordinator(ctx context.Context, rt sensorruntime.Runtime) *enrollmentCoordinator {
@@ -88,11 +97,4 @@ func (r *AgentRuntime) configureEnrollmentCoordinator(ctx context.Context, rt se
 		r.enrollmentCoordinator = newEnrollmentCoordinator(ctx, r, rt)
 	}
 	return r.enrollmentCoordinator
-}
-
-func (s *localControlServer) enrollmentCoordinator(ctx context.Context) *enrollmentCoordinator {
-	if s.enrollment != nil {
-		return s.enrollment
-	}
-	return s.runner.configureEnrollmentCoordinator(ctx, s.runtime)
 }

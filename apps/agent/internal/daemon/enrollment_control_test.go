@@ -13,7 +13,6 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
 )
 
@@ -60,16 +59,15 @@ func TestUnenrollDoesNotWaitForManagedFlowWhileHoldingPolicyAuthority(t *testing
 	})
 	runner.network.ApplyEnrollment(localstore.Enrollment{State: localstore.StateManaged, AgentID: "agent-a"})
 	<-flowStarted
-	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor)}
-	done := make(chan *controlplanev1.ControlAck, 1)
+	controller := newEnrollmentController(newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor)))
+	done := make(chan agentcontrol.Result, 1)
 	go func() {
-		ack, _ := server.Unenroll(t.Context(), &controlplanev1.UnenrollRequest{})
-		done <- ack
+		done <- controller.Unenroll(t.Context(), agentcontrol.UnenrollmentCommand{})
 	}()
 	select {
-	case ack := <-done:
-		if ack.GetStatus() != "applied" {
-			t.Fatalf("Unenroll() ack = %+v", ack)
+	case result := <-done:
+		if result.Status != "applied" {
+			t.Fatalf("Unenroll() result = %+v", result)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Unenroll blocked while managed flow waited for policy authority")
@@ -87,12 +85,11 @@ func TestUnenrollRemainsManagedWhenManagerRevocationIsUnconfirmed(t *testing.T) 
 	runner.revokeEnrollment = func(context.Context, localstore.Enrollment, string) (string, time.Time, error) {
 		return "", time.Time{}, context.DeadlineExceeded
 	}
-	server := &localControlServer{runner: runner, runtime: sensorruntime.New(runner.Sensor)}
-
-	ack, err := server.Unenroll(t.Context(), &controlplanev1.UnenrollRequest{})
+	controller := newEnrollmentController(newEnrollmentCoordinator(t.Context(), runner, sensorruntime.New(runner.Sensor)))
+	result := controller.Unenroll(t.Context(), agentcontrol.UnenrollmentCommand{})
 	got, readErr := store.Enrollment(t.Context())
-	if err != nil || ack.GetStatus() != "pending" || readErr != nil || got.State != localstore.StateUnenrolling || got.RevocationConfirmed {
-		t.Fatalf("ack=%+v err=%v enrollment=%+v readErr=%v", ack, err, got, readErr)
+	if result.Status != "pending" || readErr != nil || got.State != localstore.StateUnenrolling || got.RevocationConfirmed {
+		t.Fatalf("result=%+v enrollment=%+v readErr=%v", result, got, readErr)
 	}
 	_, source, ok, activeErr := store.ActivePolicy(t.Context(), "endpoint")
 	if activeErr != nil || !ok || source != localstore.PolicySourceManaged {
@@ -110,10 +107,11 @@ func TestEnrollReturnsPendingWithoutRequestingAnotherCertificate(t *testing.T) {
 	if err := store.SetEnrolling(t.Context(), enrollment); err != nil {
 		t.Fatal(err)
 	}
-	server := &localControlServer{runner: &AgentRuntime{Config: config.Config{Local: config.LocalConfig{StatePath: t.TempDir()}}, localStore: store}}
-	ack, err := server.Enroll(t.Context(), &controlplanev1.EnrollRequest{ManagerUrl: "://invalid"})
-	if err != nil || ack.GetStatus() != "pending" || !strings.Contains(ack.GetMessage(), "already waiting") {
-		t.Fatalf("ack=%+v err=%v", ack, err)
+	runner := &AgentRuntime{Config: config.Config{Local: config.LocalConfig{StatePath: t.TempDir()}}, localStore: store}
+	controller := newEnrollmentController(newEnrollmentCoordinator(t.Context(), runner, nil))
+	result := controller.Enroll(t.Context(), agentcontrol.EnrollmentCommand{ManagerURL: "://invalid"})
+	if result.Status != "pending" || !strings.Contains(result.Message, "already waiting") {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
@@ -124,10 +122,11 @@ func TestEnrollRejectsManagedAgentWithoutRequestingAnotherCertificate(t *testing
 	}
 	defer store.Close()
 	setManagedEnrollmentForTest(t, store)
-	server := &localControlServer{runner: &AgentRuntime{Config: config.Config{Local: config.LocalConfig{StatePath: t.TempDir()}}, localStore: store}}
-	ack, err := server.Enroll(t.Context(), &controlplanev1.EnrollRequest{ManagerUrl: "://invalid"})
-	if err != nil || ack.GetStatus() != "rejected" || !strings.Contains(ack.GetMessage(), "already managed") {
-		t.Fatalf("ack=%+v err=%v", ack, err)
+	runner := &AgentRuntime{Config: config.Config{Local: config.LocalConfig{StatePath: t.TempDir()}}, localStore: store}
+	controller := newEnrollmentController(newEnrollmentCoordinator(t.Context(), runner, nil))
+	result := controller.Enroll(t.Context(), agentcontrol.EnrollmentCommand{ManagerURL: "://invalid"})
+	if result.Status != "rejected" || !strings.Contains(result.Message, "already managed") {
+		t.Fatalf("result=%+v", result)
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
-func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
+func (s *localStatusService) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
 	health, err := s.runner.collectHealth(ctx, s.runtime, s.bus, s.batcher, s.sender, s.startedAt)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func (s *localControlServer) Health(ctx context.Context, req *controlplanev1.Hea
 	return response, nil
 }
 
-func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
+func (s *localStatusService) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
 	cfg := s.runner.Config
 	return &controlplanev1.CapabilityResponse{
 		AgentId:  cfg.Agent.ID,
@@ -58,8 +58,8 @@ func (s *localControlServer) Capability(ctx context.Context, req *controlplanev1
 	}, nil
 }
 
-func (s *localControlServer) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
-	if err := s.validateContext(req.GetContext()); err != nil {
+func (s *localDebugService) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
+	if err := s.runner.validateControlContext(req.GetContext()); err != nil {
 		return nil, err
 	}
 	profileType := strings.TrimSpace(req.GetProfileType())
@@ -156,7 +156,7 @@ func runtimeStatsPayload(observedAt time.Time, label string) map[string]any {
 	}
 }
 
-func (s *localControlServer) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
+func (s *localStatusService) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
 	policy := policymodel.Normalize(s.runner.activePolicy())
 	document := any(policy)
 	if endpoint := s.runner.currentEndpointPolicy(); endpoint.PolicyID != "" {

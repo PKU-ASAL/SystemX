@@ -95,20 +95,6 @@ func applyPolicyRequest(command agentcontrol.PolicyCommand) *controlplanev1.Appl
 	}
 }
 
-func policyCommand(req *controlplanev1.ApplyPolicyRequest, source agentcontrol.PolicySource) agentcontrol.PolicyCommand {
-	return agentcontrol.PolicyCommand{
-		Context: agentcontrol.RequestContext{
-			RequestID: req.GetContext().GetRequestId(),
-			TenantID:  req.GetContext().GetTenantId(),
-			AgentID:   req.GetContext().GetAgentId(),
-		},
-		PolicyType: req.GetPolicyType(),
-		Document:   req.GetPolicyJson(),
-		DryRun:     req.GetDryRun(),
-		Source:     source,
-	}
-}
-
 func controlResult(ack *controlplanev1.ControlAck) agentcontrol.Result {
 	if ack == nil {
 		return agentcontrol.Result{Status: "rejected", Message: "control result is nil"}
@@ -128,19 +114,4 @@ func controlResult(ack *controlplanev1.ControlAck) agentcontrol.Result {
 		})
 	}
 	return result
-}
-
-func controlAck(result agentcontrol.Result) *controlplanev1.ControlAck {
-	ack := &controlplanev1.ControlAck{
-		RequestId: result.RequestID, TenantId: result.TenantID, AgentId: result.AgentID,
-		Status: result.Status, Message: result.Message, PolicyId: result.PolicyID,
-		PolicyVersion: result.Version, Details: append([]string(nil), result.Details...), ReportJson: result.ReportJSON,
-	}
-	for _, section := range result.Sections {
-		ack.Sections = append(ack.Sections, &controlplanev1.AppliedSection{
-			Name: section.Name, Status: section.Status, Message: section.Message,
-			RequiresRestart: section.RequiresRestart, ReportJson: section.ReportJSON,
-		})
-	}
-	return ack
 }

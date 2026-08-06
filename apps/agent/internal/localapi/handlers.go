@@ -8,8 +8,26 @@ import (
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 )
 
+type StatusService interface {
+	Health(context.Context, *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error)
+	Capability(context.Context, *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error)
+	CurrentPolicy(context.Context, *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error)
+}
+
+type TelemetryService interface {
+	GetEvent(context.Context, *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error)
+	WatchEvents(*controlplanev1.WatchEventsRequest, controlplanev1.AgentControlPlaneService_WatchEventsServer) error
+	WatchSignals(*controlplanev1.WatchSignalsRequest, controlplanev1.AgentControlPlaneService_WatchSignalsServer) error
+}
+
+type DebugService interface {
+	DebugProfile(context.Context, *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error)
+}
+
 type Dependencies struct {
-	Legacy     controlplanev1.AgentControlPlaneServiceServer
+	Status     StatusService
+	Telemetry  TelemetryService
+	Debug      DebugService
 	Policy     agentcontrol.PolicyController
 	Content    agentcontrol.ContentController
 	Enrollment agentcontrol.EnrollmentController
@@ -26,24 +44,24 @@ func NewHandler(deps Dependencies) *Handler {
 }
 
 func (h *Handler) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
-	if h.deps.Legacy == nil {
+	if h.deps.Status == nil {
 		return nil, fmt.Errorf("local api status handler is unavailable")
 	}
-	return h.deps.Legacy.Health(ctx, req)
+	return h.deps.Status.Health(ctx, req)
 }
 
 func (h *Handler) Capability(ctx context.Context, req *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error) {
-	if h.deps.Legacy == nil {
+	if h.deps.Status == nil {
 		return nil, fmt.Errorf("local api status handler is unavailable")
 	}
-	return h.deps.Legacy.Capability(ctx, req)
+	return h.deps.Status.Capability(ctx, req)
 }
 
 func (h *Handler) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
-	if h.deps.Legacy == nil {
+	if h.deps.Status == nil {
 		return nil, fmt.Errorf("local api status handler is unavailable")
 	}
-	return h.deps.Legacy.CurrentPolicy(ctx, req)
+	return h.deps.Status.CurrentPolicy(ctx, req)
 }
 
 func (h *Handler) ApplyPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) (*controlplanev1.ControlAck, error) {
@@ -96,31 +114,31 @@ func (h *Handler) GetContent(ctx context.Context, req *controlplanev1.GetContent
 }
 
 func (h *Handler) GetEvent(ctx context.Context, req *controlplanev1.GetEventRequest) (*controlplanev1.EventGetResponse, error) {
-	if h.deps.Legacy == nil {
+	if h.deps.Telemetry == nil {
 		return nil, fmt.Errorf("local api telemetry handler is unavailable")
 	}
-	return h.deps.Legacy.GetEvent(ctx, req)
+	return h.deps.Telemetry.GetEvent(ctx, req)
 }
 
 func (h *Handler) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
-	if h.deps.Legacy == nil {
+	if h.deps.Debug == nil {
 		return nil, fmt.Errorf("local api debug handler is unavailable")
 	}
-	return h.deps.Legacy.DebugProfile(ctx, req)
+	return h.deps.Debug.DebugProfile(ctx, req)
 }
 
 func (h *Handler) WatchEvents(req *controlplanev1.WatchEventsRequest, stream controlplanev1.AgentControlPlaneService_WatchEventsServer) error {
-	if h.deps.Legacy == nil {
+	if h.deps.Telemetry == nil {
 		return fmt.Errorf("local api telemetry handler is unavailable")
 	}
-	return h.deps.Legacy.WatchEvents(req, stream)
+	return h.deps.Telemetry.WatchEvents(req, stream)
 }
 
 func (h *Handler) WatchSignals(req *controlplanev1.WatchSignalsRequest, stream controlplanev1.AgentControlPlaneService_WatchSignalsServer) error {
-	if h.deps.Legacy == nil {
+	if h.deps.Telemetry == nil {
 		return fmt.Errorf("local api telemetry handler is unavailable")
 	}
-	return h.deps.Legacy.WatchSignals(req, stream)
+	return h.deps.Telemetry.WatchSignals(req, stream)
 }
 
 func (h *Handler) Enroll(ctx context.Context, req *controlplanev1.EnrollRequest) (*controlplanev1.ControlAck, error) {

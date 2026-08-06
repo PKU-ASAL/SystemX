@@ -7,10 +7,6 @@ import (
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 )
 
-func (s *localControlServer) validateContext(ctx *controlplanev1.RequestContext) error {
-	return s.runner.validateControlContext(ctx)
-}
-
 func (r *AgentRuntime) validateControlContext(ctx *controlplanev1.RequestContext) error {
 	if ctx == nil {
 		return nil

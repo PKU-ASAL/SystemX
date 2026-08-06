@@ -4,7 +4,6 @@ import (
 	"context"
 
 	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
-	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 )
 
 type enrollmentController struct {
@@ -32,26 +31,5 @@ func enrollmentControlResult(request agentcontrol.RequestContext, result enrollm
 		AgentID:   result.Identity.AgentID,
 		Status:    result.Status,
 		Message:   result.Message,
-	}
-}
-
-func enrollmentCommand(req *controlplanev1.EnrollRequest) agentcontrol.EnrollmentCommand {
-	return agentcontrol.EnrollmentCommand{
-		Context:       controlRequestContext(req.GetContext()),
-		ManagerURL:    req.GetManagerUrl(),
-		Token:         req.GetEnrollmentToken(),
-		UploadHistory: req.GetUploadHistory(),
-	}
-}
-
-func unenrollmentCommand(req *controlplanev1.UnenrollRequest) agentcontrol.UnenrollmentCommand {
-	return agentcontrol.UnenrollmentCommand{Context: controlRequestContext(req.GetContext())}
-}
-
-func controlRequestContext(req *controlplanev1.RequestContext) agentcontrol.RequestContext {
-	return agentcontrol.RequestContext{
-		RequestID: req.GetRequestId(),
-		TenantID:  req.GetTenantId(),
-		AgentID:   req.GetAgentId(),
 	}
 }

@@ -50,15 +50,3 @@ func applyContentRequest(command agentcontrol.ContentCommand) *controlplanev1.Ap
 		AllowUnsigned: command.AllowUnsigned,
 	}
 }
-
-func contentCommand(req *controlplanev1.ApplyContentRequest, source agentcontrol.PolicySource) agentcontrol.ContentCommand {
-	return agentcontrol.ContentCommand{
-		Context: agentcontrol.RequestContext{
-			RequestID: req.GetContext().GetRequestId(),
-			TenantID:  req.GetContext().GetTenantId(),
-			AgentID:   req.GetContext().GetAgentId(),
-		},
-		Document: req.GetContentJson(), DryRun: req.GetDryRun(),
-		AllowUnsigned: req.GetAllowUnsigned(), Source: source,
-	}
-}
