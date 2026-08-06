@@ -1,6 +1,6 @@
 # API 与协议参考
 
-本文说明 SysArmor 当前 API 边界、端点分类和版本演进规则。精确请求/响应字段以 `internal/manager/api/` 的 handler 与测试、`api/proto/` 的 protobuf 为准。
+本文说明 SysArmor 当前 API 边界、端点分类和版本演进规则。精确请求/响应字段以 `apps/manager/internal/api/` 的 handler 与测试、`packages/contracts/proto/` 的 protobuf 为准。
 
 ## 信任边界
 
@@ -75,7 +75,7 @@ Manager 默认监听容器端口 `9443`，本地 Compose 映射为 `19443`。除
 
 ## BFF 约定
 
-浏览器调用 `/api/manager/<path>`，Next.js route 校验 session 后转发到 Manager `/api/v1/<path>`。BFF 必须保留 Manager 的状态码和错误正文。UI 只能通过 `web/manager/lib/api/` 中的 typed client 调用，不在页面组件内拼 URL 或授权 header。
+浏览器调用 `/api/manager/<path>`，Next.js route 校验 session 后转发到 Manager `/api/v1/<path>`。BFF 必须保留 Manager 的状态码和错误正文。UI 只能通过 `apps/console/lib/api/` 中的 typed client 调用，不在页面组件内拼 URL 或授权 header。
 
 ## gRPC 服务
 

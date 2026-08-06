@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package sysarmor.incident.v1;
+
+option go_package = "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/incident/v1;incidentv1";
+
+import "packages/contracts/proto/signal/v1/signal.proto";
+
+message GraphNode {
+  string id = 1;
+  string kind = 2;
+  string label = 3;
+  repeated sysarmor.signal.v1.EntityRef entities = 4;
+}
+
+message GraphEdge {
+  string id = 1;
+  string from = 2;
+  string to = 3;
+  string kind = 4;
+}
+
+message EvidenceSubgraph {
+  repeated GraphNode nodes = 1;
+  repeated GraphEdge edges = 2;
+}
+
+message ConvergeTrace {
+  string method = 1;
+  repeated string seed_ids = 2;
+  repeated string path_ids = 3;
+  float score = 4;
+  repeated string controls = 5;
+}
+
+message Incident {
+  string id = 1;
+  string summary = 2;
+  uint32 severity = 3;
+  repeated string mitre = 4;
+  repeated string lineage_ids = 5;
+  repeated string terminals = 6;
+  EvidenceSubgraph evidence = 7;
+  ConvergeTrace converge = 8;
+  repeated sysarmor.signal.v1.Signal contributing_signals = 9;
+  map<string, string> labels = 10;
+  string tenant_id = 11;
+  string correlation_key = 12;
+  string analysis_version = 13;
+  string first_observed_at = 14;
+  string last_observed_at = 15;
+}
