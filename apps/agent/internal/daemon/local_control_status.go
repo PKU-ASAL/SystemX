@@ -1,13 +1,7 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"runtime"
-	"runtime/pprof"
-	"strings"
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
@@ -55,104 +49,6 @@ func (s *localStatusService) Capability(ctx context.Context, req *controlplanev1
 		},
 		CollectionBehaviors: collectionBehaviorMessages(s.runner.runtimeCapability().Collection),
 	}, nil
-}
-
-func (s *localDebugService) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
-	if err := s.runner.validateControlContext(req.GetContext()); err != nil {
-		return nil, err
-	}
-	profileType := strings.TrimSpace(req.GetProfileType())
-	if profileType == "" {
-		profileType = "cpu"
-	}
-	switch profileType {
-	case "cpu", "heap", "allocs", "goroutine", "threadcreate", "block", "mutex", "runtime":
-	default:
-		return nil, fmt.Errorf("unsupported debug profile type %q", profileType)
-	}
-	seconds := req.GetSeconds()
-	if seconds == 0 {
-		seconds = 10
-	}
-	if seconds > 300 {
-		return nil, fmt.Errorf("debug profile seconds must be <= 300")
-	}
-	if !s.profileMu.TryLock() {
-		return nil, fmt.Errorf("debug profile already running")
-	}
-	defer s.profileMu.Unlock()
-
-	var buf bytes.Buffer
-	started := time.Now().UTC()
-	switch profileType {
-	case "cpu":
-		if err := pprof.StartCPUProfile(&buf); err != nil {
-			return nil, fmt.Errorf("start cpu profile: %w", err)
-		}
-		timer := time.NewTimer(time.Duration(seconds) * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			pprof.StopCPUProfile()
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
-		pprof.StopCPUProfile()
-	case "runtime":
-		stats := runtimeStatsPayload(started, strings.TrimSpace(req.GetLabel()))
-		if err := json.NewEncoder(&buf).Encode(stats); err != nil {
-			return nil, fmt.Errorf("encode runtime stats: %w", err)
-		}
-	default:
-		runtime.GC()
-		prof := pprof.Lookup(profileType)
-		if prof == nil {
-			return nil, fmt.Errorf("profile %q unavailable", profileType)
-		}
-		if err := prof.WriteTo(&buf, 0); err != nil {
-			return nil, fmt.Errorf("write %s profile: %w", profileType, err)
-		}
-	}
-	finished := time.Now().UTC()
-	return &controlplanev1.DebugProfileResponse{
-		ProfileType: profileType,
-		Seconds:     seconds,
-		StartedAt:   started.Format(time.RFC3339Nano),
-		FinishedAt:  finished.Format(time.RFC3339Nano),
-		Profile:     buf.Bytes(),
-		Label:       strings.TrimSpace(req.GetLabel()),
-	}, nil
-}
-
-func runtimeStatsPayload(observedAt time.Time, label string) map[string]any {
-	var mem runtime.MemStats
-	runtime.ReadMemStats(&mem)
-	return map[string]any{
-		"observed_at":         observedAt.Format(time.RFC3339Nano),
-		"label":               label,
-		"go_version":          runtime.Version(),
-		"goos":                runtime.GOOS,
-		"goarch":              runtime.GOARCH,
-		"gomaxprocs":          runtime.GOMAXPROCS(0),
-		"goroutines":          runtime.NumGoroutine(),
-		"cgo_calls":           runtime.NumCgoCall(),
-		"heap_alloc_bytes":    mem.HeapAlloc,
-		"heap_sys_bytes":      mem.HeapSys,
-		"heap_idle_bytes":     mem.HeapIdle,
-		"heap_inuse_bytes":    mem.HeapInuse,
-		"heap_released_bytes": mem.HeapReleased,
-		"heap_objects":        mem.HeapObjects,
-		"stack_inuse_bytes":   mem.StackInuse,
-		"stack_sys_bytes":     mem.StackSys,
-		"alloc_bytes_total":   mem.TotalAlloc,
-		"mallocs_total":       mem.Mallocs,
-		"frees_total":         mem.Frees,
-		"gc_count":            mem.NumGC,
-		"gc_pause_ns_total":   mem.PauseTotalNs,
-		"last_gc_unix_ns":     mem.LastGC,
-		"next_gc_bytes":       mem.NextGC,
-		"gc_cpu_fraction":     mem.GCCPUFraction,
-	}
 }
 
 func (r *AgentRuntime) localStoreHealth(ctx context.Context) (*controlplanev1.LocalStoreHealth, error) {

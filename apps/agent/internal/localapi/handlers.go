@@ -3,6 +3,7 @@ package localapi
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
@@ -13,14 +14,9 @@ type StatusService interface {
 	Capability(context.Context, *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error)
 }
 
-type DebugService interface {
-	DebugProfile(context.Context, *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error)
-}
-
 type Dependencies struct {
 	Status     StatusService
 	Telemetry  TelemetryReader
-	Debug      DebugService
 	Policy     agentcontrol.PolicyController
 	Content    agentcontrol.ContentController
 	Enrollment agentcontrol.EnrollmentController
@@ -29,7 +25,8 @@ type Dependencies struct {
 
 type Handler struct {
 	controlplanev1.UnimplementedAgentControlPlaneServiceServer
-	deps Dependencies
+	deps      Dependencies
+	profileMu sync.Mutex
 }
 
 func NewHandler(deps Dependencies) *Handler {
@@ -108,13 +105,6 @@ func (h *Handler) GetContent(ctx context.Context, req *controlplanev1.GetContent
 		return nil, fmt.Errorf("content ref %q not found", req.GetRef())
 	}
 	return &controlplanev1.ContentGetResponse{Record: contentRecordMessage(record)}, nil
-}
-
-func (h *Handler) DebugProfile(ctx context.Context, req *controlplanev1.DebugProfileRequest) (*controlplanev1.DebugProfileResponse, error) {
-	if h.deps.Debug == nil {
-		return nil, fmt.Errorf("local api debug handler is unavailable")
-	}
-	return h.deps.Debug.DebugProfile(ctx, req)
 }
 
 func (h *Handler) Enroll(ctx context.Context, req *controlplanev1.EnrollRequest) (*controlplanev1.ControlAck, error) {

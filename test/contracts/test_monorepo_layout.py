@@ -234,10 +234,8 @@ class MonorepoLayoutContractTest(unittest.TestCase):
         for declaration in (
             "type StatusService interface",
             "type TelemetryReader interface",
-            "type DebugService interface",
             "Status     StatusService",
             "Telemetry  TelemetryReader",
-            "Debug      DebugService",
         ):
             with self.subTest(declaration=declaration):
                 self.assertIn(declaration, sources)

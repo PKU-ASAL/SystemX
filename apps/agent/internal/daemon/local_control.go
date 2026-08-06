@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localapi"
@@ -23,11 +22,9 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 		startedAt: startedAt,
 	}
 	telemetryService := &localTelemetryService{runner: r, bus: bus}
-	debugService := &localDebugService{runner: r}
 	handler := localapi.NewHandler(localapi.Dependencies{
 		Status:     statusService,
 		Telemetry:  telemetryService,
-		Debug:      debugService,
 		Policy:     newPolicyController(r, rt, batcher),
 		Content:    newContentController(r),
 		Enrollment: newEnrollmentController(coordinator),
@@ -83,11 +80,6 @@ type localStatusService struct {
 type localTelemetryService struct {
 	runner *AgentRuntime
 	bus    *telemetry.Bus
-}
-
-type localDebugService struct {
-	runner    *AgentRuntime
-	profileMu sync.Mutex
 }
 
 func (r *AgentRuntime) configureEnrollmentCoordinator(ctx context.Context, rt sensorruntime.Runtime) *enrollmentCoordinator {
