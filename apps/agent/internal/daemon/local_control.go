@@ -15,7 +15,7 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 	coordinator := r.configureEnrollmentCoordinator(ctx, rt)
 	bus, batcher, sender, startedAt := r.localControlTelemetryArgs(source, rest...)
 	socketPath := r.Config.Control.SocketPath
-	handler := &localControlServer{
+	legacy := &localControlServer{
 		runner:     r,
 		enrollment: coordinator,
 		runtime:    rt,
@@ -24,6 +24,13 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 		sender:     sender,
 		startedAt:  startedAt,
 	}
+	handler := localapi.NewHandler(localapi.Dependencies{
+		Legacy:     legacy,
+		Policy:     newPolicyController(r, rt, batcher),
+		Content:    newContentController(r),
+		Enrollment: newEnrollmentController(coordinator),
+		Validate:   r.validateControlContext,
+	})
 	return localapi.New(socketPath, handler, r.Out).Start(ctx)
 }
 
