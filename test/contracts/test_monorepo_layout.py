@@ -219,10 +219,14 @@ class MonorepoLayoutContractTest(unittest.TestCase):
 
     def test_agent_control_contract_files(self):
         root = self.repo / "apps/agent/internal/control"
-        expected = ("types.go", "policy.go", "content.go")
+        expected = ("types.go", "policy.go", "content.go", "response.go", "enrollment.go")
         for name in expected:
             with self.subTest(name=name):
                 self.assertTrue((root / name).is_file(), f"missing control/{name}")
+
+    def test_agent_local_api_adapter_directory(self):
+        root = self.repo / "apps/agent/internal"
+        self.assertTrue((root / "localapi").is_dir(), "missing agent localapi")
 
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (

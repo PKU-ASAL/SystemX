@@ -4,11 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
-	"os"
-	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strings"
@@ -19,6 +15,7 @@ import (
 	agentcontent "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/content"
 	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/detection"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localapi"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/linux/tetragon"
@@ -31,32 +28,13 @@ import (
 	signalv1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/signal/v1"
 	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 	"github.com/sysarmor/sysarmor-next-project/packages/sensor-sdk/contract"
-	"google.golang.org/grpc"
 )
 
 func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorruntime.Runtime, source any, rest ...any) (func(), error) {
 	coordinator := r.configureEnrollmentCoordinator(ctx, rt)
 	bus, batcher, sender, startedAt := r.localControlTelemetryArgs(source, rest...)
 	socketPath := r.Config.Control.SocketPath
-	if socketPath == "" {
-		return func() {}, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(socketPath), 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	lis, err := net.Listen("unix", socketPath)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(socketPath, 0o660); err != nil {
-		_ = lis.Close()
-		return nil, err
-	}
-	server := grpc.NewServer()
-	controlplanev1.RegisterAgentControlPlaneServiceServer(server, &localControlServer{
+	handler := &localControlServer{
 		runner:     r,
 		enrollment: coordinator,
 		runtime:    rt,
@@ -64,23 +42,8 @@ func (r *AgentRuntime) startLocalControlServer(ctx context.Context, rt sensorrun
 		batcher:    batcher,
 		sender:     sender,
 		startedAt:  startedAt,
-	})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := server.Serve(lis); err != nil && r.Out != nil {
-			fmt.Fprintf(r.Out, "agent local control server stopped: %v\n", err)
-		}
-	}()
-	go func() {
-		<-ctx.Done()
-		server.GracefulStop()
-	}()
-	return func() {
-		server.GracefulStop()
-		<-done
-		_ = os.Remove(socketPath)
-	}, nil
+	}
+	return localapi.New(socketPath, handler, r.Out).Start(ctx)
 }
 
 func (r *AgentRuntime) localControlTelemetryArgs(source any, rest ...any) (*telemetry.Bus, *telemetry.Batcher, *telemetry.Sender, time.Time) {
