@@ -7,12 +7,10 @@ import (
 	"io"
 	"time"
 
-	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/remoteapi"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
-	"google.golang.org/protobuf/proto"
 )
 
 func (r *TransportRuntime) runControlFlow(ctx context.Context) {
@@ -65,8 +63,14 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 	if err != nil {
 		return err
 	}
+	dispatcher := remoteapi.NewDispatcher(remoteapi.Dependencies{
+		Policy:   newPolicyController(runner, r.sensor, r.batcher),
+		Content:  newContentController(runner),
+		Response: newResponseController(runner),
+	}, runner.Out)
+	remoteIdentity := remoteapi.Identity{TenantID: identity.TenantID, AgentID: identity.AgentID}
 	for _, frame := range frames {
-		if err := r.handleControlFrame(ctx, session, identity, frame); err != nil {
+		if err := dispatcher.Handle(ctx, session, remoteIdentity, frame); err != nil {
 			return err
 		}
 	}
@@ -112,7 +116,7 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 			}
 			return err
 		case frame := <-recvCh:
-			if err := r.handleControlFrame(ctx, session, identity, frame); err != nil {
+			if err := dispatcher.Handle(ctx, session, remoteIdentity, frame); err != nil {
 				return err
 			}
 		case <-ticker.C:
@@ -148,111 +152,4 @@ func (r *TransportRuntime) runControlFlowForEnrollment(ctx context.Context, enro
 			backoff *= 2
 		}
 	}
-}
-
-func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *remoteapi.ControlChannel, identity runtimeIdentity, frame *controlplanev1.ControlFrame) error {
-	runner := r.runner
-	switch frame.GetType() {
-	case "ack":
-		if frame.GetAck().GetStatus() == "rejected" {
-			return fmt.Errorf("control channel request rejected: %s", frame.GetAck().GetMessage())
-		}
-		return nil
-	case "policy_update":
-		requestContext := frame.GetContext()
-		if requestContext == nil {
-			requestContext = &controlplanev1.RequestContext{RequestId: frame.GetRequestId()}
-		}
-		controller := newPolicyController(runner, r.sensor, r.batcher)
-		ack := controlAck(controller.ApplyPolicy(ctx, policyCommand(&controlplanev1.ApplyPolicyRequest{
-			Context: requestContext, PolicyType: "endpoint", PolicyJson: frame.GetPolicyUpdate().GetRawJson(),
-		}, agentcontrol.PolicySourceManaged)))
-		ack = bindControlAckToSession(ack, identity)
-		if err := session.SendControlAck(ctx, ack); err != nil {
-			return err
-		}
-		if runner.Out != nil {
-			fmt.Fprintf(runner.Out, "agent control policy update ack: request=%s status=%s message=%q\n", ack.GetRequestId(), ack.GetStatus(), ack.GetMessage())
-		}
-		return nil
-	case "content_update":
-		req := contentUpdateFromControlFrame(frame)
-		controller := newContentController(runner)
-		ack := controlAck(controller.ApplyContent(ctx, contentCommand(req, agentcontrol.PolicySourceManaged)))
-		ack = bindControlAckToSession(ack, identity)
-		if err := session.SendControlAck(ctx, ack); err != nil {
-			return err
-		}
-		if runner.Out != nil {
-			fmt.Fprintf(runner.Out, "agent control content update ack: request=%s status=%s message=%q\n", ack.GetRequestId(), ack.GetStatus(), ack.GetMessage())
-		}
-		return nil
-	case "resume":
-		cursor := frame.GetResume().GetResumeCursor()
-		if runner.Out != nil {
-			fmt.Fprintf(runner.Out, "agent control resume cursor ignored by telemetry data plane: %s\n", cursor)
-		}
-		return nil
-	case "response_command":
-		cmd, err := responseCommandFromControl(frame.GetResponseCommand())
-		if err != nil {
-			return err
-		}
-		ack := newResponseController(runner).ExecuteResponse(ctx, cmd)
-		if err := session.SendResponseAck(ctx, ack); err != nil {
-			return err
-		}
-		if runner.Out != nil {
-			fmt.Fprintf(runner.Out, "agent control response ack: response=%s action=%s observe_only=%t unsupported=%t executed=%t\n", ack.ResponseID, cmd.Action, ack.ObserveOnly, ack.Unsupported, ack.Executed)
-		}
-		return nil
-	case "evidence_pullback":
-		req, err := evidencePullbackFromControl(frame.GetEvidencePullback())
-		if err != nil {
-			return err
-		}
-		result := newResponseController(runner).CollectEvidence(ctx, req)
-		if err := session.SendEvidenceResult(ctx, result); err != nil {
-			return err
-		}
-		if runner.Out != nil {
-			fmt.Fprintf(runner.Out, "agent control evidence pullback result: request=%s ok=%t message=%q\n", result.RequestID, result.OK, result.Message)
-		}
-		return nil
-	default:
-		return nil
-	}
-}
-
-func contentUpdateFromControlFrame(frame *controlplanev1.ControlFrame) *controlplanev1.ApplyContentRequest {
-	if frame == nil {
-		return &controlplanev1.ApplyContentRequest{}
-	}
-	req := protoCloneApplyContentRequest(frame.GetContentUpdate())
-	if req.Context == nil {
-		req.Context = frame.GetContext()
-	}
-	if req.Context == nil {
-		req.Context = &controlplanev1.RequestContext{}
-	}
-	if req.Context.RequestId == "" {
-		req.Context.RequestId = frame.GetRequestId()
-	}
-	if req.Context.TenantId == "" {
-		req.Context.TenantId = frame.GetContext().GetTenantId()
-	}
-	if req.Context.AgentId == "" {
-		req.Context.AgentId = frame.GetContext().GetAgentId()
-	}
-	if req.Context.Scope == nil {
-		req.Context.Scope = frame.GetContext().GetScope()
-	}
-	return req
-}
-
-func protoCloneApplyContentRequest(in *controlplanev1.ApplyContentRequest) *controlplanev1.ApplyContentRequest {
-	if in == nil {
-		return &controlplanev1.ApplyContentRequest{}
-	}
-	return proto.Clone(in).(*controlplanev1.ApplyContentRequest)
 }
