@@ -250,6 +250,10 @@ class MonorepoLayoutContractTest(unittest.TestCase):
         path = self.repo / "apps/agent/internal/daemon/local_control.go"
         self.assertLessEqual(len(path.read_text().splitlines()), 500)
 
+    def test_agent_daemon_composition_root_is_bounded(self):
+        path = self.repo / "apps/agent/internal/daemon/daemon.go"
+        self.assertLessEqual(len(path.read_text().splitlines()), 500)
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",
