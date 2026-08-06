@@ -9,6 +9,7 @@ import (
 
 	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/remoteapi"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
 	"google.golang.org/protobuf/proto"
@@ -55,8 +56,8 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 	runner := r.runner
 	connectCtx, cancel := context.WithTimeout(ctx, runner.Config.Local.Export.RequestTimeout)
 	defer cancel()
-	session := NewControlChannel(manager, token, tlsCfg)
-	if err := session.open(connectCtx, ctx); err != nil {
+	session := remoteapi.NewControlChannel(manager, token, tlsCfg)
+	if err := session.OpenSession(connectCtx, ctx); err != nil {
 		return err
 	}
 	defer session.Close()
@@ -72,10 +73,10 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 	health, err := runner.collectHealth(ctx, r.sensor, r.bus, r.batcher, r.sender, r.startedAt)
 	if err == nil {
 		health = bindHealthToSession(health, identity)
-		if err := session.SendHealth(ctx, health); err != nil {
+		if err := session.SendHealth(ctx, healthResponse(health)); err != nil {
 			return err
 		}
-		if err := session.SendCapability(ctx, health); err != nil {
+		if err := session.SendCapability(ctx, remoteCapabilityResponse(health)); err != nil {
 			return err
 		}
 	}
@@ -120,10 +121,10 @@ func (r *TransportRuntime) runControlChannel(ctx context.Context, manager, token
 				return err
 			}
 			health = bindHealthToSession(health, identity)
-			if err := session.SendHealth(ctx, health); err != nil {
+			if err := session.SendHealth(ctx, healthResponse(health)); err != nil {
 				return err
 			}
-			if err := session.SendCapability(ctx, health); err != nil {
+			if err := session.SendCapability(ctx, remoteCapabilityResponse(health)); err != nil {
 				return err
 			}
 		}
@@ -149,7 +150,7 @@ func (r *TransportRuntime) runControlFlowForEnrollment(ctx context.Context, enro
 	}
 }
 
-func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *ControlChannel, identity runtimeIdentity, frame *controlplanev1.ControlFrame) error {
+func (r *TransportRuntime) handleControlFrame(ctx context.Context, session *remoteapi.ControlChannel, identity runtimeIdentity, frame *controlplanev1.ControlFrame) error {
 	runner := r.runner
 	switch frame.GetType() {
 	case "ack":

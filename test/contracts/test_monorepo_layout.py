@@ -228,6 +228,24 @@ class MonorepoLayoutContractTest(unittest.TestCase):
         root = self.repo / "apps/agent/internal"
         self.assertTrue((root / "localapi").is_dir(), "missing agent localapi")
 
+    def test_agent_remote_api_adapter_directory(self):
+        root = self.repo / "apps/agent/internal"
+        self.assertTrue((root / "remoteapi").is_dir(), "missing agent remoteapi")
+
+    def test_agent_control_dependency_direction(self):
+        root = self.repo / "apps/agent/internal"
+        forbidden = {
+            "control": ("localapi", "remoteapi"),
+            "localapi": ("remoteapi",),
+            "remoteapi": ("localapi",),
+        }
+        for owner, targets in forbidden.items():
+            for source in (root / owner).rglob("*.go"):
+                text = source.read_text()
+                for target in targets:
+                    path = f"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/{target}"
+                    self.assertNotIn(path, text, f"{source} imports forbidden {target}")
+
     def test_legacy_manager_implementation_paths_are_absent(self):
         legacy = (
             "internal/manager",

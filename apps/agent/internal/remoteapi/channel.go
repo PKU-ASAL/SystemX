@@ -1,14 +1,14 @@
-package daemon
+package remoteapi
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	controlmodel "github.com/sysarmor/sysarmor-next-project/packages/contracts/controlmodel"
-	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
 	responsemodel "github.com/sysarmor/sysarmor-next-project/packages/response"
 	"github.com/sysarmor/sysarmor-next-project/packages/tlsconfig"
@@ -31,10 +31,10 @@ func NewControlChannel(manager, token string, tlsCfg tlsconfig.ClientConfig) *Co
 }
 
 func (s *ControlChannel) Open(ctx context.Context) error {
-	return s.open(ctx, ctx)
+	return s.OpenSession(ctx, ctx)
 }
 
-func (s *ControlChannel) open(dialCtx, sessionCtx context.Context) error {
+func (s *ControlChannel) OpenSession(dialCtx, sessionCtx context.Context) error {
 	if s == nil {
 		return fmt.Errorf("control channel session is nil")
 	}
@@ -95,7 +95,7 @@ func (s *ControlChannel) Hello(ctx context.Context, tenantID, agentID, scopeType
 	}
 }
 
-func (s *ControlChannel) ReportHealth(ctx context.Context, health agenthealth.AgentHealth) error {
+func (s *ControlChannel) ReportHealth(ctx context.Context, health *controlplanev1.HealthResponse) error {
 	if err := s.SendHealth(ctx, health); err != nil {
 		return err
 	}
@@ -109,16 +109,16 @@ func (s *ControlChannel) ReportHealth(ctx context.Context, health agenthealth.Ag
 	return nil
 }
 
-func (s *ControlChannel) SendHealth(ctx context.Context, health agenthealth.AgentHealth) error {
+func (s *ControlChannel) SendHealth(ctx context.Context, health *controlplanev1.HealthResponse) error {
 	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "health_report",
 		RequestId: "health-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
 		Context: &controlplanev1.RequestContext{
-			TenantId: health.TenantID,
-			AgentId:  health.AgentID,
-			Scope:    &controlplanev1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
+			TenantId: health.GetTenantId(),
+			AgentId:  health.GetAgentId(),
+			Scope:    health.GetScope(),
 		},
-		Health: healthResponse(health),
+		Health: health,
 	})
 }
 
@@ -178,30 +178,17 @@ func (s *ControlChannel) SendControlAck(ctx context.Context, ack *controlplanev1
 	})
 }
 
-func (s *ControlChannel) SendCapability(ctx context.Context, health agenthealth.AgentHealth) error {
+func (s *ControlChannel) SendCapability(ctx context.Context, capability *controlplanev1.CapabilityResponse) error {
 	return s.Send(ctx, &controlplanev1.ControlFrame{
 		Type:      "capability_report",
 		RequestId: "capability-" + time.Now().UTC().Format("20060102T150405.000000000Z"),
 		Context: &controlplanev1.RequestContext{
-			TenantId: health.TenantID,
-			AgentId:  health.AgentID,
-			Scope:    &controlplanev1.Scope{Type: health.Scope.Type, Selector: health.Scope.Selector},
+			TenantId: capability.GetTenantId(),
+			AgentId:  capability.GetAgentId(),
+			Scope:    capability.GetScope(),
 		},
-		Capability: capabilityResponse(health),
+		Capability: capability,
 	})
-}
-
-func capabilityResponse(health agenthealth.AgentHealth) *controlplanev1.CapabilityResponse {
-	return &controlplanev1.CapabilityResponse{
-		AgentId:                  health.AgentID,
-		HostId:                   health.HostID,
-		TenantId:                 health.TenantID,
-		Scope:                    scopeMessage(health.Scope),
-		Sensor:                   capabilityMessage(health.Capability),
-		SupportedPolicySections:  []string{"collection", "detection", "telemetry"},
-		SupportedResponseActions: []string{"collect", "noop"},
-		CollectionBehaviors:      collectionBehaviorMessages(health.Capability.Collection),
-	}
 }
 
 func (s *ControlChannel) Send(ctx context.Context, frame *controlplanev1.ControlFrame) error {
@@ -223,6 +210,12 @@ func (s *ControlChannel) Send(ctx context.Context, frame *controlplanev1.Control
 	frame.Sequence = s.next
 	s.next++
 	return s.stream.Send(frame)
+}
+
+func normalizeGRPCAddress(manager string) string {
+	manager = strings.TrimPrefix(manager, "http://")
+	manager = strings.TrimPrefix(manager, "https://")
+	return strings.TrimRight(manager, "/")
 }
 
 func (s *ControlChannel) Recv() (*controlplanev1.ControlFrame, error) {

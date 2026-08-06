@@ -22,6 +22,7 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/event/normalize"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
+	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/remoteapi"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/linux/tetragon"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/tamper"
@@ -590,7 +591,7 @@ func TestControlChannelKeepsLongLivedContract(t *testing.T) {
 	server := &healthControlContractServer{received: make(chan *controlplanev1.HealthResponse, 1)}
 	address := startControlContractServer(t, server)
 
-	session := NewControlChannel(address, "", tlsconfig.ClientConfig{})
+	session := remoteapi.NewControlChannel(address, "", tlsconfig.ClientConfig{})
 	defer session.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -649,7 +650,7 @@ func TestControlChannelHelloStopsWhenSessionContextIsCanceled(t *testing.T) {
 	go func() { _ = grpcServer.Serve(lis) }()
 	defer grpcServer.Stop()
 
-	session := NewControlChannel(lis.Addr().String(), "", tlsconfig.ClientConfig{})
+	session := remoteapi.NewControlChannel(lis.Addr().String(), "", tlsconfig.ClientConfig{})
 	defer session.Close()
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
