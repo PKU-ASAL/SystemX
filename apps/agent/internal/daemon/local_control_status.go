@@ -13,7 +13,6 @@ import (
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agenthealth "github.com/sysarmor/sysarmor-next-project/packages/contracts/health"
 	controlplanev1 "github.com/sysarmor/sysarmor-next-project/packages/contracts/proto/controlplane/v1"
-	policymodel "github.com/sysarmor/sysarmor-next-project/packages/policy"
 )
 
 func (s *localStatusService) Health(ctx context.Context, req *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error) {
@@ -154,38 +153,6 @@ func runtimeStatsPayload(observedAt time.Time, label string) map[string]any {
 		"next_gc_bytes":       mem.NextGC,
 		"gc_cpu_fraction":     mem.GCCPUFraction,
 	}
-}
-
-func (s *localStatusService) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
-	policy := policymodel.Normalize(s.runner.activePolicy())
-	document := any(policy)
-	if endpoint := s.runner.currentEndpointPolicy(); endpoint.PolicyID != "" {
-		document = endpoint
-		policy.PolicyID = endpoint.PolicyID
-		policy.Version = endpoint.Version
-	}
-	raw, err := json.Marshal(document)
-	if err != nil {
-		return nil, err
-	}
-	pending, err := s.runner.pendingPolicyStatus(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &controlplanev1.CurrentPolicyResponse{
-		PolicyId: policy.PolicyID,
-		Version:  policy.Version,
-		TenantId: policy.TenantID,
-		Scope: &controlplanev1.Scope{
-			Type:     policy.Scope.Type,
-			Selector: policy.Scope.Selector,
-		},
-		Mode:          policy.Mode,
-		CloudRules:    append([]string(nil), policy.CloudRules...),
-		Published:     policy.Published,
-		RawJson:       string(raw),
-		PendingPolicy: pendingPolicyMessage(pending),
-	}, nil
 }
 
 func (r *AgentRuntime) localStoreHealth(ctx context.Context) (*controlplanev1.LocalStoreHealth, error) {

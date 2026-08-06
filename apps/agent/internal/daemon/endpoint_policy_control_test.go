@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/config"
+	agentcontrol "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/control"
 	"github.com/sysarmor/sysarmor-next-project/apps/agent/internal/localstore"
 	agentpolicy "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/policy"
 	sensorruntime "github.com/sysarmor/sysarmor-next-project/apps/agent/internal/sensors/runtime"
@@ -140,19 +141,18 @@ func TestManagerPolicyPersistsPendingWhenSensorUnavailable(t *testing.T) {
 }
 
 func TestCurrentPolicyReportsPendingManagedPolicy(t *testing.T) {
-	store, runner, controller := setupPendingEndpointPolicyTest(t)
+	store, _, controller := setupPendingEndpointPolicyTest(t)
 	defer store.Close()
 	ack := controller.applyEndpointPolicyInternal(t.Context(), managedPolicyRequest("managed", 5), localstore.PolicySourceManaged)
 	if ack.GetStatus() != "pending" {
 		t.Fatalf("ack=%+v", ack)
 	}
-	server := &localStatusService{runner: runner, runtime: controller.runtime}
-	current, err := server.CurrentPolicy(t.Context(), &controlplanev1.CurrentPolicyRequest{})
+	current, err := controller.CurrentPolicy(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := current.GetPendingPolicy()
-	if current.GetPolicyId() != "standalone" || current.GetVersion() != 1 || pending.GetStatus() != "pending" || pending.GetSource() != "managed" || pending.GetPolicyId() != "managed" || pending.GetVersion() != 5 || pending.GetDigest() == "" {
+	pending := current.Pending
+	if current.PolicyID != "standalone" || current.Version != 1 || pending == nil || pending.Status != "pending" || pending.Source != agentcontrol.PolicySourceManaged || pending.PolicyID != "managed" || pending.Version != 5 || pending.Digest == "" {
 		t.Fatalf("current=%+v pending=%+v", current, pending)
 	}
 }

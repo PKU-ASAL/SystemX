@@ -56,3 +56,19 @@ func contentRecordMessage(record agentcontent.Record) *controlplanev1.ContentRec
 		Signed: record.Signed, Status: record.Status, RawJson: record.RawJSON,
 	}
 }
+
+func currentPolicyMessage(snapshot agentcontrol.PolicySnapshot) *controlplanev1.CurrentPolicyResponse {
+	response := &controlplanev1.CurrentPolicyResponse{
+		PolicyId: snapshot.PolicyID, Version: snapshot.Version, TenantId: snapshot.TenantID,
+		Scope: &controlplanev1.Scope{Type: snapshot.ScopeType, Selector: snapshot.ScopeSelector},
+		Mode:  snapshot.Mode, EndpointRules: append([]string(nil), snapshot.EndpointRules...),
+		CloudRules: append([]string(nil), snapshot.CloudRules...), Published: snapshot.Published, RawJson: snapshot.RawJSON,
+	}
+	if snapshot.Pending != nil {
+		response.PendingPolicy = &controlplanev1.PendingPolicyStatus{
+			Status: snapshot.Pending.Status, Source: string(snapshot.Pending.Source), PolicyId: snapshot.Pending.PolicyID,
+			Version: snapshot.Pending.Version, Digest: snapshot.Pending.Digest,
+		}
+	}
+	return response
+}

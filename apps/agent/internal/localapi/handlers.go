@@ -11,7 +11,6 @@ import (
 type StatusService interface {
 	Health(context.Context, *controlplanev1.HealthRequest) (*controlplanev1.HealthResponse, error)
 	Capability(context.Context, *controlplanev1.CapabilityRequest) (*controlplanev1.CapabilityResponse, error)
-	CurrentPolicy(context.Context, *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error)
 }
 
 type TelemetryService interface {
@@ -57,11 +56,15 @@ func (h *Handler) Capability(ctx context.Context, req *controlplanev1.Capability
 	return h.deps.Status.Capability(ctx, req)
 }
 
-func (h *Handler) CurrentPolicy(ctx context.Context, req *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
-	if h.deps.Status == nil {
-		return nil, fmt.Errorf("local api status handler is unavailable")
+func (h *Handler) CurrentPolicy(ctx context.Context, _ *controlplanev1.CurrentPolicyRequest) (*controlplanev1.CurrentPolicyResponse, error) {
+	if h.deps.Policy == nil {
+		return nil, fmt.Errorf("local api policy controller is unavailable")
 	}
-	return h.deps.Status.CurrentPolicy(ctx, req)
+	snapshot, err := h.deps.Policy.CurrentPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return currentPolicyMessage(snapshot), nil
 }
 
 func (h *Handler) ApplyPolicy(ctx context.Context, req *controlplanev1.ApplyPolicyRequest) (*controlplanev1.ControlAck, error) {

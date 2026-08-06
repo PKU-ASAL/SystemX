@@ -22,13 +22,22 @@ type PendingPolicy struct {
 	Version  uint64
 	Status   string
 	Message  string
+	Source   PolicySource
+	Digest   string
 }
 
 type PolicySnapshot struct {
-	PolicyID string
-	Version  uint64
-	RawJSON  string
-	Pending  *PendingPolicy
+	PolicyID      string
+	Version       uint64
+	TenantID      string
+	ScopeType     string
+	ScopeSelector string
+	Mode          string
+	EndpointRules []string
+	CloudRules    []string
+	Published     bool
+	RawJSON       string
+	Pending       *PendingPolicy
 }
 
 type PolicyController interface {

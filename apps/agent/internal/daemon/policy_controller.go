@@ -71,13 +71,21 @@ func (c *policyController) CurrentPolicy(ctx context.Context) (agentcontrol.Poli
 	if err != nil {
 		return agentcontrol.PolicySnapshot{}, err
 	}
-	snapshot := agentcontrol.PolicySnapshot{PolicyID: policy.PolicyID, Version: policy.Version, RawJSON: string(raw)}
+	snapshot := agentcontrol.PolicySnapshot{
+		PolicyID: policy.PolicyID, Version: policy.Version, TenantID: policy.TenantID,
+		ScopeType: policy.Scope.Type, ScopeSelector: policy.Scope.Selector, Mode: policy.Mode,
+		EndpointRules: append([]string(nil), policy.EndpointRules...), CloudRules: append([]string(nil), policy.CloudRules...),
+		Published: policy.Published, RawJSON: string(raw),
+	}
 	pending, err := c.runner.pendingPolicyStatus(ctx)
 	if err != nil {
 		return agentcontrol.PolicySnapshot{}, err
 	}
 	if pending.Status != "" {
-		snapshot.Pending = &agentcontrol.PendingPolicy{PolicyID: pending.PolicyID, Version: pending.Version, Status: pending.Status}
+		snapshot.Pending = &agentcontrol.PendingPolicy{
+			PolicyID: pending.PolicyID, Version: pending.Version, Status: pending.Status,
+			Source: agentcontrol.PolicySource(pending.Source), Digest: pending.Digest,
+		}
 	}
 	return snapshot, nil
 }
